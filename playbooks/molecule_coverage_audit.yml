@@ -1,0 +1,9 @@
+---
+- name: Molecule coverage audit
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Audit molecule coverage
+      ansible.builtin.debug:
+        msg: "Molecule coverage audit placeholder"

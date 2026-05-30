@@ -1,0 +1,8 @@
+---
+- name: Converge noop playbook
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Include noop playbook
+      ansible.builtin.include_playbook: "../../../playbooks/noop.yml"

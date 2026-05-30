@@ -1,0 +1,9 @@
+---
+- name: Molecule test runner
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Run molecule test
+      ansible.builtin.debug:
+        msg: "Molecule test placeholder"

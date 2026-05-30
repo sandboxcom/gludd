@@ -1,0 +1,9 @@
+---
+- name: Quality gate validation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Validate quality gates
+      ansible.builtin.debug:
+        msg: "Quality gate validation placeholder"

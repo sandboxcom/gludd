@@ -1,0 +1,17 @@
+---
+- name: Verify noop artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Assert artifact directory exists
+      ansible.builtin.stat:
+        path: "/tmp/harness-noop"
+      register: artifact_dir
+      failed_when: not artifact_dir.stat.exists
+
+    - name: Assert noop result artifact exists
+      ansible.builtin.stat:
+        path: "/tmp/harness-noop/noop_result.json"
+      register: artifact_file
+      failed_when: not artifact_file.stat.exists
