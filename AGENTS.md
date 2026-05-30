@@ -88,6 +88,19 @@ This is enforced by:
 - `Makefile` `test-and-commit` target — atomic test-then-commit
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: Evidence-Based Response Policy
+
+Every factual claim MUST have supporting evidence from a tool call, file read, URL fetch, or test result.
+- If you say "X tests pass", cite the make output.
+- If you say "file Y contains Z", cite the file path and line number.
+- If you say "opencode supports X", cite the URL or docs page you fetched.
+- Unsupported claims are policy violations.
+
+This is enforced by:
+- `.opencode/plugin/enforce-make.ts` — injects evidence policy into system prompt
+- `src/agentic_harness/review/evidence_checker.py` — runtime claim auditing
+- This AGENTS.md section — proactive instruction
+
 ## Project Overview
 
 This is the agentic-harness project: an autonomous coding system with Ansible runners and multi-model AI agents.

@@ -134,8 +134,24 @@ export default (async ({ }) => {
         "   (missing credentials, environment issues you cannot fix).",
         "",
       ].join("\n")
+      const evidencePrompt = [
+        "",
+        "## CRITICAL: Evidence-Based Response Policy",
+        "",
+        "Every factual claim in your responses MUST cite its source. Acceptable sources:",
+        "- File paths with line numbers (e.g., src/foo.py:42)",
+        "- Tool output (e.g., test results, grep results)",
+        "- URLs with retrieved content",
+        "- Direct quotes from documentation",
+        "- Test pass/fail counts from make output",
+        "",
+        "If you cannot cite a source, you MUST NOT make the claim. Instead say",
+        '"I don\'t have evidence for this" or "Based on [source], ..."',
+        "",
+      ].join("\n")
       if (typeof output === "string") {
         output += completionPrompt
+        output += evidencePrompt
       }
     },
   }

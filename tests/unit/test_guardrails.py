@@ -315,6 +315,25 @@ class TestSkeletonScript:
             assert len(inits) > 0, "skeleton should create __init__.py files"
 
 
+class TestEvidencePolicyGuardrail:
+    def test_evidence_policy_in_agents_md(self):
+        content = AGENTS_MD.read_text()
+        assert "Evidence-Based Response" in content or "Evidence" in content
+        assert "source" in content.lower() or "evidence" in content.lower()
+        assert "CRITICAL" in content
+
+    def test_evidence_policy_in_plugin(self):
+        content = PLUGIN_FILE.read_text()
+        assert "Evidence-Based Response" in content or "Evidence" in content or "evidence" in content.lower()
+        assert "source" in content.lower() or "cite" in content.lower()
+
+    def test_evidence_checker_exists(self):
+        from agentic_harness.review.evidence_checker import EvidenceChecker
+        checker = EvidenceChecker()
+        assert hasattr(checker, "check_claim")
+        assert hasattr(checker, "audit_response")
+
+
 class TestMakeTargetSmokeTests:
     def test_make_qa_passes(self):
         if not shutil.which("ansible-playbook"):
