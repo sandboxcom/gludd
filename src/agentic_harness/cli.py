@@ -8,8 +8,8 @@ import sys
 
 def main() -> None:
     parser = argparse.ArgumentParser(
-        prog="agentic-harness",
-        description="Agentic Harness - autonomous coding system",
+        prog="hottentot",
+        description="Hottentot Agent — the black swan agentic coding system",
     )
     sub = parser.add_subparsers(dest="command")
 
@@ -21,7 +21,7 @@ def main() -> None:
 
     if args.command == "version":
         from agentic_harness import __version__
-        print(f"agentic-harness {__version__}")
+        print(f"hottentot-agent {__version__}")
     elif args.command == "worker":
         from agentic_harness.worker.cli import main as worker_main
         worker_main()

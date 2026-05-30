@@ -1,11 +1,11 @@
 [project]
-name = "agentic-harness"
+name = "hottentot-agent"
 version = "0.1.0"
-description = "Agentic coding harness with Ansible runners and multi-model AI agents"
+description = "Hottentot — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
 license = {text = "MIT"}
-authors = [{name = "Agentic Harness Team"}]
+authors = [{name = "Hottentot Team"}]
 
 dependencies = [
     "fastapi>=0.115.0",
@@ -47,9 +47,9 @@ dev = [
 ]
 
 [project.scripts]
-agentic-harness = "agentic_harness.cli:main"
-agentic-harness-worker = "agentic_harness.worker.cli:main"
-agentic-harness-loop = "agentic_harness.event_loop.cli:main"
+hottentot = "agentic_harness.cli:main"
+hottentot-worker = "agentic_harness.worker.cli:main"
+hottentot-loop = "agentic_harness.event_loop.cli:main"
 
 [build-system]
 requires = ["hatchling"]

@@ -126,7 +126,7 @@ git-status:
 git-init:
 	@git init
 	@git config user.email "agent@harness.local" || true
-	@git config user.name "Agentic Harness Agent" || true
+	@git config user.name "Hottentot Agent" || true
 
 git-commit:
 	@git add -A

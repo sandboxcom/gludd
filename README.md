@@ -1,6 +1,6 @@
-# Agentic Harness
+# Hottentot Agent
 
-Autonomous coding system with Ansible runners and multi-model AI agents.
+The black swan agentic coding system — autonomous, Ansible-driven, multi-model AI agents.
 
 ## Quick Start
 
@@ -9,7 +9,7 @@ Autonomous coding system with Ansible runners and multi-model AI agents.
 ```bash
 uv sync --locked
 uv run pytest -v
-uv run agentic-harness version
+uv run hottentot version
 ```
 
 ### Native pip mode
@@ -24,13 +24,13 @@ pytest -v
 ### Worker service
 
 ```bash
-uv run agentic-harness worker
+uv run hottentot-worker
 ```
 
 ### Event loop
 
 ```bash
-uv run agentic-harness loop
+uv run hottentot-loop
 ```
 
 ## Runtime Modes
@@ -42,7 +42,7 @@ uv run agentic-harness loop
 ## Project Structure
 
 ```
-src/agentic_harness/     - Main package
+src/agentic_harness/     - Main package (internal namespace)
   schemas/               - Pydantic models
   worker/                - FastAPI worker app
   event_loop/            - Event loop
@@ -56,6 +56,9 @@ src/agentic_harness/     - Main package
   ansible/               - Ansible runner adapter
   prompts/               - Prompt registry
   runtime/               - Runtime profiles
+  agents/                - Multitasking agent system
+  review/                - Return review + evidence checker
+  dependency/            - Dependency update pipeline
 tests/                   - Test suite
 playbooks/               - Ansible playbooks
 molecule/                - Molecule scenarios
