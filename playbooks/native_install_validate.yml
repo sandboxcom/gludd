@@ -1,0 +1,8 @@
+---
+- name: Validate native install (uv/pip)
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run native install validation
+      ansible.builtin.debug:
+        msg: "Native install validation placeholder"

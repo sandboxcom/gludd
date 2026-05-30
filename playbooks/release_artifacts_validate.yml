@@ -1,0 +1,8 @@
+---
+- name: Validate release artifacts
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run release artifact validation
+      ansible.builtin.debug:
+        msg: "Release artifacts validation placeholder"

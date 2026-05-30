@@ -1,0 +1,8 @@
+---
+- name: Audit data source mounts
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run data source mount audit
+      ansible.builtin.debug:
+        msg: "Data source mount audit placeholder"

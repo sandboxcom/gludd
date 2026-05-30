@@ -1,0 +1,8 @@
+---
+- name: Validate runtime profile
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run runtime profile validation
+      ansible.builtin.debug:
+        msg: "Runtime profile validation placeholder"

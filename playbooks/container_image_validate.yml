@@ -1,0 +1,8 @@
+---
+- name: Validate container image
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run container image validation
+      ansible.builtin.debug:
+        msg: "Container image validation placeholder"

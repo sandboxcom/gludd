@@ -1,0 +1,8 @@
+---
+- name: Install pip bundle
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Run pip bundle install
+      ansible.builtin.debug:
+        msg: "Pip bundle install placeholder"

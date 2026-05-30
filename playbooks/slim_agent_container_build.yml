@@ -1,0 +1,8 @@
+---
+- name: Build slim agent container
+  hosts: localhost
+  gather_facts: false
+  tasks:
+    - name: Build container image
+      ansible.builtin.debug:
+        msg: "Slim agent container build placeholder"
