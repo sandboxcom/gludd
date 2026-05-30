@@ -1,0 +1,25 @@
+model_profile_id: vllm_local
+role_names:
+  - coder
+  - reviewer
+provider: vllm
+provider_package: langchain-community
+provider_class_hint: ChatVLLM
+model_name: mistral-7b
+api_base_alias: vllm_base_url
+context_window: 32000
+max_input_tokens: 30000
+max_output_tokens: 4000
+cost_per_input_token: 0.0
+cost_per_output_token: 0.0
+api_metered: false
+run_budget_usd: 0.0
+enabled: false
+resource_profile: local_heavy
+roles:
+  - coder
+  - reviewer
+latency_class: medium
+quality_class: medium
+fallback_profiles: []
+probe_enabled: false
