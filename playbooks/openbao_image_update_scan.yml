@@ -1,0 +1,32 @@
+---
+- name: OpenBao weekly image update scan
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    openbao_image: "{{ openbao_image | default('ghcr.io/openbao/openbao') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-openbao-scan') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Record scan intent
+      ansible.builtin.debug:
+        msg: >-
+          Scanning for OpenBao image updates:
+          current={{ openbao_image }}
+
+    - name: Write scan stub artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "playbook": "openbao_image_update_scan",
+            "image": "{{ openbao_image }}",
+            "status": "stub"
+          }
+        dest: "{{ artifact_dir }}/scan_result.json"
+        mode: "0644"

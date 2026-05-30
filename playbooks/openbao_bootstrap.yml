@@ -1,0 +1,37 @@
+---
+- name: OpenBao bootstrap playbook
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    openbao_image: "{{ openbao_image | default('ghcr.io/openbao/openbao') }}"
+    openbao_port: "{{ openbao_port | default(8200) }}"
+    openbao_mode: "{{ openbao_mode | default('auto') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-openbao') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Record bootstrap intent
+      ansible.builtin.debug:
+        msg: >-
+          OpenBao bootstrap mode={{ openbao_mode }}
+          image={{ openbao_image }}
+          port={{ openbao_port }}
+
+    - name: Write bootstrap stub artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "playbook": "openbao_bootstrap",
+            "mode": "{{ openbao_mode }}",
+            "image": "{{ openbao_image }}",
+            "port": "{{ openbao_port }}",
+            "status": "stub"
+          }
+        dest: "{{ artifact_dir }}/bootstrap_result.json"
+        mode: "0644"
