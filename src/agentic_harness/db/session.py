@@ -2,32 +2,25 @@
 
 from __future__ import annotations
 
-from collections.abc import Generator
+from collections.abc import AsyncGenerator
 from typing import Any
 
-from sqlalchemy import create_engine
-from sqlalchemy.orm import DeclarativeBase, Session, sessionmaker
+from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
 
-class Base(DeclarativeBase):
-    pass
+def init_async_engine(url: str = "postgresql+psycopg://localhost/agentic_harness", **kwargs: Any) -> AsyncEngine:
+    return create_async_engine(url, **kwargs)
 
 
-def create_db_engine(url: str = "sqlite+aiosqlite:///./test.db", **kwargs: Any) -> Any:
-    return create_engine(url, **kwargs)
+def create_async_session_factory(engine: AsyncEngine) -> async_sessionmaker[AsyncSession]:
+    return async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
 
 
-def create_session_factory(engine: Any) -> sessionmaker[Session]:
-    return sessionmaker(bind=engine, expire_on_commit=False)
-
-
-def get_session(session_factory: sessionmaker[Session]) -> Generator[Session, None, None]:
-    session = session_factory()
-    try:
-        yield session
-        session.commit()
-    except Exception:
-        session.rollback()
-        raise
-    finally:
-        session.close()
+async def get_async_session(session_factory: async_sessionmaker[AsyncSession]) -> AsyncGenerator[AsyncSession, None]:
+    async with session_factory() as session:
+        try:
+            yield session
+            await session.commit()
+        except Exception:
+            await session.rollback()
+            raise

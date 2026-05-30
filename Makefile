@@ -11,7 +11,7 @@ TESTS_DIR := tests
 
 .PHONY: search-google search-json \
         init sync install-pip lint lint-fix test test-unit test-integration \
-        test-guardrails test-scripts \
+        test-guardrails test-scripts test-db \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks playbook-list \
@@ -100,6 +100,9 @@ test-integration:
 
 test-guardrails:
 	@$(UV) run pytest tests/unit/test_guardrails.py -v
+
+test-db:
+	@$(UV) run pytest tests/unit/test_db_models.py -v
 
 test-scripts:
 	@$(UV) run pytest tests/unit/test_guardrails.py::TestSkeletonScript -v

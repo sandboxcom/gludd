@@ -42,6 +42,8 @@ dev = [
     "ansible-dev-tools>=24.0.0",
     "types-requests>=2.32.0",
     "types-psutil>=6.0.0",
+    "aiosqlite>=0.20.0",
+    "greenlet>=3.0.0",
 ]
 
 [project.scripts]
@@ -79,6 +81,7 @@ ignore_missing_imports = true
 testpaths = ["tests"]
 pythonpath = ["src"]
 addopts = "-v --tb=short"
+asyncio_mode = "auto"
 
 [tool.coverage.run]
 source = ["agentic_harness"]
@@ -104,4 +107,6 @@ dev-dependencies = [
     "pre-commit>=4.0.0",
     "types-requests>=2.32.0",
     "types-psutil>=6.0.0",
+    "aiosqlite>=0.20.0",
+    "greenlet>=3.0.0",
 ]
