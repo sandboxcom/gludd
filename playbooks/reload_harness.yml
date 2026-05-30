@@ -1,0 +1,33 @@
+---
+- name: Reload harness components
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    job_id: "{{ job_id | default('RL-00000000') }}"
+    reload_type: "{{ reload_type | default('config') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-reload') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write reload artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "job_id": "{{ job_id }}",
+            "reload_type": "{{ reload_type }}",
+            "playbook": "reload_harness.yml",
+            "status": "success",
+            "exit_code": 0
+          }
+        dest: "{{ artifact_dir }}/reload_result.json"
+        mode: "0644"
+
+    - name: Report reload completion
+      ansible.builtin.debug:
+        msg: "Reload playbook completed for job {{ job_id }} type {{ reload_type }}"

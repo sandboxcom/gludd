@@ -1,0 +1,33 @@
+---
+- name: Self-improve harness
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    job_id: "{{ job_id | default('SI-00000000') }}"
+    todo_id: "{{ todo_id | default('none') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-self-improve') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write self-improve artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "job_id": "{{ job_id }}",
+            "todo_id": "{{ todo_id }}",
+            "playbook": "self_improve_harness.yml",
+            "status": "success",
+            "exit_code": 0
+          }
+        dest: "{{ artifact_dir }}/self_improve_result.json"
+        mode: "0644"
+
+    - name: Report self-improve completion
+      ansible.builtin.debug:
+        msg: "Self-improve playbook completed for job {{ job_id }}"
