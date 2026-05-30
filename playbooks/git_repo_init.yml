@@ -1,0 +1,48 @@
+---
+- name: Initialize git repository for agentic harness
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ repo_path | default('.') }}"
+    user_email: "{{ user_email | default('agent@harness.local') }}"
+    user_name: "{{ user_name | default('Agentic Harness Agent') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-git-init') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Initialize git repository
+      ansible.builtin.command:
+        cmd: git init
+        chdir: "{{ repo_path }}"
+      register: init_result
+      changed_when: "'Initialized' in init_result.stdout"
+
+    - name: Configure git user email
+      ansible.builtin.command:
+        cmd: git config user.email "{{ user_email }}"
+        chdir: "{{ repo_path }}"
+      changed_when: false
+
+    - name: Configure git user name
+      ansible.builtin.command:
+        cmd: git config user.name "{{ user_name }}"
+        chdir: "{{ repo_path }}"
+      changed_when: false
+
+    - name: Write init result artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "repo_path": "{{ repo_path }}",
+            "playbook": "git_repo_init.yml",
+            "status": "success",
+            "stdout": "{{ init_result.stdout | default('') }}"
+          }
+        dest: "{{ artifact_dir }}/git_init_result.json"
+        mode: "0644"

@@ -1,0 +1,38 @@
+---
+- name: Manage git worktrees for agentic harness
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    repo_path: "{{ repo_path | default('.') }}"
+    worktree_action: "{{ worktree_action | default('list') }}"
+    worktree_path: "{{ worktree_path | default('') }}"
+    branch_name: "{{ branch_name | default('') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-git-worktree') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: List worktrees
+      ansible.builtin.command:
+        cmd: git worktree list --porcelain
+        chdir: "{{ repo_path }}"
+      register: worktree_list
+      changed_when: false
+
+    - name: Write worktree result artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "repo_path": "{{ repo_path }}",
+            "action": "{{ worktree_action }}",
+            "playbook": "git_manage_worktree.yml",
+            "status": "success",
+            "worktrees": "{{ worktree_list.stdout | default('') }}"
+          }
+        dest: "{{ artifact_dir }}/worktree_result.json"
+        mode: "0644"
