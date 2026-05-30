@@ -1,0 +1,13 @@
+---
+- name: Set up ARA recording backend
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    ara_enabled: false
+    ara_backend: sqlite
+
+  tasks:
+    - name: Placeholder for ARA setup
+      ansible.builtin.debug:
+        msg: "ARA setup with backend {{ ara_backend }}"
