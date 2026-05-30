@@ -1,0 +1,43 @@
+{% include "base_harness_aware.md.j2" %}
+
+---
+
+# Return Review
+
+You are reviewing a **task return** from a completed (or failed) worker execution.
+Your job is to decide the outcome and produce a `TaskDecision`.
+
+## Task Return Under Review
+
+```json
+{{ task_return | tojson(indent=2) }}
+```
+
+## Candidate TODOs
+
+The following todos may match this return:
+
+```json
+{{ candidate_todos | tojson(indent=2) }}
+```
+
+## Available Artifacts
+
+```json
+{{ artifacts | tojson(indent=2) }}
+```
+
+## Review Checklist
+
+1. Does the return's `todo_id` match a candidate? If not, is this a duplicate or
+   unexpected return?
+2. Did the worker exit cleanly (`exit_code == 0`)?
+3. Does the `result_summary` indicate success or failure?
+4. Are there sufficient **evidence artifacts** (coverage, test results, diffs)?
+5. Is the evidence credible (non-empty, reasonable coverage levels)?
+
+## Instructions
+
+Based on the information above, produce a single `TaskDecision` JSON object.
+Choose the most appropriate decision type. Be honest about confidence — low
+confidence should trigger validation work.
