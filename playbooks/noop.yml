@@ -1,0 +1,33 @@
+---
+- name: No-op playbook for harness testing
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    job_id: "{{ job_id | default('NOOP-00000000') }}"
+    todo_id: "{{ todo_id | default('none') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-noop') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write no-op artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "job_id": "{{ job_id }}",
+            "todo_id": "{{ todo_id }}",
+            "playbook": "noop.yml",
+            "status": "success",
+            "exit_code": 0
+          }
+        dest: "{{ artifact_dir }}/noop_result.json"
+        mode: "0644"
+
+    - name: Report no-op completion
+      ansible.builtin.debug:
+        msg: "No-op playbook completed for job {{ job_id }}"

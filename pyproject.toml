@@ -1,0 +1,107 @@
+[project]
+name = "agentic-harness"
+version = "0.1.0"
+description = "Agentic coding harness with Ansible runners and multi-model AI agents"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "MIT"}
+authors = [{name = "Agentic Harness Team"}]
+
+dependencies = [
+    "fastapi>=0.115.0",
+    "uvicorn-worker>=0.3.0",
+    "gunicorn>=23.0.0",
+    "httpx>=0.28.0",
+    "pydantic>=2.10.0",
+    "sqlalchemy>=2.0.0",
+    "alembic>=1.14.0",
+    "psycopg[binary]>=3.2.0",
+    "structlog>=24.0.0",
+    "prometheus-client>=0.21.0",
+    "psutil>=6.0.0",
+    "tenacity>=9.0.0",
+    "ansible-runner>=2.4.0",
+    "jinja2>=3.1.0",
+    "hvac>=2.3.0",
+    "langchain>=0.3.0",
+    "langchain-openai>=0.3.0",
+    "requests>=2.32.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+    "pytest-ansible>=24.0.0",
+    "molecule>=24.0.0",
+    "ansible-lint>=24.0.0",
+    "ansible-dev-tools>=24.0.0",
+    "types-requests>=2.32.0",
+    "types-psutil>=6.0.0",
+]
+
+[project.scripts]
+agentic-harness = "agentic_harness.cli:main"
+agentic-harness-worker = "agentic_harness.worker.cli:main"
+agentic-harness-loop = "agentic_harness.event_loop.cli:main"
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/agentic_harness"]
+
+[tool.ruff]
+target-version = "py311"
+src = ["src", "tests"]
+line-length = 120
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
+
+[tool.mypy]
+python_version = "3.11"
+strict = true
+warn_return_any = true
+warn_unused_configs = true
+disallow_untyped_defs = true
+
+[[tool.mypy.overrides]]
+module = ["ansible_runner.*", "hvac.*", "langchain.*", "langchain_openai.*", "psycopg.*", "molecule.*", "pytest_ansible.*"]
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["src"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["agentic_harness"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+fail_under = 10
+show_missing = true
+exclude_lines = [
+    "pragma: no cover",
+    "if TYPE_CHECKING:",
+    "raise NotImplementedError",
+    "pass",
+]
+
+[tool.uv]
+dev-dependencies = [
+    "pytest>=8.0.0",
+    "pytest-cov>=6.0.0",
+    "pytest-asyncio>=0.25.0",
+    "ruff>=0.8.0",
+    "mypy>=1.13.0",
+    "pre-commit>=4.0.0",
+    "types-requests>=2.32.0",
+    "types-psutil>=6.0.0",
+]

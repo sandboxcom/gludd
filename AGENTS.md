@@ -1,0 +1,136 @@
+# Agentic Harness - Agent Rules
+
+## CRITICAL: Task Completion Policy
+
+**You MUST complete ALL requested work before stopping. No exceptions.**
+
+1. If given a sprint, objective list, or multi-step task, work through EVERY
+   step until all are complete or genuinely blocked.
+2. Do NOT stop early to report status. Do NOT pause to ask if the user wants
+   you to continue when instructions were explicit.
+3. Do NOT treat infrastructure/tooling setup as the deliverable. Guardrails,
+   hooks, and make targets exist to support the real work.
+4. Do NOT get sidetracked. If you catch yourself spending time on something
+   that is not the requested work, refocus immediately.
+5. After completing one objective, immediately start the next. No victory laps.
+6. Only stop when ALL objectives are complete or you hit a hard blocker you
+   cannot fix (missing credentials, environment you cannot change).
+
+This is enforced by:
+- `.opencode/plugin/enforce-make.ts` — injects completion policy into system prompt
+- This AGENTS.md section — proactive instruction
+- If you stopped early: RESUME WORK NOW.
+
+## Meta-Rule: Guardrail Policy
+
+When you introduce ANY new restriction or policy on agent behavior, you MUST
+implement it at all three layers. Single-layer restrictions are insufficient.
+
+1. **Config permission** (`opencode.json` `permission` block) - hard gate
+2. **Runtime hook** (`.opencode/plugin/*.ts`) - contextual error with guidance
+3. **Agent prompt** (`AGENTS.md` prominent section) - proactive instruction
+
+Every guardrail must have all three. If you catch yourself adding only one or
+two, stop and add the missing layers before continuing. See the
+`guardrail-pattern` skill for the full pattern and checklist.
+
+## CRITICAL: Bash Command Policy
+
+**You MUST only run `make <target>` commands in bash. Never run any other command directly.**
+
+- ALLOWED: `make test`, `make lint`, `make init`, `make sync`, etc.
+- DENIED: `uv run ...`, `python3 ...`, `pip install ...`, `git ...`, `which ...`, `ls ...`, `cat ...`, `find ...`, `rm ...`, or any other direct command.
+
+This is enforced by:
+- `opencode.json` permission rules (hard deny on non-make bash)
+- `.opencode/plugin/enforce-make.ts` (throws helpful error with next steps)
+- This AGENTS.md section (proactive reminder)
+
+If you need to do something at the command line, add or update a Makefile target
+first, then run `make <target>`.
+
+When you have working Python you can dogfood, migrate make targets into that system.
+
+## CRITICAL: TDD Policy
+
+**You MUST write a failing test BEFORE writing implementation code. No exceptions.**
+
+Workflow for every change:
+1. Identify the behavior you need.
+2. Write a test that fails because the behavior does not exist yet.
+3. Run `make test-unit` — confirm the test fails.
+4. Write the minimal implementation to make the test pass.
+5. Run `make test-unit` — confirm the test passes.
+6. Refactor if needed, keeping tests green.
+
+This is enforced by:
+- `.opencode/plugin/enforce-make.ts` — prints TDD reminder when you edit files under `src/`
+- This AGENTS.md section — proactive instruction
+- The guardrail-pattern skill — reusable pattern reference
+
+Do not skip steps. Do not write implementation and then retroactively add tests.
+Do not mark work complete unless a test proves the behavior exists.
+
+## CRITICAL: Commit-After-Green Policy
+
+**You MUST commit your work after tests pass and the change is complete. Do not leave green work uncommitted.**
+
+Workflow:
+1. Tests pass for the change you made.
+2. Run `make test-and-commit` — this runs the full test suite and commits only if all tests pass.
+3. If you want a descriptive message, run `make test-and-commit MSG="your message"`.
+
+If you notice uncommitted changes that are test-green, stop what you are doing
+and commit them before starting new work.
+
+This is enforced by:
+- `.opencode/plugin/enforce-make.ts` — prints commit reminder after test runs pass
+- `Makefile` `test-and-commit` target — atomic test-then-commit
+- This AGENTS.md section — proactive instruction
+
+## Project Overview
+
+This is the agentic-harness project: an autonomous coding system with Ansible runners and multi-model AI agents.
+
+- Primary language: Python 3.11+
+- Package manager: uv (preferred), pip (fallback)
+- Test runner: pytest
+- Linter: ruff
+- Type checker: mypy
+- Worker: FastAPI + Gunicorn + uvicorn-worker
+- Database: PostgreSQL (Alembic migrations)
+- Secrets: OpenBao + hvac
+- Playbook execution: Ansible Runner
+- Testing strategy: TDD, Molecule for Ansible content
+
+## Key Make Targets
+
+- `make init` - Set up the project (dirs + deps)
+- `make sync` - Sync uv dependencies
+- `make test` - Run full test suite with coverage
+- `make test-unit` - Run unit tests only
+- `make test-guardrails` - Test guardrail infrastructure
+- `make lint` - Run ruff linter
+- `make lint-fix` - Run ruff with auto-fix
+- `make typecheck` - Run mypy
+- `make healthcheck` - Verify imports work
+- `make qa` - Run lint + typecheck + test + healthcheck
+- `make validate` - Full validation including ansible syntax
+- `make ansible-syntax` - Check playbook syntax
+- `make clean` - Remove build artifacts
+- `make bootstrap` - init + lint + test + healthcheck
+- `make test-and-commit` - Run tests then commit if green
+- `make git-init` - Initialize git repo
+- `make git-status` - Show git status
+- `make git-log` - Show recent commits
+
+## Working Conventions
+
+- TDD: write failing tests first (enforced by plugin + policy)
+- Small, testable increments
+- Keep the event loop thin
+- Ansible playbooks are the tool-call boundary
+- Never force-push
+- Never run non-make commands in bash (enforced by plugin + policy)
+- Commit after tests pass (enforced by plugin + policy)
+- When adding any new guardrail, apply all three layers (enforced by meta-rule)
