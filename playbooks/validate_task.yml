@@ -1,0 +1,40 @@
+---
+- name: Validate task via test commands
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    todo_id: "{{ todo_id | default('TODO-00000000') }}"
+    worktree_path: "{{ worktree_path | default('/tmp/worktree') }}"
+    test_commands: "{{ test_commands | default(['echo ok']) }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-validate') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run validation commands
+      ansible.builtin.command: "{{ item }}"
+      loop: "{{ test_commands }}"
+      register: validation_results
+      ignore_errors: true
+      changed_when: false
+
+    - name: Write validation result artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "todo_id": "{{ todo_id }}",
+            "playbook": "validate_task.yml",
+            "results": {{ validation_results | default([]) | to_json }},
+            "status": "completed"
+          }
+        dest: "{{ artifact_dir }}/validation_result.json"
+        mode: "0644"
+
+    - name: Report validation completion
+      ansible.builtin.debug:
+        msg: "Validation completed for todo {{ todo_id }}"

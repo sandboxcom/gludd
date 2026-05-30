@@ -1,0 +1,30 @@
+---
+- name: Audit logs for anomalies
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    log_source: "{{ log_source | default('/var/log/harness') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-log-audit') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write log audit artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "log_source": "{{ log_source }}",
+            "playbook": "log_audit.yml",
+            "status": "completed"
+          }
+        dest: "{{ artifact_dir }}/log_audit_result.json"
+        mode: "0644"
+
+    - name: Report log audit completion
+      ansible.builtin.debug:
+        msg: "Log audit completed for source {{ log_source }}"

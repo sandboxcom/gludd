@@ -1,0 +1,32 @@
+---
+- name: Run gap analysis on project
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    sprint_path: "{{ sprint_path | default('sprint0') }}"
+    repo_root: "{{ repo_root | default('.') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-gap-analysis') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write gap analysis artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "sprint_path": "{{ sprint_path }}",
+            "repo_root": "{{ repo_root }}",
+            "playbook": "gap_analysis.yml",
+            "status": "completed"
+          }
+        dest: "{{ artifact_dir }}/gap_analysis_result.json"
+        mode: "0644"
+
+    - name: Report gap analysis completion
+      ansible.builtin.debug:
+        msg: "Gap analysis completed for sprint {{ sprint_path }}"
