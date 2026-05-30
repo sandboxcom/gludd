@@ -74,7 +74,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible_runner.*", "hvac.*", "langchain.*", "langchain_openai.*", "psycopg.*", "molecule.*", "pytest_ansible.*"]
+module = ["ansible_runner.*", "hvac.*", "langchain.*", "langchain_openai.*", "psycopg.*", "molecule.*", "pytest_ansible.*", "yaml.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
