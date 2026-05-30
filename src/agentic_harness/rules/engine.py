@@ -17,9 +17,17 @@ class Rule(BaseModel):
     audit_message: str = ""
 
 
+class RuleAction(BaseModel):
+    rule_id: str
+    action_type: str
+    params: dict[str, Any] = Field(default_factory=dict)
+    audit_message: str = ""
+
+
 class RuleEngine:
     def __init__(self, rules: list[Rule] | None = None) -> None:
         self._rules: list[Rule] = rules or []
+        self._rules.sort(key=lambda r: r.priority)
 
     def add_rule(self, rule: Rule) -> None:
         self._rules.append(rule)
@@ -63,11 +71,29 @@ class RuleEngine:
         if op == "neq":
             return bool(ctx_value != value)
         if op == "in":
-            if value is not None:
+            if value is not None and ctx_value is not None:
                 return bool(ctx_value in value)
             return False
         if op == "contains":
-            return bool(value in ctx_value)
+            if ctx_value is not None:
+                return bool(value in ctx_value)
+            return False
+        if op == "gt":
+            if ctx_value is None:
+                return False
+            return bool(ctx_value > value)
+        if op == "lt":
+            if ctx_value is None:
+                return False
+            return bool(ctx_value < value)
+        if op == "gte":
+            if ctx_value is None:
+                return False
+            return bool(ctx_value >= value)
+        if op == "lte":
+            if ctx_value is None:
+                return False
+            return bool(ctx_value <= value)
         return False
 
     @staticmethod
@@ -77,3 +103,87 @@ class RuleEngine:
         for part in parts:
             obj = obj.get(part) if isinstance(obj, dict) else getattr(obj, part, None)
         return obj
+
+
+def evaluate_rules(
+    rules: list[Rule], context: dict[str, Any],
+) -> list[RuleAction]:
+    engine = RuleEngine(rules=rules)
+    raw = engine.evaluate(context)
+    queue_name = ""
+    q = context.get("queue")
+    if isinstance(q, dict):
+        queue_name = q.get("queue_name", "")
+
+    actions: list[RuleAction] = []
+    for result in raw:
+        for action_dict in result["actions"]:
+            params = {k: v for k, v in action_dict.items() if k != "type"}
+            if queue_name and "queue" not in params:
+                params["queue"] = queue_name
+            actions.append(RuleAction(
+                rule_id=result["rule_id"],
+                action_type=action_dict.get("type", "unknown"),
+                params=params,
+                audit_message=result.get("audit_message", ""),
+            ))
+    return actions
+
+
+def default_rules() -> list[Rule]:
+    return [
+        Rule(
+            rule_id="route_failing_validation_to_qa",
+            priority=10,
+            condition={"all": [
+                {"field": "todo.status", "op": "eq", "value": "failed"},
+                {"field": "todo.work_type", "op": "in", "value": ["test", "code", "review"]},
+            ]},
+            actions=[{"type": "route", "queue": "qa"}],
+            audit_message="Routing failing validation to qa queue",
+        ),
+        Rule(
+            rule_id="route_dependency_updates",
+            priority=10,
+            condition={"field": "todo.work_type", "op": "eq", "value": "dependency"},
+            actions=[{"type": "route", "queue": "dependency"}],
+            audit_message="Routing dependency update to dependency queue",
+        ),
+        Rule(
+            rule_id="route_openbao_update_to_manual_hold",
+            priority=5,
+            condition={"all": [
+                {"field": "todo.tags", "op": "contains", "value": "openbao"},
+                {"field": "todo.tags", "op": "contains", "value": "image_update"},
+            ]},
+            actions=[{"type": "route", "queue": "manual_hold", "approval_required": True}],
+            audit_message="Routing OpenBao image update to manual_hold with approval_required",
+        ),
+        Rule(
+            rule_id="pause_queue_model_down",
+            priority=5,
+            condition={"field": "model_profile.status", "op": "eq", "value": "down"},
+            actions=[{"type": "pause_queue"}],
+            audit_message="Pausing queue because model profile is down",
+        ),
+        Rule(
+            rule_id="reduce_local_heavy_high_load",
+            priority=20,
+            condition={"all": [
+                {"field": "queue.resource_profile", "op": "eq", "value": "local_heavy"},
+                {"field": "load_snapshot.load_ratio", "op": "gt", "value": 1.0},
+            ]},
+            actions=[{"type": "reduce_buckets", "reduction": 2}],
+            audit_message="Reducing local-heavy buckets when 10m load exceeds target",
+        ),
+        Rule(
+            rule_id="reduce_api_metered_budget_exhaustion",
+            priority=20,
+            condition={"all": [
+                {"field": "queue.resource_profile", "op": "in", "value": ["ai_heavy"]},
+                {"field": "budget.budget_near_exhaustion", "op": "eq", "value": True},
+            ]},
+            actions=[{"type": "reduce_buckets", "reduction": 2}],
+            audit_message="Reducing API-metered buckets when budget near exhaustion",
+        ),
+    ]

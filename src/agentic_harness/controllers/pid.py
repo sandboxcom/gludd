@@ -3,8 +3,13 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from typing import TYPE_CHECKING
 
 import psutil
+
+if TYPE_CHECKING:
+    from agentic_harness.controllers.load_scrape import LoadSnapshot
+    from agentic_harness.schemas.queue import Queue
 
 
 @dataclass
@@ -52,6 +57,53 @@ class LoadController:
 
         return outputs
 
+    def evaluate_snapshot(
+        self,
+        snapshot: LoadSnapshot,
+        queues: list[Queue],
+    ) -> ControllerOutputs:
+        from agentic_harness.schemas.todo import ResourceProfile
+
+        outputs = ControllerOutputs()
+
+        for queue in queues:
+            profile = ResourceProfile(queue.resource_profile)
+            buckets = queue.soft_cap
+
+            if profile == ResourceProfile.LOCAL_HEAVY:
+                if snapshot.loadavg_10m >= snapshot.logical_cpu_count:
+                    buckets = max(1, buckets // 2)
+                    outputs.throttle_reasons.append(
+                        f"local_heavy throttle: {queue.queue_name}"
+                    )
+
+            elif profile == ResourceProfile.AI_HEAVY:
+                pass
+
+            elif profile == ResourceProfile.HYBRID:
+                if snapshot.loadavg_10m > snapshot.logical_cpu_count:
+                    excess = snapshot.loadavg_10m - snapshot.logical_cpu_count
+                    penalty = min(1.0, excess / snapshot.logical_cpu_count)
+                    buckets = max(1, int(buckets * (1 - penalty)))
+                    outputs.throttle_reasons.append(
+                        f"hybrid partial penalty: {queue.queue_name} penalty={penalty:.2f}"
+                    )
+
+            elif profile == ResourceProfile.NETWORK_HEAVY:
+                pass
+
+            elif profile == ResourceProfile.LOW_RESOURCE and snapshot.loadavg_10m >= snapshot.logical_cpu_count * 1.5:
+                buckets = max(1, buckets // 2)
+                outputs.throttle_reasons.append(
+                    f"low_resource throttle: {queue.queue_name}"
+                )
+
+            outputs.desired_active_buckets_by_queue[queue.queue_name] = buckets
+
+        total = sum(outputs.desired_active_buckets_by_queue.values())
+        outputs.desired_total_active_buckets = max(1, total)
+        return outputs
+
     def should_throttle_local_heavy(self, inputs: ControllerInputs) -> bool:
         return inputs.loadavg_10m > self.cpu_count
 
@@ -80,6 +132,26 @@ class BudgetController:
         self, estimated_cost: float, budget_remaining: float
     ) -> bool:
         return estimated_cost <= budget_remaining and estimated_cost <= self.default_run_budget_usd
+
+    def estimate_call_cost(self, tokens: int, cost_per_1k: float) -> float:
+        return (tokens / 1000.0) * cost_per_1k
+
+    def check_local_model_resources(self, snapshot: LoadSnapshot) -> dict[str, bool | str]:
+        blocked = []
+        if snapshot.cpu_percent > 95:
+            blocked.append("cpu_percent > 95")
+        if snapshot.memory_available_percent < 10:
+            blocked.append("memory_available < 10%")
+        if snapshot.disk_free_percent < 5:
+            blocked.append("disk_free < 5%")
+        if snapshot.loadavg_10m >= snapshot.logical_cpu_count * 2:
+            blocked.append("loadavg_10m >= 2x cpu_count")
+
+        allowed = len(blocked) == 0
+        return {
+            "allowed": allowed,
+            "reasons": "; ".join(blocked) if blocked else "ok",
+        }
 
     def compute_non_api_burn(
         self, elapsed_seconds: float, used_percent: float
