@@ -21,7 +21,7 @@ TESTS_DIR := tests
         git-branch git-checkout git-merge git-staged \
         feature-start feature-done test-and-commit \
         container-build container-run container-push \
-        build-executable \
+        build-executable dist dist-clean \
         qa validate
 
 search-google:
@@ -228,9 +228,31 @@ test-live-zai:
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := hottentot-agent:latest
 
+VERSION := $(shell $(UV) run python -c "from agentic_harness import __version__; print(__version__)")
+PLATFORM := $(shell uname -s)-$(shell uname -m)
+TARBALL_NAME := hottentot-agent-$(VERSION)-$(PLATFORM)
+TARBALL_DIR := dist/$(TARBALL_NAME)
+
 build-executable:
 	@$(UV) run pyinstaller hottentot.spec --clean --noconfirm
 	@echo "Built dist/hottentot"
+
+dist: build-executable
+	@echo "Assembling tarball..."
+	@rm -rf $(TARBALL_DIR)
+	@mkdir -p $(TARBALL_DIR)
+	@cp dist/hottentot $(TARBALL_DIR)/hottentot
+	@cp dist/install.sh $(TARBALL_DIR)/install.sh
+	@cp dist/hottentot.service $(TARBALL_DIR)/hottentot.service
+	@cp -r config $(TARBALL_DIR)/config
+	@cp -r templates $(TARBALL_DIR)/templates
+	@if [ -d docs ]; then cp -r docs $(TARBALL_DIR)/docs; fi
+	@cd dist && tar czf $(TARBALL_NAME).tar.gz $(TARBALL_NAME)
+	@echo "Created dist/$(TARBALL_NAME).tar.gz"
+
+dist-clean:
+	@rm -rf dist/hottentot-agent-* dist/hottentot build
+	@echo "Dist artifacts cleaned."
 
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
