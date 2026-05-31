@@ -169,3 +169,41 @@ class ModelGateway:
             model_name=profile.model_name,
             raw_response=raw_response,
         )
+
+    def _try_call_model(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> ModelResponse | None:
+        try:
+            return self.call_model(profile_id, messages, **kwargs)
+        except (ValueError, ImportError):
+            return None
+
+    def call_model_with_fallback(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        fallback_profiles: list[str] | None = None,
+        **kwargs: Any,
+    ) -> ModelResponse:
+        result = self._try_call_model(profile_id, messages, **kwargs)
+        if result is not None:
+            return result
+
+        fallback_ids: list[str] = fallback_profiles or []
+        if not fallback_ids:
+            profile = self._profiles.get(profile_id)
+            if profile is not None:
+                fallback_ids = list(profile.fallback_profiles)
+
+        for fb_id in fallback_ids:
+            result = self._try_call_model(fb_id, messages, **kwargs)
+            if result is not None:
+                return result
+
+        raise ValueError(
+            f"All profiles in fallback chain failed for '{profile_id}'"
+        )
