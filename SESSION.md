@@ -7,8 +7,8 @@
 
 ## Current Status
 - **Phase**: Post-sprint0, feature development
-- **Test Suite**: 1183 passing, 11 skipped, 0 failures, 91.52% coverage
-- **Last Commit**: 37fc104 (codify_directive skill)
+- **Test Suite**: 1187 passing, 11 skipped, 0 failures, 91.56% coverage
+- **Last Commit**: c156a11 (fix: wire pattern_routing from YAML config through ModelRouter to Gateway)
 - **Branch**: feature/ephemeral-gpu-compute
 
 ## Sprint0 Objectives (ALL COMPLETE)
