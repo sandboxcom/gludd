@@ -6,12 +6,12 @@
 - 2026-05-31
 
 ## Current Status
-- **Phase**: Post-sprint0, feature development, ready for merge
-- **Test Suite**: 1319 passed, 0 failed, 10 skipped, 91.32% coverage
-- **Mypy**: 0 errors (112 source files checked)
+- **Phase**: Unified CLI refactor complete
+- **Test Suite**: 1359 passed, 0 failed, 10 skipped, 91.39% coverage
+- **Mypy**: 0 errors (113 source files checked)
 - **Lint**: 0 errors (ruff)
-- **Last Commit**: 137beff
-- **Branch**: feature/ephemeral-gpu-compute
+- **Last Commit**: 43a2202
+- **Branch**: master
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.
@@ -48,8 +48,18 @@ obj01-obj16 all complete.
 29. All 29 mypy type errors resolved across 13 files (0 errors now)
 30. 53 e2e tests for new features (binary paths, deployment, secrets, ansible, containerfile)
 
+31. Unified CLI: single `hottentot` binary with daemon/add/status/list/log-level/deployments/version/health subcommands
+32. Daemon app: FastAPI with embedded EventLoop as lifespan background task (daemon.py)
+33. Direct dispatch: EventLoop accepts runner parameter for non-HTTP job execution
+34. PyInstaller spec (hottentot.spec) + make build-executable target
+35. Deprecated hottentot-worker and hottentot-loop (delegate to hottentot daemon)
+36. Containerfile ENTRYPOINT updated to `hottentot daemon`
+37. 40 new tests (23 CLI + 17 daemon)
+
 ## Architecture
-- Entry: `event_loop/cli.py` -> `EventLoop.run_forever()`
+- Entry: `hottentot daemon` -> FastAPI lifespan -> EventLoop.run_forever() as asyncio.Task
+- Client: `hottentot add/status/list/log-level/deployments/health` -> httpx -> daemon HTTP API
+- Direct dispatch: EventLoop calls runner directly when runner param provided (no HTTP loopback)
 - Tick phases: load_config, claim_returns, dispatch_review, evaluate_pid, evaluate_rules, refill_buckets, claim_todos, dispatch_execute, reconcile_decisions, emit_metrics
 - Config layer: UserConfig (read-only) > AgentConfig (agent-editable) > project defaults
 - Model routing: config/model_routing.yml -> ModelRoutingConfig -> ModelRouter -> ModelGateway
