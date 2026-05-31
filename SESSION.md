@@ -1,68 +1,63 @@
 # Session State
 
-> This file is maintained automatically. Update it after every logical unit of work.
-> The agent MUST read this file at session start to restore context.
+> This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
 - 2026-05-31
 
 ## Current Status
 - **Phase**: Post-sprint0, feature development
-- **Test Suite**: 1098 passing (59 new), 11 skipped, 0 failures
-- **Last Commit**: 8916ce9 (feat(config): model routing YAML config + user/agent config layer)
+- **Test Suite**: 1183 passing, 11 skipped, 0 failures, 91.52% coverage
+- **Last Commit**: 37fc104 (codify_directive skill)
+- **Branch**: feature/ephemeral-gpu-compute
 
 ## Sprint0 Objectives (ALL COMPLETE)
-- obj01: Project skeleton
-- obj02: Model gateway (LangChain)
-- obj03: Prompt registry (Jinja2)
-- obj04: Event loop (10-phase tick)
-- obj05: DB models + schemas
-- obj06: Worker (FastAPI + Gunicorn)
-- obj07: Config hot-reload
-- obj08: Runtime packaging (native_uv, native_pip, container)
-- obj09: Quality tools (ruff, mypy, pytest-cov)
-- obj10: OpenBao secrets manager
-- obj11: Ansible runner
-- obj12: Guardrails (three-layer pattern)
-- obj13: Git workflow (granular make targets)
-- obj14: Documentation (feature parity matrix, decisions)
-- obj15: Molecule coverage for Ansible content
-- obj16: Dogfood loop (agent improves itself)
+obj01–obj16 all complete.
 
 ## Additional Features Implemented
 1. Per-pattern model routing (models/router.py)
 2. Gateway fallback chains (models/gateway.py)
 3. RunBudgetGuard (controllers/budget.py)
-4. MCP client skeleton (mcp/)
-5. MCP stdio transport (mcp/transport.py, mcp/client.py)
-6. Context compaction (agents/context.py)
-7. SKILL.md format (skills/)
-8. PlanArtifact (planning/artifact.py)
-9. Conversation persistence (review/conversation.py)
-10. AgentBehavior codification (agents/behavior.py) — COMPLETE
-11. Behavior prompt renderer (agents/behavior.py) — COMPLETE
-12. Ephemeral GPU compute module (infra/compute.py, infra/providers.py, infra/terraform.py) — COMPLETE
-13. Model routing YAML config (config/model_routing.yml, config/model_routing.py) — COMPLETE
-14. User config layer — read-only override + agent-editable (config/user_config.py, config/loader.py) — COMPLETE
+4. MCP client skeleton + stdio transport (mcp/)
+5. Context compaction (agents/context.py)
+6. SKILL.md format (skills/)
+7. PlanArtifact (planning/artifact.py)
+8. Conversation persistence (review/conversation.py)
+9. AgentBehavior codification (agents/behavior.py)
+10. Behavior prompt renderer (agents/behavior.py)
+11. Ephemeral GPU compute + Terraform generator (infra/)
+12. Tree-sitter repo map (planning/repo_map.py)
+13. YAML-driven task definitions (schemas/task_definition.py, config/task_loader.py)
+14. MCP tools wired into event loop + agent tool adapter
+15. Budget caps wired into event loop + BUDGET_EXCEEDED status
+16. Model router wired into gateway + reviewer
+17. Conversation wired into ReturnReviewer
+18. PlanArtifact wired into Todo + JobSpec + event loop dispatch
+19. Model routing YAML config (config/model_routing.yml, config/model_routing.py)
+20. User config layer — read-only override + agent-editable (config/user_config.py, config/loader.py)
+21. Ansible process_isolation_* options (ansible/isolation.py)
+22. Codify directive skill (config/skills/codify_directive.md)
 
 ## Architecture
 - Entry: `event_loop/cli.py` -> `EventLoop.run_forever()`
 - Tick phases: load_config, claim_returns, dispatch_review, evaluate_pid, evaluate_rules, refill_buckets, claim_todos, dispatch_execute, reconcile_decisions, emit_metrics
-- Prompt rendering: `PromptRegistry` (Jinja2) -> `ReturnReviewer` -> model call (stub) -> `TaskDecision`
-- Agent dispatch: `AgentRegistry` -> `AgentDispatcher` with concurrency control
-- Config: `config/agents/`, `config/model_profiles/`, `config/skills/`, `config/mcp_servers/`, `config/model_routing.yml`
-- Config layer: UserConfig (read-only, `~/.config/hottentot/user.yml`) > AgentConfig (`.hottentot/agent_config.yml`) > project defaults
+- Config layer: UserConfig (read-only) > AgentConfig (agent-editable) > project defaults
+- Model routing: config/model_routing.yml -> ModelRoutingConfig -> ModelRouter -> ModelGateway
+- Agent behavior: AgentBehavior -> BehaviorRenderer -> system prompt section
+- Ansible isolation: ProcessIsolationConfig -> AnsibleRunnerAdapter.run_playbook()
+- Infra: TerraformGenerator -> HCL for AWS/GCP/Azure/RunPod/Vast.ai
 
 ## Key Gaps (Known)
-- `ReturnReviewer._call_model()` is a stub
-- Skills `body` field not injected into prompts
+- ReturnReviewer._call_model() is a stub (no real LLM calls in tests)
+- Skills body field not injected into prompts
 - Event loop phases 4 (PID) and 5 (rules) are stubs
 - OpenBao not wired into worker/runner pipeline
-- MCP client not wired into event loop phases
+- No DB migration for plan_artifact column on TodoModel
+- Need comprehensive e2e tests for all new features
 
 ## Next Steps
-1. Wire prompt_profile resolution into pipeline
-2. Integrate MCP tools into event loop phases
+1. Write comprehensive e2e tests for all new features
+2. Wire prompt_profile resolution into pipeline
 3. Wire OpenBao into worker/runner
-4. Write cross-cutting e2e tests
-5. Tighten type definitions across codebase
+4. Tighten type definitions across codebase
+5. Merge feature branch back to master
