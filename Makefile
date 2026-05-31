@@ -12,7 +12,7 @@ PROJECT_SRC := src/agentic_harness
 TESTS_DIR := tests
 
 .PHONY: search-google search-json \
-        init sync install-pip lint lint-fix test test-unit test-integration test-e2e \
+        init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
@@ -102,6 +102,13 @@ test-unit:
 	else \
 		$(UV) run pytest tests/unit/ -v; \
 	fi
+
+test-specific:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
+	@$(UV) run pytest $(TESTFILE) -v
+
+test-count:
+	@$(UV) run pytest tests/ --co -q 2>&1 | tail -3
 
 test-integration:
 	@$(UV) run pytest tests/integration/ -v

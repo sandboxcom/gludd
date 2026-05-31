@@ -48,15 +48,37 @@ two, stop and add the missing layers before continuing. See the
 - ALLOWED: `make test`, `make lint`, `make init`, `make sync`, etc.
 - DENIED: `uv run ...`, `python3 ...`, `pip install ...`, `git ...`, `which ...`, `ls ...`, `cat ...`, `find ...`, `rm ...`, or any other direct command.
 
+**Shell metacharacters are FORBIDDEN:**
+
+| Character | Name | Why forbidden |
+|-----------|------|---------------|
+| `\|` | Pipe | Chains commands, bypasses make |
+| `;` | Semicolon | Runs multiple commands |
+| `&&` | And | Chains commands conditionally |
+| `\|\|` | Or | Chains commands conditionally |
+| `()` | Subshell | Runs commands in subprocess |
+| `$()` | Command substitution | Embeds command output |
+| `` ` `` | Backtick | Command substitution |
+| `>` / `<` | Redirect | Pipes output to files |
+| `2>&1` | Redirect stderr | Chains stderr to stdout |
+| `{}` | Brace expansion | Generates arguments |
+| `!` | History expansion | Accesses previous commands |
+
+**If you need ANY of these, create a Makefile target.** Make targets ARE allowed to use metacharacters internally.
+
+VIOLATIONS (all will be blocked by the plugin):
+- `make test-unit 2>&1 | tail -20`
+- `cd /foo && make test`
+- `make test; make lint`
+- `$(cat file)`
+- `make test || true`
+- `.venv/bin/python -m pytest ...`
+- `cd /path && .venv/bin/python ...`
+
 This is enforced by:
 - `opencode.json` permission rules (hard deny on non-make bash)
-- `.opencode/plugin/enforce-make.ts` (throws helpful error with next steps)
+- `.opencode/plugin/enforce-make.ts` (blocks metacharacters + non-make commands)
 - This AGENTS.md section (proactive reminder)
-
-If you need to do something at the command line, add or update a Makefile target
-first, then run `make <target>`.
-
-When you have working Python you can dogfood, migrate make targets into that system.
 
 ## CRITICAL: TDD Policy
 
