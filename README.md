@@ -21,16 +21,21 @@ pip install -e ".[dev]"
 pytest -v
 ```
 
-### Worker service
+### Daemon (server + event loop)
 
 ```bash
-uv run hottentot-worker
+uv run hottentot daemon --port 8000 --log-level info
 ```
 
-### Event loop
+### Client commands
 
 ```bash
-uv run hottentot-loop
+uv run hottentot add "Fix the login bug" --queue core
+uv run hottentot list --status queued
+uv run hottentot status
+uv run hottentot log-level debug
+uv run hottentot health
+uv run hottentot version
 ```
 
 ## Runtime Modes

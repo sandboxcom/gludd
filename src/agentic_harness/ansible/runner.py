@@ -1,8 +1,8 @@
 """Ansible runner adapter module.
 
 Delegates playbook execution to CoreAnsibleRunner which uses ansible-core
-as a native Python library instead of the ansible-runner subprocess wrapper.
-Falls back to ansible-runner if ansible-core is not available.
+as a native Python library for playbook execution, variable resolution,
+and Jinja2 templating.
 """
 
 from __future__ import annotations

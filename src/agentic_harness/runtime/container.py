@@ -110,7 +110,7 @@ class ContainerBuilder:
 
         config = info.get("Config", info.get("config", {}))
         entrypoint = config.get("Entrypoint", [])
-        entrypoint_correct = "/usr/bin/hottentot-worker" in " ".join(entrypoint)
+        entrypoint_correct = "hottentot" in " ".join(entrypoint)
 
         size_bytes = info.get("Size", info.get("size", 0))
         if isinstance(size_bytes, str):

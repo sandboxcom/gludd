@@ -40,12 +40,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     task = None
 
     try:
+        from agentic_harness.ansible.runner import AnsibleRunnerAdapter
         from agentic_harness.event_loop.loop import EventLoop
 
+        runner = AnsibleRunnerAdapter()
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
+            runner=runner,
         )
         app.state.event_loop = event_loop
+        app.state.event_loop._runner = runner
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
     except Exception as exc:
         logger.warning("Could not start event loop: %s", exc)
@@ -68,6 +72,10 @@ def create_daemon_app(
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level
+
+    if log_level == "debug":
+        logging.getLogger("httpx").setLevel(logging.DEBUG)
+        logging.getLogger("httpcore").setLevel(logging.DEBUG)
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
