@@ -125,24 +125,44 @@ This is the agentic-harness project: an autonomous coding system with Ansible ru
 
 ## Key Make Targets
 
-- `make init` - Set up the project (dirs + deps)
-- `make sync` - Sync uv dependencies
+### Testing
 - `make test` - Run full test suite with coverage
 - `make test-unit` - Run unit tests only
+- `make test-e2e` - Run end-to-end tests
 - `make test-guardrails` - Test guardrail infrastructure
+- `make test-and-commit` - Run tests then commit if green (`MSG="msg"` for custom message)
+
+### Quality
 - `make lint` - Run ruff linter
 - `make lint-fix` - Run ruff with auto-fix
 - `make typecheck` - Run mypy
 - `make healthcheck` - Verify imports work
 - `make qa` - Run lint + typecheck + test + healthcheck
 - `make validate` - Full validation including ansible syntax
-- `make ansible-syntax` - Check playbook syntax
-- `make clean` - Remove build artifacts
+
+### Setup
+- `make init` - Set up the project (dirs + deps)
+- `make sync` - Sync uv dependencies
 - `make bootstrap` - init + lint + test + healthcheck
-- `make test-and-commit` - Run tests then commit if green
-- `make git-init` - Initialize git repo
+- `make clean` - Remove build artifacts
+
+### Git (use ONLY these — NEVER raw git commands)
 - `make git-status` - Show git status
+- `make git-diff` - Show diff stats
+- `make git-staged` - Show staged changes
 - `make git-log` - Show recent commits
+- `make git-init` - Initialize git repo
+- `make git-add FILES='f1 f2 ...'` - Stage specific files
+- `make git-add-all` - Stage all changes
+- `make git-commit MSG='message'` - Commit staged changes with message
+- `make git-reset FILES='HEAD~1'` - Reset to ref (soft by default)
+- `make git-branch MSG='name'` - Create branch
+- `make git-checkout MSG='branch'` - Switch branch
+- `make git-merge MSG='branch'` - Merge branch with --no-ff
+
+### Feature Branch Workflow
+- `make feature-start MSG='feature/short-name'` - Create and switch to feature branch
+- `make feature-done MSG='feature/short-name'` - Test, merge to master with --no-ff
 
 ## Working Conventions
 
@@ -154,3 +174,5 @@ This is the agentic-harness project: an autonomous coding system with Ansible ru
 - Never run non-make commands in bash (enforced by plugin + policy)
 - Commit after tests pass (enforced by plugin + policy)
 - When adding any new guardrail, apply all three layers (enforced by meta-rule)
+- **Feature branches**: Start a branch per feature with `make feature-start`, commit small green increments onto it, then `make feature-done` to merge with --no-ff after full test suite passes
+- **Atomic commits**: Each commit should represent one logical change (one test file, one feature, one fix). Never batch unrelated changes into a single commit.

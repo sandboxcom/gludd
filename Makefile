@@ -3,6 +3,7 @@ MAX_RESULTS ?= 10
 FORMAT ?= text
 SEARCH_SCRIPT := scripts/search.py
 MSG ?= 
+FILES ?= 
 
 PYTHON := python3
 UV := uv
@@ -15,7 +16,9 @@ TESTS_DIR := tests
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks playbook-list \
-        git-status git-init git-commit git-log test-and-commit \
+        git-status git-init git-add git-commit git-log git-diff git-reset \
+        git-branch git-checkout git-merge git-staged \
+        feature-start feature-done test-and-commit \
         qa validate
 
 search-google:
@@ -126,17 +129,74 @@ playbook-list:
 git-status:
 	@git status --short || echo "Not a git repo"
 
+git-diff:
+	@git diff --stat || echo "No diff"
+
+git-staged:
+	@git diff --cached --stat || echo "Nothing staged"
+
 git-init:
 	@git init
 	@git config user.email "agent@harness.local" || true
 	@git config user.name "Hottentot Agent" || true
 
-git-commit:
-	@git add -A
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "agent: $(shell date +%Y%m%d%H%M%S) checkpoint"
-
 git-log:
 	@git log --oneline -10 || echo "No git history"
+
+git-add:
+	@if [ -z "$(FILES)" ]; then echo "Usage: make git-add FILES='file1 file2 ...'"; exit 1; fi
+	@git add $(FILES)
+
+git-add-all:
+	@git add -A
+
+git-commit:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+
+git-reset:
+	@if [ -z "$(FILES)" ]; then \
+		echo "Usage: make git-reset FILES='HEAD~1' (or specific ref)"; \
+		exit 1; \
+	fi
+	@git reset $(FILES)
+
+git-branch:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-branch MSG='branch-name'"; exit 1; fi
+	@git branch "$(MSG)"
+
+git-checkout:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-checkout MSG='branch-name'"; exit 1; fi
+	@git checkout "$(MSG)"
+
+git-merge:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
+	@git merge --no-ff "$(MSG)"
+
+feature-start:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-start MSG='feature/short-name'"; exit 1; fi
+	@git checkout -b "$(MSG)"
+	@echo "Created and switched to branch: $(MSG)"
+
+feature-done:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-done MSG='feature/short-name'"; exit 1; fi
+	@echo "Running full test suite before merge..."
+	@$(UV) run pytest tests/ -q
+	@git checkout master
+	@git merge --no-ff "$(MSG)"
+	@echo "Merged $(MSG) into master"
+
+test-and-commit:
+	@echo "Running tests before commit..."
+	@$(UV) run pytest tests/ --cov=agentic_harness -q
+	@echo "Tests passed. Committing..."
+	@git add -A
+	@if [ -n "$(MSG)" ]; then \
+		git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"; \
+	else \
+		git diff --cached --quiet && echo "Nothing to commit" || git commit -m "agent: test-green $(shell date +%Y%m%d%H%M%S)"; \
+	fi
+	@echo "Committed."
 
 clean:
 	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
@@ -157,15 +217,3 @@ validate: lint typecheck test ansible-syntax healthcheck
 
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."
-
-test-and-commit:
-	@echo "Running tests before commit..."
-	@$(UV) run pytest tests/ --cov=agentic_harness -q
-	@echo "Tests passed. Committing..."
-	@git add -A
-	@if [ -n "$(MSG)" ]; then \
-		git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"; \
-	else \
-		git diff --cached --quiet && echo "Nothing to commit" || git commit -m "agent: test-green $(shell date +%Y%m%d%H%M%S)"; \
-	fi
-	@echo "Committed."
