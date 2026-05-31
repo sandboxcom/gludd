@@ -20,6 +20,7 @@ TESTS_DIR := tests
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
         feature-start feature-done test-and-commit \
+        container-build container-run container-push \
         qa validate
 
 search-google:
@@ -222,6 +223,21 @@ test-live-zai:
 	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
 	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
 	$(UV) run pytest tests/live/test_zai_live.py -v -s
+
+CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+CONTAINER_IMAGE := hottentot-agent:latest
+
+container-build:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
+	@$(CONTAINER_RUNTIME) build -t $(CONTAINER_IMAGE) .
+
+container-run:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
+	@$(CONTAINER_RUNTIME) run -p 8000:8000 $(CONTAINER_IMAGE)
+
+container-push:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
+	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
 
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."

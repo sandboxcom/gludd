@@ -7,6 +7,8 @@ from pydantic import BaseModel, Field
 
 class OpenBaoConfig(BaseModel):
     mode: str = Field(default="auto", pattern="^(auto|external|disabled)$")
+    backend: str = Field(default="openbao", pattern="^(openbao|vault)$")
+    binary_path: str | None = None
     external_url: str | None = None
     external_token: str | None = None
     local_image: str = "ghcr.io/openbao/openbao"

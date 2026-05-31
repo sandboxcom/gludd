@@ -17,6 +17,18 @@ FROM python:3.11-slim
 LABEL maintainer="Hottentot Team"
 LABEL description="Hottentot agentic harness agent"
 
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    git curl ca-certificates gnupg2 unzip \
+    && rm -rf /var/lib/apt/lists/*
+
+RUN curl -fsSL https://releases.hashicorp.com/terraform/1.7.0/terraform_1.7.0_linux_amd64.zip -o /tmp/terraform.zip \
+    && unzip /tmp/terraform.zip -d /usr/local/bin \
+    && rm /tmp/terraform.zip
+
+RUN curl -fsSL https://github.com/opentofu/opentofu/releases/download/v1.6.1/tofu_1.6.1_linux_amd64.zip -o /tmp/tofu.zip \
+    && unzip /tmp/tofu.zip -d /usr/local/bin \
+    && rm /tmp/tofu.zip
+
 RUN groupadd --system hottentot && \
     useradd --system --gid hottentot --create-home hottentot
 
@@ -26,6 +38,10 @@ COPY --from=builder /build/dist/*.whl /tmp/wheels/
 
 RUN pip install --no-cache-dir /tmp/wheels/*.whl && \
     rm -rf /tmp/wheels
+
+COPY config/ config/
+COPY playbooks/ playbooks/
+COPY templates/ templates/
 
 USER hottentot
 

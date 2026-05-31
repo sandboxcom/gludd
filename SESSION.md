@@ -7,8 +7,8 @@
 
 ## Current Status
 - **Phase**: Post-sprint0, feature development
-- **Test Suite**: 1187 passing, 11 skipped, 0 failures, 91.56% coverage
-- **Last Commit**: 10d556c (fix: harden bash policy at all three layers)
+- **Test Suite**: 902 unit passing, 1 pre-existing failure, 44 new tests added
+- **Last Commit**: pending (binary paths + deployment + secrets wiring + Containerfile)
 - **Branch**: feature/ephemeral-gpu-compute
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -37,6 +37,10 @@ obj01–obj16 all complete.
 20. User config layer — read-only override + agent-editable (config/user_config.py, config/loader.py)
 21. Ansible process_isolation_* options (ansible/isolation.py)
 22. Codify directive skill (config/skills/codify_directive.md)
+23. BinaryPathConfig + BinaryPathResolver (config/binary_paths.py) — 18 tests
+24. DeploymentManager — terraform/opentofu lifecycle (infra/deployment.py) — 13 tests
+25. OpenBaoConfig backend/binary_path fields + container launch + health_check (secrets/) — 13 tests
+26. Containerfile updated with terraform+tofu, Makefile container-build/run/push targets
 
 ## Architecture
 - Entry: `event_loop/cli.py` -> `EventLoop.run_forever()`
@@ -46,6 +50,9 @@ obj01–obj16 all complete.
 - Agent behavior: AgentBehavior -> BehaviorRenderer -> system prompt section
 - Ansible isolation: ProcessIsolationConfig -> AnsibleRunnerAdapter.run_playbook()
 - Infra: TerraformGenerator -> HCL for AWS/GCP/Azure/RunPod/Vast.ai
+- Deployment: DeploymentManager -> BinaryPathResolver -> terraform/tofu init/apply/destroy
+- Binary paths: BinaryPaths (Pydantic) + BinaryPathResolver (shutil.which + overrides)
+- Secrets: OpenBaoConfig (backend=vault|openbao) + SecretsManager.start_local_container() + health_check()
 
 ## Key Gaps (Known)
 - ReturnReviewer._call_model() is a stub (no real LLM calls in tests)

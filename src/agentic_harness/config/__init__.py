@@ -1,3 +1,4 @@
+from agentic_harness.config.binary_paths import BinaryPathResolver, BinaryPaths
 from agentic_harness.config.loader import (
     build_config_layer,
     load_agent_config,
@@ -14,6 +15,8 @@ from agentic_harness.config.user_config import AgentConfig, ConfigLayer, UserCon
 
 __all__ = [
     "AgentConfig",
+    "BinaryPathResolver",
+    "BinaryPaths",
     "ConfigLayer",
     "ModelRoutingConfig",
     "UserConfig",
