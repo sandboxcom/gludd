@@ -6,13 +6,15 @@
 - 2026-05-31
 
 ## Current Status
-- **Phase**: Post-sprint0, feature development
-- **Test Suite**: 902 unit passing, 1 pre-existing failure, 44 new tests added
-- **Last Commit**: pending (binary paths + deployment + secrets wiring + Containerfile)
+- **Phase**: Post-sprint0, feature development, ready for merge
+- **Test Suite**: 1319 passed, 0 failed, 10 skipped, 91.32% coverage
+- **Mypy**: 0 errors (112 source files checked)
+- **Lint**: 0 errors (ruff)
+- **Last Commit**: 137beff
 - **Branch**: feature/ephemeral-gpu-compute
 
 ## Sprint0 Objectives (ALL COMPLETE)
-obj01–obj16 all complete.
+obj01-obj16 all complete.
 
 ## Additional Features Implemented
 1. Per-pattern model routing (models/router.py)
@@ -41,6 +43,10 @@ obj01–obj16 all complete.
 24. DeploymentManager — terraform/opentofu lifecycle (infra/deployment.py) — 13 tests
 25. OpenBaoConfig backend/binary_path fields + container launch + health_check (secrets/) — 13 tests
 26. Containerfile updated with terraform+tofu, Makefile container-build/run/push targets
+27. ansible-core library runner — CoreAnsibleRunner + AnsibleTemplater (ansible/core_runner.py, ansible/templating.py) — 34 tests
+28. AnsibleRunnerAdapter delegates to CoreAnsibleRunner instead of ansible_runner subprocess
+29. All 29 mypy type errors resolved across 13 files (0 errors now)
+30. 53 e2e tests for new features (binary paths, deployment, secrets, ansible, containerfile)
 
 ## Architecture
 - Entry: `event_loop/cli.py` -> `EventLoop.run_forever()`
@@ -48,11 +54,14 @@ obj01–obj16 all complete.
 - Config layer: UserConfig (read-only) > AgentConfig (agent-editable) > project defaults
 - Model routing: config/model_routing.yml -> ModelRoutingConfig -> ModelRouter -> ModelGateway
 - Agent behavior: AgentBehavior -> BehaviorRenderer -> system prompt section
-- Ansible isolation: ProcessIsolationConfig -> AnsibleRunnerAdapter.run_playbook()
+- Ansible: CoreAnsibleRunner (ansible-core library) -> AnsibleRunnerAdapter (no subprocess)
+- Ansible templating: AnsibleTemplater wraps CoreAnsibleRunner.render_template() for skills/prompts
+- Ansible isolation: ProcessIsolationConfig -> CoreAnsibleRunner options
 - Infra: TerraformGenerator -> HCL for AWS/GCP/Azure/RunPod/Vast.ai
 - Deployment: DeploymentManager -> BinaryPathResolver -> terraform/tofu init/apply/destroy
 - Binary paths: BinaryPaths (Pydantic) + BinaryPathResolver (shutil.which + overrides)
 - Secrets: OpenBaoConfig (backend=vault|openbao) + SecretsManager.start_local_container() + health_check()
+- Container: Containerfile (podman/docker) + make container-build/run/push
 
 ## Key Gaps (Known)
 - ReturnReviewer._call_model() is a stub (no real LLM calls in tests)
@@ -60,11 +69,10 @@ obj01–obj16 all complete.
 - Event loop phases 4 (PID) and 5 (rules) are stubs
 - OpenBao not wired into worker/runner pipeline
 - No DB migration for plan_artifact column on TodoModel
-- Need comprehensive e2e tests for all new features
 
 ## Next Steps
-1. Write comprehensive e2e tests for all new features
+1. Merge feature branch to master
 2. Wire prompt_profile resolution into pipeline
 3. Wire OpenBao into worker/runner
-4. Tighten type definitions across codebase
-5. Merge feature branch back to master
+4. DB migration for plan_artifact column
+5. Implement PID rules engine and rules evaluation
