@@ -4,12 +4,19 @@ from __future__ import annotations
 
 import fnmatch
 
+from agentic_harness.agents.behavior import (
+    AgentBehavior,
+    BehaviorRenderer,
+    default_primary_behavior,
+    default_subagent_behavior,
+)
 from agentic_harness.agents.types import AgentConfig, AgentPermission, AgentType
 
 
 class AgentRegistry:
     def __init__(self) -> None:
         self._agents: dict[str, AgentConfig] = {}
+        self._renderer = BehaviorRenderer()
 
     def register(self, config: AgentConfig) -> None:
         self._agents[config.name] = config
@@ -37,9 +44,26 @@ class AgentRegistry:
             for pattern in invoker_config.permissions.allowed_subagents
         )
 
+    def get_behavior(self, name: str) -> AgentBehavior:
+        config = self._agents.get(name)
+        if config is not None and config.behavior is not None:
+            return config.behavior
+        if config is not None and config.type == AgentType.PRIMARY:
+            return default_primary_behavior()
+        return default_subagent_behavior()
+
+    def render_behavior_prompt(self, name: str, task: str) -> str | None:
+        config = self._agents.get(name)
+        if config is None:
+            return None
+        behavior = self.get_behavior(name)
+        return self._renderer.render_as_prompt(behavior, agent_name=name, task=task)
+
 
 def default_registry() -> AgentRegistry:
     registry = AgentRegistry()
+    primary_behavior = default_primary_behavior()
+    subagent_behavior = default_subagent_behavior()
 
     registry.register(AgentConfig(
         name="build",
@@ -53,6 +77,7 @@ def default_registry() -> AgentRegistry:
             allowed_subagents=["*"],
         ),
         max_concurrent=1,
+        behavior=primary_behavior,
     ))
 
     registry.register(AgentConfig(
@@ -67,6 +92,7 @@ def default_registry() -> AgentRegistry:
             allowed_subagents=["explore"],
         ),
         max_concurrent=1,
+        behavior=primary_behavior,
     ))
 
     registry.register(AgentConfig(
@@ -81,6 +107,7 @@ def default_registry() -> AgentRegistry:
             allowed_subagents=[],
         ),
         max_concurrent=5,
+        behavior=subagent_behavior,
     ))
 
     registry.register(AgentConfig(
@@ -95,6 +122,7 @@ def default_registry() -> AgentRegistry:
             allowed_subagents=[],
         ),
         max_concurrent=3,
+        behavior=subagent_behavior,
     ))
 
     return registry

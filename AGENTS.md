@@ -164,6 +164,25 @@ This is the agentic-harness project: an autonomous coding system with Ansible ru
 - `make feature-start MSG='feature/short-name'` - Create and switch to feature branch
 - `make feature-done MSG='feature/short-name'` - Test, merge to master with --no-ff
 
+## CRITICAL: Session Persistence Policy
+
+**You MUST maintain `SESSION.md` at the root of the project. Read it at session start to restore context. Update it after every logical unit of work (feature, fix, test suite). Never leave it stale.**
+
+The file must contain:
+- Last updated date
+- Current test suite status (pass/fail/skip counts, coverage)
+- Last commit hash
+- Completed objectives/features
+- Known gaps
+- Next steps
+
+This ensures you NEVER have to ask "what did we do so far?" — read SESSION.md.
+
+This is enforced by:
+- This AGENTS.md section — proactive instruction
+- The hottentot agent's own `AgentBehavior.session_persistence` flag — agents self-enforce
+- The `BehaviorRenderer` includes session persistence rules in rendered system prompts
+
 ## Working Conventions
 
 - TDD: write failing tests first (enforced by plugin + policy)

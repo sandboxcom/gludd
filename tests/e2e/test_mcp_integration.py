@@ -36,7 +36,7 @@ class TestMCPConfig:
         assert cfg.is_http() is False
 
     def test_mcp_config_requires_command_or_url(self):
-        with pytest.raises(Exception):
+        with pytest.raises(ValueError):
             MCPServerConfig(server_id="bad")
 
     def test_mcp_config_yaml_roundtrip(self):
@@ -140,7 +140,6 @@ class TestMCPClientFacade:
                 pass
 
         import asyncio
-
         from unittest.mock import patch
 
         reg = MCPToolRegistry()

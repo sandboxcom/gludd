@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from dataclasses import dataclass, field
 from enum import Enum
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from agentic_harness.agents.behavior import AgentBehavior
 
 
 class AgentType(Enum):
@@ -31,3 +35,4 @@ class AgentConfig:
     permissions: AgentPermission = field(default_factory=AgentPermission)
     max_concurrent: int = 1
     enabled: bool = True
+    behavior: AgentBehavior | None = None
