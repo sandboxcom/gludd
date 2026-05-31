@@ -7,6 +7,7 @@ from agentic_harness.ansible.action_policy import (
     validate_action,
 )
 from agentic_harness.ansible.ara import ARAConfig
+from agentic_harness.ansible.isolation import ProcessIsolationConfig
 from agentic_harness.ansible.manifest import generate_manifest
 from agentic_harness.ansible.runner import AnsibleRunnerAdapter
 
@@ -16,6 +17,7 @@ __all__ = [
     "ActionPolicyConfig",
     "AnsibleRunnerAdapter",
     "PolicyResult",
+    "ProcessIsolationConfig",
     "generate_manifest",
     "validate_action",
 ]

@@ -10,6 +10,8 @@ from typing import Any
 
 import yaml
 
+from agentic_harness.ansible.isolation import ProcessIsolationConfig
+
 logger = logging.getLogger(__name__)
 
 _PLAYBOOKS_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "playbooks"
@@ -31,9 +33,11 @@ class AnsibleRunnerAdapter:
         self,
         private_data_dir: str | None = None,
         registry: dict[str, str] | None = None,
+        isolation_config: ProcessIsolationConfig | None = None,
     ) -> None:
         self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="harness-runner-")
         self.registry = _build_registry(registry)
+        self.isolation_config = isolation_config
 
     def resolve_playbook(self, playbook_name: str) -> str:
         if playbook_name not in self.registry:
@@ -80,6 +84,9 @@ class AnsibleRunnerAdapter:
     ) -> dict[str, Any]:
         playbook_path = self.resolve_playbook(playbook_name)
         target_dir = private_data_dir or self.private_data_dir
+        merged_kwargs: dict[str, Any] = dict(runner_kwargs)
+        if self.isolation_config is not None:
+            merged_kwargs.update(self.isolation_config.to_runner_kwargs())
         try:
             import ansible_runner
 
@@ -87,7 +94,7 @@ class AnsibleRunnerAdapter:
                 playbook=playbook_path,
                 private_data_dir=target_dir,
                 extravars=extravars or {},
-                **runner_kwargs,
+                **merged_kwargs,
             )
             return {
                 "status": result.status,
