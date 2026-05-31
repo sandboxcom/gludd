@@ -14,7 +14,7 @@ if [ ! -f "$BINARY" ]; then
     exit 1
 fi
 
-echo "Installing hottentot agent..."
+echo "Installing hottentot daemon..."
 
 cp "$BINARY" /usr/local/bin/hottentot
 chmod 755 /usr/local/bin/hottentot

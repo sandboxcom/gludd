@@ -6,8 +6,8 @@
 - 2026-05-31
 
 ## Current Status
-- **Phase**: Unified CLI refactor complete
-- **Test Suite**: 1359 passed, 0 failed, 10 skipped, 91.39% coverage
+- **Phase**: Audit gap e2e tests + dependency sync
+- **Test Suite**: 1416 passed, 0 failed, 12 skipped, 91.85% coverage
 - **Mypy**: 0 errors (113 source files checked)
 - **Lint**: 0 errors (ruff)
 - **Last Commit**: 43a2202
@@ -55,6 +55,8 @@ obj01-obj16 all complete.
 35. Deprecated hottentot-worker and hottentot-loop (delegate to hottentot daemon)
 36. Containerfile ENTRYPOINT updated to `hottentot daemon`
 37. 40 new tests (23 CLI + 17 daemon)
+38. 18 e2e tests for audit gaps (daemon dispatch, lifespan, debug logging, log-level switch, tarball structure, README, deprecated CLIs, container entrypoint, pyproject deps/entrypoints)
+39. Dependencies synced via `make sync`; ansible-runner removed; all deps resolve
 
 ## Architecture
 - Entry: `hottentot daemon` -> FastAPI lifespan -> EventLoop.run_forever() as asyncio.Task
