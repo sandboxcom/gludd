@@ -2,26 +2,25 @@ model_profile_id: zai_coder
 role_names:
   - coder
   - planner
-provider: zai
-provider_package: langchain-zai
-provider_class_hint: ChatZAI
-model_name: z-coder-v1
-credential_alias: zai_api_key
-api_base_alias: zai_base_url
+provider: openai
+provider_package: langchain_openai
+provider_class_hint: ChatOpenAI
+model_name: glm-5.1
+credential_alias: ZAI_API_KEY
+api_base_alias: ZAI_BASE_URL
 context_window: 64000
 max_input_tokens: 60000
-max_output_tokens: 8000
+max_output_tokens: 4096
 cost_per_input_token: 0.001
 cost_per_output_token: 0.003
-api_metered: true
-run_budget_usd: 20.0
-enabled: false
+api_metered: false
+run_budget_usd: 1.0
+enabled: true
 resource_profile: ai_heavy
 roles:
   - coder
   - planner
 latency_class: fast
-quality_class: medium
-fallback_profiles:
-  - openai_gpt4
+quality_class: high
+fallback_profiles: []
 probe_enabled: false

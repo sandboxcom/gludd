@@ -1,6 +1,7 @@
 """Secrets module."""
 
 from agentic_harness.secrets.config import OpenBaoConfig
+from agentic_harness.secrets.env import EnvSecretsManager
 from agentic_harness.secrets.manager import (
     AppRoleCreds,
     BootstrapResult,
@@ -12,6 +13,7 @@ from agentic_harness.secrets.manager import (
 __all__ = [
     "AppRoleCreds",
     "BootstrapResult",
+    "EnvSecretsManager",
     "ImageUpdateCandidate",
     "OpenBaoConfig",
     "SecretAlias",

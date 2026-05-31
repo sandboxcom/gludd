@@ -4,14 +4,18 @@ from __future__ import annotations
 
 import logging
 from dataclasses import dataclass, field
-from typing import Any
+from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
 from agentic_harness.models.provider_registry import ProviderRegistry
-from agentic_harness.secrets.manager import SecretsManager
 
 logger = logging.getLogger(__name__)
+
+
+class _SecretsResolver(Protocol):
+    def resolve(self, alias_name: str) -> str | None: ...
+
 
 
 class ModelProfile(BaseModel):
@@ -53,7 +57,7 @@ class ModelGateway:
         self,
         profiles: list[ModelProfile] | None = None,
         provider_registry: ProviderRegistry | None = None,
-        secrets_manager: SecretsManager | None = None,
+        secrets_manager: _SecretsResolver | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:

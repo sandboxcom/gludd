@@ -11,7 +11,7 @@ TESTS_DIR := tests
 
 .PHONY: search-google search-json \
         init sync install-pip lint lint-fix test test-unit test-integration \
-        test-guardrails test-scripts test-db \
+        test-guardrails test-scripts test-db test-live-zai \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks playbook-list \
@@ -139,6 +139,12 @@ clean:
 	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
 	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
 	@echo "Cleaned."
+
+test-live-zai:
+	@echo "Running live Z.AI integration tests..."
+	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
+	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
+	$(UV) run pytest tests/live/test_zai_live.py -v -s
 
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
