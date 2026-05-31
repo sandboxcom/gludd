@@ -8,8 +8,8 @@
 
 ## Current Status
 - **Phase**: Post-sprint0, feature development
-- **Test Suite**: 794 passing, 11 skipped, 0 failures, 91.4% coverage
-- **Last Commit**: 24a8f7f (PlanArtifact + Conversation)
+- **Test Suite**: 1098 passing (59 new), 11 skipped, 0 failures
+- **Last Commit**: 8916ce9 (feat(config): model routing YAML config + user/agent config layer)
 
 ## Sprint0 Objectives (ALL COMPLETE)
 - obj01: Project skeleton
@@ -39,18 +39,21 @@
 7. SKILL.md format (skills/)
 8. PlanArtifact (planning/artifact.py)
 9. Conversation persistence (review/conversation.py)
-10. AgentBehavior codification (agents/behavior.py) — IN PROGRESS
-11. Behavior prompt renderer (agents/behavior.py) — IN PROGRESS
+10. AgentBehavior codification (agents/behavior.py) — COMPLETE
+11. Behavior prompt renderer (agents/behavior.py) — COMPLETE
+12. Ephemeral GPU compute module (infra/compute.py, infra/providers.py, infra/terraform.py) — COMPLETE
+13. Model routing YAML config (config/model_routing.yml, config/model_routing.py) — COMPLETE
+14. User config layer — read-only override + agent-editable (config/user_config.py, config/loader.py) — COMPLETE
 
 ## Architecture
 - Entry: `event_loop/cli.py` -> `EventLoop.run_forever()`
 - Tick phases: load_config, claim_returns, dispatch_review, evaluate_pid, evaluate_rules, refill_buckets, claim_todos, dispatch_execute, reconcile_decisions, emit_metrics
 - Prompt rendering: `PromptRegistry` (Jinja2) -> `ReturnReviewer` -> model call (stub) -> `TaskDecision`
 - Agent dispatch: `AgentRegistry` -> `AgentDispatcher` with concurrency control
-- Config: `config/agents/`, `config/model_profiles/`, `config/skills/`, `config/mcp_servers/`
+- Config: `config/agents/`, `config/model_profiles/`, `config/skills/`, `config/mcp_servers/`, `config/model_routing.yml`
+- Config layer: UserConfig (read-only, `~/.config/hottentot/user.yml`) > AgentConfig (`.hottentot/agent_config.yml`) > project defaults
 
 ## Key Gaps (Known)
-- `prompt_profile` declared but never resolved (AgentConfig.prompt_profile is always None)
 - `ReturnReviewer._call_model()` is a stub
 - Skills `body` field not injected into prompts
 - Event loop phases 4 (PID) and 5 (rules) are stubs
@@ -58,8 +61,8 @@
 - MCP client not wired into event loop phases
 
 ## Next Steps
-1. Complete AgentBehavior codification (currently in progress)
-2. Wire prompt_profile resolution into pipeline
-3. Integrate MCP tools into event loop phases
-4. Wire OpenBao into worker/runner
-5. Write cross-cutting e2e tests
+1. Wire prompt_profile resolution into pipeline
+2. Integrate MCP tools into event loop phases
+3. Wire OpenBao into worker/runner
+4. Write cross-cutting e2e tests
+5. Tighten type definitions across codebase
