@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 
 class ModelRouter:
     def __init__(
@@ -59,7 +61,7 @@ class ModelRouter:
         return [role for role, pid in self._mapping.items() if pid == profile_id]
 
     @classmethod
-    def build_from_profiles(cls, profiles: list) -> ModelRouter:
+    def build_from_profiles(cls, profiles: list[Any]) -> ModelRouter:
         role_mapping: dict[str, str] = {}
         quality_map: dict[str, str] = {}
         latency_map: dict[str, str] = {}

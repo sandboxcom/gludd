@@ -121,9 +121,9 @@ class SecretsManager:
         if self._client is None:
             raise RuntimeError("Not connected.")
         resp = self._client.auth.approle.generate_secret_id(role_name)
-        return resp["data"]["secret_id"]
+        return str(resp["data"]["secret_id"])
 
-    def write_secret(self, path: str, value: dict) -> None:
+    def write_secret(self, path: str, value: dict[str, Any]) -> None:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         self._client.secrets.kv.v2.create_or_update_secret(
@@ -132,7 +132,7 @@ class SecretsManager:
             mount_point=self._config.kv_mount,
         )
 
-    def read_secret(self, path: str) -> dict | None:
+    def read_secret(self, path: str) -> dict[str, Any] | None:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         try:
@@ -140,7 +140,7 @@ class SecretsManager:
                 path=path, mount_point=self._config.kv_mount
             )
             if result and "data" in result and "data" in result["data"]:
-                return result["data"]["data"]
+                return dict[str, Any](result["data"]["data"])
         except Exception:
             return None
         return None
@@ -162,7 +162,7 @@ class SecretsManager:
             return None
         if stored is None:
             return None
-        current_digest = stored.get("pinned_digest", "")
+        current_digest = str(stored.get("pinned_digest", ""))
         candidate_digest = self._fetch_remote_digest(image_ref)
         if candidate_digest == current_digest:
             return None

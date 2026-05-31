@@ -74,7 +74,7 @@ class TestBehaviorEndToEnd:
         with pytest.raises(ValueError):
             GuardrailConfig(
                 config_layer=False, hook_layer=False, prompt_layer=False
-            ).validate()
+            ).ensure_valid()
 
     def test_behavior_serialization_roundtrip_via_registry(self):
         behavior = default_primary_behavior()

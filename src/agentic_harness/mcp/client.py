@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from typing import Any
+
 from agentic_harness.mcp.config import MCPServerConfig
 from agentic_harness.mcp.registry import MCPTool, MCPToolRegistry
 from agentic_harness.mcp.transport import MCPStdioClient, MCPTransportError
@@ -33,7 +35,7 @@ class MCPClient:
     async def list_tools(self, server_id: str | None = None) -> list[MCPTool]:
         return self._registry.list_tools(server_id)
 
-    async def call_tool(self, server_id: str, tool_name: str, arguments: dict) -> dict:
+    async def call_tool(self, server_id: str, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
         transport = self._transports.get(server_id)
         if transport is None:
             raise MCPTransportError(f"No transport for server: {server_id}")

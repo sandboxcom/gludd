@@ -6,6 +6,7 @@ import logging
 import re
 import subprocess
 from dataclasses import dataclass, field
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +18,7 @@ class ValidationResult:
     failed_count: int
     output: str
     failures: list[str] = field(default_factory=list)
-    child_todos: list[dict] = field(default_factory=list)
+    child_todos: list[dict[str, Any]] = field(default_factory=list)
 
 
 class ValidationRunner:
@@ -54,8 +55,8 @@ class ValidationRunner:
             failures=all_failures,
         )
 
-    def create_child_todos_for_failures(self, result: ValidationResult) -> list[dict]:
-        children: list[dict] = []
+    def create_child_todos_for_failures(self, result: ValidationResult) -> list[dict[str, Any]]:
+        children: list[dict[str, Any]] = []
         if result.failures:
             for failure in result.failures:
                 children.append({

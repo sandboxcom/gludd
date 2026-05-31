@@ -6,6 +6,7 @@ import uuid
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from enum import Enum
+from typing import Any
 
 
 class ReloadType(Enum):
@@ -37,10 +38,10 @@ class ReloadStatus:
 
 class ReloadManager:
     def __init__(self) -> None:
-        self._reload_store: dict[str, dict] = {}
+        self._reload_store: dict[str, dict[str, Any]] = {}
 
     def request_reload(
-        self, reload_type: ReloadType, config: dict | None = None
+        self, reload_type: ReloadType, config: dict[str, Any] | None = None
     ) -> ReloadResult:
         reload_id = uuid.uuid4().hex[:12]
         now = datetime.now(UTC).isoformat()

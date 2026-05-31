@@ -569,7 +569,7 @@ class TestAgentBehaviorCodification:
         with pytest.raises(ValueError, match="At least one guardrail"):
             GuardrailConfig(
                 config_layer=False, hook_layer=False, prompt_layer=False
-            ).validate()
+            ).ensure_valid()
 
     def test_render_as_prompt_includes_agent_and_task(self) -> None:
         behavior = AgentBehavior()

@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass, field
+from typing import Any
 
 _SECRET_PATTERNS = [
     re.compile(r"(?i)(?:api_key|secret|token|password|private_key)\s*[:=]\s*['\"]?[\w\-]{16,}['\"]?"),
@@ -30,13 +31,13 @@ class AuditReport:
 
 
 class LogAuditor:
-    def audit_logs(self, log_entries: list[dict]) -> AuditReport:
+    def audit_logs(self, log_entries: list[dict[str, Any]]) -> AuditReport:
         findings: list[AuditFinding] = []
         for entry in log_entries:
             findings.extend(self._check_entry(entry))
         return AuditReport(findings=findings, total_findings=len(findings))
 
-    def _check_entry(self, entry: dict) -> list[AuditFinding]:
+    def _check_entry(self, entry: dict[str, Any]) -> list[AuditFinding]:
         findings: list[AuditFinding] = []
 
         if "correlation_id" not in entry or not entry["correlation_id"]:

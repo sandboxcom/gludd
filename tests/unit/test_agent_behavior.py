@@ -133,7 +133,7 @@ class TestGuardrailConfig:
     def test_validate_raises_on_no_layers(self):
         g = GuardrailConfig(config_layer=False, hook_layer=False, prompt_layer=False)
         with pytest.raises(ValueError, match=r"(?i)at least one"):
-            g.validate()
+            g.ensure_valid()
 
 
 class TestBehaviorRenderer:

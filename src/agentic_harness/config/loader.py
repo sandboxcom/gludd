@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -32,7 +33,7 @@ def load_agent_config(path: Path | None = None) -> AgentConfig:
 def build_config_layer(
     user_path: Path | None = None,
     agent_path: Path | None = None,
-    defaults: dict | None = None,
+    defaults: dict[str, Any] | None = None,
 ) -> ConfigLayer:
     user = load_user_config(user_path)
     agent = load_agent_config(agent_path)

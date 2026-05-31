@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import re
 from pathlib import Path
+from typing import Any
 
 import yaml
 
@@ -30,7 +31,7 @@ _MODULE_TASK_KEYS = {
 }
 
 
-def _extract_modules_from_task(task: dict) -> list[str]:
+def _extract_modules_from_task(task: dict[str, Any]) -> list[str]:
     modules: list[str] = []
     for key in task:
         if key in _MODULE_TASK_KEYS:

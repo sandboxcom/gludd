@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, Field
 
 
 class MCPTool(BaseModel):
     name: str
     description: str = ""
-    input_schema: dict = Field(default_factory=dict)
+    input_schema: dict[str, Any] = Field(default_factory=dict)
     server_id: str = ""
 
 
