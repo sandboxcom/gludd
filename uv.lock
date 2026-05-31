@@ -909,6 +909,8 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "alembic" },
+    { name = "ansible-core", version = "2.19.10", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version < '3.12'" },
+    { name = "ansible-core", version = "2.21.0", source = { registry = "https://pypi.org/simple" }, marker = "python_full_version >= '3.12'" },
     { name = "ansible-runner" },
     { name = "fastapi" },
     { name = "gunicorn" },
@@ -921,6 +923,7 @@ dependencies = [
     { name = "psutil" },
     { name = "psycopg", extra = ["binary"] },
     { name = "pydantic" },
+    { name = "pyyaml" },
     { name = "requests" },
     { name = "sqlalchemy" },
     { name = "structlog" },
@@ -966,6 +969,7 @@ dev = [
 requires-dist = [
     { name = "aiosqlite", marker = "extra == 'dev'", specifier = ">=0.20.0" },
     { name = "alembic", specifier = ">=1.14.0" },
+    { name = "ansible-core", specifier = ">=2.16.0" },
     { name = "ansible-dev-tools", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "ansible-lint", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "ansible-runner", specifier = ">=2.4.0" },
@@ -988,6 +992,7 @@ requires-dist = [
     { name = "pytest-ansible", marker = "extra == 'dev'", specifier = ">=24.0.0" },
     { name = "pytest-asyncio", marker = "extra == 'dev'", specifier = ">=0.25.0" },
     { name = "pytest-cov", marker = "extra == 'dev'", specifier = ">=6.0.0" },
+    { name = "pyyaml", specifier = ">=6.0.0" },
     { name = "requests", specifier = ">=2.32.0" },
     { name = "ruff", marker = "extra == 'dev'", specifier = ">=0.8.0" },
     { name = "sqlalchemy", specifier = ">=2.0.0" },

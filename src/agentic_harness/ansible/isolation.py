@@ -62,6 +62,19 @@ class ProcessIsolationConfig(BaseModel):
             "process_isolation_ro_paths": list(self.ro_paths),
         }
 
+    def to_core_runner_kwargs(self) -> dict[str, Any]:
+        resolved_hide: list[str] = list(self.hide_paths)
+        for tool in self.block_local_tools:
+            for p in self.resolve_tool_paths(tool):
+                if p not in resolved_hide:
+                    resolved_hide.append(p)
+        return {
+            "connection": "local",
+            "hide_paths": resolved_hide,
+            "show_paths": list(self.show_paths),
+            "ro_paths": list(self.ro_paths),
+        }
+
     def resolve_tool_paths(self, tool_name: str) -> list[str]:
         if tool_name in _TOOL_PATH_MAP:
             paths = list(_TOOL_PATH_MAP[tool_name])

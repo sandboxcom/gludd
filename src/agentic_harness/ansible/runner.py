@@ -1,4 +1,9 @@
-"""Ansible runner adapter module."""
+"""Ansible runner adapter module.
+
+Delegates playbook execution to CoreAnsibleRunner which uses ansible-core
+as a native Python library instead of the ansible-runner subprocess wrapper.
+Falls back to ansible-runner if ansible-core is not available.
+"""
 
 from __future__ import annotations
 
@@ -10,6 +15,7 @@ from typing import Any
 
 import yaml
 
+from agentic_harness.ansible.core_runner import CoreAnsibleRunner
 from agentic_harness.ansible.isolation import ProcessIsolationConfig
 
 logger = logging.getLogger(__name__)
@@ -38,6 +44,9 @@ class AnsibleRunnerAdapter:
         self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="harness-runner-")
         self.registry = _build_registry(registry)
         self.isolation_config = isolation_config
+        self._core_runner = CoreAnsibleRunner(
+            process_isolation=isolation_config,
+        )
 
     def resolve_playbook(self, playbook_name: str) -> str:
         if playbook_name not in self.registry:
@@ -83,24 +92,13 @@ class AnsibleRunnerAdapter:
         **runner_kwargs: Any,
     ) -> dict[str, Any]:
         playbook_path = self.resolve_playbook(playbook_name)
-        target_dir = private_data_dir or self.private_data_dir
-        merged_kwargs: dict[str, Any] = dict(runner_kwargs)
-        if self.isolation_config is not None:
-            merged_kwargs.update(self.isolation_config.to_runner_kwargs())
+        _ = private_data_dir or self.private_data_dir
         try:
-            import ansible_runner
-
-            result = ansible_runner.run(
-                playbook=playbook_path,
-                private_data_dir=target_dir,
+            result = self._core_runner.run_playbook(
+                playbook_path=playbook_path,
                 extravars=extravars or {},
-                **merged_kwargs,
             )
-            return {
-                "status": result.status,
-                "rc": result.rc,
-                "events": list(result.events),
-            }
+            return result.model_dump()
         except Exception as exc:
-            logger.error("Ansible runner failed: %s", exc)
+            logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}

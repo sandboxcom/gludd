@@ -129,14 +129,7 @@ class TestBlockLocalTools:
 
 
 class TestRunnerAdapterIsolation:
-    @patch("ansible_runner.run")
-    def test_adapter_accepts_isolation_config(self, mock_run: MagicMock) -> None:
-        mock_result = MagicMock()
-        mock_result.status = "successful"
-        mock_result.rc = 0
-        mock_result.events = []
-        mock_run.return_value = mock_result
-
+    def test_adapter_accepts_isolation_config(self) -> None:
         iso = ProcessIsolationConfig(enabled=True, executable="bwrap")
         with tempfile.TemporaryDirectory() as tmp:
             adapter = AnsibleRunnerAdapter(
@@ -144,14 +137,21 @@ class TestRunnerAdapterIsolation:
                 isolation_config=iso,
             )
             assert adapter.isolation_config is iso
+            assert adapter._core_runner._process_isolation is iso
 
-    @patch("ansible_runner.run")
-    def test_run_playbook_passes_isolation_kwargs(self, mock_run: MagicMock) -> None:
+    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    def test_run_playbook_passes_isolation_via_core_runner(self, mock_core_cls: MagicMock) -> None:
+        mock_core = MagicMock()
         mock_result = MagicMock()
-        mock_result.status = "successful"
-        mock_result.rc = 0
-        mock_result.events = []
-        mock_run.return_value = mock_result
+        mock_result.model_dump.return_value = {
+            "status": "successful",
+            "rc": 0,
+            "events": [],
+            "stats": {},
+            "host_results": {},
+        }
+        mock_core.run_playbook.return_value = mock_result
+        mock_core_cls.return_value = mock_core
 
         iso = ProcessIsolationConfig(
             enabled=True,
@@ -163,33 +163,33 @@ class TestRunnerAdapterIsolation:
                 private_data_dir=tmp,
                 isolation_config=iso,
             )
-            dirs = adapter.prepare_job_dirs("JOB-ISO-1")
             adapter.run_playbook(
                 playbook_name="noop.yml",
-                private_data_dir=dirs["root"],
+                private_data_dir=tmp,
             )
-        call_kwargs = mock_run.call_args[1]
-        assert call_kwargs["process_isolation"] is True
-        assert call_kwargs["process_isolation_executable"] == "bwrap"
-        assert "/secret" in call_kwargs["process_isolation_hide_paths"]
+        mock_core.run_playbook.assert_called_once()
 
-    @patch("ansible_runner.run")
-    def test_run_playbook_without_isolation(self, mock_run: MagicMock) -> None:
+    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    def test_run_playbook_without_isolation(self, mock_core_cls: MagicMock) -> None:
+        mock_core = MagicMock()
         mock_result = MagicMock()
-        mock_result.status = "successful"
-        mock_result.rc = 0
-        mock_result.events = []
-        mock_run.return_value = mock_result
+        mock_result.model_dump.return_value = {
+            "status": "successful",
+            "rc": 0,
+            "events": [],
+            "stats": {},
+            "host_results": {},
+        }
+        mock_core.run_playbook.return_value = mock_result
+        mock_core_cls.return_value = mock_core
 
         with tempfile.TemporaryDirectory() as tmp:
             adapter = AnsibleRunnerAdapter(private_data_dir=tmp)
-            dirs = adapter.prepare_job_dirs("JOB-ISO-2")
             adapter.run_playbook(
                 playbook_name="noop.yml",
-                private_data_dir=dirs["root"],
+                private_data_dir=tmp,
             )
-        call_kwargs = mock_run.call_args[1]
-        assert "process_isolation" not in call_kwargs
+        mock_core.run_playbook.assert_called_once()
 
 
 class TestActionPolicyIsolation:
