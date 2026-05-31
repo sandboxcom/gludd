@@ -192,19 +192,22 @@ class TestTDDGuardrail:
 class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_runs_tests_first(self):
         content = MAKEFILE.read_text()
-        tac_section = content[content.index("test-and-commit:"):content.index("test-and-commit:") + 500]
+        tac_start = content.index("\ntest-and-commit:")
+        tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
+        tac_section = content[tac_start:tac_end]
         assert "pytest" in tac_section
         assert "git commit" in tac_section
 
     def test_makefile_test_and_commit_rejects_if_tests_fail(self):
         content = MAKEFILE.read_text()
-        tac_section = content[content.index("test-and-commit:"):content.index("test-and-commit:") + 500]
-        assert "pytest" in tac_section
+        tac_start = content.index("\ntest-and-commit:")
+        tac_end = content.index("\n\n", tac_start) if "\n\n" in content[tac_start:] else len(content)
+        tac_section = content[tac_start:tac_end]
         lines = tac_section.split("\n")
         pytest_line = None
         commit_line = None
         for i, line in enumerate(lines):
-            if "pytest" in line:
+            if "$(UV) run pytest" in line or " uv run pytest" in line:
                 pytest_line = i
             if "git commit" in line:
                 commit_line = i

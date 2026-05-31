@@ -6,7 +6,6 @@ import os
 import tempfile
 
 from agentic_harness.quality import (
-    CoverageResult,
     MoleculeCoverageChecker,
     MoleculeCoverageReport,
     QualityGateChecker,
@@ -20,12 +19,6 @@ from agentic_harness.quality.config import (
     MoleculeQualityGate,
     PythonQualityGate,
     QualityGateConfig,
-)
-from agentic_harness.quality.gate import QualityGateChecker as GateChecker
-from agentic_harness.quality.molecule_coverage import MoleculeCoverageReport as MCR
-from agentic_harness.quality.tools import (
-    CoverageResult as CR,
-    QualityGateResult as QGR,
 )
 
 
@@ -75,7 +68,12 @@ class TestCoverageThresholdChecking:
         assert result.target_branch == 80.0
 
     def test_quality_gate_checker_python_passes(self):
-        cfg = QualityGateConfig(python=PythonQualityGate(line_coverage_min_percent=50.0, branch_coverage_min_percent=40.0))
+        cfg = QualityGateConfig(
+            python=PythonQualityGate(
+                line_coverage_min_percent=50.0,
+                branch_coverage_min_percent=40.0,
+            )
+        )
         checker = QualityGateChecker(config=cfg)
         result = checker.check_python_coverage(coverage_percent=60.0, branch_percent=50.0)
         assert result["passed"]
