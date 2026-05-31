@@ -20,6 +20,7 @@ class TodoStatus(enum.StrEnum):
     MANUAL_HOLD = "manual_hold"
     APPROVAL_REQUIRED = "approval_required"
     COMPLETE = "complete"
+    BUDGET_EXCEEDED = "budget_exceeded"
     FAILED = "failed"
     CANCELLED = "cancelled"
 
@@ -59,14 +60,26 @@ class ResourceProfile(enum.StrEnum):
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.BLOCKED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
-    TodoStatus.ACTIVE: {TodoStatus.AWAITING_RESULT, TodoStatus.BLOCKED, TodoStatus.FAILED, TodoStatus.CANCELLED},
-    TodoStatus.AWAITING_RESULT: {TodoStatus.REVIEWING_RETURN, TodoStatus.BLOCKED, TodoStatus.CANCELLED},
+    TodoStatus.ACTIVE: {
+        TodoStatus.AWAITING_RESULT,
+        TodoStatus.BLOCKED,
+        TodoStatus.FAILED,
+        TodoStatus.CANCELLED,
+        TodoStatus.BUDGET_EXCEEDED,
+    },
+    TodoStatus.AWAITING_RESULT: {
+        TodoStatus.REVIEWING_RETURN,
+        TodoStatus.BLOCKED,
+        TodoStatus.CANCELLED,
+        TodoStatus.BUDGET_EXCEEDED,
+    },
     TodoStatus.REVIEWING_RETURN: {
         TodoStatus.COMPLETE,
         TodoStatus.NEEDS_MORE_WORK,
         TodoStatus.FAILED,
         TodoStatus.BLOCKED,
         TodoStatus.MANUAL_HOLD,
+        TodoStatus.BUDGET_EXCEEDED,
     },
     TodoStatus.NEEDS_MORE_WORK: {TodoStatus.QUEUED, TodoStatus.ACTIVE, TodoStatus.CANCELLED},
     TodoStatus.BLOCKED: {TodoStatus.QUEUED, TodoStatus.CANCELLED},

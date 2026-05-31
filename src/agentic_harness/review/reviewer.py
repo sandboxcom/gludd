@@ -7,6 +7,7 @@ import logging
 from typing import Any
 
 from agentic_harness.models.gateway import ModelGateway
+from agentic_harness.models.router import ModelRouter
 from agentic_harness.prompts.registry import PromptRegistry
 from agentic_harness.schemas.task_decision import TaskDecision
 from agentic_harness.schemas.task_return import TaskReturn
@@ -20,10 +21,12 @@ class ReturnReviewer:
         gateway: ModelGateway,
         prompt_registry: PromptRegistry,
         model_profile_id: str = "default",
+        router: ModelRouter | None = None,
     ) -> None:
         self._gateway = gateway
         self._registry = prompt_registry
         self._model_profile_id = model_profile_id
+        self._router = router
 
     def review_return(
         self,
@@ -53,6 +56,10 @@ class ReturnReviewer:
         )
 
     def _call_model(self, prompt: str) -> str:
+        if self._router is not None:
+            profile_id = self._router.resolve_role("return_review")
+            if profile_id is not None:
+                self._model_profile_id = profile_id
         return str(prompt)
 
     def _parse_model_output(self, raw: Any) -> TaskDecision | None:

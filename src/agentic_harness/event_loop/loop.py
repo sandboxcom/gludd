@@ -19,7 +19,6 @@ from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
 from agentic_harness.schemas.todo import Todo, TodoStatus
 
 logger = logging.getLogger(__name__)
-
 PHASE_ORDER = [
     "load_config_snapshot",
     "claim_unreviewed_task_returns",
@@ -43,6 +42,7 @@ class EventLoop:
         http_client: Any | None = None,
         todo_repo: TodoRepository | None = None,
         task_return_repo: TaskReturnRepository | None = None,
+        budget_guard: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -54,6 +54,7 @@ class EventLoop:
         self._task_return_repo = task_return_repo or (
             TaskReturnRepository(session) if session else None
         )
+        self._budget_guard = budget_guard
         self._running = False
         self._tick_state: dict[str, Any] = {}
         self._tick_metrics: dict[str, Any] = {}
@@ -100,6 +101,15 @@ class EventLoop:
 
     async def _phase_dispatch_return_review_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_returns", [])
+        if self._budget_guard is not None:
+            check = self._budget_guard.check_all_limits()
+            if not check["allowed"]:
+                logger.warning(
+                    "Budget exceeded, skipping return review dispatch: %s",
+                    check["reason"],
+                )
+                self._tick_metrics["returns_reviewed"] = 0
+                return
         for tr in claimed:
             await self._dispatch_review_job(tr)
         self._tick_metrics["returns_reviewed"] = len(claimed)
@@ -140,6 +150,15 @@ class EventLoop:
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
+        if self._budget_guard is not None:
+            check = self._budget_guard.check_all_limits()
+            if not check["allowed"]:
+                logger.warning(
+                    "Budget exceeded, skipping execute dispatch: %s",
+                    check["reason"],
+                )
+                self._tick_metrics["todos_dispatched"] = 0
+                return
         for todo in claimed:
             await self._dispatch_execute_job(todo)
         self._tick_metrics["todos_dispatched"] = len(claimed)
