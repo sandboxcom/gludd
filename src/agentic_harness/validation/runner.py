@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import re
+import shlex
 import subprocess
 from dataclasses import dataclass, field
 from typing import Any
@@ -35,8 +36,7 @@ class ValidationRunner:
 
         for cmd in self.test_commands:
             proc = subprocess.run(
-                cmd,
-                shell=True,
+                shlex.split(cmd),
                 cwd=self.worktree_path,
                 capture_output=True,
                 text=True,

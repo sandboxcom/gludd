@@ -11,7 +11,7 @@ class PromptRegistry:
         self._loader: BaseLoader = (
             FileSystemLoader(template_dir) if template_dir else BaseLoader()
         )
-        self._env = Environment(loader=self._loader)
+        self._env = Environment(loader=self._loader, autoescape=True)
 
     def register(self, name: str, template_text: str) -> None:
         self._templates[name] = template_text

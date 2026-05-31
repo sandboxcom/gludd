@@ -22,6 +22,7 @@ TESTS_DIR := tests
         feature-start feature-done test-and-commit \
         container-build container-run container-push \
         build-executable dist dist-clean \
+        sast sbom pip-audit security \
         qa validate
 
 search-google:
@@ -265,6 +266,20 @@ container-run:
 container-push:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
 	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
+
+sast:
+	@mkdir -p dist
+	@$(UV) run bandit -r src/ -f json -o dist/sast-report.json || true
+	@$(UV) run bandit -r src/ -f custom || true
+
+sbom:
+	@mkdir -p dist
+	@$(UV) run cyclonedx-py environment .venv -o dist/sbom.json --of JSON
+
+pip-audit:
+	@$(UV) run pip-audit --desc || true
+
+security: sast sbom pip-audit
 
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
