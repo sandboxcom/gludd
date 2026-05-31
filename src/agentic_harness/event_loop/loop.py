@@ -13,6 +13,8 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from agentic_harness.db.models import TaskDecisionModel
 from agentic_harness.db.repository import TaskReturnRepository, TodoRepository
 from agentic_harness.event_loop.lease import reclaim_expired_leases
+from agentic_harness.mcp.client import MCPClient
+from agentic_harness.mcp.registry import MCPToolRegistry
 from agentic_harness.schemas.job import JobSpec
 from agentic_harness.schemas.task_decision import TaskDecision
 from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
@@ -43,6 +45,8 @@ class EventLoop:
         todo_repo: TodoRepository | None = None,
         task_return_repo: TaskReturnRepository | None = None,
         budget_guard: Any | None = None,
+        mcp_client: MCPClient | None = None,
+        mcp_tool_registry: MCPToolRegistry | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -55,6 +59,8 @@ class EventLoop:
             TaskReturnRepository(session) if session else None
         )
         self._budget_guard = budget_guard
+        self._mcp_client = mcp_client
+        self._mcp_tool_registry = mcp_tool_registry
         self._running = False
         self._tick_state: dict[str, Any] = {}
         self._tick_metrics: dict[str, Any] = {}
@@ -89,6 +95,11 @@ class EventLoop:
 
     def stop(self) -> None:
         self._running = False
+
+    def get_available_tools(self) -> list[str]:
+        if self._mcp_tool_registry is None:
+            return []
+        return self._mcp_tool_registry.tool_names()
 
     async def _phase_load_config_snapshot(self) -> None:
         self._config_snapshot = dict(self.config)
@@ -167,6 +178,9 @@ class EventLoop:
     async def _dispatch_execute_job(self, todo: Any) -> None:
         if self._http_client is None:
             return
+        budget_context: dict[str, Any] = {}
+        if self._mcp_tool_registry is not None:
+            budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         job = JobSpec(
             job_id=f"EXEC-{todo.todo_id}",
             todo_id=todo.todo_id,
@@ -175,6 +189,7 @@ class EventLoop:
             work_type=getattr(todo, "work_type", "unknown"),
             resource_profile=getattr(todo, "resource_profile", "low_resource"),
             plan_artifact=getattr(todo, "plan_artifact", None),
+            budget_context=budget_context,
         )
         await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
