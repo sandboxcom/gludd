@@ -8,7 +8,7 @@
 ## Current Status
 - **Phase**: Post-sprint0, feature development
 - **Test Suite**: 1187 passing, 11 skipped, 0 failures, 91.56% coverage
-- **Last Commit**: c156a11 (fix: wire pattern_routing from YAML config through ModelRouter to Gateway)
+- **Last Commit**: 10d556c (fix: harden bash policy at all three layers)
 - **Branch**: feature/ephemeral-gpu-compute
 
 ## Sprint0 Objectives (ALL COMPLETE)
