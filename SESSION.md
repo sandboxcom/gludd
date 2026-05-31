@@ -6,11 +6,12 @@
 - 2026-05-31
 
 ## Current Status
-- **Phase**: Audit gap e2e tests + dependency sync
+- **Phase**: Audit complete, all gaps fixed
 - **Test Suite**: 1416 passed, 0 failed, 12 skipped, 91.85% coverage
-- **Mypy**: 0 errors (113 source files checked)
+- **Mypy**: 0 errors (111 source files)
 - **Lint**: 0 errors (ruff)
-- **Last Commit**: 43a2202
+- **SAST**: 0 high-severity issues (bandit)
+- **Last Commit**: 638ef49
 - **Branch**: master
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -44,36 +45,33 @@ obj01-obj16 all complete.
 25. OpenBaoConfig backend/binary_path fields + container launch + health_check (secrets/) — 13 tests
 26. Containerfile updated with terraform+tofu, Makefile container-build/run/push targets
 27. ansible-core library runner — CoreAnsibleRunner + AnsibleTemplater (ansible/core_runner.py, ansible/templating.py) — 34 tests
-28. AnsibleRunnerAdapter delegates to CoreAnsibleRunner instead of ansible_runner subprocess
-29. All 29 mypy type errors resolved across 13 files (0 errors now)
-30. 53 e2e tests for new features (binary paths, deployment, secrets, ansible, containerfile)
-
-31. Unified CLI: single `hottentot` binary with daemon/add/status/list/log-level/deployments/version/health subcommands
+28. AnsibleRunnerAdapter delegates to CoreAnsibleRunner (ansible-runner dep removed)
+29. All mypy type errors resolved (0 errors across 111 source files)
+30. 53 e2e tests for infra features (binary paths, deployment, secrets, ansible, containerfile)
+31. Unified CLI: single `hottentot` binary with daemon/add/status/list/log-level/deployments/version/health
 32. Daemon app: FastAPI with embedded EventLoop as lifespan background task (daemon.py)
-33. Direct dispatch: EventLoop accepts runner parameter for non-HTTP job execution
-34. PyInstaller spec (hottentot.spec) + make build-executable target
-35. Deprecated hottentot-worker and hottentot-loop (delegate to hottentot daemon)
-36. Containerfile ENTRYPOINT updated to `hottentot daemon`
-37. 40 new tests (23 CLI + 17 daemon)
-38. 18 e2e tests for audit gaps (daemon dispatch, lifespan, debug logging, log-level switch, tarball structure, README, deprecated CLIs, container entrypoint, pyproject deps/entrypoints)
-39. Dependencies synced via `make sync`; ansible-runner removed; all deps resolve
+33. Direct dispatch: EventLoop accepts runner param — daemon passes AnsibleRunnerAdapter (no HTTP loopback)
+34. Hot-loading: heavy modules lazy-imported only in daemon mode; client imports only argparse + httpx
+35. Runtime log level: POST /admin/log-level + httpx debug logging when log_level=debug
+36. PyInstaller spec (hottentot.spec) + make build-executable target
+37. Tarball installer: make dist — systemd unit, install.sh, config/, templates/, docs/, binary
+38. Deprecated hottentot-worker and hottentot-loop deleted; README updated
+39. Security: SAST (bandit), SBOM (cyclonedx-py), pip-audit, OPA/Rego policies — 14 tests
+40. 40 CLI + daemon tests, 18 audit gap e2e tests, 27 installer tests
 
 ## Architecture
 - Entry: `hottentot daemon` -> FastAPI lifespan -> EventLoop.run_forever() as asyncio.Task
 - Client: `hottentot add/status/list/log-level/deployments/health` -> httpx -> daemon HTTP API
-- Direct dispatch: EventLoop calls runner directly when runner param provided (no HTTP loopback)
+- Direct dispatch: EventLoop calls AnsibleRunnerAdapter directly (no HTTP loopback)
+- Hot-loading: daemon mode lazy-imports event_loop, gateway, ansible, db, secrets, mcp
 - Tick phases: load_config, claim_returns, dispatch_review, evaluate_pid, evaluate_rules, refill_buckets, claim_todos, dispatch_execute, reconcile_decisions, emit_metrics
 - Config layer: UserConfig (read-only) > AgentConfig (agent-editable) > project defaults
 - Model routing: config/model_routing.yml -> ModelRoutingConfig -> ModelRouter -> ModelGateway
 - Agent behavior: AgentBehavior -> BehaviorRenderer -> system prompt section
-- Ansible: CoreAnsibleRunner (ansible-core library) -> AnsibleRunnerAdapter (no subprocess)
-- Ansible templating: AnsibleTemplater wraps CoreAnsibleRunner.render_template() for skills/prompts
-- Ansible isolation: ProcessIsolationConfig -> CoreAnsibleRunner options
-- Infra: TerraformGenerator -> HCL for AWS/GCP/Azure/RunPod/Vast.ai
-- Deployment: DeploymentManager -> BinaryPathResolver -> terraform/tofu init/apply/destroy
-- Binary paths: BinaryPaths (Pydantic) + BinaryPathResolver (shutil.which + overrides)
-- Secrets: OpenBaoConfig (backend=vault|openbao) + SecretsManager.start_local_container() + health_check()
-- Container: Containerfile (podman/docker) + make container-build/run/push
+- Ansible: CoreAnsibleRunner (ansible-core library) -> AnsibleRunnerAdapter
+- Infra: TerraformGenerator -> DeploymentManager -> BinaryPathResolver -> terraform/tofu
+- Secrets: OpenBaoConfig (backend=vault|openbao) + SecretsManager + BinaryPathResolver
+- Security: bandit SAST + cyclonedx-py SBOM + pip-audit + OPA/Rego policies
 
 ## Key Gaps (Known)
 - ReturnReviewer._call_model() is a stub (no real LLM calls in tests)
@@ -83,8 +81,8 @@ obj01-obj16 all complete.
 - No DB migration for plan_artifact column on TodoModel
 
 ## Next Steps
-1. Merge feature branch to master
-2. Wire prompt_profile resolution into pipeline
-3. Wire OpenBao into worker/runner
-4. DB migration for plan_artifact column
-5. Implement PID rules engine and rules evaluation
+1. Wire prompt_profile resolution into pipeline
+2. Wire OpenBao into worker/runner
+3. DB migration for plan_artifact column
+4. Implement PID rules engine and rules evaluation
+5. Real LLM call integration in ReturnReviewer
