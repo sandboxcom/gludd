@@ -16,6 +16,13 @@
 6. Only stop when ALL objectives are complete or you hit a hard blocker you
    cannot fix (missing credentials, environment you cannot change).
 
+**Self-Directed Work Rule: When you identify a gap, bug, or missing
+integration while working, you MUST fix it immediately. Do NOT stop to ask
+the user whether to proceed. Do NOT list the gap and wait for approval.
+If you found it, you own it. Fix it, test it, commit it, then continue
+with the original task. The only exception is if fixing it would require
+credentials, payment, or environment changes you cannot make.**
+
 This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — injects completion policy into system prompt
 - This AGENTS.md section — proactive instruction

@@ -74,6 +74,17 @@ const TASK_COMPLETION_WARNING = [
   "stopped. Just keep going.",
 ].join("\n")
 
+const SELF_DIRECTED_WORK_WARNING = [
+  "⚠️ SELF-DIRECTED WORK CHECK: You identified a gap and are about to",
+  "ask the user for permission instead of fixing it.",
+  "",
+  "RULE: When you find a gap, bug, or missing integration, you MUST",
+  "fix it immediately. Do NOT say 'this is a gap worth fixing' and",
+  "then stop. Do NOT ask 'want me to...' or 'should I...'.",
+  "",
+  "If you found it, you own it. Fix it now.",
+].join("\n")
+
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
@@ -132,6 +143,19 @@ export default (async ({ }) => {
         "5. After each objective is complete, immediately start the next one.",
         "6. Only stop when ALL objectives are complete or you hit a hard blocker",
         "   (missing credentials, environment issues you cannot fix).",
+        "",
+        "## CRITICAL: Self-Directed Work Rule",
+        "",
+        "When you identify a gap, bug, or missing integration while working,",
+        "you MUST fix it immediately. Do NOT:",
+        "  - Stop to ask the user whether to proceed",
+        "  - List the gap and wait for approval",
+        "  - Say 'this is a gap worth fixing' and then stop",
+        "  - Ask 'want me to...' or 'should I...'",
+        "",
+        "If you found it, you own it. Fix it, test it, commit it, then continue",
+        "with the original task. The ONLY exception is if fixing it would require",
+        "credentials, payment, or environment changes you cannot make.",
         "",
       ].join("\n")
       const evidencePrompt = [
