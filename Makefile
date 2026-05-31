@@ -201,6 +201,8 @@ test-and-commit:
 clean:
 	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
 	@find . -name __pycache__ -type d -exec rm -rf {} + 2>/dev/null || true
+	@git rm -r --cached '*__pycache__*' 2>/dev/null || true
+	@git rm --cached .coverage coverage.xml 2>/dev/null || true
 	@echo "Cleaned."
 
 test-live-zai:
