@@ -1,0 +1,8 @@
+active_model_profile: zai_coder
+preferred_agents:
+  coder: agent_a
+  reviewer: agent_b
+task_preferences:
+  prefer_fast: true
+  max_retries: 3
+session_notes: ""
