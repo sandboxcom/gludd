@@ -10,7 +10,7 @@ PROJECT_SRC := src/agentic_harness
 TESTS_DIR := tests
 
 .PHONY: search-google search-json \
-        init sync install-pip lint lint-fix test test-unit test-integration \
+        init sync install-pip lint lint-fix test test-unit test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
@@ -97,6 +97,9 @@ test-unit:
 
 test-integration:
 	@$(UV) run pytest tests/integration/ -v
+
+test-e2e:
+	@$(UV) run pytest tests/e2e/ -v
 
 test-guardrails:
 	@$(UV) run pytest tests/unit/test_guardrails.py -v
