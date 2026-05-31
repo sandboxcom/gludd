@@ -48,12 +48,11 @@ dev = [
     "types-psutil>=6.0.0",
     "aiosqlite>=0.20.0",
     "greenlet>=3.0.0",
+    "pyinstaller>=6.0.0",
 ]
 
 [project.scripts]
 hottentot = "agentic_harness.cli:main"
-hottentot-worker = "agentic_harness.worker.cli:main"
-hottentot-loop = "agentic_harness.event_loop.cli:main"
 
 [build-system]
 requires = ["hatchling"]
@@ -113,4 +112,5 @@ dev-dependencies = [
     "types-psutil>=6.0.0",
     "aiosqlite>=0.20.0",
     "greenlet>=3.0.0",
+    "pyinstaller>=6.0.0",
 ]

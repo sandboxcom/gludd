@@ -47,11 +47,13 @@ class EventLoop:
         budget_guard: Any | None = None,
         mcp_client: MCPClient | None = None,
         mcp_tool_registry: MCPToolRegistry | None = None,
+        runner: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self.session = session
         self._http_client = http_client
+        self._runner = runner
         self._todo_repo = todo_repo or (
             TodoRepository(session) if session else None
         )
@@ -126,8 +128,6 @@ class EventLoop:
         self._tick_metrics["returns_reviewed"] = len(claimed)
 
     async def _dispatch_review_job(self, tr: Any) -> None:
-        if self._http_client is None:
-            return
         job = JobSpec(
             job_id=f"REVIEW-{tr.return_id}",
             return_id=tr.return_id,
@@ -138,6 +138,26 @@ class EventLoop:
             resource_profile="ai_heavy",
             plan_artifact=getattr(tr, "plan_artifact", None),
         )
+        if self._runner is not None:
+            dirs = self._runner.prepare_job_dirs(job.job_id)
+            self._runner.write_vars(
+                job.job_id,
+                job_vars={
+                    "job_id": job.job_id,
+                    "todo_id": job.todo_id,
+                    "return_id": job.return_id,
+                    "queue": job.queue,
+                    "work_type": job.work_type,
+                },
+                shared_vars=None,
+            )
+            self._runner.run_playbook(
+                playbook_name="return_review.yml",
+                private_data_dir=dirs["root"],
+            )
+            return
+        if self._http_client is None:
+            return
         await self._http_client.post(
             f"{self.worker_base_url}/jobs/return-review",
             json=job.model_dump(mode="json"),
@@ -176,15 +196,35 @@ class EventLoop:
         self._tick_metrics["todos_dispatched"] = len(claimed)
 
     async def _dispatch_execute_job(self, todo: Any) -> None:
-        if self._http_client is None:
-            return
         budget_context: dict[str, Any] = {}
         if self._mcp_tool_registry is not None:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
+        playbook = self._config_snapshot.get("default_playbook", "noop.yml")
+        if self._runner is not None:
+            job_id = f"EXEC-{todo.todo_id}"
+            dirs = self._runner.prepare_job_dirs(job_id)
+            self._runner.write_vars(
+                job_id,
+                job_vars={
+                    "job_id": job_id,
+                    "todo_id": todo.todo_id,
+                    "queue": getattr(todo, "queue", "core"),
+                    "work_type": getattr(todo, "work_type", "unknown"),
+                    **budget_context,
+                },
+                shared_vars=None,
+            )
+            self._runner.run_playbook(
+                playbook_name=playbook,
+                private_data_dir=dirs["root"],
+            )
+            return
+        if self._http_client is None:
+            return
         job = JobSpec(
             job_id=f"EXEC-{todo.todo_id}",
             todo_id=todo.todo_id,
-            playbook=self._config_snapshot.get("default_playbook", "noop.yml"),
+            playbook=playbook,
             queue=getattr(todo, "queue", "core"),
             work_type=getattr(todo, "work_type", "unknown"),
             resource_profile=getattr(todo, "resource_profile", "low_resource"),

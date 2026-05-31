@@ -1,24 +1,21 @@
-"""Worker CLI entrypoint."""
+"""Worker CLI entrypoint (deprecated — use 'hottentot daemon')."""
 
 from __future__ import annotations
 
-import subprocess
 import sys
+import warnings
 
 
 def main() -> None:
-    cmd = [
-        "gunicorn",
-        "agentic_harness.worker.app:create_app",
-        "--factory",
-        "--worker-class",
-        "uvicorn_worker.UvicornWorker",
-        "--workers",
-        "2",
-        "--bind",
-        "0.0.0.0:8000",
-    ]
-    sys.exit(subprocess.call(cmd))
+    warnings.warn(
+        "hottentot-worker is deprecated. Use 'hottentot daemon' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    sys.argv = ["hottentot", "daemon", *sys.argv[1:]]
+    from agentic_harness.cli import main as cli_main
+
+    cli_main()
 
 
 if __name__ == "__main__":

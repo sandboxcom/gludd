@@ -21,6 +21,7 @@ TESTS_DIR := tests
         git-branch git-checkout git-merge git-staged \
         feature-start feature-done test-and-commit \
         container-build container-run container-push \
+        build-executable \
         qa validate
 
 search-google:
@@ -226,6 +227,10 @@ test-live-zai:
 
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := hottentot-agent:latest
+
+build-executable:
+	@$(UV) run pyinstaller hottentot.spec --clean --noconfirm
+	@echo "Built dist/hottentot"
 
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi

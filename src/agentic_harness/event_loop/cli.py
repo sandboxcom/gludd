@@ -1,19 +1,21 @@
-"""Event loop CLI entrypoint."""
+"""Event loop CLI entrypoint (deprecated — use 'hottentot daemon')."""
 
 from __future__ import annotations
 
-import asyncio
-import logging
-
-from agentic_harness.event_loop.loop import EventLoop
-
-logging.basicConfig(level=logging.INFO)
+import sys
+import warnings
 
 
 def main() -> None:
-    loop = EventLoop()
-    logging.info("Starting agentic harness event loop")
-    asyncio.run(loop.run_forever())
+    warnings.warn(
+        "hottentot-loop is deprecated. Use 'hottentot daemon' instead.",
+        DeprecationWarning,
+        stacklevel=2,
+    )
+    sys.argv = ["hottentot", "daemon", *sys.argv[1:]]
+    from agentic_harness.cli import main as cli_main
+
+    cli_main()
 
 
 if __name__ == "__main__":
