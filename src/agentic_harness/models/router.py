@@ -13,6 +13,7 @@ class ModelRouter:
         self.weak_model_profile_id = weak_model_profile_id
         self._quality_map: dict[str, str] = {}
         self._latency_map: dict[str, str] = {}
+        self._pattern_map: dict[str, str] = {}
 
     def resolve_role(self, role_name: str) -> str | None:
         if role_name == "weak" and self.weak_model_profile_id:
@@ -32,6 +33,18 @@ class ModelRouter:
 
     def add_latency_mapping(self, class_name: str, profile_id: str) -> None:
         self._latency_map[class_name] = profile_id
+
+    def add_pattern_mapping(self, pattern_name: str, role_name: str) -> None:
+        self._pattern_map[pattern_name] = role_name
+
+    def resolve_pattern(self, pattern_name: str) -> str | None:
+        role_name = self._pattern_map.get(pattern_name)
+        if role_name is None:
+            return None
+        return self.resolve_role(role_name)
+
+    def list_patterns(self) -> list[str]:
+        return list(self._pattern_map.keys())
 
     def resolve_by_quality(self, class_name: str) -> str | None:
         return self._quality_map.get(class_name)

@@ -199,15 +199,7 @@ class ModelGateway:
     ) -> ModelResponse:
         if self._router is None:
             raise ValueError("No router configured")
-        role_map: dict[str, str] = {
-            "return_review": "reviewer",
-            "commit_message": "weak",
-            "gap_analysis": "fast",
-        }
-        role_name = role_map.get(pattern)
-        if role_name is None:
-            raise ValueError(f"No profile resolved for pattern '{pattern}'")
-        profile_id = self._router.resolve_role(role_name)
+        profile_id = self._router.resolve_pattern(pattern)
         if profile_id is None:
             raise ValueError(f"No profile resolved for pattern '{pattern}'")
         return self.call_model(profile_id, messages, **kwargs)

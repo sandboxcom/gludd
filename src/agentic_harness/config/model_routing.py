@@ -36,4 +36,6 @@ def build_router_from_config(config: ModelRoutingConfig) -> ModelRouter:
         router.add_quality_mapping(class_name, profile_id)
     for class_name, profile_id in config.latency_routing.items():
         router.add_latency_mapping(class_name, profile_id)
+    for pattern_name, role_name in config.pattern_routing.items():
+        router.add_pattern_mapping(pattern_name, role_name)
     return router

@@ -150,6 +150,7 @@ class TestCallModelByPattern:
 
     def test_pattern_return_review_maps_to_reviewer(self):
         router = ModelRouter(role_mapping={"reviewer": "reviewer_profile"})
+        router.add_pattern_mapping("return_review", "reviewer")
         gw, reg = self._make_gateway(router=router)
 
         FakeChatModel = MagicMock()
@@ -175,6 +176,7 @@ class TestCallModelByPattern:
             role_mapping={"weak": "weak_profile"},
             weak_model_profile_id="weak_profile",
         )
+        router.add_pattern_mapping("commit_message", "weak")
         gw, reg = self._make_gateway(router=router)
 
         FakeChatModel = MagicMock()
@@ -197,6 +199,7 @@ class TestCallModelByPattern:
 
     def test_pattern_gap_analysis_maps_to_fast(self):
         router = ModelRouter(role_mapping={"fast": "fast_profile"})
+        router.add_pattern_mapping("gap_analysis", "fast")
         gw, reg = self._make_gateway(router=router)
 
         FakeChatModel = MagicMock()
