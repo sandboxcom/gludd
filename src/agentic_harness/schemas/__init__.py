@@ -4,6 +4,7 @@ from agentic_harness.schemas.job import JobSpec
 from agentic_harness.schemas.quality_gate import QualityGateConfig
 from agentic_harness.schemas.queue import Queue
 from agentic_harness.schemas.task_decision import TaskDecision
+from agentic_harness.schemas.task_definition import TaskDefinition
 from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
 from agentic_harness.schemas.todo import (
     ResourceProfile,
@@ -20,6 +21,7 @@ __all__ = [
     "ResourceProfile",
     "RiskLevel",
     "TaskDecision",
+    "TaskDefinition",
     "TaskReturn",
     "TaskReturnStatus",
     "Todo",
