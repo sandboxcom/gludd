@@ -4,6 +4,7 @@ FORMAT ?= text
 SEARCH_SCRIPT := scripts/search.py
 MSG ?= 
 FILES ?= 
+TESTFILE ?= 
 
 PYTHON := python3
 UV := uv
@@ -11,7 +12,7 @@ PROJECT_SRC := src/agentic_harness
 TESTS_DIR := tests
 
 .PHONY: search-google search-json \
-        init sync install-pip lint lint-fix test test-unit test-integration test-e2e \
+        init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
@@ -19,6 +20,7 @@ TESTS_DIR := tests
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
         feature-start feature-done test-and-commit \
+        container-build container-run container-push \
         qa validate
 
 search-google:
@@ -96,7 +98,18 @@ test:
 	@$(UV) run pytest tests/ --cov=agentic_harness --cov-report=term-missing --cov-report=xml -v
 
 test-unit:
-	@$(UV) run pytest tests/unit/ -v
+	@if [ -n "$(TESTFILE)" ]; then \
+		$(UV) run pytest $(TESTFILE) -v; \
+	else \
+		$(UV) run pytest tests/unit/ -v; \
+	fi
+
+test-specific:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
+	@$(UV) run pytest $(TESTFILE) -v
+
+test-count:
+	@$(UV) run pytest tests/ --co -q 2>&1 | tail -3
 
 test-integration:
 	@$(UV) run pytest tests/integration/ -v
@@ -210,6 +223,21 @@ test-live-zai:
 	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
 	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
 	$(UV) run pytest tests/live/test_zai_live.py -v -s
+
+CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
+CONTAINER_IMAGE := hottentot-agent:latest
+
+container-build:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
+	@$(CONTAINER_RUNTIME) build -t $(CONTAINER_IMAGE) .
+
+container-run:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
+	@$(CONTAINER_RUNTIME) run -p 8000:8000 $(CONTAINER_IMAGE)
+
+container-push:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
+	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
 
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."

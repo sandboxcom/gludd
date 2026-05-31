@@ -9,6 +9,7 @@ from typing import Any, Protocol
 from pydantic import BaseModel, Field
 
 from agentic_harness.models.provider_registry import ProviderRegistry
+from agentic_harness.models.router import ModelRouter
 
 logger = logging.getLogger(__name__)
 
@@ -58,6 +59,8 @@ class ModelGateway:
         profiles: list[ModelProfile] | None = None,
         provider_registry: ProviderRegistry | None = None,
         secrets_manager: _SecretsResolver | None = None,
+        budget_guard: Any | None = None,
+        router: ModelRouter | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -65,6 +68,8 @@ class ModelGateway:
                 self._profiles[p.model_profile_id] = p
         self._registry = provider_registry
         self._secrets = secrets_manager
+        self._budget_guard = budget_guard
+        self._router = router
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -162,6 +167,9 @@ class ModelGateway:
             cost,
         )
 
+        if self._budget_guard is not None:
+            self._budget_guard.record_spend(cost)
+
         return ModelResponse(
             content=str(content),
             usage_metadata=dict(usage),
@@ -169,6 +177,32 @@ class ModelGateway:
             model_name=profile.model_name,
             raw_response=raw_response,
         )
+
+    def call_model_by_role(
+        self,
+        role_name: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> ModelResponse:
+        if self._router is None:
+            raise ValueError("No router configured")
+        profile_id = self._router.resolve_role(role_name)
+        if profile_id is None:
+            raise ValueError(f"No profile resolved for role '{role_name}'")
+        return self.call_model(profile_id, messages, **kwargs)
+
+    def call_model_by_pattern(
+        self,
+        pattern: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> ModelResponse:
+        if self._router is None:
+            raise ValueError("No router configured")
+        profile_id = self._router.resolve_pattern(pattern)
+        if profile_id is None:
+            raise ValueError(f"No profile resolved for pattern '{pattern}'")
+        return self.call_model(profile_id, messages, **kwargs)
 
     def _try_call_model(
         self,

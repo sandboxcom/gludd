@@ -5,6 +5,7 @@ from __future__ import annotations
 import uuid
 from dataclasses import dataclass
 from datetime import UTC, datetime
+from typing import Any
 
 from agentic_harness.reload.manager import ReloadManager, ReloadResult, ReloadType
 from agentic_harness.validation.runner import ValidationResult, ValidationRunner
@@ -21,9 +22,9 @@ class ApplyResult:
 class SelfImprovementWorkflow:
     def __init__(self) -> None:
         self._reload_manager = ReloadManager()
-        self._todos: dict[str, dict] = {}
+        self._todos: dict[str, dict[str, Any]] = {}
 
-    def create_improvement_todo(self, title: str, description: str) -> dict:
+    def create_improvement_todo(self, title: str, description: str) -> dict[str, Any]:
         todo_id = f"SI-{uuid.uuid4().hex[:8]}"
         now = datetime.now(UTC).isoformat()
         todo = {

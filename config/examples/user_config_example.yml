@@ -1,0 +1,25 @@
+model_routing:
+  default_profile: zai_coder
+  weak_model_profile: zai_weak
+  role_routing:
+    coder: zai_coder
+    reviewer: zai_reviewer
+  quality_routing:
+    high: zai_coder
+    medium: zai_fast
+
+model_profiles:
+  primary: zai_coder
+  fallback: zai_weak
+
+agents:
+  default_agent: coder
+  max_concurrent: 4
+
+process_isolation:
+  enabled: true
+  container_runtime: podman
+
+budget:
+  max_usd: 50
+  warn_percent: 80

@@ -6,6 +6,8 @@ gets rendered into agent system prompts at runtime.
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel
 
 
@@ -17,7 +19,7 @@ class GuardrailConfig(BaseModel):
     def layer_count(self) -> int:
         return sum([self.config_layer, self.hook_layer, self.prompt_layer])
 
-    def validate(self) -> None:
+    def ensure_valid(self) -> None:
         if self.layer_count() == 0:
             raise ValueError("At least one guardrail layer must be enabled")
 
@@ -42,11 +44,11 @@ class AgentBehavior(BaseModel):
     def should_stop(self, condition: str) -> bool:
         return condition in self.stop_conditions
 
-    def to_dict(self) -> dict:
+    def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
 
     @classmethod
-    def from_dict(cls, data: dict) -> AgentBehavior:
+    def from_dict(cls, data: dict[str, Any]) -> AgentBehavior:
         return cls(**data)
 
 

@@ -7,6 +7,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from agentic_harness.ansible.isolation import ProcessIsolationConfig
+
 
 class ActionPolicyConfig(BaseModel):
     enabled: bool = True
@@ -18,6 +20,7 @@ class ActionPolicyConfig(BaseModel):
     disabled_roles: list[str] = Field(default_factory=list)
     disabled_collections: list[str] = Field(default_factory=list)
     disabled_modules: list[str] = Field(default_factory=list)
+    process_isolation: ProcessIsolationConfig | None = None
 
 
 @dataclass
@@ -70,6 +73,14 @@ def validate_action(
         if module in policy.disabled_modules:
             denied.append(module)
             reasons.append(f"Module '{module}' is disabled")
+
+    if policy.process_isolation and policy.process_isolation.enabled:
+        for module in manifest.modules:
+            if policy.process_isolation.is_module_blocked(module):
+                denied.append(module)
+                reasons.append(
+                    f"Module '{module}' blocked by process isolation"
+                )
 
     if denied:
         return PolicyResult(

@@ -2,14 +2,18 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import hvac
 
 from agentic_harness.secrets.config import OpenBaoConfig
+
+if TYPE_CHECKING:
+    from agentic_harness.config.binary_paths import BinaryPathResolver
 
 logger = logging.getLogger(__name__)
 
@@ -117,9 +121,9 @@ class SecretsManager:
         if self._client is None:
             raise RuntimeError("Not connected.")
         resp = self._client.auth.approle.generate_secret_id(role_name)
-        return resp["data"]["secret_id"]
+        return str(resp["data"]["secret_id"])
 
-    def write_secret(self, path: str, value: dict) -> None:
+    def write_secret(self, path: str, value: dict[str, Any]) -> None:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         self._client.secrets.kv.v2.create_or_update_secret(
@@ -128,7 +132,7 @@ class SecretsManager:
             mount_point=self._config.kv_mount,
         )
 
-    def read_secret(self, path: str) -> dict | None:
+    def read_secret(self, path: str) -> dict[str, Any] | None:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         try:
@@ -136,7 +140,7 @@ class SecretsManager:
                 path=path, mount_point=self._config.kv_mount
             )
             if result and "data" in result and "data" in result["data"]:
-                return result["data"]["data"]
+                return dict[str, Any](result["data"]["data"])
         except Exception:
             return None
         return None
@@ -158,7 +162,7 @@ class SecretsManager:
             return None
         if stored is None:
             return None
-        current_digest = stored.get("pinned_digest", "")
+        current_digest = str(stored.get("pinned_digest", ""))
         candidate_digest = self._fetch_remote_digest(image_ref)
         if candidate_digest == current_digest:
             return None
@@ -168,6 +172,43 @@ class SecretsManager:
             candidate_digest=candidate_digest,
             registry=registry,
         )
+
+    async def start_local_container(
+        self,
+        binary_resolver: BinaryPathResolver | None = None,
+    ) -> str | None:
+        from agentic_harness.config.binary_paths import BinaryPathResolver
+
+        resolver = binary_resolver or BinaryPathResolver()
+        runtime = resolver.get_container_runtime()
+        image = self._config.local_image
+        proc = await asyncio.create_subprocess_exec(
+            runtime,
+            "run",
+            "-d",
+            "-p",
+            "8200:8200",
+            "--name",
+            f"hottentot-{self._config.backend}",
+            image,
+            "server",
+            "-dev",
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE,
+        )
+        stdout, _ = await proc.communicate()
+        if proc.returncode != 0:
+            return None
+        container_id = stdout.decode().strip()
+        return container_id or None
+
+    async def health_check(self) -> bool:
+        if self._client is None:
+            return False
+        try:
+            return bool(self._client.is_authenticated())
+        except Exception:
+            return False
 
     def _fetch_remote_digest(self, image_ref: str) -> str:
         return f"sha256:{uuid.uuid4().hex[:24]}"

@@ -1,0 +1,7 @@
+process_isolation:
+  enabled: false
+  executable: podman
+  hide_paths: []
+  show_paths: []
+  ro_paths: []
+  block_local_tools: []

@@ -79,23 +79,27 @@ class TestRunnerWriteVars:
 
 
 class TestRunnerRunPlaybook:
-    @patch("ansible_runner.run")
-    def test_run_playbook_calls_ansible_runner(self, mock_run: MagicMock) -> None:
+    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    def test_run_playbook_calls_core_runner(self, mock_core_cls: MagicMock) -> None:
+        mock_core = MagicMock()
         mock_result = MagicMock()
-        mock_result.status = "successful"
-        mock_result.rc = 0
-        mock_result.events = [{}]
-        mock_run.return_value = mock_result
+        mock_result.model_dump.return_value = {
+            "status": "successful",
+            "rc": 0,
+            "events": [{}],
+            "stats": {},
+            "host_results": {},
+        }
+        mock_core.run_playbook.return_value = mock_result
+        mock_core_cls.return_value = mock_core
 
         with tempfile.TemporaryDirectory() as tmp:
             adapter = AnsibleRunnerAdapter(private_data_dir=tmp)
-            adapter.prepare_job_dirs("JOB-400")
-            dirs = adapter.prepare_job_dirs("JOB-400")
             result = adapter.run_playbook(
                 playbook_name="noop.yml",
-                private_data_dir=dirs["root"],
+                private_data_dir=tmp,
             )
-        mock_run.assert_called_once()
+        mock_core.run_playbook.assert_called_once()
         assert result["status"] == "successful"
         assert result["rc"] == 0
 
@@ -105,23 +109,28 @@ class TestRunnerRunPlaybook:
             with pytest.raises(ValueError, match="not registered"):
                 adapter.run_playbook(playbook_name="evil.yml")
 
-    @patch("ansible_runner.run")
-    def test_run_playbook_captures_events(self, mock_run: MagicMock) -> None:
+    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    def test_run_playbook_captures_events(self, mock_core_cls: MagicMock) -> None:
         events = [
             {"event": "playbook_on_start"},
             {"event": "runner_on_ok", "event_data": {"task": "debug"}},
         ]
+        mock_core = MagicMock()
         mock_result = MagicMock()
-        mock_result.status = "successful"
-        mock_result.rc = 0
-        mock_result.events = events
-        mock_run.return_value = mock_result
+        mock_result.model_dump.return_value = {
+            "status": "successful",
+            "rc": 0,
+            "events": events,
+            "stats": {},
+            "host_results": {},
+        }
+        mock_core.run_playbook.return_value = mock_result
+        mock_core_cls.return_value = mock_core
 
         with tempfile.TemporaryDirectory() as tmp:
             adapter = AnsibleRunnerAdapter(private_data_dir=tmp)
-            dirs = adapter.prepare_job_dirs("JOB-401")
             result = adapter.run_playbook(
                 playbook_name="noop.yml",
-                private_data_dir=dirs["root"],
+                private_data_dir=tmp,
             )
         assert len(result["events"]) == 2

@@ -16,10 +16,13 @@ const BASH_POLICY_FIX = [
 ].join("\n")
 const BASH_POLICY_REF = "See AGENTS.md for existing make targets and the full policy.\n"
 
-function formatBashBlockedMessage(attemptedCommand: string): string {
+const SHELL_META_CHARS = /[|;&(){}$`\\!]/
+
+function formatBashBlockedMessage(attemptedCommand: string, reason?: string): string {
   return [
     BASH_POLICY_HEADER,
     `Attempted command: ${attemptedCommand}`,
+    reason ? `\nReason: ${reason}` : "",
     "",
     BASH_POLICY_RULE,
     "",
@@ -85,14 +88,97 @@ const SELF_DIRECTED_WORK_WARNING = [
   "If you found it, you own it. Fix it now.",
 ].join("\n")
 
+const BASH_METACHAR_POLICY = [
+  "",
+  "## CRITICAL: Bash Metacharacter Policy",
+  "",
+  "Shell metacharacters are FORBIDDEN in bash commands. This includes:",
+  "  | (pipe)   ; (semicolon)   && (and)   || (or)",
+  "  () (subshell)   $ (variable)   ` (backtick)   ! (history)",
+  "  {} (brace expansion)   \\ (escape)",
+  "",
+  "These allow chaining commands, piping output, running subcommands,",
+  "and other side effects that bypass the make-only policy.",
+  "",
+  "If you need to combine operations, create a Makefile target that",
+  "does the combination. Make targets ARE allowed to use these",
+  "characters internally because they execute in a controlled context.",
+  "",
+  "VIOLATIONS (all blocked):",
+  "  make test-unit 2>&1 | tail -20     # pipe forbidden",
+  "  cd /foo && make test                # cd and && forbidden",
+  "  make test; make lint                # ; forbidden",
+  "  $(cat file)                         # $() forbidden",
+  "  make test || true                   # || forbidden",
+  "",
+  "CORRECT (all allowed):",
+  "  make test-unit                      # plain make",
+  "  make test-unit TESTFILE=path        # make with variable",
+  "  make lint                           # plain make",
+  "",
+].join("\n")
+
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
       if (input.tool === "bash") {
         const command = output?.args?.command ?? ""
         const trimmed = typeof command === "string" ? command.trim() : ""
+
         if (!trimmed.startsWith("make ") && trimmed !== "make") {
-          throw new Error(formatBashBlockedMessage(trimmed))
+          throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
+        }
+
+        if (SHELL_META_CHARS.test(trimmed)) {
+          const matched = trimmed.match(SHELL_META_CHARS)
+          throw new Error(
+            formatBashBlockedMessage(
+              trimmed,
+              `Shell metacharacter(s) forbidden: ${matched?.join(", ")}. ` +
+              `Pipes (|), chaining (&&, ||, ;), subshells ($(), ()), backticks (\`), ` +
+              `variable expansion ($), and brace expansion ({}) are not allowed. ` +
+              `Create a Makefile target instead.`
+            )
+          )
+        }
+
+        const afterMake = trimmed.slice(5).trim()
+        const invalidPatterns = [
+          /\b2>&1\b/,
+          /\b>\s/,
+          /\b<\s/,
+          /\brg\b/,
+          /\btail\b/,
+          /\bhead\b/,
+          /\bgrep\b/,
+          /\bcat\b/,
+          /\bfind\b/,
+          /\bls\b/,
+          /\bcd\b/,
+          /\bpython\b/,
+          /\bpython3\b/,
+          /\buv\b/,
+          /\bpip\b/,
+          /\bgit\b/,
+          /\brm\b/,
+          /\bcp\b/,
+          /\bmv\b/,
+          /\bwhich\b/,
+          /\bcommand\b/,
+          /\bexport\b/,
+          /\bsource\b/,
+        ]
+        for (const pattern of invalidPatterns) {
+          if (pattern.test(afterMake)) {
+            throw new Error(
+              formatBashBlockedMessage(
+                trimmed,
+                `Forbidden command/shell builtin detected: ${pattern.source}. ` +
+                `Only 'make <target> VAR=val' is allowed. ` +
+                `Create a Makefile target for this operation.`
+              )
+            )
+          }
         }
       }
 
@@ -176,6 +262,7 @@ export default (async ({ }) => {
       if (typeof output === "string") {
         output += completionPrompt
         output += evidencePrompt
+        output += BASH_METACHAR_POLICY
       }
     },
   }

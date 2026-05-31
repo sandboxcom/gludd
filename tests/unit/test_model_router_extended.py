@@ -94,3 +94,37 @@ class TestBuildFromProfiles:
         assert router.resolve_role("anything") is None
         assert router.resolve_by_quality("high") is None
         assert router.resolve_by_latency("fast") is None
+
+
+class TestPatternRouting:
+    def test_resolve_pattern_through_router(self):
+        router = ModelRouter(
+            role_mapping={"reviewer": "gpt4", "coder": "gpt4", "fast": "haiku"},
+            weak_model_profile_id="haiku",
+        )
+        router.add_pattern_mapping("return_review", "reviewer")
+        router.add_pattern_mapping("commit_message", "weak")
+        router.add_pattern_mapping("gap_analysis", "fast")
+        assert router.resolve_pattern("return_review") == "gpt4"
+        assert router.resolve_pattern("commit_message") == "haiku"
+        assert router.resolve_pattern("gap_analysis") == "haiku"
+
+    def test_resolve_pattern_unknown_returns_none(self):
+        router = ModelRouter()
+        assert router.resolve_pattern("nonexistent") is None
+
+    def test_resolve_pattern_falls_to_default(self):
+        router = ModelRouter(
+            role_mapping={"coder": "gpt4"},
+            default_profile_id="fallback",
+        )
+        router.add_pattern_mapping("custom_task", "coder")
+        assert router.resolve_pattern("custom_task") == "gpt4"
+
+    def test_list_patterns(self):
+        router = ModelRouter()
+        router.add_pattern_mapping("return_review", "reviewer")
+        router.add_pattern_mapping("commit_message", "weak")
+        patterns = router.list_patterns()
+        assert "return_review" in patterns
+        assert "commit_message" in patterns

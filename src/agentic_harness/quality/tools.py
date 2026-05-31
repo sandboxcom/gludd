@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from dataclasses import dataclass
+from typing import Any
 
 from agentic_harness.quality.molecule_coverage import MoleculeCoverageChecker, MoleculeCoverageReport
 
@@ -24,7 +25,7 @@ class QualityGateResult:
 
 
 def check_python_coverage(
-    config: dict,
+    config: dict[str, Any],
     line_coverage: float = 0.0,
     branch_coverage: float = 0.0,
 ) -> CoverageResult:
@@ -41,7 +42,7 @@ def check_python_coverage(
     )
 
 
-def check_molecule_coverage(config: dict) -> MoleculeCoverageReport:
+def check_molecule_coverage(config: dict[str, Any]) -> MoleculeCoverageReport:
     registry: dict[str, str] = config.get("playbook_registry", {})
     roots: list[str] = config.get("scenario_roots", [])
     checker = MoleculeCoverageChecker(playbook_registry=registry, scenario_roots=roots)
@@ -49,7 +50,7 @@ def check_molecule_coverage(config: dict) -> MoleculeCoverageReport:
 
 
 def check_quality_gates(
-    config: dict,
+    config: dict[str, Any],
     line_coverage: float = 0.0,
     branch_coverage: float = 0.0,
 ) -> QualityGateResult:

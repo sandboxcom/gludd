@@ -1,0 +1,110 @@
+providers:
+  - provider: aws
+    display_name: Amazon Web Services
+    terraform_provider: hashicorp/aws
+    supports_spot: true
+    sub_hour_billing: false
+    min_gpu: t4
+    max_gpu: a100_80
+    pricing:
+      t4: 0.20
+      a10g: 0.40
+      a100_80: 10.00
+
+  - provider: gcp
+    display_name: Google Cloud Platform
+    terraform_provider: hashicorp/google
+    supports_spot: true
+    sub_hour_billing: true
+    min_gpu: l4
+    max_gpu: a100_80
+    pricing:
+      l4: 0.22
+      a100_80: 3.67
+
+  - provider: azure
+    display_name: Microsoft Azure
+    terraform_provider: hashicorp/azurerm
+    supports_spot: true
+    sub_hour_billing: false
+    min_gpu: t4
+    max_gpu: a100_80
+    pricing:
+      t4: 0.53
+      a100_80: 3.67
+
+  - provider: runpod
+    display_name: RunPod
+    terraform_provider: runpod/runpod
+    supports_spot: true
+    sub_hour_billing: true
+    min_gpu: l4
+    max_gpu: a100_80
+    pricing:
+      l4: 0.39
+      a100_80: 1.39
+
+  - provider: vast_ai
+    display_name: Vast.ai
+    terraform_provider: vast-ai/vast-ai
+    supports_spot: true
+    sub_hour_billing: true
+    min_gpu: rtx_4090
+    max_gpu: a100_80
+    pricing:
+      rtx_4090: 0.40
+      a100_80: 1.20
+
+  - provider: lambda_labs
+    display_name: Lambda Labs
+    terraform_provider: lambda-labs/lambda
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: a100_80
+    max_gpu: a100_80
+    pricing:
+      a100_80: 2.79
+
+  - provider: modal
+    display_name: Modal
+    terraform_provider: modal/modal
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: t4
+    max_gpu: a100_80
+    pricing:
+      t4: 0.59
+      a100_80: 2.50
+
+  - provider: coreweave
+    display_name: CoreWeave
+    terraform_provider: coreweave/coreweave
+    supports_spot: true
+    sub_hour_billing: true
+    min_gpu: l40s
+    max_gpu: a100_80
+    pricing:
+      l40s: 2.25
+      a100_80: 2.70
+
+  - provider: digital_ocean
+    display_name: DigitalOcean
+    terraform_provider: digitalocean/digitalocean
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: rtx_6000_ada
+    max_gpu: h100
+    pricing:
+      rtx_6000_ada: 1.49
+      h100: 7.99
+
+  - provider: oracle
+    display_name: Oracle Cloud
+    terraform_provider: hashicorp/oci
+    supports_spot: true
+    sub_hour_billing: false
+    min_gpu: a10
+    max_gpu: a100_80
+    pricing:
+      a10: 0.75
+      a100_80: 25.00

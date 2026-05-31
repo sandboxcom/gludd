@@ -22,3 +22,4 @@ class JobSpec(BaseModel):
     budget_context: dict[str, Any] = Field(default_factory=dict)
     candidate_todos: list[str] = Field(default_factory=list)
     artifact_summaries: list[str] = Field(default_factory=list)
+    plan_artifact: str | None = None

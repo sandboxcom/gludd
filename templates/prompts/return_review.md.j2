@@ -27,6 +27,12 @@ The following todos may match this return:
 {{ artifacts | tojson(indent=2) }}
 ```
 
+{% if conversation_context %}
+## Conversation History
+
+{{ conversation_context }}
+
+{% endif %}
 ## Review Checklist
 
 1. Does the return's `todo_id` match a candidate? If not, is this a duplicate or
