@@ -4,6 +4,7 @@ FORMAT ?= text
 SEARCH_SCRIPT := scripts/search.py
 MSG ?= 
 FILES ?= 
+TESTFILE ?= 
 
 PYTHON := python3
 UV := uv
@@ -96,7 +97,11 @@ test:
 	@$(UV) run pytest tests/ --cov=agentic_harness --cov-report=term-missing --cov-report=xml -v
 
 test-unit:
-	@$(UV) run pytest tests/unit/ -v
+	@if [ -n "$(TESTFILE)" ]; then \
+		$(UV) run pytest $(TESTFILE) -v; \
+	else \
+		$(UV) run pytest tests/unit/ -v; \
+	fi
 
 test-integration:
 	@$(UV) run pytest tests/integration/ -v

@@ -125,6 +125,7 @@ class EventLoop:
             queue=getattr(tr, "queue", "model"),
             work_type="review",
             resource_profile="ai_heavy",
+            plan_artifact=getattr(tr, "plan_artifact", None),
         )
         await self._http_client.post(
             f"{self.worker_base_url}/jobs/return-review",
@@ -173,6 +174,7 @@ class EventLoop:
             queue=getattr(todo, "queue", "core"),
             work_type=getattr(todo, "work_type", "unknown"),
             resource_profile=getattr(todo, "resource_profile", "low_resource"),
+            plan_artifact=getattr(todo, "plan_artifact", None),
         )
         await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",

@@ -122,6 +122,7 @@ class Todo(BaseModel):
     branch_name: str | None = None
     artifacts: list[str] = Field(default_factory=list)
     evidence_refs: list[str] = Field(default_factory=list)
+    plan_artifact: str | None = None
     confidence: float | None = None
     manual_hold_reason: str | None = None
     approval_policy: str = "none"
