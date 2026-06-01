@@ -1,5 +1,5 @@
-default_profile: null
-weak_model_profile: null
+default_profile: zai_coder
+weak_model_profile: zai_coder
 
 role_routing:
   coder: zai_coder

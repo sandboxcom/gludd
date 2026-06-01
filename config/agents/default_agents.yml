@@ -2,8 +2,8 @@ agents:
   - name: build
     description: "Primary build agent with all tool permissions"
     type: primary
-    model_profile: null
-    prompt_profile: null
+    model_profile: zai_coder
+    prompt_profile: default
     max_steps: 10
     permissions:
       can_edit: true
@@ -18,8 +18,8 @@ agents:
   - name: plan
     description: "Primary planning agent with read-only access"
     type: primary
-    model_profile: null
-    prompt_profile: null
+    model_profile: zai_coder
+    prompt_profile: default
     max_steps: 10
     permissions:
       can_edit: false
@@ -34,8 +34,8 @@ agents:
   - name: explore
     description: "Subagent for codebase exploration, read-only"
     type: subagent
-    model_profile: null
-    prompt_profile: null
+    model_profile: zai_coder
+    prompt_profile: default
     max_steps: 10
     permissions:
       can_edit: false
@@ -49,8 +49,8 @@ agents:
   - name: general
     description: "General-purpose subagent with all tool permissions"
     type: subagent
-    model_profile: null
-    prompt_profile: null
+    model_profile: zai_coder
+    prompt_profile: default
     max_steps: 10
     permissions:
       can_edit: true

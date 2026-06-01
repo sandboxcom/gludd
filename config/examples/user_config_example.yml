@@ -1,23 +1,34 @@
+# User Configuration Example
+# ==========================
+# Copy this to ~/.config/general-ludd/user.yml and customize.
+# Values here override /etc/general-ludd/general-ludd.yml.
+#
+# Model profiles are defined in config/model_profiles/*.yml
+# Available profile IDs: zai_coder, openai_gpt4, openrouter_coder,
+#                        vllm_local, llamacpp_local
+
 model_routing:
   default_profile: zai_coder
-  weak_model_profile: zai_weak
+  weak_model_profile: zai_coder
   role_routing:
     coder: zai_coder
-    reviewer: zai_reviewer
+    reviewer: zai_coder
   quality_routing:
     high: zai_coder
-    medium: zai_fast
+    medium: zai_coder
 
-model_profiles:
-  primary: zai_coder
-  fallback: zai_weak
+database:
+  host: localhost
+  port: 5432
+  name: gludd
+  user: gludd
 
 agents:
-  default_agent: coder
+  default_agent: build
   max_concurrent: 4
 
 process_isolation:
-  enabled: true
+  enabled: false
   container_runtime: podman
 
 budget:

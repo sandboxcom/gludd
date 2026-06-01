@@ -1,7 +1,12 @@
+# Agent Configuration Example
+# ============================
+# Place this at .general-ludd/agent_config.yml in your project root.
+# This configures per-project agent behavior.
+
 active_model_profile: zai_coder
 preferred_agents:
-  coder: agent_a
-  reviewer: agent_b
+  coder: build
+  reviewer: plan
 task_preferences:
   prefer_fast: true
   max_retries: 3
