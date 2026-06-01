@@ -6,11 +6,11 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: Audit gaps fixed, distributables built, self-audit policy codified
-- **Test Suite**: 1830 passed, 12 skipped, 0 failures, 92.87% coverage
+- **Phase**: User-facing dist, docs, config, install complete
+- **Test Suite**: 1849 passed, 12 skipped, 0 failures, 92.87% coverage
 - **Branch**: master
-- **Latest commit**: merge of feature/audit-gaps-and-wiring
-- **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz built and current
+- **Latest commit**: merge of feature/user-facing-dist
+- **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.
@@ -106,6 +106,24 @@ obj01-obj16 all complete.
 - Integration tests: `tests/integration/test_multi_project_integration.py` (3 tests)
 - Self-audit policy codified in AGENTS.md (7-step checklist)
 - `feature-done` Makefile target now builds distributables post-merge
+
+## User-Facing Dist & Docs (COMPLETE)
+- `config/general-ludd.yml` — main user-facing config with commented sections
+- `config/model_routing.yml` — fixed non-null default_profile
+- `config/agents/default_agents.yml` — fixed non-null model_profile on all agents
+- `config/examples/` — fixed to reference real profiles (zai_coder, build, plan)
+- `UserConfig.database` field added for PostgreSQL config
+- `docs/quickstart.md` — step-by-step getting started guide
+- `docs/configuration.md` — full config reference with all sections
+- `docs/architecture.md` — system overview for users
+- `docs/internal/` — moved sprint0.md, features-to-decide.md, feature-parity-matrix.md out of dist
+- `dist/README.md` — tarball readme with quick start, CLI reference, directory layout
+- `dist/install.sh` — rewritten with preflight checks, no auto-start, config preservation, macOS support
+- `dist/general-ludd.service` — localhost binding, dedicated user, env file, read-only home
+- `Makefile dist` target — includes README, selective docs only, sha256 checksums
+- `Makefile dist-clean` — cleans stale hottentot artifacts
+- 16 dist readiness tests + 2 UserConfig database tests
+- `tests/unit/test_dist_readiness.py` — validates config, docs, install script, systemd unit
 
 ## Key Gaps (Known)
 - ReturnReviewer._call_model() is a stub
