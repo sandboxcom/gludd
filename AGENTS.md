@@ -234,3 +234,61 @@ This is enforced by:
 - When adding any new guardrail, apply all three layers (enforced by meta-rule)
 - **Feature branches**: Start a branch per feature with `make feature-start`, commit small green increments onto it, then `make feature-done` to merge with --no-ff after full test suite passes
 - **Atomic commits**: Each commit should represent one logical change (one test file, one feature, one fix). Never batch unrelated changes into a single commit.
+
+## CRITICAL: Self-Audit Policy
+
+**After completing any significant body of work, you MUST perform a full self-audit before declaring it done.**
+
+### Full Self-Audit Checklist
+
+Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
+
+1. **Conversation History Audit**: Read ALL user messages from the opencode conversation
+   database at `~/.local/share/opencode/opencode.db` (table: `message`, join `part` for content).
+   Extract every explicit request. Cross-reference each against implementation.
+
+2. **Dead Code Audit**: For every new class/module you created, search the ENTIRE `src/` tree
+   for imports of that class. If it is only imported in test files, it is dead code — wire it
+   into the daemon, event loop, worker, or relevant subsystem.
+
+3. **Wiring Audit**: For every new field added to a schema/model:
+   - Is it populated at creation time? (check the daemon endpoints and event loop)
+   - Is it propagated through the pipeline? (check JobSpec construction in EventLoop)
+   - Is it consumed at the destination? (check Worker endpoints)
+   - Is it returned in API responses? (check daemon response dicts)
+
+4. **Migration Audit**: For every new SQLAlchemy model or column:
+   - Does an Alembic migration file exist in `alembic/versions/`?
+   - Does the migration revision chain link correctly? (`down_revision` references previous)
+   - Does `downgrade()` reverse `upgrade()` completely?
+
+5. **Test Level Audit**: Verify tests exist at ALL three levels:
+   - **Unit tests** (`tests/unit/`): Test individual functions/classes in isolation
+   - **Integration tests** (`tests/integration/`): Test 2+ subsystems together (e.g., EventLoop + DB)
+   - **E2E tests** (`tests/e2e/`): Test through the daemon API as a user would
+
+6. **Gap Audit**: For every feature area, check:
+   - Does the daemon endpoint exist? Does it support the new field?
+   - Does the CLI expose the feature? (`--project`, etc.)
+   - Does logging include the new context? (project_id in log records)
+   - Are secrets scoped? (per-project secret paths)
+   - Is the config per-project? (project-level config overrides)
+
+7. **Evidence**: After completing the audit, run `make test` and cite the pass count.
+   Run `make lint` and `make typecheck` and cite the results.
+
+### How to Execute
+
+```
+1. Read opencode.db messages (or re-read the conversation history)
+2. For each user request, grep the src/ tree for implementation
+3. For each implementation class, grep for usage (imports) outside test/
+4. For each schema field, trace it: daemon -> event_loop -> worker -> response
+5. For each DB model, check alembic/versions/ for migration
+6. Check tests/unit/, tests/integration/, tests/e2e/ for coverage
+7. Fix all gaps, run make test, commit green
+```
+
+This is enforced by:
+- This AGENTS.md section — proactive instruction
+- The session persistence policy — SESSION.md tracks known gaps

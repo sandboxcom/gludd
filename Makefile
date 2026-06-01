@@ -197,9 +197,12 @@ feature-done:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-done MSG='feature/short-name'"; exit 1; fi
 	@echo "Running full test suite before merge..."
 	@$(UV) run pytest tests/ -q
-	@git checkout master
+	@git checkout -f master
 	@git merge --no-ff "$(MSG)"
 	@echo "Merged $(MSG) into master"
+	@echo "Building distributables..."
+	@$(MAKE) dist
+	@echo "Feature complete. Tests green, distributables built."
 
 test-and-commit:
 	@echo "Running tests before commit..."
