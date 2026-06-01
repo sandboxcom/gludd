@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agentic_harness.agents.registry import AgentRegistry, default_registry
-from agentic_harness.agents.tool_adapter import AgentToolAdapter
-from agentic_harness.event_loop.loop import EventLoop
-from agentic_harness.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.agents.registry import AgentRegistry, default_registry
+from general_ludd.agents.tool_adapter import AgentToolAdapter
+from general_ludd.event_loop.loop import EventLoop
+from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
 
 
 def _make_loop(**overrides):

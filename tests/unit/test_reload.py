@@ -5,13 +5,13 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-from agentic_harness.reload.manager import (
+from general_ludd.reload.manager import (
     ReloadManager,
     ReloadResult,
     ReloadStatus,
     ReloadType,
 )
-from agentic_harness.reload.self_improve import (
+from general_ludd.reload.self_improve import (
     ApplyResult,
     SelfImprovementWorkflow,
 )
@@ -102,7 +102,7 @@ class TestSelfImprovementCreateTodo:
 
 
 class TestSelfImprovementValidatePasses:
-    @patch("agentic_harness.validation.runner.subprocess.run")
+    @patch("general_ludd.validation.runner.subprocess.run")
     def test_self_improvement_validate_passes(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(returncode=0, stdout="3 passed", stderr="")
         wf = SelfImprovementWorkflow()
@@ -112,7 +112,7 @@ class TestSelfImprovementValidatePasses:
 
 
 class TestSelfImprovementValidateFails:
-    @patch("agentic_harness.validation.runner.subprocess.run")
+    @patch("general_ludd.validation.runner.subprocess.run")
     def test_self_improvement_validate_fails(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             returncode=1,
@@ -128,7 +128,7 @@ class TestSelfImprovementValidateFails:
 class TestSelfImprovementApplyAndReload:
     def test_self_improvement_apply_and_reload(self) -> None:
         wf = SelfImprovementWorkflow()
-        from agentic_harness.validation.runner import ValidationResult
+        from general_ludd.validation.runner import ValidationResult
 
         vresult = ValidationResult(
             success=True, passed_count=5, failed_count=0, output="5 passed"
@@ -146,7 +146,7 @@ class TestSelfImprovementApplyAndReload:
 class TestSelfImprovementNoReloadWhenNotNeeded:
     def test_self_improvement_no_reload_when_not_needed(self) -> None:
         wf = SelfImprovementWorkflow()
-        from agentic_harness.validation.runner import ValidationResult
+        from general_ludd.validation.runner import ValidationResult
 
         vresult = ValidationResult(
             success=False, passed_count=0, failed_count=1, output="1 failed"

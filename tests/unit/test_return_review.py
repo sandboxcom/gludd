@@ -5,13 +5,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentic_harness.db.repository import TodoRepository
-from agentic_harness.models.gateway import ModelGateway
-from agentic_harness.prompts.registry import PromptRegistry
-from agentic_harness.review.decision_applier import apply_decision
-from agentic_harness.review.reviewer import ReturnReviewer
-from agentic_harness.schemas.task_decision import TaskDecision
-from agentic_harness.schemas.task_return import TaskReturn
+from general_ludd.db.repository import TodoRepository
+from general_ludd.models.gateway import ModelGateway
+from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.review.decision_applier import apply_decision
+from general_ludd.review.reviewer import ReturnReviewer
+from general_ludd.schemas.task_decision import TaskDecision
+from general_ludd.schemas.task_return import TaskReturn
 
 
 def _make_task_return(**overrides: object) -> TaskReturn:

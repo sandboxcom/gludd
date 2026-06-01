@@ -6,15 +6,15 @@ import os
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from agentic_harness.validation.gap_analyzer import GapAnalyzer, GapReport
-from agentic_harness.validation.log_auditor import AuditReport, LogAuditor
-from agentic_harness.validation.runner import ValidationResult, ValidationRunner
+from general_ludd.validation.gap_analyzer import GapAnalyzer, GapReport
+from general_ludd.validation.log_auditor import AuditReport, LogAuditor
+from general_ludd.validation.runner import ValidationResult, ValidationRunner
 
 PLAYBOOK_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "playbooks")
 
 
 class TestValidationRunnerSuccess:
-    @patch("agentic_harness.validation.runner.subprocess.run")
+    @patch("general_ludd.validation.runner.subprocess.run")
     def test_validation_runner_success(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -34,7 +34,7 @@ class TestValidationRunnerSuccess:
 
 
 class TestValidationRunnerFailureCreatesChildTodos:
-    @patch("agentic_harness.validation.runner.subprocess.run")
+    @patch("general_ludd.validation.runner.subprocess.run")
     def test_validation_runner_failure_creates_child_todos(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             returncode=1,
@@ -55,7 +55,7 @@ class TestValidationRunnerFailureCreatesChildTodos:
 
 
 class TestValidationRunnerMissingTestsCreatesTodo:
-    @patch("agentic_harness.validation.runner.subprocess.run")
+    @patch("general_ludd.validation.runner.subprocess.run")
     def test_validation_runner_missing_tests_creates_todo(self, mock_run: MagicMock) -> None:
         mock_run.return_value = MagicMock(
             returncode=0,

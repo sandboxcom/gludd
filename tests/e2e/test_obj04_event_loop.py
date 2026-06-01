@@ -10,7 +10,7 @@ import asyncio
 from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
-from agentic_harness.event_loop.loop import PHASE_ORDER, EventLoop
+from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop
 
 
 class TestEventLoopE2E:
@@ -42,7 +42,7 @@ class TestEventLoopE2E:
         assert metrics["phases_completed"] == len(PHASE_ORDER)
 
     async def test_dispatches_return_review_for_unreviewed_return(self):
-        from agentic_harness.schemas.task_return import TaskReturn
+        from general_ludd.schemas.task_return import TaskReturn
 
         mock_return = TaskReturn(
             return_id="RET-E2E",
@@ -68,8 +68,8 @@ class TestEventLoopE2E:
     async def test_reclaims_expired_lease(self):
         from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
-        from agentic_harness.db.models import Base, BucketLeaseModel
-        from agentic_harness.event_loop.lease import reclaim_expired_leases
+        from general_ludd.db.models import Base, BucketLeaseModel
+        from general_ludd.event_loop.lease import reclaim_expired_leases
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
         async with engine.begin() as conn:

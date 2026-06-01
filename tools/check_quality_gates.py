@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from agentic_harness.quality.tools import check_quality_gates
+from general_ludd.quality.tools import check_quality_gates
 
 
 def main() -> None:

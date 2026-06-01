@@ -5,9 +5,9 @@ import os
 import pytest
 import yaml
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.models.provider_registry import ProviderRegistry
-from agentic_harness.models.router import ModelRouter
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.models.router import ModelRouter
 
 
 class TestModelGatewayE2E:

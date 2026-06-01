@@ -1,4 +1,4 @@
-# Hottentot Agent
+# General Ludd Agent
 
 The black swan agentic coding system — autonomous, Ansible-driven, multi-model AI agents.
 
@@ -9,7 +9,7 @@ The black swan agentic coding system — autonomous, Ansible-driven, multi-model
 ```bash
 uv sync --locked
 uv run pytest -v
-uv run hottentot version
+uv run gludd version
 ```
 
 ### Native pip mode
@@ -24,18 +24,18 @@ pytest -v
 ### Daemon (server + event loop)
 
 ```bash
-uv run hottentot daemon --port 8000 --log-level info
+uv run gludd daemon --port 8000 --log-level info
 ```
 
 ### Client commands
 
 ```bash
-uv run hottentot add "Fix the login bug" --queue core
-uv run hottentot list --status queued
-uv run hottentot status
-uv run hottentot log-level debug
-uv run hottentot health
-uv run hottentot version
+uv run gludd add "Fix the login bug" --queue core
+uv run gludd list --status queued
+uv run gludd status
+uv run gludd log-level debug
+uv run gludd health
+uv run gludd version
 ```
 
 ## Runtime Modes
@@ -47,7 +47,7 @@ uv run hottentot version
 ## Project Structure
 
 ```
-src/agentic_harness/     - Main package (internal namespace)
+src/general_ludd/       - Main package (internal namespace)
   schemas/               - Pydantic models
   worker/                - FastAPI worker app
   event_loop/            - Event loop

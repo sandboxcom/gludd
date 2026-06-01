@@ -4,11 +4,11 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.models.router import ModelRouter
-from agentic_harness.prompts.registry import PromptRegistry
-from agentic_harness.review.reviewer import ReturnReviewer
-from agentic_harness.schemas.task_return import TaskReturn
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.router import ModelRouter
+from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.review.reviewer import ReturnReviewer
+from general_ludd.schemas.task_return import TaskReturn
 
 
 def _make_task_return(**overrides):
@@ -28,7 +28,7 @@ def _make_task_return(**overrides):
 
 class TestCallModelByRole:
     def _make_gateway(self, router=None):
-        from agentic_harness.models.provider_registry import ProviderRegistry
+        from general_ludd.models.provider_registry import ProviderRegistry
 
         reg = ProviderRegistry()
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
@@ -112,7 +112,7 @@ class TestCallModelByRole:
 
 class TestCallModelByPattern:
     def _make_gateway(self, router=None):
-        from agentic_harness.models.provider_registry import ProviderRegistry
+        from general_ludd.models.provider_registry import ProviderRegistry
 
         reg = ProviderRegistry()
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
@@ -257,7 +257,7 @@ class TestReviewerUsesRouter:
         )
 
         task_return = _make_task_return()
-        from agentic_harness.schemas.task_decision import TaskDecision
+        from general_ludd.schemas.task_decision import TaskDecision
 
         expected = TaskDecision(
             return_id="RET-001",

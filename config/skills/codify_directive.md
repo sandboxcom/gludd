@@ -1,6 +1,6 @@
 ---
 name: codify_directive
-description: Port an opencode/AGENTS.md behavioral directive into the hottentot agent's codified AgentBehavior system
+description: Port an opencode/AGENTS.md behavioral directive into the General Ludd agent's codified AgentBehavior system
 model_profile: null
 tools: [read, write, edit, glob, grep, bash]
 trigger_patterns: ["codify directive", "port directive", "add behavior rule", "codify behavior"]
@@ -12,17 +12,17 @@ tags: [meta, guardrail, behavior, skill]
 ## Purpose
 
 When you identify a behavioral directive in opencode's configuration (AGENTS.md,
-opencode.json, .opencode/plugin/*.ts) that should be ported to the hottentot
+opencode.json, .opencode/plugin/*.ts) that should be ported to the General Ludd
 agent's own AgentBehavior system, follow this exact workflow.
 
 ## The Pattern: Three-Layer Directive Porting
 
-Every opencode behavioral directive maps to a hottentot agent codified directive
+Every opencode behavioral directive maps to a General Ludd agent codified directive
 through a three-layer porting process:
 
 ### Layer 1: AgentBehavior Model Field
 
-1. Open `src/agentic_harness/agents/behavior.py`
+1. Open `src/general_ludd/agents/behavior.py`
 2. Add a new field to `AgentBehavior` with appropriate type and default:
    ```python
    new_directive: bool = True  # or str, list[str], int, etc.

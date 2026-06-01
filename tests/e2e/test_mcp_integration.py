@@ -8,10 +8,10 @@ import tempfile
 import pytest
 import yaml
 
-from agentic_harness.mcp.client import MCPClient
-from agentic_harness.mcp.config import MCPServerConfig
-from agentic_harness.mcp.loader import load_mcp_config
-from agentic_harness.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.mcp.client import MCPClient
+from general_ludd.mcp.config import MCPServerConfig
+from general_ludd.mcp.loader import load_mcp_config
+from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
 
 
 def _repo_root() -> str:
@@ -147,7 +147,7 @@ class TestMCPClientFacade:
 
         async def _run():
             with patch(
-                "agentic_harness.mcp.client.MCPStdioClient", FakeTransport
+                "general_ludd.mcp.client.MCPStdioClient", FakeTransport
             ):
                 await client.start_all()
 

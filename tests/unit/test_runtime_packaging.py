@@ -8,13 +8,13 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.runtime.profile import DataSourceMount, RuntimeProfile
+from general_ludd.runtime.profile import DataSourceMount, RuntimeProfile
 
 
 class TestRuntimeValidatorNativeUv:
-    @patch("agentic_harness.runtime.validator.subprocess.run")
+    @patch("general_ludd.runtime.validator.subprocess.run")
     def test_runtime_validator_validates_native_uv(self, mock_run: MagicMock):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         mock_run.return_value = MagicMock(returncode=0, stdout="Resolved")
         profile = RuntimeProfile(
@@ -27,9 +27,9 @@ class TestRuntimeValidatorNativeUv:
         assert result.valid is True
         assert len(result.errors) == 0
 
-    @patch("agentic_harness.runtime.validator.subprocess.run")
+    @patch("general_ludd.runtime.validator.subprocess.run")
     def test_runtime_validator_uv_fails_on_bad_sync(self, mock_run: MagicMock):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         mock_run.return_value = MagicMock(returncode=1, stderr="sync failed")
         profile = RuntimeProfile(
@@ -44,9 +44,9 @@ class TestRuntimeValidatorNativeUv:
 
 
 class TestRuntimeValidatorNativePip:
-    @patch("agentic_harness.runtime.validator.subprocess.run")
+    @patch("general_ludd.runtime.validator.subprocess.run")
     def test_runtime_validator_validates_native_pip(self, mock_run: MagicMock):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         mock_run.return_value = MagicMock(returncode=0, stdout="Successfully installed")
         profile = RuntimeProfile(
@@ -58,9 +58,9 @@ class TestRuntimeValidatorNativePip:
         result = validator.validate_native_pip(profile)
         assert result.valid is True
 
-    @patch("agentic_harness.runtime.validator.subprocess.run")
+    @patch("general_ludd.runtime.validator.subprocess.run")
     def test_runtime_validator_pip_fails(self, mock_run: MagicMock):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         mock_run.return_value = MagicMock(returncode=1, stderr="pip install failed")
         profile = RuntimeProfile(
@@ -75,12 +75,12 @@ class TestRuntimeValidatorNativePip:
 
 class TestRuntimeValidatorContainer:
     def test_runtime_validator_validates_container_mounts(self):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         profile = RuntimeProfile(
             runtime_profile_id="container-test",
             mode="container",
-            config_path="hottentot-agent:latest",
+            config_path="gl-agent:latest",
             mounts=[
                 DataSourceMount(
                     mount_id="config",
@@ -103,7 +103,7 @@ class TestRuntimeValidatorContainer:
         assert result.valid is True
 
     def test_runtime_validator_rejects_missing_required_mount(self):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         profile = RuntimeProfile(
             runtime_profile_id="container-bad",
@@ -124,7 +124,7 @@ class TestRuntimeValidatorContainer:
         assert any("host_path" in e for e in result.errors)
 
     def test_runtime_validator_rejects_invalid_image_ref(self):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         profile = RuntimeProfile(
             runtime_profile_id="container-img",
@@ -138,7 +138,7 @@ class TestRuntimeValidatorContainer:
 
 class TestDataSourceMountAudit:
     def test_data_source_mount_audit_detects_untracked(self):
-        from agentic_harness.runtime.validator import RuntimeValidator
+        from general_ludd.runtime.validator import RuntimeValidator
 
         mounts = [
             DataSourceMount(
@@ -166,18 +166,18 @@ class TestDataSourceMountAudit:
 
 
 class TestPipBundleBuilder:
-    @patch("agentic_harness.runtime.pip_bundle.subprocess.run")
-    @patch("agentic_harness.runtime.pip_bundle.os.listdir")
+    @patch("general_ludd.runtime.pip_bundle.subprocess.run")
+    @patch("general_ludd.runtime.pip_bundle.os.listdir")
     def test_pip_bundle_builder_creates_manifest(self, mock_listdir: MagicMock, mock_run: MagicMock):
-        from agentic_harness.runtime.pip_bundle import PipBundleBuilder
+        from general_ludd.runtime.pip_bundle import PipBundleBuilder
 
         mock_run.side_effect = [
             MagicMock(returncode=0),
             MagicMock(returncode=0, stdout="abc123def456"),
         ]
         mock_listdir.return_value = [
-            "hottentot_agent-0.1.0-py3-none-any.whl",
-            "hottentot_agent-0.1.0.tar.gz",
+            "general_ludd_agent-0.1.0-py3-none-any.whl",
+            "general_ludd_agent-0.1.0.tar.gz",
             "requirements.txt",
         ]
         builder = PipBundleBuilder()
@@ -187,7 +187,7 @@ class TestPipBundleBuilder:
         assert result.checksum_path.endswith("CHECKSUMS.sha256")
 
     def test_pip_bundle_manifest_schema(self):
-        from agentic_harness.runtime.pip_bundle import BundleManifest
+        from general_ludd.runtime.pip_bundle import BundleManifest
 
         manifest = BundleManifest(
             version="0.1.0",
@@ -202,9 +202,9 @@ class TestPipBundleBuilder:
 
 
 class TestContainerBuilder:
-    @patch("agentic_harness.runtime.container.subprocess.run")
+    @patch("general_ludd.runtime.container.subprocess.run")
     def test_container_builder_build_result(self, mock_run: MagicMock):
-        from agentic_harness.runtime.container import ContainerBuilder
+        from general_ludd.runtime.container import ContainerBuilder
 
         mock_run.return_value = MagicMock(
             returncode=0,
@@ -213,23 +213,23 @@ class TestContainerBuilder:
         builder = ContainerBuilder()
         result = builder.build_image(
             context_dir="/tmp/context",
-            image_ref="hottentot-agent:latest",
+            image_ref="gl-agent:latest",
             runtime="podman",
         )
         assert result.success is True
-        assert result.image_ref == "hottentot-agent:latest"
+        assert result.image_ref == "gl-agent:latest"
         assert result.image_digest != ""
 
-    @patch("agentic_harness.runtime.container.subprocess.run")
+    @patch("general_ludd.runtime.container.subprocess.run")
     def test_container_builder_validate_image(self, mock_run: MagicMock):
-        from agentic_harness.runtime.container import ContainerBuilder
+        from general_ludd.runtime.container import ContainerBuilder
 
         mock_run.return_value = MagicMock(
             returncode=0,
-            stdout='{"Config":{"Entrypoint":["/usr/bin/hottentot-worker"]},"Size":123456789}',
+            stdout='{"Config":{"Entrypoint":["/usr/bin/gludd-worker"]},"Size":123456789}',
         )
         builder = ContainerBuilder()
-        result = builder.validate_image("hottentot-agent:latest")
+        result = builder.validate_image("gl-agent:latest")
         assert isinstance(result.valid, bool)
         assert isinstance(result.has_baked_state, bool)
         assert isinstance(result.entrypoint_correct, bool)
@@ -249,7 +249,7 @@ class TestContainerfile:
 
 class TestReleaseArtifactValidator:
     def test_release_artifact_validator_checks_bundle(self, tmp_path: Path):
-        from agentic_harness.runtime.release import ReleaseArtifactValidator
+        from general_ludd.runtime.release import ReleaseArtifactValidator
 
         manifest_data = '{"version": "0.1.0", "files": [], "checksums": {}}'
         manifest_file = tmp_path / "MANIFEST.json"
@@ -264,7 +264,7 @@ class TestReleaseArtifactValidator:
         assert isinstance(result.pip_bundle_valid, bool)
 
     def test_release_artifact_validator_checks_container(self, tmp_path: Path):
-        from agentic_harness.runtime.release import ReleaseArtifactValidator
+        from general_ludd.runtime.release import ReleaseArtifactValidator
 
         validator = ReleaseArtifactValidator()
         result = validator.validate_release(version="0.1.0", artifacts_dir=str(tmp_path))

@@ -7,9 +7,9 @@ import tempfile
 
 import pytest
 
-from agentic_harness.mcp.config import MCPServerConfig
-from agentic_harness.mcp.loader import load_mcp_config
-from agentic_harness.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.mcp.config import MCPServerConfig
+from general_ludd.mcp.loader import load_mcp_config
+from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
 
 
 class TestMCPServerConfig:

@@ -4,8 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock, patch
 
-from agentic_harness.secrets.config import OpenBaoConfig
-from agentic_harness.secrets.manager import (
+from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.manager import (
     AppRoleCreds,
     BootstrapResult,
     ImageUpdateCandidate,
@@ -75,7 +75,7 @@ class TestOpenBaoSecretsManager:
 
     def test_openbao_connect_external(self):
         mock_client = MagicMock()
-        with patch("agentic_harness.secrets.manager.hvac") as mock_hvac:
+        with patch("general_ludd.secrets.manager.hvac") as mock_hvac:
             mock_hvac.Client.return_value = mock_client
             mgr = self._make_manager(
                 mode="external",

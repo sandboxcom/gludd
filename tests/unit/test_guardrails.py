@@ -312,7 +312,7 @@ class TestSkeletonScript:
             capture_output=True, text=True, cwd=str(tmp_path),
             timeout=30,
         )
-        src_dir = tmp_path / "src" / "agentic_harness"
+        src_dir = tmp_path / "src" / "general_ludd"
         if src_dir.exists():
             inits = list(src_dir.rglob("__init__.py"))
             assert len(inits) > 0, "skeleton should create __init__.py files"
@@ -331,7 +331,7 @@ class TestEvidencePolicyGuardrail:
         assert "source" in content.lower() or "cite" in content.lower()
 
     def test_evidence_checker_exists(self):
-        from agentic_harness.review.evidence_checker import EvidenceChecker
+        from general_ludd.review.evidence_checker import EvidenceChecker
         checker = EvidenceChecker()
         assert hasattr(checker, "check_claim")
         assert hasattr(checker, "audit_response")

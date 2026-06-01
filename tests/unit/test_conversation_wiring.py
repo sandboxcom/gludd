@@ -2,12 +2,12 @@
 
 from unittest.mock import MagicMock, patch
 
-from agentic_harness.models.gateway import ModelGateway
-from agentic_harness.prompts.registry import PromptRegistry
-from agentic_harness.review.conversation import Conversation
-from agentic_harness.review.reviewer import ReturnReviewer
-from agentic_harness.schemas.task_decision import TaskDecision
-from agentic_harness.schemas.task_return import TaskReturn
+from general_ludd.models.gateway import ModelGateway
+from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.review.conversation import Conversation
+from general_ludd.review.reviewer import ReturnReviewer
+from general_ludd.schemas.task_decision import TaskDecision
+from general_ludd.schemas.task_return import TaskReturn
 
 
 def _make_task_return(**overrides: object) -> TaskReturn:

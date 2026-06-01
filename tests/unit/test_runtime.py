@@ -1,6 +1,6 @@
 """Unit tests for runtime profiles."""
 
-from agentic_harness.runtime.profile import (
+from general_ludd.runtime.profile import (
     DataSourceMount,
     RuntimeProfile,
     RuntimeValidator,

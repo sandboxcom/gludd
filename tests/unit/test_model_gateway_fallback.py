@@ -4,9 +4,9 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.models.provider_registry import ProviderRegistry
-from agentic_harness.secrets.manager import SecretAlias, SecretsManager
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.secrets.manager import SecretAlias, SecretsManager
 
 
 def _make_profile(

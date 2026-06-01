@@ -6,10 +6,10 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentic_harness.mcp.client import MCPClient
-from agentic_harness.mcp.config import MCPServerConfig
-from agentic_harness.mcp.registry import MCPTool, MCPToolRegistry
-from agentic_harness.mcp.transport import MCPStdioClient, MCPTransportError
+from general_ludd.mcp.client import MCPClient
+from general_ludd.mcp.config import MCPServerConfig
+from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.mcp.transport import MCPStdioClient, MCPTransportError
 
 
 def _make_config(**overrides: object) -> MCPServerConfig:
@@ -168,7 +168,7 @@ class TestMCPClientFacade:
             return_value=[MCPTool(name="read_file", description="Read file")]
         )
 
-        with patch("agentic_harness.mcp.client.MCPStdioClient", return_value=mock_transport):
+        with patch("general_ludd.mcp.client.MCPStdioClient", return_value=mock_transport):
             client = MCPClient(configs, registry)
             await client.start_all()
             tools = await client.list_tools("srv")
@@ -188,7 +188,7 @@ class TestMCPClientFacade:
             return_value={"content": [{"type": "text", "text": "ok"}]}
         )
 
-        with patch("agentic_harness.mcp.client.MCPStdioClient", return_value=mock_transport):
+        with patch("general_ludd.mcp.client.MCPStdioClient", return_value=mock_transport):
             client = MCPClient(configs, registry)
             await client.start_all()
             result = await client.call_tool("srv", "read_file", {"path": "/tmp/f"})
@@ -205,7 +205,7 @@ class TestMCPClientFacade:
         mock_transport.stop = AsyncMock()
         mock_transport.list_tools = AsyncMock(return_value=[])
 
-        with patch("agentic_harness.mcp.client.MCPStdioClient", return_value=mock_transport):
+        with patch("general_ludd.mcp.client.MCPStdioClient", return_value=mock_transport):
             client = MCPClient(configs, registry)
             await client.start_all()
             assert mock_transport.start.call_count == 2

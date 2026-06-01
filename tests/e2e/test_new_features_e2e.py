@@ -9,15 +9,15 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 import yaml
 
-from agentic_harness.ansible.core_runner import CoreAnsibleRunner
-from agentic_harness.ansible.isolation import ProcessIsolationConfig
-from agentic_harness.ansible.runner import AnsibleRunnerAdapter
-from agentic_harness.ansible.templating import AnsibleTemplater
-from agentic_harness.config.binary_paths import BinaryPathResolver, BinaryPaths
-from agentic_harness.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
-from agentic_harness.infra.deployment import DeploymentManager
-from agentic_harness.secrets.config import OpenBaoConfig
-from agentic_harness.secrets.manager import SecretsManager
+from general_ludd.ansible.core_runner import CoreAnsibleRunner
+from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.ansible.templating import AnsibleTemplater
+from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
+from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType, InferenceEngine
+from general_ludd.infra.deployment import DeploymentManager
+from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.manager import SecretsManager
 
 PROJECT_ROOT = Path(__file__).resolve().parent.parent.parent
 
@@ -113,7 +113,7 @@ class TestDeploymentLifecycle:
         assert "g4dn.xlarge" in hcl
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
+    @patch("general_ludd.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
     async def test_deploy_runs_init_and_apply(self, mock_binary: MagicMock) -> None:
         dm = DeploymentManager()
 
@@ -140,7 +140,7 @@ class TestDeploymentLifecycle:
             assert "init" in first_call_args[0]
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
+    @patch("general_ludd.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
     async def test_destroy_runs_terraform_destroy(self, mock_binary: MagicMock) -> None:
         dm = DeploymentManager()
 
@@ -181,7 +181,7 @@ class TestDeploymentLifecycle:
         assert dm._parse_outputs("  ") == {}
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
+    @patch("general_ludd.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
     async def test_deploy_raises_on_nonzero_rc(self, mock_binary: MagicMock) -> None:
         dm = DeploymentManager()
 
@@ -298,7 +298,7 @@ class TestCoreAnsibleRunner:
         runner = CoreAnsibleRunner()
         mock_templar = MagicMock()
         mock_templar.template.return_value = "Hello World"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar):
             result = runner.render_template("Hello {{ name }}", variables={"name": "World"})
         assert result == "Hello World"
         mock_templar.template.assert_called_once_with("Hello {{ name }}")
@@ -307,7 +307,7 @@ class TestCoreAnsibleRunner:
         runner = CoreAnsibleRunner()
         mock_templar = MagicMock()
         mock_templar.template.return_value = "a, b, c"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar):
             result = runner.render_template("{{ items | join(', ') }}", variables={"items": ["a", "b", "c"]})
         assert result == "a, b, c"
 
@@ -315,7 +315,7 @@ class TestCoreAnsibleRunner:
         runner = CoreAnsibleRunner()
         mock_templar = MagicMock()
         mock_templar.template.return_value = "TEST"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar):
             result = runner.render_template("{{ name | upper }}", variables={"name": "test"})
         assert result == "TEST"
 
@@ -323,7 +323,7 @@ class TestCoreAnsibleRunner:
         runner = CoreAnsibleRunner()
         mock_templar = MagicMock()
         mock_templar.template.return_value = "fallback"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar):
             result = runner.render_template("{{ value | default('fallback') }}", variables={})
         assert result == "fallback"
 
@@ -331,7 +331,7 @@ class TestCoreAnsibleRunner:
         templater = AnsibleTemplater(extra_vars={"env": "prod"})
         mock_templar = MagicMock()
         mock_templar.template.return_value = "Environment: prod, Host: web01"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar):
             result = templater.render("Environment: {{ env }}, Host: {{ host }}", host="web01")
         assert result == "Environment: prod, Host: web01"
 
@@ -339,7 +339,7 @@ class TestCoreAnsibleRunner:
         templater = AnsibleTemplater(extra_vars={"x": "1"})
         mock_templar = MagicMock()
         mock_templar.template.return_value = "1-2"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar) as mock_get:
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar) as mock_get:
             result = templater.render("{{ x }}-{{ y }}", y="2")
         assert result == "1-2"
         call_kwargs = mock_get.call_args
@@ -376,7 +376,7 @@ class TestCoreAnsibleRunner:
         runner = CoreAnsibleRunner()
         mock_templar = MagicMock()
         mock_templar.template.return_value = "localhost:8080"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templar):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templar):
             result = runner.render_template(
                 "{{ config.host }}:{{ config.port }}",
                 variables={"config": {"host": "localhost", "port": 8080}},

@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_harness.planning.repo_map import CodeSymbol, RepoMap, RepoMapBuilder
+from general_ludd.planning.repo_map import CodeSymbol, RepoMap, RepoMapBuilder
 
 
 class TestCodeSymbol:

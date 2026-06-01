@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_harness.controllers.pid import (
+from general_ludd.controllers.pid import (
     BudgetController,
     ControllerInputs,
     LoadController,
@@ -51,8 +51,8 @@ class TestLoadController:
 
 class TestLoadControllerEvaluateSnapshot:
     def test_local_heavy_throttles_when_10m_load_exceeds_cpu_count(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
-        from agentic_harness.schemas.queue import Queue
+        from general_ludd.controllers.load_scrape import LoadSnapshot
+        from general_ludd.schemas.queue import Queue
 
         ctrl = LoadController(cpu_count=4, default_buckets=5)
         snap = LoadSnapshot(
@@ -67,8 +67,8 @@ class TestLoadControllerEvaluateSnapshot:
         assert any("ansible" in r for r in outputs.throttle_reasons)
 
     def test_ai_heavy_does_not_throttle_for_high_cpu(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
-        from agentic_harness.schemas.queue import Queue
+        from general_ludd.controllers.load_scrape import LoadSnapshot
+        from general_ludd.schemas.queue import Queue
 
         ctrl = LoadController(cpu_count=4, default_buckets=5)
         snap = LoadSnapshot(
@@ -82,8 +82,8 @@ class TestLoadControllerEvaluateSnapshot:
         assert outputs.desired_active_buckets_by_queue["model"] == 5
 
     def test_hybrid_queue_partial_penalty(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
-        from agentic_harness.schemas.queue import Queue
+        from general_ludd.controllers.load_scrape import LoadSnapshot
+        from general_ludd.schemas.queue import Queue
 
         ctrl = LoadController(cpu_count=4, default_buckets=5)
         snap = LoadSnapshot(
@@ -98,8 +98,8 @@ class TestLoadControllerEvaluateSnapshot:
         assert 1 <= buckets < 5
 
     def test_network_heavy_no_cpu_throttle(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
-        from agentic_harness.schemas.queue import Queue
+        from general_ludd.controllers.load_scrape import LoadSnapshot
+        from general_ludd.schemas.queue import Queue
 
         ctrl = LoadController(cpu_count=4, default_buckets=5)
         snap = LoadSnapshot(
@@ -113,8 +113,8 @@ class TestLoadControllerEvaluateSnapshot:
         assert outputs.desired_active_buckets_by_queue["dependency"] == 5
 
     def test_low_resource_continues_under_moderate_cpu(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
-        from agentic_harness.schemas.queue import Queue
+        from general_ludd.controllers.load_scrape import LoadSnapshot
+        from general_ludd.schemas.queue import Queue
 
         ctrl = LoadController(cpu_count=4, default_buckets=5)
         snap = LoadSnapshot(
@@ -175,7 +175,7 @@ class TestBudgetController:
         assert ctrl.check_api_budget(cost, 500.0) is False
 
     def test_local_model_resource_check_allowed(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
+        from general_ludd.controllers.load_scrape import LoadSnapshot
 
         ctrl = BudgetController()
         snap = LoadSnapshot(
@@ -188,7 +188,7 @@ class TestBudgetController:
         assert result["allowed"] is True
 
     def test_local_model_resource_check_blocked(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
+        from general_ludd.controllers.load_scrape import LoadSnapshot
 
         ctrl = BudgetController()
         snap = LoadSnapshot(

@@ -8,10 +8,10 @@ from unittest.mock import AsyncMock
 
 import pytest
 
-from agentic_harness.agents.dispatcher import AgentDispatcher, AgentTask, AgentTaskResult
-from agentic_harness.agents.registry import AgentRegistry, default_registry
-from agentic_harness.agents.token_window import TokenWindowManager
-from agentic_harness.agents.types import AgentConfig, AgentPermission, AgentType
+from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask, AgentTaskResult
+from general_ludd.agents.registry import AgentRegistry, default_registry
+from general_ludd.agents.token_window import TokenWindowManager
+from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
 
 
 class TestAgentTypeEnum:

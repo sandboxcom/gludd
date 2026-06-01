@@ -1,7 +1,7 @@
 from __future__ import annotations
 
-from agentic_harness.models.gateway import ModelProfile
-from agentic_harness.models.router import ModelRouter
+from general_ludd.models.gateway import ModelProfile
+from general_ludd.models.router import ModelRouter
 
 
 class TestResolveRoleWithDefault:

@@ -7,39 +7,39 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-BINARY="$SCRIPT_DIR/hottentot"
+BINARY="$SCRIPT_DIR/gludd"
 
 if [ ! -f "$BINARY" ]; then
-    echo "ERROR: hottentot binary not found at $BINARY"
+    echo "ERROR: gludd binary not found at $BINARY"
     exit 1
 fi
 
-echo "Installing hottentot daemon..."
+echo "Installing General Ludd Agent daemon..."
 
-cp "$BINARY" /usr/local/bin/hottentot
-chmod 755 /usr/local/bin/hottentot
+cp "$BINARY" /usr/local/bin/gludd
+chmod 755 /usr/local/bin/gludd
 
-mkdir -p /etc/hottentot/config
-mkdir -p /etc/hottentot/templates
-mkdir -p /var/log/hottentot
-mkdir -p /var/lib/hottentot
+mkdir -p /etc/general-ludd/config
+mkdir -p /etc/general-ludd/templates
+mkdir -p /var/log/general-ludd
+mkdir -p /var/lib/general-ludd
 
 if [ -d "$SCRIPT_DIR/config" ]; then
-    cp -r "$SCRIPT_DIR/config/"* /etc/hottentot/config/
+    cp -r "$SCRIPT_DIR/config/"* /etc/general-ludd/config/
 fi
 
 if [ -d "$SCRIPT_DIR/templates" ]; then
-    cp -r "$SCRIPT_DIR/templates/"* /etc/hottentot/templates/
+    cp -r "$SCRIPT_DIR/templates/"* /etc/general-ludd/templates/
 fi
 
-if [ -f "$SCRIPT_DIR/hottentot.service" ]; then
-    cp "$SCRIPT_DIR/hottentot.service" /etc/systemd/system/hottentot.service
+if [ -f "$SCRIPT_DIR/general-ludd.service" ]; then
+    cp "$SCRIPT_DIR/general-ludd.service" /etc/systemd/system/general-ludd.service
     systemctl daemon-reload
 fi
 
-systemctl enable hottentot
-systemctl start hottentot
+systemctl enable general-ludd
+systemctl start general-ludd
 
 echo ""
-echo "Hottentot agent installed successfully."
-echo "Check status with: systemctl status hottentot"
+echo "General Ludd Agent installed successfully."
+echo "Check status with: systemctl status general-ludd"

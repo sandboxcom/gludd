@@ -2,10 +2,10 @@
 
 import pytest
 
-from agentic_harness.schemas.job import JobSpec
-from agentic_harness.schemas.queue import INITIAL_QUEUES
-from agentic_harness.schemas.task_decision import TaskDecision
-from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
+from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.queue import INITIAL_QUEUES
+from general_ludd.schemas.task_decision import TaskDecision
+from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 
 
 class TestTaskDecision:

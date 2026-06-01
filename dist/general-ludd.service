@@ -1,0 +1,22 @@
+[Unit]
+Description=General Ludd Agent Daemon
+After=network.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+ExecStart=/usr/local/bin/gludd daemon --host 0.0.0.0 --port 8000 --log-level info
+Restart=on-failure
+RestartSec=5
+WorkingDirectory=/etc/general-ludd
+Environment=PYTHONUNBUFFERED=1
+
+# Security hardening
+NoNewPrivileges=true
+ProtectSystem=strict
+ProtectHome=true
+ReadWritePaths=/var/log/general-ludd /var/lib/general-ludd
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

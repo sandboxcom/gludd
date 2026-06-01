@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentic_harness.rules.engine import Rule, RuleAction, RuleEngine, default_rules, evaluate_rules
+from general_ludd.rules.engine import Rule, RuleAction, RuleEngine, default_rules, evaluate_rules
 
 
 class TestRuleEngine:

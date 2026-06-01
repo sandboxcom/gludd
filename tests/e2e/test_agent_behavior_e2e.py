@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_harness.agents.behavior import (
+from general_ludd.agents.behavior import (
     AgentBehavior,
     BehaviorRenderer,
     GuardrailConfig,
     default_primary_behavior,
     default_subagent_behavior,
 )
-from agentic_harness.agents.registry import default_registry
-from agentic_harness.agents.types import AgentType
-from agentic_harness.prompts.registry import PromptRegistry
+from general_ludd.agents.registry import default_registry
+from general_ludd.agents.types import AgentType
+from general_ludd.prompts.registry import PromptRegistry
 
 
 class TestBehaviorEndToEnd:

@@ -5,8 +5,8 @@ import re
 
 import pytest
 
-from agentic_harness.git_automation.repo import GitAutomation
-from agentic_harness.git_automation.types import (
+from general_ludd.git_automation.repo import GitAutomation
+from general_ludd.git_automation.types import (
     InitResult,
     MergeResult,
     PushResult,

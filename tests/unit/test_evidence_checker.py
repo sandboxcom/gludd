@@ -1,6 +1,6 @@
 """Tests for the EvidenceChecker guardrail."""
 
-from agentic_harness.review.evidence_checker import EvidenceChecker, EvidenceResult
+from general_ludd.review.evidence_checker import EvidenceChecker, EvidenceResult
 
 
 class TestEvidenceResult:

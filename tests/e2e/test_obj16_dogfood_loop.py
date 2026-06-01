@@ -10,7 +10,7 @@ import os
 from dataclasses import dataclass
 from unittest.mock import MagicMock, patch
 
-from agentic_harness.dogfood import (
+from general_ludd.dogfood import (
     BypassFinding,
     DogfoodConfig,
     DogfoodProfile,
@@ -25,7 +25,7 @@ from agentic_harness.dogfood import (
 
 class TestDogfoodRunnerImportAndInstantiation:
     def test_runner_imports_from_package(self):
-        from agentic_harness.dogfood import DogfoodRunner
+        from general_ludd.dogfood import DogfoodRunner
         assert DogfoodRunner is not None
 
     def test_runner_instantiation_with_config(self):

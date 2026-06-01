@@ -127,12 +127,12 @@ Every factual claim MUST have supporting evidence from a tool call, file read, U
 
 This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — injects evidence policy into system prompt
-- `src/agentic_harness/review/evidence_checker.py` — runtime claim auditing
+- `src/general_ludd/review/evidence_checker.py` — runtime claim auditing
 - This AGENTS.md section — proactive instruction
 
 ## Project Overview
 
-This is the agentic-harness project: an autonomous coding system with Ansible runners and multi-model AI agents.
+This is the general-ludd-agent project: an autonomous coding system with Ansible runners and multi-model AI agents.
 
 - Primary language: Python 3.11+
 - Package manager: uv (preferred), pip (fallback)
@@ -202,7 +202,7 @@ This ensures you NEVER have to ask "what did we do so far?" — read SESSION.md.
 
 This is enforced by:
 - This AGENTS.md section — proactive instruction
-- The hottentot agent's own `AgentBehavior.session_persistence` flag — agents self-enforce
+- The General Ludd agent's own `AgentBehavior.session_persistence` flag — agents self-enforce
 - The `BehaviorRenderer` includes session persistence rules in rendered system prompts
 
 ## Working Conventions

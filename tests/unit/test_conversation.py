@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from agentic_harness.review.conversation import Conversation, ConversationMessage
+from general_ludd.review.conversation import Conversation, ConversationMessage
 
 
 class TestConversationMessageCreate:

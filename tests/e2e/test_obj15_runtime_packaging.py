@@ -9,7 +9,7 @@ from __future__ import annotations
 import json
 import os
 
-from agentic_harness.runtime import (
+from general_ludd.runtime import (
     BuildResult,
     BundleManifest,
     BundleResult,
@@ -116,7 +116,7 @@ class TestReleaseValidation:
         import hashlib
 
         wheel_content = b"fake-wheel-bytes"
-        wheel_name = "agentic_harness-0.1.0-py3-none-any.whl"
+        wheel_name = "general_ludd-0.1.0-py3-none-any.whl"
         wheel_path = tmp_path / wheel_name
         wheel_path.write_bytes(wheel_content)
         checksum = f"sha256:{hashlib.sha256(wheel_content).hexdigest()}"
@@ -274,7 +274,7 @@ class TestRuntimeValidatorImport:
 
 class TestRuntimeValidatorModes:
     def test_validate_container_requires_config_path(self):
-        from agentic_harness.runtime.validator import RuntimeValidator as RV
+        from general_ludd.runtime.validator import RuntimeValidator as RV
 
         v = RV()
         profile = RuntimeProfile(
@@ -287,7 +287,7 @@ class TestRuntimeValidatorModes:
         assert any("image reference" in e for e in result.errors)
 
     def test_validate_native_uv_wrong_mode(self):
-        from agentic_harness.runtime.validator import RuntimeValidator as RV
+        from general_ludd.runtime.validator import RuntimeValidator as RV
 
         v = RV()
         profile = RuntimeProfile(
@@ -298,7 +298,7 @@ class TestRuntimeValidatorModes:
         assert result.valid is False
 
     def test_validate_native_pip_wrong_mode(self):
-        from agentic_harness.runtime.validator import RuntimeValidator as RV
+        from general_ludd.runtime.validator import RuntimeValidator as RV
 
         v = RV()
         profile = RuntimeProfile(
@@ -309,7 +309,7 @@ class TestRuntimeValidatorModes:
         assert result.valid is False
 
     def test_validate_data_source_mounts_bind_missing_source(self, tmp_path):
-        from agentic_harness.runtime.validator import RuntimeValidator as RV
+        from general_ludd.runtime.validator import RuntimeValidator as RV
 
         v = RV()
         mounts = [
@@ -327,7 +327,7 @@ class TestRuntimeValidatorModes:
         assert results[0].mount_id == "missing-src"
 
     def test_validate_data_source_mounts_named_volume_missing_name(self):
-        from agentic_harness.runtime.validator import RuntimeValidator as RV
+        from general_ludd.runtime.validator import RuntimeValidator as RV
 
         v = RV()
         mounts = [

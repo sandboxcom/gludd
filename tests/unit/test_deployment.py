@@ -7,9 +7,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentic_harness.config.binary_paths import BinaryPathResolver, BinaryPaths
-from agentic_harness.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType
-from agentic_harness.infra.deployment import DeploymentManager
+from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
+from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType
+from general_ludd.infra.deployment import DeploymentManager
 
 
 def _make_config() -> ComputeConfig:
@@ -70,10 +70,10 @@ class TestDeploymentManagerDeploy:
         next_proc = lambda *a, **kw: next(procs)  # noqa: E731
 
         with patch(
-            "agentic_harness.infra.deployment.asyncio.create_subprocess_exec",
+            "general_ludd.infra.deployment.asyncio.create_subprocess_exec",
             side_effect=next_proc,
         ) as mock_exec, \
-             patch("agentic_harness.infra.deployment.os.makedirs"), \
+             patch("general_ludd.infra.deployment.os.makedirs"), \
              patch("builtins.open", MagicMock()):
             instance = await mgr.deploy(_make_config())
 
@@ -140,7 +140,7 @@ class TestDeploymentManagerDestroy:
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test-deploy")
 
         with patch.object(resolver, "get_infra_binary", return_value="tofu"), \
-             patch("agentic_harness.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+             patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
             mock_proc = _mock_subprocess(
                 stdout="Resources: 0 destroyed.",
                 returncode=0,
@@ -159,7 +159,7 @@ class TestDeploymentManagerRunTerraform:
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test")
 
         with patch.object(resolver, "get_infra_binary", return_value="terraform"), \
-             patch("agentic_harness.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+             patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
             mock_proc = _mock_subprocess(stdout="success output", returncode=0)
             mock_exec.return_value = mock_proc
 
@@ -173,7 +173,7 @@ class TestDeploymentManagerRunTerraform:
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test")
 
         with patch.object(resolver, "get_infra_binary", return_value="terraform"), \
-             patch("agentic_harness.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
+             patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
             mock_proc = _mock_subprocess(stdout="", stderr="error!", returncode=1)
             mock_exec.return_value = mock_proc
 

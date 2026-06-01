@@ -11,32 +11,32 @@ import importlib
 
 class TestRepositorySkeleton:
     def test_package_version_importable(self):
-        from agentic_harness import __version__
+        from general_ludd import __version__
 
         assert __version__
         assert __version__ == "0.1.0"
 
     def test_all_subpackages_importable(self):
         subpackages = [
-            "agentic_harness.schemas",
-            "agentic_harness.db",
-            "agentic_harness.models",
-            "agentic_harness.worker",
-            "agentic_harness.event_loop",
-            "agentic_harness.rules",
-            "agentic_harness.controllers",
-            "agentic_harness.prompts",
-            "agentic_harness.quality",
-            "agentic_harness.secrets",
-            "agentic_harness.git_automation",
-            "agentic_harness.ansible",
-            "agentic_harness.dependency",
-            "agentic_harness.runtime",
-            "agentic_harness.validation",
-            "agentic_harness.reload",
-            "agentic_harness.review",
-            "agentic_harness.dogfood",
-            "agentic_harness.agents",
+            "general_ludd.schemas",
+            "general_ludd.db",
+            "general_ludd.models",
+            "general_ludd.worker",
+            "general_ludd.event_loop",
+            "general_ludd.rules",
+            "general_ludd.controllers",
+            "general_ludd.prompts",
+            "general_ludd.quality",
+            "general_ludd.secrets",
+            "general_ludd.git_automation",
+            "general_ludd.ansible",
+            "general_ludd.dependency",
+            "general_ludd.runtime",
+            "general_ludd.validation",
+            "general_ludd.reload",
+            "general_ludd.review",
+            "general_ludd.dogfood",
+            "general_ludd.agents",
         ]
         errors = []
         for pkg in subpackages:
@@ -47,14 +47,14 @@ class TestRepositorySkeleton:
         assert not errors, f"Failed imports: {errors}"
 
     def test_worker_app_factory_creates_fastapi_app(self):
-        from agentic_harness.worker import create_app
+        from general_ludd.worker import create_app
 
         app = create_app()
         assert app is not None
         assert app.title
 
     def test_initial_queues_defined(self):
-        from agentic_harness.schemas.queue import INITIAL_QUEUES
+        from general_ludd.schemas.queue import INITIAL_QUEUES
 
         names = {q.queue_name for q in INITIAL_QUEUES}
         expected = {

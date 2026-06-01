@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_harness.agents.behavior import (
+from general_ludd.agents.behavior import (
     AgentBehavior,
     BehaviorRenderer,
     GuardrailConfig,
@@ -223,7 +223,7 @@ class TestBehaviorRendererMarkdown:
 
 class TestDefaultBehaviors:
     def test_default_primary_behavior(self):
-        from agentic_harness.agents.behavior import default_primary_behavior
+        from general_ludd.agents.behavior import default_primary_behavior
 
         b = default_primary_behavior()
         assert b.completion_policy == "complete_all"
@@ -232,7 +232,7 @@ class TestDefaultBehaviors:
         assert b.allowed_command_patterns == ["make *"]
 
     def test_default_subagent_behavior(self):
-        from agentic_harness.agents.behavior import default_subagent_behavior
+        from general_ludd.agents.behavior import default_subagent_behavior
 
         b = default_subagent_behavior()
         assert b.completion_policy == "complete_all"

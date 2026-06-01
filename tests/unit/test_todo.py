@@ -2,7 +2,7 @@
 
 import pytest
 
-from agentic_harness.schemas.todo import (
+from general_ludd.schemas.todo import (
     ResourceProfile,
     RiskLevel,
     Todo,

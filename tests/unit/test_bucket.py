@@ -2,10 +2,10 @@
 
 from __future__ import annotations
 
-from agentic_harness.controllers.bucket import allocate_buckets
-from agentic_harness.controllers.pid import ControllerOutputs
-from agentic_harness.rules.engine import RuleAction
-from agentic_harness.schemas.queue import Queue
+from general_ludd.controllers.bucket import allocate_buckets
+from general_ludd.controllers.pid import ControllerOutputs
+from general_ludd.rules.engine import RuleAction
+from general_ludd.schemas.queue import Queue
 
 
 class TestBucketAllocation:

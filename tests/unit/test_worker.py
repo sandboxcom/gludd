@@ -10,7 +10,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-from agentic_harness.worker.app import create_app
+from general_ludd.worker.app import create_app
 
 
 @pytest.fixture
@@ -55,7 +55,7 @@ class TestWorkerApp:
             assert "Unknown playbook" in resp.json()["detail"]
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.worker.app.get_runner")
+    @patch("general_ludd.worker.app.get_runner")
     async def test_worker_execute_noop_playbook(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
         adapter = MagicMock()
@@ -89,7 +89,7 @@ class TestWorkerApp:
             assert data["job_id"] == "JOB-EXE"
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.worker.app.get_runner")
+    @patch("general_ludd.worker.app.get_runner")
     async def test_worker_writes_task_return_with_artifacts(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
         adapter = MagicMock()
@@ -121,7 +121,7 @@ class TestWorkerApp:
             assert data["artifacts"] is not None
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.worker.app.get_runner")
+    @patch("general_ludd.worker.app.get_runner")
     async def test_worker_captures_runner_events(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
         adapter = MagicMock()
@@ -155,7 +155,7 @@ class TestWorkerApp:
             assert len(data["events"]) == 2
 
     @pytest.mark.asyncio
-    @patch("agentic_harness.worker.app.get_runner")
+    @patch("general_ludd.worker.app.get_runner")
     async def test_worker_vars_files_created_correctly(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
         adapter = MagicMock()
@@ -190,7 +190,7 @@ class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_worker_redacts_secret_aliases_in_logs(self, transport, caplog):
         import logging
-        with caplog.at_level(logging.INFO, logger="agentic_harness.worker.app"):
+        with caplog.at_level(logging.INFO, logger="general_ludd.worker.app"):
             async with AsyncClient(transport=transport, base_url="http://test") as client:
                 resp = await client.post("/jobs/execute", json={
                     "job_id": "JOB-SEC",
@@ -238,7 +238,7 @@ class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_worker_gunicorn_config_exists(self):
         import importlib
-        mod = importlib.import_module("agentic_harness.worker.gunicorn_conf")
+        mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
         assert mod.worker_class == "uvicorn_worker.UvicornWorker"
         assert mod.workers == 2
         assert mod.timeout == 0

@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from agentic_harness.agents.context import ContextCompactor, ContextMessage
+from general_ludd.agents.context import ContextCompactor, ContextMessage
 
 
 def _make_messages(count: int, tokens_per_msg: int = 100, role: str = "user") -> list[ContextMessage]:

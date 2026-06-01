@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 
-from agentic_harness.quality import (
+from general_ludd.quality import (
     MoleculeCoverageChecker,
     MoleculeCoverageReport,
     QualityGateChecker,
@@ -14,7 +14,7 @@ from agentic_harness.quality import (
     check_python_coverage,
     check_quality_gates,
 )
-from agentic_harness.quality.config import (
+from general_ludd.quality.config import (
     EnforcementGate,
     MoleculeQualityGate,
     PythonQualityGate,

@@ -1,19 +1,19 @@
-# Hottentot-Agent Feature Parity Matrix
+# General Ludd Agent Feature Parity Matrix
 
-Competitive analysis of agentic coding tools, mapping features to hottentot-agent
+Competitive analysis of agentic coding tools, mapping features to general-ludd-agent
 status (EXISTS / PARTIAL / MISSING / N/A) with source references.
 
 ## Legend
 - **EXISTS**: Fully implemented and tested
 - **PARTIAL**: Skeleton or incomplete implementation
 - **MISSING**: Not implemented
-- **N/A**: UI-only feature, irrelevant to hottentot-agent's CLI/todo interface
+- **N/A**: UI-only feature, irrelevant to general-ludd-agent's CLI/todo interface
 
 ---
 
 ## 1. MCP (Model Context Protocol)
 
-| Feature | Aider | Goose | OpenCode | Codex | Cline | Zed | OpenHands | hottentot |
+| Feature | Aider | Goose | OpenCode | Codex | Cline | Zed | OpenHands | general-ludd |
 |---------|-------|-------|----------|-------|-------|-----|-----------|-----------|
 | MCP client (connect to MCP servers) | MISSING | EXISTS | EXISTS | EXISTS | EXISTS | EXISTS | EXISTS | MISSING |
 | MCP server (expose tools via MCP) | MISSING | MISSING | MISSING | PARTIAL | MISSING | MISSING | MISSING | MISSING |
@@ -30,11 +30,11 @@ status (EXISTS / PARTIAL / MISSING / N/A) with source references.
 - Goose #9332: stdio MCP subprocesses killed by `PR_SET_PDEATHSIG` on multi-threaded runtimes
 - Goose #9469: MCP proxy for governance/audit (Vaara) — tamper-evident audit logs at protocol boundary
 
-**Priority: HIGH** — MCP is the universal tool integration standard. Without it, hottentot-agent
+**Priority: HIGH** — MCP is the universal tool integration standard. Without it, general-ludd-agent
 cannot connect to external tools (databases, APIs, cloud infra). Implementation plan:
-1. `src/agentic_harness/mcp/client.py` — MCP client with stdio + HTTP transports
-2. `src/agentic_harness/mcp/registry.py` — MCP server registry from YAML config
-3. `src/agentic_harness/mcp/tool_adapter.py` — adapt MCP tools to playbook calls
+1. `src/general_ludd/mcp/client.py` — MCP client with stdio + HTTP transports
+2. `src/general_ludd/mcp/registry.py` — MCP server registry from YAML config
+3. `src/general_ludd/mcp/tool_adapter.py` — adapt MCP tools to playbook calls
 4. `config/mcp_servers/` — YAML server definitions
 5. Integrate MCP tool discovery into event loop tick
 
@@ -42,7 +42,7 @@ cannot connect to external tools (databases, APIs, cloud infra). Implementation 
 
 ## 2. Skills / Patterns / Prompt Templates
 
-| Feature | Aider | Goose | OpenCode | Fabric | hottentot |
+| Feature | Aider | Goose | OpenCode | Fabric | general-ludd |
 |---------|-------|-------|----------|--------|-----------|
 | Skill/template loading | MISSING | EXISTS | EXISTS | EXISTS | PARTIAL |
 | SKILL.md with frontmatter | N/A | N/A | EXISTS | N/A | MISSING |
@@ -53,13 +53,13 @@ cannot connect to external tools (databases, APIs, cloud infra). Implementation 
 | Prompt registry | N/A | N/A | N/A | N/A | EXISTS |
 | Community skill marketplace | N/A | PARTIAL | N/A | EXISTS | MISSING |
 
-**What exists:** `PromptRegistry` with Jinja2 rendering (`src/agentic_harness/prompts/registry.py`).
+**What exists:** `PromptRegistry` with Jinja2 rendering (`src/general_ludd/prompts/registry.py`).
 **What's missing:** No SKILL.md format, no discovery by description, no per-skill model routing,
 no community marketplace, no skill → agent binding.
 
 **Priority: MEDIUM** — The Jinja2 registry is a good foundation. Extend with:
 1. SKILL.md format with YAML frontmatter (name, description, model_profile, tools)
-2. Discovery paths: `~/.config/hottentot/skills/`, `.hottentot/skills/`
+2. Discovery paths: `~/.config/general-ludd/skills/`, `.general-ludd/skills/`
 3. Skill → agent binding in agent config
 4. Per-skill model routing via `model_profile` field
 
@@ -67,7 +67,7 @@ no community marketplace, no skill → agent binding.
 
 ## 3. Multi-Model Routing
 
-| Feature | Aider | Goose | OpenCode | Codex | hottentot |
+| Feature | Aider | Goose | OpenCode | Codex | general-ludd |
 |---------|-------|-------|----------|-------|-----------|
 | Multiple providers | EXISTS | EXISTS | EXISTS | EXISTS | EXISTS |
 | Per-agent model selection | N/A | EXISTS | EXISTS | N/A | EXISTS |
@@ -90,7 +90,7 @@ No reasoning effort parameter pass-through.
 
 ## 4. Agent Architecture
 
-| Feature | AutoGen | CrewAI | LangGraph | MetaGPT | hottentot |
+| Feature | AutoGen | CrewAI | LangGraph | MetaGPT | general-ludd |
 |---------|---------|--------|-----------|---------|-----------|
 | Agent registry | EXISTS | EXISTS | N/A | EXISTS | EXISTS |
 | Subagent dispatch | EXISTS | EXISTS | N/A | EXISTS | EXISTS |
@@ -116,7 +116,7 @@ pattern. No SOP coordination. No durable checkpointing.
 
 ## 5. Context Management
 
-| Feature | Aider | Goose | OpenCode | Plandex | hottentot |
+| Feature | Aider | Goose | OpenCode | Plandex | general-ludd |
 |---------|-------|-------|----------|---------|-----------|
 | Token window tracking | EXISTS | EXISTS | EXISTS | N/A | EXISTS |
 | Auto-compaction | N/A | EXISTS | EXISTS | N/A | STUB |
@@ -138,7 +138,7 @@ No context caching awareness.
 
 ## 6. Session Management
 
-| Feature | Goose | OpenCode | Codex | hottentot |
+| Feature | Goose | OpenCode | Codex | general-ludd |
 |---------|-------|----------|-------|-----------|
 | Session persistence | EXISTS | EXISTS | EXISTS | MISSING |
 | Session resume | EXISTS | EXISTS | EXISTS | MISSING |
@@ -147,7 +147,7 @@ No context caching awareness.
 | Session undo/redo | N/A | EXISTS | N/A | MISSING |
 | Multi-session parallel | EXISTS | EXISTS | EXISTS | MISSING |
 
-**Priority: MEDIUM** — Sessions are important for long-running work but hottentot-agent's
+**Priority: MEDIUM** — Sessions are important for long-running work but general-ludd-agent's
 todo-driven model means the "session" is effectively the todo list state in PostgreSQL.
 The main gap is agent conversation history persistence.
 
@@ -155,7 +155,7 @@ The main gap is agent conversation history persistence.
 
 ## 7. Planning
 
-| Feature | Plandex | MetaGPT | Goose | hottentot |
+| Feature | Plandex | MetaGPT | Goose | general-ludd |
 |---------|---------|---------|-------|-----------|
 | Plan-then-execute | EXISTS | EXISTS | EXISTS | MISSING |
 | Plan diffing/review | EXISTS | N/A | N/A | MISSING |
@@ -173,7 +173,7 @@ that decomposes complex todos into child todos before execution.
 
 ## 8. Memory
 
-| Feature | AutoGPT | LangGraph | Codex | hottentot |
+| Feature | AutoGPT | LangGraph | Codex | general-ludd |
 |---------|---------|-----------|-------|-----------|
 | Short-term (working) memory | EXISTS | EXISTS | EXISTS | PARTIAL |
 | Long-term (cross-session) memory | EXISTS | EXISTS | EXISTS | MISSING |
@@ -190,7 +190,7 @@ Vector search is overkill for a todo-driven agent.
 
 ## 9. Self-Improvement / Dogfood
 
-| Feature | hottentot | Industry |
+| Feature | general-ludd | Industry |
 |---------|-----------|----------|
 | Self-improvement workflow | EXISTS | UNIQUE |
 | Validation gate before apply | EXISTS | UNIQUE |
@@ -200,14 +200,14 @@ Vector search is overkill for a todo-driven agent.
 | Smoke task execution | EXISTS | UNIQUE |
 | Bypass detection | EXISTS | UNIQUE |
 
-**This is hottentot-agent's unique differentiator.** No other tool has this level of
+**This is general-ludd-agent's unique differentiator.** No other tool has this level of
 self-improvement infrastructure. Keep investing here.
 
 ---
 
 ## 10. Security / Governance
 
-| Feature | Codex | Goose | MetaGPT | hottentot |
+| Feature | Codex | Goose | MetaGPT | general-ludd |
 |---------|-------|-------|---------|-----------|
 | Tool-level permissions | EXISTS | EXISTS | N/A | EXISTS |
 | Sandbox execution | EXISTS | EXISTS | N/A | MISSING |
@@ -225,7 +225,7 @@ for a CLI tool. MCP audit proxy can be added when MCP client is built.
 
 ## 11. Observability
 
-| Feature | Codex | OpenHands | hottentot |
+| Feature | Codex | OpenHands | general-ludd |
 |---------|-------|-----------|-----------|
 | Structured logging | EXISTS | EXISTS | PARTIAL |
 | Audit events | N/A | EXISTS | EXISTS |
@@ -243,7 +243,7 @@ OTEL can be added later if needed.
 
 These features from other tools have no equivalent in any surveyed tool:
 
-| Feature | Source | Relevance to hottentot |
+| Feature | Source | Relevance to general-ludd |
 |---------|--------|----------------------|
 | Shared intermediate artifacts (shared_deps.md) | Smol Developer | HIGH — force LLM to commit to cross-file contracts before generating |
 | Function dependency graph with triggers | BabyAGI | MEDIUM — auto-discover tool dependencies |
@@ -253,9 +253,9 @@ These features from other tools have no equivalent in any surveyed tool:
 | Budget/spend/time caps on autonomous runs | AutoGPT | HIGH — prevent runaway costs |
 | AFlow automated workflow discovery | MetaGPT | LOW — research-grade, not production ready |
 | SPO self-play prompt optimization | MetaGPT | LOW — research-grade |
-| Sandbox-as-a-service (E2B) | E2B | N/A — hottentot runs locally or in containers |
+| Sandbox-as-a-service (E2B) | E2B | N/A — general-ludd runs locally or in containers |
 | Pattern library (100+ crowdsourced) | Fabric | MEDIUM — reusable prompt templates |
 | Per-pattern model routing | Fabric | MEDIUM — route different tasks to optimal models |
-| Workflow DAG builder | AutoGPT | N/A — hottentot is todo-driven, not DAG-driven |
+| Workflow DAG builder | AutoGPT | N/A — general-ludd is todo-driven, not DAG-driven |
 | Agent marketplace | AutoGPT | LOW — premature for current stage |
 | EU AI Act compliance layer | AutoGPT | LOW — not needed for dev tool |

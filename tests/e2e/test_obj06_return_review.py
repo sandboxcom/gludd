@@ -5,12 +5,12 @@ import os
 import pytest
 from pydantic import ValidationError
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.prompts.registry import PromptRegistry
-from agentic_harness.review.reviewer import ReturnReviewer
-from agentic_harness.schemas.task_decision import TaskDecision
-from agentic_harness.schemas.todo import Todo, TodoStatus
-from agentic_harness.secrets.env import EnvSecretsManager
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.review.reviewer import ReturnReviewer
+from general_ludd.schemas.task_decision import TaskDecision
+from general_ludd.schemas.todo import Todo, TodoStatus
+from general_ludd.secrets.env import EnvSecretsManager
 
 
 class TestReturnReviewPipelineE2E:
@@ -66,7 +66,7 @@ class TestReturnReviewPipelineE2E:
     def test_decision_applier_complete_marks_todo(self):
         from unittest.mock import AsyncMock, MagicMock
 
-        from agentic_harness.review.decision_applier import apply_decision
+        from general_ludd.review.decision_applier import apply_decision
 
         todo = Todo(title="Test", description="E2E", queue="core")
         todo.status = TodoStatus.REVIEWING_RETURN
@@ -90,7 +90,7 @@ class TestReturnReviewPipelineE2E:
     def test_decision_applier_needs_more_work_creates_children(self):
         from unittest.mock import AsyncMock, MagicMock
 
-        from agentic_harness.review.decision_applier import apply_decision
+        from general_ludd.review.decision_applier import apply_decision
 
         todo = Todo(title="Test", description="E2E", queue="core")
         todo.status = TodoStatus.REVIEWING_RETURN

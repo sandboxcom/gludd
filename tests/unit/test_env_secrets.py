@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import os
 
-from agentic_harness.secrets.env import EnvSecretsManager
+from general_ludd.secrets.env import EnvSecretsManager
 
 
 class TestEnvSecretsManager:

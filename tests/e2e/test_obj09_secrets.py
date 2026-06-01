@@ -6,9 +6,9 @@ from unittest.mock import MagicMock
 import pytest
 import yaml
 
-from agentic_harness.secrets.config import OpenBaoConfig
-from agentic_harness.secrets.env import EnvSecretsManager
-from agentic_harness.secrets.manager import SecretsManager
+from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.env import EnvSecretsManager
+from general_ludd.secrets.manager import SecretsManager
 
 
 class TestOpenBaoE2E:

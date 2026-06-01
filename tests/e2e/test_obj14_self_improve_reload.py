@@ -8,9 +8,9 @@ from __future__ import annotations
 
 import os
 
-from agentic_harness.reload.manager import ReloadManager, ReloadStatus, ReloadType
-from agentic_harness.reload.self_improve import ApplyResult, SelfImprovementWorkflow
-from agentic_harness.validation.runner import ValidationResult
+from general_ludd.reload.manager import ReloadManager, ReloadStatus, ReloadType
+from general_ludd.reload.self_improve import ApplyResult, SelfImprovementWorkflow
+from general_ludd.validation.runner import ValidationResult
 
 
 class TestReloadManagerImport:

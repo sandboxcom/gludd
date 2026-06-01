@@ -1,7 +1,7 @@
 """Unit tests for quality gates."""
 
-from agentic_harness.quality.gate import QualityGateChecker
-from agentic_harness.schemas.quality_gate import QualityGateConfig
+from general_ludd.quality.gate import QualityGateChecker
+from general_ludd.schemas.quality_gate import QualityGateConfig
 
 
 class TestQualityGate:

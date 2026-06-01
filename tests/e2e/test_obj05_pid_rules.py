@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-from agentic_harness.controllers.bucket import allocate_buckets
-from agentic_harness.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
-from agentic_harness.controllers.pid import BudgetController, ControllerInputs, ControllerOutputs, LoadController
-from agentic_harness.rules.engine import Rule, RuleEngine, default_rules, evaluate_rules
-from agentic_harness.schemas.queue import Queue
-from agentic_harness.schemas.todo import ResourceProfile
+from general_ludd.controllers.bucket import allocate_buckets
+from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+from general_ludd.controllers.pid import BudgetController, ControllerInputs, ControllerOutputs, LoadController
+from general_ludd.rules.engine import Rule, RuleEngine, default_rules, evaluate_rules
+from general_ludd.schemas.queue import Queue
+from general_ludd.schemas.todo import ResourceProfile
 
 
 class TestLoadControlE2E:

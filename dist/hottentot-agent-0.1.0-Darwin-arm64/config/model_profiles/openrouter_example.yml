@@ -1,0 +1,27 @@
+model_profile_id: openrouter_coder
+role_names:
+  - coder
+  - reviewer
+provider: openrouter
+provider_package: langchain-openrouter
+provider_class_hint: ChatOpenRouter
+model_name: anthropic/claude-3-sonnet
+api_base_alias: openrouter_base_url
+credential_alias: openrouter_api_key
+context_window: 200000
+max_input_tokens: 190000
+max_output_tokens: 8000
+cost_per_input_token: 0.003
+cost_per_output_token: 0.015
+api_metered: true
+run_budget_usd: 30.0
+enabled: true
+resource_profile: ai_heavy
+roles:
+  - coder
+  - reviewer
+latency_class: medium
+quality_class: high
+fallback_profiles:
+  - openai_gpt4
+probe_enabled: true

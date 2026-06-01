@@ -3,7 +3,7 @@
 import pytest
 from jinja2 import TemplateNotFound
 
-from agentic_harness.prompts.registry import PromptRegistry
+from general_ludd.prompts.registry import PromptRegistry
 
 
 class TestPromptRegistry:

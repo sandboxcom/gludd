@@ -6,9 +6,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentic_harness.config.binary_paths import BinaryPathResolver, BinaryPaths
-from agentic_harness.secrets.config import OpenBaoConfig
-from agentic_harness.secrets.manager import SecretsManager
+from general_ludd.config.binary_paths import BinaryPathResolver, BinaryPaths
+from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.manager import SecretsManager
 
 
 class TestOpenBaoConfigBackend:

@@ -4,7 +4,7 @@ import os
 
 import yaml
 
-from agentic_harness.dependency.manager import DependencyManager
+from general_ludd.dependency.manager import DependencyManager
 
 
 class TestDependencyPipelineE2E:

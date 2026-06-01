@@ -7,24 +7,24 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.cli import main
+from general_ludd.cli import main
 
 
 class TestCLIParsing:
     def test_no_args_prints_help_and_exits(self):
-        with patch("sys.argv", ["hottentot"]):
+        with patch("sys.argv", ["gludd"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code == 1
 
     def test_version_command(self, capsys):
-        with patch("sys.argv", ["hottentot", "version"]):
+        with patch("sys.argv", ["gludd", "version"]):
             main()
         captured = capsys.readouterr()
         assert "0.1.0" in captured.out
 
     def test_daemon_command_defaults(self):
-        with patch("sys.argv", ["hottentot", "daemon"]), patch("agentic_harness.cli._cmd_daemon") as mock_cmd:
+        with patch("sys.argv", ["gludd", "daemon"]), patch("general_ludd.cli._cmd_daemon") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.host == "0.0.0.0"
@@ -36,9 +36,9 @@ class TestCLIParsing:
     def test_daemon_command_custom_args(self):
         with patch(
             "sys.argv",
-            ["hottentot", "daemon", "--host", "127.0.0.1", "--port", "9000", "--log-level", "debug",
+            ["gludd", "daemon", "--host", "127.0.0.1", "--port", "9000", "--log-level", "debug",
              "--tick-interval", "2.5", "--workers", "4"],
-        ), patch("agentic_harness.cli._cmd_daemon") as mock_cmd:
+        ), patch("general_ludd.cli._cmd_daemon") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.host == "127.0.0.1"
@@ -48,7 +48,7 @@ class TestCLIParsing:
             assert args.workers == 4
 
     def test_add_command_required_title(self):
-        with patch("sys.argv", ["hottentot", "add"]):
+        with patch("sys.argv", ["gludd", "add"]):
             with pytest.raises(SystemExit) as exc_info:
                 main()
             assert exc_info.value.code != 0
@@ -56,9 +56,9 @@ class TestCLIParsing:
     def test_add_command_options(self):
         with patch(
             "sys.argv",
-            ["hottentot", "add", "Fix the login bug", "--queue", "core", "--priority", "high",
+            ["gludd", "add", "Fix the login bug", "--queue", "core", "--priority", "high",
              "--work-type", "code", "--description", "desc"],
-        ), patch("agentic_harness.cli._cmd_add") as mock_cmd:
+        ), patch("general_ludd.cli._cmd_add") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.title == "Fix the login bug"
@@ -69,22 +69,22 @@ class TestCLIParsing:
             assert args.daemon_url == "http://localhost:8000"
 
     def test_status_command_optional_id(self):
-        with patch("sys.argv", ["hottentot", "status"]), patch("agentic_harness.cli._cmd_status") as mock_cmd:
+        with patch("sys.argv", ["gludd", "status"]), patch("general_ludd.cli._cmd_status") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.todo_id is None
 
     def test_status_command_with_id(self):
-        with patch("sys.argv", ["hottentot", "status", "TODO-001"]), patch(
-            "agentic_harness.cli._cmd_status",
+        with patch("sys.argv", ["gludd", "status", "TODO-001"]), patch(
+            "general_ludd.cli._cmd_status",
         ) as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.todo_id == "TODO-001"
 
     def test_list_command_filters(self):
-        with patch("sys.argv", ["hottentot", "list", "--queue", "core", "--status", "queued"]), patch(
-            "agentic_harness.cli._cmd_list"
+        with patch("sys.argv", ["gludd", "list", "--queue", "core", "--status", "queued"]), patch(
+            "general_ludd.cli._cmd_list"
         ) as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
@@ -92,26 +92,26 @@ class TestCLIParsing:
             assert args.status == "queued"
 
     def test_log_level_command_choices(self):
-        with patch("sys.argv", ["hottentot", "log-level", "debug"]), patch(
-            "agentic_harness.cli._cmd_log_level"
+        with patch("sys.argv", ["gludd", "log-level", "debug"]), patch(
+            "general_ludd.cli._cmd_log_level"
         ) as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
             assert args.level == "debug"
 
     def test_log_level_command_rejects_invalid(self):
-        with patch("sys.argv", ["hottentot", "log-level", "verbose"]), pytest.raises(SystemExit):
+        with patch("sys.argv", ["gludd", "log-level", "verbose"]), pytest.raises(SystemExit):
             main()
 
     def test_deployments_command(self):
-        with patch("sys.argv", ["hottentot", "deployments"]), patch(
-            "agentic_harness.cli._cmd_deployments"
+        with patch("sys.argv", ["gludd", "deployments"]), patch(
+            "general_ludd.cli._cmd_deployments"
         ) as mock_cmd:
             main()
             mock_cmd.assert_called_once()
 
     def test_health_command(self):
-        with patch("sys.argv", ["hottentot", "health"]), patch("agentic_harness.cli._cmd_health") as mock_cmd:
+        with patch("sys.argv", ["gludd", "health"]), patch("general_ludd.cli._cmd_health") as mock_cmd:
             main()
             mock_cmd.assert_called_once()
 
@@ -125,7 +125,7 @@ class TestClientCommands:
         with patch("httpx.post", return_value=mock_response) as mock_post:
             import argparse
 
-            from agentic_harness.cli import _cmd_add
+            from general_ludd.cli import _cmd_add
             args = argparse.Namespace(
                 title="Fix bug", queue="core", priority="medium",
                 work_type="code", description="", daemon_url="http://localhost:9000",
@@ -146,7 +146,7 @@ class TestClientCommands:
         with patch("httpx.get", return_value=mock_response) as mock_get:
             import argparse
 
-            from agentic_harness.cli import _cmd_status
+            from general_ludd.cli import _cmd_status
             args = argparse.Namespace(todo_id="TODO-001", daemon_url="http://localhost:8000")
             _cmd_status(args)
         mock_get.assert_called_once()
@@ -160,7 +160,7 @@ class TestClientCommands:
         with patch("httpx.get", return_value=mock_response) as mock_get:
             import argparse
 
-            from agentic_harness.cli import _cmd_status
+            from general_ludd.cli import _cmd_status
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000")
             _cmd_status(args)
         mock_get.assert_called_once()
@@ -174,7 +174,7 @@ class TestClientCommands:
         with patch("httpx.get", return_value=mock_response) as mock_get:
             import argparse
 
-            from agentic_harness.cli import _cmd_list
+            from general_ludd.cli import _cmd_list
             args = argparse.Namespace(
                 queue="core", status="queued", daemon_url="http://localhost:8000",
             )
@@ -194,7 +194,7 @@ class TestClientCommands:
         with patch("httpx.post", return_value=mock_response) as mock_post:
             import argparse
 
-            from agentic_harness.cli import _cmd_log_level
+            from general_ludd.cli import _cmd_log_level
             args = argparse.Namespace(level="debug", daemon_url="http://localhost:8000")
             _cmd_log_level(args)
         mock_post.assert_called_once()
@@ -210,7 +210,7 @@ class TestClientCommands:
         with patch("httpx.get", return_value=mock_response) as mock_get:
             import argparse
 
-            from agentic_harness.cli import _cmd_deployments
+            from general_ludd.cli import _cmd_deployments
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_deployments(args)
         mock_get.assert_called_once()
@@ -224,7 +224,7 @@ class TestClientCommands:
         with patch("httpx.get", return_value=mock_response) as mock_get:
             import argparse
 
-            from agentic_harness.cli import _cmd_health
+            from general_ludd.cli import _cmd_health
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_health(args)
         mock_get.assert_called_once()
@@ -234,7 +234,7 @@ class TestClientCommands:
         with patch("httpx.get", side_effect=Exception("Connection refused")):
             import argparse
 
-            from agentic_harness.cli import _cmd_health
+            from general_ludd.cli import _cmd_health
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             with pytest.raises(SystemExit) as exc_info:
                 _cmd_health(args)
@@ -243,7 +243,7 @@ class TestClientCommands:
 
 class TestHotLoading:
     def test_cli_import_does_not_import_event_loop(self):
-        cli_mod = sys.modules["agentic_harness.cli"]
+        cli_mod = sys.modules["general_ludd.cli"]
         assert hasattr(cli_mod, "main")
         assert hasattr(cli_mod, "_cmd_daemon")
 
@@ -251,7 +251,7 @@ class TestHotLoading:
         import ast
         import inspect
 
-        import agentic_harness.cli as cli_mod
+        import general_ludd.cli as cli_mod
         source = inspect.getsource(cli_mod)
         tree = ast.parse(source)
         top_level_imports = []
@@ -262,15 +262,15 @@ class TestHotLoading:
             elif isinstance(node, ast.ImportFrom) and node.module:
                     top_level_imports.append(node.module)
         heavy_prefixes = [
-            "agentic_harness.event_loop.loop",
-            "agentic_harness.models.gateway",
-            "agentic_harness.models.router",
-            "agentic_harness.ansible",
-            "agentic_harness.db.models",
-            "agentic_harness.db.repository",
-            "agentic_harness.secrets.manager",
-            "agentic_harness.mcp",
-            "agentic_harness.daemon",
+            "general_ludd.event_loop.loop",
+            "general_ludd.models.gateway",
+            "general_ludd.models.router",
+            "general_ludd.ansible",
+            "general_ludd.db.models",
+            "general_ludd.db.repository",
+            "general_ludd.secrets.manager",
+            "general_ludd.mcp",
+            "general_ludd.daemon",
             "uvicorn",
             "gunicorn",
         ]

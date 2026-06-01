@@ -5,13 +5,13 @@ from __future__ import annotations
 import tempfile
 from unittest.mock import MagicMock, patch
 
-from agentic_harness.ansible.action_policy import (
+from general_ludd.ansible.action_policy import (
     ActionManifest,
     ActionPolicyConfig,
     validate_action,
 )
-from agentic_harness.ansible.isolation import ProcessIsolationConfig
-from agentic_harness.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
 
 class TestProcessIsolationConfigDefaults:
@@ -139,7 +139,7 @@ class TestRunnerAdapterIsolation:
             assert adapter.isolation_config is iso
             assert adapter._core_runner._process_isolation is iso
 
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_run_playbook_passes_isolation_via_core_runner(self, mock_core_cls: MagicMock) -> None:
         mock_core = MagicMock()
         mock_result = MagicMock()
@@ -169,7 +169,7 @@ class TestRunnerAdapterIsolation:
             )
         mock_core.run_playbook.assert_called_once()
 
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_run_playbook_without_isolation(self, mock_core_cls: MagicMock) -> None:
         mock_core = MagicMock()
         mock_result = MagicMock()

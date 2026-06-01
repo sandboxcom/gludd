@@ -6,11 +6,11 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from agentic_harness.controllers.budget import RunBudgetGuard
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.models.provider_registry import ProviderRegistry
-from agentic_harness.models.router import ModelRouter
-from agentic_harness.secrets.manager import SecretAlias, SecretsManager
+from general_ludd.controllers.budget import RunBudgetGuard
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.models.router import ModelRouter
+from general_ludd.secrets.manager import SecretAlias, SecretsManager
 
 CONFIG_DIR = os.path.join(
     os.path.dirname(os.path.dirname(os.path.dirname(__file__))),

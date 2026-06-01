@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 import sys
 
-from agentic_harness.quality.molecule_coverage import MoleculeCoverageChecker
+from general_ludd.quality.molecule_coverage import MoleculeCoverageChecker
 
 
 def main() -> None:

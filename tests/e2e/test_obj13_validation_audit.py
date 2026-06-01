@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from agentic_harness.validation.gap_analyzer import GapAnalyzer, GapItem, GapReport
-from agentic_harness.validation.log_auditor import AuditFinding, AuditReport, LogAuditor
-from agentic_harness.validation.runner import ValidationResult, ValidationRunner
+from general_ludd.validation.gap_analyzer import GapAnalyzer, GapItem, GapReport
+from general_ludd.validation.log_auditor import AuditFinding, AuditReport, LogAuditor
+from general_ludd.validation.runner import ValidationResult, ValidationRunner
 
 
 class TestValidationRunnerImportAndInit:

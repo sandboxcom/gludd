@@ -6,9 +6,9 @@ from datetime import UTC, datetime
 
 import pytest
 
-from agentic_harness.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType, InferenceEngine
-from agentic_harness.infra.providers import ProviderInfo, ProviderRegistry
-from agentic_harness.infra.terraform import TerraformGenerator
+from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType, InferenceEngine
+from general_ludd.infra.providers import ProviderInfo, ProviderRegistry
+from general_ludd.infra.terraform import TerraformGenerator
 
 
 class TestComputeProvider:

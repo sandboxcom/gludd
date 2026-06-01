@@ -12,8 +12,8 @@ import tempfile
 import pytest
 from fastapi.testclient import TestClient
 
-from agentic_harness.ansible.runner import AnsibleRunnerAdapter
-from agentic_harness.worker.app import create_app
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.worker.app import create_app
 
 
 @pytest.fixture()
@@ -97,7 +97,7 @@ class TestWorkerE2E:
 
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
         conf_path = os.path.join(
-            repo_root, "src", "agentic_harness", "worker", "gunicorn_conf.py"
+            repo_root, "src", "general_ludd", "worker", "gunicorn_conf.py"
         )
         assert os.path.exists(conf_path)
         with open(conf_path) as f:

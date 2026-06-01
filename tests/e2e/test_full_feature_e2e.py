@@ -8,50 +8,50 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 import yaml
 
-from agentic_harness.agents.behavior import (
+from general_ludd.agents.behavior import (
     AgentBehavior,
     BehaviorRenderer,
     GuardrailConfig,
 )
-from agentic_harness.agents.registry import AgentRegistry
-from agentic_harness.agents.tool_adapter import AgentToolAdapter
-from agentic_harness.agents.types import AgentConfig, AgentPermission, AgentType
-from agentic_harness.ansible.isolation import ProcessIsolationConfig
-from agentic_harness.ansible.runner import AnsibleRunnerAdapter
-from agentic_harness.config.loader import (
+from general_ludd.agents.registry import AgentRegistry
+from general_ludd.agents.tool_adapter import AgentToolAdapter
+from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
+from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.config.loader import (
     build_config_layer,
     load_agent_config,
     save_agent_config,
 )
-from agentic_harness.config.model_routing import (
+from general_ludd.config.model_routing import (
     ModelRoutingConfig,
     build_router_from_config,
     load_model_routing,
 )
-from agentic_harness.config.task_loader import load_task_definitions
-from agentic_harness.config.user_config import AgentConfig as UserConfigAgentConfig
-from agentic_harness.config.user_config import ConfigLayer, UserConfig
-from agentic_harness.controllers.budget import RunBudgetGuard
-from agentic_harness.event_loop.loop import EventLoop
-from agentic_harness.infra.compute import (
+from general_ludd.config.task_loader import load_task_definitions
+from general_ludd.config.user_config import AgentConfig as UserConfigAgentConfig
+from general_ludd.config.user_config import ConfigLayer, UserConfig
+from general_ludd.controllers.budget import RunBudgetGuard
+from general_ludd.event_loop.loop import EventLoop
+from general_ludd.infra.compute import (
     ComputeConfig,
     ComputeProvider,
     GPUType,
     InferenceEngine,
 )
-from agentic_harness.infra.providers import ProviderRegistry as InfraProviderRegistry
-from agentic_harness.infra.terraform import TerraformGenerator
-from agentic_harness.mcp.registry import MCPTool, MCPToolRegistry
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.models.router import ModelRouter
-from agentic_harness.planning.artifact import PlanArtifact
-from agentic_harness.planning.repo_map import RepoMap, RepoMapBuilder
-from agentic_harness.prompts.registry import PromptRegistry
-from agentic_harness.review.reviewer import ReturnReviewer
-from agentic_harness.schemas.job import JobSpec
-from agentic_harness.schemas.task_definition import TaskDefinition
-from agentic_harness.schemas.task_return import TaskReturn
-from agentic_harness.schemas.todo import (
+from general_ludd.infra.providers import ProviderRegistry as InfraProviderRegistry
+from general_ludd.infra.terraform import TerraformGenerator
+from general_ludd.mcp.registry import MCPTool, MCPToolRegistry
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.router import ModelRouter
+from general_ludd.planning.artifact import PlanArtifact
+from general_ludd.planning.repo_map import RepoMap, RepoMapBuilder
+from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.review.reviewer import ReturnReviewer
+from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.task_definition import TaskDefinition
+from general_ludd.schemas.task_return import TaskReturn
+from general_ludd.schemas.todo import (
     VALID_TRANSITIONS,
     Todo,
     TodoStatus,

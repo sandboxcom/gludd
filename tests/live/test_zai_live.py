@@ -15,9 +15,9 @@ import os
 
 import pytest
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
-from agentic_harness.models.provider_registry import ProviderRegistry
-from agentic_harness.secrets.env import EnvSecretsManager
+from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.secrets.env import EnvSecretsManager
 
 
 def _get_zai_api_key() -> str | None:
@@ -140,7 +140,7 @@ class TestZAILiveCompletions:
         gw = _build_zai_gateway()
         response = gw.call_model(
             "zai_live",
-            messages=[{"role": "user", "content": "Say exactly: HELLO hottentot"}],
+            messages=[{"role": "user", "content": "Say exactly: HELLO general-ludd"}],
             estimated_cost=0.0,
             budget_remaining=1.0,
         )

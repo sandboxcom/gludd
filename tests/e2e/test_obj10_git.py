@@ -6,7 +6,7 @@ import tempfile
 
 import pytest
 
-from agentic_harness.git_automation.repo import GitAutomation
+from general_ludd.git_automation.repo import GitAutomation
 
 
 @pytest.fixture()
@@ -84,7 +84,7 @@ class TestGitAutonomyE2E:
         _write_dummy_file(repo_dir)
         git.commit(message="base")
 
-        wt_path = os.path.join(tempfile.gettempdir(), "hottentot-e2e-wt")
+        wt_path = os.path.join(tempfile.gettempdir(), "gludd-e2e-wt")
         wt = git.create_worktree(repo_dir, "wt-e2e-branch", wt_path)
         assert wt.success
         assert os.path.isdir(wt.path)
@@ -108,7 +108,7 @@ class TestGitAutonomyE2E:
 
     def test_local_bare_mirror(self, git_env):
         git, repo_dir = git_env
-        mirror_path = os.path.join(tempfile.gettempdir(), "hottentot-e2e-mirror.git")
+        mirror_path = os.path.join(tempfile.gettempdir(), "gludd-e2e-mirror.git")
         result = git.create_local_bare_mirror(repo_dir, mirror_path)
         assert result == mirror_path
         assert os.path.isdir(mirror_path)

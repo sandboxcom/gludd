@@ -4,7 +4,7 @@ from pathlib import Path
 
 import yaml
 
-from agentic_harness.schemas.todo import (
+from general_ludd.schemas.todo import (
     ResourceProfile,
     RiskLevel,
     Todo,
@@ -15,7 +15,7 @@ from agentic_harness.schemas.todo import (
 
 class TestTaskDefinition:
     def test_create_with_defaults(self):
-        from agentic_harness.schemas.task_definition import TaskDefinition
+        from general_ludd.schemas.task_definition import TaskDefinition
 
         td = TaskDefinition(name="my_task")
         assert td.name == "my_task"
@@ -35,7 +35,7 @@ class TestTaskDefinition:
         assert td.vars == {}
 
     def test_create_with_all_fields(self):
-        from agentic_harness.schemas.task_definition import TaskDefinition
+        from general_ludd.schemas.task_definition import TaskDefinition
 
         td = TaskDefinition(
             name="full_task",
@@ -71,7 +71,7 @@ class TestTaskDefinition:
         assert td.vars == {"foo": "bar", "count": 42}
 
     def test_to_todo_conversion(self):
-        from agentic_harness.schemas.task_definition import TaskDefinition
+        from general_ludd.schemas.task_definition import TaskDefinition
 
         td = TaskDefinition(
             name="implement_auth",
@@ -109,7 +109,7 @@ class TestTaskDefinition:
         assert todo.status == TodoStatus.BACKLOG
 
     def test_to_todo_minimal(self):
-        from agentic_harness.schemas.task_definition import TaskDefinition
+        from general_ludd.schemas.task_definition import TaskDefinition
 
         td = TaskDefinition(name="simple")
         todo = td.to_todo()
@@ -125,7 +125,7 @@ class TestTaskDefinition:
 
 class TestLoadTaskDefinitions:
     def test_load_from_yaml_file(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import load_task_definitions
+        from general_ludd.config.task_loader import load_task_definitions
 
         yaml_content = {
             "tasks": [
@@ -156,7 +156,7 @@ class TestLoadTaskDefinitions:
         assert result[1].dependencies == ["implement_feature"]
 
     def test_load_empty_tasks(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import load_task_definitions
+        from general_ludd.config.task_loader import load_task_definitions
 
         f = tmp_path / "empty.yml"
         f.write_text("tasks: []\n")
@@ -165,7 +165,7 @@ class TestLoadTaskDefinitions:
         assert result == []
 
     def test_load_missing_tasks_key(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import load_task_definitions
+        from general_ludd.config.task_loader import load_task_definitions
 
         f = tmp_path / "no_tasks.yml"
         f.write_text("something_else: true\n")
@@ -174,7 +174,7 @@ class TestLoadTaskDefinitions:
         assert result == []
 
     def test_load_empty_file(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import load_task_definitions
+        from general_ludd.config.task_loader import load_task_definitions
 
         f = tmp_path / "blank.yml"
         f.write_text("")
@@ -183,7 +183,7 @@ class TestLoadTaskDefinitions:
         assert result == []
 
     def test_load_nonexistent_file(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import load_task_definitions
+        from general_ludd.config.task_loader import load_task_definitions
 
         result = load_task_definitions(tmp_path / "nonexistent.yml")
         assert result == []
@@ -191,7 +191,7 @@ class TestLoadTaskDefinitions:
 
 class TestDiscoverTaskDefinitions:
     def test_discovers_task_yml_files(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import discover_task_definitions
+        from general_ludd.config.task_loader import discover_task_definitions
 
         content = {
             "tasks": [
@@ -220,7 +220,7 @@ class TestDiscoverTaskDefinitions:
         assert len(result) == 2
 
     def test_discover_empty_dir(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import discover_task_definitions
+        from general_ludd.config.task_loader import discover_task_definitions
 
         empty_dir = tmp_path / "empty"
         empty_dir.mkdir()
@@ -229,7 +229,7 @@ class TestDiscoverTaskDefinitions:
         assert result == []
 
     def test_discover_multiple_paths(self, tmp_path: Path):
-        from agentic_harness.config.task_loader import discover_task_definitions
+        from general_ludd.config.task_loader import discover_task_definitions
 
         dir_a = tmp_path / "a"
         dir_a.mkdir()

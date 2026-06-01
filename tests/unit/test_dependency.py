@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from agentic_harness.dependency.manager import (
+from general_ludd.dependency.manager import (
     DependencyManager,
     OutdatedPackage,
     SyncResult,
@@ -81,7 +81,7 @@ class TestDependencyManagerUpdateWithUv:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
         ):
             result = await mgr.update_package("requests", ">=2.32.0")
@@ -101,7 +101,7 @@ class TestDependencyManagerUpdateWithUv:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await mgr.update_package("requests", ">=2.32.0")
@@ -120,7 +120,7 @@ class TestDependencyManagerUpdateWithPipFallback:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value=None),
+            patch("general_ludd.dependency.manager.shutil.which", return_value=None),
             patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
         ):
             result = await mgr.update_package("foo", ">=1.0.0")
@@ -139,7 +139,7 @@ class TestDependencyManagerUpdateWithPipFallback:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value=None),
+            patch("general_ludd.dependency.manager.shutil.which", return_value=None),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await mgr.update_package("foo", "==1.0.0")
@@ -155,7 +155,7 @@ class TestDependencyManagerSyncEnvironment:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await mgr.sync_environment()
@@ -172,7 +172,7 @@ class TestDependencyManagerSyncEnvironment:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value=None),
+            patch("general_ludd.dependency.manager.shutil.which", return_value=None),
             patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
         ):
             result = await mgr.sync_environment()
@@ -188,7 +188,7 @@ class TestDependencyManagerSyncEnvironment:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             result = await mgr.sync_environment()
@@ -205,7 +205,7 @@ class TestDependencyManagerCheckForUpdates:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", side_effect=[proc_json, proc_text]),
         ):
             outdated = await mgr.check_for_updates()
@@ -222,7 +222,7 @@ class TestDependencyManagerCheckForUpdates:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", return_value=proc),
         ):
             outdated = await mgr.check_for_updates()
@@ -237,7 +237,7 @@ class TestDependencyManagerGenerateRequirements:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
+            patch("general_ludd.dependency.manager.shutil.which", return_value="/usr/bin/uv"),
             patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
         ):
             await mgr.generate_requirements()
@@ -253,7 +253,7 @@ class TestDependencyManagerGenerateRequirements:
         mgr = DependencyManager()
 
         with (
-            patch("agentic_harness.dependency.manager.shutil.which", return_value=None),
+            patch("general_ludd.dependency.manager.shutil.which", return_value=None),
             patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec,
         ):
             await mgr.generate_requirements()

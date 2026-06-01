@@ -9,7 +9,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from agentic_harness.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
 
 class TestRunnerAdapterRegistry:
@@ -79,7 +79,7 @@ class TestRunnerWriteVars:
 
 
 class TestRunnerRunPlaybook:
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_run_playbook_calls_core_runner(self, mock_core_cls: MagicMock) -> None:
         mock_core = MagicMock()
         mock_result = MagicMock()
@@ -109,7 +109,7 @@ class TestRunnerRunPlaybook:
             with pytest.raises(ValueError, match="not registered"):
                 adapter.run_playbook(playbook_name="evil.yml")
 
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_run_playbook_captures_events(self, mock_core_cls: MagicMock) -> None:
         events = [
             {"event": "playbook_on_start"},

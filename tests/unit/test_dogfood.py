@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from agentic_harness.dogfood.runner import DogfoodConfig, DogfoodProfile, DogfoodRunner, SmokeTaskResult
-from agentic_harness.dogfood.sprint_parser import parse_sprint_markdown
-from agentic_harness.dogfood.validator import BypassFinding, DogfoodValidationResult, DogfoodValidator
+from general_ludd.dogfood.runner import DogfoodConfig, DogfoodProfile, DogfoodRunner, SmokeTaskResult
+from general_ludd.dogfood.sprint_parser import parse_sprint_markdown
+from general_ludd.dogfood.validator import BypassFinding, DogfoodValidationResult, DogfoodValidator
 
 PLAYBOOK_DIR = os.path.join(os.path.dirname(__file__), "..", "..", "playbooks")
 
@@ -53,7 +53,7 @@ class TestDogfoodRunnerSeedTodosFromSprint:
 
 class TestDogfoodRunnerSeedTodosFromGapAnalysis:
     def test_dogfood_runner_seed_todos_from_gap_analysis(self) -> None:
-        from agentic_harness.validation.gap_analyzer import GapItem, GapReport
+        from general_ludd.validation.gap_analyzer import GapItem, GapReport
 
         gap_report = GapReport(
             total_gaps=2,

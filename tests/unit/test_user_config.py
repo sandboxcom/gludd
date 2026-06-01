@@ -2,14 +2,14 @@ from __future__ import annotations
 
 import yaml
 
-from agentic_harness.config.loader import (
+from general_ludd.config.loader import (
     build_config_layer,
     load_agent_config,
     load_user_config,
     save_agent_config,
 )
-from agentic_harness.config.model_routing import ModelRoutingConfig
-from agentic_harness.config.user_config import AgentConfig, ConfigLayer, UserConfig
+from general_ludd.config.model_routing import ModelRoutingConfig
+from general_ludd.config.user_config import AgentConfig, ConfigLayer, UserConfig
 
 
 class TestUserConfigDefaults:
@@ -200,7 +200,7 @@ class TestUserConfigNotWritableByAgent:
         assert not callable(getattr(UserConfig, "save", None))
 
     def test_only_agent_config_has_save(self):
-        from agentic_harness.config import loader
+        from general_ludd.config import loader
 
         assert hasattr(loader, "save_agent_config")
         assert not hasattr(loader, "save_user_config")

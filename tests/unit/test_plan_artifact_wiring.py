@@ -4,10 +4,10 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agentic_harness.event_loop.loop import EventLoop
-from agentic_harness.planning.artifact import PlanArtifact
-from agentic_harness.schemas.job import JobSpec
-from agentic_harness.schemas.todo import Todo, TodoStatus
+from general_ludd.event_loop.loop import EventLoop
+from general_ludd.planning.artifact import PlanArtifact
+from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.todo import Todo, TodoStatus
 
 
 class TestPlanArtifactFieldOnTodo:

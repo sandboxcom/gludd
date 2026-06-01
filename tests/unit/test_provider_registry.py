@@ -7,7 +7,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.models.provider_registry import ProviderRegistry
+from general_ludd.models.provider_registry import ProviderRegistry
 
 
 class TestProviderRegistryRegister:

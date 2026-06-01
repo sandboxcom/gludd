@@ -13,8 +13,8 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from agentic_harness.db.models import Base
-from agentic_harness.schemas.todo import TodoStatus
+from general_ludd.db.models import Base
+from general_ludd.schemas.todo import TodoStatus
 
 
 @pytest.fixture()
@@ -32,7 +32,7 @@ async def db_session():
 
 class TestDatabaseSchemaE2E:
     async def test_create_and_query_todo_full_lifecycle(self, db_session: AsyncSession):
-        from agentic_harness.db.models import TodoModel
+        from general_ludd.db.models import TodoModel
 
         todo = TodoModel(
             title="E2E test todo",
@@ -65,7 +65,7 @@ class TestDatabaseSchemaE2E:
         assert again.status == TodoStatus.QUEUED.value
 
     async def test_audit_event_recording(self, db_session: AsyncSession):
-        from agentic_harness.db.models import AuditEventModel
+        from general_ludd.db.models import AuditEventModel
 
         event = AuditEventModel(
             event_type="todo.created",
@@ -84,7 +84,7 @@ class TestDatabaseSchemaE2E:
         assert json.loads(loaded.details)["title"] == "test"
 
     async def test_variable_namespace_and_values(self, db_session: AsyncSession):
-        from agentic_harness.db.models import VariableNamespaceModel, VariableValueModel
+        from general_ludd.db.models import VariableNamespaceModel, VariableValueModel
 
         ns = VariableNamespaceModel(
             namespace="global_shared",
@@ -113,7 +113,7 @@ class TestDatabaseSchemaE2E:
         assert vals[0].value == "INFO"
 
     async def test_task_return_and_decision(self, db_session: AsyncSession):
-        from agentic_harness.db.models import TaskDecisionModel, TaskReturnModel
+        from general_ludd.db.models import TaskDecisionModel, TaskReturnModel
 
         ret = TaskReturnModel(
             return_id="RET-001",
@@ -149,7 +149,7 @@ class TestDatabaseSchemaE2E:
     async def test_bucket_lease_creation(self, db_session: AsyncSession):
         from datetime import UTC, datetime
 
-        from agentic_harness.db.models import BucketLeaseModel
+        from general_ludd.db.models import BucketLeaseModel
 
         lease = BucketLeaseModel(
             bucket_key="core:ai_heavy",
@@ -166,7 +166,7 @@ class TestDatabaseSchemaE2E:
         assert loaded.holder_id == "worker-1"
 
     async def test_repository_optimistic_concurrency(self, db_session: AsyncSession):
-        from agentic_harness.db.repository import ConcurrencyError, TodoRepository
+        from general_ludd.db.repository import ConcurrencyError, TodoRepository
 
         repo = TodoRepository(db_session)
         todo = await repo.create({
@@ -185,7 +185,7 @@ class TestDatabaseSchemaE2E:
             await repo.update(todo_id, {"status": TodoStatus.ACTIVE.value}, expected_version=1)
 
     async def test_repository_claim_runnable(self, db_session: AsyncSession):
-        from agentic_harness.db.repository import TodoRepository
+        from general_ludd.db.repository import TodoRepository
 
         repo = TodoRepository(db_session)
         await repo.create({"title": "Task A", "description": "", "queue": "core"})
@@ -193,9 +193,9 @@ class TestDatabaseSchemaE2E:
 
         await db_session.execute(
             __import__("sqlalchemy").update(
-                __import__("agentic_harness.db.models", fromlist=["TodoModel"]).TodoModel
+                __import__("general_ludd.db.models", fromlist=["TodoModel"]).TodoModel
             ).where(
-                __import__("agentic_harness.db.models", fromlist=["TodoModel"]).TodoModel.title == "Task A"
+                __import__("general_ludd.db.models", fromlist=["TodoModel"]).TodoModel.title == "Task A"
             ).values(status=TodoStatus.QUEUED.value)
         )
         await db_session.commit()
@@ -206,8 +206,8 @@ class TestDatabaseSchemaE2E:
         assert claimed[0].status == TodoStatus.ACTIVE.value
 
     async def test_queue_model_crud(self, db_session: AsyncSession):
-        from agentic_harness.db.models import QueueModel
-        from agentic_harness.db.repository import QueueRepository
+        from general_ludd.db.models import QueueModel
+        from general_ludd.db.repository import QueueRepository
 
         q = QueueModel(
             queue_name="test_queue",
@@ -229,7 +229,7 @@ class TestDatabaseSchemaE2E:
         assert loaded in enabled
 
     async def test_todo_event_recording(self, db_session: AsyncSession):
-        from agentic_harness.db.models import TodoEventModel, TodoModel
+        from general_ludd.db.models import TodoEventModel, TodoModel
 
         todo = TodoModel(title="Event test", description="test events", queue="core", tags="[]")
         db_session.add(todo)

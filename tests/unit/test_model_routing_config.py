@@ -3,12 +3,12 @@ from __future__ import annotations
 import pytest
 import yaml
 
-from agentic_harness.config.model_routing import (
+from general_ludd.config.model_routing import (
     ModelRoutingConfig,
     build_router_from_config,
     load_model_routing,
 )
-from agentic_harness.models.router import ModelRouter
+from general_ludd.models.router import ModelRouter
 
 
 class TestModelRoutingConfigDefaults:

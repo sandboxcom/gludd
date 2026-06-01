@@ -5,7 +5,7 @@ PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(_
 
 
 class TestSystemdUnit:
-    SERVICE_PATH = os.path.join(PROJECT_ROOT, "dist", "hottentot.service")
+    SERVICE_PATH = os.path.join(PROJECT_ROOT, "dist", "general-ludd.service")
 
     def test_service_file_exists(self):
         assert os.path.isfile(self.SERVICE_PATH)
@@ -13,7 +13,7 @@ class TestSystemdUnit:
     def test_service_file_has_exec_start(self):
         with open(self.SERVICE_PATH) as f:
             content = f.read()
-        assert "ExecStart=/usr/local/bin/hottentot daemon" in content
+        assert "ExecStart=/usr/local/bin/gludd daemon" in content
 
     def test_service_file_has_restart(self):
         with open(self.SERVICE_PATH) as f:
@@ -36,10 +36,10 @@ class TestSystemdUnit:
         ]:
             assert directive in content
 
-    def test_service_file_uses_hottentot_daemon(self):
+    def test_service_file_uses_gludd_daemon(self):
         with open(self.SERVICE_PATH) as f:
             content = f.read()
-        assert "hottentot daemon --host 0.0.0.0 --port 8000" in content
+        assert "gludd daemon --host 0.0.0.0 --port 8000" in content
 
 
 class TestInstallScript:
@@ -55,21 +55,21 @@ class TestInstallScript:
     def test_install_script_copies_binary(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "/usr/local/bin/hottentot" in content
+        assert "/usr/local/bin/gludd" in content
         assert "cp" in content or "install" in content
 
     def test_install_script_installs_systemd_unit(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "hottentot.service" in content
+        assert "general-ludd.service" in content
         assert "systemd" in content or "systemctl" in content
 
     def test_install_script_creates_dirs(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "/var/log/hottentot" in content
-        assert "/var/lib/hottentot" in content
-        assert "/etc/hottentot" in content
+        assert "/var/log/general-ludd" in content
+        assert "/var/lib/general-ludd" in content
+        assert "/etc/general-ludd" in content
 
     def test_install_script_starts_service(self):
         with open(self.SCRIPT_PATH) as f:
@@ -125,7 +125,7 @@ class TestTarballStructure:
 
 
 class TestPyInstallerSpec:
-    SPEC_PATH = os.path.join(PROJECT_ROOT, "hottentot.spec")
+    SPEC_PATH = os.path.join(PROJECT_ROOT, "gludd.spec")
 
     def test_spec_file_exists(self):
         assert os.path.isfile(self.SPEC_PATH)
@@ -134,7 +134,7 @@ class TestPyInstallerSpec:
         with open(self.SPEC_PATH) as f:
             content = f.read()
         assert "cli.py" in content
-        assert "agentic_harness" in content
+        assert "general_ludd" in content
 
     def test_spec_file_includes_config(self):
         with open(self.SPEC_PATH) as f:
@@ -155,7 +155,7 @@ class TestPyInstallerSpec:
         with open(self.SPEC_PATH) as f:
             content = f.read()
         assert "hiddenimports" in content
-        assert "agentic_harness.cli" in content
+        assert "general_ludd.cli" in content
 
     def test_spec_file_excludes_dev_deps(self):
         with open(self.SPEC_PATH) as f:

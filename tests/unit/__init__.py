@@ -1,6 +1,6 @@
 """Unit tests for the agentic harness."""
 
-from agentic_harness import __version__
+from general_ludd import __version__
 
 
 def test_version_exists():

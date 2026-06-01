@@ -5,11 +5,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from agentic_harness.event_loop.lease import reclaim_expired_leases
-from agentic_harness.event_loop.loop import EventLoop
-from agentic_harness.schemas.task_decision import TaskDecision
-from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
-from agentic_harness.schemas.todo import Todo, TodoStatus
+from general_ludd.event_loop.lease import reclaim_expired_leases
+from general_ludd.event_loop.loop import EventLoop
+from general_ludd.schemas.task_decision import TaskDecision
+from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
+from general_ludd.schemas.todo import Todo, TodoStatus
 
 
 def _make_loop(**overrides):

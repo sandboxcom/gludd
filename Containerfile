@@ -14,8 +14,8 @@ RUN uv build --out-dir /build/dist
 # Stage 2: Runtime
 FROM python:3.11-slim
 
-LABEL maintainer="Hottentot Team"
-LABEL description="Hottentot agentic harness agent"
+LABEL maintainer="General Ludd Team"
+LABEL description="General Ludd Agent"
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
     git curl ca-certificates gnupg2 unzip \
@@ -29,8 +29,8 @@ RUN curl -fsSL https://github.com/opentofu/opentofu/releases/download/v1.6.1/tof
     && unzip /tmp/tofu.zip -d /usr/local/bin \
     && rm /tmp/tofu.zip
 
-RUN groupadd --system hottentot && \
-    useradd --system --gid hottentot --create-home hottentot
+RUN groupadd --system gludd && \
+    useradd --system --gid gludd --create-home gludd
 
 WORKDIR /app
 
@@ -43,11 +43,11 @@ COPY config/ config/
 COPY playbooks/ playbooks/
 COPY templates/ templates/
 
-USER hottentot
+USER gludd
 
 EXPOSE 8000
 
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8000/healthz')" || exit 1
 
-ENTRYPOINT ["hottentot", "daemon"]
+ENTRYPOINT ["gludd", "daemon"]

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from agentic_harness.ansible.ara import ARAConfig
+from general_ludd.ansible.ara import ARAConfig
 
 _PLAYBOOKS_ROOT = Path(__file__).resolve().parent.parent.parent / "playbooks"
 

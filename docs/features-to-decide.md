@@ -1,7 +1,7 @@
 # Features to Decide
 
 Features discovered in competitive research that need user decision before implementation.
-Each entry has: what it is, who has it, what it would look like in hottentot-agent,
+Each entry has: what it is, who has it, what it would look like in general-ludd-agent,
 and arguments for/against.
 
 ---
@@ -13,14 +13,14 @@ Can resume from any historical checkpoint. Time-travel debugging by rewinding st
 
 **Who has it:** LangGraph (primary), Codex (session persistence), Plandex (plan versioning).
 
-**In hottentot-agent:** Would mean snapshotting the entire event loop state
+**In general-ludd-agent:** Would mean snapshotting the entire event loop state
 (todos, leases, decisions, controller outputs) after every tick. Resume would
 restore from last snapshot. Branching would let you explore different strategies.
 
 **For:** Long-running autonomous sessions could survive worker restarts. Debugging
 failed ticks by replaying from checkpoint. Exploring alternative strategies via branches.
 
-**Against:** hottentot-agent's PostgreSQL persistence already provides durable state
+**Against:** general-ludd-agent's PostgreSQL persistence already provides durable state
 for todos and task returns. The event loop is stateless between ticks (reads fresh
 from DB). Checkpointing adds complexity with no clear win since the DB IS the checkpoint.
 
@@ -37,7 +37,7 @@ recursive composition: a build agent can invoke an explore agent as a tool call.
 
 **Who has it:** AutoGen (primary), LangGraph (subgraphs), Zed (`spawn_agent`).
 
-**In hottentot-agent:** The `AgentDispatcher` already dispatches subagents, but
+**In general-ludd-agent:** The `AgentDispatcher` already dispatches subagents, but
 they run as separate LLM calls with their own context. "Agents-as-tools" would
 mean the parent agent sees the subagent as a tool in its tool list, calls it
 with a natural language description, and gets structured output back.
@@ -46,7 +46,7 @@ with a natural language description, and gets structured output back.
 Subagent output is structured (not just appended to conversation). Matches how
 Zed/Codex/OpenCode implement subagents.
 
-**Against:** hottentot-agent's tool boundary is Ansible playbooks, not LLM function
+**Against:** general-ludd-agent's tool boundary is Ansible playbooks, not LLM function
 calls. Adding LLM-to-LLM tool calls would be a different execution model. Current
 dispatcher pattern works for the event loop's phase-based architecture.
 
@@ -63,7 +63,7 @@ parallel paths.
 
 **Who has it:** LangGraph (primary), AutoGPT (block-based DAGs), CrewAI (Flows).
 
-**In hottentot-agent:** Would replace the 10-phase tick pipeline with a configurable
+**In general-ludd-agent:** Would replace the 10-phase tick pipeline with a configurable
 graph. Each phase becomes a node. Edges define conditions (e.g., "if load > 80%,
 skip dispatch and go to evaluate_pid"). Users could define custom graphs.
 
@@ -71,7 +71,7 @@ skip dispatch and go to evaluate_pid"). Users could define custom graphs.
 their own agent workflows. Conditional edges handle edge cases. Visual DAG representation
 for complex workflows.
 
-**Against:** The fixed pipeline is simple and debuggable. hottentot-agent is a
+**Against:** The fixed pipeline is simple and debuggable. general-ludd-agent is a
 todo-driven scheduler, not a general-purpose agent framework. Graph complexity
 makes it harder to reason about behavior. No evidence from issues that other tools'
 users are building custom graphs — they use the default pipeline.
@@ -90,14 +90,14 @@ cloud VMs). Prevents agent from damaging the host system.
 **Who has it:** Codex (OS-native sandbox), E2B (cloud VMs), OpenHands (Docker),
 SWE-agent (Docker).
 
-**In hottentot-agent:** Ansible Runner already provides some isolation (runs in
+**In general-ludd-agent:** Ansible Runner already provides some isolation (runs in
 its own environment directory). Could add Docker-based playbook execution or
 use the existing `RuntimeProfile.container` mode.
 
 **For:** Safety net for autonomous execution. Prevents accidental host damage.
 Required for multi-tenant deployment.
 
-**Against:** hottentot-agent runs locally (single user). Ansible Runner already
+**Against:** general-ludd-agent runs locally (single user). Ansible Runner already
 isolates execution in private data directories. Container mode exists for
 production deployment. Adding Docker-in-Docker for sandboxing is complex.
 
@@ -115,7 +115,7 @@ relevant symbols in the LLM context window.
 **Who has it:** Aider (primary, with PageRank), Plandex (30+ languages), CodeStory
 (ported Aider's approach).
 
-**In hottentot-agent:** Would add a `RepoMap` class that indexes the project with
+**In general-ludd-agent:** Would add a `RepoMap` class that indexes the project with
 tree-sitter, builds a symbol graph, and provides the top-K most relevant symbols
 for a given query. The event loop would inject repo map context into model calls.
 
@@ -124,7 +124,7 @@ gets a compact symbol summary. Proven to work at scale (Aider handles 100K+ line
 Directly addresses the #1 pain point from all issue research: context window efficiency.
 
 **Against:** Requires tree-sitter grammars for all target languages. Adds a dependency.
- hottentot-agent's playbook-driven model means the LLM doesn't directly navigate code —
+ general-ludd-agent's playbook-driven model means the LLM doesn't directly navigate code —
 it decides what playbooks to run. Context injection is less critical when tools
 (playbooks) are the execution boundary.
 
@@ -142,7 +142,7 @@ conversations across restarts. Search past conversations.
 **Who has it:** Goose (SQLite), OpenCode (multi-backend), Codex (history.jsonl),
 AutoGPT (workspace).
 
-**In hottentot-agent:** Would add a `ConversationModel` to the DB with message
+**In general-ludd-agent:** Would add a `ConversationModel` to the DB with message
 history per todo or per agent session. The event loop would load conversation
 context when processing a todo.
 
@@ -150,7 +150,7 @@ context when processing a todo.
 invocation starts fresh — the LLM has no memory of what it tried before. Enables
 "resume where I left off" after worker restart.
 
-**Against:** hottentot-agent's playbook-driven model means the LLM is invoked for
+**Against:** general-ludd-agent's playbook-driven model means the LLM is invoked for
 return reviews and self-improvement, not continuous conversation. Conversation
 history is less valuable when the primary interface is todos, not chat.
 
@@ -168,7 +168,7 @@ Compare branches. Merge the winner.
 
 **Who has it:** Plandex (primary).
 
-**In hottentot-agent:** Would add plan versioning to the todo system. A "plan" is
+**In general-ludd-agent:** Would add plan versioning to the todo system. A "plan" is
 a set of child todos. Branching creates alternative child todo sets. Comparison
 shows diffs between plans. Merging applies the winning plan.
 
@@ -176,7 +176,7 @@ shows diffs between plans. Merging applies the winning plan.
 could evaluate competing plans and pick the best. Natural fit for the
 self-improvement workflow (plan A vs plan B).
 
-**Against:** hottentot-agent's todo state machine is already versioned (optimistic
+**Against:** general-ludd-agent's todo state machine is already versioned (optimistic
 locking). Branching child todos adds significant complexity. No other tool has
 adopted this pattern (Plandex is niche at 15K stars).
 
@@ -191,9 +191,9 @@ with a selection phase in the event loop.
 **What:** Hard limits on cost, token usage, and wall-clock time for autonomous
 agent runs. Agent stops when caps are hit. Prevents runaway costs.
 
-**Who has it:** AutoGPT (primary), hottentot-agent (PARTIAL — BudgetController exists).
+**Who has it:** AutoGPT (primary), general-ludd-agent (PARTIAL — BudgetController exists).
 
-**In hottentot-agent:** `BudgetController` already has cost checking per call.
+**In general-ludd-agent:** `BudgetController` already has cost checking per call.
 Would add: total run budget cap, wall-clock timeout, per-todo budget allocation,
 budget exhaustion as a todo status (BUDGET_EXCEEDED).
 
@@ -212,13 +212,13 @@ This is a small extension of existing `BudgetController`.
 **What:** Agents and tasks defined in YAML files separate from code. Roles,
 goals, tools, and dependencies all declarative.
 
-**Who has it:** CrewAI (primary), Goose (recipes), hottentot-agent (PARTIAL).
+**Who has it:** CrewAI (primary), Goose (recipes), general-ludd-agent (PARTIAL).
 
-**In hottentot-agent:** Agent configs already in `config/agents/default_agents.yml`.
+**In general-ludd-agent:** Agent configs already in `config/agents/default_agents.yml`.
 Would extend to: task definitions (what to do, tools, dependencies, validation),
 workflow definitions (task ordering, parallelism), and prompt templates per task.
 
-**For:** Already partially there. YAML-driven configuration is a hottentot-agent
+**For:** Already partially there. YAML-driven configuration is a general-ludd-agent
 core principle. Extending to task definitions would make the system fully configurable
 without code changes.
 
@@ -238,7 +238,7 @@ Code generation then references this artifact for coherence.
 
 **Who has it:** Smol Developer (primary).
 
-**In hottentot-agent:** Would mean: before dispatching a build job, the planning
+**In general-ludd-agent:** Would mean: before dispatching a build job, the planning
 agent generates a shared artifact describing the intended changes (files to modify,
 new functions, API contracts). Build agents reference this artifact for coherence.
 
@@ -247,7 +247,7 @@ multi-file changes. Lightweight to implement (just a markdown file in the todo's
 worktree). Proven effective in Smol Developer.
 
 **Against:** Adds a planning step before every build. May slow down simple tasks.
- hottentot-agent's playbook-driven model means changes are already scoped per playbook.
+ general-ludd-agent's playbook-driven model means changes are already scoped per playbook.
 
 **Recommendation:** IMPLEMENT for complex todos. Add an optional `plan_artifact`
 field to `TodoModel`. The plan agent generates it, build agents reference it.
@@ -262,14 +262,14 @@ functions when dependencies change. Self-building agent that registers new funct
 
 **Who has it:** BabyAGI (primary).
 
-**In hottentot-agent:** Would mean: playbook results trigger follow-up actions
+**In general-ludd-agent:** Would mean: playbook results trigger follow-up actions
 (e.g., test failure triggers gap analysis, dependency update triggers security scan).
 The event loop already does some of this via phases, but triggers would be more dynamic.
 
 **For:** Reactive automation. Events trigger appropriate responses without manual
 phase ordering. Self-building capability (agent registers new playbooks).
 
-**Against:** hottentot-agent's phase-based event loop is simpler and more predictable.
+**Against:** general-ludd-agent's phase-based event loop is simpler and more predictable.
 Trigger systems can create unexpected cascading behavior. BabyAGI is a proof-of-concept,
 not a production system.
 
@@ -286,7 +286,7 @@ routes to expensive model. Simple summarization routes to cheap model.
 
 **Who has it:** Fabric (primary).
 
-**In hottentot-agent:** Would extend `ModelRouter` with pattern-based routing.
+**In general-ludd-agent:** Would extend `ModelRouter` with pattern-based routing.
 Return review routes to strong model. Commit message generation routes to weak model.
 Gap analysis routes to cheap model.
 

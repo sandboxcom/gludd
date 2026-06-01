@@ -7,13 +7,13 @@ import pytest
 import yaml
 from pydantic import ValidationError
 
-from agentic_harness.ansible.action_policy import (
+from general_ludd.ansible.action_policy import (
     ActionManifest,
     ActionPolicyConfig,
     validate_action,
 )
-from agentic_harness.ansible.ara import ARAConfig
-from agentic_harness.ansible.manifest import generate_manifest
+from general_ludd.ansible.ara import ARAConfig
+from general_ludd.ansible.manifest import generate_manifest
 
 
 class TestActionPolicyE2E:

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from agentic_harness.controllers.budget import RunBudgetGuard
+from general_ludd.controllers.budget import RunBudgetGuard
 
 
 class TestCheckRunBudget:

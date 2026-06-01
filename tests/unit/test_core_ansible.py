@@ -9,13 +9,13 @@ from unittest.mock import MagicMock, patch
 import pytest
 import yaml
 
-from agentic_harness.ansible.isolation import ProcessIsolationConfig
-from agentic_harness.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
 
 
 class TestAnsibleOptions:
     def test_default_options(self):
-        from agentic_harness.ansible.core_runner import AnsibleOptions
+        from general_ludd.ansible.core_runner import AnsibleOptions
 
         opts = AnsibleOptions()
         assert opts.inventory == ["localhost,"]
@@ -30,7 +30,7 @@ class TestAnsibleOptions:
         assert opts.skip_tags == []
 
     def test_custom_options(self):
-        from agentic_harness.ansible.core_runner import AnsibleOptions
+        from general_ludd.ansible.core_runner import AnsibleOptions
 
         opts = AnsibleOptions(
             inventory=["web1", "web2"],
@@ -62,7 +62,7 @@ class TestAnsibleOptions:
 
 class TestAnsibleResult:
     def test_default_result(self):
-        from agentic_harness.ansible.core_runner import AnsibleResult
+        from general_ludd.ansible.core_runner import AnsibleResult
 
         result = AnsibleResult()
         assert result.status == "unknown"
@@ -72,7 +72,7 @@ class TestAnsibleResult:
         assert result.host_results == {}
 
     def test_successful_result(self):
-        from agentic_harness.ansible.core_runner import AnsibleResult
+        from general_ludd.ansible.core_runner import AnsibleResult
 
         result = AnsibleResult(
             status="successful",
@@ -87,26 +87,26 @@ class TestAnsibleResult:
 
 class TestCoreAnsibleRunnerInit:
     def test_default_init(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         assert runner._module_paths == []
         assert runner._callback_plugins == []
 
     def test_init_with_module_paths(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner(module_paths=["/custom/modules"])
         assert runner._module_paths == ["/custom/modules"]
 
     def test_init_with_callback_plugins(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner(callback_plugins=["/plugins/callback"])
         assert runner._callback_plugins == ["/plugins/callback"]
 
     def test_accepts_process_isolation_config(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         iso = ProcessIsolationConfig(enabled=True, executable="bwrap")
         runner = CoreAnsibleRunner(process_isolation=iso)
@@ -114,32 +114,32 @@ class TestCoreAnsibleRunnerInit:
 
 
 class TestCoreAnsibleRunnerRenderTemplate:
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_render_simple_variable(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         mock_templer = MagicMock()
         mock_templer.template.return_value = "hello world"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templer):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templer):
             result = runner.render_template("{{ msg }}", variables={"msg": "hello world"})
         assert result == "hello world"
         mock_templer.template.assert_called_once_with("{{ msg }}")
 
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_render_with_filter(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         mock_templer = MagicMock()
         mock_templer.template.return_value = "HELLO"
-        with patch("agentic_harness.ansible.core_runner._get_templar", return_value=mock_templer):
+        with patch("general_ludd.ansible.core_runner._get_templar", return_value=mock_templer):
             result = runner.render_template("{{ name | upper }}", variables={"name": "hello"})
         assert result == "HELLO"
 
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", False)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", False)
     def test_render_template_fallback_without_ansible_core(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         with pytest.raises(ImportError, match="ansible-core"):
@@ -148,7 +148,7 @@ class TestCoreAnsibleRunnerRenderTemplate:
 
 class TestCoreAnsibleRunnerListTasks:
     def test_list_tasks_from_playbook(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         playbook = [
             {
@@ -175,7 +175,7 @@ class TestCoreAnsibleRunnerListTasks:
             os.unlink(path)
 
     def test_list_tasks_empty_playbook(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
@@ -188,7 +188,7 @@ class TestCoreAnsibleRunnerListTasks:
             os.unlink(path)
 
     def test_list_tasks_multiple_plays(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         playbook = [
             {
@@ -221,7 +221,7 @@ class TestCoreAnsibleRunnerListTasks:
 
 class TestCoreAnsibleRunnerValidatePlaybookSyntax:
     def test_validate_valid_playbook(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         playbook = [
             {
@@ -243,7 +243,7 @@ class TestCoreAnsibleRunnerValidatePlaybookSyntax:
             os.unlink(path)
 
     def test_validate_invalid_yaml(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         with tempfile.NamedTemporaryFile(mode="w", suffix=".yml", delete=False) as f:
@@ -256,14 +256,14 @@ class TestCoreAnsibleRunnerValidatePlaybookSyntax:
             os.unlink(path)
 
     def test_validate_missing_file(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         errors = runner.validate_playbook_syntax("/nonexistent/path/playbook.yml")
         assert len(errors) > 0
 
     def test_validate_playbook_missing_hosts(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         playbook = [
             {
@@ -285,9 +285,9 @@ class TestCoreAnsibleRunnerValidatePlaybookSyntax:
 
 
 class TestCoreAnsibleRunnerRunPlaybook:
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_run_playbook_delegates_to_executor(self):
-        from agentic_harness.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import AnsibleResult, CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         mock_result = AnsibleResult(status="successful", rc=0)
@@ -297,9 +297,9 @@ class TestCoreAnsibleRunnerRunPlaybook:
         assert result.rc == 0
         mock_exec.assert_called_once()
 
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", False)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", False)
     def test_run_playbook_fallback_without_ansible_core(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         with pytest.raises(ImportError, match="ansible-core"):
@@ -307,9 +307,9 @@ class TestCoreAnsibleRunnerRunPlaybook:
 
 
 class TestCoreAnsibleRunnerResolveVariable:
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_resolve_variable_delegates(self):
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner()
         with patch.object(runner, "_resolve_with_variable_manager", return_value="resolved_val") as mock_resolve:
@@ -320,53 +320,53 @@ class TestCoreAnsibleRunnerResolveVariable:
 
 class TestAnsibleTemplater:
     def test_templater_init_default(self):
-        from agentic_harness.ansible.templating import AnsibleTemplater
+        from general_ludd.ansible.templating import AnsibleTemplater
 
         templater = AnsibleTemplater()
         assert templater._extra_vars == {}
 
     def test_templater_init_with_vars(self):
-        from agentic_harness.ansible.templating import AnsibleTemplater
+        from general_ludd.ansible.templating import AnsibleTemplater
 
         templater = AnsibleTemplater(extra_vars={"env": "prod"})
         assert templater._extra_vars == {"env": "prod"}
 
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_templater_render_delegates_to_core_runner(self):
-        from agentic_harness.ansible.templating import AnsibleTemplater
+        from general_ludd.ansible.templating import AnsibleTemplater
 
         mock_core = MagicMock()
         mock_core.render_template.return_value = "test"
-        with patch("agentic_harness.ansible.templating.CoreAnsibleRunner", return_value=mock_core):
+        with patch("general_ludd.ansible.templating.CoreAnsibleRunner", return_value=mock_core):
             templater = AnsibleTemplater(extra_vars={"name": "test"})
             result = templater.render("{{ name }}")
         assert result == "test"
 
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_templater_render_with_kwargs(self):
-        from agentic_harness.ansible.templating import AnsibleTemplater
+        from general_ludd.ansible.templating import AnsibleTemplater
 
         mock_core = MagicMock()
         mock_core.render_template.return_value = "hello"
-        with patch("agentic_harness.ansible.templating.CoreAnsibleRunner", return_value=mock_core):
+        with patch("general_ludd.ansible.templating.CoreAnsibleRunner", return_value=mock_core):
             templater = AnsibleTemplater()
             result = templater.render("{{ msg }}", msg="hello")
         assert result == "hello"
 
-    @patch("agentic_harness.ansible.core_runner._HAS_ANSIBLE_CORE", True)
+    @patch("general_ludd.ansible.core_runner._HAS_ANSIBLE_CORE", True)
     def test_templater_resolve_fact(self):
-        from agentic_harness.ansible.templating import AnsibleTemplater
+        from general_ludd.ansible.templating import AnsibleTemplater
 
         mock_core = MagicMock()
         mock_core.resolve_variable.return_value = "192.168.1.1"
-        with patch("agentic_harness.ansible.templating.CoreAnsibleRunner", return_value=mock_core):
+        with patch("general_ludd.ansible.templating.CoreAnsibleRunner", return_value=mock_core):
             templater = AnsibleTemplater()
             result = templater.resolve_fact("ansible_default_ipv4.address", host="web1")
         assert result == "192.168.1.1"
 
 
 class TestRunnerAdapterUsesCoreRunner:
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_adapter_delegates_run_to_core_runner(self, mock_core_cls: MagicMock):
         mock_core_instance = MagicMock()
         mock_result = MagicMock()
@@ -394,7 +394,7 @@ class TestRunnerAdapterUsesCoreRunner:
         mock_core_instance.run_playbook.assert_called_once()
         assert result["status"] == "successful"
 
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_adapter_passes_extravars_to_core_runner(self, mock_core_cls: MagicMock):
         mock_core_instance = MagicMock()
         mock_result = MagicMock()
@@ -424,7 +424,7 @@ class TestRunnerAdapterUsesCoreRunner:
         assert call_kwargs[1]["extravars"] == {"env": "staging"} or \
                (len(call_kwargs[0]) > 1 and call_kwargs[1].get("extravars") == {"env": "staging"})
 
-    @patch("agentic_harness.ansible.runner.CoreAnsibleRunner")
+    @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_adapter_handles_core_runner_failure(self, mock_core_cls: MagicMock):
         mock_core_instance = MagicMock()
         mock_core_instance.run_playbook.side_effect = RuntimeError("executor crashed")
@@ -465,7 +465,7 @@ class TestProcessIsolationWithCoreRunner:
             executable="bwrap",
             hide_paths=["/secret"],
         )
-        from agentic_harness.ansible.core_runner import CoreAnsibleRunner
+        from general_ludd.ansible.core_runner import CoreAnsibleRunner
 
         runner = CoreAnsibleRunner(process_isolation=iso)
         assert runner._process_isolation is iso

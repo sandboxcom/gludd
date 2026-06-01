@@ -4,9 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from agentic_harness.controllers.budget import RunBudgetGuard
-from agentic_harness.event_loop.loop import EventLoop
-from agentic_harness.schemas.todo import (
+from general_ludd.controllers.budget import RunBudgetGuard
+from general_ludd.event_loop.loop import EventLoop
+from general_ludd.schemas.todo import (
     Todo,
     TodoStatus,
     validate_transition,
@@ -149,7 +149,7 @@ class TestEventLoopBudgetGuard:
         guard.record_spend(1.0)
 
         loop, mocks = self._make_loop(budget_guard=guard)
-        from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
+        from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 
         tr = TaskReturn(
             return_id="RET-001",
@@ -170,7 +170,7 @@ class TestEventLoopBudgetGuard:
         guard = RunBudgetGuard(run_budget_usd=100.0)
 
         loop, mocks = self._make_loop(budget_guard=guard)
-        from agentic_harness.schemas.task_return import TaskReturn, TaskReturnStatus
+        from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 
         tr = TaskReturn(
             return_id="RET-001",
@@ -207,8 +207,8 @@ class TestEventLoopBudgetGuard:
 
 class TestModelGatewayBudgetTracking:
     def test_gateway_records_spend_via_budget_guard(self):
-        from agentic_harness.models.gateway import ModelGateway, ModelProfile
-        from agentic_harness.models.provider_registry import ProviderRegistry
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
 
         guard = RunBudgetGuard(run_budget_usd=100.0)
         reg = ProviderRegistry()
@@ -251,8 +251,8 @@ class TestModelGatewayBudgetTracking:
         assert guard.get_total_spend() == pytest.approx(expected_cost)
 
     def test_gateway_without_budget_guard_still_works(self):
-        from agentic_harness.models.gateway import ModelGateway, ModelProfile
-        from agentic_harness.models.provider_registry import ProviderRegistry
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
 
         reg = ProviderRegistry()
         reg.register_provider("openai", "langchain-openai", "ChatOpenAI")

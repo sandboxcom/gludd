@@ -1,0 +1,27 @@
+model_profile_id: openai_gpt4
+role_names:
+  - coder
+  - planner
+provider: openai
+provider_package: langchain-openai
+provider_class_hint: ChatOpenAI
+model_name: gpt-4
+credential_alias: openai_api_key
+context_window: 128000
+max_input_tokens: 120000
+max_output_tokens: 8000
+cost_per_input_token: 0.03
+cost_per_output_token: 0.06
+api_metered: true
+run_budget_usd: 50.0
+enabled: true
+resource_profile: ai_heavy
+roles:
+  - coder
+  - planner
+  - reviewer
+latency_class: fast
+quality_class: high
+fallback_profiles:
+  - openrouter_coder
+probe_enabled: true

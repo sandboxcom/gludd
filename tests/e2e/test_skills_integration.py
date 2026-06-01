@@ -5,9 +5,9 @@ from __future__ import annotations
 import os
 import tempfile
 
-from agentic_harness.skills.loader import discover_skills, parse_skill_md
-from agentic_harness.skills.registry import SkillRegistry
-from agentic_harness.skills.skill import Skill
+from general_ludd.skills.loader import discover_skills, parse_skill_md
+from general_ludd.skills.registry import SkillRegistry
+from general_ludd.skills.skill import Skill
 
 
 def _repo_root() -> str:

@@ -7,10 +7,10 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile, ModelResponse
-from agentic_harness.models.provider_registry import ProviderRegistry
-from agentic_harness.models.router import ModelRouter
-from agentic_harness.secrets.manager import SecretAlias, SecretsManager
+from general_ludd.models.gateway import ModelGateway, ModelProfile, ModelResponse
+from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.models.router import ModelRouter
+from general_ludd.secrets.manager import SecretAlias, SecretsManager
 
 
 def _make_fake_chat_model():
@@ -220,7 +220,7 @@ class TestModelGatewayRedactsCredentials:
         FakeChatModel.return_value = fake_instance
 
         with (
-            caplog.at_level(logging.DEBUG, logger="agentic_harness.models.gateway"),
+            caplog.at_level(logging.DEBUG, logger="general_ludd.models.gateway"),
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
         ):

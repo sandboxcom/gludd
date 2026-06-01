@@ -2,9 +2,8 @@ from __future__ import annotations
 
 from datetime import datetime
 
-from agentic_harness.planning.artifact import PlanArtifact
-
-from agentic_harness.schemas.todo import Todo
+from general_ludd.planning.artifact import PlanArtifact
+from general_ludd.schemas.todo import Todo
 
 
 class TestPlanArtifactCreate:

@@ -8,7 +8,7 @@ TESTFILE ?=
 
 PYTHON := python3
 UV := uv
-PROJECT_SRC := src/agentic_harness
+PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 
 .PHONY: search-google search-json \
@@ -35,19 +35,19 @@ skeleton:
 	@$(PYTHON) scripts/skeleton.py
 
 setup-dirs:
-	@mkdir -p src/agentic_harness/worker
-	@mkdir -p src/agentic_harness/event_loop
-	@mkdir -p src/agentic_harness/models
-	@mkdir -p src/agentic_harness/db
-	@mkdir -p src/agentic_harness/rules
-	@mkdir -p src/agentic_harness/schemas
-	@mkdir -p src/agentic_harness/secrets
-	@mkdir -p src/agentic_harness/git_automation
-	@mkdir -p src/agentic_harness/controllers
-	@mkdir -p src/agentic_harness/ansible
-	@mkdir -p src/agentic_harness/prompts
-	@mkdir -p src/agentic_harness/quality
-	@mkdir -p src/agentic_harness/runtime
+	@mkdir -p src/general_ludd/worker
+	@mkdir -p src/general_ludd/event_loop
+	@mkdir -p src/general_ludd/models
+	@mkdir -p src/general_ludd/db
+	@mkdir -p src/general_ludd/rules
+	@mkdir -p src/general_ludd/schemas
+	@mkdir -p src/general_ludd/secrets
+	@mkdir -p src/general_ludd/git_automation
+	@mkdir -p src/general_ludd/controllers
+	@mkdir -p src/general_ludd/ansible
+	@mkdir -p src/general_ludd/prompts
+	@mkdir -p src/general_ludd/quality
+	@mkdir -p src/general_ludd/runtime
 	@mkdir -p tests/unit
 	@mkdir -p tests/integration
 	@mkdir -p tests/e2e
@@ -78,7 +78,7 @@ install-pip:
 	@. .venv/bin/activate && pip install -e ".[dev]"
 
 version:
-	@$(UV) run python -c "from agentic_harness import __version__; print(f'agentic-harness {__version__}')"
+	@$(UV) run python -c "from general_ludd import __version__; print(f'general-ludd-agent {__version__}')"
 
 check-uv:
 	@command -v $(UV) >/dev/null 2>&1 || (echo "uv not found"; exit 1)
@@ -97,7 +97,7 @@ typecheck:
 	@$(UV) run mypy src
 
 test:
-	@$(UV) run pytest tests/ --cov=agentic_harness --cov-report=term-missing --cov-report=xml -v
+	@$(UV) run pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml -v
 
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
@@ -129,8 +129,8 @@ test-scripts:
 	@$(UV) run pytest tests/unit/test_guardrails.py::TestSkeletonScript -v
 
 healthcheck:
-	@$(UV) run python -c "from agentic_harness.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
-	@$(UV) run python -c "from agentic_harness.event_loop.loop import EventLoop; print('Event loop import OK')"
+	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
+	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
 
 ansible-syntax:
 	@for f in playbooks/*.yml; do echo "Checking $$f..."; ansible-playbook --syntax-check "$$f" || exit 1; done
@@ -152,8 +152,8 @@ git-staged:
 
 git-init:
 	@git init
-	@git config user.email "agent@harness.local" || true
-	@git config user.name "Hottentot Agent" || true
+	@git config user.email "agent@general-ludd.local" || true
+	@git config user.name "General Ludd Agent" || true
 
 git-log:
 	@git log --oneline -10 || echo "No git history"
@@ -203,7 +203,7 @@ feature-done:
 
 test-and-commit:
 	@echo "Running tests before commit..."
-	@$(UV) run pytest tests/ --cov=agentic_harness -q
+	@$(UV) run pytest tests/ --cov=general_ludd -q
 	@echo "Tests passed. Committing..."
 	@git add -A
 	@if [ -n "$(MSG)" ]; then \
@@ -227,24 +227,24 @@ test-live-zai:
 	$(UV) run pytest tests/live/test_zai_live.py -v -s
 
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
-CONTAINER_IMAGE := hottentot-agent:latest
+CONTAINER_IMAGE := gl-agent:latest
 
-VERSION := $(shell $(UV) run python -c "from agentic_harness import __version__; print(__version__)")
+VERSION := $(shell $(UV) run python -c "from general_ludd import __version__; print(__version__)")
 PLATFORM := $(shell uname -s)-$(shell uname -m)
-TARBALL_NAME := hottentot-agent-$(VERSION)-$(PLATFORM)
+TARBALL_NAME := general-ludd-agent-$(VERSION)-$(PLATFORM)
 TARBALL_DIR := dist/$(TARBALL_NAME)
 
 build-executable:
-	@$(UV) run pyinstaller hottentot.spec --clean --noconfirm
-	@echo "Built dist/hottentot"
+	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
+	@echo "Built dist/gludd"
 
 dist: build-executable
 	@echo "Assembling tarball..."
 	@rm -rf $(TARBALL_DIR)
 	@mkdir -p $(TARBALL_DIR)
-	@cp dist/hottentot $(TARBALL_DIR)/hottentot
+	@cp dist/gludd $(TARBALL_DIR)/gludd
 	@cp dist/install.sh $(TARBALL_DIR)/install.sh
-	@cp dist/hottentot.service $(TARBALL_DIR)/hottentot.service
+	@cp dist/general-ludd.service $(TARBALL_DIR)/general-ludd.service
 	@cp -r config $(TARBALL_DIR)/config
 	@cp -r templates $(TARBALL_DIR)/templates
 	@if [ -d docs ]; then cp -r docs $(TARBALL_DIR)/docs; fi
@@ -252,7 +252,7 @@ dist: build-executable
 	@echo "Created dist/$(TARBALL_NAME).tar.gz"
 
 dist-clean:
-	@rm -rf dist/hottentot-agent-* dist/hottentot build
+	@rm -rf dist/general-ludd-agent-* dist/gludd build
 	@echo "Dist artifacts cleaned."
 
 container-build:

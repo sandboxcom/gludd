@@ -8,8 +8,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-import agentic_harness.daemon as daemon_mod
-from agentic_harness.daemon import create_daemon_app
+import general_ludd.daemon as daemon_mod
+from general_ludd.daemon import create_daemon_app
 
 
 @pytest.fixture(autouse=True)
@@ -123,10 +123,10 @@ class TestDaemonLifespan:
     async def test_lifespan_creates_event_loop_and_task(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()
-        with patch("agentic_harness.event_loop.loop.EventLoop", return_value=mock_loop):
+        with patch("general_ludd.event_loop.loop.EventLoop", return_value=mock_loop):
             from fastapi import FastAPI
 
-            from agentic_harness.daemon import _lifespan
+            from general_ludd.daemon import _lifespan
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
@@ -138,10 +138,10 @@ class TestDaemonLifespan:
     async def test_lifespan_stops_event_loop_on_shutdown(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()
-        with patch("agentic_harness.event_loop.loop.EventLoop", return_value=mock_loop):
+        with patch("general_ludd.event_loop.loop.EventLoop", return_value=mock_loop):
             from fastapi import FastAPI
 
-            from agentic_harness.daemon import _lifespan
+            from general_ludd.daemon import _lifespan
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
@@ -151,10 +151,10 @@ class TestDaemonLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_handles_event_loop_failure(self):
-        with patch("agentic_harness.event_loop.loop.EventLoop", side_effect=RuntimeError("boom")):
+        with patch("general_ludd.event_loop.loop.EventLoop", side_effect=RuntimeError("boom")):
             from fastapi import FastAPI
 
-            from agentic_harness.daemon import _lifespan
+            from general_ludd.daemon import _lifespan
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
@@ -165,7 +165,7 @@ class TestDaemonLifespan:
 class TestDirectDispatch:
     @pytest.mark.asyncio
     async def test_event_loop_with_runner_dispatches_directly(self):
-        from agentic_harness.event_loop.loop import EventLoop
+        from general_ludd.event_loop.loop import EventLoop
         mock_runner = MagicMock()
         mock_runner.prepare_job_dirs.return_value = {
             "root": "/tmp/test",
@@ -188,7 +188,7 @@ class TestDirectDispatch:
 
     @pytest.mark.asyncio
     async def test_event_loop_with_runner_dispatches_review_directly(self):
-        from agentic_harness.event_loop.loop import EventLoop
+        from general_ludd.event_loop.loop import EventLoop
         mock_runner = MagicMock()
         mock_runner.prepare_job_dirs.return_value = {
             "root": "/tmp/test",
@@ -210,7 +210,7 @@ class TestDirectDispatch:
 
     @pytest.mark.asyncio
     async def test_event_loop_without_runner_falls_back_to_http(self):
-        from agentic_harness.event_loop.loop import EventLoop
+        from general_ludd.event_loop.loop import EventLoop
         http_client = AsyncMock()
         http_client.post.return_value = MagicMock(status_code=202)
         loop = EventLoop(worker_base_url="http://worker:8000", http_client=http_client)
@@ -226,7 +226,7 @@ class TestDirectDispatch:
 
     @pytest.mark.asyncio
     async def test_event_loop_without_runner_review_falls_back_to_http(self):
-        from agentic_harness.event_loop.loop import EventLoop
+        from general_ludd.event_loop.loop import EventLoop
         http_client = AsyncMock()
         http_client.post.return_value = MagicMock(status_code=202)
         loop = EventLoop(worker_base_url="http://worker:8000", http_client=http_client)

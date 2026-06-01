@@ -1,0 +1,13 @@
+# Binary paths configuration
+# Override paths to external binaries. Defaults to PATH lookup via shutil.which.
+
+binary_paths:
+  terraform: "terraform"
+  opentofu: "tofu"
+  vault: "vault"
+  openbao: "bao"
+  podman: "podman"
+  docker: "docker"
+  ansible_playbook: "ansible-playbook"
+  git: "git"
+  uv: "uv"

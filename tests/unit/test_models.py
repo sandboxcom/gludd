@@ -1,6 +1,6 @@
 """Unit tests for model gateway."""
 
-from agentic_harness.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.gateway import ModelGateway, ModelProfile
 
 
 class TestModelGateway:

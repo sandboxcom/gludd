@@ -14,7 +14,7 @@ from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 
-from agentic_harness.db.models import (
+from general_ludd.db.models import (
     AuditEventModel,
     AuditEventType,
     Base,
@@ -27,14 +27,14 @@ from agentic_harness.db.models import (
     VariableNamespaceModel,
     VariableValueModel,
 )
-from agentic_harness.db.repository import (
+from general_ludd.db.repository import (
     ConcurrencyError,
     InvalidTransitionError,
     QueueRepository,
     TaskReturnRepository,
     TodoRepository,
 )
-from agentic_harness.schemas.todo import TodoStatus
+from general_ludd.schemas.todo import TodoStatus
 
 
 def _make_async_engine():

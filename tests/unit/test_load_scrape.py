@@ -6,12 +6,12 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from agentic_harness.schemas.todo import ResourceProfile
+from general_ludd.schemas.todo import ResourceProfile
 
 
 class TestLoadSnapshot:
     def test_load_snapshot_creation(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot
+        from general_ludd.controllers.load_scrape import LoadSnapshot
 
         snap = LoadSnapshot(
             loadavg_1m=1.0,
@@ -34,9 +34,9 @@ class TestLoadSnapshot:
 
 
 class TestScrapeSystemLoad:
-    @patch("agentic_harness.controllers.load_scrape.psutil")
+    @patch("general_ludd.controllers.load_scrape.psutil")
     def test_scrape_returns_snapshot(self, mock_psutil):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot, scrape_system_load
+        from general_ludd.controllers.load_scrape import LoadSnapshot, scrape_system_load
 
         mock_psutil.cpu_count.return_value = 8
         mock_psutil.cpu_percent.return_value = 45.0
@@ -44,7 +44,7 @@ class TestScrapeSystemLoad:
         mock_psutil.disk_usage.return_value = MagicMock(percent=30.0)
         mock_psutil.getloadavg.return_value = (1.0, 2.0, 3.0)
 
-        with patch("agentic_harness.controllers.load_scrape._count_active_jobs", return_value=5):
+        with patch("general_ludd.controllers.load_scrape._count_active_jobs", return_value=5):
             snap = scrape_system_load()
 
         assert isinstance(snap, LoadSnapshot)
@@ -60,7 +60,7 @@ class TestScrapeSystemLoad:
 
 class TestClassifyPressure:
     def test_classify_pressure_low(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
 
         snap = LoadSnapshot(
             loadavg_1m=0.5, loadavg_5m=0.8, loadavg_10m=1.0,
@@ -76,7 +76,7 @@ class TestClassifyPressure:
         assert result[ResourceProfile.LOW_RESOURCE] == PressureLevel.LOW
 
     def test_classify_pressure_high(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
 
         snap = LoadSnapshot(
             loadavg_1m=6.0, loadavg_5m=6.5, loadavg_10m=7.0,
@@ -88,7 +88,7 @@ class TestClassifyPressure:
         assert result[ResourceProfile.LOCAL_HEAVY] == PressureLevel.HIGH
 
     def test_classify_pressure_severe(self):
-        from agentic_harness.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
 
         snap = LoadSnapshot(
             loadavg_1m=12.0, loadavg_5m=11.0, loadavg_10m=10.0,

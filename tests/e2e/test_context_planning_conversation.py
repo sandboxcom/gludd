@@ -8,10 +8,10 @@ from __future__ import annotations
 
 import re
 
-from agentic_harness.agents.context import ContextCompactor, ContextMessage
-from agentic_harness.planning.artifact import PlanArtifact
-from agentic_harness.review.conversation import Conversation
-from agentic_harness.schemas.todo import Todo
+from general_ludd.agents.context import ContextCompactor, ContextMessage
+from general_ludd.planning.artifact import PlanArtifact
+from general_ludd.review.conversation import Conversation
+from general_ludd.schemas.todo import Todo
 
 
 def _make_messages(count: int, tokens_per_msg: int = 100, role: str = "user") -> list[ContextMessage]:
