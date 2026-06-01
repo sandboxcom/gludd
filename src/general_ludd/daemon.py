@@ -53,6 +53,25 @@ class RegisterHookRequest(BaseModel):
     timeout_seconds: int = 10
 
 
+class AddProjectRequest(BaseModel):
+    name: str
+    weight: float
+    description: str = ""
+
+
+class SetWeightRequest(BaseModel):
+    weight: float
+
+
+class RebalanceRequest(BaseModel):
+    weights: dict[str, float]
+
+
+class ModelSearchRequest(BaseModel):
+    query: str = ""
+    limit: int = 20
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -102,6 +121,28 @@ def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
     }
 
 
+def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
+    from general_ludd.infra.utilization import UtilizationTracker
+    from general_ludd.metrics.collector import MetricsCollector
+    from general_ludd.models.model_registry import ModelRegistry
+    from general_ludd.projects.manager import ProjectManager
+
+    if not hasattr(app.state, "_metrics_collector") or app.state._metrics_collector is None:
+        app.state._metrics_collector = MetricsCollector()
+    if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
+        app.state._project_manager = ProjectManager()
+    if not hasattr(app.state, "_utilization_tracker") or app.state._utilization_tracker is None:
+        app.state._utilization_tracker = UtilizationTracker()
+    if not hasattr(app.state, "_model_registry") or app.state._model_registry is None:
+        app.state._model_registry = ModelRegistry()
+    return {
+        "metrics": app.state._metrics_collector,
+        "projects": app.state._project_manager,
+        "utilization": app.state._utilization_tracker,
+        "model_registry": app.state._model_registry,
+    }
+
+
 def create_daemon_app(
     tick_interval: float = 1.0,
     log_level: str = "info",
@@ -119,6 +160,10 @@ def create_daemon_app(
     app.state._config_dir = config_dir
     app.state._templates_dir = templates_dir
     app.state._playbooks_dir = playbooks_dir
+    app.state._metrics_collector = None
+    app.state._project_manager = None
+    app.state._utilization_tracker = None
+    app.state._model_registry = None
 
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)
@@ -339,6 +384,176 @@ def create_daemon_app(
                     "last_seen": w.last_seen,
                 }
                 for w in workers
+            ]
+        }
+
+    @app.get("/admin/agents")
+    async def admin_list_agents() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        agents = ext["metrics"].list_agents()
+        return {
+            "agents": [
+                {
+                    "agent_id": a.agent_id,
+                    "agent_name": a.agent_name,
+                    "status": a.status,
+                    "project": a.project,
+                    "uptime_seconds": a.uptime_seconds,
+                    "total_tokens": a.total_tokens,
+                    "total_cost_usd": a.total_cost_usd,
+                    "models_used": {
+                        mid: {
+                            "total_calls": u.total_calls,
+                            "successful_calls": u.successful_calls,
+                            "success_rate": u.success_rate,
+                            "cost_usd": u.total_cost_usd,
+                        }
+                        for mid, u in a.model_usage.items()
+                    },
+                }
+                for a in agents
+            ]
+        }
+
+    @app.get("/admin/agents/{agent_id}")
+    async def admin_get_agent(agent_id: str) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        summary = ext["metrics"].get_agent_summary(agent_id)
+        if not summary:
+            raise HTTPException(status_code=404, detail="Agent not found")
+        return summary
+
+    @app.get("/admin/metrics/cost")
+    async def admin_metrics_cost(
+        subscription_name: str = "",
+        subscription_cost_per_month: float = 0.0,
+        tokens_per_week: int = 0,
+    ) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        estimate = ext["metrics"].get_cost_estimate(
+            subscription_name=subscription_name,
+            subscription_cost_usd_per_month=subscription_cost_per_month,
+            tokens_per_week=tokens_per_week,
+        )
+        return {
+            "total_cost_usd": estimate.total_cost_usd,
+            "subscription_name": estimate.subscription_name,
+            "subscription_cost_usd_per_month": estimate.subscription_cost_usd_per_month,
+            "tokens_per_week": estimate.tokens_per_week,
+            "tokens_used": estimate.tokens_used,
+            "cost_as_pct_of_subscription": estimate.cost_as_pct_of_subscription,
+            "tokens_as_pct_of_weekly": estimate.tokens_as_pct_of_weekly,
+            "tokens_remaining_this_week": estimate.tokens_remaining_this_week,
+        }
+
+    @app.get("/admin/metrics/report")
+    async def admin_metrics_report() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        return ext["metrics"].get_full_report()
+
+    @app.post("/admin/projects")
+    async def admin_add_project(req: AddProjectRequest) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        try:
+            project = ext["projects"].add_project(
+                name=req.name, weight=req.weight, description=req.description
+            )
+            return {
+                "project_id": project.project_id,
+                "name": project.name,
+                "weight": project.weight,
+                "description": project.description,
+                "active": project.active,
+            }
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.delete("/admin/projects/{project_id}")
+    async def admin_delete_project(project_id: str) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        ext["projects"].remove_project(project_id)
+        return {"removed": project_id}
+
+    @app.put("/admin/projects/{project_id}/weight")
+    async def admin_set_project_weight(project_id: str, req: SetWeightRequest) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        try:
+            ext["projects"].set_weight(project_id, req.weight)
+            project = ext["projects"].get_project(project_id)
+            return {"project_id": project_id, "weight": project.weight if project else req.weight}
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.post("/admin/projects/rebalance")
+    async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        try:
+            ext["projects"].rebalance(req.weights)
+            return {"rebalanced": list(req.weights.keys())}
+        except Exception as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+
+    @app.get("/admin/projects")
+    async def admin_list_projects() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        return ext["projects"].get_summary()
+
+    @app.get("/admin/compute/utilization")
+    async def admin_compute_utilization() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        return ext["utilization"].get_utilization_report()
+
+    @app.get("/admin/compute/endpoints")
+    async def admin_compute_endpoints() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        endpoints = ext["utilization"].list_endpoints()
+        return {
+            "endpoints": [
+                {
+                    "endpoint_id": e.endpoint_id,
+                    "url": e.url,
+                    "model": e.model,
+                    "utilization_pct": e.utilization * 100,
+                    "current_load": e.current_load,
+                    "max_concurrent": e.max_concurrent,
+                    "available_slots": e.available_slots,
+                    "active": e.active,
+                }
+                for e in endpoints
+            ]
+        }
+
+    @app.post("/admin/models/search")
+    async def admin_models_search(req: ModelSearchRequest) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        results = ext["model_registry"].search(query=req.query, limit=req.limit)
+        return {
+            "results": [
+                {
+                    "model_id": r.model_id,
+                    "author": r.author,
+                    "downloads": r.downloads,
+                    "tags": r.tags,
+                    "pipeline_tag": r.pipeline_tag,
+                    "library_name": r.library_name,
+                }
+                for r in results
+            ]
+        }
+
+    @app.get("/admin/models/downloaded")
+    async def admin_models_downloaded() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        models = ext["model_registry"].list_downloaded()
+        return {
+            "models": [
+                {
+                    "model_id": m.model_id,
+                    "local_path": m.local_path,
+                    "engine": m.engine,
+                    "size_bytes": m.size_bytes,
+                }
+                for m in models
             ]
         }
 
