@@ -53,9 +53,10 @@ def create_app() -> FastAPI:
             job.vars_namespace_refs,
         )
         logger.info(
-            "Executing job_id=%s todo_id=%s playbook=%s %s",
+            "Executing job_id=%s todo_id=%s project_id=%s playbook=%s %s",
             job.job_id,
             job.todo_id,
+            getattr(job, "project_id", None),
             job.playbook,
             redacted_vars,
         )
@@ -68,6 +69,7 @@ def create_app() -> FastAPI:
                 "todo_id": job.todo_id,
                 "queue": job.queue,
                 "work_type": job.work_type,
+                "project_id": getattr(job, "project_id", None),
                 **job.budget_context,
             },
             shared_vars=None,
