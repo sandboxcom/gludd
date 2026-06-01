@@ -81,13 +81,30 @@ fi
 
 if [ ! -f /etc/general-ludd/env ]; then
     cat > /etc/general-ludd/env << 'ENVEOF'
-# General Ludd Agent Environment Variables
-# Set your API keys and database URL here.
+# General Ludd Agent — Secrets and Environment
+# =============================================
+# API keys go here (mode 600, owner-only readable).
+# NEVER put actual keys in config/*.yml files.
+# Model profiles reference these via credential_alias.
 #
+# Resolution order: OpenBao/Vault -> env vars below -> error
+#
+# ── Z.AI (default provider) ──
 # ZAI_API_KEY=your-zai-api-key
 # ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+#
+# ── OpenAI ──
 # OPENAI_API_KEY=sk-your-openai-key
+#
+# ── OpenRouter ──
+# OPENROUTER_API_KEY=your-key
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+#
+# ── Database ──
 # DATABASE_URL=postgresql://gludd:password@localhost:5432/gludd
+#
+# ── HuggingFace (local model download) ──
+# HF_TOKEN=your-hf-token
 ENVEOF
     echo "Created /etc/general-ludd/env (edit to add your API keys)"
 else

@@ -142,26 +142,57 @@ Every section is documented inline. Key sections:
 
 Each file defines one model provider. The daemon uses these to make AI API calls.
 
+**IMPORTANT: API keys are NEVER stored in config files.** The daemon resolves
+credentials through a secure chain:
+
+1. **OpenBao/Vault** (if configured) — reads `secret/general-ludd/<alias>` from
+   the vault. Supports short-lived AppRole tokens for maximum security.
+2. **Environment variables** (fallback) — reads the env var named by
+   `credential_alias` from `/etc/general-ludd/env`.
+
+Each profile has two key fields:
+- `credential_alias` — the name of the secret/env var holding the API key
+  (e.g., `ZAI_API_KEY`, `OPENAI_API_KEY`). For local models, omit this field.
+- `api_base_alias` — the name of the env var holding the API base URL
+  (e.g., `ZAI_BASE_URL`, `VLLM_BASE_URL`). Required for non-OpenAI endpoints.
+
 **To use Z.AI (default):**
-Set `ZAI_API_KEY` in `/etc/general-ludd/env`. The `zai_example.yml` profile is
-preconfigured to use GLM-5.1 via the OpenAI-compatible API.
+The `zai_example.yml` profile is preconfigured for GLM-5.1. Set credentials in
+`/etc/general-ludd/env`:
+
+```bash
+ZAI_API_KEY=your-zai-api-key-here
+ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
+```
+
+The profile references these via:
+```yaml
+credential_alias: ZAI_API_KEY     # resolved from env or vault
+api_base_alias: ZAI_BASE_URL      # resolved from env or vault
+model_name: glm-5.1
+```
 
 **To use OpenAI:**
+Create `config/model_profiles/openai.yml` (copy from `openai_example.yml`):
 ```yaml
-# config/model_profiles/openai.yml  (copy from openai_example.yml)
 model_profile_id: openai_gpt4
 provider: openai
 provider_package: langchain-openai
 provider_class_hint: ChatOpenAI
 model_name: gpt-4
-credential_alias: OPENAI_API_KEY    # env var name for the key
+credential_alias: OPENAI_API_KEY
 context_window: 128000
 max_input_tokens: 120000
 max_output_tokens: 8000
-cost_per_input_token: 0.03          # USD per 1K tokens
+cost_per_input_token: 0.03
 cost_per_output_token: 0.06
-run_budget_usd: 50.0                # per-task limit
+run_budget_usd: 50.0
 enabled: true
+```
+
+Set in `/etc/general-ludd/env`:
+```bash
+OPENAI_API_KEY=sk-your-openai-key-here
 ```
 
 Then update `general-ludd.yml`:
@@ -171,7 +202,8 @@ model_routing:
 ```
 
 **To use OpenRouter:**
-Same pattern — copy `openrouter_example.yml`, set `OPENROUTER_API_KEY`.
+Same pattern — copy `openrouter_example.yml`, set `OPENROUTER_API_KEY` and
+`OPENROUTER_BASE_URL` in the env file.
 
 **To use a local model (vLLM):**
 ```yaml
@@ -181,18 +213,43 @@ provider: openai
 provider_package: langchain-openai
 provider_class_hint: ChatOpenAI
 model_name: my-model
-credential_alias: VLLM_API_KEY      # can be anything for local
 api_base_alias: VLLM_BASE_URL       # http://127.0.0.1:8080/v1
 context_window: 4096
 enabled: true
+# No credential_alias needed for unauthenticated local servers
 ```
 
-Set `VLLM_API_KEY=none` and `VLLM_BASE_URL=http://127.0.0.1:8080/v1` in env.
+Set in `/etc/general-ludd/env`:
+```bash
+VLLM_BASE_URL=http://127.0.0.1:8080/v1
+```
 
-**Credential resolution order:**
-1. Environment variable matching `credential_alias` (e.g., `OPENAI_API_KEY`)
-2. OpenBao secret at `secret/general-ludd/<credential_alias>`
-3. Error if not found
+**To use OpenBao/Vault for secrets (recommended for production):**
+Configure `config/openbao/default.yml`:
+```yaml
+mode: external
+external_url: http://bao:8200
+auth_method: approle
+approle_role_name: general-ludd-agent
+```
+
+Then store each API key in the vault:
+```bash
+bao kv put secret/general-ludd/ZAI_API_KEY value=your-actual-key
+bao kv put secret/general-ludd/ZAI_BASE_URL value=https://open.bigmodel.cn/api/paas/v4
+```
+
+The daemon resolves `credential_alias: ZAI_API_KEY` by looking up
+`secret/general-ludd/ZAI_API_KEY` in the vault first, then falling back to
+the env file if the vault is unreachable.
+
+With AppRole auth, the daemon can use short-lived tokens that auto-renew,
+so long-lived API keys never touch disk.
+
+**Credential resolution order (most secure first):**
+1. OpenBao/Vault KV secret at `secret/general-ludd/<credential_alias>`
+2. Environment variable named by `credential_alias`
+3. Error if not found anywhere
 
 ### config/agents/default_agents.yml — Agent Definitions
 
@@ -276,18 +333,30 @@ tasks:
 
 ### /etc/general-ludd/env — Environment Variables
 
+API keys go here. This file is mode 600 (owner-only readable). Never put
+actual keys in config YAML files — use `credential_alias` in model profiles
+to reference the env var name.
+
 ```bash
-# API Keys (at least one required)
+# ── Z.AI (default provider) ──
 ZAI_API_KEY=your-zai-key
 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
-# OPENAI_API_KEY=sk-your-key
-# OPENROUTER_API_KEY=your-key
 
-# Database
+# ── OpenAI ──
+# OPENAI_API_KEY=sk-your-key
+
+# ── OpenRouter ──
+# OPENROUTER_API_KEY=your-key
+# OPENROUTER_BASE_URL=https://openrouter.ai/api/v1
+
+# ── Database ──
 DATABASE_URL=postgresql://gludd:password@localhost:5432/gludd
 
-# HuggingFace (for local model download)
+# ── HuggingFace (for local model download) ──
 # HF_TOKEN=your-hf-token
+
+# ── vLLM local server ──
+# VLLM_BASE_URL=http://127.0.0.1:8080/v1
 ```
 
 ## Runtime API

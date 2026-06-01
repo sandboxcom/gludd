@@ -39,6 +39,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "process_isolation": None,
         "mcp_servers": {},
         "task_definitions": [],
+        "model_profiles": [],
     }
     if config_dir is None:
         return cfg
@@ -92,7 +93,58 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         from general_ludd.config.task_loader import discover_task_definitions
         cfg["task_definitions"] = discover_task_definitions(str(tasks_dir))
 
+    profiles_dir = cdir / "model_profiles"
+    if profiles_dir.is_dir():
+        cfg["model_profiles"] = load_model_profiles(profiles_dir=str(profiles_dir))
+
     return cfg
+
+
+def build_secrets_resolver(
+    openbao_config: OpenBaoConfig | None = None,
+    env_overrides: dict[str, str] | None = None,
+) -> Any:
+    from general_ludd.secrets.env import EnvSecretsManager
+
+    if openbao_config is not None and openbao_config.mode not in ("disabled", None):
+        try:
+            from general_ludd.secrets.manager import SecretsManager
+
+            mgr = SecretsManager(config=openbao_config)
+            if openbao_config.mode == "external" and openbao_config.external_url:
+                mgr.connect()
+                health = mgr.health_check()
+                if health.get("healthy"):
+                    logger.info("OpenBao secrets backend connected: %s", openbao_config.external_url)
+                    return mgr
+            logger.warning("OpenBao not reachable, falling back to env var secrets")
+        except Exception as exc:
+            logger.warning("OpenBao init failed (%s), falling back to env var secrets", exc)
+
+    return EnvSecretsManager(overrides=env_overrides)
+
+
+def load_model_profiles(profiles_dir: str | None = None) -> list[Any]:
+    from general_ludd.models.gateway import ModelProfile
+
+    if profiles_dir is None:
+        return []
+    pdir = Path(profiles_dir)
+    if not pdir.is_dir():
+        return []
+    profiles: list[ModelProfile] = []
+    for yml_file in sorted(pdir.glob("*.yml")):
+        if yml_file.name.startswith("_"):
+            continue
+        try:
+            with open(yml_file) as f:
+                data = yaml.safe_load(f) or {}
+            if data.get("enabled", True) is False:
+                continue
+            profiles.append(ModelProfile(**data))
+        except Exception as exc:
+            logger.warning("Skipping model profile %s: %s", yml_file.name, exc)
+    return profiles
 
 
 class AddTodoRequest(BaseModel):
