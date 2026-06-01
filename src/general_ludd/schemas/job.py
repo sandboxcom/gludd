@@ -24,3 +24,4 @@ class JobSpec(BaseModel):
     candidate_todos: list[str] = Field(default_factory=list)
     artifact_summaries: list[str] = Field(default_factory=list)
     plan_artifact: str | None = None
+    prompt_text: str | None = None

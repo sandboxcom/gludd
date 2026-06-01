@@ -6,10 +6,10 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: Secrets wiring complete; continuing with remaining pipeline wiring
-- **Test Suite**: 1869 passed, 12 skipped, 0 failures, 92.60% coverage
+- **Phase**: All planned pipeline wiring complete
+- **Test Suite**: 1888 passed, 12 skipped, 0 failures, 92.19% coverage
 - **Branch**: master
-- **Latest commit**: 61817c6 wire secrets resolution and model profile loading into daemon startup
+- **Latest commit**: b770e82 add plan_artifact migration, CLI models/local-serve commands, optional local-inference deps
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -136,24 +136,12 @@ obj01-obj16 all complete.
 - 12 tests in test_secrets_wiring_startup.py
 
 ## Key Gaps (Known)
-- ReturnReviewer._call_model() is a stub (returns prompt text, no real LLM call)
 - Skills body field not injected into prompts
-- PID rules engine phases are no-ops (pass)
-- Rules evaluation phase is no-op (pass)
-- Event loop phases evaluate_pid_controllers and evaluate_rules not implemented
-- No DB migration for plan_artifact column on TodoModel
-- prompt_profile on TodoModel not resolved/wired into pipeline
-- OpenBao not wired into worker/runner pipeline (secrets not passed to worker)
-- Local inference deps (llama-cpp-python, vllm) not in pyproject.toml
-- CLI missing models search/download and local-serve subcommands
+- PID controller phase is still no-op (rules engine wired, PID not)
+- `_phase_evaluate_pid_controllers` still pass
 - `tool.uv.dev-dependencies` deprecation warning (cosmetic)
 
-## Next Steps
-1. Wire prompt_profile resolution into pipeline
-2. Wire OpenBao into worker/runner pipeline
-3. DB migration for plan_artifact column on TodoModel
-4. Implement PID rules engine and rules evaluation in event loop
-5. Real LLM call integration in ReturnReviewer
-6. Wire CLI gludd models search/download subcommands
-7. Wire CLI gludd local-serve subcommand
-8. Add llama-cpp-python and vllm as optional dependencies
+## Remaining Next Steps
+1. Wire PID controller phase
+2. Inject skills body into prompts
+3. Fix `tool.uv.dev-dependencies` deprecation warning

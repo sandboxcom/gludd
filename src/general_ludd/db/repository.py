@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import (
+    AuditEventModel,
     ProjectModel,
     QueueModel,
     TaskReturnModel,
@@ -205,3 +206,59 @@ class ProjectRepository:
         if project is not None:
             project.active = False
             await self._session.flush()
+
+
+class AuditEventRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(
+        self,
+        event_type: str,
+        entity_type: str,
+        entity_id: str,
+        *,
+        project_id: str | None = None,
+        actor: str = "agent",
+        correlation_id: str | None = None,
+        details: str = "{}",
+    ) -> AuditEventModel:
+        audit = AuditEventModel(
+            event_type=event_type,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            project_id=project_id,
+            actor=actor,
+            correlation_id=correlation_id,
+            details=details,
+        )
+        self._session.add(audit)
+        await self._session.flush()
+        return audit
+
+    async def list_by_entity(
+        self, entity_type: str, entity_id: str, limit: int = 50
+    ) -> list[AuditEventModel]:
+        stmt = (
+            select(AuditEventModel)
+            .where(
+                AuditEventModel.entity_type == entity_type,
+                AuditEventModel.entity_id == entity_id,
+            )
+            .order_by(AuditEventModel.created_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_project(
+        self, project_id: str, limit: int = 100
+    ) -> list[AuditEventModel]:
+        stmt = (
+            select(AuditEventModel)
+            .where(AuditEventModel.project_id == project_id)
+            .order_by(AuditEventModel.created_at.desc())
+            .limit(limit)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())

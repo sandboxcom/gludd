@@ -244,3 +244,111 @@ class TestReturnReviewerLLMCall:
         decision = reviewer.review_return(tr, [], [])
         assert decision.decision == "ignore_duplicate"
         assert decision.confidence == 0.0
+
+
+class TestMetricsCollectorWiring:
+    def test_gateway_records_metrics_on_call(self):
+        from general_ludd.metrics.collector import MetricsCollector
+        from general_ludd.models.gateway import ModelGateway
+
+        collector = MetricsCollector()
+        collector.register_agent("agent-1", agent_name="test")
+
+        gateway = ModelGateway(
+            profiles=[ModelProfile(
+                model_profile_id="test-profile",
+                provider="openai",
+                model_name="gpt-4",
+                enabled=True,
+                cost_per_input_token=0.01,
+                cost_per_output_token=0.03,
+            )],
+            metrics_collector=collector,
+            metrics_agent_id="agent-1",
+        )
+
+        mock_response = MagicMock()
+        mock_response.content = "hello"
+        mock_response.usage_metadata = {"input_tokens": 100, "output_tokens": 50}
+
+        fake_provider_cls = type("FakeProvider", (), {
+            "__init__": lambda self, **kw: None,
+            "invoke": lambda self, m: mock_response,
+        })
+
+        from general_ludd.models.provider_registry import ProviderRegistry
+        registry = MagicMock(spec=ProviderRegistry)
+        registry.is_installed.return_value = True
+        registry.get_provider_class.return_value = fake_provider_cls
+        gateway._registry = registry
+
+        response = gateway.call_model("test-profile", [{"role": "user", "content": "hi"}])
+        assert response.content == "hello"
+
+        agent = collector.get_agent("agent-1")
+        assert agent is not None
+        assert "test-profile" in agent.model_usage
+        assert agent.model_usage["test-profile"].total_input_tokens == 100
+        assert agent.model_usage["test-profile"].total_output_tokens == 50
+        assert agent.model_usage["test-profile"].successful_calls == 1
+
+    def test_gateway_without_metrics_collector_still_works(self):
+        from general_ludd.models.gateway import ModelGateway
+
+        gateway = ModelGateway()
+        assert gateway._metrics_collector is None
+
+
+class TestPromptResolution:
+    def test_resolve_prompt_text_static_returns_rendered_text(self):
+        from general_ludd.event_loop.loop import _resolve_prompt_text_static
+
+        registry = MagicMock()
+        registry.render.return_value = "Review task TODO-001"
+        result = _resolve_prompt_text_static(registry, "return_review.md.j2", task_id="TODO-001")
+        assert result == "Review task TODO-001"
+        registry.render.assert_called_once_with("return_review.md.j2", task_id="TODO-001")
+
+    def test_resolve_prompt_text_static_returns_none_without_registry(self):
+        from general_ludd.event_loop.loop import _resolve_prompt_text_static
+
+        assert _resolve_prompt_text_static(None, "return_review.md.j2") is None
+
+    def test_resolve_prompt_text_static_returns_none_without_profile(self):
+        from general_ludd.event_loop.loop import _resolve_prompt_text_static
+
+        registry = MagicMock()
+        assert _resolve_prompt_text_static(registry, None) is None
+        assert _resolve_prompt_text_static(registry, "") is None
+        registry.render.assert_not_called()
+
+    def test_resolve_prompt_text_static_returns_none_on_error(self):
+        from general_ludd.event_loop.loop import _resolve_prompt_text_static
+
+        registry = MagicMock()
+        registry.render.side_effect = Exception("template not found")
+        assert _resolve_prompt_text_static(registry, "missing.j2") is None
+
+    def test_event_loop_resolves_prompt_in_dispatch(self):
+        prompt_reg = MagicMock()
+        prompt_reg.render.return_value = "Execute: fix the bug"
+
+        loop, _ = _make_loop(
+            config={"tick_interval": 1.0},
+            prompt_registry=prompt_reg,
+        )
+
+        todo = MagicMock()
+        todo.todo_id = "TODO-100"
+        todo.queue = "core"
+        todo.work_type = "code"
+        todo.resource_profile = "low_resource"
+        todo.model_profile = None
+        todo.prompt_profile = "execute.md.j2"
+        todo.plan_artifact = None
+        todo.project_id = None
+
+        import asyncio
+        asyncio.run(loop._dispatch_execute_job(todo))
+
+        prompt_reg.render.assert_called_once_with("execute.md.j2")

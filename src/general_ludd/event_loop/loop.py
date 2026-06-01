@@ -8,7 +8,7 @@ import time
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.models import TaskDecisionModel
 from general_ludd.db.repository import TaskReturnRepository, TodoRepository
@@ -40,12 +40,24 @@ def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
     return val if isinstance(val, str) else default
 
 
+def _resolve_prompt_text_static(
+    prompt_registry: Any, prompt_profile: str | None, **kwargs: object
+) -> str | None:
+    if prompt_registry is None or not prompt_profile:
+        return None
+    try:
+        result: str = prompt_registry.render(prompt_profile, **kwargs)
+        return result
+    except Exception:
+        return None
+
+
 class EventLoop:
     def __init__(
         self,
         worker_base_url: str = "http://localhost:8000",
         config: dict[str, Any] | None = None,
-        session: AsyncSession | None = None,
+        session: AsyncSession | async_sessionmaker[AsyncSession] | None = None,
         http_client: Any | None = None,
         todo_repo: TodoRepository | None = None,
         task_return_repo: TaskReturnRepository | None = None,
@@ -55,17 +67,25 @@ class EventLoop:
         runner: Any | None = None,
         event_bus: Any | None = None,
         project_manager: Any | None = None,
+        prompt_registry: Any | None = None,
+        audit_repo: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
-        self.session = session
+        if isinstance(session, async_sessionmaker):
+            self._session_factory: async_sessionmaker[AsyncSession] | None = session
+            self.session: AsyncSession | None = None
+        else:
+            self._session_factory = None
+            self.session = session
         self._http_client = http_client
         self._runner = runner
+        live_session = self.session
         self._todo_repo = todo_repo or (
-            TodoRepository(session) if session else None
+            TodoRepository(live_session) if live_session else None
         )
         self._task_return_repo = task_return_repo or (
-            TaskReturnRepository(session) if session else None
+            TaskReturnRepository(live_session) if live_session else None
         )
         self._budget_guard = budget_guard
         self._mcp_client = mcp_client
@@ -76,8 +96,14 @@ class EventLoop:
         self._config_snapshot: dict[str, Any] = {}
         self._event_bus = event_bus
         self._project_manager = project_manager
+        self._prompt_registry = prompt_registry
+        self._audit_repo = audit_repo
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
+
+    def _resolve_prompt_text(self, todo: Any) -> str | None:
+        profile_name = _safe_str(todo, "prompt_profile")
+        return _resolve_prompt_text_static(self._prompt_registry, profile_name)
 
     def _on_config_reloaded(self, event: Any) -> None:
         payload = getattr(event, "payload", {}) or {}
@@ -253,6 +279,7 @@ class EventLoop:
         if self._mcp_tool_registry is not None:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         playbook = self._config_snapshot.get("default_playbook", "noop.yml")
+        prompt_text = self._resolve_prompt_text(todo)
         if self._runner is not None:
             job_id = f"EXEC-{todo.todo_id}"
             dirs = self._runner.prepare_job_dirs(job_id)
@@ -265,6 +292,7 @@ class EventLoop:
                     "work_type": _safe_str(todo, "work_type", "unknown"),
                     "model_profile": _safe_str(todo, "model_profile"),
                     "prompt_profile": _safe_str(todo, "prompt_profile"),
+                    "prompt_text": prompt_text,
                     **budget_context,
                 },
                 shared_vars=None,
@@ -286,6 +314,7 @@ class EventLoop:
             model_profile=_safe_str(todo, "model_profile"),
             prompt_profile=_safe_str(todo, "prompt_profile"),
             plan_artifact=_safe_str(todo, "plan_artifact"),
+            prompt_text=prompt_text,
             budget_context=budget_context,
             project_id=(
                 todo.project_id

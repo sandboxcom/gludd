@@ -204,19 +204,59 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
     event_loop = None
     task = None
+    engine = None
 
     try:
         from general_ludd.ansible.runner import AnsibleRunnerAdapter
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+            init_engine_from_config,
+            seed_initial_queues,
+        )
         from general_ludd.event_loop.loop import EventLoop
 
+        startup_config = getattr(app.state, "_startup_config", {}) or {}
+        db_config: dict[str, Any] = {}
+        uc = startup_config.get("user_config")
+        if uc and hasattr(uc, "database"):
+            db_config = uc.database or {}
+        engine = init_engine_from_config(db_config)
+        await ensure_tables(engine)
+
+        session_factory = create_async_session_factory(engine)
+        async with session_factory() as session:
+            await seed_initial_queues(session)
+            await session.commit()
+
         runner = AnsibleRunnerAdapter()
+        subsys = _get_or_create_subsystems(app)
+        ext = _get_or_create_extended_subsystems(app)
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
+            session=session_factory,
+            http_client=None,
+            todo_repo=None,
+            task_return_repo=None,
+            budget_guard=None,
+            mcp_client=None,
+            mcp_tool_registry=None,
+            event_bus=subsys["bus"],
+            project_manager=ext["projects"],
+            config={
+                "default_playbook": "noop.yml",
+                "model_profiles": startup_config.get("model_profiles", []),
+                "rules": startup_config.get("rules", []),
+            },
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
+        app.state._db_engine = engine
+        app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
+        logger.info("Daemon started: db=%s event_loop=running", engine.url)
     except Exception as exc:
         logger.warning("Could not start event loop: %s", exc)
 
@@ -228,6 +268,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    if engine is not None:
+        await engine.dispose()
 
 
 def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:

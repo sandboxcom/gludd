@@ -64,6 +64,8 @@ class ModelGateway:
         event_bus: Any | None = None,
         hook_system: Any | None = None,
         worker_broadcaster: Any | None = None,
+        metrics_collector: Any | None = None,
+        metrics_agent_id: str | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -77,6 +79,8 @@ class ModelGateway:
         self._event_bus = event_bus
         self._hooks = hook_system
         self._broadcaster = worker_broadcaster
+        self._metrics_collector = metrics_collector
+        self._metrics_agent_id = metrics_agent_id
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -176,6 +180,17 @@ class ModelGateway:
 
         if self._budget_guard is not None:
             self._budget_guard.record_spend(cost)
+
+        if self._metrics_collector is not None and self._metrics_agent_id:
+            self._metrics_collector.record_model_call(
+                agent_id=self._metrics_agent_id,
+                model_id=profile_id,
+                input_tokens=int(input_tokens) if isinstance(input_tokens, (int, float)) else 0,
+                output_tokens=int(output_tokens) if isinstance(output_tokens, (int, float)) else 0,
+                success=True,
+                cost_per_input_token=profile.cost_per_input_token,
+                cost_per_output_token=profile.cost_per_output_token,
+            )
 
         return ModelResponse(
             content=str(content),
