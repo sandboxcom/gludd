@@ -13,7 +13,12 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.models import TaskDecisionModel
-from general_ludd.db.repository import TaskReturnRepository, TodoRepository
+from general_ludd.db.repository import (
+    AuditEventRepository,
+    TaskReturnRepository,
+    TodoRepository,
+    VariableNamespaceRepository,
+)
 from general_ludd.event_loop.lease import reclaim_expired_leases
 from general_ludd.mcp.client import MCPClient
 from general_ludd.mcp.registry import MCPToolRegistry
@@ -101,9 +106,13 @@ class EventLoop:
         self._event_bus = event_bus
         self._project_manager = project_manager
         self._prompt_registry = prompt_registry
-        self._audit_repo = audit_repo
+        self._audit_repo = audit_repo or (
+            AuditEventRepository(live_session) if live_session else None
+        )
         self._skill_registry = skill_registry
-        self._variable_repo = variable_repo
+        self._variable_repo = variable_repo or (
+            VariableNamespaceRepository(live_session) if live_session else None
+        )
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
 
