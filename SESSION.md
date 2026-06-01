@@ -6,10 +6,11 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: Multi-project isolation complete, merged to master
-- **Test Suite**: 1827 passed, 12 skipped, 0 failures, 92.84% coverage
+- **Phase**: Audit gaps fixed, distributables built, self-audit policy codified
+- **Test Suite**: 1830 passed, 12 skipped, 0 failures, 92.87% coverage
 - **Branch**: master
-- **Latest commit**: merge of feature/multi-project-isolation
+- **Latest commit**: merge of feature/audit-gaps-and-wiring
+- **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz built and current
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.
@@ -95,6 +96,16 @@ obj01-obj16 all complete.
 - `AGENTS.md` — expanded forbidden patterns list (audit-findings-stop, plan-then-stop, etc.)
 - `.opencode/plugin/enforce-make.ts` — expanded TASK_COMPLETION_WARNING and system prompt injection
 - Key rule: "THE ONLY VALID RESPONSE TO IDENTIFYING WORK IS TO DO IT."
+
+## Audit Gap Fixes (COMPLETE)
+- Alembic migration `002_add_projects_and_project_id.py` — creates `projects` table + `project_id` columns on all 8 models
+- EventLoop `_phase_claim_unreviewed_task_returns` now respects project_manager
+- EventLoop `_phase_reconcile_completed_decisions` now filters by project
+- EventLoop `_dispatch_execute_job` passes `project_id` on JobSpec
+- Worker logs and writes `project_id` to job vars
+- Integration tests: `tests/integration/test_multi_project_integration.py` (3 tests)
+- Self-audit policy codified in AGENTS.md (7-step checklist)
+- `feature-done` Makefile target now builds distributables post-merge
 
 ## Key Gaps (Known)
 - ReturnReviewer._call_model() is a stub
