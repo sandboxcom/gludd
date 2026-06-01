@@ -121,7 +121,12 @@ class EventLoop:
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:
             return
-        claimed = await self._task_return_repo.claim_unreviewed()
+        project_id: str | None = None
+        if self._project_manager is not None:
+            project = self._project_manager.select_project()
+            if project is not None:
+                project_id = project.project_id
+        claimed = await self._task_return_repo.claim_unreviewed(project_id=project_id)
         self._tick_state["claimed_returns"] = claimed
 
     async def _phase_dispatch_return_review_jobs(self) -> None:
@@ -140,6 +145,9 @@ class EventLoop:
         self._tick_metrics["returns_reviewed"] = len(claimed)
 
     async def _dispatch_review_job(self, tr: Any) -> None:
+        project_id_val = getattr(tr, "project_id", None)
+        if not isinstance(project_id_val, str):
+            project_id_val = None
         job = JobSpec(
             job_id=f"REVIEW-{tr.return_id}",
             return_id=tr.return_id,
@@ -149,6 +157,7 @@ class EventLoop:
             work_type="review",
             resource_profile="ai_heavy",
             plan_artifact=getattr(tr, "plan_artifact", None),
+            project_id=project_id_val,
         )
         if self._runner is not None:
             dirs = self._runner.prepare_job_dirs(job.job_id)
@@ -251,6 +260,12 @@ class EventLoop:
             resource_profile=getattr(todo, "resource_profile", "low_resource"),
             plan_artifact=getattr(todo, "plan_artifact", None),
             budget_context=budget_context,
+            project_id=(
+                todo.project_id
+                if hasattr(todo, "project_id")
+                and isinstance(todo.project_id, str)
+                else None
+            ),
         )
         await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
@@ -265,6 +280,10 @@ class EventLoop:
             .order_by(TaskDecisionModel.created_at.desc())
             .limit(50)
         )
+        if self._project_manager is not None:
+            project = self._project_manager.select_project()
+            if project is not None:
+                stmt = stmt.where(TaskDecisionModel.project_id == project.project_id)
         result = await self.session.execute(stmt)
         decisions = list(result.scalars().all())
         reconciled = 0
