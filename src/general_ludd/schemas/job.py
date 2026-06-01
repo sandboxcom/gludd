@@ -11,6 +11,7 @@ class JobSpec(BaseModel):
     job_id: str
     todo_id: str | None = None
     return_id: str | None = None
+    project_id: str | None = None
     playbook: str
     queue: str
     work_type: str = "unknown"

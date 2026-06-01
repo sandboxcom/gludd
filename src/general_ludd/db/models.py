@@ -26,6 +26,33 @@ class Base(DeclarativeBase):
     pass
 
 
+def _utcnow() -> datetime:
+    return datetime.now(UTC)
+
+
+def _gen_todo_id() -> str:
+    return f"TODO-{uuid4().hex[:8].upper()}"
+
+
+class ProjectModel(Base):
+    __tablename__ = "projects"
+
+    project_id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=lambda: f"proj-{uuid4().hex[:8]}"
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    workspace_path: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    config: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    active: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
 class AuditEventType(enum.StrEnum):
     TODO_CREATED = "todo_created"
     TODO_STATUS_CHANGED = "todo_status_changed"
@@ -39,19 +66,14 @@ class AuditEventType(enum.StrEnum):
     BUCKET_LEASE_RELEASED = "bucket_lease_released"
 
 
-def _utcnow() -> datetime:
-    return datetime.now(UTC)
-
-
-def _gen_todo_id() -> str:
-    return f"TODO-{uuid4().hex[:8].upper()}"
-
-
 class TodoModel(Base):
     __tablename__ = "todos"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     todo_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, default=_gen_todo_id)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     status: Mapped[str] = mapped_column(String(32), nullable=False, default=TodoStatus.BACKLOG, index=True)
@@ -101,6 +123,9 @@ class TodoEventModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     todo_id: Mapped[str] = mapped_column(String(32), ForeignKey("todos.todo_id"), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     old_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
     new_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -116,6 +141,9 @@ class TaskReturnModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     return_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     job_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     playbook: Mapped[str] = mapped_column(String(256), nullable=False)
@@ -142,6 +170,9 @@ class TaskDecisionModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     return_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     matched_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
     confidence: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
@@ -160,6 +191,9 @@ class QueueModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     queue_name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     queue_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
     resource_profile: Mapped[str] = mapped_column(String(32), nullable=False, default="low_resource")
@@ -179,6 +213,9 @@ class AuditEventModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     actor: Mapped[str] = mapped_column(String(64), nullable=False, default="agent")
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
     entity_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -195,11 +232,18 @@ class VariableNamespaceModel(Base):
     __tablename__ = "variable_namespaces"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    namespace: Mapped[str] = mapped_column(String(128), unique=True, nullable=False)
+    namespace: Mapped[str] = mapped_column(String(128), nullable=False)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        UniqueConstraint("namespace", "project_id", name="uq_namespace_project"),
     )
 
     values: Mapped[list[VariableValueModel]] = relationship(
@@ -234,6 +278,9 @@ class BucketLeaseModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     bucket_key: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
     holder_id: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)

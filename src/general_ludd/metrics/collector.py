@@ -128,10 +128,14 @@ class MetricsCollector:
     def get_agent(self, agent_id: str) -> AgentMetrics | None:
         return self._agents.get(agent_id)
 
-    def list_agents(self, status: str | None = None) -> list[AgentMetrics]:
+    def list_agents(
+        self, status: str | None = None, project: str | None = None
+    ) -> list[AgentMetrics]:
         agents = list(self._agents.values())
         if status:
             agents = [a for a in agents if a.status == status]
+        if project:
+            agents = [a for a in agents if a.project == project]
         return agents
 
     def list_running_agents(self) -> list[AgentMetrics]:
@@ -218,3 +222,13 @@ class MetricsCollector:
                 for mid, u in self._global_model_usage.items()
             },
         }
+
+    def get_cost_by_project(self) -> dict[str, float]:
+        project_costs: dict[str, float] = {}
+        for agent in self._agents.values():
+            if agent.project:
+                project_costs[agent.project] = (
+                    project_costs.get(agent.project, 0.0)
+                    + agent.total_cost_usd
+                )
+        return project_costs

@@ -24,6 +24,7 @@ class Conversation(BaseModel):
     conversation_id: str = Field(default_factory=lambda: f"conv-{uuid4().hex[:8]}")
     todo_id: str = ""
     return_id: str = ""
+    project_id: str | None = None
     messages: list[ConversationMessage] = []
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 

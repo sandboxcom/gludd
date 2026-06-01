@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import (
+    ProjectModel,
     QueueModel,
     TaskReturnModel,
     TodoEventModel,
@@ -56,17 +57,25 @@ class TodoRepository:
         await self._session.flush()
         return todo
 
-    async def list_by_status(self, status: TodoStatus) -> list[TodoModel]:
+    async def list_by_status(
+        self, status: TodoStatus, project_id: str | None = None
+    ) -> list[TodoModel]:
         stmt = select(TodoModel).where(TodoModel.status == status.value)
+        if project_id is not None:
+            stmt = stmt.where(TodoModel.project_id == project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def claim_runnable(self, limit: int = 10) -> list[TodoModel]:
+    async def claim_runnable(
+        self, limit: int = 10, project_id: str | None = None
+    ) -> list[TodoModel]:
         stmt = (
             select(TodoModel)
             .where(TodoModel.status == TodoStatus.QUEUED.value)
-            .limit(limit)
         )
+        if project_id is not None:
+            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = stmt.limit(limit)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
@@ -136,12 +145,16 @@ class TaskReturnRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def claim_unreviewed(self, limit: int = 10) -> list[TaskReturnModel]:
+    async def claim_unreviewed(
+        self, limit: int = 10, project_id: str | None = None
+    ) -> list[TaskReturnModel]:
         stmt = (
             select(TaskReturnModel)
             .where(TaskReturnModel.status == "created")
-            .limit(limit)
         )
+        if project_id is not None:
+            stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        stmt = stmt.limit(limit)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
@@ -165,3 +178,30 @@ class QueueRepository:
         stmt = select(QueueModel).where(QueueModel.queue_enabled == True)  # noqa: E712
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+
+class ProjectRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def create(self, data: dict[str, Any]) -> ProjectModel:
+        project = ProjectModel(**data)
+        self._session.add(project)
+        await self._session.flush()
+        return project
+
+    async def get_by_id(self, project_id: str) -> ProjectModel | None:
+        stmt = select(ProjectModel).where(ProjectModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_active(self) -> list[ProjectModel]:
+        stmt = select(ProjectModel).where(ProjectModel.active == True)  # noqa: E712
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def deactivate(self, project_id: str) -> None:
+        project = await self.get_by_id(project_id)
+        if project is not None:
+            project.active = False
+            await self._session.flush()

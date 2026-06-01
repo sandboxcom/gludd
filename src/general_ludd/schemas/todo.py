@@ -99,6 +99,7 @@ class Todo(BaseModel):
     todo_id: str = Field(default_factory=lambda: f"TODO-{uuid4().hex[:8].upper()}")
     title: str
     description: str = ""
+    project_id: str | None = None
     status: TodoStatus = TodoStatus.BACKLOG
     priority: int = 0
     queue: str = "core"
