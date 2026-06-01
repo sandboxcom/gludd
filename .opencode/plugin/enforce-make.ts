@@ -138,6 +138,40 @@ const BASH_METACHAR_POLICY = [
   "",
 ].join("\n")
 
+const STOP_SIGNAL_WORDS = [
+  "want me to proceed",
+  "want me to continue",
+  "want me to start",
+  "want me to fix",
+  "should i continue",
+  "should i proceed",
+  "should i start",
+  "should i fix",
+  "shall i continue",
+  "shall i proceed",
+  "next steps are",
+  "remaining tasks",
+  "here are the remaining",
+  "what priority",
+  "here is what needs to be done",
+  "i'll stop here",
+  "let me know if you'd like",
+  "let me know if you want",
+  "i can continue",
+  "i could continue",
+  "would you like me to",
+  "ready to proceed",
+  "here's my plan",
+  "here is my plan",
+]
+
+const RESUME_COMMAND = "RESUME WORK NOW. You have pending tasks. Do not stop to report status or ask for permission. Call your tools and continue working immediately."
+
+function detectStopPattern(responseText: string): boolean {
+  const lower = responseText.toLowerCase()
+  return STOP_SIGNAL_WORDS.some(pattern => lower.includes(pattern))
+}
+
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
@@ -311,6 +345,23 @@ export default (async ({ }) => {
         output += completionPrompt
         output += evidencePrompt
         output += BASH_METACHAR_POLICY
+      }
+    },
+
+    "experimental.chat.response.transform": async (_input, output) => {
+      if (typeof output !== "string") return
+      if (detectStopPattern(output)) {
+        output += "\n\n" + [
+          "════════════════════════════════════════════════════════",
+          "⚠️ ANTI-STOP GUARDRAIL TRIGGERED",
+          "",
+          "Your response contains a stop pattern. You appear to be",
+          "stopping work to report status, ask for permission, or wait",
+          "for approval instead of continuing to work.",
+          "",
+          RESUME_COMMAND,
+          "════════════════════════════════════════════════════════",
+        ].join("\n")
       }
     },
   }

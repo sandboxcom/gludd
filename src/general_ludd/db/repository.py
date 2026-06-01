@@ -8,6 +8,7 @@ from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.orm import selectinload
 
 from general_ludd.db.models import (
     AuditEventModel,
@@ -16,6 +17,8 @@ from general_ludd.db.models import (
     TaskReturnModel,
     TodoEventModel,
     TodoModel,
+    VariableNamespaceModel,
+    VariableValueModel,
 )
 from general_ludd.schemas.todo import VALID_TRANSITIONS, TodoStatus
 
@@ -262,3 +265,68 @@ class AuditEventRepository:
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+
+class VariableNamespaceRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def load_vars_for_project(self, project_id: str | None = None) -> dict[str, str]:
+        stmt = select(VariableNamespaceModel).options(selectinload(VariableNamespaceModel.values))
+        if project_id is not None:
+            stmt = stmt.where(
+                (VariableNamespaceModel.project_id == project_id)
+                | (VariableNamespaceModel.project_id.is_(None))
+            )
+        else:
+            stmt = stmt.where(VariableNamespaceModel.project_id.is_(None))
+        result = await self._session.execute(stmt)
+        namespaces = list(result.scalars().all())
+        merged: dict[str, str] = {}
+        for ns in namespaces:
+            if ns.project_id is not None:
+                continue
+            for v in ns.values:
+                merged[v.key] = v.value
+        for ns in namespaces:
+            if ns.project_id is None:
+                continue
+            for v in ns.values:
+                merged[v.key] = v.value
+        return merged
+
+    async def create_namespace(
+        self, namespace: str, project_id: str | None = None, description: str = ""
+    ) -> VariableNamespaceModel:
+        ns = VariableNamespaceModel(
+            namespace=namespace,
+            project_id=project_id,
+            description=description,
+        )
+        self._session.add(ns)
+        await self._session.flush()
+        return ns
+
+    async def set_var(
+        self, namespace_id: int, key: str, value: str, value_type: str = "string"
+    ) -> VariableValueModel:
+        stmt = select(VariableValueModel).where(
+            VariableValueModel.namespace_id == namespace_id,
+            VariableValueModel.key == key,
+        )
+        result = await self._session.execute(stmt)
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            existing.value = value
+            existing.value_type = value_type
+            await self._session.flush()
+            return existing
+        var = VariableValueModel(
+            namespace_id=namespace_id,
+            key=key,
+            value=value,
+            value_type=value_type,
+        )
+        self._session.add(var)
+        await self._session.flush()
+        return var

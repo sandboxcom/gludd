@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
+import json
 import logging
 import time
 from typing import Any
@@ -69,6 +71,8 @@ class EventLoop:
         project_manager: Any | None = None,
         prompt_registry: Any | None = None,
         audit_repo: Any | None = None,
+        skill_registry: Any | None = None,
+        variable_repo: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -98,12 +102,28 @@ class EventLoop:
         self._project_manager = project_manager
         self._prompt_registry = prompt_registry
         self._audit_repo = audit_repo
+        self._skill_registry = skill_registry
+        self._variable_repo = variable_repo
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
 
     def _resolve_prompt_text(self, todo: Any) -> str | None:
         profile_name = _safe_str(todo, "prompt_profile")
         return _resolve_prompt_text_static(self._prompt_registry, profile_name)
+
+    def _resolve_skill_body(self, todo: Any) -> str | None:
+        if self._skill_registry is None:
+            return None
+        title = _safe_str(todo, "title") or ""
+        matched = self._skill_registry.match_trigger(title)
+        if matched:
+            return matched[0].body
+        return None
+
+    async def _load_shared_vars(self, project_id: str | None) -> dict[str, str] | None:
+        if self._variable_repo is None or self.session is None:
+            return None
+        return await self._variable_repo.load_vars_for_project(project_id)
 
     def _on_config_reloaded(self, event: Any) -> None:
         payload = getattr(event, "payload", {}) or {}
@@ -184,7 +204,7 @@ class EventLoop:
             return_id=tr.return_id,
             todo_id=tr.todo_id,
             playbook="return_review.yml",
-            queue=_safe_str(tr, "queue", "model"),
+            queue=_safe_str(tr, "queue", "model") or "model",
             work_type="review",
             resource_profile="ai_heavy",
             plan_artifact=_safe_str(tr, "plan_artifact"),
@@ -210,13 +230,83 @@ class EventLoop:
             return
         if self._http_client is None:
             return
-        await self._http_client.post(
+        resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/return-review",
             json=job.model_dump(mode="json"),
         )
+        await self._persist_review_response(tr, resp)
+
+    async def _persist_review_response(self, tr: Any, resp: Any) -> None:
+        if self._task_return_repo is None:
+            return
+        try:
+            body = getattr(resp, "json", None)
+            if callable(body):
+                data = await body()
+            elif isinstance(resp, dict):
+                data = resp
+            else:
+                data = getattr(resp, "body", None)
+                if data is not None:
+                    import json as _json
+                    data = _json.loads(data)
+                else:
+                    return
+            if not isinstance(data, dict):
+                return
+            decision = data.get("decision")
+            if decision and self.session is not None:
+                from general_ludd.db.models import TaskDecisionModel
+                dm = TaskDecisionModel(
+                    return_id=tr.return_id,
+                    project_id=getattr(tr, "project_id", None),
+                    matched_todo_id=getattr(tr, "todo_id", None),
+                    decision=str(decision),
+                    confidence=float(data.get("confidence", 0.0)),
+                    evidence_refs=json.dumps(data.get("evidence_refs", [])),
+                    audit_notes=json.dumps(data.get("audit_notes", [])),
+                )
+                self.session.add(dm)
+                await self.session.flush()
+                logger.info("Persisted decision for return %s: %s", tr.return_id, decision)
+        except Exception as exc:
+            logger.warning("Failed to persist review response for %s: %s", getattr(tr, "return_id", "?"), exc)
 
     async def _phase_evaluate_pid_controllers(self) -> None:
-        pass
+        queues_data = self._config_snapshot.get("queues", [])
+        if not queues_data:
+            return
+        try:
+            import psutil
+
+            from general_ludd.controllers.load_scrape import LoadSnapshot
+            from general_ludd.controllers.pid import LoadController
+            from general_ludd.schemas.queue import Queue
+
+            load_1, load_5, load_10 = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
+            cpu_count = psutil.cpu_count(logical=True) or 1
+            cpu_pct = psutil.cpu_percent(interval=0)
+            mem = psutil.virtual_memory()
+            disk = psutil.disk_usage("/")
+            disk_free_pct = 100 - (disk.used / disk.total * 100) if disk.total > 0 else 100.0
+
+            controller = LoadController(cpu_count=cpu_count)
+            queues = [Queue(**q) if isinstance(q, dict) else q for q in queues_data]
+            snapshot = LoadSnapshot(
+                loadavg_1m=load_1,
+                loadavg_5m=load_5,
+                loadavg_10m=load_10,
+                logical_cpu_count=cpu_count,
+                cpu_percent=cpu_pct,
+                memory_available_percent=mem.percent,
+                disk_free_percent=disk_free_pct,
+                active_ansible_jobs=0,
+                active_gunicorn_jobs=0,
+            )
+            outputs = controller.evaluate_snapshot(snapshot, queues)
+            self._tick_state["pid_outputs"] = outputs
+        except Exception as exc:
+            logger.debug("PID evaluation skipped: %s", exc)
 
     async def _phase_evaluate_rules(self) -> None:
         from general_ludd.rules.engine import Rule
@@ -280,6 +370,14 @@ class EventLoop:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         playbook = self._config_snapshot.get("default_playbook", "noop.yml")
         prompt_text = self._resolve_prompt_text(todo)
+        skill_body = self._resolve_skill_body(todo)
+        project_id_val = (
+            todo.project_id
+            if hasattr(todo, "project_id")
+            and isinstance(todo.project_id, str)
+            else None
+        )
+        shared_vars = await self._load_shared_vars(project_id_val)
         if self._runner is not None:
             job_id = f"EXEC-{todo.todo_id}"
             dirs = self._runner.prepare_job_dirs(job_id)
@@ -293,9 +391,10 @@ class EventLoop:
                     "model_profile": _safe_str(todo, "model_profile"),
                     "prompt_profile": _safe_str(todo, "prompt_profile"),
                     "prompt_text": prompt_text,
+                    "skill_body": skill_body,
                     **budget_context,
                 },
-                shared_vars=None,
+                shared_vars=shared_vars,
             )
             self._runner.run_playbook(
                 playbook_name=playbook,
@@ -308,25 +407,50 @@ class EventLoop:
             job_id=f"EXEC-{todo.todo_id}",
             todo_id=todo.todo_id,
             playbook=playbook,
-            queue=_safe_str(todo, "queue", "core"),
-            work_type=_safe_str(todo, "work_type", "unknown"),
-            resource_profile=_safe_str(todo, "resource_profile", "low_resource"),
+            queue=_safe_str(todo, "queue", "core") or "core",
+            work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
+            resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
             model_profile=_safe_str(todo, "model_profile"),
             prompt_profile=_safe_str(todo, "prompt_profile"),
             plan_artifact=_safe_str(todo, "plan_artifact"),
             prompt_text=prompt_text,
             budget_context=budget_context,
-            project_id=(
-                todo.project_id
-                if hasattr(todo, "project_id")
-                and isinstance(todo.project_id, str)
-                else None
-            ),
+            project_id=project_id_val,
         )
-        await self._http_client.post(
+        resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
             json=job.model_dump(mode="json"),
         )
+        await self._persist_task_return(todo, job, resp)
+
+    async def _persist_task_return(self, todo: Any, job: JobSpec, resp: Any) -> None:
+        if self._task_return_repo is None:
+            return
+        try:
+            body = getattr(resp, "json", None)
+            if callable(body):
+                data = await body()
+            elif isinstance(resp, dict):
+                data = resp
+            else:
+                return
+            if not isinstance(data, dict):
+                return
+            await self._task_return_repo.create(data={
+                "return_id": data.get("return_id", f"RET-{job.job_id}"),
+                "todo_id": todo.todo_id,
+                "job_id": job.job_id,
+                "playbook": job.playbook,
+                "queue": job.queue,
+                "exit_code": data.get("exit_code", 0),
+                "result_summary": data.get("result_summary", ""),
+                "project_id": job.project_id,
+            })
+            if self.session is not None:
+                await self.session.flush()
+            logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
+        except Exception as exc:
+            logger.warning("Failed to persist task return for %s: %s", todo.todo_id, exc)
 
     async def _phase_reconcile_completed_decisions(self) -> None:
         if self.session is None or self._todo_repo is None:
@@ -355,6 +479,19 @@ class EventLoop:
                     todo.todo_id, new_status, todo.version
                 )
                 reconciled += 1
+                if self._audit_repo is not None:
+                    with contextlib.suppress(Exception):
+                        await self._audit_repo.create(
+                            event_type="todo_status_changed",
+                            entity_type="todo",
+                            entity_id=todo.todo_id,
+                            project_id=todo.project_id,
+                            details=json.dumps({
+                                "old": todo.status,
+                                "new": new_status.value,
+                                "decision": d.decision,
+                            }),
+                        )
         self._tick_metrics["decisions_applied"] = reconciled
 
     def _decision_to_status(self, decision: str) -> TodoStatus | None:

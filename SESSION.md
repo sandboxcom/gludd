@@ -6,10 +6,10 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: All planned pipeline wiring complete
-- **Test Suite**: 1888 passed, 12 skipped, 0 failures, 92.19% coverage
+- **Phase**: Data flow wiring (Phases 1, 4, 5, 8 complete)
+- **Test Suite**: 1935 passed, 12 skipped, 0 failures, 92.44% coverage
 - **Branch**: master
-- **Latest commit**: b770e82 add plan_artifact migration, CLI models/local-serve commands, optional local-inference deps
+- **Latest commit**: c7ce18c wire DB into daemon lifespan, SQLite WAL, metrics, audit repo, prompt resolution
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -135,13 +135,67 @@ obj01-obj16 all complete.
 - dist/install.sh env template expanded with all provider env vars
 - 12 tests in test_secrets_wiring_startup.py
 
+## Data Flow Wiring (IN PROGRESS)
+
+### Phase 1: Wire DB into daemon lifespan (COMPLETE — commit c7ce18c)
+- `init_engine_from_config()` — creates engine from config dict, defaults to SQLite
+- `ensure_tables()` — auto-creates all tables for SQLite
+- `seed_initial_queues()` — idempotent, seeds 12 queues on first run
+- `run_wal_pragmas()` — WAL mode, busy_timeout=5000, FK ON, mmap, cache
+- `get_default_db_url()` — returns `sqlite+aiosqlite:///~/.local/share/general-ludd/general-ludd.db`
+- `is_sqlite_url()` — detects SQLite vs PostgreSQL URLs
+- Session factory passed to EventLoop as `async_sessionmaker`
+- EventLoop accepts both `AsyncSession` and `async_sessionmaker` for `session` param
+- `aiosqlite` moved to production dependencies
+- Daemon lifespan: creates engine, ensures tables, seeds queues, creates session factory
+- Engine disposed on shutdown
+- EventBus, HookSystem, ProjectManager wired into EventLoop from daemon subsystems
+
+### Phase 2: TaskReturn persistence (NOT STARTED)
+- Worker response captured and persisted via `TaskReturnRepository.create()`
+
+### Phase 3: Decision persistence (NOT STARTED)
+- `TaskDecisionModel` written after ReturnReviewer
+
+### Phase 4: MetricsCollector into ModelGateway (COMPLETE)
+- `metrics_collector` and `metrics_agent_id` params on ModelGateway
+- Records input/output tokens, success, cost per `call_model()` invocation
+- 2 tests in `test_pipeline_wiring.py`
+
+### Phase 5: AuditEventRepository (COMPLETE)
+- `AuditEventRepository` with `create()`, `list_by_entity()`, `list_by_project()`
+- 3 tests in `test_data_flow_e2e.py`
+
+### Phase 6: Queue seeding in DB (COMPLETE)
+- Part of Phase 1 — `seed_initial_queues()` called in daemon lifespan
+
+### Phase 7: Variable namespaces (NOT STARTED)
+- `shared_vars` still `None` everywhere
+
+### Phase 8: Prompt profile resolution (COMPLETE)
+- `_resolve_prompt_text_static()` — resolves profile name to rendered template text
+- `prompt_registry` param on EventLoop
+- `prompt_text` field added to `JobSpec`
+- Resolved text passed in dispatch (both runner and HTTP paths)
+- 5 tests in `test_pipeline_wiring.py`
+
+### Phase 9: Config snapshot (PARTIAL)
+- `_phase_load_config_snapshot` does `dict(self.config)` but config now contains model_profiles, rules
+
 ## Key Gaps (Known)
 - Skills body field not injected into prompts
 - PID controller phase is still no-op (rules engine wired, PID not)
 - `_phase_evaluate_pid_controllers` still pass
 - `tool.uv.dev-dependencies` deprecation warning (cosmetic)
+- TaskReturn capture from worker HTTP response not wired
+- Decision persistence after ReturnReviewer not wired
+- Variable namespaces never loaded from DB
+- Config snapshot still shallow copy
 
 ## Remaining Next Steps
-1. Wire PID controller phase
-2. Inject skills body into prompts
-3. Fix `tool.uv.dev-dependencies` deprecation warning
+1. Phase 2: Capture worker HTTP response → persist TaskReturn
+2. Phase 3: Write TaskDecisionModel after ReturnReviewer
+3. Phase 7: Load variable namespaces from DB into dispatch
+4. Wire PID controller phase
+5. Inject skills body into prompts
+6. Fix `tool.uv.dev-dependencies` deprecation warning

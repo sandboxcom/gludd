@@ -352,3 +352,84 @@ class TestPromptResolution:
         asyncio.run(loop._dispatch_execute_job(todo))
 
         prompt_reg.render.assert_called_once_with("execute.md.j2")
+
+
+class TestSkillsInjection:
+    def test_resolve_skill_body_matches_title(self):
+        from general_ludd.skills.skill import Skill
+
+        skill_reg = MagicMock()
+        skill = Skill(name="tdd", body="Always write tests first", trigger_patterns=["test", "tdd"])
+        skill_reg.match_trigger.return_value = [skill]
+
+        loop, _ = _make_loop(skill_registry=skill_reg)
+        todo = MagicMock()
+        todo.title = "Add TDD support for feature X"
+        body = loop._resolve_skill_body(todo)
+        assert body == "Always write tests first"
+
+    def test_resolve_skill_body_returns_none_no_match(self):
+        skill_reg = MagicMock()
+        skill_reg.match_trigger.return_value = []
+        loop, _ = _make_loop(skill_registry=skill_reg)
+        todo = MagicMock()
+        todo.title = "Refactor database layer"
+        assert loop._resolve_skill_body(todo) is None
+
+    def test_resolve_skill_body_returns_none_without_registry(self):
+        loop, _ = _make_loop()
+        todo = MagicMock()
+        todo.title = "Something"
+        assert loop._resolve_skill_body(todo) is None
+
+
+class TestPIDPhase:
+    def test_pid_phase_skips_without_queues(self):
+        loop, _ = _make_loop(config={"tick_interval": 1.0})
+        loop._config_snapshot = {}
+        import asyncio
+        asyncio.run(loop._phase_evaluate_pid_controllers())
+        assert "pid_outputs" not in loop._tick_state
+
+    def test_pid_phase_does_not_crash_with_queues(self):
+        from general_ludd.schemas.queue import Queue
+
+        queues = [Queue(queue_name="core").model_dump()]
+        loop, _ = _make_loop(config={"tick_interval": 1.0, "queues": queues})
+        loop._config_snapshot = {"queues": queues}
+        import asyncio
+        asyncio.run(loop._phase_evaluate_pid_controllers())
+
+
+class TestTaskReturnPersistence:
+    def test_persist_task_return_creates_row(self):
+        loop, _ = _make_loop()
+        task_return_repo = AsyncMock()
+        loop._task_return_repo = task_return_repo
+
+        todo = MagicMock()
+        todo.todo_id = "TODO-200"
+        from general_ludd.schemas.job import JobSpec
+        job = JobSpec(job_id="EXEC-200", todo_id="TODO-200", playbook="noop.yml", queue="core")
+
+        resp = MagicMock()
+        resp.json = AsyncMock(return_value={"exit_code": 0, "result_summary": "OK"})
+
+        import asyncio
+        asyncio.run(loop._persist_task_return(todo, job, resp))
+
+        task_return_repo.create.assert_called_once()
+        call_data = task_return_repo.create.call_args[1]["data"]
+        assert call_data["todo_id"] == "TODO-200"
+        assert call_data["job_id"] == "EXEC-200"
+
+    def test_persist_task_return_skips_without_repo(self):
+        loop, _ = _make_loop()
+        loop._task_return_repo = None
+        from general_ludd.schemas.job import JobSpec
+
+        todo = MagicMock()
+        job = JobSpec(job_id="EXEC-201", todo_id="TODO-201", playbook="noop.yml", queue="core")
+        import asyncio
+        asyncio.run(loop._persist_task_return(todo, job, MagicMock()))
+

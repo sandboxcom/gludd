@@ -1,5 +1,39 @@
 # Agentic Harness - Agent Rules
 
+## CRITICAL: Premature-Stop Audit Policy
+
+**At the start of EVERY session, before doing any other work, you MUST:**
+
+1. **Read `BUGS.md`** at the project root. This file tracks all premature-stop incidents.
+2. **Audit your own previous session** for premature stops by reading SESSION.md and
+   cross-referencing the "Next Steps" section. If Next Steps contains items that existed
+   before the last commit, you stopped prematurely.
+3. **Fix the root cause guardrail** before continuing with any project work.
+4. **Log the incident** in `BUGS.md` with: date, what you stopped before finishing,
+   why the guardrail failed, and what you fixed.
+
+**A premature stop is ANY session exit where:**
+- Your todo list had items in `pending` or `in_progress` state.
+- SESSION.md "Next Steps" lists work that was identified but not started.
+- You reported status/progress instead of continuing work.
+- You asked "should I continue?" or equivalent.
+- You listed remaining work and stopped without completing it.
+
+**Every premature stop is a BUG.** Bugs in your own process are no different from bugs
+in code — they must be tracked, root-caused, and fixed before moving on.
+
+**Root cause categories to check:**
+- Missing or weak guardrail (plugin hook doesn't detect the stop pattern)
+- Guardrail is advisory only (console.warn) not blocking (throw/inject)
+- System prompt doesn't mention the specific stop pattern
+- AGENTS.md doesn't codify the specific pattern as forbidden
+- No mechanism to detect pending todos at session boundary
+
+**This is enforced by:**
+- This AGENTS.md section — proactive instruction to audit on session start
+- `.opencode/plugin/enforce-make.ts` — `chat.response.transform` hook detects stop patterns
+- `BUGS.md` — persistent bug tracking for process failures
+
 ## CRITICAL: Task Completion Policy
 
 **You MUST complete ALL requested work before stopping. No exceptions.**
