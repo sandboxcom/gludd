@@ -24,6 +24,7 @@ def main() -> None:
     daemon_parser.add_argument("--tick-interval", type=float, default=1.0)
     daemon_parser.add_argument("--workers", type=int, default=1)
     daemon_parser.add_argument("--project", default=None, help="Default project for daemon operations")
+    daemon_parser.add_argument("--config-dir", default=None, help="Path to config directory")
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
@@ -78,9 +79,11 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     log_level = args.log_level.upper()
     logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
+    config_dir = getattr(args, "config_dir", None)
+
     from general_ludd.daemon import create_daemon_app
 
-    create_daemon_app(tick_interval=args.tick_interval, log_level=args.log_level)
+    create_daemon_app(tick_interval=args.tick_interval, log_level=args.log_level, config_dir=config_dir)
 
     cmd = [
         "gunicorn",

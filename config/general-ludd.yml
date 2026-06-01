@@ -1,43 +1,43 @@
-# General Ludd Agent — Main Configuration
-# ========================================
+# General Ludd Agent - Main Configuration
+# =========================================
 #
 # This is the primary configuration file. After installing, edit this file
 # to match your environment. The daemon loads it from:
 #   - /etc/general-ludd/general-ludd.yml  (systemd install)
 #   - ~/.config/general-ludd/user.yml     (user-level override)
 #
-# Environment variables take precedence over values here.
-# See docs/configuration.md for full reference.
+# Pass --config-dir to the daemon to use a different config directory:
+#   gludd daemon --config-dir /path/to/config
+#
+# Environment variables in /etc/general-ludd/env take precedence over
+# values here. See docs/configuration.md for full reference.
+#
+# Additional config files are in the config/ directory alongside this file:
+#   config/model_profiles/*.yml   - Model provider profiles
+#   config/agents/default_agents.yml - Agent definitions
+#   config/binary_paths.yml       - External binary paths
+#   config/openbao/default.yml    - OpenBao secrets settings
+#   config/ansible/isolation.yml  - Process isolation settings
+#   config/mcp_servers/example.yml - MCP server connections
+#   config/tasks/example_tasks.yml - Reusable task templates
 
 # ── Model Routing ───────────────────────────────────────────────────────────
 #
 # Controls which AI model is used for each task type.
-# Model profiles are defined in config/model_profiles/*.yml
+# Profile IDs must match a model_profile_id from config/model_profiles/*.yml
 #
 model_routing:
-  # The default model profile for all tasks unless overridden below.
-  # Must match a model_profile_id from config/model_profiles/*.yml
   default_profile: zai_coder
-
-  # Weaker/cheaper model for low-priority tasks
   weak_model_profile: zai_coder
-
-  # Route specific roles to specific profiles
   role_routing:
     coder: zai_coder
     planner: zai_coder
     reviewer: zai_coder
-
-  # Route by quality requirement
   quality_routing:
     high: zai_coder
     medium: zai_coder
-
-  # Route by latency requirement
   latency_routing:
     fast: zai_coder
-
-  # Route by work pattern
   pattern_routing:
     return_review: reviewer
     commit_message: weak
@@ -50,13 +50,10 @@ model_routing:
 # PostgreSQL connection. If not set, the daemon falls back to SQLite
 # (not recommended for production).
 #
-# You can set DATABASE_URL as an environment variable instead.
+# Override with DATABASE_URL environment variable.
 #
 database:
-  # Full connection URL (overrides individual fields below)
   # url: postgresql://gludd:password@localhost:5432/gludd
-
-  # Or set individual components:
   host: localhost
   port: 5432
   name: gludd
@@ -65,8 +62,8 @@ database:
 
 # ── Agents ──────────────────────────────────────────────────────────────────
 #
-# Agent definitions are in config/agents/default_agents.yml
-# These settings override agent behavior globally.
+# Global agent behavior. Individual agent definitions are in
+# config/agents/default_agents.yml.
 #
 agents:
   default_agent: build
@@ -75,7 +72,7 @@ agents:
 # ── Process Isolation ───────────────────────────────────────────────────────
 #
 # Run Ansible playbooks in isolated containers for safety.
-# Requires podman or docker.
+# Detailed settings in config/ansible/isolation.yml.
 #
 process_isolation:
   enabled: false
@@ -88,3 +85,184 @@ process_isolation:
 budget:
   max_usd: 50
   warn_percent: 80
+
+# ── Secrets ─────────────────────────────────────────────────────────────────
+#
+# OpenBao / HashiCorp Vault integration for secret storage.
+# Detailed settings in config/openbao/default.yml.
+# API keys are resolved from: env var -> OpenBao -> error
+#
+secrets:
+  backend: openbao
+  # config_path: config/openbao/default.yml
+
+# ── Quality Gates ───────────────────────────────────────────────────────────
+#
+# Coverage thresholds that block task completion if not met.
+#
+quality_gates:
+  python_line_coverage_min_percent: 90
+  python_branch_coverage_min_percent: 80
+  molecule_coverage_min_percent: 0
+  enforcement:
+    block_completion: true
+    block_commit: false
+    block_merge: false
+    block_tag: false
+    block_push: false
+    reload_on_failure: false
+
+# ── Context Compaction ──────────────────────────────────────────────────────
+#
+# When conversation context exceeds the token window, older messages
+# are compacted to free space.
+#
+context_compaction:
+  max_tokens: 128000
+  compaction_threshold: 0.8
+  preserve_recent_count: 4
+
+# ── Hot Reload ──────────────────────────────────────────────────────────────
+#
+# Automatically reload config, templates, and playbooks when files change.
+# Also configurable via POST /admin/reload at runtime.
+#
+hot_reload:
+  enabled: true
+  watch_config: true
+  watch_templates: true
+  watch_playbooks: true
+  debounce_seconds: 1.0
+
+# ── Metrics ─────────────────────────────────────────────────────────────────
+#
+# Agent metrics collection and cost tracking.
+# View at runtime: GET /admin/metrics/report, GET /admin/agents
+#
+metrics:
+  enabled: true
+  # subscription_name: ""        # Your API subscription name
+  # subscription_cost_per_month: 0.0
+  # tokens_per_week: 0
+
+# ── Local Inference ─────────────────────────────────────────────────────────
+#
+# Run models locally with vLLM or llama.cpp.
+# Model profiles in config/model_profiles/vllm_example.yml and
+# config/model_profiles/llamacpp_example.yml define the server settings.
+#
+local_inference:
+  enabled: false
+  # engine: vllm                 # vllm or llamacpp
+  # model_path: ~/.cache/general-ludd/models
+  # host: 127.0.0.1
+  # port: 8080
+  # gpu_layers: 40               # llamacpp only
+  # context_size: 4096           # llamacpp only
+
+# ── Git Automation ──────────────────────────────────────────────────────────
+#
+# Automatic branch creation, commits, and merges for task work.
+#
+git_automation:
+  enabled: false
+  # repo_path: .
+  # auto_commit: false
+  # branch_prefix: "gludd/"
+  # push_on_complete: false
+
+# ── Projects ────────────────────────────────────────────────────────────────
+#
+# Multi-project isolation with weighted allocation.
+# Add projects at runtime via: POST /admin/projects
+# Or define initial projects here.
+#
+# projects:
+#   - name: my-project
+#     weight: 50
+#     description: "Primary project"
+#     workspace_path: /var/lib/general-ludd/projects/my-project
+#     repo_url: https://github.com/org/repo
+#   - name: secondary
+#     weight: 50
+#     description: "Secondary project"
+
+# ── Compute Endpoints ───────────────────────────────────────────────────────
+#
+# Register compute endpoints for least-utilized task routing.
+# Add endpoints at runtime via the API or define them here.
+#
+# compute_endpoints:
+#   - endpoint_id: local-gpu
+#     url: http://127.0.0.1:8080
+#     model: local-model
+#     max_concurrent: 4
+
+# ── Model Registry ──────────────────────────────────────────────────────────
+#
+# HuggingFace model search and download.
+# Set HF_TOKEN in the env file for gated model access.
+# Use at runtime: POST /admin/models/search, GET /admin/models/downloaded
+#
+model_registry:
+  cache_dir: ~/.cache/general-ludd/models
+
+# ── MCP Servers ─────────────────────────────────────────────────────────────
+#
+# Model Context Protocol server connections.
+# See config/mcp_servers/example.yml for full examples.
+#
+# mcp_servers:
+#   filesystem:
+#     command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
+#     args: ["/tmp"]
+#     timeout_seconds: 30
+#     enabled: true
+
+# ── Skills ──────────────────────────────────────────────────────────────────
+#
+# Skill definitions are loaded from config/skills/*.md files.
+# Each skill is a markdown file with YAML frontmatter.
+#
+skills:
+  # directories:
+  #   - config/skills
+
+# ── Rules ───────────────────────────────────────────────────────────────────
+#
+# PID rules engine for automatic task routing and queue management.
+# Default rules are hardcoded. Define custom rules here to override.
+#
+# rules:
+#   - name: route_qa
+#     priority: 10
+#     enabled: true
+#     conditions:
+#       all:
+#         - field: work_type
+#           op: eq
+#           value: test
+#     actions:
+#       queue: qa
+
+# ── Validation ──────────────────────────────────────────────────────────────
+#
+# Automatic test validation and gap analysis.
+#
+validation:
+  enabled: true
+  # test_command: "make test-unit"
+  # worktree_path: /tmp/gludd-validation
+
+# ── Log Auditing ────────────────────────────────────────────────────────────
+#
+# Scan logs for secrets, stuck todos, and missing correlation IDs.
+#
+log_auditing:
+  enabled: true
+  # log_dir: /var/log/general-ludd
+  # secret_patterns:
+  #   - "api.key"
+  #   - "password"
+  #   - "token"
+  #   - "secret"

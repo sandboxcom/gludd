@@ -8,10 +8,19 @@ import logging
 import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
+import yaml
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
+
+from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.config.binary_paths import BinaryPaths
+from general_ludd.config.loader import load_user_config
+from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
+from general_ludd.config.user_config import UserConfig
+from general_ludd.secrets.config import OpenBaoConfig
 
 logger = logging.getLogger(__name__)
 
@@ -19,6 +28,71 @@ _daemon_state: dict[str, Any] = {
     "todos": [],
     "tick_metrics": {},
 }
+
+
+def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
+    cfg: dict[str, Any] = {
+        "model_routing": ModelRoutingConfig(),
+        "user_config": UserConfig(),
+        "binary_paths": None,
+        "openbao_config": None,
+        "process_isolation": None,
+        "mcp_servers": {},
+        "task_definitions": [],
+    }
+    if config_dir is None:
+        return cfg
+    cdir = Path(config_dir)
+    if not cdir.is_dir():
+        return cfg
+
+    mr_path = cdir / "model_routing.yml"
+    if mr_path.exists():
+        cfg["model_routing"] = load_model_routing(mr_path)
+
+    gl_path = cdir / "general-ludd.yml"
+    if gl_path.exists():
+        with open(gl_path) as f:
+            data = yaml.safe_load(f) or {}
+        cfg["user_config"] = UserConfig(**data)
+        if cfg["user_config"].model_routing is None and cfg["model_routing"].default_profile is None:
+            mr_data = data.get("model_routing")
+            if mr_data:
+                cfg["model_routing"] = ModelRoutingConfig(**mr_data)
+    else:
+        cfg["user_config"] = load_user_config()
+
+    bp_path = cdir / "binary_paths.yml"
+    if bp_path.exists():
+        with open(bp_path) as f:
+            data = yaml.safe_load(f) or {}
+        bp_data = data.get("binary_paths", {})
+        cfg["binary_paths"] = BinaryPaths(**bp_data) if bp_data else None
+
+    ob_path = cdir / "openbao" / "default.yml"
+    if ob_path.exists():
+        with open(ob_path) as f:
+            data = yaml.safe_load(f) or {}
+        cfg["openbao_config"] = OpenBaoConfig(**data)
+
+    iso_path = cdir / "ansible" / "isolation.yml"
+    if iso_path.exists():
+        with open(iso_path) as f:
+            data = yaml.safe_load(f) or {}
+        pi_data = data.get("process_isolation", {})
+        cfg["process_isolation"] = ProcessIsolationConfig(**pi_data) if pi_data else None
+
+    mcp_path = cdir / "mcp_servers" / "example.yml"
+    if mcp_path.exists():
+        from general_ludd.mcp.loader import load_mcp_config
+        cfg["mcp_servers"] = load_mcp_config(str(mcp_path))
+
+    tasks_dir = cdir / "tasks"
+    if tasks_dir.is_dir():
+        from general_ludd.config.task_loader import discover_task_definitions
+        cfg["task_definitions"] = discover_task_definitions(str(tasks_dir))
+
+    return cfg
 
 
 class AddTodoRequest(BaseModel):
@@ -165,6 +239,7 @@ def create_daemon_app(
     app.state._project_manager = None
     app.state._utilization_tracker = None
     app.state._model_registry = None
+    app.state._startup_config = load_startup_config(config_dir)
 
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)

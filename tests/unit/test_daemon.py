@@ -118,6 +118,85 @@ class TestDaemonApp:
             assert isinstance(resp.json(), list)
 
 
+class TestDaemonStartupConfig:
+    def test_create_app_with_config_dir_loads_config(self, tmp_path):
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "model_routing.yml").write_text(
+            "default_profile: test_prof\nrole_routing:\n  coder: test_prof\n"
+        )
+        app = create_daemon_app(config_dir=str(config_dir))
+        assert app.state._config_dir == str(config_dir)
+
+    def test_create_app_without_config_dir_still_works(self):
+        app = create_daemon_app()
+        assert app.state._config_dir is None
+
+    def test_load_startup_config_loads_model_routing(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "model_routing.yml").write_text(
+            "default_profile: my_profile\n"
+        )
+        cfg = load_startup_config(config_dir=str(config_dir))
+        assert cfg["model_routing"].default_profile == "my_profile"
+
+    def test_load_startup_config_loads_user_config(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "general-ludd.yml").write_text(
+            "database:\n  url: postgresql://localhost/gludd\n"
+        )
+        cfg = load_startup_config(config_dir=str(config_dir))
+        assert cfg["user_config"].database["url"] == "postgresql://localhost/gludd"
+
+    def test_load_startup_config_handles_missing_dir(self):
+        from general_ludd.daemon import load_startup_config
+
+        cfg = load_startup_config(config_dir="/nonexistent")
+        assert cfg["model_routing"].default_profile is None
+        assert cfg["user_config"] is not None
+
+    def test_load_startup_config_loads_binary_paths(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        (config_dir / "binary_paths.yml").write_text(
+            "binary_paths:\n  terraform: /usr/local/bin/terraform\n"
+        )
+        cfg = load_startup_config(config_dir=str(config_dir))
+        assert cfg["binary_paths"] is not None
+
+    def test_load_startup_config_loads_openbao(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        openbao_dir = config_dir / "openbao"
+        openbao_dir.mkdir()
+        (openbao_dir / "default.yml").write_text("mode: external\nexternal_url: http://bao:8200\n")
+        cfg = load_startup_config(config_dir=str(config_dir))
+        assert cfg["openbao_config"] is not None
+
+    def test_load_startup_config_loads_process_isolation(self, tmp_path):
+        from general_ludd.daemon import load_startup_config
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        ansible_dir = config_dir / "ansible"
+        ansible_dir.mkdir()
+        (ansible_dir / "isolation.yml").write_text(
+            "process_isolation:\n  enabled: true\n  executable: docker\n"
+        )
+        cfg = load_startup_config(config_dir=str(config_dir))
+        assert cfg["process_isolation"] is not None
+
+
 class TestDaemonLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_creates_event_loop_and_task(self):
