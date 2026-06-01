@@ -1,5 +1,8 @@
 from __future__ import annotations
 
+from typing import Any
+
+from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.skill import Skill
 
 
@@ -28,3 +31,10 @@ class SkillRegistry:
                     results.append(skill)
                     break
         return results
+
+    def refresh(self, search_paths: list[str] | None = None) -> dict[str, Any]:
+        if search_paths:
+            discovered = discover_skills(*search_paths)
+            for skill in discovered:
+                self._skills[skill.name] = skill
+        return {"skills": list(self._skills.keys())}

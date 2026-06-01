@@ -40,13 +40,19 @@ class AnsibleRunnerAdapter:
         private_data_dir: str | None = None,
         registry: dict[str, str] | None = None,
         isolation_config: ProcessIsolationConfig | None = None,
+        playbooks_dir: str | None = None,
+        event_bus: Any | None = None,
     ) -> None:
-        self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="harness-runner-")
+        self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="gl-runner-")
         self.registry = _build_registry(registry)
         self.isolation_config = isolation_config
+        self._playbooks_dir = playbooks_dir
+        self._event_bus = event_bus
         self._core_runner = CoreAnsibleRunner(
             process_isolation=isolation_config,
         )
+        if playbooks_dir:
+            self._scan_playbook_dir(playbooks_dir)
 
     def resolve_playbook(self, playbook_name: str) -> str:
         if playbook_name not in self.registry:
@@ -102,3 +108,31 @@ class AnsibleRunnerAdapter:
         except Exception as exc:
             logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
+
+    def refresh_playbooks(self) -> dict[str, Any]:
+        if self._playbooks_dir:
+            self._scan_playbook_dir(self._playbooks_dir)
+        return {"playbooks": list(self.registry.keys())}
+
+    def register_playbook(self, name: str, path: str) -> None:
+        self.registry[name] = path
+        if self._event_bus:
+            from general_ludd.events.types import PlaybookRegisteredEvent
+
+            self._event_bus.publish(PlaybookRegisteredEvent(playbook=name))
+
+    def unregister_playbook(self, name: str) -> None:
+        self.registry.pop(name, None)
+
+    def list_playbooks(self) -> list[str]:
+        return list(self.registry.keys())
+
+    def _scan_playbook_dir(self, playbooks_dir: str) -> None:
+        pdir = Path(playbooks_dir)
+        if pdir.is_dir():
+            for f in sorted(pdir.glob("*.yml")):
+                self.registry[f.name] = str(f)
+                if self._event_bus:
+                    from general_ludd.events.types import PlaybookRegisteredEvent
+
+                    self._event_bus.publish(PlaybookRegisteredEvent(playbook=f.name))
