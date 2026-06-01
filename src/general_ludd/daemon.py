@@ -231,6 +231,29 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         subsys = _get_or_create_subsystems(app)
         ext = _get_or_create_extended_subsystems(app)
 
+        secrets_resolver = build_secrets_resolver(
+            openbao_config=startup_config.get("openbao_config"),
+        )
+        app.state._secrets_resolver = secrets_resolver
+
+        model_profiles = startup_config.get("model_profiles", [])
+        if model_profiles and hasattr(secrets_resolver, "write_secret"):
+            try:
+                from general_ludd.secrets.migration import migrate_profile_secrets
+
+                profile_dicts = [
+                    p.model_dump() if hasattr(p, "model_dump") else p
+                    for p in model_profiles
+                ]
+                result = migrate_profile_secrets(secrets_resolver, profile_dicts)
+                logger.info(
+                    "Secret migration: %d migrated, %d skipped",
+                    result["migrated"],
+                    len(result["skipped"]),
+                )
+            except Exception as exc:
+                logger.warning("Secret migration failed: %s", exc)
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,

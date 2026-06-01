@@ -433,3 +433,45 @@ class TestTaskReturnPersistence:
         import asyncio
         asyncio.run(loop._persist_task_return(todo, job, MagicMock()))
 
+
+class TestConfigSnapshotDeepCopy:
+    @pytest.mark.asyncio
+    async def test_config_snapshot_is_deep_copy(self):
+        config = {
+            "model_profiles": [{"id": "zai_coder"}],
+            "rules": [{"rule_id": "r1"}],
+            "queues": [{"queue_name": "core"}],
+        }
+        loop, _ = _make_loop(config=config)
+        await loop._phase_load_config_snapshot()
+
+        config["model_profiles"].append({"id": "new_profile"})
+        config["rules"].append({"rule_id": "r2"})
+
+        assert len(loop._config_snapshot["model_profiles"]) == 1
+        assert len(loop._config_snapshot["rules"]) == 1
+
+    @pytest.mark.asyncio
+    async def test_config_snapshot_includes_shared_vars(self):
+        from general_ludd.db.repository import VariableNamespaceRepository
+
+        session = AsyncMock()
+        var_repo = MagicMock(spec=VariableNamespaceRepository)
+        var_repo.load_vars_for_project = AsyncMock(return_value={"SHARED_KEY": "shared_val"})
+
+        loop, _ = _make_loop(
+            config={"model_profiles": [], "rules": []},
+            session=session,
+        )
+        loop._variable_repo = var_repo
+        await loop._phase_load_config_snapshot()
+
+        assert loop._config_snapshot.get("shared_vars") == {"SHARED_KEY": "shared_val"}
+
+    @pytest.mark.asyncio
+    async def test_config_snapshot_handles_no_variable_repo(self):
+        loop, _ = _make_loop(config={"model_profiles": []})
+        loop._variable_repo = None
+        await loop._phase_load_config_snapshot()
+        assert "shared_vars" not in loop._config_snapshot
+

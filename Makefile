@@ -229,6 +229,12 @@ test-live-zai:
 	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
 	$(UV) run pytest tests/live/test_zai_live.py -v -s
 
+test-zai-identity:
+	@echo "Running authenticated Z.AI identity test..."
+	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
+	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
+	$(UV) run pytest tests/live/test_zai_identity.py -v -s
+
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
 

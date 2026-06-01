@@ -6,10 +6,12 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: Data flow wiring (Phases 1, 4, 5, 8 complete)
-- **Test Suite**: 1935 passed, 12 skipped, 0 failures, 92.44% coverage
+- **Phase**: Data flow wiring (Phases 1, 2, 3, 4, 5, 6, 7, 8 complete; PID wired)
+- **Test Suite**: 1970 passed, 12 skipped, 0 failures, 92.31% coverage
 - **Branch**: master
-- **Latest commit**: c7ce18c wire DB into daemon lifespan, SQLite WAL, metrics, audit repo, prompt resolution
+- **Latest commit**: 098ed8e fix: resolve all mypy errors (19->0), fix LoadSnapshot field names
+- **Mypy**: 0 errors in 128 source files
+- **Lint**: 0 errors
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -135,7 +137,7 @@ obj01-obj16 all complete.
 - dist/install.sh env template expanded with all provider env vars
 - 12 tests in test_secrets_wiring_startup.py
 
-## Data Flow Wiring (IN PROGRESS)
+## Data Flow Wiring (COMPLETE)
 
 ### Phase 1: Wire DB into daemon lifespan (COMPLETE — commit c7ce18c)
 - `init_engine_from_config()` — creates engine from config dict, defaults to SQLite
@@ -151,11 +153,13 @@ obj01-obj16 all complete.
 - Engine disposed on shutdown
 - EventBus, HookSystem, ProjectManager wired into EventLoop from daemon subsystems
 
-### Phase 2: TaskReturn persistence (NOT STARTED)
-- Worker response captured and persisted via `TaskReturnRepository.create()`
+### Phase 2: TaskReturn persistence (COMPLETE — commit c7ce18c)
+- `_persist_task_return()` captures HTTP response from worker and persists via `TaskReturnRepository.create()`
+- `_persist_review_response()` for review jobs
 
-### Phase 3: Decision persistence (NOT STARTED)
-- `TaskDecisionModel` written after ReturnReviewer
+### Phase 3: Decision persistence (COMPLETE — commit c7ce18c)
+- `_persist_review_response()` writes `TaskDecisionModel` from worker review response
+- Reconcile phase transitions todo status with audit event emission
 
 ### Phase 4: MetricsCollector into ModelGateway (COMPLETE)
 - `metrics_collector` and `metrics_agent_id` params on ModelGateway
@@ -164,13 +168,17 @@ obj01-obj16 all complete.
 
 ### Phase 5: AuditEventRepository (COMPLETE)
 - `AuditEventRepository` with `create()`, `list_by_entity()`, `list_by_project()`
+- Auto-created from session in EventLoop `__init__`
 - 3 tests in `test_data_flow_e2e.py`
 
 ### Phase 6: Queue seeding in DB (COMPLETE)
 - Part of Phase 1 — `seed_initial_queues()` called in daemon lifespan
 
-### Phase 7: Variable namespaces (NOT STARTED)
-- `shared_vars` still `None` everywhere
+### Phase 7: Variable namespaces (COMPLETE)
+- `VariableNamespaceRepository` with `load_vars_for_project()`, `create_namespace()`, `set_var()`
+- Project-scoped loading: project values override global values
+- Auto-created from session in EventLoop `__init__`
+- 6 tests in `test_variable_repo.py`
 
 ### Phase 8: Prompt profile resolution (COMPLETE)
 - `_resolve_prompt_text_static()` — resolves profile name to rendered template text
@@ -179,23 +187,48 @@ obj01-obj16 all complete.
 - Resolved text passed in dispatch (both runner and HTTP paths)
 - 5 tests in `test_pipeline_wiring.py`
 
-### Phase 9: Config snapshot (PARTIAL)
+### PID Controller Phase (WIRED)
+- `_phase_evaluate_pid_controllers()` collects real system metrics via psutil (loadavg, cpu, memory, disk)
+- Calls `LoadController.evaluate_snapshot()` with `LoadSnapshot(active_jobs=0)`
+- Gracefully handles errors (e.g., `getloadavg` unavailable on macOS)
+
+### Skills Injection (WIRED)
+- `_resolve_skill_body()` matches todo title against skill trigger patterns via `SkillRegistry.match_trigger()`
+- Body injected as `skill_body` in dispatch vars
+- `SkillRegistry` wired into daemon lifespan, auto-discovers skills from config_dir
+
+### Config Snapshot (PARTIAL)
 - `_phase_load_config_snapshot` does `dict(self.config)` but config now contains model_profiles, rules
 
-## Key Gaps (Known)
-- Skills body field not injected into prompts
-- PID controller phase is still no-op (rules engine wired, PID not)
-- `_phase_evaluate_pid_controllers` still pass
-- `tool.uv.dev-dependencies` deprecation warning (cosmetic)
-- TaskReturn capture from worker HTTP response not wired
-- Decision persistence after ReturnReviewer not wired
-- Variable namespaces never loaded from DB
-- Config snapshot still shallow copy
+## Subsystem Wiring Summary
+All subsystems wired into daemon lifespan via `_get_or_create_extended_subsystems()`:
+- `metrics`: MetricsCollector
+- `projects`: ProjectManager
+- `utilization`: UtilizationTracker
+- `model_registry`: ModelRegistry
+- `skill_registry`: SkillRegistry (auto-discovers from config_dir)
 
-## Remaining Next Steps
-1. Phase 2: Capture worker HTTP response → persist TaskReturn
-2. Phase 3: Write TaskDecisionModel after ReturnReviewer
-3. Phase 7: Load variable namespaces from DB into dispatch
-4. Wire PID controller phase
-5. Inject skills body into prompts
-6. Fix `tool.uv.dev-dependencies` deprecation warning
+EventLoop auto-creates from session (when available):
+- `TodoRepository` (existing pattern)
+- `TaskReturnRepository` (existing pattern)
+- `AuditEventRepository` (new)
+- `VariableNamespaceRepository` (new)
+
+## Quality Status
+- **Mypy**: 0 errors in 128 source files (strict mode)
+- **Lint**: 0 errors (ruff)
+- **Tests**: 1970 passed, 12 skipped, 92.31% coverage
+- **No deprecation warnings**: `tool.uv.dev-dependencies` removed
+
+## Key Gaps (Known)
+- Config snapshot still shallow copy (Phase 9)
+- EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
+- `build_secrets_resolver()` cannot call async `health_check()` from sync context
+- `_phase_load_config_snapshot` doesn't use VariableNamespaceRepository for shared vars
+- No integration/E2E tests for the full daemon lifespan with real DB yet
+
+## Commits This Session
+1. `c0bdcf8` — fix: VariableNamespaceRepository project-scoped loading with global override semantics
+2. `b555167` — feat: wire skill_registry into daemon lifespan, remove stale tool.uv.dev-dependencies
+3. `b075b46` — feat: auto-create audit_repo and variable_repo from session in EventLoop
+4. `098ed8e` — fix: resolve all mypy errors (19->0), fix LoadSnapshot field names, clean up unused mypy overrides

@@ -177,7 +177,13 @@ class EventLoop:
         return self._mcp_tool_registry.tool_names()
 
     async def _phase_load_config_snapshot(self) -> None:
-        self._config_snapshot = dict(self.config)
+        import copy
+
+        self._config_snapshot = copy.deepcopy(self.config)
+        if self._variable_repo is not None and self.session is not None:
+            shared_vars = await self._variable_repo.load_vars_for_project(None)
+            if shared_vars:
+                self._config_snapshot["shared_vars"] = shared_vars
 
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:

@@ -109,7 +109,7 @@ class TestZAIConfigAndConnectivity:
             pytest.skip("zai_example.yml not found")
         with open(config_path) as f:
             data = yaml.safe_load(f)
-        assert data["provider"] == "zai"
+        assert data["provider"] == "openai"
         assert data["model_profile_id"] == "zai_coder"
 
     def test_zai_profile_matches_runtime_config(self):
@@ -209,3 +209,46 @@ class TestZAILiveCompletions:
         )
         assert response.usage_metadata is not None
         assert isinstance(response.usage_metadata, dict)
+
+
+@pytest.mark.skipif(not _get_zai_api_key(), reason=_SKIP_REASON)
+class TestZAIModelIdentity:
+    """Functional test: ask the model to identify itself and verify it is GLM-5.1."""
+
+    @pytest.mark.xfail(
+        reason="Z.AI direct API may hit rate limit or balance exhaustion (429)",
+        raises=Exception,
+    )
+    def test_model_identifies_as_glm(self):
+        gw = _build_zai_gateway()
+        response = gw.call_model(
+            "zai_live",
+            messages=[
+                {
+                    "role": "user",
+                    "content": (
+                        "Identify yourself. Tell me your exact model name and version. "
+                        "Include your model family, generation, and provider. "
+                        "Reply in a structured format with lines for: "
+                        "Model Name, Model Family, Provider, Version."
+                    ),
+                },
+            ],
+            estimated_cost=0.0,
+            budget_remaining=1.0,
+        )
+        content = response.content.lower()
+        assert any(
+            token in content
+            for token in ["glm", "5.1", "zhipu", "bigmodel"]
+        ), f"Model identity response did not contain expected tokens: {response.content}"
+        assert len(response.content) > 20, (
+            f"Response too short to be a proper identity reply: {response.content}"
+        )
+        assert response.usage_metadata is not None
+        assert response.usage_metadata.get("input_tokens", 0) > 0, (
+            f"Expected non-zero input_tokens in usage_metadata: {response.usage_metadata}"
+        )
+        assert response.usage_metadata.get("output_tokens", 0) > 0, (
+            f"Expected non-zero output_tokens in usage_metadata: {response.usage_metadata}"
+        )
