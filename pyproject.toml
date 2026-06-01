@@ -29,6 +29,7 @@ dependencies = [
     "requests>=2.32.0",
     "tree-sitter>=0.24.0",
     "tree-sitter-python>=0.23.0",
+    "huggingface-hub>=0.28.0",
 ]
 
 [project.optional-dependencies]
@@ -79,7 +80,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "langchain.*", "langchain_openai.*", "psycopg.*", "molecule.*", "pytest_ansible.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*"]
+module = ["ansible.*", "hvac.*", "langchain.*", "langchain_openai.*", "psycopg.*", "molecule.*", "pytest_ansible.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]
