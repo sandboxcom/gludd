@@ -6,12 +6,12 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: Data flow wiring (Phases 1, 2, 3, 4, 5, 6, 7, 8 complete; PID wired)
-- **Test Suite**: 1970 passed, 12 skipped, 0 failures, 92.31% coverage
+- **Phase**: All data flow wiring complete. Secret migration wired. Config snapshot deep copy complete.
+- **Test Suite**: 1989 passed, 15 skipped, 0 failures, 92.36% coverage
 - **Branch**: master
-- **Latest commit**: 098ed8e fix: resolve all mypy errors (19->0), fix LoadSnapshot field names
-- **Mypy**: 0 errors in 128 source files
-- **Lint**: 0 errors
+- **Latest commit**: 7a74689 feat: wire secret migration into daemon startup, deep config snapshot, daemon lifespan integration tests
+- **Mypy**: 0 errors in 129 source files (strict mode)
+- **Lint**: 0 errors (ruff)
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -137,6 +137,17 @@ obj01-obj16 all complete.
 - dist/install.sh env template expanded with all provider env vars
 - 12 tests in test_secrets_wiring_startup.py
 
+## Secret Migration (COMPLETE)
+- `migrate_profile_secrets()` in `src/general_ludd/secrets/migration.py` — scans model profiles, resolves credential_alias from env vars, writes to OpenBao KV v2, registers SecretAlias
+- `scrub_inline_secrets()` — removes inline secret fields (api_key, password, external_token) from YAML config files
+- Wired into daemon `_lifespan()`: called after `build_secrets_resolver()` when secrets resolver has `write_secret` (i.e., is a real SecretsManager, not EnvSecretsManager)
+- Profile dicts converted via `model_dump()` before passing to migration
+- Migration failures logged as warnings, do not block daemon startup
+- Fixed lint (SIM102 nested ifs) and mypy errors (tuple type, str assertions)
+- Fixed test path mismatch bugs: migration stores at `model-profiles/{id}/credential_alias`, tests were using wrong paths
+- 8 tests in `tests/unit/test_secret_migration.py`
+- 2 wiring tests in `tests/unit/test_secret_migration_wiring.py`
+
 ## Data Flow Wiring (COMPLETE)
 
 ### Phase 1: Wire DB into daemon lifespan (COMPLETE — commit c7ce18c)
@@ -187,6 +198,12 @@ obj01-obj16 all complete.
 - Resolved text passed in dispatch (both runner and HTTP paths)
 - 5 tests in `test_pipeline_wiring.py`
 
+### Phase 9: Config snapshot deep copy (COMPLETE — commit 7a74689)
+- `_phase_load_config_snapshot` now uses `copy.deepcopy(self.config)` for isolation
+- Config snapshot includes `shared_vars` from `VariableNamespaceRepository` when available
+- Nested mutations to `self.config` after snapshot do not affect the snapshot
+- 3 tests in `test_pipeline_wiring.py` (deep copy isolation, shared vars, no repo)
+
 ### PID Controller Phase (WIRED)
 - `_phase_evaluate_pid_controllers()` collects real system metrics via psutil (loadavg, cpu, memory, disk)
 - Calls `LoadController.evaluate_snapshot()` with `LoadSnapshot(active_jobs=0)`
@@ -197,8 +214,9 @@ obj01-obj16 all complete.
 - Body injected as `skill_body` in dispatch vars
 - `SkillRegistry` wired into daemon lifespan, auto-discovers skills from config_dir
 
-### Config Snapshot (PARTIAL)
-- `_phase_load_config_snapshot` does `dict(self.config)` but config now contains model_profiles, rules
+## Daemon Lifespan Integration (COMPLETE)
+- 6 tests in `tests/integration/test_daemon_lifespan.py`
+- Tests: startup with real SQLite DB, table creation, queue seeding, EventLoop tick, todo API, engine disposal, config dir loading
 
 ## Subsystem Wiring Summary
 All subsystems wired into daemon lifespan via `_get_or_create_extended_subsystems()`:
@@ -215,20 +233,19 @@ EventLoop auto-creates from session (when available):
 - `VariableNamespaceRepository` (new)
 
 ## Quality Status
-- **Mypy**: 0 errors in 128 source files (strict mode)
+- **Mypy**: 0 errors in 129 source files (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 1970 passed, 12 skipped, 92.31% coverage
+- **Tests**: 1989 passed, 15 skipped, 92.36% coverage
 - **No deprecation warnings**: `tool.uv.dev-dependencies` removed
 
 ## Key Gaps (Known)
-- Config snapshot still shallow copy (Phase 9)
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
 - `build_secrets_resolver()` cannot call async `health_check()` from sync context
-- `_phase_load_config_snapshot` doesn't use VariableNamespaceRepository for shared vars
-- No integration/E2E tests for the full daemon lifespan with real DB yet
+- ZAI API 429 (balance exhaustion) — live identity tests xfail until recharged
 
 ## Commits This Session
 1. `c0bdcf8` — fix: VariableNamespaceRepository project-scoped loading with global override semantics
 2. `b555167` — feat: wire skill_registry into daemon lifespan, remove stale tool.uv.dev-dependencies
 3. `b075b46` — feat: auto-create audit_repo and variable_repo from session in EventLoop
 4. `098ed8e` — fix: resolve all mypy errors (19->0), fix LoadSnapshot field names, clean up unused mypy overrides
+5. `7a74689` — feat: wire secret migration into daemon startup, deep config snapshot, daemon lifespan integration tests

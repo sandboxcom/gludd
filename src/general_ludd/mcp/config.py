@@ -8,6 +8,7 @@ class MCPServerConfig(BaseModel):
     command: list[str] | None = None
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
+    env_aliases: dict[str, str] = Field(default_factory=dict)
     url: str | None = None
     timeout_seconds: float = 30.0
     enabled: bool = True
