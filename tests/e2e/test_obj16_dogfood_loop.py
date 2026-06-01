@@ -64,7 +64,7 @@ class TestDogfoodRunnerImportAndInstantiation:
 class TestSprintParser:
     def test_parse_sprint0_returns_items(self):
         repo_root = os.path.dirname(os.path.dirname(os.path.dirname(__file__)))
-        sprint_path = os.path.join(repo_root, "docs", "sprint0.md")
+        sprint_path = os.path.join(repo_root, "docs", "internal", "sprint0.md")
         items = parse_sprint_markdown(sprint_path)
         assert isinstance(items, list)
 

@@ -1,0 +1,90 @@
+# General Ludd Agent — Main Configuration
+# ========================================
+#
+# This is the primary configuration file. After installing, edit this file
+# to match your environment. The daemon loads it from:
+#   - /etc/general-ludd/general-ludd.yml  (systemd install)
+#   - ~/.config/general-ludd/user.yml     (user-level override)
+#
+# Environment variables take precedence over values here.
+# See docs/configuration.md for full reference.
+
+# ── Model Routing ───────────────────────────────────────────────────────────
+#
+# Controls which AI model is used for each task type.
+# Model profiles are defined in config/model_profiles/*.yml
+#
+model_routing:
+  # The default model profile for all tasks unless overridden below.
+  # Must match a model_profile_id from config/model_profiles/*.yml
+  default_profile: zai_coder
+
+  # Weaker/cheaper model for low-priority tasks
+  weak_model_profile: zai_coder
+
+  # Route specific roles to specific profiles
+  role_routing:
+    coder: zai_coder
+    planner: zai_coder
+    reviewer: zai_coder
+
+  # Route by quality requirement
+  quality_routing:
+    high: zai_coder
+    medium: zai_coder
+
+  # Route by latency requirement
+  latency_routing:
+    fast: zai_coder
+
+  # Route by work pattern
+  pattern_routing:
+    return_review: reviewer
+    commit_message: weak
+    gap_analysis: fast
+    code_generation: coder
+    planning: planner
+
+# ── Database ────────────────────────────────────────────────────────────────
+#
+# PostgreSQL connection. If not set, the daemon falls back to SQLite
+# (not recommended for production).
+#
+# You can set DATABASE_URL as an environment variable instead.
+#
+database:
+  # Full connection URL (overrides individual fields below)
+  # url: postgresql://gludd:password@localhost:5432/gludd
+
+  # Or set individual components:
+  host: localhost
+  port: 5432
+  name: gludd
+  user: gludd
+  # password: set-in-env-file
+
+# ── Agents ──────────────────────────────────────────────────────────────────
+#
+# Agent definitions are in config/agents/default_agents.yml
+# These settings override agent behavior globally.
+#
+agents:
+  default_agent: build
+  max_concurrent: 4
+
+# ── Process Isolation ───────────────────────────────────────────────────────
+#
+# Run Ansible playbooks in isolated containers for safety.
+# Requires podman or docker.
+#
+process_isolation:
+  enabled: false
+  container_runtime: podman
+
+# ── Budget ──────────────────────────────────────────────────────────────────
+#
+# Spending limits for AI model API calls.
+#
+budget:
+  max_usd: 50
+  warn_percent: 80

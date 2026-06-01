@@ -248,14 +248,21 @@ dist: build-executable
 	@cp dist/gludd $(TARBALL_DIR)/gludd
 	@cp dist/install.sh $(TARBALL_DIR)/install.sh
 	@cp dist/general-ludd.service $(TARBALL_DIR)/general-ludd.service
+	@cp dist/README.md $(TARBALL_DIR)/README.md
 	@cp -r config $(TARBALL_DIR)/config
 	@cp -r templates $(TARBALL_DIR)/templates
-	@if [ -d docs ]; then cp -r docs $(TARBALL_DIR)/docs; fi
+	@mkdir -p $(TARBALL_DIR)/docs
+	@if [ -f docs/quickstart.md ]; then cp docs/quickstart.md $(TARBALL_DIR)/docs/; fi
+	@if [ -f docs/configuration.md ]; then cp docs/configuration.md $(TARBALL_DIR)/docs/; fi
+	@if [ -f docs/architecture.md ]; then cp docs/architecture.md $(TARBALL_DIR)/docs/; fi
+	@if [ -f docs/model-setup.md ]; then cp docs/model-setup.md $(TARBALL_DIR)/docs/; fi
 	@cd dist && tar czf $(TARBALL_NAME).tar.gz $(TARBALL_NAME)
+	@cd dist && shasum -a 256 $(TARBALL_NAME).tar.gz > $(TARBALL_NAME).tar.gz.sha256
 	@echo "Created dist/$(TARBALL_NAME).tar.gz"
+	@echo "Checksum: dist/$(TARBALL_NAME).tar.gz.sha256"
 
 dist-clean:
-	@rm -rf dist/general-ludd-agent-* dist/gludd build
+	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot build
 	@echo "Dist artifacts cleaned."
 
 container-build:

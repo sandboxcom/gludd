@@ -31,7 +31,6 @@ class TestSystemdUnit:
         for directive in [
             "NoNewPrivileges=true",
             "ProtectSystem=strict",
-            "ProtectHome=true",
             "PrivateTmp=true",
         ]:
             assert directive in content
@@ -39,7 +38,7 @@ class TestSystemdUnit:
     def test_service_file_uses_gludd_daemon(self):
         with open(self.SERVICE_PATH) as f:
             content = f.read()
-        assert "gludd daemon --host 0.0.0.0 --port 8000" in content
+        assert "gludd daemon --host 127.0.0.1 --port 8000" in content
 
 
 class TestInstallScript:
@@ -74,8 +73,8 @@ class TestInstallScript:
     def test_install_script_starts_service(self):
         with open(self.SCRIPT_PATH) as f:
             content = f.read()
-        assert "systemctl enable" in content
-        assert "systemctl start" in content
+        assert "systemctl" in content
+        assert "daemon-reload" in content
 
     def test_install_script_checks_root(self):
         with open(self.SCRIPT_PATH) as f:

@@ -33,6 +33,27 @@ class TestUserConfigDefaults:
         cfg = UserConfig()
         assert cfg.budget == {}
 
+    def test_database_empty(self):
+        cfg = UserConfig()
+        assert cfg.database == {}
+
+    def test_database_accepts_url(self):
+        cfg = UserConfig(database={"url": "postgresql://localhost/gludd"})
+        assert cfg.database == {"url": "postgresql://localhost/gludd"}
+
+    def test_database_accepts_components(self):
+        cfg = UserConfig(
+            database={
+                "host": "localhost",
+                "port": 5432,
+                "name": "gludd",
+                "user": "gludd",
+                "password": "secret",
+            }
+        )
+        assert cfg.database["host"] == "localhost"
+        assert cfg.database["port"] == 5432
+
 
 class TestAgentConfigDefaults:
     def test_model_routing_is_none(self):

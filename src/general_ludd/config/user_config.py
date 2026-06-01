@@ -13,6 +13,7 @@ class UserConfig(BaseModel):
     agents: dict[str, Any] = {}
     process_isolation: dict[str, Any] = {}
     budget: dict[str, Any] = {}
+    database: dict[str, Any] = {}
 
 
 class AgentConfig(BaseModel):
