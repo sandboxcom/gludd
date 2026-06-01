@@ -115,6 +115,39 @@ class TestCLIParsing:
             main()
             mock_cmd.assert_called_once()
 
+    def test_models_search_command(self):
+        with patch("sys.argv", ["gludd", "models", "search", "llama"]), patch(
+            "general_ludd.cli._cmd_models_search"
+        ) as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.query == "llama"
+            assert args.limit == 20
+
+    def test_models_search_default_query(self):
+        with patch("sys.argv", ["gludd", "models", "search"]), patch(
+            "general_ludd.cli._cmd_models_search"
+        ) as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.query == ""
+
+    def test_models_downloaded_command(self):
+        with patch("sys.argv", ["gludd", "models", "downloaded"]), patch(
+            "general_ludd.cli._cmd_models_downloaded"
+        ) as mock_cmd:
+            main()
+            mock_cmd.assert_called_once()
+
+    def test_local_serve_command(self):
+        with patch(
+            "sys.argv", ["gludd", "local-serve", "--model", "llama-7b", "--engine", "vllm"]
+        ), patch("general_ludd.cli._cmd_local_serve") as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.model == "llama-7b"
+            assert args.engine == "vllm"
+
 
 class TestClientCommands:
     @pytest.mark.asyncio
@@ -239,6 +272,52 @@ class TestClientCommands:
             with pytest.raises(SystemExit) as exc_info:
                 _cmd_health(args)
             assert exc_info.value.code == 1
+
+    def test_models_search_sends_post_to_daemon(self, capsys):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "results": [
+                {"model_id": "meta-llama/Llama-3-8B", "pipeline_tag": "text-generation", "downloads": 100000}
+            ]
+        }
+        with patch("httpx.post", return_value=mock_response) as mock_post:
+            import argparse
+
+            from general_ludd.cli import _cmd_models_search
+            args = argparse.Namespace(query="llama", limit=10, daemon_url="http://localhost:8000")
+            _cmd_models_search(args)
+        mock_post.assert_called_once()
+        assert "/admin/models/search" in mock_post.call_args[0][0]
+
+    def test_models_downloaded_sends_get_to_daemon(self, capsys):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"models": []}
+        with patch("httpx.get", return_value=mock_response) as mock_get:
+            import argparse
+
+            from general_ludd.cli import _cmd_models_downloaded
+            args = argparse.Namespace(daemon_url="http://localhost:8000")
+            _cmd_models_downloaded(args)
+        mock_get.assert_called_once()
+        assert "/admin/models/downloaded" in mock_get.call_args[0][0]
+
+    def test_local_serve_sends_post_to_daemon(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"server_id": "local-0", "endpoint_url": "http://localhost:8001/v1"}
+        with patch("httpx.post", return_value=mock_response) as mock_post:
+            import argparse
+
+            from general_ludd.cli import _cmd_local_serve
+            args = argparse.Namespace(
+                engine="vllm", model="llama-7b", host="localhost", port=8001,
+                gpu_layers=-1, context_size=4096, daemon_url="http://localhost:8000",
+            )
+            _cmd_local_serve(args)
+        mock_post.assert_called_once()
+        assert "/admin/local-inference/start" in mock_post.call_args[0][0]
 
 
 class TestHotLoading:

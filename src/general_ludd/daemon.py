@@ -692,4 +692,31 @@ def create_daemon_app(
             ]
         }
 
+    @app.post("/admin/local-inference/start")
+    async def admin_local_inference_start(payload: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+
+        if not hasattr(app.state, "_local_inference") or app.state._local_inference is None:
+            subsys = _get_or_create_subsystems(app)
+            app.state._local_inference = LocalInferenceManager(event_bus=subsys["bus"])
+        manager: LocalInferenceManager = app.state._local_inference
+        config = LocalServerConfig(
+            engine=payload.get("engine", "vllm"),
+            model_path=payload.get("model_path", ""),
+            model_name=payload.get("model_name", ""),
+            host=payload.get("host", "localhost"),
+            port=payload.get("port", 8001),
+            gpu_layers=payload.get("gpu_layers", -1),
+            context_size=payload.get("context_size", 4096),
+        )
+        server = manager.create_server(config)
+        await manager.start_server(server.server_id)
+        return {
+            "server_id": server.server_id,
+            "engine": config.engine,
+            "model": config.model_path or config.model_name,
+            "endpoint_url": server.endpoint_url,
+            "status": server.status,
+        }
+
     return app

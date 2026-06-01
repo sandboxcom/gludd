@@ -66,6 +66,30 @@ def main() -> None:
     health_parser.add_argument("--daemon-url", default="http://localhost:8000")
     health_parser.set_defaults(func=_cmd_health)
 
+    models_parser = sub.add_parser("models", help="Model management commands")
+    models_sub = models_parser.add_subparsers(dest="models_command")
+    models_sub.metavar = ""
+
+    models_search = models_sub.add_parser("search", help="Search HuggingFace models")
+    models_search.add_argument("query", nargs="?", default="", help="Search query")
+    models_search.add_argument("--limit", type=int, default=20)
+    models_search.add_argument("--daemon-url", default="http://localhost:8000")
+    models_search.set_defaults(func=_cmd_models_search)
+
+    models_downloaded = models_sub.add_parser("downloaded", help="List downloaded models")
+    models_downloaded.add_argument("--daemon-url", default="http://localhost:8000")
+    models_downloaded.set_defaults(func=_cmd_models_downloaded)
+
+    local_serve_parser = sub.add_parser("local-serve", help="Start a local inference server")
+    local_serve_parser.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"])
+    local_serve_parser.add_argument("--model", required=True, help="Model name or path")
+    local_serve_parser.add_argument("--host", default="localhost")
+    local_serve_parser.add_argument("--port", type=int, default=8001)
+    local_serve_parser.add_argument("--gpu-layers", type=int, default=-1)
+    local_serve_parser.add_argument("--context-size", type=int, default=4096)
+    local_serve_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    local_serve_parser.set_defaults(func=_cmd_local_serve)
+
     args = parser.parse_args()
     if args.func is None:
         parser.print_help()
@@ -208,6 +232,89 @@ def _cmd_health(args: argparse.Namespace) -> None:
         resp = httpx.get(f"{args.daemon_url}/healthz", timeout=10.0)
         if resp.status_code == 200:
             print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_models_search(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/models/search",
+            json={"query": args.query, "limit": args.limit},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                print("No models found.")
+                return
+            for r in results:
+                print(f"  {r['model_id']}")
+                if r.get("pipeline_tag"):
+                    print(f"    Task: {r['pipeline_tag']}")
+                if r.get("downloads") is not None:
+                    print(f"    Downloads: {r['downloads']:,}")
+                print()
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_models_downloaded(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/models/downloaded", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            models = data.get("models", [])
+            if not models:
+                print("No models downloaded.")
+                return
+            for m in models:
+                print(f"  {m['model_id']}")
+                print(f"    Path: {m.get('local_path', 'N/A')}")
+                print(f"    Engine: {m.get('engine', 'N/A')}")
+                print()
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_local_serve(args: argparse.Namespace) -> None:
+    import httpx
+
+    payload = {
+        "engine": args.engine,
+        "model_path": args.model,
+        "model_name": args.model,
+        "host": args.host,
+        "port": args.port,
+        "gpu_layers": args.gpu_layers,
+        "context_size": args.context_size,
+    }
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/local-inference/start",
+            json=payload,
+            timeout=30.0,
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            print(json.dumps(data, indent=2))
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)

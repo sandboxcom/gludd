@@ -126,6 +126,19 @@ class TestTodoModel:
         assert todo.created_at is not None
         assert todo.updated_at is not None
 
+    async def test_todo_plan_artifact_nullable(self, async_session: AsyncSession):
+        todo = TodoModel(title="Plan test")
+        async_session.add(todo)
+        await async_session.flush()
+        assert todo.plan_artifact is None
+
+    async def test_todo_plan_artifact_stored(self, async_session: AsyncSession):
+        plan = "## Plan\n1. Write tests\n2. Implement\n3. Review"
+        todo = TodoModel(title="Plan test", plan_artifact=plan)
+        async_session.add(todo)
+        await async_session.flush()
+        assert todo.plan_artifact == plan
+
 
 class TestTodoEventModel:
     async def test_create_todo_event(self, async_session: AsyncSession):

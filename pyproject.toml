@@ -53,6 +53,10 @@ dev = [
     "cyclonedx-py>=0.7.0",
     "pip-audit>=0.3.0",
 ]
+local-inference = [
+    "llama-cpp-python>=0.3.0",
+    "vllm>=0.6.0",
+]
 
 [project.scripts]
 gludd = "general_ludd.cli:main"

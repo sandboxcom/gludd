@@ -2472,7 +2472,7 @@
       "version": "0.8.7"
     },
     {
-      "bom-ref": "lark==1.3.1",
+      "bom-ref": "lark==1.2.2",
       "description": "a modern parsing library",
       "externalReferences": [
         {
@@ -2495,9 +2495,9 @@
         }
       ],
       "name": "lark",
-      "purl": "pkg:pypi/lark@1.3.1",
+      "purl": "pkg:pypi/lark@1.2.2",
       "type": "library",
-      "version": "1.3.1"
+      "version": "1.2.2"
     },
     {
       "bom-ref": "librt==0.11.0",
@@ -4159,8 +4159,8 @@
       "version": "0.15.15"
     },
     {
-      "bom-ref": "setuptools==82.0.1",
-      "description": "Most extensible Python build backend with support for C/C++ extension modules",
+      "bom-ref": "setuptools==80.10.2",
+      "description": "Easily download, build, install, upgrade, and uninstall Python packages",
       "externalReferences": [
         {
           "comment": "from packaging metadata Project-URL: Documentation",
@@ -4187,9 +4187,9 @@
         }
       ],
       "name": "setuptools",
-      "purl": "pkg:pypi/setuptools@82.0.1",
+      "purl": "pkg:pypi/setuptools@80.10.2",
       "type": "library",
-      "version": "82.0.1"
+      "version": "80.10.2"
     },
     {
       "bom-ref": "shellingham==1.5.4",
@@ -5502,7 +5502,7 @@
     {
       "dependsOn": [
         "psutil==7.2.2",
-        "setuptools==82.0.1"
+        "setuptools==80.10.2"
       ],
       "ref": "greenlet==3.5.1"
     },
@@ -5723,7 +5723,7 @@
       "dependsOn": [
         "regex==2026.5.9"
       ],
-      "ref": "lark==1.3.1"
+      "ref": "lark==1.2.2"
     },
     {
       "ref": "librt==0.11.0"
@@ -5773,7 +5773,7 @@
         "pathspec==1.0.4",
         "pip==26.1.1",
         "psutil==7.2.2",
-        "setuptools==82.0.1",
+        "setuptools==80.10.2",
         "tomli==2.4.1",
         "typing_extensions==4.15.0"
       ],
@@ -5810,7 +5810,7 @@
         "SQLAlchemy==2.0.50",
         "mypy==2.1.0",
         "pytest==9.0.3",
-        "setuptools==82.0.1"
+        "setuptools==80.10.2"
       ],
       "ref": "packageurl-python==0.17.6"
     },
@@ -5893,7 +5893,7 @@
         "pytest==9.0.3",
         "requests==2.34.2",
         "ruff==0.15.15",
-        "setuptools==82.0.1",
+        "setuptools==80.10.2",
         "virtualenv==21.4.1"
       ],
       "ref": "psutil==7.2.2"
@@ -5942,7 +5942,7 @@
     {
       "dependsOn": [
         "packaging==26.2",
-        "setuptools==82.0.1"
+        "setuptools==80.10.2"
       ],
       "ref": "pyinstaller-hooks-contrib==2026.5"
     },
@@ -5954,7 +5954,7 @@
         "psutil==7.2.2",
         "pyinstaller-hooks-contrib==2026.5",
         "pytest==9.0.3",
-        "setuptools==82.0.1"
+        "setuptools==80.10.2"
       ],
       "ref": "pyinstaller==6.20.0"
     },
@@ -5989,7 +5989,7 @@
         "packaging==26.2",
         "pluggy==1.6.0",
         "requests==2.34.2",
-        "setuptools==82.0.1",
+        "setuptools==80.10.2",
         "tomli==2.4.1"
       ],
       "ref": "pytest==9.0.3"
@@ -6006,7 +6006,7 @@
         "filelock==3.29.0",
         "platformdirs==4.10.0",
         "pytest==9.0.3",
-        "setuptools==82.0.1"
+        "setuptools==80.10.2"
       ],
       "ref": "python-discovery==1.4.0"
     },
@@ -6058,7 +6058,7 @@
     },
     {
       "dependsOn": [
-        "lark==1.3.1",
+        "lark==1.2.2",
         "pytest==9.0.3"
       ],
       "ref": "rfc3987-syntax==1.1.0"
@@ -6082,6 +6082,7 @@
         "mypy==2.1.0",
         "packaging==26.2",
         "pip==26.1.1",
+        "platformdirs==4.10.0",
         "pytest-cov==7.1.0",
         "pytest==9.0.3",
         "ruff==0.15.15",
@@ -6089,7 +6090,7 @@
         "tomli_w==1.2.0",
         "virtualenv==21.4.1"
       ],
-      "ref": "setuptools==82.0.1"
+      "ref": "setuptools==80.10.2"
     },
     {
       "ref": "shellingham==1.5.4"
@@ -6248,7 +6249,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-06-01T07:30:25.127314+00:00",
+    "timestamp": "2026-06-01T07:35:12.201641+00:00",
     "tools": {
       "components": [
         {
@@ -6352,7 +6353,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:9b15d6be-874e-4d06-a70b-56886c4aa523",
+  "serialNumber": "urn:uuid:e911698c-ec45-4dbc-b23b-31c5d3f869fd",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
