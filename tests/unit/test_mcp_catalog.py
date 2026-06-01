@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import json
+from unittest.mock import patch
+
 from general_ludd.mcp.catalog import MCPCatalog, MCPCatalogEntry
 
 
@@ -71,3 +74,95 @@ class TestMCPCatalogSearch:
         catalog = MCPCatalog(registries=[])
         results = catalog.search(query="anything")
         assert results == []
+
+    @patch("urllib.request.urlopen")
+    def test_search_smithery_registry(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        mock_resp = type("Resp", (), {
+            "read": lambda self: json.dumps({
+                "servers": [
+                    {"qualifiedName": "test-server", "displayName": "Test", "description": "A test", "useCount": 42},
+                ]
+            }).encode(),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+        results = catalog.search(query="test", limit=10)
+        assert len(results) == 1
+        assert results[0].server_name == "test-server"
+        assert results[0].source == "smithery.ai"
+        assert results[0].downloads == 42
+
+    @patch("urllib.request.urlopen")
+    def test_search_mcp_registry(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["registry.modelcontextprotocol.io"])
+        mock_resp = type("Resp", (), {
+            "read": lambda self: json.dumps({
+                "servers": [
+                    {"name": "my-server", "description": "An MCP server"},
+                ]
+            }).encode(),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+        results = catalog.search(query="my", limit=10)
+        assert len(results) == 1
+        assert results[0].server_name == "my-server"
+        assert results[0].source == "registry.modelcontextprotocol.io"
+
+    @patch("urllib.request.urlopen")
+    def test_search_mcp_registry_dict_name(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["registry.modelcontextprotocol.io"])
+        mock_resp = type("Resp", (), {
+            "read": lambda self: json.dumps({
+                "servers": [
+                    {"name": {"name": "nested-name"}, "description": "Nested"},
+                ]
+            }).encode(),
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+        results = catalog.search(limit=10)
+        assert len(results) == 1
+        assert results[0].server_name == "nested-name"
+
+    def test_search_filters_by_source(self):
+        catalog = MCPCatalog(registries=["smithery.ai", "glama.ai"])
+        results = catalog.search(query="test", source="smithery")
+        assert isinstance(results, list)
+
+    @patch("urllib.request.urlopen")
+    def test_search_handles_registry_error(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        mock_urlopen.side_effect = Exception("Network error")
+        results = catalog.search(query="test")
+        assert results == []
+
+    def test_search_limits_results(self):
+        catalog = MCPCatalog(registries=[])
+        results = catalog.search(query="test", limit=1)
+        assert len(results) <= 1
+
+
+class TestMCPCatalogRefresh:
+    def test_refresh_clears_cache(self):
+        catalog = MCPCatalog()
+        catalog._cache.append(MCPCatalogEntry(server_name="cached-server"))
+        assert len(catalog._cache) == 1
+        catalog.refresh()
+        assert len(catalog._cache) == 0
+
+    def test_get_server_finds_cached_entry(self):
+        catalog = MCPCatalog(registries=[])
+        cached_entry = MCPCatalogEntry(server_name="cached-server")
+        catalog._cache.append(cached_entry)
+        assert catalog.get_server("cached-server") is cached_entry
+
+    def test_refresh_then_known_still_works(self):
+        catalog = MCPCatalog()
+        catalog._cache.append(MCPCatalogEntry(server_name="temp"))
+        catalog.refresh()
+        assert catalog.get_server("github") is not None

@@ -129,6 +129,78 @@ class TestAgentRegistryCanInvoke:
         reg.register(AgentConfig(name="explore", description="", type=AgentType.SUBAGENT))
         assert reg.can_invoke("plan", "explore") is False
 
+    def test_can_invoke_denies_unknown_invoker(self):
+        reg = AgentRegistry()
+        assert reg.can_invoke("unknown", "explore") is False
+
+    def test_can_invoke_denies_unknown_target(self):
+        reg = AgentRegistry()
+        invoker = AgentConfig(
+            name="build",
+            description="",
+            type=AgentType.PRIMARY,
+            permissions=AgentPermission(can_dispatch_subagents=True, allowed_subagents=["*"]),
+        )
+        reg.register(invoker)
+        assert reg.can_invoke("build", "unknown") is False
+
+
+class TestAgentRegistryBehavior:
+    def test_get_behavior_with_custom_behavior(self):
+        from general_ludd.agents.behavior import AgentBehavior
+        reg = AgentRegistry()
+        behavior = AgentBehavior(session_persistence=True)
+        reg.register(AgentConfig(
+            name="custom",
+            description="",
+            type=AgentType.PRIMARY,
+            behavior=behavior,
+        ))
+        result = reg.get_behavior("custom")
+        assert result.session_persistence is True
+
+    def test_get_behavior_primary_default(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="build",
+            description="",
+            type=AgentType.PRIMARY,
+        ))
+        result = reg.get_behavior("build")
+        assert result is not None
+
+    def test_get_behavior_subagent_default(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="explore",
+            description="",
+            type=AgentType.SUBAGENT,
+        ))
+        result = reg.get_behavior("explore")
+        assert result is not None
+
+    def test_get_behavior_unknown_agent(self):
+        reg = AgentRegistry()
+        result = reg.get_behavior("unknown")
+        assert result is not None
+
+    def test_render_behavior_prompt_returns_string(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="build",
+            description="",
+            type=AgentType.PRIMARY,
+        ))
+        result = reg.render_behavior_prompt("build", task="fix the bug")
+        assert result is not None
+        assert isinstance(result, str)
+        assert len(result) > 0
+
+    def test_render_behavior_prompt_unknown_returns_none(self):
+        reg = AgentRegistry()
+        result = reg.render_behavior_prompt("unknown", task="test")
+        assert result is None
+
 
 class TestAgentDispatcher:
     @pytest.fixture()

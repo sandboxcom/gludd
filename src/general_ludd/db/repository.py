@@ -179,7 +179,7 @@ class QueueRepository:
         return result.scalar_one_or_none()
 
     async def list_enabled(self) -> list[QueueModel]:
-        stmt = select(QueueModel).where(QueueModel.queue_enabled == True)  # noqa: E712
+        stmt = select(QueueModel).where(QueueModel.queue_enabled.is_(True))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -200,7 +200,7 @@ class ProjectRepository:
         return result.scalar_one_or_none()
 
     async def list_active(self) -> list[ProjectModel]:
-        stmt = select(ProjectModel).where(ProjectModel.active == True)  # noqa: E712
+        stmt = select(ProjectModel).where(ProjectModel.active.is_(True))
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

@@ -238,3 +238,62 @@ class TestDecisionApplier:
 
         todo_repo.transition.assert_called()
         assert todo_repo.create.call_count >= 1
+
+    @pytest.mark.asyncio
+    async def test_decision_applier_ignores_duplicate(self):
+        decision = _make_decision(decision="ignore_duplicate", matched_todo_id="TODO-001")
+        todo_repo = AsyncMock(spec=TodoRepository)
+        session = AsyncMock()
+        await apply_decision(decision, todo_repo, session)
+        todo_repo.get_by_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_decision_applier_no_matched_todo_id(self):
+        decision = _make_decision(decision="complete", matched_todo_id=None, evidence_refs=["ev"])
+        todo_repo = AsyncMock(spec=TodoRepository)
+        session = AsyncMock()
+        await apply_decision(decision, todo_repo, session)
+        todo_repo.get_by_id.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_decision_applier_todo_not_found(self):
+        decision = _make_decision(
+            decision="complete",
+            matched_todo_id="TODO-999",
+            evidence_refs=["ev"],
+        )
+        todo_repo = AsyncMock(spec=TodoRepository)
+        todo_repo.get_by_id.return_value = None
+        session = AsyncMock()
+        await apply_decision(decision, todo_repo, session)
+        todo_repo.transition.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_decision_applier_blocked_status(self):
+        decision = _make_decision(
+            decision="blocked",
+            matched_todo_id="TODO-001",
+        )
+        todo_repo = AsyncMock(spec=TodoRepository)
+        mock_todo = MagicMock()
+        mock_todo.todo_id = "TODO-001"
+        mock_todo.version = 1
+        todo_repo.get_by_id.return_value = mock_todo
+        session = AsyncMock()
+        await apply_decision(decision, todo_repo, session)
+        todo_repo.transition.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_decision_applier_manual_hold_status(self):
+        decision = _make_decision(
+            decision="manual_hold",
+            matched_todo_id="TODO-001",
+        )
+        todo_repo = AsyncMock(spec=TodoRepository)
+        mock_todo = MagicMock()
+        mock_todo.todo_id = "TODO-001"
+        mock_todo.version = 1
+        todo_repo.get_by_id.return_value = mock_todo
+        session = AsyncMock()
+        await apply_decision(decision, todo_repo, session)
+        todo_repo.transition.assert_called_once()

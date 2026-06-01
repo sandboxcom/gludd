@@ -207,3 +207,26 @@ class TestModelRegistryUnit:
                 reg.search(query="llama", author="meta")
                 call_kwargs = api.list_models.call_args[1]
                 assert call_kwargs["author"] == "meta"
+
+
+class TestModelRegistryRefresh:
+    def test_refresh_reloads_index(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            with patch("huggingface_hub.snapshot_download") as mock_dl:
+                snap_dir = os.path.join(tmpdir, "s1")
+                os.makedirs(snap_dir)
+                mock_dl.return_value = snap_dir
+                reg.download("test/model")
+            assert reg.get_downloaded("test/model") is not None
+            reg._downloaded.clear()
+            assert reg.get_downloaded("test/model") is None
+            reg.refresh()
+            assert reg.get_downloaded("test/model") is not None
+
+    def test_refresh_clears_in_memory(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            reg._downloaded["manual"] = DownloadedModel(model_id="manual", local_path="/tmp")
+            reg.refresh()
+            assert reg.get_downloaded("manual") is None

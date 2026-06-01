@@ -6,11 +6,11 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: All data flow wiring complete. Secret migration wired. Config snapshot deep copy complete.
-- **Test Suite**: 1989 passed, 15 skipped, 0 failures, 92.36% coverage
+- **Phase**: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation, HF integration, local inference tests, ZAI live tests
+- **Test Suite**: 2037 passed, 26 skipped, 0 failures, 91.95% coverage
 - **Branch**: master
-- **Latest commit**: 7a74689 feat: wire secret migration into daemon startup, deep config snapshot, daemon lifespan integration tests
-- **Mypy**: 0 errors in 129 source files (strict mode)
+- **Latest commit**: a5d28e7 feat: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation tests, HF integration, local inference tests, ZAI live feature tests
+- **Mypy**: 0 errors in 132 source files (strict mode)
 - **Lint**: 0 errors (ruff)
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
@@ -242,6 +242,54 @@ EventLoop auto-creates from session (when available):
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
 - `build_secrets_resolver()` cannot call async `health_check()` from sync context
 - ZAI API 429 (balance exhaustion) — live identity tests xfail until recharged
+- MCP catalog search hits real registry APIs (no offline fallback)
+- Skills catalog is curated-only (no GitHub auto-discovery yet)
+
+## MCP Secrets from Vault (COMPLETE)
+- `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases
+- `resolve_mcp_env()` in `src/general_ludd/mcp/secrets.py`: resolves aliases from secrets manager at runtime
+- `scrub_mcp_config()`: removes plaintext secrets from MCP YAML config files
+- YAML config uses `env_aliases` instead of `env` for sensitive values
+- 9 tests in `tests/unit/test_mcp_secrets.py`
+
+## MCP Server Catalog (COMPLETE)
+- `MCPCatalog` in `src/general_ludd/mcp/catalog.py`: search/discover MCP servers
+- Queries official registry (registry.modelcontextprotocol.io), Smithery (api.smithery.ai), Glama (glama.ai)
+- 10 curated known servers with env_aliases_needed (github, gitlab, slack, brave-search, etc.)
+- 10 tests in `tests/unit/test_mcp_catalog.py`
+
+## Skills Catalog (COMPLETE)
+- `SkillCatalog` in `src/general_ludd/skills/catalog.py`: search/download/install curated skills
+- 10 curated skills (tdd-discipline, security-first, git-conventional-commits, etc.)
+- Search by query, tags, category. Download as SKILL.md files. Install into config dir.
+- 16 tests in `tests/unit/test_skills_catalog.py`
+- Research sources: Anthropic skills, OpenAI skills, Antigravity, VoltAgent, SkillsCat
+
+## Worker Multi-Project Isolation Tests (COMPLETE)
+- 6 integration tests in `tests/integration/test_worker_isolation.py`
+- Verifies: project-scoped variables isolated between projects
+- Dispatch claims only one project's todos per tick
+- Dispatch jobs contain only the target project's data
+- Project workspaces are filesystem-isolated
+- EventLoop does not write to project workspace (read-only dispatch)
+- EventLoop reads all projects for dispatch (knows about all)
+
+## HuggingFace Model Integration (COMPLETE)
+- 7 tests in `tests/integration/test_hf_model_integration.py`
+- Live tests (skipif RUN_HF_TESTS): search, get_model_info, download tiny-gpt2, list, remove
+- Unit tests: mock hf_hub_download, snapshot_download
+
+## Local Inference Integration (COMPLETE)
+- 5 tests in `tests/integration/test_local_inference_integration.py`
+- Start/stop llamacpp server, start vllm server, build commands
+- Manual test for real inference with tiny model (skipif)
+
+## ZAI/GLM Live Feature Tests (COMPLETE)
+- 6 tests in `tests/live/test_zai_live_features.py` (skipif ZAI_API_KEY)
+- ReturnReviewer with real GLM model
+- ModelGateway routing with real model
+- Code generation with real model
+- Conversation planning with real model
 
 ## Commits This Session
 1. `c0bdcf8` — fix: VariableNamespaceRepository project-scoped loading with global override semantics
@@ -249,3 +297,4 @@ EventLoop auto-creates from session (when available):
 3. `b075b46` — feat: auto-create audit_repo and variable_repo from session in EventLoop
 4. `098ed8e` — fix: resolve all mypy errors (19->0), fix LoadSnapshot field names, clean up unused mypy overrides
 5. `7a74689` — feat: wire secret migration into daemon startup, deep config snapshot, daemon lifespan integration tests
+6. `a5d28e7` — feat: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation tests, HF integration, local inference tests, ZAI live feature tests

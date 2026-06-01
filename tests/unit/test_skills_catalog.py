@@ -122,3 +122,29 @@ class TestSkillCatalogMetadata:
         assert "testing" in tags
         assert "security" in tags
         assert "git" in tags
+
+
+class TestSkillCatalogRefresh:
+    def test_refresh_clears_cache(self):
+        catalog = SkillCatalog()
+        catalog._cache.append(CatalogSkillEntry(name="temp"))
+        assert len(catalog._cache) == 1
+        catalog.refresh()
+        assert len(catalog._cache) == 0
+
+
+class TestSkillCatalogBuildMd:
+    def test_build_skill_md_with_body_preview(self, tmp_path):
+        catalog = SkillCatalog()
+        result = catalog.download_skill("tdd-discipline", str(tmp_path))
+        assert result is not None
+        content = result.read_text()
+        assert "TDD Discipline" in content
+
+    def test_build_skill_md_without_body_preview(self, tmp_path):
+        from general_ludd.skills.catalog import CatalogSkillEntry, _build_skill_md
+
+        entry = CatalogSkillEntry(name="test-skill", description="A test skill")
+        md = _build_skill_md(entry)
+        assert "# test-skill" in md
+        assert "A test skill" in md

@@ -89,6 +89,9 @@ class SkillCatalog:
         skills_dir = Path(config_dir) / "skills"
         return self.download_skill(name, str(skills_dir))
 
+    def refresh(self) -> None:
+        self._cache.clear()
+
 
 def _build_skill_md(entry: CatalogSkillEntry) -> str:
     frontmatter = {
@@ -267,7 +270,10 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "performance-optimization": CatalogSkillEntry(
         name="performance-optimization",
-        description="Performance optimization: profile first, optimize algorithms, cache wisely, avoid premature optimization",  # noqa: E501
+        description=(
+            "Performance optimization: profile first, optimize algorithms,"
+            " cache wisely, avoid premature optimization"
+        ),
         source="curated",
         category="performance",
         tags=["performance", "optimization", "profiling"],

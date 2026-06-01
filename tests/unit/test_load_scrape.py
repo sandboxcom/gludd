@@ -99,3 +99,83 @@ class TestClassifyPressure:
         result = classify_pressure(snap)
         assert result[ResourceProfile.LOCAL_HEAVY] == PressureLevel.SEVERE
         assert result[ResourceProfile.HYBRID] in (PressureLevel.HIGH, PressureLevel.SEVERE)
+
+    def test_classify_pressure_ai_severe(self):
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+
+        snap = LoadSnapshot(
+            loadavg_1m=1.0, loadavg_5m=1.0, loadavg_10m=1.0,
+            logical_cpu_count=8, cpu_percent=96.0,
+            memory_available_percent=4.0, disk_free_percent=50.0,
+            active_jobs=0,
+        )
+        result = classify_pressure(snap)
+        assert result[ResourceProfile.AI_HEAVY] == PressureLevel.SEVERE
+
+    def test_classify_pressure_ai_medium(self):
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+
+        snap = LoadSnapshot(
+            loadavg_1m=1.0, loadavg_5m=1.0, loadavg_10m=1.0,
+            logical_cpu_count=8, cpu_percent=85.0,
+            memory_available_percent=40.0, disk_free_percent=50.0,
+            active_jobs=0,
+        )
+        result = classify_pressure(snap)
+        assert result[ResourceProfile.AI_HEAVY] == PressureLevel.MEDIUM
+
+    def test_classify_pressure_disk_severe(self):
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+
+        snap = LoadSnapshot(
+            loadavg_1m=0.5, loadavg_5m=0.5, loadavg_10m=0.5,
+            logical_cpu_count=8, cpu_percent=20.0,
+            memory_available_percent=80.0, disk_free_percent=3.0,
+            active_jobs=0,
+        )
+        result = classify_pressure(snap)
+        assert result[ResourceProfile.NETWORK_HEAVY] == PressureLevel.SEVERE
+
+    def test_classify_pressure_disk_high(self):
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+
+        snap = LoadSnapshot(
+            loadavg_1m=0.5, loadavg_5m=0.5, loadavg_10m=0.5,
+            logical_cpu_count=8, cpu_percent=20.0,
+            memory_available_percent=80.0, disk_free_percent=8.0,
+            active_jobs=0,
+        )
+        result = classify_pressure(snap)
+        assert result[ResourceProfile.NETWORK_HEAVY] == PressureLevel.HIGH
+
+    def test_classify_pressure_disk_medium(self):
+        from general_ludd.controllers.load_scrape import LoadSnapshot, PressureLevel, classify_pressure
+
+        snap = LoadSnapshot(
+            loadavg_1m=0.5, loadavg_5m=0.5, loadavg_10m=0.5,
+            logical_cpu_count=8, cpu_percent=20.0,
+            memory_available_percent=80.0, disk_free_percent=15.0,
+            active_jobs=0,
+        )
+        result = classify_pressure(snap)
+        assert result[ResourceProfile.NETWORK_HEAVY] == PressureLevel.MEDIUM
+
+
+class TestCountActiveJobs:
+    @patch("general_ludd.controllers.load_scrape.psutil.process_iter")
+    def test_count_active_jobs_counts_ansible(self, mock_iter):
+        from general_ludd.controllers.load_scrape import _count_active_jobs
+
+        mock_iter.return_value = [
+            MagicMock(info={"name": "ansible-playbook"}),
+            MagicMock(info={"name": "python"}),
+        ]
+        assert _count_active_jobs() == 1
+
+    @patch("general_ludd.controllers.load_scrape.psutil.process_iter")
+    def test_count_active_jobs_handles_nosuch(self, mock_iter):
+        from general_ludd.controllers.load_scrape import _count_active_jobs
+
+        mock_iter.side_effect = Exception
+        with __import__("contextlib").suppress(Exception):
+            _count_active_jobs()

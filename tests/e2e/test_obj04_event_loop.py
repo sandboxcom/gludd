@@ -109,7 +109,10 @@ class TestEventLoopE2E:
             await asyncio.sleep(0.2)
             loop.stop()
 
-        _task = asyncio.create_task(stop_after_delay())  # noqa: RUF006
+        background_tasks: set[asyncio.Task[None]] = set()
+        task = asyncio.create_task(stop_after_delay())
+        background_tasks.add(task)
+        task.add_done_callback(background_tasks.discard)
         await loop.run_forever(interval=0.05)
 
     async def test_never_executes_playbook_inline(self):

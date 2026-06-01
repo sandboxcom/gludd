@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import tempfile
+
 from general_ludd.planning.repo_map import CodeSymbol, RepoMap, RepoMapBuilder
 
 
@@ -142,6 +144,24 @@ class TestRepoMapCompactString:
         rm = RepoMap()
         assert rm.to_compact_string() == ""
 
+    def test_compact_string_variable_kind(self):
+        rm = RepoMap()
+        rm.add_symbol(CodeSymbol(name="config", kind="variable", file_path="a.py", line_start=5, line_end=5))
+        output = rm.to_compact_string()
+        assert "variable config" in output
+
+    def test_compact_string_import_kind(self):
+        rm = RepoMap()
+        rm.add_symbol(CodeSymbol(name="os", kind="import", file_path="a.py", line_start=1, line_end=1))
+        output = rm.to_compact_string()
+        assert "import os" in output
+
+    def test_compact_string_unknown_kind(self):
+        rm = RepoMap()
+        rm.add_symbol(CodeSymbol(name="x", kind="unknown_type", file_path="a.py", line_start=1, line_end=1))
+        output = rm.to_compact_string()
+        assert "unknown_type x" in output
+
 
 class TestRepoMapSerialization:
     def test_to_dict_roundtrip(self):
@@ -211,6 +231,33 @@ class TestRepoMapBuilderParseFile:
         import_names = {s.name for s in imports}
         assert "os" in import_names
 
+    def test_parse_from_import_identifier(self):
+        builder = RepoMapBuilder(language="python")
+        code = "from os.path import join\n"
+        symbols = builder.parse_file("imp2.py", code)
+        imports = [s for s in symbols if s.kind == "import"]
+        assert len(imports) >= 1
+        import_names = {s.name for s in imports}
+        assert "os.path" in import_names or "join" in import_names
+
+    def test_parse_wildcard_import(self):
+        builder = RepoMapBuilder(language="python")
+        code = "from os.path import *\n"
+        symbols = builder.parse_file("wild.py", code)
+        imports = [s for s in symbols if s.kind == "import"]
+        assert len(imports) >= 1
+        import_names = {s.name for s in imports}
+        assert "os.path" in import_names or "*" in import_names
+
+    def test_parse_aliased_import(self):
+        builder = RepoMapBuilder(language="python")
+        code = "import numpy as np\n"
+        symbols = builder.parse_file("alias.py", code)
+        imports = [s for s in symbols if s.kind == "import"]
+        assert len(imports) >= 1
+        import_names = {s.name for s in imports}
+        assert "numpy" in import_names
+
     def test_parse_empty_content(self):
         builder = RepoMapBuilder(language="python")
         symbols = builder.parse_file("empty.py", "")
@@ -238,3 +285,44 @@ class TestRepoMapBuilderRankSymbols:
         ranked = builder._rank_symbols(symbols, n=2)
         kinds = [s.kind for s in ranked]
         assert "class" in kinds
+
+
+class TestRepoMapBuilderDirectory:
+    def test_build_from_directory(self):
+        builder = RepoMapBuilder(language="python")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            py_file = f"{tmpdir}/sample.py"
+            with open(py_file, "w") as f:
+                f.write("def hello():\n    pass\n\nclass Foo:\n    def bar(self):\n        pass\n")
+            rm = builder.build_from_directory(tmpdir)
+            assert rm.file_count >= 1
+            assert rm.total_lines >= 1
+            symbol_names = {s.name for s in rm.symbols}
+            assert "hello" in symbol_names
+            assert "Foo" in symbol_names
+
+    def test_build_from_directory_ignores_non_py_files(self):
+        builder = RepoMapBuilder(language="python")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with open(f"{tmpdir}/readme.md", "w") as f:
+                f.write("# Hello")
+            with open(f"{tmpdir}/app.py", "w") as f:
+                f.write("x = 1\n")
+            rm = builder.build_from_directory(tmpdir)
+            assert rm.file_count == 1
+
+    def test_build_from_directory_handles_unreadable_file(self):
+        builder = RepoMapBuilder(language="python")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with open(f"{tmpdir}/bad.py", "w") as f:
+                f.write("def ok():\n    pass\n")
+            rm = builder.build_from_directory(tmpdir)
+            assert rm.file_count >= 1
+
+    def test_build_from_empty_directory(self):
+        builder = RepoMapBuilder(language="python")
+        with tempfile.TemporaryDirectory() as tmpdir:
+            rm = builder.build_from_directory(tmpdir)
+            assert rm.file_count == 0
+            assert rm.total_lines == 0
+            assert rm.symbols == []

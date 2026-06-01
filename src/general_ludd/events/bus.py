@@ -18,6 +18,7 @@ class EventBus:
         self._history: list[Event] = []
         self._history_size = history_size
         self._next_id = 0
+        self._background_tasks: set[asyncio.Task[Any]] = set()
 
     def subscribe(self, event_type: EventType | str, callback: Callable[..., Any]) -> str:
         sub_id = f"sub-{self._next_id}"
@@ -44,13 +45,17 @@ class EventBus:
                 if asyncio.iscoroutine(result):
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(result)  # noqa: RUF006
+                        task = loop.create_task(result)
+                        task.add_done_callback(self._background_tasks.discard)
+                        self._background_tasks.add(task)
                     except RuntimeError:
                         asyncio.run(result)
                 elif inspect.iscoroutinefunction(callback):
                     try:
                         loop = asyncio.get_running_loop()
-                        loop.create_task(callback(event))  # noqa: RUF006
+                        task = loop.create_task(callback(event))
+                        task.add_done_callback(self._background_tasks.discard)
+                        self._background_tasks.add(task)
                     except RuntimeError:
                         asyncio.run(callback(event))
             except Exception as exc:

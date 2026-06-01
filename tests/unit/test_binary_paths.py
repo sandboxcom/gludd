@@ -88,7 +88,8 @@ class TestBinaryPathResolver:
     def test_get_infra_binary_falls_back_to_terraform(self):
         bp = BinaryPaths()
         resolver = BinaryPathResolver(config=bp)
-        which_fn = lambda x: None if x == "tofu" else "/usr/bin/terraform"  # noqa: E731
+        def which_fn(x: str) -> str | None:
+            return None if x == "tofu" else "/usr/bin/terraform"
         with patch("general_ludd.config.binary_paths.shutil.which", side_effect=which_fn):
             assert resolver.get_infra_binary() == "terraform"
 
@@ -101,7 +102,8 @@ class TestBinaryPathResolver:
     def test_get_secrets_binary_falls_back_to_vault(self):
         bp = BinaryPaths()
         resolver = BinaryPathResolver(config=bp)
-        which_fn = lambda x: None if x == "bao" else "/usr/bin/vault"  # noqa: E731
+        def which_fn(x: str) -> str | None:
+            return None if x == "bao" else "/usr/bin/vault"
         with patch("general_ludd.config.binary_paths.shutil.which", side_effect=which_fn):
             assert resolver.get_secrets_binary() == "vault"
 
@@ -114,7 +116,8 @@ class TestBinaryPathResolver:
     def test_get_container_runtime_falls_back_to_docker(self):
         bp = BinaryPaths()
         resolver = BinaryPathResolver(config=bp)
-        which_fn = lambda x: None if x == "podman" else "/usr/bin/docker"  # noqa: E731
+        def which_fn(x: str) -> str | None:
+            return None if x == "podman" else "/usr/bin/docker"
         with patch("general_ludd.config.binary_paths.shutil.which", side_effect=which_fn):
             assert resolver.get_container_runtime() == "docker"
 

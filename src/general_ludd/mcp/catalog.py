@@ -64,6 +64,9 @@ class MCPCatalog:
                 return entry
         return None
 
+    def refresh(self) -> None:
+        self._cache.clear()
+
     def _query_registry(
         self, registry: str, query: str, limit: int
     ) -> list[MCPCatalogEntry]:

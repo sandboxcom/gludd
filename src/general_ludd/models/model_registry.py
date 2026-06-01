@@ -146,6 +146,10 @@ class ModelRegistry:
             self._save_index()
             logger.info("Removed model %s from registry", model_id)
 
+    def refresh(self) -> None:
+        self._downloaded.clear()
+        self._load_index()
+
     def _index_path(self) -> Path:
         return self._cache_dir / "model_index.json"
 

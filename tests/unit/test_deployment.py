@@ -67,7 +67,9 @@ class TestDeploymentManagerDeploy:
         )
 
         procs = iter([mock_proc_init, mock_proc_apply, mock_proc_output])
-        next_proc = lambda *a, **kw: next(procs)  # noqa: E731
+
+        def next_proc(*a: object, **kw: object) -> object:
+            return next(procs)
 
         with patch(
             "general_ludd.infra.deployment.asyncio.create_subprocess_exec",

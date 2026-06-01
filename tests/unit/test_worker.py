@@ -242,3 +242,30 @@ class TestWorkerApp:
         assert mod.worker_class == "uvicorn_worker.UvicornWorker"
         assert mod.workers == 2
         assert mod.timeout == 0
+
+    def test_gunicorn_conf_max_requests(self):
+        import importlib
+        mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
+        assert mod.max_requests == 1000
+        assert mod.max_requests_jitter == 50
+
+    def test_gunicorn_on_reload(self):
+        import importlib
+        mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
+        arbiter = MagicMock()
+        mod.on_reload(arbiter)
+
+    def test_gunicorn_post_fork(self):
+        import importlib
+        mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
+        worker = MagicMock()
+        worker.pid = 12345
+        worker.spawned = True
+        mod.post_fork(MagicMock(), worker)
+
+    def test_gunicorn_pre_exec(self):
+        import importlib
+        mod = importlib.import_module("general_ludd.worker.gunicorn_conf")
+        worker = MagicMock()
+        worker.pid = 12345
+        mod.pre_exec(worker)
