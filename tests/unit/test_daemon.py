@@ -241,6 +241,26 @@ class TestDaemonLifespan:
                 assert app.state.event_loop is None
 
 
+class TestExtendedSubsystemsWiring:
+    def test_extended_subsystems_includes_skill_registry(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+        app = FastAPI()
+        ext = _get_or_create_extended_subsystems(app)
+        assert "skill_registry" in ext
+        assert ext["skill_registry"] is not None
+
+    def test_skill_registry_is_reused_on_second_call(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+        app = FastAPI()
+        ext1 = _get_or_create_extended_subsystems(app)
+        ext2 = _get_or_create_extended_subsystems(app)
+        assert ext1["skill_registry"] is ext2["skill_registry"]
+
+
 class TestDirectDispatch:
     @pytest.mark.asyncio
     async def test_event_loop_with_runner_dispatches_directly(self):

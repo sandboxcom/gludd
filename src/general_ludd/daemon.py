@@ -245,6 +245,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             mcp_tool_registry=None,
             event_bus=subsys["bus"],
             project_manager=ext["projects"],
+            skill_registry=ext["skill_registry"],
             config={
                 "default_playbook": "noop.yml",
                 "model_profiles": startup_config.get("model_profiles", []),
@@ -295,6 +296,8 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
     from general_ludd.metrics.collector import MetricsCollector
     from general_ludd.models.model_registry import ModelRegistry
     from general_ludd.projects.manager import ProjectManager
+    from general_ludd.skills.loader import discover_skills
+    from general_ludd.skills.registry import SkillRegistry
 
     if not hasattr(app.state, "_metrics_collector") or app.state._metrics_collector is None:
         app.state._metrics_collector = MetricsCollector()
@@ -304,11 +307,20 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
         app.state._utilization_tracker = UtilizationTracker()
     if not hasattr(app.state, "_model_registry") or app.state._model_registry is None:
         app.state._model_registry = ModelRegistry()
+    if not hasattr(app.state, "_skill_registry") or app.state._skill_registry is None:
+        registry = SkillRegistry()
+        config_dir = getattr(app.state, "_config_dir", None)
+        if config_dir:
+            discovered = discover_skills(config_dir)
+            for skill in discovered:
+                registry.register(skill)
+        app.state._skill_registry = registry
     return {
         "metrics": app.state._metrics_collector,
         "projects": app.state._project_manager,
         "utilization": app.state._utilization_tracker,
         "model_registry": app.state._model_registry,
+        "skill_registry": app.state._skill_registry,
     }
 
 
@@ -333,6 +345,7 @@ def create_daemon_app(
     app.state._project_manager = None
     app.state._utilization_tracker = None
     app.state._model_registry = None
+    app.state._skill_registry = None
     app.state._startup_config = load_startup_config(config_dir)
 
     if log_level == "debug":
