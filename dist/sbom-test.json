@@ -1391,6 +1391,28 @@
       "version": "1.5.1"
     },
     {
+      "bom-ref": "general-ludd-agent==0.1.0",
+      "description": "General Ludd Agent \u2014 the black swan agentic coding system with Ansible runners and multi-model AI agents",
+      "externalReferences": [
+        {
+          "comment": "PackageSource: Local",
+          "type": "distribution",
+          "url": "file:///Users/shawnwilson/hottentotpy"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "general-ludd-agent",
+      "type": "library",
+      "version": "0.1.0"
+    },
+    {
       "bom-ref": "greenlet==3.5.1",
       "description": "Lightweight in-process concurrent programming",
       "externalReferences": [
@@ -1496,28 +1518,6 @@
       "purl": "pkg:pypi/h11@0.16.0",
       "type": "library",
       "version": "0.16.0"
-    },
-    {
-      "bom-ref": "hottentot-agent==0.1.0",
-      "description": "Hottentot \u2014 the black swan agentic coding system with Ansible runners and multi-model AI agents",
-      "externalReferences": [
-        {
-          "comment": "PackageSource: Local",
-          "type": "distribution",
-          "url": "file:///Users/shawnwilson/hottentotpy"
-        }
-      ],
-      "licenses": [
-        {
-          "license": {
-            "acknowledgement": "declared",
-            "id": "MIT"
-          }
-        }
-      ],
-      "name": "hottentot-agent",
-      "type": "library",
-      "version": "0.1.0"
     },
     {
       "bom-ref": "httpcore==1.0.9",
@@ -5279,27 +5279,6 @@
     },
     {
       "dependsOn": [
-        "psutil==7.2.2",
-        "setuptools==82.0.1"
-      ],
-      "ref": "greenlet==3.5.1"
-    },
-    {
-      "dependsOn": [
-        "coverage==7.14.1",
-        "httpx==0.28.1",
-        "packaging==26.2",
-        "pytest-asyncio==1.4.0",
-        "pytest-cov==7.1.0",
-        "pytest==9.0.3"
-      ],
-      "ref": "gunicorn==26.0.0"
-    },
-    {
-      "ref": "h11==0.16.0"
-    },
-    {
-      "dependsOn": [
         "Jinja2==3.1.6",
         "PyYAML==6.0.3",
         "SQLAlchemy==2.0.50",
@@ -5336,7 +5315,28 @@
         "types-requests==2.33.0.20260518",
         "uvicorn-worker==0.4.0"
       ],
-      "ref": "hottentot-agent==0.1.0"
+      "ref": "general-ludd-agent==0.1.0"
+    },
+    {
+      "dependsOn": [
+        "psutil==7.2.2",
+        "setuptools==82.0.1"
+      ],
+      "ref": "greenlet==3.5.1"
+    },
+    {
+      "dependsOn": [
+        "coverage==7.14.1",
+        "httpx==0.28.1",
+        "packaging==26.2",
+        "pytest-asyncio==1.4.0",
+        "pytest-cov==7.1.0",
+        "pytest==9.0.3"
+      ],
+      "ref": "gunicorn==26.0.0"
+    },
+    {
+      "ref": "h11==0.16.0"
     },
     {
       "dependsOn": [
@@ -6024,7 +6024,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-05-31T19:46:55.332266+00:00",
+    "timestamp": "2026-06-01T01:18:57.370352+00:00",
     "tools": {
       "components": [
         {
@@ -6128,7 +6128,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:2b4b80bd-c2ea-4fca-9ad5-e0203d1bfbe1",
+  "serialNumber": "urn:uuid:113dbf6c-24ab-41e2-bb27-8cd1c085afa1",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",
