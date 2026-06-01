@@ -27,6 +27,7 @@ class AddTodoRequest(BaseModel):
     queue: str = "core"
     priority: str = "medium"
     work_type: str = "code"
+    project_id: str | None = None
 
 
 class LogLevelRequest(BaseModel):
@@ -184,17 +185,24 @@ def create_daemon_app(
             "priority": req.priority,
             "work_type": req.work_type,
             "status": "queued",
+            "project_id": req.project_id,
         }
         _daemon_state["todos"].append(todo)
         return todo
 
     @app.get("/api/todos")
-    async def api_list_todos(queue: str | None = None, status: str | None = None) -> list[dict[str, Any]]:
+    async def api_list_todos(
+        queue: str | None = None,
+        status: str | None = None,
+        project_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         results = list(_daemon_state["todos"])
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
         if status is not None:
             results = [t for t in results if t.get("status") == status]
+        if project_id is not None:
+            results = [t for t in results if t.get("project_id") == project_id]
         return results
 
     @app.get("/api/todos/{todo_id}")

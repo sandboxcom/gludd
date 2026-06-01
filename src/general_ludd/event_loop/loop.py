@@ -49,6 +49,7 @@ class EventLoop:
         mcp_tool_registry: MCPToolRegistry | None = None,
         runner: Any | None = None,
         event_bus: Any | None = None,
+        project_manager: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -69,6 +70,7 @@ class EventLoop:
         self._tick_metrics: dict[str, Any] = {}
         self._config_snapshot: dict[str, Any] = {}
         self._event_bus = event_bus
+        self._project_manager = project_manager
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
 
@@ -187,7 +189,16 @@ class EventLoop:
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
-        claimed = await self._todo_repo.claim_runnable()
+        if self._project_manager is not None:
+            project = self._project_manager.select_project()
+            if project is not None:
+                claimed = await self._todo_repo.claim_runnable(
+                    project_id=project.project_id
+                )
+            else:
+                claimed = await self._todo_repo.claim_runnable()
+        else:
+            claimed = await self._todo_repo.claim_runnable()
         self._tick_state["claimed_todos"] = claimed
 
     async def _phase_dispatch_execute_jobs(self) -> None:

@@ -23,6 +23,7 @@ def main() -> None:
     daemon_parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
     daemon_parser.add_argument("--tick-interval", type=float, default=1.0)
     daemon_parser.add_argument("--workers", type=int, default=1)
+    daemon_parser.add_argument("--project", default=None, help="Default project for daemon operations")
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
@@ -31,17 +32,20 @@ def main() -> None:
     add_parser.add_argument("--priority", default="medium")
     add_parser.add_argument("--work-type", default="code")
     add_parser.add_argument("--description", default="")
+    add_parser.add_argument("--project", default=None, help="Project ID to add the todo to")
     add_parser.add_argument("--daemon-url", default="http://localhost:8000")
     add_parser.set_defaults(func=_cmd_add)
 
     status_parser = sub.add_parser("status", help="Show todo or system status")
     status_parser.add_argument("todo_id", nargs="?", default=None)
+    status_parser.add_argument("--project", default=None, help="Project ID to filter by")
     status_parser.add_argument("--daemon-url", default="http://localhost:8000")
     status_parser.set_defaults(func=_cmd_status)
 
     list_parser = sub.add_parser("list", help="List todos")
     list_parser.add_argument("--queue", default=None)
     list_parser.add_argument("--status", default=None)
+    list_parser.add_argument("--project", default=None, help="Project ID to filter by")
     list_parser.add_argument("--daemon-url", default="http://localhost:8000")
     list_parser.set_defaults(func=_cmd_list)
 
@@ -102,6 +106,8 @@ def _cmd_add(args: argparse.Namespace) -> None:
         "priority": args.priority,
         "work_type": args.work_type,
     }
+    if getattr(args, "project", None):
+        payload["project_id"] = args.project
     try:
         resp = httpx.post(f"{args.daemon_url}/api/todos", json=payload, timeout=10.0)
         if resp.status_code in (200, 201):
@@ -141,6 +147,8 @@ def _cmd_list(args: argparse.Namespace) -> None:
         params["queue"] = args.queue
     if args.status:
         params["status"] = args.status
+    if getattr(args, "project", None):
+        params["project_id"] = args.project
     try:
         resp = httpx.get(f"{args.daemon_url}/api/todos", params=params, timeout=10.0)
         if resp.status_code == 200:

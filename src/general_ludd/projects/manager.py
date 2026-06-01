@@ -15,6 +15,8 @@ class ProjectWeight:
     weight: float
     description: str = ""
     config: dict[str, Any] = field(default_factory=dict)
+    workspace_path: str = ""
+    repo_url: str = ""
     created_at: float = 0.0
     active: bool = True
 
@@ -27,7 +29,15 @@ class ProjectManager:
     def __init__(self) -> None:
         self._projects: dict[str, ProjectWeight] = {}
 
-    def add_project(self, name: str, weight: float, description: str = "", **config: Any) -> ProjectWeight:
+    def add_project(
+        self,
+        name: str,
+        weight: float,
+        description: str = "",
+        workspace_path: str = "",
+        repo_url: str = "",
+        **config: Any,
+    ) -> ProjectWeight:
         total = sum(p.weight for p in self._projects.values() if p.active)
         if total + weight > 100.0:
             available = 100.0 - total
@@ -43,6 +53,8 @@ class ProjectManager:
             weight=weight,
             description=description,
             config=config,
+            workspace_path=workspace_path,
+            repo_url=repo_url,
             created_at=time.time(),
         )
         self._projects[project_id] = project
