@@ -16,11 +16,19 @@
 6. Only stop when ALL objectives are complete or you hit a hard blocker you
    cannot fix (missing credentials, environment you cannot change).
 
-**Anti-Stop Patterns — these are policy violations:**
+**Anti-Stop Patterns — EVERY ONE of these is a policy violation:**
 - Listing remaining tasks and asking "Want me to proceed?" or "What priority?"
+- Listing findings/gaps/audit results and asking "Want me to start building?"
 - Answering a status question and then stopping instead of resuming work
 - Saying "X is done. Next steps are A, B, C." and then stopping
 - Asking "Should I continue?" when there are clearly pending tasks
+- Presenting a plan or analysis and waiting for approval before implementing
+- Saying "Here's what needs to be done" and then NOT doing it immediately
+- Asking any question that is really "should I do my job?" in disguise
+
+**The ONLY valid response to identifying work that needs to be done is to DO IT.**
+Never ask. Never wait. Just do the work. If the user wants you to stop,
+THEY will tell you. Until then, keep working.
 
 **When asked for status:** Answer briefly, then RESUME WORK immediately.
 Do not ask for permission. Do not wait for acknowledgment.
