@@ -3,76 +3,82 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-05-31
+- 2026-06-01
 
 ## Current Status
-- **Phase**: Hot-reload and hook system complete
-- **Test Suite**: 1498 passed, 12 skipped, 0 failures, 92.16% coverage
-- **Branch**: master (feature/hot-reload-hooks merged)
-- **Latest commit**: `894dc7d` (merge)
+- **Phase**: Feature branch `feature/multi-project-agent-metrics-local-inference` merged to master
+- **Test Suite**: 1774 passed, 12 skipped, 0 failures, ~92.7% coverage
+- **Branch**: master
+- **Latest commit**: merge commit (feature/multi-project-agent-metrics-local-inference into master)
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.
 
 ## Hot-Reload System (COMPLETE)
+- `src/general_ludd/events/bus.py` — EventBus (pub/sub, wildcard, history, async)
+- `src/general_ludd/events/hooks.py` — HookSystem (callback + webhook, priority, retry)
+- `src/general_ludd/events/types.py` — 14 event types (StrEnum)
+- `src/general_ludd/reload/hot_reloader.py` — HotReloader with ReloadScope
+- `src/general_ludd/reload/worker_broadcast.py` — WorkerBroadcaster
+- 14 daemon admin endpoints for reload/models/templates/playbooks/hooks/workers
+- 82 e2e tests
 
-New modules:
-- `src/general_ludd/events/bus.py` — EventBus (in-process pub/sub with wildcard support, history, async subscriber support)
-- `src/general_ludd/events/hooks.py` — HookSystem (callback + webhook registration with priorities, retries, custom headers)
-- `src/general_ludd/events/types.py` — 14 event types: ModelAdded, ModelRemoved, ConfigReloaded, TemplateUpdated, PlaybookRegistered/Removed, SkillUpdated, ReloadRequested/Completed/Failed, WorkerPing/Pong, HookTriggered, Custom
-- `src/general_ludd/reload/hot_reloader.py` — HotReloader orchestrates reload by scope (models, templates, playbooks, skills, config, all) with event publishing, hook firing, and worker broadcast
-- `src/general_ludd/reload/worker_broadcast.py` — WorkerBroadcaster (register/unregister/heartbeat/stale-cleanup, broadcast reload and model updates to all workers via HTTP)
+## Agent Metrics (COMPLETE)
+- `src/general_ludd/metrics/collector.py` — MetricsCollector, AgentMetrics, ModelUsage, CostEstimate
+- Daemon endpoints: `GET /admin/agents`, `GET /admin/agents/{id}`, `GET /admin/metrics/cost`, `GET /admin/metrics/report`
+- 50 unit tests
 
-Updated modules:
-- `src/general_ludd/daemon.py` — 14 new admin endpoints for reload, models, templates, playbooks, hooks, workers
-- `src/general_ludd/models/gateway.py` — `add_profile()`, `remove_profile()` with event/hook/broadcast integration
-- `src/general_ludd/models/router.py` — `set_role_routing()` for dynamic route updates
-- `src/general_ludd/prompts/registry.py` — `refresh()` re-reads templates from disk, preserves in-memory templates
-- `src/general_ludd/ansible/runner.py` — `refresh_playbooks()`, `register_playbook()`, `unregister_playbook()`, `list_playbooks()`, `event_bus` support
-- `src/general_ludd/skills/registry.py` — `refresh()` with search_paths
-- `src/general_ludd/worker/gunicorn_conf.py` — `on_reload`, `post_fork`, `pre_exec` hooks, `max_requests` + `max_requests_jitter`
+## Multi-Project Allocation (COMPLETE)
+- `src/general_ludd/projects/manager.py` — ProjectManager, ProjectWeight (weighted allocation, rebalance)
+- Daemon endpoints: `POST/DELETE/PUT /admin/projects`, `POST /admin/projects/rebalance`, `GET /admin/projects`
+- 44 unit tests
 
-Daemon admin endpoints:
-- `POST /admin/reload` — trigger reload by scope
-- `GET /admin/reload/status` — recent event history
-- `POST /admin/models` — add model profile
-- `DELETE /admin/models/{id}` — remove model profile
-- `GET /admin/models` — list profiles
-- `POST /admin/templates/refresh` — re-read templates from disk
-- `GET /admin/templates` — list templates
-- `POST /admin/playbooks/refresh` — re-read playbooks from disk
-- `GET /admin/playbooks` — list playbooks
-- `GET /admin/hooks` — list registered hooks
-- `POST /admin/hooks` — register webhook
-- `DELETE /admin/hooks/{id}` — remove hook
-- `POST /admin/workers/ping` — ping all workers
-- `GET /admin/workers` — list registered workers
+## Compute Utilization Maximizer (COMPLETE)
+- `src/general_ludd/infra/utilization.py` — UtilizationTracker, ComputeEndpoint (least-utilized routing, cache-aware)
+- Daemon endpoints: `GET /admin/compute/utilization`, `GET /admin/compute/endpoints`
+- 49 unit tests
 
-82 new e2e tests covering: EventBus (14), HookSystem (14), HotReloader (8), WorkerBroadcaster (9), ModelGateway dynamic (6), PromptRegistry dynamic (5), AnsibleRunner dynamic (5), SkillRegistry dynamic (2), Daemon endpoints (15), Full integration (4).
+## HuggingFace Model Registry (COMPLETE)
+- `src/general_ludd/models/model_registry.py` — ModelRegistry wraps huggingface_hub.HfApi
+- Daemon endpoints: `POST /admin/models/search`, `GET /admin/models/downloaded`
+- 18 unit tests
 
-## Anti-Stop Bug Fix
-Fixed the bug that allowed the agent to stop and ask "should I continue?" when tasks were pending:
-- `.opencode/plugin/enforce-make.ts` — Added explicit forbidden stop patterns to TASK_COMPLETION_WARNING and system prompt injection
-- `AGENTS.md` — Added "Anti-Stop Patterns" section with specific examples
+## Local Inference Manager (COMPLETE)
+- `src/general_ludd/infra/local_inference.py` — LocalInferenceManager (vllm + llamacpp)
+- 33 unit tests
 
-## Rename Completed
-- `agentic_harness` → `general_ludd`
-- `hottentot-agent` → `general-ludd-agent`
-- `hottentot` → `gludd`
-- `~/.config/hottentot/` → `~/.config/general-ludd/`
+## Anti-Stop Bug Fix (COMPLETE)
+- `.opencode/plugin/enforce-make.ts` — forbidden stop patterns
+- `AGENTS.md` — Anti-Stop Patterns section
+
+## Rename (COMPLETE)
+- `agentic_harness` → `general_ludd`, `hottentot` → `gludd`, all paths updated
+
+## Other Completed
+- ansible-core library refactor (CoreAnsibleRunner)
+- BinaryPathConfig + BinaryPathResolver
+- DeploymentManager (terraform lifecycle)
+- Security: SAST (bandit), SBOM (cyclonedx-py), pip-audit, OPA/Rego
+- Unified CLI (`gludd` binary)
+- PyInstaller spec + tarball installer
+- Config docs (`docs/model-setup.md`)
+- EventLoop subscribes to EventBus config reload events
 
 ## Key Gaps (Known)
 - ReturnReviewer._call_model() is a stub (no real LLM calls in tests)
 - Skills body field not injected into prompts
-- Event loop phases 4 (PID) and 5 (rules) are stubs
+- PID rules engine and rules evaluation are stubs
 - OpenBao not wired into worker/runner pipeline
 - No DB migration for plan_artifact column on TodoModel
-- EventLoop doesn't subscribe to EventBus for config updates
+- Local inference deps (llama-cpp-python, vllm) not in pyproject.toml — user must install separately
+- `tool.uv.dev-dependencies` deprecation warning (cosmetic)
 
 ## Next Steps
-1. Wire EventLoop to subscribe to EventBus config reload events
-2. Wire prompt_profile resolution into pipeline
-3. Wire OpenBao into worker/runner pipeline
-4. DB migration for plan_artifact column
-5. Implement PID rules engine and rules evaluation
-6. Real LLM call integration in ReturnReviewer
+1. Wire prompt_profile resolution into pipeline
+2. Wire OpenBao into worker/runner pipeline
+3. DB migration for plan_artifact column on TodoModel
+4. Implement PID rules engine and rules evaluation
+5. Real LLM call integration in ReturnReviewer
+6. Wire CLI `gludd models search/download` subcommands
+7. Wire CLI `gludd local-serve` subcommand
+8. Add llama-cpp-python and vllm as optional dependencies in pyproject.toml
