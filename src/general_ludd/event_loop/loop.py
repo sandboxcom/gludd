@@ -35,6 +35,11 @@ PHASE_ORDER = [
 ]
 
 
+def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
+    val = getattr(obj, attr, default)
+    return val if isinstance(val, str) else default
+
+
 class EventLoop:
     def __init__(
         self,
@@ -153,10 +158,10 @@ class EventLoop:
             return_id=tr.return_id,
             todo_id=tr.todo_id,
             playbook="return_review.yml",
-            queue=getattr(tr, "queue", "model"),
+            queue=_safe_str(tr, "queue", "model"),
             work_type="review",
             resource_profile="ai_heavy",
-            plan_artifact=getattr(tr, "plan_artifact", None),
+            plan_artifact=_safe_str(tr, "plan_artifact"),
             project_id=project_id_val,
         )
         if self._runner is not None:
@@ -188,7 +193,25 @@ class EventLoop:
         pass
 
     async def _phase_evaluate_rules(self) -> None:
-        pass
+        from general_ludd.rules.engine import Rule
+        from general_ludd.rules.engine import evaluate_rules as _evaluate_rules
+
+        raw_rules = self.config.get("rules", [])
+        rules = [r if isinstance(r, Rule) else Rule(**r) for r in raw_rules]
+        todos_ctx = self.config.get("todos", [])
+        all_results: list[dict[str, Any]] = []
+        for todo_ctx in todos_ctx:
+            context = {"todo": todo_ctx}
+            actions = _evaluate_rules(rules, context)
+            if actions:
+                all_results.append({
+                    "todo_id": todo_ctx.get("todo_id", ""),
+                    "actions": [
+                        {"rule_id": a.rule_id, "action_type": a.action_type, "params": a.params}
+                        for a in actions
+                    ],
+                })
+        self._tick_state["rule_evaluation_results"] = all_results
 
     async def _phase_refill_task_buckets(self) -> None:
         if self.session is not None:
@@ -238,8 +261,10 @@ class EventLoop:
                 job_vars={
                     "job_id": job_id,
                     "todo_id": todo.todo_id,
-                    "queue": getattr(todo, "queue", "core"),
-                    "work_type": getattr(todo, "work_type", "unknown"),
+                    "queue": _safe_str(todo, "queue", "core"),
+                    "work_type": _safe_str(todo, "work_type", "unknown"),
+                    "model_profile": _safe_str(todo, "model_profile"),
+                    "prompt_profile": _safe_str(todo, "prompt_profile"),
                     **budget_context,
                 },
                 shared_vars=None,
@@ -255,10 +280,12 @@ class EventLoop:
             job_id=f"EXEC-{todo.todo_id}",
             todo_id=todo.todo_id,
             playbook=playbook,
-            queue=getattr(todo, "queue", "core"),
-            work_type=getattr(todo, "work_type", "unknown"),
-            resource_profile=getattr(todo, "resource_profile", "low_resource"),
-            plan_artifact=getattr(todo, "plan_artifact", None),
+            queue=_safe_str(todo, "queue", "core"),
+            work_type=_safe_str(todo, "work_type", "unknown"),
+            resource_profile=_safe_str(todo, "resource_profile", "low_resource"),
+            model_profile=_safe_str(todo, "model_profile"),
+            prompt_profile=_safe_str(todo, "prompt_profile"),
+            plan_artifact=_safe_str(todo, "plan_artifact"),
             budget_context=budget_context,
             project_id=(
                 todo.project_id

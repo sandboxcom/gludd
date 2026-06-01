@@ -6,10 +6,10 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: User-facing dist, docs, config, install complete
-- **Test Suite**: 1849 passed, 12 skipped, 0 failures, 92.87% coverage
+- **Phase**: Secrets wiring complete; continuing with remaining pipeline wiring
+- **Test Suite**: 1869 passed, 12 skipped, 0 failures, 92.60% coverage
 - **Branch**: master
-- **Latest commit**: merge of feature/user-facing-dist
+- **Latest commit**: 61817c6 wire secrets resolution and model profile loading into daemon startup
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -125,21 +125,35 @@ obj01-obj16 all complete.
 - 16 dist readiness tests + 2 UserConfig database tests
 - `tests/unit/test_dist_readiness.py` — validates config, docs, install script, systemd unit
 
+## Secrets Wiring (COMPLETE)
+- `build_secrets_resolver()` in daemon.py — creates OpenBao SecretsManager if configured, falls back to EnvSecretsManager
+- `load_model_profiles()` in daemon.py — reads config/model_profiles/*.yml into ModelProfile objects
+- `load_startup_config()` loads model profiles into cfg["model_profiles"]
+- Startup config stored in app.state._startup_config
+- docs/configuration.md updated with complete credential flow docs (OpenBao → env vars → error)
+- dist/README.md rewritten with credential flow, per-provider examples, vault commands
+- dist/install.sh env template expanded with all provider env vars
+- 12 tests in test_secrets_wiring_startup.py
+
 ## Key Gaps (Known)
-- ReturnReviewer._call_model() is a stub
+- ReturnReviewer._call_model() is a stub (returns prompt text, no real LLM call)
 - Skills body field not injected into prompts
-- PID rules engine and rules evaluation are stubs
-- OpenBao not fully wired into worker/runner pipeline
+- PID rules engine phases are no-ops (pass)
+- Rules evaluation phase is no-op (pass)
+- Event loop phases evaluate_pid_controllers and evaluate_rules not implemented
 - No DB migration for plan_artifact column on TodoModel
+- prompt_profile on TodoModel not resolved/wired into pipeline
+- OpenBao not wired into worker/runner pipeline (secrets not passed to worker)
 - Local inference deps (llama-cpp-python, vllm) not in pyproject.toml
+- CLI missing models search/download and local-serve subcommands
 - `tool.uv.dev-dependencies` deprecation warning (cosmetic)
 
 ## Next Steps
 1. Wire prompt_profile resolution into pipeline
 2. Wire OpenBao into worker/runner pipeline
 3. DB migration for plan_artifact column on TodoModel
-4. Implement PID rules engine and rules evaluation
+4. Implement PID rules engine and rules evaluation in event loop
 5. Real LLM call integration in ReturnReviewer
-6. Wire CLI `gludd models search/download` subcommands
-7. Wire CLI `gludd local-serve` subcommand
+6. Wire CLI gludd models search/download subcommands
+7. Wire CLI gludd local-serve subcommand
 8. Add llama-cpp-python and vllm as optional dependencies

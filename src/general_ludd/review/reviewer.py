@@ -82,7 +82,15 @@ class ReturnReviewer:
             profile_id = self._router.resolve_role("return_review")
             if profile_id is not None:
                 self._model_profile_id = profile_id
-        return str(prompt)
+        try:
+            response = self._gateway.call_model(
+                self._model_profile_id,
+                messages=[{"role": "user", "content": prompt}],
+            )
+            return response.content
+        except Exception as exc:
+            logger.warning("Model call failed for profile %s: %s", self._model_profile_id, exc)
+            return str(prompt)
 
     def _parse_model_output(self, raw: Any) -> TaskDecision | None:
         if isinstance(raw, TaskDecision):
