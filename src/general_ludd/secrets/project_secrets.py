@@ -19,7 +19,9 @@ class ProjectSecretsManager:
         self._base.write_secret(self._scoped_path(path), value)
 
     def read_secret(self, path: str) -> dict[str, Any] | None:
-        return self._base.read_secret(self._scoped_path(path))
+        result: dict[str, Any] | None = self._base.read_secret(self._scoped_path(path))
+        return result
 
     def resolve(self, alias_name: str) -> str | None:
-        return self._base.resolve(alias_name)
+        result: str | None = self._base.resolve(alias_name)
+        return result

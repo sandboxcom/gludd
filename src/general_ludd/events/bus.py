@@ -5,6 +5,7 @@ import inspect
 import logging
 from collections import defaultdict
 from collections.abc import Callable
+from typing import Any
 
 from general_ludd.events.types import Event, EventType
 
@@ -13,12 +14,12 @@ logger = logging.getLogger(__name__)
 
 class EventBus:
     def __init__(self, history_size: int = 0) -> None:
-        self._subscribers: dict[str, list[tuple[str, Callable]]] = defaultdict(list)
+        self._subscribers: dict[str, list[tuple[str, Callable[..., Any]]]] = defaultdict(list)
         self._history: list[Event] = []
         self._history_size = history_size
         self._next_id = 0
 
-    def subscribe(self, event_type: EventType | str, callback: Callable) -> str:
+    def subscribe(self, event_type: EventType | str, callback: Callable[..., Any]) -> str:
         sub_id = f"sub-{self._next_id}"
         self._next_id += 1
         key = event_type if isinstance(event_type, str) else event_type.value

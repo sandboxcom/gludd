@@ -85,7 +85,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "langchain.*", "langchain_openai.*", "psycopg.*", "molecule.*", "pytest_ansible.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*"]
 ignore_missing_imports = true
 
 [tool.pytest.ini_options]

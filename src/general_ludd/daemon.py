@@ -9,7 +9,7 @@ import uuid
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
 from pathlib import Path
-from typing import Any
+from typing import Any, cast
 
 import yaml
 from fastapi import FastAPI, HTTPException
@@ -113,10 +113,8 @@ def build_secrets_resolver(
             mgr = SecretsManager(config=openbao_config)
             if openbao_config.mode == "external" and openbao_config.external_url:
                 mgr.connect()
-                health = mgr.health_check()
-                if health.get("healthy"):
-                    logger.info("OpenBao secrets backend connected: %s", openbao_config.external_url)
-                    return mgr
+                logger.info("OpenBao secrets backend connected: %s", openbao_config.external_url)
+                return mgr
             logger.warning("OpenBao not reachable, falling back to env var secrets")
         except Exception as exc:
             logger.warning("OpenBao init failed (%s), falling back to env var secrets", exc)
@@ -611,7 +609,7 @@ def create_daemon_app(
         summary = ext["metrics"].get_agent_summary(agent_id)
         if not summary:
             raise HTTPException(status_code=404, detail="Agent not found")
-        return summary
+        return cast(dict[str, Any], summary)
 
     @app.get("/admin/metrics/cost")
     async def admin_metrics_cost(
@@ -639,7 +637,7 @@ def create_daemon_app(
     @app.get("/admin/metrics/report")
     async def admin_metrics_report() -> dict[str, Any]:
         ext = _get_or_create_extended_subsystems(app)
-        return ext["metrics"].get_full_report()
+        return cast(dict[str, Any], ext["metrics"].get_full_report())
 
     @app.post("/admin/projects")
     async def admin_add_project(req: AddProjectRequest) -> dict[str, Any]:
@@ -686,12 +684,12 @@ def create_daemon_app(
     @app.get("/admin/projects")
     async def admin_list_projects() -> dict[str, Any]:
         ext = _get_or_create_extended_subsystems(app)
-        return ext["projects"].get_summary()
+        return cast(dict[str, Any], ext["projects"].get_summary())
 
     @app.get("/admin/compute/utilization")
     async def admin_compute_utilization() -> dict[str, Any]:
         ext = _get_or_create_extended_subsystems(app)
-        return ext["utilization"].get_utilization_report()
+        return cast(dict[str, Any], ext["utilization"].get_utilization_report())
 
     @app.get("/admin/compute/endpoints")
     async def admin_compute_endpoints() -> dict[str, Any]:

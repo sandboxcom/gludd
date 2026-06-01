@@ -4,7 +4,7 @@ import logging
 from typing import Any
 
 
-class ProjectLogAdapter(logging.LoggerAdapter):
+class ProjectLogAdapter(logging.LoggerAdapter[Any]):
     def __init__(
         self, logger: logging.Logger, project_id: str | None = None
     ) -> None:
@@ -25,5 +25,5 @@ class ProjectLogFilter(logging.Filter):
         self.project_id = project_id
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.project_id = self.project_id  # type: ignore[attr-defined]
+        record.project_id = self.project_id
         return True

@@ -24,7 +24,7 @@ class HookRegistration:
     hook_id: str
     event_name: str
     hook_type: str
-    callback: Callable | None = None
+    callback: Callable[..., Any] | None = None
     webhook_config: WebhookConfig | None = None
     priority: int = 100
 
@@ -35,7 +35,7 @@ class HookSystem:
         self._next_cb_id = 0
 
     def register_callback(
-        self, event_name: str, callback: Callable, priority: int = 100
+        self, event_name: str, callback: Callable[..., Any], priority: int = 100
     ) -> str:
         hook_id = f"hook-cb-{self._next_cb_id}"
         self._next_cb_id += 1

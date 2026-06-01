@@ -126,7 +126,8 @@ class EventLoop:
         title = _safe_str(todo, "title") or ""
         matched = self._skill_registry.match_trigger(title)
         if matched:
-            return matched[0].body
+            body: str | None = matched[0].body
+            return body
         return None
 
     async def _load_shared_vars(self, project_id: str | None) -> dict[str, str] | None:
@@ -309,8 +310,7 @@ class EventLoop:
                 cpu_percent=cpu_pct,
                 memory_available_percent=mem.percent,
                 disk_free_percent=disk_free_pct,
-                active_ansible_jobs=0,
-                active_gunicorn_jobs=0,
+                active_jobs=0,
             )
             outputs = controller.evaluate_snapshot(snapshot, queues)
             self._tick_state["pid_outputs"] = outputs
