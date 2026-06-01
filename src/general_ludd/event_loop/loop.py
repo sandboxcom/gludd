@@ -48,6 +48,7 @@ class EventLoop:
         mcp_client: MCPClient | None = None,
         mcp_tool_registry: MCPToolRegistry | None = None,
         runner: Any | None = None,
+        event_bus: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -67,6 +68,15 @@ class EventLoop:
         self._tick_state: dict[str, Any] = {}
         self._tick_metrics: dict[str, Any] = {}
         self._config_snapshot: dict[str, Any] = {}
+        self._event_bus = event_bus
+        if event_bus is not None:
+            event_bus.subscribe("config_reloaded", self._on_config_reloaded)
+
+    def _on_config_reloaded(self, event: Any) -> None:
+        payload = getattr(event, "payload", {}) or {}
+        scope = payload.get("scope", "")
+        logger.info("EventLoop received config reload event, scope=%s", scope)
+        self._config_snapshot = dict(self.config)
 
     async def tick(self) -> dict[str, Any]:
         self._tick_state = {}
