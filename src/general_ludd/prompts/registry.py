@@ -2,19 +2,33 @@
 
 from __future__ import annotations
 
+import logging
+from pathlib import Path
+from typing import Any
+
 from jinja2 import BaseLoader, Environment, FileSystemLoader
+
+logger = logging.getLogger(__name__)
 
 
 class PromptRegistry:
-    def __init__(self, template_dir: str | None = None) -> None:
+    def __init__(
+        self,
+        template_dir: str | None = None,
+        event_bus: Any | None = None,
+    ) -> None:
         self._templates: dict[str, str] = {}
+        self._in_memory: set[str] = set()
+        self._template_dir = template_dir
         self._loader: BaseLoader = (
             FileSystemLoader(template_dir) if template_dir else BaseLoader()
         )
         self._env = Environment(loader=self._loader, autoescape=True)
+        self._event_bus = event_bus
 
     def register(self, name: str, template_text: str) -> None:
         self._templates[name] = template_text
+        self._in_memory.add(name)
 
     def render(self, template_name: str, **kwargs: object) -> str:
         if template_name in self._templates:
@@ -25,3 +39,28 @@ class PromptRegistry:
 
     def list_templates(self) -> list[str]:
         return list(self._templates.keys())
+
+    def refresh(self) -> dict[str, Any]:
+        if not self._template_dir:
+            return {"templates": list(self._templates.keys()), "refreshed": False}
+        templates_path = Path(self._template_dir)
+        discovered: list[str] = []
+        if templates_path.is_dir():
+            for f in sorted(templates_path.glob("*.j2")):
+                name = f.name
+                self._templates[name] = f.read_text()
+                discovered.append(name)
+        disk_names = set(discovered)
+        to_remove = [
+            n for n in list(self._templates.keys())
+            if n not in disk_names and n not in self._in_memory
+        ]
+        for name in to_remove:
+            del self._templates[name]
+        self._loader = FileSystemLoader(self._template_dir) if self._template_dir else BaseLoader()
+        self._env = Environment(loader=self._loader, autoescape=True)
+        if self._event_bus:
+            from general_ludd.events.types import TemplateUpdatedEvent
+
+            self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))
+        return {"templates": discovered, "refreshed": True}

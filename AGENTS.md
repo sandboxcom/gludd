@@ -16,6 +16,15 @@
 6. Only stop when ALL objectives are complete or you hit a hard blocker you
    cannot fix (missing credentials, environment you cannot change).
 
+**Anti-Stop Patterns — these are policy violations:**
+- Listing remaining tasks and asking "Want me to proceed?" or "What priority?"
+- Answering a status question and then stopping instead of resuming work
+- Saying "X is done. Next steps are A, B, C." and then stopping
+- Asking "Should I continue?" when there are clearly pending tasks
+
+**When asked for status:** Answer briefly, then RESUME WORK immediately.
+Do not ask for permission. Do not wait for acknowledgment.
+
 **Self-Directed Work Rule: When you identify a gap, bug, or missing
 integration while working, you MUST fix it immediately. Do NOT stop to ask
 the user whether to proceed. Do NOT list the gap and wait for approval.

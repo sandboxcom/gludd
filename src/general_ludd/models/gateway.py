@@ -56,20 +56,27 @@ class ModelResponse:
 class ModelGateway:
     def __init__(
         self,
-        profiles: list[ModelProfile] | None = None,
+        profiles: list[ModelProfile] | dict[str, ModelProfile] | None = None,
         provider_registry: ProviderRegistry | None = None,
         secrets_manager: _SecretsResolver | None = None,
         budget_guard: Any | None = None,
         router: ModelRouter | None = None,
+        event_bus: Any | None = None,
+        hook_system: Any | None = None,
+        worker_broadcaster: Any | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
-            for p in profiles:
+            src = profiles.values() if isinstance(profiles, dict) else profiles
+            for p in src:
                 self._profiles[p.model_profile_id] = p
         self._registry = provider_registry
         self._secrets = secrets_manager
         self._budget_guard = budget_guard
         self._router = router
+        self._event_bus = event_bus
+        self._hooks = hook_system
+        self._broadcaster = worker_broadcaster
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -241,3 +248,49 @@ class ModelGateway:
         raise ValueError(
             f"All profiles in fallback chain failed for '{profile_id}'"
         )
+
+    def add_profile(
+        self,
+        model_id: str,
+        provider: str = "openai",
+        model: str = "",
+        api_key_env: str | None = None,
+        api_base_alias: str | None = None,
+        **kwargs: Any,
+    ) -> ModelProfile:
+        profile = ModelProfile(
+            model_profile_id=model_id,
+            provider=provider,
+            model_name=model,
+            credential_alias=api_key_env,
+            api_base_alias=api_base_alias,
+            enabled=True,
+            **{k: v for k, v in kwargs.items() if k in ModelProfile.model_fields},
+        )
+        self._profiles[model_id] = profile
+        if self._event_bus:
+            from general_ludd.events.types import ModelAddedEvent
+
+            self._event_bus.publish(ModelAddedEvent(model_id=model_id, profile=profile.model_dump()))
+        if self._hooks:
+            self._hooks.fire("on_model_added", {"model_id": model_id, "profile": profile.model_dump()})
+        if self._broadcaster:
+            try:
+                self._broadcaster.broadcast_model_update("add", model_id, profile.model_dump())
+            except Exception as exc:
+                logger.warning("Worker broadcast failed for model add: %s", exc)
+        return profile
+
+    def remove_profile(self, model_id: str) -> None:
+        self._profiles.pop(model_id, None)
+        if self._event_bus:
+            from general_ludd.events.types import ModelRemovedEvent
+
+            self._event_bus.publish(ModelRemovedEvent(model_id=model_id))
+        if self._hooks:
+            self._hooks.fire("on_model_removed", {"model_id": model_id})
+        if self._broadcaster:
+            try:
+                self._broadcaster.broadcast_model_update("remove", model_id, {})
+            except Exception as exc:
+                logger.warning("Worker broadcast failed for model remove: %s", exc)

@@ -11,5 +11,7 @@ htmlcov/
 dist/gludd
 dist/general-ludd-agent-*
 dist/build/
+dist/sbom-test.json
+dist/*.json
 build/
 *.egg-info/

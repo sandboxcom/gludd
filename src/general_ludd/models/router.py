@@ -30,6 +30,9 @@ class ModelRouter:
     def add_role(self, role_name: str, profile_id: str) -> None:
         self._mapping[role_name] = profile_id
 
+    def set_role_routing(self, role_name: str, profile_id: str) -> None:
+        self._mapping[role_name] = profile_id
+
     def add_quality_mapping(self, class_name: str, profile_id: str) -> None:
         self._quality_map[class_name] = profile_id
 
