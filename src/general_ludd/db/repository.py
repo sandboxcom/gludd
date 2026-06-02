@@ -3,16 +3,19 @@
 from __future__ import annotations
 
 import contextlib
+import json
 from datetime import UTC, datetime
 from typing import Any
 
-from sqlalchemy import select
+from sqlalchemy import func, select
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import selectinload
 
 from general_ludd.db.models import (
     AuditEventModel,
+    BenchmarkResultModel,
     ProjectModel,
+    PromptProfileModel,
     QueueModel,
     TaskReturnModel,
     TodoEventModel,
@@ -330,3 +333,184 @@ class VariableNamespaceRepository:
         self._session.add(var)
         await self._session.flush()
         return var
+
+
+class PromptProfileRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def upsert(
+        self,
+        name: str,
+        source: str,
+        prompt_text: str,
+        source_url: str = "",
+        task_types: list[str] | None = None,
+        tags: list[str] | None = None,
+        version: str = "latest",
+    ) -> PromptProfileModel:
+        result = await self._session.execute(
+            select(PromptProfileModel).where(PromptProfileModel.name == name)
+        )
+        existing = result.scalar_one_or_none()
+        if existing is not None:
+            existing.source = source
+            existing.source_url = source_url
+            existing.prompt_text = prompt_text
+            existing.task_types = json.dumps(task_types or [])
+            existing.tags = json.dumps(tags or [])
+            existing.version = version
+            await self._session.flush()
+            return existing
+        profile = PromptProfileModel(
+            name=name,
+            source=source,
+            source_url=source_url,
+            prompt_text=prompt_text,
+            task_types=json.dumps(task_types or []),
+            tags=json.dumps(tags or []),
+            version=version,
+        )
+        self._session.add(profile)
+        await self._session.flush()
+        return profile
+
+    async def get_by_name(self, name: str) -> PromptProfileModel | None:
+        result = await self._session.execute(
+            select(PromptProfileModel).where(PromptProfileModel.name == name)
+        )
+        return result.scalar_one_or_none()
+
+    async def get_by_id(self, profile_id: str) -> PromptProfileModel | None:
+        result = await self._session.execute(
+            select(PromptProfileModel).where(PromptProfileModel.id == profile_id)
+        )
+        return result.scalar_one_or_none()
+
+    async def list_all(self) -> list[PromptProfileModel]:
+        result = await self._session.execute(
+            select(PromptProfileModel).order_by(PromptProfileModel.name)
+        )
+        return list(result.scalars().all())
+
+    async def list_by_source(self, source: str) -> list[PromptProfileModel]:
+        result = await self._session.execute(
+            select(PromptProfileModel)
+            .where(PromptProfileModel.source == source)
+            .order_by(PromptProfileModel.name)
+        )
+        return list(result.scalars().all())
+
+    async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
+        result = await self._session.execute(select(PromptProfileModel))
+        profiles = list(result.scalars().all())
+        return [
+            p
+            for p in profiles
+            if task_type in json.loads(p.task_types)
+            or not json.loads(p.task_types)
+        ]
+
+
+class BenchmarkRepository:
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record_result(
+        self,
+        model_profile_id: str,
+        task_type: str,
+        scores: dict[str, float],
+        success: bool,
+        prompt_profile_id: str | None = None,
+        task_description: str = "",
+        time_seconds: float = 0.0,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: float = 0.0,
+        error_message: str = "",
+        raw_output: str = "",
+    ) -> BenchmarkResultModel:
+        row = BenchmarkResultModel(
+            prompt_profile_id=prompt_profile_id,
+            model_profile_id=model_profile_id,
+            task_type=task_type,
+            task_description=task_description,
+            completion_score=scores.get("completion", 0.0),
+            code_quality_score=scores.get("code_quality", 0.0),
+            instruction_adherence_score=scores.get("instruction", 0.0),
+            token_efficiency_score=scores.get("token_efficiency", 0.0),
+            time_seconds=time_seconds,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+            success=success,
+            error_message=error_message,
+            raw_output=raw_output,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def get_aggregate_scores(
+        self, task_type: str | None = None
+    ) -> list[dict[str, Any]]:
+        cols = [
+            BenchmarkResultModel.prompt_profile_id,
+            BenchmarkResultModel.model_profile_id,
+            BenchmarkResultModel.task_type,
+            func.count(BenchmarkResultModel.id).label("sample_count"),
+            func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
+            func.avg(BenchmarkResultModel.code_quality_score).label("avg_code_quality"),
+            func.avg(BenchmarkResultModel.instruction_adherence_score).label(
+                "avg_instruction"
+            ),
+            func.avg(BenchmarkResultModel.token_efficiency_score).label(
+                "avg_token_efficiency"
+            ),
+            func.avg(BenchmarkResultModel.cost_usd).label("avg_cost"),
+            func.avg(
+                BenchmarkResultModel.completion_score * 0.35
+                + BenchmarkResultModel.code_quality_score * 0.25
+                + BenchmarkResultModel.instruction_adherence_score * 0.25
+                + BenchmarkResultModel.token_efficiency_score * 0.15
+            ).label("composite_score"),
+        ]
+        q = select(*cols).where(BenchmarkResultModel.success.is_(True))
+        if task_type is not None:
+            q = q.where(BenchmarkResultModel.task_type == task_type)
+        q = q.group_by(
+            BenchmarkResultModel.prompt_profile_id,
+            BenchmarkResultModel.model_profile_id,
+            BenchmarkResultModel.task_type,
+        )
+        result = await self._session.execute(q)
+        return [dict(row._mapping) for row in result.all()]
+
+    async def get_best_for_task(
+        self, task_type: str, min_samples: int = 3
+    ) -> dict[str, Any] | None:
+        aggregates = await self.get_aggregate_scores(task_type=task_type)
+        qualified = [a for a in aggregates if a["sample_count"] >= min_samples]
+        if not qualified:
+            return None
+        return max(qualified, key=lambda a: float(a["composite_score"]))
+
+    async def get_model_scores(
+        self, model_profile_id: str
+    ) -> list[dict[str, Any]]:
+        return [
+            a
+            for a in await self.get_aggregate_scores()
+            if a["model_profile_id"] == model_profile_id
+        ]
+
+    async def list_recent(
+        self, limit: int = 50
+    ) -> list[BenchmarkResultModel]:
+        result = await self._session.execute(
+            select(BenchmarkResultModel)
+            .order_by(BenchmarkResultModel.created_at.desc())
+            .limit(limit)
+        )
+        return list(result.scalars().all())

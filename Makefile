@@ -305,3 +305,8 @@ validate: lint typecheck test ansible-syntax healthcheck
 
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."
+
+collect-prompts:
+	@echo "Collecting system prompts from open-source coding agents..."
+	@$(UV) run python scripts/collect_prompts.py --output-dir config/prompt_profiles/collected
+	@echo "Done. Run 'make collect-prompts SOURCE=aider' for a specific agent."

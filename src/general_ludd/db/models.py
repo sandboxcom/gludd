@@ -289,3 +289,52 @@ class BucketLeaseModel(Base):
     __table_args__ = (
         UniqueConstraint("bucket_key", "holder_id", name="uq_bucket_lease"),
     )
+
+
+class PromptProfileModel(Base):
+    __tablename__ = "prompt_profiles"
+
+    id: Mapped[str] = mapped_column(
+        String(64), primary_key=True, default=lambda: f"pp-{uuid4().hex[:8]}"
+    )
+    name: Mapped[str] = mapped_column(String(128), nullable=False, unique=True)
+    source: Mapped[str] = mapped_column(String(64), nullable=False)
+    source_url: Mapped[str] = mapped_column(String(512), nullable=False, default="")
+    prompt_text: Mapped[str] = mapped_column(Text, nullable=False)
+    task_types: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    version: Mapped[str] = mapped_column(String(32), nullable=False, default="latest")
+    collected_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+
+class BenchmarkResultModel(Base):
+    __tablename__ = "benchmark_results"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    prompt_profile_id: Mapped[str] = mapped_column(
+        String(64), ForeignKey("prompt_profiles.id"), nullable=True, index=True
+    )
+    model_profile_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    task_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    completion_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    code_quality_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    instruction_adherence_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    token_efficiency_score: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    time_seconds: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    error_message: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    raw_output: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_benchmark_task_model", "task_type", "model_profile_id"),
+        Index("ix_benchmark_task_prompt", "task_type", "prompt_profile_id"),
+    )

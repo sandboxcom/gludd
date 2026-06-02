@@ -6,10 +6,10 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: Noqa cleanup, cache refresh, coverage improvements across 15 files
-- **Test Suite**: 2126 passed, 26 skipped, 0 failures, 94.23% coverage
+- **Phase**: Azure ContainerApp generator, CLI bugfixes, Anthropic docs, new endpoint tests
+- **Test Suite**: 2160 passed, 26 skipped, 0 failures, 93.91% coverage
 - **Branch**: master
-- **Latest commit**: 038a302 feat: remove all noqa suppressions, add refresh to caches, improve test coverage across 15 files
+- **Latest commit**: 5add075 feat: Azure ContainerApp terraform generator, CLI bugfixes, Anthropic docs, new endpoint tests
 - **Mypy**: 0 errors in 132 source files (strict mode)
 - **Lint**: 0 errors (ruff), 0 noqa suppressions in src/
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
@@ -233,9 +233,9 @@ EventLoop auto-creates from session (when available):
 - `VariableNamespaceRepository` (new)
 
 ## Quality Status
-- **Mypy**: 0 errors in 129 source files (strict mode)
+- **Mypy**: 0 errors in 132 source files (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 1989 passed, 15 skipped, 92.36% coverage
+- **Tests**: 2160 passed, 26 skipped, 93.91% coverage
 - **No deprecation warnings**: `tool.uv.dev-dependencies` removed
 
 ## Key Gaps (Known)
@@ -301,6 +301,32 @@ EventLoop auto-creates from session (when available):
 5. `7a74689` — feat: wire secret migration into daemon startup, deep config snapshot, daemon lifespan integration tests
 6. `a5d28e7` — feat: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation tests, HF integration, local inference tests, ZAI live feature tests
 7. `038a302` — feat: remove all noqa suppressions, add refresh to caches, improve test coverage across 15 files
+8. `5add075` — feat: Azure ContainerApp terraform generator, CLI bugfixes, Anthropic docs, new endpoint tests
+
+## Azure ContainerApp, CLI Fixes, Docs, Endpoint Tests (COMPLETE — commit 5add075)
+
+### Azure ContainerApp Terraform Generator
+- `_generate_azure_containerapp()` in terraform.py: generates Azure ContainerApp HCL with VNet, ACR, environment, ingress, cost tags
+- `deploy_type` field on `ComputeConfig`: `"vm"` (default) or `"containerapp"`
+- `TerraformGenerator.generate()` dispatches to ContainerApp when `provider=azure` + `deploy_type="containerapp"`
+- 9 tests in `TestTerraformGeneratorAzureContainerApp`
+
+### CLI Bugfixes
+- `_cmd_mcp_search`: fixed `r.get("name")` → `r.get("server_name")` to match daemon response
+- `_cmd_skills_install`: fixed `data.get('path')` → `data.get('installed')` to match daemon response
+
+### Anthropic/Claude Model Profile
+- `config/model_profiles/anthropic_example.yml`: claude-sonnet-4-20250514, credential_alias ANTHROPIC_API_KEY, langchain-anthropic package
+
+### New CLI Subcommand Tests
+- `tests/unit/test_new_cli_commands.py`: 13 tests for mcp search/list/info, skills search/list/install, compute endpoints/register
+
+### New Daemon Endpoint Tests
+- `tests/unit/test_new_daemon_endpoints.py`: 12 tests for MCP catalog search/list/detail, skills catalog search/list/install, compute endpoint register/unregister/list
+
+### Documentation Updates
+- `dist/README.md`: Added Anthropic/Claude provider section, MCP server workflow, skills workflow, compute endpoint workflow, Azure ContainerApp section, new CLI commands, new daemon API endpoints
+- `docs/quickstart.md`: Updated prerequisites (SQLite default, Anthropic provider), simplified database setup, added MCP/skills/compute quickstart sections
 
 ## Noqa Cleanup and Cache Refresh (COMPLETE — commit 038a302)
 - **Removed all noqa suppressions** from src/ (E501 in skills/catalog.py, RUF006 in events/bus.py x2, E712 in db/repository.py x2) and tests/ (E731 in test_deployment.py, test_binary_paths.py; RUF006 in test_obj04_event_loop.py)
