@@ -6,12 +6,12 @@
 - 2026-06-01
 
 ## Current Status
-- **Phase**: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation, HF integration, local inference tests, ZAI live tests
-- **Test Suite**: 2037 passed, 26 skipped, 0 failures, 91.95% coverage
+- **Phase**: Noqa cleanup, cache refresh, coverage improvements across 15 files
+- **Test Suite**: 2126 passed, 26 skipped, 0 failures, 94.23% coverage
 - **Branch**: master
-- **Latest commit**: a5d28e7 feat: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation tests, HF integration, local inference tests, ZAI live feature tests
+- **Latest commit**: 038a302 feat: remove all noqa suppressions, add refresh to caches, improve test coverage across 15 files
 - **Mypy**: 0 errors in 132 source files (strict mode)
-- **Lint**: 0 errors (ruff)
+- **Lint**: 0 errors (ruff), 0 noqa suppressions in src/
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
 ## Sprint0 Objectives (ALL COMPLETE)
@@ -242,8 +242,10 @@ EventLoop auto-creates from session (when available):
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
 - `build_secrets_resolver()` cannot call async `health_check()` from sync context
 - ZAI API 429 (balance exhaustion) — live identity tests xfail until recharged
-- MCP catalog search hits real registry APIs (no offline fallback)
-- Skills catalog is curated-only (no GitHub auto-discovery yet)
+- MCP catalog search hits real registry APIs (no offline fallback) — now has `refresh()` for cache invalidation
+- Skills catalog is curated-only (no GitHub auto-discovery yet) — now has `refresh()` for cache invalidation
+- Files still below 85%: cli.py (73%), ansible/core_runner.py (76%), runtime/pip_bundle.py (88%), runtime/release.py (88%)
+- events/bus.py (83%) — async subscriber paths with `asyncio.run()` fallback not covered
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases
@@ -298,3 +300,16 @@ EventLoop auto-creates from session (when available):
 4. `098ed8e` — fix: resolve all mypy errors (19->0), fix LoadSnapshot field names, clean up unused mypy overrides
 5. `7a74689` — feat: wire secret migration into daemon startup, deep config snapshot, daemon lifespan integration tests
 6. `a5d28e7` — feat: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation tests, HF integration, local inference tests, ZAI live feature tests
+7. `038a302` — feat: remove all noqa suppressions, add refresh to caches, improve test coverage across 15 files
+
+## Noqa Cleanup and Cache Refresh (COMPLETE — commit 038a302)
+- **Removed all noqa suppressions** from src/ (E501 in skills/catalog.py, RUF006 in events/bus.py x2, E712 in db/repository.py x2) and tests/ (E731 in test_deployment.py, test_binary_paths.py; RUF006 in test_obj04_event_loop.py)
+- **Fixed EventBus RUF006**: Added `_background_tasks` set to store asyncio.Task references, preventing GC of fire-and-forget tasks
+- **Fixed QueueRepository/ProjectRepository E712**: Changed `== True` to `.is_(True)` for SQLAlchemy boolean comparisons
+- **Fixed skills/catalog.py E501**: Broke long description string across lines
+- **Fixed test lambdas E731**: Replaced `lambda` assignments with proper `def` functions
+- **Added `refresh()` method** to MCPCatalog, SkillCatalog, and ModelRegistry for cache invalidation
+- **New test files**: `test_db_migrations.py` (5 tests), `test_ansible_manifest.py` (11 tests)
+- **Extended test coverage** across 13 existing test files
+- **Coverage**: 94.23% (up from 91.95%), 2126 tests (up from 2037)
+- **Files now at 85%+**: db/migrations.py (100%), mcp/catalog.py (99%), ansible/manifest.py (98%), skills/catalog.py (100%), worker/gunicorn_conf.py (100%), agents/registry.py (100%), runtime/validator.py (95%), controllers/load_scrape.py (97%), runtime/container.py (96%), review/decision_applier.py (94%)

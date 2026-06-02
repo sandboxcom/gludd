@@ -54,6 +54,7 @@ class ComputeConfig(BaseModel):
     disk_size_gb: int = 100
     container_image: str | None = None
     api_key_alias: str | None = None
+    deploy_type: str = "vm"
 
 
 class ComputeInstance(BaseModel):

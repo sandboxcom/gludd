@@ -4,10 +4,11 @@
 
 Before installing General Ludd Agent, make sure you have:
 
-1. **PostgreSQL 14+** running and accessible
+1. **SQLite** (default, zero-config) or **PostgreSQL 14+** for production
 2. **A model provider API key** (one of):
    - Z.AI (GLM models)
    - OpenAI (GPT-4, etc.)
+   - Anthropic (Claude)
    - OpenRouter (multi-provider gateway)
    - A local model server (vLLM, llama.cpp)
 
@@ -48,25 +49,21 @@ ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 
 # For OpenAI
 OPENAI_API_KEY=sk-your-key-here
+
+# For Anthropic Claude
+ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
 ### Step 2: Configure the Database
 
-Edit `/etc/general-ludd/general-ludd.yml`:
+The default database is **SQLite** (zero-config, stored in
+`~/.local/share/general-ludd/gludd.db`). No setup needed.
+
+For production with PostgreSQL, edit `/etc/general-ludd/general-ludd.yml`:
 
 ```yaml
 database:
-  host: localhost
-  port: 5432
-  name: gludd
-  user: gludd
-  password: your-password
-```
-
-Or set the `DATABASE_URL` environment variable:
-
-```bash
-export DATABASE_URL=postgresql://gludd:password@localhost:5432/gludd
+  url: postgresql://gludd:password@localhost:5432/gludd
 ```
 
 Create the database:
@@ -133,3 +130,35 @@ gludd status <task-id>
 - Read `docs/configuration.md` for full config options
 - Read `docs/architecture.md` to understand how the system works
 - Explore `/etc/general-ludd/config/` for model profiles, agent definitions, etc.
+
+## Searching and Using MCP Servers
+
+```bash
+# Search for MCP tools
+gludd mcp search filesystem
+
+# View server details
+gludd mcp info filesystem
+
+# Register in config/mcp_servers/ (see dist/README.md for full example)
+```
+
+## Searching and Using Skills
+
+```bash
+# Find a skill
+gludd skills search tdd
+
+# Install it locally
+gludd skills install tdd-discipline
+```
+
+## Registering GPU Compute Endpoints
+
+```bash
+# Register a remote vLLM server
+gludd compute register --id my-gpu --url http://gpu:8000 --model llama-3
+
+# View all endpoints
+gludd compute endpoints
+```

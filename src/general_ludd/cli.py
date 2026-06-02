@@ -90,6 +90,58 @@ def main() -> None:
     local_serve_parser.add_argument("--daemon-url", default="http://localhost:8000")
     local_serve_parser.set_defaults(func=_cmd_local_serve)
 
+    mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
+    mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
+    mcp_sub.metavar = ""
+
+    mcp_search = mcp_sub.add_parser("search", help="Search MCP catalog")
+    mcp_search.add_argument("query", nargs="?", default="", help="Search query")
+    mcp_search.add_argument("--daemon-url", default="http://localhost:8000")
+    mcp_search.set_defaults(func=_cmd_mcp_search)
+
+    mcp_list = mcp_sub.add_parser("list", help="List known MCP servers")
+    mcp_list.add_argument("--daemon-url", default="http://localhost:8000")
+    mcp_list.set_defaults(func=_cmd_mcp_list)
+
+    mcp_info = mcp_sub.add_parser("info", help="Show MCP server details")
+    mcp_info.add_argument("name", help="Server name")
+    mcp_info.add_argument("--daemon-url", default="http://localhost:8000")
+    mcp_info.set_defaults(func=_cmd_mcp_info)
+
+    skills_parser = sub.add_parser("skills", help="Skills catalog commands")
+    skills_sub = skills_parser.add_subparsers(dest="skills_command")
+    skills_sub.metavar = ""
+
+    skills_search = skills_sub.add_parser("search", help="Search skills catalog")
+    skills_search.add_argument("query", nargs="?", default="", help="Search query")
+    skills_search.add_argument("--daemon-url", default="http://localhost:8000")
+    skills_search.set_defaults(func=_cmd_skills_search)
+
+    skills_list = skills_sub.add_parser("list", help="List all skills")
+    skills_list.add_argument("--daemon-url", default="http://localhost:8000")
+    skills_list.set_defaults(func=_cmd_skills_list)
+
+    skills_install = skills_sub.add_parser("install", help="Install a skill")
+    skills_install.add_argument("name", help="Skill name")
+    skills_install.add_argument("--daemon-url", default="http://localhost:8000")
+    skills_install.set_defaults(func=_cmd_skills_install)
+
+    compute_parser = sub.add_parser("compute", help="Compute endpoint commands")
+    compute_sub = compute_parser.add_subparsers(dest="compute_command")
+    compute_sub.metavar = ""
+
+    compute_endpoints = compute_sub.add_parser("endpoints", help="List compute endpoints")
+    compute_endpoints.add_argument("--daemon-url", default="http://localhost:8000")
+    compute_endpoints.set_defaults(func=_cmd_compute_endpoints)
+
+    compute_register = compute_sub.add_parser("register", help="Register a compute endpoint")
+    compute_register.add_argument("--id", required=True, help="Endpoint ID")
+    compute_register.add_argument("--url", required=True, help="Endpoint URL")
+    compute_register.add_argument("--model", required=True, help="Model name")
+    compute_register.add_argument("--max-concurrent", type=int, default=1, help="Max concurrent requests")
+    compute_register.add_argument("--daemon-url", default="http://localhost:8000")
+    compute_register.set_defaults(func=_cmd_compute_register)
+
     args = parser.parse_args()
     if args.func is None:
         parser.print_help()
@@ -315,6 +367,181 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
         if resp.status_code in (200, 201):
             data = resp.json()
             print(json.dumps(data, indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_mcp_search(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/mcp/catalog/search",
+            json={"query": args.query, "limit": 20},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                print("No MCP servers found.")
+                return
+            print(f"{'name':<30} {'description':<50} {'source':<20}")
+            print("-" * 100)
+            for r in results:
+                name = r.get("server_name", "N/A")[:29]
+                description = r.get("description", "")[:49]
+                source = r.get("source", "")[:19]
+                print(f"{name:<30} {description:<50} {source:<20}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_mcp_list(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/mcp/catalog/servers", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            servers = data.get("servers", [])
+            if not servers:
+                print("No MCP servers known.")
+                return
+            for s in servers:
+                print(f"  {s}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_mcp_info(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/mcp/catalog/servers/{args.name}",
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_skills_search(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/skills/catalog/search",
+            json={"query": args.query, "limit": 20},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if not results:
+                print("No skills found.")
+                return
+            print(f"{'name':<25} {'description':<40} {'category':<15} {'tags':<30}")
+            print("-" * 110)
+            for r in results:
+                name = r.get("name", "N/A")[:24]
+                description = r.get("description", "")[:39]
+                category = r.get("category", "")[:14]
+                tags = ", ".join(r.get("tags", []))[:29]
+                print(f"{name:<25} {description:<40} {category:<15} {tags:<30}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_skills_list(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/skills/catalog", timeout=10.0)
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_skills_install(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/skills/catalog/install",
+            json={"name": args.name},
+            timeout=30.0,
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            print(f"Installed to: {data.get('installed', 'N/A')}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_compute_endpoints(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/compute/endpoints", timeout=10.0)
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_compute_register(args: argparse.Namespace) -> None:
+    import httpx
+
+    payload = {
+        "id": args.id,
+        "url": args.url,
+        "model": args.model,
+        "max_concurrent": args.max_concurrent,
+    }
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/compute/endpoints",
+            json=payload,
+            timeout=10.0,
+        )
+        if resp.status_code in (200, 201):
+            print(json.dumps(resp.json(), indent=2))
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)

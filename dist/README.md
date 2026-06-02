@@ -56,6 +56,30 @@ gludd log-level <debug|info|warning|error>
 
 gludd deployments
     List active deployments
+
+gludd mcp search [QUERY]
+    Search the MCP server catalog (official, Smithery, Glama registries)
+
+gludd mcp list
+    List all known MCP servers
+
+gludd mcp info <NAME>
+    Show detailed info for a specific MCP server
+
+gludd skills search [QUERY]
+    Search the skills catalog by name, tag, or category
+
+gludd skills list
+    List all available skills
+
+gludd skills install <NAME>
+    Install a skill from the catalog to the local config directory
+
+gludd compute endpoints
+    List registered compute endpoints with utilization
+
+gludd compute register --id ID --url URL [--model MODEL] [--gpu-type TYPE] [--max-concurrent N]
+    Register a GPU compute endpoint for inference routing
 ```
 
 ## Directory Structure After Install
@@ -204,6 +228,35 @@ model_routing:
 **To use OpenRouter:**
 Same pattern — copy `openrouter_example.yml`, set `OPENROUTER_API_KEY` and
 `OPENROUTER_BASE_URL` in the env file.
+
+**To use Anthropic Claude:**
+Copy `config/model_profiles/anthropic_example.yml` to `anthropic.yml`:
+```yaml
+model_profile_id: anthropic_claude
+provider: anthropic
+provider_package: langchain-anthropic
+provider_class_hint: ChatAnthropic
+model_name: claude-sonnet-4-20250514
+credential_alias: ANTHROPIC_API_KEY
+context_window: 200000
+max_input_tokens: 190000
+max_output_tokens: 16000
+cost_per_input_token: 0.003
+cost_per_output_token: 0.015
+run_budget_usd: 50.0
+enabled: true
+```
+
+Set in `/etc/general-ludd/env`:
+```bash
+ANTHROPIC_API_KEY=sk-ant-your-key-here
+```
+
+Then update `general-ludd.yml`:
+```yaml
+model_routing:
+  default_profile: anthropic_claude
+```
 
 **To use a local model (vLLM):**
 ```yaml
@@ -398,8 +451,150 @@ The daemon exposes REST endpoints for management:
 | GET | `/admin/projects` | List projects |
 | GET | `/admin/compute/utilization` | Utilization report |
 | GET | `/admin/compute/endpoints` | List compute endpoints |
+| POST | `/admin/compute/endpoints` | Register compute endpoint |
+| DELETE | `/admin/compute/endpoints/{id}` | Unregister compute endpoint |
+| POST | `/admin/mcp/catalog/search` | Search MCP server catalog |
+| GET | `/admin/mcp/catalog/servers` | List known MCP servers |
+| GET | `/admin/mcp/catalog/servers/{name}` | MCP server detail |
+| POST | `/admin/skills/catalog/search` | Search skills catalog |
+| GET | `/admin/skills/catalog` | List all skills |
+| POST | `/admin/skills/catalog/install` | Install a skill |
 
-## Features
+## Common Workflows
+
+### Adding an MCP Server
+
+MCP (Model Context Protocol) servers provide tools that agents can use during task
+execution. The catalog aggregates servers from three registries: official MCP registry,
+Smithery, and Glama.
+
+```bash
+# 1. Search for a server
+gludd mcp search github
+
+# 2. View details
+gludd mcp info github
+
+# 3. Register it in your config
+# Edit config/mcp_servers/github.yml:
+#   servers:
+#     github:
+#       command: ["npx", "-y", "@modelcontextprotocol/server-github"]
+#       env_aliases:
+#         GITHUB_PERSONAL_ACCESS_TOKEN: GITHUB_TOKEN
+#       timeout_seconds: 30
+#       enabled: true
+
+# 4. Set the required credentials in /etc/general-ludd/env:
+#   GITHUB_TOKEN=ghp_your_token_here
+
+# 5. Reload config
+gludd daemon reload
+```
+
+For servers that require API keys (most do), the `env_aliases` field maps
+environment variable names the server expects to credential aliases resolved
+through OpenBao/Vault or the env file.
+
+### Adding and Using Skills
+
+Skills are reusable prompt templates that guide agent behavior. They are written
+as Markdown files with YAML frontmatter.
+
+```bash
+# 1. Search for a skill
+gludd skills search tdd
+
+# 2. List all available skills
+gludd skills list
+
+# 3. Install a skill (copies to config/skills/ directory)
+gludd skills install tdd-discipline
+
+# 4. The skill is now active — agents will match it via triggers
+#    defined in the skill's frontmatter
+```
+
+You can also create custom skills manually:
+```bash
+# Create config/skills/my-skill.md
+cat > /etc/general-ludd/config/skills/my-skill.md << 'EOF'
+---
+name: my-custom-skill
+description: Custom skill for my project
+triggers:
+  - pattern: "implement .* feature"
+    priority: 5
+tags:
+  - custom
+  - feature
+category: methodology
+---
+
+# My Custom Skill
+
+When implementing a feature:
+1. Write tests first (TDD)
+2. Implement minimal code
+3. Refactor
+4. Run full test suite
+EOF
+```
+
+### Adding a Compute Endpoint for GPU Inference
+
+Register external GPU endpoints (vLLM servers, cloud GPU instances) to route
+inference tasks to them automatically.
+
+```bash
+# 1. List current endpoints
+gludd compute endpoints
+
+# 2. Register a new endpoint
+gludd compute register \
+  --id my-gpu-a100 \
+  --url http://gpu-server:8000 \
+  --model llama-3-70b \
+  --gpu-type a100_80 \
+  --max-concurrent 8
+
+# 3. Verify it's registered
+gludd compute endpoints
+```
+
+The daemon automatically routes inference tasks to the least-utilized endpoint
+that matches the requested model. You can also register Azure ContainerApp
+endpoints provisioned via terraform:
+
+```bash
+# Generate terraform for Azure ContainerApp
+# In your compute config:
+#   deploy_type: containerapp
+#   provider: azure
+#   gpu_type: t4
+```
+
+### Adding Azure ContainerApp Compute
+
+For serverless GPU inference on Azure:
+
+1. Set `deploy_type: containerapp` in your compute config
+2. The terraform generator produces an Azure ContainerApp with:
+   - VNet-integrated environment
+   - Container registry
+   - External ingress on port 8000
+   - Auto-scaling based on load
+   - Cost tracking tags
+
+```yaml
+# In general-ludd.yml
+compute:
+  provider: azure
+  deploy_type: containerapp
+  gpu_type: t4
+  model_name: my-model
+  region: eastus
+```
 
 | Feature | How to Use |
 |---------|-----------|

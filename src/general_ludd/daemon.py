@@ -795,4 +795,145 @@ def create_daemon_app(
             "status": server.status,
         }
 
+    @app.post("/admin/mcp/catalog/search")
+    async def admin_mcp_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.mcp.catalog import MCPCatalog
+
+        catalog = MCPCatalog()
+        results = catalog.search(query=req.get("query", ""), limit=req.get("limit", 20))
+        return {
+            "results": [
+                {
+                    "server_name": r.server_name,
+                    "display_name": r.display_name,
+                    "description": r.description,
+                    "source": r.source,
+                    "command": r.command,
+                    "env_aliases_needed": r.env_aliases_needed,
+                    "tags": r.tags,
+                    "downloads": r.downloads,
+                }
+                for r in results
+            ]
+        }
+
+    @app.get("/admin/mcp/catalog/servers")
+    async def admin_mcp_catalog_servers() -> dict[str, Any]:
+        from general_ludd.mcp.catalog import MCPCatalog
+
+        catalog = MCPCatalog()
+        servers = catalog.get_known_servers()
+        return {
+            "servers": [
+                {
+                    "server_name": s.server_name,
+                    "display_name": s.display_name,
+                    "description": s.description,
+                    "source": s.source,
+                    "command": s.command,
+                    "env_aliases_needed": s.env_aliases_needed,
+                    "tags": s.tags,
+                }
+                for s in servers
+            ]
+        }
+
+    @app.get("/admin/mcp/catalog/servers/{name}")
+    async def admin_mcp_catalog_server(name: str) -> dict[str, Any]:
+        from general_ludd.mcp.catalog import MCPCatalog
+
+        catalog = MCPCatalog()
+        server = catalog.get_server(name)
+        if server is None:
+            raise HTTPException(status_code=404, detail=f"MCP server {name} not found")
+        return {
+            "server": {
+                "server_name": server.server_name,
+                "display_name": server.display_name,
+                "description": server.description,
+                "source": server.source,
+                "command": server.command,
+                "env_aliases_needed": server.env_aliases_needed,
+                "tags": server.tags,
+            }
+        }
+
+    @app.post("/admin/skills/catalog/search")
+    async def admin_skills_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.skills.catalog import SkillCatalog
+
+        catalog = SkillCatalog()
+        results = catalog.search(
+            query=req.get("query", ""),
+            tags=req.get("tags"),
+            category=req.get("category"),
+            limit=req.get("limit", 20),
+        )
+        return {
+            "results": [
+                {
+                    "name": r.name,
+                    "description": r.description,
+                    "source": r.source,
+                    "tags": r.tags,
+                    "category": r.category,
+                }
+                for r in results
+            ]
+        }
+
+    @app.get("/admin/skills/catalog")
+    async def admin_skills_catalog() -> dict[str, Any]:
+        from general_ludd.skills.catalog import SkillCatalog
+
+        catalog = SkillCatalog()
+        results = catalog.search(limit=100)
+        return {
+            "skills": [
+                {
+                    "name": r.name,
+                    "description": r.description,
+                    "source": r.source,
+                    "tags": r.tags,
+                    "category": r.category,
+                }
+                for r in results
+            ]
+        }
+
+    @app.post("/admin/skills/catalog/install")
+    async def admin_skills_catalog_install(req: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.skills.catalog import SkillCatalog
+
+        catalog = SkillCatalog()
+        name = req.get("name", "")
+        config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
+        path = catalog.install_skill(name, config_dir)
+        if path is None:
+            raise HTTPException(status_code=404, detail=f"Skill {name} not found")
+        return {"installed": str(path), "name": name}
+
+    @app.post("/admin/compute/endpoints")
+    async def admin_register_compute_endpoint(req: dict[str, Any]) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        endpoint_id = req.get("endpoint_id", "")
+        url = req.get("url", "")
+        if not endpoint_id or not url:
+            raise HTTPException(status_code=422, detail="endpoint_id and url required")
+        ep = ext["utilization"].register_endpoint(
+            endpoint_id=endpoint_id,
+            url=url,
+            model=req.get("model", ""),
+            gpu_type=req.get("gpu_type", ""),
+            gpu_count=req.get("gpu_count", 1),
+            max_concurrent=req.get("max_concurrent", 4),
+        )
+        return {"endpoint_id": ep.endpoint_id, "url": ep.url, "model": ep.model}
+
+    @app.delete("/admin/compute/endpoints/{endpoint_id}")
+    async def admin_unregister_compute_endpoint(endpoint_id: str) -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        ext["utilization"].unregister_endpoint(endpoint_id)
+        return {"removed": endpoint_id}
+
     return app

@@ -360,6 +360,105 @@ class TestTerraformGeneratorAzure:
         assert "azurerm" in tf
 
 
+class TestTerraformGeneratorAzureContainerApp:
+    def setup_method(self):
+        self.gen = TerraformGenerator()
+
+    def test_generates_containerapp_hcl(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+        )
+        tf = self.gen.generate(cfg)
+        assert "terraform {" in tf
+        assert "azurerm_container_app" in tf
+
+    def test_contains_container_app_environment(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+        )
+        tf = self.gen.generate(cfg)
+        assert "azurerm_container_app_environment" in tf
+
+    def test_contains_model_name(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.A100_80,
+            model_name="llama-3-70b",
+            deploy_type="containerapp",
+        )
+        tf = self.gen.generate(cfg)
+        assert "llama-3-70b" in tf
+
+    def test_contains_resource_group(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.L4,
+            model_name="m",
+            deploy_type="containerapp",
+        )
+        tf = self.gen.generate(cfg)
+        assert "azurerm_resource_group" in tf
+
+    def test_contains_ingress(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+        )
+        tf = self.gen.generate(cfg)
+        assert "ingress" in tf
+        assert "target_port = 8000" in tf
+
+    def test_contains_output_endpoint_url(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+        )
+        tf = self.gen.generate(cfg)
+        assert "output" in tf
+        assert "latest_revision_fqdn" in tf
+
+    def test_custom_region(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="containerapp",
+            region="westus2",
+        )
+        tf = self.gen.generate(cfg)
+        assert "westus2" in tf
+
+    def test_vm_deploy_type_still_uses_vm_generator(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            deploy_type="vm",
+        )
+        tf = self.gen.generate(cfg)
+        assert "azurerm_virtual_machine" in tf
+        assert "azurerm_container_app" not in tf
+
+    def test_default_deploy_type_uses_vm(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+        )
+        tf = self.gen.generate(cfg)
+        assert "azurerm_virtual_machine" in tf
+
+
 class TestTerraformGeneratorRunPod:
     def setup_method(self):
         self.gen = TerraformGenerator()

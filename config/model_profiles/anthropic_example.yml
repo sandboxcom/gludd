@@ -1,0 +1,28 @@
+model_profile_id: anthropic_claude
+role_names:
+  - coder
+  - reviewer
+  - planner
+provider: anthropic
+provider_package: langchain-anthropic
+provider_class_hint: ChatAnthropic
+model_name: claude-sonnet-4-20250514
+credential_alias: ANTHROPIC_API_KEY
+context_window: 200000
+max_input_tokens: 190000
+max_output_tokens: 16000
+cost_per_input_token: 0.003
+cost_per_output_token: 0.015
+api_metered: true
+run_budget_usd: 50.0
+enabled: true
+resource_profile: ai_heavy
+roles:
+  - coder
+  - reviewer
+  - planner
+latency_class: medium
+quality_class: high
+fallback_profiles:
+  - openai_gpt4
+probe_enabled: true

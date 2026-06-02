@@ -79,6 +79,8 @@ def _user_data_script(config: ComputeConfig) -> str:
 
 class TerraformGenerator:
     def generate(self, config: ComputeConfig) -> str:
+        if config.provider == ComputeProvider.AZURE and config.deploy_type == "containerapp":
+            return self._generate_azure_containerapp(config)
         dispatch = {
             ComputeProvider.AWS: self._generate_aws,
             ComputeProvider.GCP: self._generate_gcp,
@@ -406,6 +408,128 @@ class TerraformGenerator:
               location            = azurerm_resource_group.gpu_rg.location
               resource_group_name = azurerm_resource_group.gpu_rg.name
               allocation_method   = "Static"
+            }}
+        """)
+
+    def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
+        region = config.region or "eastus"
+        image = _container_image(config)
+        gpu_sku_map: dict[str, str] = {
+            "t4": "Standard_NC4as_T4_v3",
+            "a100_80": "Standard_ND96asr_v4",
+            "l4": "Standard_NC24ads_A100_v4",
+        }
+        sku = gpu_sku_map.get(config.gpu_type.value, "Standard_NC4as_T4_v3")
+
+        return textwrap.dedent(f"""\
+            terraform {{
+              required_providers {{
+                azurerm = {{
+                      source  = "hashicorp/azurerm"
+                      version = "~> 3.0"
+                }}
+              }}
+            }}
+
+            provider "azurerm" {{
+              features {{}}
+              location = "{region}"
+            }}
+
+            resource "azurerm_resource_group" "ca_rg" {{
+              name     = "ca-rg-{config.gpu_type.value}"
+              location = "{region}"
+            }}
+
+            resource "azurerm_container_registry" "gpu_acr" {{
+              name                = "gpuacr{config.gpu_type.value}"
+              resource_group_name = azurerm_resource_group.ca_rg.name
+              location            = azurerm_resource_group.ca_rg.location
+              sku                 = "Standard"
+              admin_enabled       = true
+            }}
+
+            resource "azurerm_container_app_environment" "gpu_env" {{
+              name                       = "gpu-inference-env"
+              location                   = azurerm_resource_group.ca_rg.location
+              resource_group_name        = azurerm_resource_group.ca_rg.name
+              infrastructure_subnet_id   = azurerm_subnet.ca_subnet.id
+            }}
+
+            resource "azurerm_virtual_network" "ca_vnet" {{
+              name                = "ca-vnet"
+              address_space       = ["10.1.0.0/16"]
+              location            = azurerm_resource_group.ca_rg.location
+              resource_group_name = azurerm_resource_group.ca_rg.name
+            }}
+
+            resource "azurerm_subnet" "ca_subnet" {{
+              name                 = "ca-subnet"
+              resource_group_name  = azurerm_resource_group.ca_rg.name
+              virtual_network_name = azurerm_virtual_network.ca_vnet.name
+              address_prefixes     = ["10.1.0.0/23"]
+            }}
+
+            resource "azurerm_container_app" "gpu_inference" {{
+              name                         = "gpu-inference-{config.gpu_type.value}"
+              container_app_environment_id = azurerm_container_app_environment.gpu_env.id
+              resource_group_name          = azurerm_resource_group.ca_rg.name
+              revision_mode                = "Single"
+
+              container {{
+                name   = "inference"
+                image  = "{image}"
+
+                resources {{
+                  cpu    = "4.0"
+                  memory = "16Gi"
+                }}
+
+                env {{
+                  name  = "MODEL_NAME"
+                  value = "{config.model_name}"
+                }}
+
+                env {{
+                  name  = "HOST"
+                  value = "0.0.0.0"
+                }}
+
+                env {{
+                  name  = "PORT"
+                  value = "8000"
+                }}
+              }}
+
+              ingress {{
+                target_port = 8000
+                transport   = "http"
+                external_enabled = true
+
+                traffic_weight {{
+                  percentage = 100
+                  latest_revision = true
+                }}
+              }}
+
+              template {{
+                container {{
+                  name  = "inference"
+                  image = "{image}"
+                }}
+              }}
+
+              tags = {{
+                engine       = "{config.engine.value}"
+                model        = "{config.model_name}"
+                gpu_type     = "{config.gpu_type.value}"
+                compute_type = "containerapp"
+                vm_sku       = "{sku}"
+              }}
+            }}
+
+            output "endpoint_url" {{
+              value = azurerm_container_app.gpu_inference.latest_revision_fqdn
             }}
         """)
 
