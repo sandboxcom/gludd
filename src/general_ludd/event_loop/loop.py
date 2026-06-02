@@ -78,6 +78,7 @@ class EventLoop:
         audit_repo: Any | None = None,
         skill_registry: Any | None = None,
         variable_repo: Any | None = None,
+        adaptive_router: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -115,10 +116,36 @@ class EventLoop:
         )
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
+        self._adaptive_router = adaptive_router
 
     def _resolve_prompt_text(self, todo: Any) -> str | None:
         profile_name = _safe_str(todo, "prompt_profile")
         return _resolve_prompt_text_static(self._prompt_registry, profile_name)
+
+    async def _resolve_adaptive_prompt(
+        self, todo: Any, default_model_profile: str = "default"
+    ) -> tuple[str | None, str | None, Any | None]:
+        if self._adaptive_router is None:
+            return None, None, None
+        from general_ludd.schemas.benchmark import TaskType
+
+        work_type = _safe_str(todo, "work_type", "feature") or "feature"
+        task_type_str = work_type.replace("-", "_").lower()
+        try:
+            task_type = TaskType(task_type_str)
+        except ValueError:
+            task_type = TaskType.FEATURE
+        default_prompt = _safe_str(todo, "prompt_profile")
+        decision = await self._adaptive_router.route(
+            task_type=task_type,
+            default_prompt_profile=default_prompt,
+            default_model_profile=default_model_profile,
+        )
+        return (
+            decision.selected_prompt_profile_id,
+            decision.selected_model_profile_id,
+            decision,
+        )
 
     def _resolve_skill_body(self, todo: Any) -> str | None:
         if self._skill_registry is None:
@@ -384,7 +411,22 @@ class EventLoop:
         if self._mcp_tool_registry is not None:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         playbook = self._config_snapshot.get("default_playbook", "noop.yml")
-        prompt_text = self._resolve_prompt_text(todo)
+        (
+            adaptive_prompt_id,
+            adaptive_model_id,
+            routing_decision,
+        ) = await self._resolve_adaptive_prompt(todo)
+        if routing_decision is not None and not routing_decision.fallback:
+            resolved_prompt_profile = adaptive_prompt_id or _safe_str(todo, "prompt_profile")
+            resolved_model_profile = adaptive_model_id or _safe_str(todo, "model_profile")
+        else:
+            resolved_prompt_profile = _safe_str(todo, "prompt_profile")
+            resolved_model_profile = _safe_str(todo, "model_profile")
+        prompt_text = _resolve_prompt_text_static(
+            self._prompt_registry, resolved_prompt_profile
+        )
+        if prompt_text is None:
+            prompt_text = self._resolve_prompt_text(todo)
         skill_body = self._resolve_skill_body(todo)
         project_id_val = (
             todo.project_id
@@ -403,8 +445,8 @@ class EventLoop:
                     "todo_id": todo.todo_id,
                     "queue": _safe_str(todo, "queue", "core"),
                     "work_type": _safe_str(todo, "work_type", "unknown"),
-                    "model_profile": _safe_str(todo, "model_profile"),
-                    "prompt_profile": _safe_str(todo, "prompt_profile"),
+                    "model_profile": resolved_model_profile,
+                    "prompt_profile": resolved_prompt_profile,
                     "prompt_text": prompt_text,
                     "skill_body": skill_body,
                     **budget_context,
@@ -425,8 +467,8 @@ class EventLoop:
             queue=_safe_str(todo, "queue", "core") or "core",
             work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
             resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
-            model_profile=_safe_str(todo, "model_profile"),
-            prompt_profile=_safe_str(todo, "prompt_profile"),
+            model_profile=resolved_model_profile,
+            prompt_profile=resolved_prompt_profile,
             plan_artifact=_safe_str(todo, "plan_artifact"),
             prompt_text=prompt_text,
             budget_context=budget_context,

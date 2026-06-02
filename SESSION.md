@@ -3,14 +3,14 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-01
+- 2026-06-02
 
 ## Current Status
-- **Phase**: Azure ContainerApp generator, CLI bugfixes, Anthropic docs, new endpoint tests
-- **Test Suite**: 2160 passed, 26 skipped, 0 failures, 93.91% coverage
+- **Phase**: System prompt collection, benchmark scoring engine, adaptive router
+- **Test Suite**: 2213 passed, 26 skipped, 0 failures, 94.04% coverage
 - **Branch**: master
-- **Latest commit**: 5add075 feat: Azure ContainerApp terraform generator, CLI bugfixes, Anthropic docs, new endpoint tests
-- **Mypy**: 0 errors in 132 source files (strict mode)
+- **Latest commit**: ae29f60 feat: System prompt collection, benchmark scoring engine, adaptive router, DB persistence
+- **Mypy**: 0 errors in 136 source files (strict mode)
 - **Lint**: 0 errors (ruff), 0 noqa suppressions in src/
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
 
@@ -233,9 +233,9 @@ EventLoop auto-creates from session (when available):
 - `VariableNamespaceRepository` (new)
 
 ## Quality Status
-- **Mypy**: 0 errors in 132 source files (strict mode)
+- **Mypy**: 0 errors in 136 source files (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 2160 passed, 26 skipped, 93.91% coverage
+- **Tests**: 2213 passed, 26 skipped, 94.04% coverage
 - **No deprecation warnings**: `tool.uv.dev-dependencies` removed
 
 ## Key Gaps (Known)
@@ -302,6 +302,48 @@ EventLoop auto-creates from session (when available):
 6. `a5d28e7` — feat: MCP secrets from Vault, MCP catalog, skills catalog, worker isolation tests, HF integration, local inference tests, ZAI live feature tests
 7. `038a302` — feat: remove all noqa suppressions, add refresh to caches, improve test coverage across 15 files
 8. `5add075` — feat: Azure ContainerApp terraform generator, CLI bugfixes, Anthropic docs, new endpoint tests
+9. `ae29f60` — feat: System prompt collection, benchmark scoring engine, adaptive router, DB persistence
+
+## System Prompt Collection (COMPLETE — commit ae29f60)
+
+### Collection Script
+- `scripts/collect_prompts.py` — fetches system prompts from GitHub repos of known coding agents
+- Sources configured: Aider (editblock, wholefile, udiff, func prompts), OpenHands (codeact agent prompts), SWE-agent (default_prompts.yaml), Cline (system.ts, tools.ts)
+- Extracts prompts from Python string literals, YAML files, TypeScript template literals
+- Outputs YAML files to `config/prompt_profiles/collected/` with metadata (source, source_url, tags, version)
+- Make target: `make collect-prompts` (optional `SOURCE=aider` for specific agent)
+- Repeatable: re-runs update existing profiles (upsert by name)
+
+### Benchmark Scoring Engine
+- `src/general_ludd/scoring/engine.py` — `PromptScoringEngine` with 10 default benchmark tasks
+- Each task covers one `TaskType` enum value (bug_fix, feature, refactor, test_write, code_review, documentation, debugging, optimization, security_fix, integration)
+- Scoring dimensions: `completion_score` (pattern matching), `code_quality_score` (structure analysis), `instruction_adherence_score` (forbidden patterns, "return only" checks), `token_efficiency_score` (line length analysis)
+- Composite score: weighted 35% completion + 25% code_quality + 25% instruction + 15% token_efficiency
+- `BenchmarkScores` Pydantic model with `composite_score` computed property
+
+### Adaptive Router
+- `src/general_ludd/scoring/router.py` — `AdaptiveRouter` selects best prompt+model based on historical scores
+- Queries `BenchmarkRepository.get_aggregate_scores()` grouped by (prompt_profile_id, model_profile_id, task_type)
+- Routes to highest composite_score combo with sufficient samples (default min_samples=3)
+- Falls back to configured defaults when insufficient historical data
+- Cost-aware: `max_cost_usd` parameter switches to cheapest qualifying combo when best is too expensive
+- `get_leaderboard(task_type)` returns ranked list of all combos
+- Cache with 5-minute TTL, invalidatable
+
+### DB Persistence
+- `PromptProfileModel` table: id, name (unique), source, source_url, prompt_text, task_types (JSON), tags (JSON), version, collected_at
+- `BenchmarkResultModel` table: id, prompt_profile_id (FK), model_profile_id, task_type, 4 score columns, time_seconds, input_tokens, output_tokens, cost_usd, success, error_message, raw_output, created_at
+- `PromptProfileRepository`: upsert (by name), get_by_name, get_by_id, list_all, list_by_source, list_for_task_type
+- `BenchmarkRepository`: record_result, get_aggregate_scores (with GROUP BY), get_best_for_task (min_samples), get_model_scores, list_recent
+- Alembic migration `004_add_benchmark_tables.py`: creates both tables with indexes
+
+### Schemas
+- `src/general_ludd/schemas/benchmark.py` — TaskType (10 values), PromptProfile, BenchmarkScores, BenchmarkResult, RoutingCandidate, RoutingDecision
+
+### Tests
+- `tests/unit/test_scoring.py` — 30 tests: TaskType, BenchmarkScores (4 tests), PromptProfile, BenchmarkResult, RoutingDecision, RoutingCandidate, BenchmarkTask (3 tests), PromptScoringEngine (12 tests), AdaptiveRouter (9 tests)
+- `tests/unit/test_benchmark_models.py` — 6 tests: DB model field checks, column defaults
+- `tests/unit/test_benchmark_repo.py` — 17 tests: PromptProfileRepository (8 tests), BenchmarkRepository (9 tests) with in-memory SQLite
 
 ## Azure ContainerApp, CLI Fixes, Docs, Endpoint Tests (COMPLETE — commit 5add075)
 

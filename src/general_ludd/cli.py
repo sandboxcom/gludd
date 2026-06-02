@@ -142,6 +142,16 @@ def main() -> None:
     compute_register.add_argument("--daemon-url", default="http://localhost:8000")
     compute_register.set_defaults(func=_cmd_compute_register)
 
+    scores_parser = sub.add_parser("scores", help="View benchmark scores")
+    scores_parser.add_argument("--task-type", default=None, help="Filter by task type")
+    scores_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    scores_parser.set_defaults(func=_cmd_scores)
+
+    leaderboard_parser = sub.add_parser("leaderboard", help="View prompt+model leaderboard")
+    leaderboard_parser.add_argument("--task-type", default=None, help="Filter by task type")
+    leaderboard_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    leaderboard_parser.set_defaults(func=_cmd_leaderboard)
+
     args = parser.parse_args()
     if args.func is None:
         parser.print_help()
@@ -542,6 +552,67 @@ def _cmd_compute_register(args: argparse.Namespace) -> None:
         )
         if resp.status_code in (200, 201):
             print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_scores(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        params = {}
+        if args.task_type:
+            params["task_type"] = args.task_type
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/benchmark/scores",
+            params=params,
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Error: {exc}", file=sys.stderr)
+        sys.exit(1)
+
+
+def _cmd_leaderboard(args: argparse.Namespace) -> None:
+    import httpx
+
+    try:
+        params = {}
+        if args.task_type:
+            params["task_type"] = args.task_type
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/benchmark/leaderboard",
+            params=params,
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            entries = data.get("leaderboard", [])
+            if not entries:
+                print("No benchmark data yet. Run tasks to accumulate scores.")
+                return
+            print(
+                f"{'rank':<5} {'prompt':<25} {'model':<20} "
+                f"{'score':<8} {'cost':<10} {'samples':<8} {'task_type':<15}"
+            )
+            print("-" * 100)
+            for i, e in enumerate(entries, 1):
+                prompt = (e.get("prompt_profile_id") or "default")[:24]
+                model = e.get("model_profile_id", "")[:19]
+                score = f"{e.get('composite_score', 0):.3f}"
+                cost = f"${e.get('avg_cost_usd', 0):.4f}"
+                samples = str(e.get("sample_count", 0))
+                tt = e.get("task_type", "")[:14]
+                print(f"{i:<5} {prompt:<25} {model:<20} {score:<8} {cost:<10} {samples:<8} {tt:<15}")
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
