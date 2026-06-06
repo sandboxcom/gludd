@@ -102,6 +102,11 @@ class EventLoop:
         self._mcp_tool_registry = mcp_tool_registry
         self._running = False
         self._tick_state: dict[str, Any] = {}
+        self._active_traces: dict[str, Any] = {}
+        self._benchmark_recorder: Any = None
+        self._observability_enabled: bool = bool(
+            adaptive_router
+        )
         self._tick_metrics: dict[str, Any] = {}
         self._config_snapshot: dict[str, Any] = {}
         self._event_bus = event_bus

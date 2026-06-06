@@ -591,6 +591,22 @@ def create_daemon_app(
             ]
         }
 
+    @app.get("/admin/observability/comparison")
+    async def admin_observability_comparison(
+        task_type: str | None = None,
+        sort_by: str = "composite",
+    ) -> dict[str, Any]:
+        from general_ludd.observability.comparison import ModelComparison
+
+        session = getattr(app.state, "_session", None)
+        if session is None:
+            return {"rankings": [], "summary": "No DB session available"}
+        from general_ludd.db.repository import BenchmarkRepository
+
+        repo = BenchmarkRepository(session)
+        comparison = ModelComparison(benchmark_repo=repo)
+        return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
+
     @app.get("/admin/models")
     async def admin_list_models() -> dict[str, Any]:
         if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
