@@ -149,6 +149,7 @@ const STOP_SIGNAL_WORDS = [
   "should i fix",
   "shall i continue",
   "shall i proceed",
+  "shall i finish",
   "next steps are",
   "remaining tasks",
   "here are the remaining",
@@ -163,6 +164,13 @@ const STOP_SIGNAL_WORDS = [
   "ready to proceed",
   "here's my plan",
   "here is my plan",
+  "all done",
+  "work is complete",
+  "sprint is complete",
+  "everything is done",
+  "all objectives delivered",
+  "all objectives complete",
+  "all work done",
 ]
 
 const RESUME_COMMAND = "RESUME WORK NOW. You have pending tasks. Do not stop to report status or ask for permission. Call your tools and continue working immediately."

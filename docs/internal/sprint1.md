@@ -27,17 +27,17 @@ This sprint adds intelligent, data-driven model selection, multi-step langgraph-
 
 ### Implementation
 
-[ ] In `_get_or_create_extended_subsystems()`, instantiate `AdaptiveRouter` with `BenchmarkRepository` when DB session is available.
-[ ] Pass `adaptive_router` to `EventLoop()` constructor in `daemon.py:257-275`.
-[ ] Add `prompt_profile_repo` and `model_registry` to extended subsystems for prompt/model resolution.
-[ ] Ensure `_resolve_adaptive_prompt()` in EventLoop no longer short-circuits.
+[x] In `_get_or_create_extended_subsystems()`, instantiate `AdaptiveRouter` with `BenchmarkRepository` when DB session is available.
+[x] Pass `adaptive_router` to `EventLoop()` constructor in `daemon.py:257-275`.
+[x] Add `prompt_profile_repo` and `model_registry` to extended subsystems for prompt/model resolution.
+[x] Ensure `_resolve_adaptive_prompt()` in EventLoop no longer short-circuits.
 
 ### Acceptance Criteria
 
-[ ] `make test-unit` passes with >85% coverage on daemon.py wiring.
-[ ] EventLoop receives `adaptive_router` and calls `_resolve_adaptive_prompt()` per dispatch.
-[ ] Adaptive routing falls back to static when router returns fallback=True.
-[ ] Adaptive routing overrides todo.model_profile and todo.prompt_profile when fallback=False.
+[x] `make test-unit` passes with >85% coverage on daemon.py wiring.
+[x] EventLoop receives `adaptive_router` and calls `_resolve_adaptive_prompt()` per dispatch.
+[x] Adaptive routing falls back to static when router returns fallback=True.
+[x] Adaptive routing overrides todo.model_profile and todo.prompt_profile when fallback=False.
 
 ### FOSS Research
 
@@ -46,11 +46,11 @@ This sprint adds intelligent, data-driven model selection, multi-step langgraph-
 
 ### Tests
 
-[ ] `test_daemon_wires_adaptive_router` — daemon lifespan passes adaptive_router to EventLoop.
-[ ] `test_adaptive_router_resolves_prompt_and_model` — _resolve_adaptive_prompt returns valid profile IDs when data exists.
-[ ] `test_adaptive_router_falls_back_without_data` — returns None when repo empty.
-[ ] `test_dispatch_uses_adaptive_when_available` — job dispatch preference chain works.
-[ ] `test_dispatch_falls_back_to_static` — uses todo fields when adaptive returns fallback=True.
+[x] `test_daemon_wires_adaptive_router` — daemon lifespan passes adaptive_router to EventLoop.
+[x] `test_adaptive_router_resolves_prompt_and_model` — _resolve_adaptive_prompt returns valid profile IDs when data exists.
+[x] `test_adaptive_router_falls_back_without_data` — returns None when repo empty.
+[x] `test_dispatch_uses_adaptive_when_available` — job dispatch preference chain works.
+[x] `test_dispatch_falls_back_to_static` — uses todo fields when adaptive returns fallback=True.
 
 ---
 
@@ -138,15 +138,15 @@ project: auth-service
 
 ### Acceptance Criteria
 
-[ ] watchdog observer starts/stops with daemon lifespan.
-[ ] AGENTS.md creation in watched dir triggers todo creation within one scan interval.
-[ ] AGENTS.md modification updates existing pending todo.
-[ ] Worktree deletion removes associated pending todos.
-[ ] Abandoned worktrees (no commits > 24h) produce todos.
-[ ] Active worktrees (recent commits) do NOT produce abandonment todos.
-[ ] Duplicate todos not created for same worktree.
-[ ] Parses both markdown-heading and YAML-frontmatter AGENTS.md formats.
-[ ] Configurable watch paths, scan interval, abandonment threshold.
+[x] watchdog observer starts/stops with daemon lifespan.
+[x] AGENTS.md creation in watched dir triggers todo creation within one scan interval.
+[x] AGENTS.md modification updates existing pending todo.
+[x] Worktree deletion removes associated pending todos.
+[x] Abandoned worktrees (no commits > 24h) produce todos.
+[x] Active worktrees (recent commits) do NOT produce abandonment todos.
+[x] Duplicate todos not created for same worktree.
+[x] Parses both markdown-heading and YAML-frontmatter AGENTS.md formats.
+[x] Configurable watch paths, scan interval, abandonment threshold.
 
 ### FOSS Research
 
@@ -156,18 +156,18 @@ project: auth-service
 
 ### Tests
 
-[ ] `test_worktree_event_handler_creates_todo_on_agents_md` — synthetic filesystem event.
-[ ] `test_worktree_event_handler_ignores_non_agents_files` — only AGENTS.md triggers.
-[ ] `test_worktree_scanner_detects_worktree` — identifies .git file worktrees.
-[ ] `test_worktree_scanner_parses_markdown_agents_md` — extracts directives from headings.
-[ ] `test_worktree_scanner_parses_yaml_frontmatter` — extracts directives from YAML.
-[ ] `test_worktree_scanner_excludes_patterns` — respects exclude_patterns config.
-[ ] `test_worktree_monitor_detects_abandoned` — no commits > 24h.
-[ ] `test_worktree_monitor_ignores_active` — recent commits → no abandonment todo.
-[ ] `test_worktree_monitor_no_duplicate_todos` — same worktree scanned twice.
-[ ] `test_worktree_monitor_cleans_up_deleted_worktree` — removes stale todos.
-[ ] `test_worktree_monitor_config_defaults` — default config values.
-[ ] `test_worktree_monitor_max_todos_per_scan` — respects cap.
+[x] `test_worktree_event_handler_creates_todo_on_agents_md` — synthetic filesystem event.
+[x] `test_worktree_event_handler_ignores_non_agents_files` — only AGENTS.md triggers.
+[x] `test_worktree_scanner_detects_worktree` — identifies .git file worktrees.
+[x] `test_worktree_scanner_parses_markdown_agents_md` — extracts directives from headings.
+[x] `test_worktree_scanner_parses_yaml_frontmatter` — extracts directives from YAML.
+[x] `test_worktree_scanner_excludes_patterns` — respects exclude_patterns config.
+[x] `test_worktree_monitor_detects_abandoned` — no commits > 24h.
+[x] `test_worktree_monitor_ignores_active` — recent commits → no abandonment todo.
+[x] `test_worktree_monitor_no_duplicate_todos` — same worktree scanned twice.
+[x] `test_worktree_monitor_cleans_up_deleted_worktree` — removes stale todos.
+[x] `test_worktree_monitor_config_defaults` — default config values.
+[x] `test_worktree_monitor_max_todos_per_scan` — respects cap.
 
 ---
 
@@ -226,12 +226,12 @@ class GraphState(TypedDict):
 
 ### Acceptance Criteria
 
-[ ] Single-shot `call_model()` still works unchanged (backward compatible).
-[ ] `call_model_graph()` executes multi-step flow when `enable_graph=True`.
-[ ] Classify → Select → Generate → Review → Return/Retry cycle works end-to-end.
-[ ] Max retry count enforced.
-[ ] Quality threshold gates final output.
-[ ] Falls back to single-shot when langgraph not installed or disabled.
+[x] Single-shot `call_model()` still works unchanged (backward compatible).
+[x] `call_model_graph()` executes multi-step flow when `enable_graph=True`.
+[x] Classify → Select → Generate → Review → Return/Retry cycle works end-to-end.
+[x] Max retry count enforced.
+[x] Quality threshold gates final output.
+[x] Falls back to single-shot when langgraph not installed or disabled.
 
 ### FOSS Research
 
@@ -241,16 +241,16 @@ class GraphState(TypedDict):
 
 ### Tests
 
-[ ] `test_call_model_graph_classify_task` — classification node produces valid TaskType.
-[ ] `test_call_model_graph_select_model` — model selection uses AdaptiveRouter.
-[ ] `test_call_model_graph_generate` — generation calls provider.
-[ ] `test_call_model_graph_review` — review scores output.
-[ ] `test_call_model_graph_retry_on_low_quality` — retries when quality < threshold.
-[ ] `test_call_model_graph_max_retries` — stops after max_retries.
-[ ] `test_call_model_graph_returns_warnings` — includes warnings in result.
-[ ] `test_call_model_graph_fallback_to_single_shot` — works without langgraph installed.
-[ ] `test_call_model_graph_backward_compat` — existing call_model unchanged.
-[ ] `test_graph_state_typeddict` — state fields validated.
+[x] `test_call_model_graph_classify_task` — classification node produces valid TaskType.
+[x] `test_call_model_graph_select_model` — model selection uses AdaptiveRouter.
+[x] `test_call_model_graph_generate` — generation calls provider.
+[x] `test_call_model_graph_review` — review scores output.
+[x] `test_call_model_graph_retry_on_low_quality` — retries when quality < threshold.
+[x] `test_call_model_graph_max_retries` — stops after max_retries.
+[x] `test_call_model_graph_returns_warnings` — includes warnings in result.
+[x] `test_call_model_graph_fallback_to_single_shot` — works without langgraph installed.
+[x] `test_call_model_graph_backward_compat` — existing call_model unchanged.
+[x] `test_graph_state_typeddict` — state fields validated.
 
 ---
 
@@ -276,29 +276,29 @@ actions:
 
 ### Implementation
 
-[ ] Add `ActionType` enum with new values: `SET_MODEL_PROFILE`, `SET_PROMPT_PROFILE`, `SET_QUALITY_THRESHOLD`, `ENABLE_ADAPTIVE_ROUTING`.
-[ ] Add `RuleAction` Pydantic model with typed action validation.
-[ ] Add `_apply_rule_actions()` in EventLoop that processes model/prompt actions.
-[ ] Wire rule evaluation results into dispatch phase (modify model_profile/prompt_profile on todos before dispatch).
+[x] Add `ActionType` enum with new values: `SET_MODEL_PROFILE`, `SET_PROMPT_PROFILE`, `SET_QUALITY_THRESHOLD`, `ENABLE_ADAPTIVE_ROUTING`.
+[x] Add `RuleAction` Pydantic model with typed action validation.
+[x] Add `_apply_rule_actions()` in EventLoop that processes model/prompt actions.
+[x] Wire rule evaluation results into dispatch phase (modify model_profile/prompt_profile on todos before dispatch).
 
 ### Acceptance Criteria
 
-[ ] `set_model_profile` action changes model used for todo dispatch.
-[ ] `set_prompt_profile` action changes prompt used for todo dispatch.
-[ ] `set_quality_threshold` action gates graph-based model invocation.
-[ ] `enable_adaptive_routing` action toggles adaptive vs static routing per todo.
-[ ] Actions are audited (audit event emitted on apply).
-[ ] Unknown action types log warning but don't crash.
+[x] `set_model_profile` action changes model used for todo dispatch.
+[x] `set_prompt_profile` action changes prompt used for todo dispatch.
+[x] `set_quality_threshold` action gates graph-based model invocation.
+[x] `enable_adaptive_routing` action toggles adaptive vs static routing per todo.
+[x] Actions are audited (audit event emitted on apply).
+[x] Unknown action types log warning but don't crash.
 
 ### Tests
 
-[ ] `test_rule_action_set_model_profile` — action parsed and applied to todo.
-[ ] `test_rule_action_set_prompt_profile` — action parsed and applied to todo.
-[ ] `test_rule_action_set_quality_threshold` — action parsed, config updated.
-[ ] `test_rule_action_enable_adaptive_routing` — toggles router usage.
-[ ] `test_rule_action_unknown_type_warns` — logs warning, doesn't crash.
-[ ] `test_rule_action_audit_event_emitted` — audit event on apply.
-[ ] `test_rule_action_applied_during_dispatch` — end-to-end in EventLoop.
+[x] `test_rule_action_set_model_profile` — action parsed and applied to todo.
+[x] `test_rule_action_set_prompt_profile` — action parsed and applied to todo.
+[x] `test_rule_action_set_quality_threshold` — action parsed, config updated.
+[x] `test_rule_action_enable_adaptive_routing` — toggles router usage.
+[x] `test_rule_action_unknown_type_warns` — logs warning, doesn't crash.
+[x] `test_rule_action_audit_event_emitted` — audit event on apply.
+[x] `test_rule_action_applied_during_dispatch` — end-to-end in EventLoop.
 
 ---
 
@@ -310,18 +310,18 @@ Close the loop: every task execution should feed back into the benchmark system 
 
 ### Implementation
 
-[ ] In `_persist_task_return()` or `_reconcile_completed_decisions()`, extract task result quality metrics:
+[x] In `_persist_task_return()` or `_reconcile_completed_decisions()`, extract task result quality metrics:
   - Success/failure (from return code or reviewer decision)
   - Test pass/fail counts from artifacts
   - Token usage from model call metadata
   - Cost from gateway cost estimate
   - Execution time
-[ ] Record `BenchmarkResult` row with task_type, prompt_profile_id, model_profile_id, scores.
-[ ] Compute completion_score from success/failure.
-[ ] Compute code_quality_score from lint/typecheck/test results.
-[ ] Compute token_efficiency_score from token usage relative to output size.
-[ ] Record result via `BenchmarkRepository.record_result()`.
-[ ] AdaptiveRouter cache invalidation after new results recorded.
+[x] Record `BenchmarkResult` row with task_type, prompt_profile_id, model_profile_id, scores.
+[x] Compute completion_score from success/failure.
+[x] Compute code_quality_score from lint/typecheck/test results.
+[x] Compute token_efficiency_score from token usage relative to output size.
+[x] Record result via `BenchmarkRepository.record_result()`.
+[x] AdaptiveRouter cache invalidation after new results recorded.
 
 ### Scoring from live results
 
@@ -334,22 +334,22 @@ token_efficiency_score = min(1.0, 1000 / max(input_tokens, 1))
 
 ### Acceptance Criteria
 
-[ ] Completed tasks auto-record benchmark results.
-[ ] Failed tasks record benchmark results with low scores.
-[ ] AdaptiveRouter cache invalidated after new results.
-[ ] Next dispatch uses updated benchmark data.
-[ ] No duplicate benchmark results for same task return.
+[x] Completed tasks auto-record benchmark results.
+[x] Failed tasks record benchmark results with low scores.
+[x] AdaptiveRouter cache invalidated after new results.
+[x] Next dispatch uses updated benchmark data.
+[x] No duplicate benchmark results for same task return.
 
 ### Tests
 
-[ ] `test_feedback_loop_records_on_complete` — completed task → benchmark result.
-[ ] `test_feedback_loop_records_on_failure` — failed task → low scores.
-[ ] `test_feedback_loop_extracts_token_metrics` — token usage from model metadata.
-[ ] `test_feedback_loop_extracts_test_results` — test pass/fail counts.
-[ ] `test_feedback_loop_invalidates_adaptive_cache` — router cache cleared.
-[ ] `test_feedback_loop_no_duplicate_records` — same return not recorded twice.
-[ ] `test_feedback_loop_skips_when_no_model_usage` — no benchmark without model data.
-[ ] `test_feedback_loop_completion_score_computation` — score formula correct.
+[x] `test_feedback_loop_records_on_complete` — completed task → benchmark result.
+[x] `test_feedback_loop_records_on_failure` — failed task → low scores.
+[x] `test_feedback_loop_extracts_token_metrics` — token usage from model metadata.
+[x] `test_feedback_loop_extracts_test_results` — test pass/fail counts.
+[x] `test_feedback_loop_invalidates_adaptive_cache` — router cache cleared.
+[x] `test_feedback_loop_no_duplicate_records` — same return not recorded twice.
+[x] `test_feedback_loop_skips_when_no_model_usage` — no benchmark without model data.
+[x] `test_feedback_loop_completion_score_computation` — score formula correct.
 
 ---
 
@@ -357,29 +357,29 @@ token_efficiency_score = min(1.0, 1000 / max(input_tokens, 1))
 
 ### Integration Tests
 
-[ ] `test_adaptive_routing_wired_integration` — daemon starts, todo dispatched with adaptive routing.
-[ ] `test_worktree_monitor_integration` — real worktree with agents.md triggers todo.
-[ ] `test_langgraph_multi_step_integration` — classify+select+generate+review cycle.
-[ ] `test_rule_model_action_integration` — rule changes model mid-dispatch.
-[ ] `test_feedback_loop_integration` — task completes → benchmark recorded → next route improved.
+[x] `test_adaptive_routing_wired_integration` — daemon starts, todo dispatched with adaptive routing.
+[x] `test_worktree_monitor_integration` — real worktree with agents.md triggers todo.
+[x] `test_langgraph_multi_step_integration` — classify+select+generate+review cycle.
+[x] `test_rule_model_action_integration` — rule changes model mid-dispatch.
+[x] `test_feedback_loop_integration` — task completes → benchmark recorded → next route improved.
 
 ### E2E Tests
 
-[ ] `test_e2e_adaptive_routing_end_to_end` — create todo → dispatch → review → check benchmark recorded.
-[ ] `test_e2e_worktree_monitor_end_to_end` — create worktree with agents.md → monitor detects → todo created → dispatch.
-[ ] `test_e2e_langgraph_quality_retry` — low-quality output → graph retries → improved output.
-[ ] `test_e2e_rule_model_override` — budget-exhausted rule → switches to cheaper model.
+[x] `test_e2e_adaptive_routing_end_to_end` — create todo → dispatch → review → check benchmark recorded.
+[x] `test_e2e_worktree_monitor_end_to_end` — create worktree with agents.md → monitor detects → todo created → dispatch.
+[x] `test_e2e_langgraph_quality_retry` — low-quality output → graph retries → improved output.
+[x] `test_e2e_rule_model_override` — budget-exhausted rule → switches to cheaper model.
 
 ---
 
 ## Quality Gates
 
-[ ] All new files have >85% line coverage.
-[ ] `make lint` passes with 0 errors.
-[ ] `make typecheck` passes with 0 errors.
-[ ] All typed variables use explicit types (no `Any` unless genuinely dynamic).
-[ ] New dependencies justified with FOSS_RESEARCH_NOTE.
-[ ] All new Ansible playbooks (if any) have Molecule scenarios.
+[x] All new files have >85% line coverage.
+[x] `make lint` passes with 0 errors.
+[x] `make typecheck` passes with 0 errors.
+[x] All typed variables use explicit types (no `Any` unless genuinely dynamic).
+[x] New dependencies justified with FOSS_RESEARCH_NOTE.
+[x] All new Ansible playbooks (if any) have Molecule scenarios.
 
 ---
 
