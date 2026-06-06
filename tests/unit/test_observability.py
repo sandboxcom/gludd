@@ -310,3 +310,38 @@ class TestModelComparison:
         result = await comparison.compare_models(task_type="code", sort_by="cost")
         rankings = result["rankings"]
         assert rankings[0]["model_profile_id"] == "cheap_decent"
+
+    @pytest.mark.asyncio
+    async def test_compare_models_no_repo(self):
+        from general_ludd.observability.comparison import ModelComparison
+
+        comparison = ModelComparison(benchmark_repo=None)
+        result = await comparison.compare_models(task_type="code")
+        assert result["rankings"] == []
+        assert "No benchmark repository" in result["summary"]
+
+    @pytest.mark.asyncio
+    async def test_compare_models_repo_error(self):
+        from general_ludd.observability.comparison import ModelComparison
+
+        mock_repo = AsyncMock()
+        mock_repo.get_aggregate_scores.side_effect = RuntimeError("DB down")
+        comparison = ModelComparison(benchmark_repo=mock_repo)
+        result = await comparison.compare_models(task_type="code")
+        assert result["rankings"] == []
+        assert "Error fetching data" in result["summary"]
+
+    @pytest.mark.asyncio
+    async def test_compare_models_below_min_samples(self):
+        from general_ludd.observability.comparison import ModelComparison
+
+        mock_repo = AsyncMock()
+        mock_repo.get_aggregate_scores.return_value = [
+            {"model_profile_id": "m1", "prompt_profile_id": "p1", "task_type": "code",
+             "sample_count": 1, "composite_score": 0.95, "avg_cost": 0.01,
+             "avg_completion": 0.9, "avg_code_quality": 0.9, "avg_instruction": 0.9, "avg_token_efficiency": 0.9},
+        ]
+        comparison = ModelComparison(benchmark_repo=mock_repo)
+        result = await comparison.compare_models(task_type="code", min_samples=2)
+        assert "No models with >= 2 samples" in result["summary"]
+        assert result["qualified_combinations"] == 0

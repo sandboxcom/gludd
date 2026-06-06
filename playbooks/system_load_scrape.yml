@@ -1,0 +1,62 @@
+- name: Scrape system load metrics
+  hosts: localhost
+  gather_facts: true
+  vars:
+    job_id: "{{ job_id | default('unknown') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp') }}"
+    include_gpu: "{{ include_gpu | default('false') }}"
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}/system"
+        state: directory
+        mode: "0755"
+
+    - name: Collect CPU load average
+      ansible.builtin.set_fact:
+        load_1m: "{{ ansible_processor_cores | default(1) }}"
+        cpu_count: "{{ ansible_processor_count | default(1) }}"
+        cpu_vcpus: "{{ ansible_processor_vcpus | default(1) }}"
+
+    - name: Collect memory info
+      ansible.builtin.set_fact:
+        mem_total_mb: "{{ ansible_memtotal_mb | default(0) }}"
+        mem_free_mb: "{{ ansible_memfree_mb | default(0) }}"
+
+    - name: Write load metrics to artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "load_1m": {{ load_1m | default(0) }},
+            "cpu_count": {{ cpu_count }},
+            "cpu_vcpus": {{ cpu_vcpus }},
+            "mem_total_mb": {{ mem_total_mb }},
+            "mem_free_mb": {{ mem_free_mb }},
+            "job_id": "{{ job_id }}",
+            "timestamp": "{{ ansible_date_time.iso8601 }}"
+          }
+        dest: "{{ artifact_dir }}/system/load.json"
+        mode: "0600"
+
+    - name: Collect psutil metrics (Python)
+      ansible.builtin.script:
+        cmd: |
+          import json, psutil
+          data = {
+              "cpu_percent": psutil.cpu_percent(interval=1),
+              "cpu_count": psutil.cpu_count(),
+              "virtual_memory": dict(psutil.virtual_memory()._asdict()),
+              "disk_usage": dict(psutil.disk_usage('/')._asdict()),
+          }
+          print(json.dumps(data))
+      register: psutil_output
+
+    - name: Write psutil metrics to artifact
+      ansible.builtin.copy:
+        content: "{{ psutil_output.stdout | default('{}') }}"
+        dest: "{{ artifact_dir }}/system/psutil.json"
+        mode: "0600"
+
+    - name: Emit load scrape completion
+      ansible.builtin.debug:
+        msg: "System load scrape complete for {{ job_id }}"

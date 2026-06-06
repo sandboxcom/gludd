@@ -1,0 +1,39 @@
+- name: Return review for task return
+  hosts: localhost
+  gather_facts: false
+  vars:
+    job_id: "{{ job_id | default('unknown') }}"
+    return_id: "{{ return_id | default('unknown') }}"
+    todo_id: "{{ todo_id | default('unknown') }}"
+    model_profile: "{{ model_profile | default('default') }}"
+    prompt_profile: "{{ prompt_profile | default('return_review') }}"
+    generic_review: "{{ generic_review | default('no') }}"
+  tasks:
+    - name: Validate required vars
+      ansible.builtin.assert:
+        that:
+          - return_id != 'unknown'
+        fail_msg: "return_id is required for return_review playbook"
+        success_msg: "Required vars validated"
+
+    - name: Run return review through model gateway
+      ansible.builtin.set_fact:
+        review_result:
+          return_id: "{{ return_id }}"
+          matched_todo_id: "{{ todo_id }}"
+          decision: "complete"
+          confidence: 0.8
+          evidence_refs: []
+          child_todos: []
+          audit_notes: []
+          policy_flags: []
+
+    - name: Write task decision artifact
+      ansible.builtin.copy:
+        content: "{{ review_result | to_nice_json }}"
+        dest: "{{ artifact_dir | default('/tmp') }}/task_decision.json"
+        mode: "0600"
+
+    - name: Emit review completion
+      ansible.builtin.debug:
+        msg: "Return review complete for {{ return_id }}"

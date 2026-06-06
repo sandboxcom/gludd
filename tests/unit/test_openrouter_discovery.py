@@ -391,3 +391,32 @@ class TestAutoUpdateJob:
         from general_ludd.models.provider_presets import detect_credential_alias
 
         assert detect_credential_alias("openrouter", {"SOME_OTHER_VAR": "val"}) is False
+
+
+class TestListConfiguredProviders:
+    def test_lists_configured_providers(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        env = {"OPENROUTER_API_KEY": "sk-xxx", "OPENAI_API_KEY": "sk-yyy"}
+        configured = list_configured_providers(env)
+        assert "openrouter" in configured
+        assert "openai" in configured
+
+    def test_empty_env_returns_empty(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        configured = list_configured_providers({})
+        assert configured == []
+
+    def test_empty_string_value_not_configured(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        env = {"OPENROUTER_API_KEY": ""}
+        configured = list_configured_providers(env)
+        assert "openrouter" not in configured
+
+    def test_uses_os_environ_when_none(self):
+        from general_ludd.models.provider_presets import list_configured_providers
+
+        configured = list_configured_providers(None)
+        assert isinstance(configured, list)
