@@ -10,6 +10,159 @@ from typing import Any
 
 import httpx
 
+MAN_PAGE = """\
+NAME
+    gludd — General Ludd Agent — autonomous coding system
+
+SYNOPSIS
+    gludd <command> [<subcommand>] [options...]
+
+DESCRIPTION
+    General Ludd Agent is an autonomous coding system with Ansible runners
+    and multi-model AI agents. It coordinates AI models and local automation
+    to complete software work.
+
+COMMANDS
+    daemon              Start the daemon (server + event loop)
+      --host HOST         Bind address (default: 0.0.0.0)
+      --port PORT         Port (default: 8000)
+      --log-level LEVEL   debug|info|warning|error (default: info)
+      --tick-interval N   Event loop tick interval in seconds (default: 1.0)
+      --workers N         Gunicorn workers (default: 1)
+      --config-dir PATH   Configuration directory
+      --templates-dir PATH  Prompt templates directory
+      --playbooks-dir PATH  Ansible playbooks directory
+
+    add                 Add a todo to the queue
+      TITLE               Task title (required)
+      --description TEXT  Detailed description
+      --queue NAME        Target queue (default: core)
+      --priority INT      Priority (default: 100)
+      --work-type TYPE    code|test|review|refactor|docs|etc
+      --project ID        Project identifier
+      --daemon-url URL    Daemon URL (default: http://localhost:8000)
+
+    status              Show todo or system status
+      [TODO_ID]           Optional todo ID for details
+      --project ID        Filter by project
+      --daemon-url URL    Daemon URL
+
+    list                List todos
+      --queue NAME        Filter by queue
+      --status STATUS     Filter by status
+      --project ID        Filter by project
+      --daemon-url URL    Daemon URL
+
+    log-level           Change daemon log level at runtime
+      LEVEL               debug|info|warning|error
+      --daemon-url URL    Daemon URL
+
+    deployments         List active deployments
+      --daemon-url URL    Daemon URL
+
+    version             Show version
+
+    health              Check daemon health
+      --daemon-url URL    Daemon URL
+
+    models              Model management commands
+      search              Search HuggingFace models
+        [QUERY]             Search query
+        --limit N           Max results (default: 20)
+        --daemon-url URL    Daemon URL
+      downloaded          List downloaded models
+        --daemon-url URL    Daemon URL
+      discover            Discover free models from providers
+        --provider NAME      Provider (default: openrouter)
+        --daemon-url URL     Daemon URL
+      discovered          List auto-discovered model profiles
+        --daemon-url URL     Daemon URL
+
+    local-serve         Start a local inference server
+      --engine ENGINE     vllm|llamacpp (default: vllm)
+      --model MODEL       Model name or path (required)
+      --host HOST         Host (default: localhost)
+      --port PORT         Port (default: 8001)
+      --gpu-layers N      GPU layers (default: -1)
+      --context-size N    Context size (default: 4096)
+      --daemon-url URL    Daemon URL
+
+    worktree            Worktree monitor commands
+      scan                Scan for abandoned worktrees with AGENTS.md
+        --path PATHS        Comma-separated paths to scan
+        --daemon-url URL    Daemon URL
+      status              Show tracked worktrees
+        --daemon-url URL    Daemon URL
+
+    mcp                 MCP server catalog commands
+      search              Search MCP catalog
+        [QUERY]             Search query
+        --daemon-url URL    Daemon URL
+      list                List known MCP servers
+        --daemon-url URL    Daemon URL
+      info                Show MCP server details
+        NAME                Server name
+        --daemon-url URL    Daemon URL
+
+    skills              Skills catalog commands
+      search              Search skills catalog
+        [QUERY]             Search query
+        --daemon-url URL    Daemon URL
+      list                List all skills
+        --daemon-url URL    Daemon URL
+      install             Install a skill
+        NAME                Skill name
+        --daemon-url URL    Daemon URL
+
+    compute             Compute endpoint commands
+      endpoints           List compute endpoints
+        --daemon-url URL    Daemon URL
+      register            Register a compute endpoint
+        --id ID             Endpoint ID
+        --url URL           Endpoint URL
+        --model MODEL       Model name
+        --daemon-url URL    Daemon URL
+      unregister          Remove a compute endpoint
+        ENDPOINT_ID         Endpoint to remove
+        --daemon-url URL    Daemon URL
+
+    scores              View benchmark scores
+      --task-type TYPE    Filter by task type
+      --daemon-url URL    Daemon URL
+
+    leaderboard         View prompt+model leaderboard
+      --task-type TYPE    Filter by task type
+      --daemon-url URL    Daemon URL
+
+    help                Show this manual
+
+EXAMPLES
+    gludd daemon
+    gludd add "Fix login bug" --work-type bug_fix
+    gludd status
+    gludd list --queue core
+    gludd models discover --provider openrouter
+    gludd worktree scan --path ~/projects
+    gludd mcp search github
+    gludd scores --task-type code
+    gludd help
+
+ENVIRONMENT
+    OPENROUTER_API_KEY   OpenRouter API key for model discovery
+    OPENAI_API_KEY       OpenAI API key
+    ANTHROPIC_API_KEY    Anthropic API key
+    ZAI_API_KEY          Z.AI API key
+
+FILES
+    ~/.config/general-ludd/general-ludd.yml   User configuration
+    ~/.cache/general-ludd/                    Cache directory
+
+SEE ALSO
+    gludd daemon --help    Daemon-specific options
+    docs/quickstart.md     Getting started guide
+    docs/configuration.md  Full configuration reference
+"""
+
 
 def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
     if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
@@ -194,6 +347,9 @@ def main() -> None:
     leaderboard_parser.add_argument("--task-type", default=None, help="Filter by task type")
     leaderboard_parser.add_argument("--daemon-url", default="http://localhost:8000")
     leaderboard_parser.set_defaults(func=_cmd_leaderboard)
+
+    help_p = sub.add_parser("help", help="Show full manual")
+    help_p.set_defaults(func=_cmd_help)
 
     args = parser.parse_args()
     if args.func is None:
@@ -737,6 +893,11 @@ def _cmd_leaderboard(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception as exc:
         _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_help(args: argparse.Namespace) -> None:
+    print(MAN_PAGE)
+    sys.exit(0)
 
 
 if __name__ == "__main__":
