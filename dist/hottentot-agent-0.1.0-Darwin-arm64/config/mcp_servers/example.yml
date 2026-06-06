@@ -1,6 +1,0 @@
-servers:
-  filesystem:
-    command: ["npx", "-y", "@modelcontextprotocol/server-filesystem"]
-    args: ["/tmp"]
-    timeout_seconds: 30
-    enabled: true

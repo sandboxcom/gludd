@@ -1430,7 +1430,7 @@
         {
           "comment": "PackageSource: Local",
           "type": "distribution",
-          "url": "file:///Users/shawnwilson/hottentotpy"
+          "url": "file:///Users/shawnwilson/gludd"
         }
       ],
       "licenses": [
@@ -6249,7 +6249,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-06-02T07:34:08.392795+00:00",
+    "timestamp": "2026-06-06T09:50:47.318275+00:00",
     "tools": {
       "components": [
         {
@@ -6353,7 +6353,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:c817053e-b619-47e3-a17e-c41efc0b926a",
+  "serialNumber": "urn:uuid:79fa99cf-9e09-41cd-b5a7-ca374ad1e893",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",

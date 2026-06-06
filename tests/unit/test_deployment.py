@@ -36,12 +36,20 @@ class TestDeploymentManagerInit:
         mgr = DeploymentManager()
         assert mgr._binary_resolver is not None
         assert mgr._working_dir is not None
+        assert mgr._secrets_resolver is None
 
     def test_custom_init(self):
         resolver = BinaryPathResolver(config=BinaryPaths(terraform="/custom/tf"))
         mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/tf-work")
         assert mgr._binary_resolver is resolver
         assert mgr._working_dir == "/tmp/tf-work"
+
+    def test_init_with_secrets_resolver(self):
+        from general_ludd.secrets.env import EnvSecretsManager
+        env_resolver = EnvSecretsManager(overrides={"TEST_KEY": "test-value"})
+        mgr = DeploymentManager(secrets_resolver=env_resolver)
+        assert mgr._secrets_resolver is env_resolver
+        assert mgr._working_dir is not None and "gludd-tf-" in mgr._working_dir
 
 
 class TestDeploymentManagerDeploy:

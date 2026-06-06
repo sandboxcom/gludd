@@ -55,6 +55,7 @@ class ComputeConfig(BaseModel):
     container_image: str | None = None
     api_key_alias: str | None = None
     deploy_type: str = "vm"
+    provider_auth_aliases: dict[str, str] | None = None
 
 
 class ComputeInstance(BaseModel):

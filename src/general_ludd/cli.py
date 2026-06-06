@@ -8,6 +8,22 @@ import logging
 import sys
 from typing import Any
 
+import httpx
+
+
+def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
+    if isinstance(exc, (httpx.ConnectError, httpx.ConnectTimeout)):
+        print(
+            f"Error: Cannot connect to daemon at {daemon_url}. "
+            f"Is the daemon running? Start it with: gludd daemon",
+            file=sys.stderr,
+        )
+    elif isinstance(exc, httpx.TimeoutException):
+        print(f"Error: Request to daemon at {daemon_url} timed out.", file=sys.stderr)
+    else:
+        print(f"Error: {exc}", file=sys.stderr)
+    sys.exit(1)
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(
@@ -67,8 +83,8 @@ def main() -> None:
     health_parser.set_defaults(func=_cmd_health)
 
     models_parser = sub.add_parser("models", help="Model management commands")
+    models_parser.set_defaults(func=None)
     models_sub = models_parser.add_subparsers(dest="models_command")
-    models_sub.metavar = ""
 
     models_search = models_sub.add_parser("search", help="Search HuggingFace models")
     models_search.add_argument("query", nargs="?", default="", help="Search query")
@@ -91,8 +107,8 @@ def main() -> None:
     local_serve_parser.set_defaults(func=_cmd_local_serve)
 
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
+    mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
-    mcp_sub.metavar = ""
 
     mcp_search = mcp_sub.add_parser("search", help="Search MCP catalog")
     mcp_search.add_argument("query", nargs="?", default="", help="Search query")
@@ -109,8 +125,8 @@ def main() -> None:
     mcp_info.set_defaults(func=_cmd_mcp_info)
 
     skills_parser = sub.add_parser("skills", help="Skills catalog commands")
+    skills_parser.set_defaults(func=None)
     skills_sub = skills_parser.add_subparsers(dest="skills_command")
-    skills_sub.metavar = ""
 
     skills_search = skills_sub.add_parser("search", help="Search skills catalog")
     skills_search.add_argument("query", nargs="?", default="", help="Search query")
@@ -127,8 +143,8 @@ def main() -> None:
     skills_install.set_defaults(func=_cmd_skills_install)
 
     compute_parser = sub.add_parser("compute", help="Compute endpoint commands")
+    compute_parser.set_defaults(func=None)
     compute_sub = compute_parser.add_subparsers(dest="compute_command")
-    compute_sub.metavar = ""
 
     compute_endpoints = compute_sub.add_parser("endpoints", help="List compute endpoints")
     compute_endpoints.add_argument("--daemon-url", default="http://localhost:8000")
@@ -142,6 +158,11 @@ def main() -> None:
     compute_register.add_argument("--daemon-url", default="http://localhost:8000")
     compute_register.set_defaults(func=_cmd_compute_register)
 
+    compute_unregister = compute_sub.add_parser("unregister", help="Remove a compute endpoint")
+    compute_unregister.add_argument("endpoint_id", help="Endpoint ID to remove")
+    compute_unregister.add_argument("--daemon-url", default="http://localhost:8000")
+    compute_unregister.set_defaults(func=_cmd_compute_unregister)
+
     scores_parser = sub.add_parser("scores", help="View benchmark scores")
     scores_parser.add_argument("--task-type", default=None, help="Filter by task type")
     scores_parser.add_argument("--daemon-url", default="http://localhost:8000")
@@ -154,7 +175,16 @@ def main() -> None:
 
     args = parser.parse_args()
     if args.func is None:
-        parser.print_help()
+        subcommand_map = {
+            "models": models_parser,
+            "mcp": mcp_parser,
+            "skills": skills_parser,
+            "compute": compute_parser,
+        }
+        if args.command in subcommand_map:
+            subcommand_map[args.command].print_help()
+        else:
+            parser.print_help()
         sys.exit(1)
     args.func(args)
 
@@ -186,8 +216,6 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
 
 def _cmd_add(args: argparse.Namespace) -> None:
-    import httpx
-
     payload: dict[str, Any] = {
         "title": args.title,
         "description": args.description,
@@ -206,13 +234,10 @@ def _cmd_add(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_status(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         if args.todo_id:
             resp = httpx.get(f"{args.daemon_url}/api/todos/{args.todo_id}", timeout=10.0)
@@ -224,13 +249,10 @@ def _cmd_status(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
-    import httpx
-
     params: dict[str, str] = {}
     if args.queue:
         params["queue"] = args.queue
@@ -246,13 +268,10 @@ def _cmd_list(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_log_level(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.post(f"{args.daemon_url}/admin/log-level", json={"level": args.level}, timeout=10.0)
         if resp.status_code == 200:
@@ -262,13 +281,10 @@ def _cmd_log_level(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_deployments(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(f"{args.daemon_url}/api/deployments", timeout=10.0)
         if resp.status_code == 200:
@@ -277,8 +293,7 @@ def _cmd_deployments(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_version(args: argparse.Namespace) -> None:
@@ -288,8 +303,6 @@ def _cmd_version(args: argparse.Namespace) -> None:
 
 
 def _cmd_health(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(f"{args.daemon_url}/healthz", timeout=10.0)
         if resp.status_code == 200:
@@ -298,13 +311,10 @@ def _cmd_health(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_models_search(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/models/search",
@@ -328,13 +338,10 @@ def _cmd_models_search(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_models_downloaded(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(f"{args.daemon_url}/admin/models/downloaded", timeout=10.0)
         if resp.status_code == 200:
@@ -352,13 +359,10 @@ def _cmd_models_downloaded(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_local_serve(args: argparse.Namespace) -> None:
-    import httpx
-
     payload = {
         "engine": args.engine,
         "model_path": args.model,
@@ -381,13 +385,10 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_mcp_search(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/mcp/catalog/search",
@@ -411,13 +412,10 @@ def _cmd_mcp_search(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_mcp_list(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(f"{args.daemon_url}/admin/mcp/catalog/servers", timeout=10.0)
         if resp.status_code == 200:
@@ -432,13 +430,10 @@ def _cmd_mcp_list(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_mcp_info(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(
             f"{args.daemon_url}/admin/mcp/catalog/servers/{args.name}",
@@ -450,13 +445,10 @@ def _cmd_mcp_info(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_skills_search(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/skills/catalog/search",
@@ -481,13 +473,10 @@ def _cmd_skills_search(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_skills_list(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(f"{args.daemon_url}/admin/skills/catalog", timeout=10.0)
         if resp.status_code == 200:
@@ -496,13 +485,10 @@ def _cmd_skills_list(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_skills_install(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/skills/catalog/install",
@@ -516,13 +502,10 @@ def _cmd_skills_install(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_compute_endpoints(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         resp = httpx.get(f"{args.daemon_url}/admin/compute/endpoints", timeout=10.0)
         if resp.status_code == 200:
@@ -531,13 +514,10 @@ def _cmd_compute_endpoints(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_compute_register(args: argparse.Namespace) -> None:
-    import httpx
-
     payload = {
         "id": args.id,
         "url": args.url,
@@ -556,13 +536,28 @@ def _cmd_compute_register(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_compute_unregister(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.delete(
+            f"{args.daemon_url}/admin/compute/endpoints/{args.endpoint_id}",
+            timeout=10.0,
+        )
+        if resp.status_code in (200, 204):
+            if resp.status_code == 204:
+                print(f"Endpoint {args.endpoint_id} removed.")
+            else:
+                print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_scores(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         params = {}
         if args.task_type:
@@ -578,13 +573,10 @@ def _cmd_scores(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_leaderboard(args: argparse.Namespace) -> None:
-    import httpx
-
     try:
         params = {}
         if args.task_type:
@@ -617,8 +609,7 @@ def _cmd_leaderboard(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Error: {exc}", file=sys.stderr)
-        sys.exit(1)
+        _handle_connection_error(exc, args.daemon_url)
 
 
 if __name__ == "__main__":

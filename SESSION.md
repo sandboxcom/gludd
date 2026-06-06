@@ -3,16 +3,16 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-02
+- 2026-06-06
 
 ## Current Status
-- **Phase**: System prompt collection, benchmark scoring engine, adaptive router
-- **Test Suite**: 2213 passed, 26 skipped, 0 failures, 94.04% coverage
+- **Phase**: Test suite stabilization, lint cleanup, venv rebuild
+- **Test Suite**: 2423 passed, 26 skipped, 0 failures, 95.05% coverage
 - **Branch**: master
-- **Latest commit**: ae29f60 feat: System prompt collection, benchmark scoring engine, adaptive router, DB persistence
-- **Mypy**: 0 errors in 136 source files (strict mode)
-- **Lint**: 0 errors (ruff), 0 noqa suppressions in src/
-- **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum
+- **Latest commit**: TBD (Makefile fixes, lint cleanup, dist file recreation, test bug fixes pending commit)
+- **Mypy**: 4 errors (pre-existing import-not-found for alembic.config and types-psutil)
+- **Lint**: 0 errors (ruff)
+- **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum (rebuilt)
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.
@@ -235,7 +235,7 @@ EventLoop auto-creates from session (when available):
 ## Quality Status
 - **Mypy**: 0 errors in 136 source files (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 2213 passed, 26 skipped, 94.04% coverage
+- **Tests**: 2238 passed, 26 skipped, 93.91% coverage
 - **No deprecation warnings**: `tool.uv.dev-dependencies` removed
 
 ## Key Gaps (Known)
@@ -303,6 +303,7 @@ EventLoop auto-creates from session (when available):
 7. `038a302` — feat: remove all noqa suppressions, add refresh to caches, improve test coverage across 15 files
 8. `5add075` — feat: Azure ContainerApp terraform generator, CLI bugfixes, Anthropic docs, new endpoint tests
 9. `ae29f60` — feat: System prompt collection, benchmark scoring engine, adaptive router, DB persistence
+10. `3b60aa6` — feat: Wire AdaptiveRouter into EventLoop, add benchmark daemon endpoints and CLI commands
 
 ## System Prompt Collection (COMPLETE — commit ae29f60)
 
@@ -345,6 +346,29 @@ EventLoop auto-creates from session (when available):
 - `tests/unit/test_benchmark_models.py` — 6 tests: DB model field checks, column defaults
 - `tests/unit/test_benchmark_repo.py` — 17 tests: PromptProfileRepository (8 tests), BenchmarkRepository (9 tests) with in-memory SQLite
 
+## AdaptiveRouter EventLoop Wiring, Benchmark Endpoints, CLI (COMPLETE — commit 3b60aa6)
+
+### EventLoop Wiring
+- `adaptive_router` param added to `EventLoop.__init__()` (optional, defaults to None)
+- `_resolve_adaptive_prompt(todo)` — async method that classifies todo's work_type into TaskType, calls router.route(), returns (prompt_id, model_id, decision)
+- `_dispatch_execute_job()` now tries adaptive routing first; uses adaptive results when decision.fallback=False, falls back to static prompt_profile/model_profile from todo when fallback=True or no router
+- Both runner path and HTTP path use resolved profiles
+- 7 tests in `tests/unit/test_adaptive_routing.py`: no router, override, fallback, task type classification, unknown work type default, no router returns None, runner path uses adaptive
+
+### Daemon Admin Endpoints
+- `GET /admin/benchmark/scores` — aggregate benchmark scores, optional task_type filter
+- `GET /admin/benchmark/recent` — recent benchmark results (default limit 50)
+- `GET /admin/benchmark/leaderboard` — ranked prompt+model combos via AdaptiveRouter
+- `POST /admin/benchmark/record` — record a new benchmark result
+- `GET /admin/prompt-profiles` — list all prompt profiles
+- All endpoints gracefully return empty data when no DB session available
+- 8 tests in `tests/unit/test_benchmark_endpoints.py`
+
+### CLI Commands
+- `gludd scores [--task-type TYPE] [--daemon-url URL]` — view benchmark scores from daemon
+- `gludd leaderboard [--task-type TYPE] [--daemon-url URL]` — view ranked prompt+model leaderboard with formatted table output
+- 10 tests in `tests/unit/test_benchmark_cli.py`
+
 ## Azure ContainerApp, CLI Fixes, Docs, Endpoint Tests (COMPLETE — commit 5add075)
 
 ### Azure ContainerApp Terraform Generator
@@ -381,3 +405,20 @@ EventLoop auto-creates from session (when available):
 - **Extended test coverage** across 13 existing test files
 - **Coverage**: 94.23% (up from 91.95%), 2126 tests (up from 2037)
 - **Files now at 85%+**: db/migrations.py (100%), mcp/catalog.py (99%), ansible/manifest.py (98%), skills/catalog.py (100%), worker/gunicorn_conf.py (100%), agents/registry.py (100%), runtime/validator.py (95%), controllers/load_scrape.py (97%), runtime/container.py (96%), review/decision_applier.py (94%)
+
+## Azure IAM Least-Privilege Policy and Provider Auth (COMPLETE)
+- **IAM Policy**: `config/infra/azure-iam-policy.json` — Custom role with minimal permissions for Container App, ACR, VNet, Subnet, Resource Group, NSG, Public IP, NIC, VM, Disk, Deployments, Tags, Diagnostics
+- **Documentation**: `docs/azure-iam-setup.md` — Step-by-step Azure Portal and CLI instructions for creating the role, assigning the managed identity/SP, and configuring agent auth
+- **ComputeConfig**: Added `provider_auth_aliases: dict[str, str] | None` field mapping ARM env var names to secret aliases (e.g., `{"ARM_CLIENT_ID": "AZURE_CLIENT_ID"}`)
+- **DeploymentManager**: Added `secrets_resolver` param (implements `SecretsResolver` protocol), `_inject_auth_env()` and `_restore_auth_env()` methods to inject/restore provider credentials around Terraform subprocess calls
+- **Destroy auth**: `destroy()` now uses `_last_config` to restore auth context when tearing down infrastructure
+- **Env template**: `dist/install.sh` now includes ARM_SUBSCRIPTION_ID, ARM_TENANT_ID, ARM_CLIENT_ID, ARM_CLIENT_SECRET, ARM_USE_MSI Azure credential env vars
+- **Tests**: 7 new tests in `test_provider_auth.py` (ComputeConfig auth aliases, deploy injection, env restore, cleanup on failure, destroy injection, MSI flags); 3 updated tests in `test_deployment.py` (init with/without secrets_resolver); 3 updated tests in `test_infra_compute.py` (provider_auth_aliases defaults, full config, serialization)
+
+## CLI Graceful Error Handling and Wiring Fix (COMPLETE)
+- **Graceful offline errors**: All daemon-requiring CLI commands (`status`, `add`, `list`, `health`, `deployments`, `log-level`, `models`, `mcp`, `skills`, `compute`, `scores`, `leaderboard`, `local-serve`) now detect `httpx.ConnectError`/`httpx.ConnectTimeout` and print a user-friendly message: "Cannot connect to daemon at URL. Is the daemon running? Start it with: gludd daemon"
+- **`_handle_connection_error()` helper**: Centralized error handler that distinguishes ConnectError, ConnectTimeout, and generic exceptions
+- **Subcommand help**: `gludd models`, `gludd mcp`, `gludd skills`, `gludd compute` without a subcommand now show their specific help text instead of the root help
+- **New command**: `gludd compute unregister <endpoint_id>` wires up the existing `DELETE /admin/compute/endpoints/{endpoint_id}` daemon endpoint
+- **Top-level httpx import**: Moved `import httpx` to module top-level since `_handle_connection_error` needs exception types
+- **Tests**: 13 new offline-error tests in `tests/e2e/test_cli_e2e.py`, 4 subcommand-help tests, 3 compute-unregister tests, 1 command-existence audit; 6 new tests in `tests/unit/test_cli.py` (unregister, status/add offline errors, subcommand-help tests, unregister parsing)

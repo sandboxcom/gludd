@@ -1,24 +1,17 @@
 [Unit]
 Description=General Ludd Agent Daemon
-After=network.target postgresql.service
+After=network-online.target
 Wants=network-online.target
 
 [Service]
 Type=simple
-User=gludd
-Group=gludd
-EnvironmentFile=/etc/general-ludd/env
-ExecStart=/usr/local/bin/gludd daemon --host 127.0.0.1 --port 8000 --log-level info
+User=general-ludd
+EnvironmentFile=-/etc/general-ludd/env
+ExecStart=/usr/local/bin/gludd daemon --host 127.0.0.1 --port 8000
 Restart=on-failure
-RestartSec=5
-WorkingDirectory=/etc/general-ludd
-Environment=PYTHONUNBUFFERED=1
-
-# Security hardening
+RestartSec=5s
 NoNewPrivileges=true
 ProtectSystem=strict
-ProtectHome=read-only
-ReadWritePaths=/var/log/general-ludd /var/lib/general-ludd
 PrivateTmp=true
 
 [Install]

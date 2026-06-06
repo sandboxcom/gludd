@@ -91,52 +91,52 @@ lint:
 	@$(UV) run ruff check src tests
 
 lint-fix:
-	@$(UV) run ruff check --fix src tests
+	@$(UV) run ruff check --fix --unsafe-fixes src tests
 
 typecheck:
 	@$(UV) run mypy src
 
 test:
-	@$(UV) run pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml -v
+	@$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml -v
 
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(UV) run pytest $(TESTFILE) -v; \
+		$(UV) run python -m pytest $(TESTFILE) -v; \
 	else \
-		$(UV) run pytest tests/unit/ -v; \
+		$(UV) run python -m pytest tests/unit/ -v; \
 	fi
 
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(UV) run pytest $(TESTFILE) -v
+	@$(UV) run python -m pytest $(TESTFILE) -v
 
 test-count:
-	@$(UV) run pytest tests/ --co -q 2>&1 | tail -3
+	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
 test-integration:
-	@$(UV) run pytest tests/integration/ -v
+	@$(UV) run python -m pytest tests/integration/ -v
 
 test-e2e:
-	@$(UV) run pytest tests/e2e/ -v
+	@$(UV) run python -m pytest tests/e2e/ -v
 
 test-guardrails:
-	@$(UV) run pytest tests/unit/test_guardrails.py -v
+	@$(UV) run python -m pytest tests/unit/test_guardrails.py -v
 
 test-db:
-	@$(UV) run pytest tests/unit/test_db_models.py -v
+	@$(UV) run python -m pytest tests/unit/test_db_models.py -v
 
 test-scripts:
-	@$(UV) run pytest tests/unit/test_guardrails.py::TestSkeletonScript -v
+	@$(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript -v
 
 healthcheck:
 	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
 	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
 
 ansible-syntax:
-	@for f in playbooks/*.yml; do echo "Checking $$f..."; ansible-playbook --syntax-check "$$f" || exit 1; done
+	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook --syntax-check "$$f" || exit 1; done
 
 ansible-lint-playbooks:
-	@ansible-lint playbooks/roles || true
+	@$(UV) run ansible-lint playbooks/roles || true
 
 playbook-list:
 	@ls -1 playbooks/*.yml 2>/dev/null || echo "No playbooks found"
@@ -196,7 +196,7 @@ feature-start:
 feature-done:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-done MSG='feature/short-name'"; exit 1; fi
 	@echo "Running full test suite before merge..."
-	@$(UV) run pytest tests/ -q
+	@$(UV) run python -m pytest tests/ -q
 	@git checkout -f master
 	@git merge --no-ff "$(MSG)"
 	@echo "Merged $(MSG) into master"
@@ -206,7 +206,7 @@ feature-done:
 
 test-and-commit:
 	@echo "Running tests before commit..."
-	@$(UV) run pytest tests/ --cov=general_ludd -q
+	@$(UV) run python -m pytest tests/ --cov=general_ludd -q
 	@echo "Tests passed. Committing..."
 	@git add -A
 	@if [ -n "$(MSG)" ]; then \
@@ -227,13 +227,13 @@ test-live-zai:
 	@echo "Running live Z.AI integration tests..."
 	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
 	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
-	$(UV) run pytest tests/live/test_zai_live.py -v -s
+	$(UV) run python -m pytest tests/live/test_zai_live.py -v -s
 
 test-zai-identity:
 	@echo "Running authenticated Z.AI identity test..."
 	@_zai_key=$$(python3 -c "import json,os; print(json.load(open(os.path.expanduser('~/.local/share/opencode/auth.json'))).get('zai-coding-plan',{}).get('key',''))") && \
 	ZAI_API_KEY="$$_zai_key" ZAI_BASE_URL="https://open.bigmodel.cn/api/paas/v4" ZAI_MODEL="glm-5.1" \
-	$(UV) run pytest tests/live/test_zai_identity.py -v -s
+	$(UV) run python -m pytest tests/live/test_zai_identity.py -v -s
 
 CONTAINER_RUNTIME := $(shell command -v podman 2>/dev/null || command -v docker 2>/dev/null)
 CONTAINER_IMAGE := gl-agent:latest
@@ -249,6 +249,7 @@ build-executable:
 
 dist: build-executable
 	@echo "Assembling tarball..."
+	@chmod +x dist/install.sh
 	@rm -rf $(TARBALL_DIR)
 	@mkdir -p $(TARBALL_DIR)
 	@cp dist/gludd $(TARBALL_DIR)/gludd

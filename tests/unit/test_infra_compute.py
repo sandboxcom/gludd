@@ -55,6 +55,7 @@ class TestComputeConfig:
         assert cfg.disk_size_gb == 100
         assert cfg.container_image is None
         assert cfg.api_key_alias is None
+        assert cfg.provider_auth_aliases is None
 
     def test_full_config(self):
         cfg = ComputeConfig(
@@ -70,6 +71,7 @@ class TestComputeConfig:
             disk_size_gb=200,
             container_image="custom/vllm:latest",
             api_key_alias="gcp_key",
+            provider_auth_aliases={"ARM_CLIENT_ID": "AZURE_CLIENT_ID"},
         )
         assert cfg.provider == ComputeProvider.GCP
         assert cfg.gpu_type == GPUType.A100_80
@@ -77,6 +79,7 @@ class TestComputeConfig:
         assert cfg.region == "us-central1"
         assert cfg.spot is False
         assert cfg.container_image == "custom/vllm:latest"
+        assert cfg.provider_auth_aliases == {"ARM_CLIENT_ID": "AZURE_CLIENT_ID"}
 
     def test_serialization_roundtrip(self):
         cfg = ComputeConfig(provider=ComputeProvider.RUNPOD, gpu_type=GPUType.A100_80, model_name="test-model")
@@ -89,6 +92,21 @@ class TestComputeConfig:
         json_str = cfg.model_dump_json()
         restored = ComputeConfig.model_validate_json(json_str)
         assert restored == cfg
+
+    def test_auth_aliases_serialization_roundtrip(self):
+        cfg = ComputeConfig(
+            provider=ComputeProvider.AZURE,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            provider_auth_aliases={
+                "ARM_CLIENT_ID": "AZURE_CLIENT_ID",
+                "ARM_CLIENT_SECRET": "AZURE_CLIENT_SECRET",
+            },
+        )
+        data = cfg.model_dump()
+        restored = ComputeConfig.model_validate(data)
+        expected = {"ARM_CLIENT_ID": "AZURE_CLIENT_ID", "ARM_CLIENT_SECRET": "AZURE_CLIENT_SECRET"}
+        assert restored.provider_auth_aliases == expected
 
     def test_spot_true(self):
         cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4, model_name="m", spot=True)

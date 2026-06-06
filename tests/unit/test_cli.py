@@ -5,6 +5,7 @@ from __future__ import annotations
 import sys
 from unittest.mock import MagicMock, patch
 
+import httpx
 import pytest
 
 from general_ludd.cli import main
@@ -264,7 +265,7 @@ class TestClientCommands:
         assert "/healthz" in mock_get.call_args[0][0]
 
     def test_client_handles_connection_refused(self, capsys):
-        with patch("httpx.get", side_effect=Exception("Connection refused")):
+        with patch("httpx.get", side_effect=httpx.ConnectError("Connection refused")):
             import argparse
 
             from general_ludd.cli import _cmd_health
@@ -272,6 +273,46 @@ class TestClientCommands:
             with pytest.raises(SystemExit) as exc_info:
                 _cmd_health(args)
             assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "daemon" in (captured.err + captured.out).lower()
+
+    def test_compute_unregister_sends_delete_to_daemon(self):
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"removed": "test-ep"}
+        with patch("httpx.delete", return_value=mock_response) as mock_delete:
+            import argparse
+
+            from general_ludd.cli import _cmd_compute_unregister
+            args = argparse.Namespace(endpoint_id="test-ep", daemon_url="http://localhost:8000")
+            _cmd_compute_unregister(args)
+        mock_delete.assert_called_once()
+        assert "/admin/compute/endpoints/test-ep" in mock_delete.call_args[0][0]
+
+    def test_status_connection_error_message(self, capsys):
+        with patch("httpx.get", side_effect=httpx.ConnectError("Connection refused")):
+            import argparse
+
+            from general_ludd.cli import _cmd_status
+            args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000")
+            with pytest.raises(SystemExit) as exc_info:
+                _cmd_status(args)
+            assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "daemon" in (captured.err + captured.out).lower()
+
+    def test_add_connection_error_message(self, capsys):
+        with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
+            import argparse
+
+            from general_ludd.cli import _cmd_add
+            args = argparse.Namespace(title="test", queue="core", priority="medium",
+                                       work_type="code", description="", daemon_url="http://localhost:8000")
+            with pytest.raises(SystemExit) as exc_info:
+                _cmd_add(args)
+            assert exc_info.value.code == 1
+        captured = capsys.readouterr()
+        assert "daemon" in (captured.err + captured.out).lower()
 
     def test_models_search_sends_post_to_daemon(self, capsys):
         mock_response = MagicMock()
@@ -356,3 +397,30 @@ class TestHotLoading:
         for imp in top_level_imports:
             for prefix in heavy_prefixes:
                 assert not imp.startswith(prefix), f"Heavy import at module level: {imp}"
+
+    def test_models_no_subcommand_prints_help(self, capsys):
+        with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "models"]):
+            main()
+        assert exc_info.value.code == 1
+
+    def test_mcp_no_subcommand_prints_help(self):
+        with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "mcp"]):
+            main()
+        assert exc_info.value.code == 1
+
+    def test_skills_no_subcommand_prints_help(self):
+        with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "skills"]):
+            main()
+        assert exc_info.value.code == 1
+
+    def test_compute_no_subcommand_prints_help(self):
+        with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "compute"]):
+            main()
+        assert exc_info.value.code == 1
+
+    def test_compute_unregister_parsing(self):
+        with patch.object(sys, "argv", ["gludd", "compute", "unregister", "my-endpoint"]), \
+             patch("general_ludd.cli._cmd_compute_unregister") as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.endpoint_id == "my-endpoint"
