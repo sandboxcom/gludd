@@ -11,6 +11,20 @@
 
 **This is a HARD block. Text-only responses while work remains are a policy violation.**
 
+## CRITICAL: Instruction-Following Priority
+
+**When the user gives a specific instruction that contradicts your current plan, you MUST follow the instruction IMMEDIATELY, before anything else.**
+
+Examples of overriding instructions:
+- "fix this bug FIRST before continuing" → fix the bug, do not continue other work
+- "please address this message and continue" → address the message AND continue work
+- "codify a process to do X" → codify X immediately, do not start other features
+- "correct your code so that..." → fix your code NOW, not later
+
+DO NOT do both simultaneously if the instruction says "first" or "before".
+DO NOT start a new feature before fixing the thing the user just complained about.
+DO NOT continue your own plan when the user redirects you.
+
 Cop behavior patterns that trigger this (DO NOT DO THESE):
 - "X passed, Y failed, Z skipped — committed" as final message
 - "All done. Everything is complete." as final message
