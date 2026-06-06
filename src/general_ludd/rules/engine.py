@@ -2,9 +2,20 @@
 
 from __future__ import annotations
 
+from enum import StrEnum
 from typing import Any
 
 from pydantic import BaseModel, Field
+
+
+class ActionType(StrEnum):
+    ROUTE = "route"
+    PAUSE_QUEUE = "pause_queue"
+    REDUCE_BUCKETS = "reduce_buckets"
+    SET_MODEL_PROFILE = "set_model_profile"
+    SET_PROMPT_PROFILE = "set_prompt_profile"
+    SET_QUALITY_THRESHOLD = "set_quality_threshold"
+    ENABLE_ADAPTIVE_ROUTING = "enable_adaptive_routing"
 
 
 class Rule(BaseModel):
@@ -22,6 +33,40 @@ class RuleAction(BaseModel):
     action_type: str
     params: dict[str, Any] = Field(default_factory=dict)
     audit_message: str = ""
+
+
+def apply_rule_actions(
+    actions: list[dict[str, Any]],
+    todo: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Apply rule actions to a todo or context, returning modifications.
+
+    Accepts both flattened format (type, profile_id) and event_loop format
+    (action_type, params.profile_id).
+    """
+    overrides: dict[str, Any] = {}
+    for action in actions:
+        action_type = action.get("type") or action.get("action_type", "")
+        params = action.get("params", {})
+        if not isinstance(params, dict):
+            params = {}
+
+        if action_type == ActionType.SET_MODEL_PROFILE:
+            profile_id = action.get("profile_id") or params.get("profile_id")
+            if profile_id and isinstance(profile_id, str):
+                overrides["model_profile"] = profile_id
+        elif action_type == ActionType.SET_PROMPT_PROFILE:
+            profile_id = action.get("profile_id") or params.get("profile_id")
+            if profile_id and isinstance(profile_id, str):
+                overrides["prompt_profile"] = profile_id
+        elif action_type == ActionType.SET_QUALITY_THRESHOLD:
+            value = action.get("value") or params.get("value")
+            if isinstance(value, (int, float)):
+                overrides["quality_threshold"] = float(value)
+        elif action_type == ActionType.ENABLE_ADAPTIVE_ROUTING:
+            value = action.get("value", params.get("value", True))
+            overrides["enable_adaptive_routing"] = bool(value)
+    return overrides
 
 
 class RuleEngine:

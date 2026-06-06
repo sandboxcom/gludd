@@ -406,22 +406,43 @@ class EventLoop:
             await self._dispatch_execute_job(todo)
         self._tick_metrics["todos_dispatched"] = len(claimed)
 
+    def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
+        """Return model/prompt overrides from rule evaluation results for this todo."""
+        from general_ludd.rules.engine import apply_rule_actions
+
+        results = self._tick_state.get("rule_evaluation_results", [])
+        for result in results:
+            if not isinstance(result, dict):
+                continue
+            tid = result.get("todo_id", "")
+            actual_tid = _safe_str(todo, "todo_id", "")
+            if tid == actual_tid:
+                actions = result.get("actions", [])
+                if actions:
+                    return apply_rule_actions(actions)
+        return {}
+
     async def _dispatch_execute_job(self, todo: Any) -> None:
         budget_context: dict[str, Any] = {}
         if self._mcp_tool_registry is not None:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         playbook = self._config_snapshot.get("default_playbook", "noop.yml")
-        (
-            adaptive_prompt_id,
-            adaptive_model_id,
-            routing_decision,
-        ) = await self._resolve_adaptive_prompt(todo)
+
+        rule_overrides = self._get_rule_overrides_for_todo(todo)
+
+        adaptive_prompt_id, adaptive_model_id, routing_decision = (
+            await self._resolve_adaptive_prompt(todo)
+        )
         if routing_decision is not None and not routing_decision.fallback:
             resolved_prompt_profile = adaptive_prompt_id or _safe_str(todo, "prompt_profile")
             resolved_model_profile = adaptive_model_id or _safe_str(todo, "model_profile")
         else:
             resolved_prompt_profile = _safe_str(todo, "prompt_profile")
             resolved_model_profile = _safe_str(todo, "model_profile")
+
+        resolved_model_profile = rule_overrides.get("model_profile") or resolved_model_profile
+        resolved_prompt_profile = rule_overrides.get("prompt_profile") or resolved_prompt_profile
+
         prompt_text = _resolve_prompt_text_static(
             self._prompt_registry, resolved_prompt_profile
         )
