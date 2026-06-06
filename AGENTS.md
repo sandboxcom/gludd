@@ -1,5 +1,27 @@
 # Agentic Harness - Agent Rules
 
+## CRITICAL: Pre-Response Stop Audit (READ BEFORE EVERY RESPONSE)
+
+**Before sending ANY text response to the user, you MUST run this checklist:**
+
+1. Check `todowrite` state. Are there items in `pending` or `in_progress`?
+2. If yes → you MUST make a tool call, NOT send text. Your response must include at least one tool invocation that continues work.
+3. The ONLY exception: ALL items are `completed` or `cancelled`.
+4. If you catch yourself writing a completion summary, status report, or "done" message — STOP. Replace it with a tool call.
+
+**This is a HARD block. Text-only responses while work remains are a policy violation.**
+
+Cop behavior patterns that trigger this (DO NOT DO THESE):
+- "X passed, Y failed, Z skipped — committed" as final message
+- "All done. Everything is complete." as final message
+- A table/summary of completed work followed by no tool calls
+- "Ready for review" or "Waiting for your feedback"
+- Any message ending in "Done." with pending todos
+
+CORRECT: If asked for status, respond briefly (1-2 lines) then IMMEDIATELY make a tool call.
+CORRECT: After committing, immediately start the next pending task.
+CORRECT: Never send text without also continuing work via a tool call.
+
 ## CRITICAL: Premature-Stop Audit Policy
 
 **At the start of EVERY session, before doing any other work, you MUST:**

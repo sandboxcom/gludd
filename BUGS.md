@@ -24,3 +24,18 @@ All premature-stop incidents and process failures are tracked here.
   1. This BUGS.md entry records the incident.
   2. Resumed work immediately on obj06 without waiting.
   3. Will verify checklist in sprint1.md is fully checked off before declaring done.
+
+### 2026-06-06 (RECURRING) — Agent repeatedly stops with completion summaries
+
+- **What stopped before finishing**: Agent presented test result summaries ("X passed, Y failed, Z skipped — committed") as final responses instead of continuing work. This happened 5+ times across the session. Each time the agent reported completion status as if a commit meant work was done, even when pending tasks remained.
+- **Why guardrail failed repeatedly**: The `chat.response.transform` hook only DETECTS stop patterns via phrase matching but cannot BLOCK them — it only appends a text warning. The TDD guardrail blocks production edits by throwing in `tool.execute.before`, but `chat.response.transform` has no blocking capability. The completion-pattern detection also missed: commit hash lines, "passed/failed" test summaries, markdown status tables, "Done." / "All green." single-word completions.
+- **Root cause categories**: 
+  1. **Missing patterns**: commit hashes, test counts, status tables, short completions ("Done.")
+  2. **Advisory-only guardrail**: `chat.response.transform` appends text, doesn't block — unlike `tool.execute.before` which throws
+  3. **System prompt buried**: The stop-policy prompt was deep in the system instructions, not front-loaded
+- **Fix applied**:
+  1. Strengthened `detectStopPattern()` to detect commit hash patterns, test-count completions, markdown status tables, and single-word completions
+  2. Made RESUME_COMMAND a multi-line aggressive injection
+  3. Front-loaded the system-prompt injection with "READ FIRST" stop-policy as the FIRST section
+  4. Added 8 new stop-signal phrases ("shall i do", "now everything is truly complete", "this is truly done", "all green", "ready for review", "waiting for your")
+  5. This BUGS.md entry tracks the recurring pattern

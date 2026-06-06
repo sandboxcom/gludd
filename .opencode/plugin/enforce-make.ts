@@ -150,6 +150,7 @@ const STOP_SIGNAL_WORDS = [
   "shall i continue",
   "shall i proceed",
   "shall i finish",
+  "shall i do",
   "next steps are",
   "remaining tasks",
   "here are the remaining",
@@ -171,13 +172,54 @@ const STOP_SIGNAL_WORDS = [
   "all objectives delivered",
   "all objectives complete",
   "all work done",
+  "now everything is truly complete",
+  "this is truly done",
+  "all green",
+  "ready for review",
+  "waiting for your",
 ]
 
-const RESUME_COMMAND = "RESUME WORK NOW. You have pending tasks. Do not stop to report status or ask for permission. Call your tools and continue working immediately."
+const RESUME_COMMAND = [
+  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+  "⛔ STOP-PATTERN DETECTED — AUTO-INJECTED OVERRIDE",
+  "",
+  "You just generated a response that appears to be a completion",
+  "report, status summary, or permission-asking pattern. This is",
+  "FORBIDDEN when there may be pending work.",
+  "",
+  "YOUR NEXT ACTION MUST be a tool call — not text.",
+  "Do not explain yourself. Do not apologize. Do not ask questions.",
+  "Call your tools and CONTINUE WORKING immediately.",
+  "",
+  "The ONLY exception: ALL todo items are marked 'completed'.",
+  "If any todo is 'in_progress' or 'pending', you MUST keep working.",
+  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+].join("\n")
 
 function detectStopPattern(responseText: string): boolean {
   const lower = responseText.toLowerCase()
-  return STOP_SIGNAL_WORDS.some(pattern => lower.includes(pattern))
+  if (STOP_SIGNAL_WORDS.some(pattern => lower.includes(pattern))) {
+    return true
+  }
+  const lines = lower.split("\n")
+  let commitHashCount = 0
+  let passedCount = false
+  let summaryTable = false
+  let lastLineIsSummary = false
+  for (const line of lines) {
+    if (/^\[master [a-f0-9]{7}\]/.test(line.trim())) commitHashCount++
+    if (/\d+ passed/.test(line) && /0 failed/.test(line)) passedCount = true
+    if (line.includes("|") && line.includes("---") && line.includes(":")) summaryTable = true
+  }
+  if (lines.length > 0) {
+    const last = lines[lines.length - 1].trim().toLowerCase()
+    if (last === "done." || last === "done!" || last === "complete." || last === "all green." || last === "ready.") {
+      lastLineIsSummary = true
+    }
+  }
+  if (commitHashCount >= 2 && passedCount) return true
+  if (passedCount && lastLineIsSummary && summaryTable) return true
+  return false
 }
 
 export default (async ({ }) => {
@@ -294,9 +336,28 @@ export default (async ({ }) => {
     "experimental.chat.system.transform": async (_input, output) => {
       const completionPrompt = [
         "",
-        "## CRITICAL: Task Completion Policy",
+        "## ⛔ CRITICAL — READ FIRST: Pre-Response Stop Audit",
         "",
-        "You MUST complete ALL work requested before stopping. Specifically:",
+        "You have a history of stopping work to report status instead of",
+        "continuing. This section is injected FIRST in your prompt to prevent it.",
+        "",
+        "BEFORE EVERY RESPONSE:",
+        "1. Check your todowrite state. Any items 'pending' or 'in_progress'?",
+        "2. If yes → DO NOT send text. Make a tool call to continue work.",
+        "3. The ONLY exception: ALL items are 'completed' or 'cancelled'.",
+        "4. Completion/report messages followed by no tool calls are BLOCKED.",
+        "5. After committing, START THE NEXT PENDING TASK immediately.",
+        "",
+        "FORBIDDEN RESPONSE PATTERNS (auto-detected and blocked):",
+        "  - 'X passed, Y failed — committed' as last line",
+        "  - 'All done.' or 'Complete.' or 'Ready.' as last line",
+        "  - Status tables/summaries followed by no tool calls",
+        "  - 'Waiting for your...' or 'Ready for review'",
+        "",
+        "CORRECT: Answer status briefly (1-2 lines), then make a tool call.",
+        "CORRECT: After commit, immediately call tools for next task.",
+        "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+        "",
         "",
         "1. If given a sprint, objective list, or multi-step task, you MUST",
         "   work through every step until all are complete or genuinely blocked.",
