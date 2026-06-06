@@ -607,6 +607,48 @@ def create_daemon_app(
         comparison = ModelComparison(benchmark_repo=repo)
         return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
 
+    @app.post("/admin/code/blocks")
+    async def admin_code_blocks(request: Any) -> dict[str, Any]:
+        import json
+
+        from general_ludd.code_intelligence.extractor import ASTBlockExtractor
+
+        body = await request.json() if hasattr(request, "json") else {}
+        if isinstance(body, str):
+            body = json.loads(body)
+        source = body.get("source", "")
+        language = body.get("language", "python")
+        extractor = ASTBlockExtractor()
+        blocks = extractor.extract_blocks(source, language=language)
+        return {"blocks": blocks, "count": len(blocks)}
+
+    @app.get("/admin/code/graph")
+    async def admin_code_graph(source: str = "", language: str = "python") -> dict[str, Any]:
+        from general_ludd.code_intelligence.callgraph import CallGraph
+        from general_ludd.code_intelligence.extractor import ASTBlockExtractor
+
+        extractor = ASTBlockExtractor()
+        blocks = extractor.extract_blocks(source, language=language)
+        graph = CallGraph()
+        graph.build_from_blocks(blocks)
+        return graph.to_dict()
+
+    @app.get("/admin/code/search")
+    async def admin_code_search(
+        source: str = "",
+        query: str = "",
+        type_filter: str | None = None,
+        language: str = "python",
+    ) -> dict[str, Any]:
+        from general_ludd.code_intelligence.extractor import ASTBlockExtractor
+        from general_ludd.code_intelligence.search import CodeSearch
+
+        extractor = ASTBlockExtractor()
+        blocks = extractor.extract_blocks(source, language=language)
+        searcher = CodeSearch(blocks)
+        results = searcher.search(query=query, type_filter=type_filter)
+        return {"results": results, "count": len(results)}
+
     @app.get("/admin/models")
     async def admin_list_models() -> dict[str, Any]:
         if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
