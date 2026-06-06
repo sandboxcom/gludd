@@ -1101,19 +1101,19 @@ class TestLeaderboardE2E:
 class TestCLISubcommandHelp:
     def test_models_no_subcommand_shows_help(self):
         exit_code = _run_cli(["models"])
-        assert exit_code == 1
+        assert exit_code == 0
 
     def test_mcp_no_subcommand_shows_help(self):
         exit_code = _run_cli(["mcp"])
-        assert exit_code == 1
+        assert exit_code == 0
 
     def test_skills_no_subcommand_shows_help(self):
         exit_code = _run_cli(["skills"])
-        assert exit_code == 1
+        assert exit_code == 0
 
     def test_compute_no_subcommand_shows_help(self):
         exit_code = _run_cli(["compute"])
-        assert exit_code == 1
+        assert exit_code == 0
 
 
 class TestCLIDefaultBehavior:

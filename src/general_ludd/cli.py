@@ -106,6 +106,19 @@ def main() -> None:
     local_serve_parser.add_argument("--daemon-url", default="http://localhost:8000")
     local_serve_parser.set_defaults(func=_cmd_local_serve)
 
+    worktree_parser = sub.add_parser("worktree", help="Worktree monitor commands")
+    worktree_parser.set_defaults(func=None)
+    wt_sub = worktree_parser.add_subparsers(dest="worktree_command")
+
+    wt_scan = wt_sub.add_parser("scan", help="Scan for abandoned worktrees with AGENTS.md")
+    wt_scan.add_argument("--path", default=None, help="Comma-separated paths to scan")
+    wt_scan.add_argument("--daemon-url", default="http://localhost:8000")
+    wt_scan.set_defaults(func=_cmd_worktree_scan)
+
+    wt_status = wt_sub.add_parser("status", help="Show tracked worktrees")
+    wt_status.add_argument("--daemon-url", default="http://localhost:8000")
+    wt_status.set_defaults(func=_cmd_worktree_status)
+
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
     mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
@@ -180,12 +193,14 @@ def main() -> None:
             "mcp": mcp_parser,
             "skills": skills_parser,
             "compute": compute_parser,
+            "worktree": worktree_parser,
         }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
+            sys.exit(0)
         else:
             parser.print_help()
-        sys.exit(1)
+            sys.exit(1)
     args.func(args)
 
 
@@ -381,6 +396,52 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
         if resp.status_code in (200, 201):
             data = resp.json()
             print(json.dumps(data, indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_worktree_scan(args: argparse.Namespace) -> None:
+    try:
+        url = f"{args.daemon_url}/admin/worktree/scan"
+        params: dict[str, str] = {}
+        if args.path:
+            params["watch_paths"] = args.path
+        resp = httpx.post(url, params=params, timeout=30.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            todos = data.get("todos", [])
+            tracked = data.get("tracked_count", 0)
+            print(f"Tracked worktrees: {tracked}")
+            print(f"Abandoned worktrees with todos: {len(todos)}")
+            for todo in todos:
+                print(f"  - {todo['title']} ({todo['queue']})")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_worktree_status(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/worktree/status",
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            wts = data.get("tracked_worktrees", [])
+            print(f"Tracked worktrees: {len(wts)}")
+            for wt in wts:
+                status_line = f"  {wt['path']}"
+                if wt["todo_id"]:
+                    status_line += f" [todo: {wt['todo_id']}]"
+                if wt["has_agents_md"]:
+                    status_line += " [AGENTS.md]"
+                print(status_line)
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)

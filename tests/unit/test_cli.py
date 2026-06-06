@@ -401,22 +401,22 @@ class TestHotLoading:
     def test_models_no_subcommand_prints_help(self, capsys):
         with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "models"]):
             main()
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
     def test_mcp_no_subcommand_prints_help(self):
         with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "mcp"]):
             main()
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
     def test_skills_no_subcommand_prints_help(self):
         with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "skills"]):
             main()
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
     def test_compute_no_subcommand_prints_help(self):
         with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "compute"]):
             main()
-        assert exc_info.value.code == 1
+        assert exc_info.value.code == 0
 
     def test_compute_unregister_parsing(self):
         with patch.object(sys, "argv", ["gludd", "compute", "unregister", "my-endpoint"]), \
