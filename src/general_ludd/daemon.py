@@ -346,7 +346,7 @@ def _get_or_create_extended_subsystems(
         from general_ludd.db.repository import BenchmarkRepository
         from general_ludd.scoring.router import AdaptiveRouter
 
-        benchmark_repo = BenchmarkRepository(session_factory)  # type: ignore[arg-type]
+        benchmark_repo = BenchmarkRepository(session_factory)
         adaptive_router = AdaptiveRouter(benchmark_repo=benchmark_repo)
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):

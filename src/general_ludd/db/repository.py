@@ -465,6 +465,7 @@ class BenchmarkRepository:
             raw_output=raw_output,
         )
         session = await self._get_session()
+        assert session is not None, "No session available"
         session.add(row)
         await session.flush()
         return row
@@ -526,7 +527,8 @@ class BenchmarkRepository:
     async def list_recent(
         self, limit: int = 50
     ) -> list[BenchmarkResultModel]:
-        result = await self._session.execute(
+        session = await self._get_session()
+        result = await session.execute(
             select(BenchmarkResultModel)
             .order_by(BenchmarkResultModel.created_at.desc())
             .limit(limit)

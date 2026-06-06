@@ -308,6 +308,10 @@ class WorktreeMonitor:
 
             todo = self._create_todo_from_worktree(wt)
             if todo:
+                todo_id = f"WT-{wt.path.replace('/', '-')}"
+                todo["todo_id"] = todo_id
+                wt.todo_id = todo_id
+                self._scanner._tracked[wt.path] = wt
                 todos.append(todo)
                 todos_created += 1
 

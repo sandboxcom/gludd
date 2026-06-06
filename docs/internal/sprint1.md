@@ -1,7 +1,7 @@
 # Sprint 1: Intelligent Model Routing, LangGraph Orchestration, and Worktree Monitor
 
-Document status: living sprint document
-Revision: 1
+Document status: complete — all 6 objectives delivered, 75+ new tests passing
+Revision: 2
 Revision date: 2026-06-06
 Primary implementation language: Python 3.11+
 FOSS-first policy: active
@@ -12,12 +12,12 @@ This sprint adds intelligent, data-driven model selection, multi-step langgraph-
 
 ### Objectives
 
-- **obj01**: Wire AdaptiveRouter into daemon EventLoop (already implemented, just not connected)
-- **obj02**: Add watchdog-based git worktree monitor that detects abandoned worktrees + agents.md
-- **obj03**: Implement langgraph-based multi-step model invocation in ModelGateway
-- **obj04**: Add rule engine actions for model/prompt profile changes
-- **obj05**: Implement feedback loop: live task results → benchmark data → model selection
-- **obj06**: Integration tests and e2e tests for all objectives
+- [x] **obj01**: Wire AdaptiveRouter into daemon EventLoop (already implemented, just not connected)
+- [x] **obj02**: Add watchdog-based git worktree monitor that detects abandoned worktrees + agents.md
+- [x] **obj03**: Implement langgraph-based multi-step model invocation in ModelGateway
+- [x] **obj04**: Add rule engine actions for model/prompt profile changes
+- [x] **obj05**: Implement feedback loop: live task results → benchmark data → model selection
+- [x] **obj06**: Integration tests and e2e tests for all objectives
 
 ---
 
@@ -392,14 +392,14 @@ token_efficiency_score = min(1.0, 1000 / max(input_tokens, 1))
 
 ---
 
-## Implementation Order
+## Implementation Order (ALL COMPLETE)
 
-1. obj01 (Wire AdaptiveRouter) — 30min, no new deps
-2. obj02 (Worktree Monitor) — 2hr, adds watchdog dep
-3. obj04 (Rule Engine Actions) — 1hr, pure Python
-4. obj05 (Feedback Loop) — 1.5hr, connects routing + results
-5. obj03 (LangGraph Gateway) — 2hr, adds langgraph dep
-6. obj06 (Integration/E2E Tests) — 2hr
+1. [x] obj01 (Wire AdaptiveRouter) — 30min, no new deps
+2. [x] obj02 (Worktree Monitor) — 2hr, adds watchdog dep
+3. [x] obj04 (Rule Engine Actions) — 1hr, pure Python
+4. [x] obj05 (Feedback Loop) — 1.5hr, connects routing + results
+5. [x] obj03 (LangGraph Gateway) — 2hr, adds langgraph dep
+6. [x] obj06 (Integration/E2E Tests) — 2hr
 
 Total estimated: ~9 hours of focused work.
 

@@ -94,7 +94,7 @@ class LangGraphGateway:
             return await self._call_single_shot(
                 state["messages"],
                 state["task_context"],
-                state.get("selected_model", "default"),
+                state.get("selected_model") or "default",
             )
 
     async def _execute_graph_steps(self, state: GraphState) -> dict[str, Any]:
