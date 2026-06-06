@@ -96,6 +96,15 @@ def main() -> None:
     models_downloaded.add_argument("--daemon-url", default="http://localhost:8000")
     models_downloaded.set_defaults(func=_cmd_models_downloaded)
 
+    models_discover = models_sub.add_parser("discover", help="Discover free models from OpenRouter")
+    models_discover.add_argument("--provider", default="openrouter", help="Provider to discover from")
+    models_discover.add_argument("--daemon-url", default="http://localhost:8000")
+    models_discover.set_defaults(func=_cmd_models_discover)
+
+    models_list_discovered = models_sub.add_parser("discovered", help="List auto-discovered model profiles")
+    models_list_discovered.add_argument("--daemon-url", default="http://localhost:8000")
+    models_list_discovered.set_defaults(func=_cmd_models_discovered)
+
     local_serve_parser = sub.add_parser("local-serve", help="Start a local inference server")
     local_serve_parser.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"])
     local_serve_parser.add_argument("--model", required=True, help="Model name or path")
@@ -370,6 +379,63 @@ def _cmd_models_downloaded(args: argparse.Namespace) -> None:
                 print(f"    Path: {m.get('local_path', 'N/A')}")
                 print(f"    Engine: {m.get('engine', 'N/A')}")
                 print()
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_models_discover(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/models/discover",
+            params={"provider": args.provider},
+            timeout=60.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if not data.get("success"):
+                print(f"Discovery failed: {data.get('error', 'unknown')}")
+                if data.get("configured"):
+                    print(f"Configured providers: {', '.join(data['configured'])}")
+                sys.exit(1)
+            models = data.get("models", [])
+            print(f"Provider: {data['provider']}")
+            print(f"Discovered: {data['discovered_count']} models")
+            print(f"Generated: {data['generated_profiles']} profiles")
+            print(f"Free models: {sum(1 for m in models if m['is_free'])}")
+            print()
+            for m in models:
+                free_tag = " [FREE]" if m["is_free"] else ""
+                print(f"  {m['display_name']} ({m['model_name']}){free_tag}")
+                cost = f"${m['cost_per_input_token']:.8f}/${m['cost_per_output_token']:.8f}"
+                print(f"    Cost: {cost} | Context: {m['context_window']:,} | Quality: {m['quality_class']}")
+                print(f"    Roles: {', '.join(m['role_names'])}")
+                print()
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_models_discovered(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/models/discovered",
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            profiles = data.get("profiles", [])
+            if not profiles:
+                print("No auto-discovered models. Run 'gludd models discover' first.")
+                return
+            print(f"Discovered profiles: {len(profiles)}")
+            for p in profiles:
+                enabled = "[enabled]" if p.get("enabled", True) else "[disabled]"
+                print(f"  {p['display_name']} ({p['model_profile_id']}) {enabled}")
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)

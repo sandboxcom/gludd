@@ -359,6 +359,8 @@ def _get_or_create_extended_subsystems(
         "model_registry": app.state._model_registry,
         "skill_registry": app.state._skill_registry,
         "adaptive_router": adaptive_router,
+        "auto_configurator": getattr(app.state, "_auto_configurator", None),
+        "scraper": getattr(app.state, "_scraper", None),
     }
 
 
@@ -514,6 +516,80 @@ def create_daemon_app(
         if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
             app.state._model_gateway.remove_profile(model_id)
         return {"removed": model_id}
+
+    @app.post("/admin/models/discover")
+    async def admin_models_discover(
+        provider: str = "openrouter",
+    ) -> dict[str, Any]:
+        from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
+        from general_ludd.models.openrouter_discovery import OpenRouterScraper
+        from general_ludd.models.provider_presets import detect_credential_alias, list_configured_providers
+
+        configured = list_configured_providers()
+        if provider not in configured and provider != "openrouter":
+            msg = f"Provider '{provider}' not configured (missing credentials)"
+            return {"success": False, "error": msg, "configured": configured}
+
+        scraper = OpenRouterScraper()
+        if detect_credential_alias(provider):
+            import os
+            scraper._api_key = os.environ.get(
+                "OPENROUTER_API_KEY" if provider == "openrouter" else "",
+                None,
+            )
+        scraped = await scraper.fetch_models()
+        configurator = AutoConfigurator()
+        profiles = configurator.generate_profiles(provider, scraped)
+        prioritizer = ModelPrioritizer()
+        ranked = prioritizer.rank(profiles)
+
+        app.state._auto_configurator = configurator
+        app.state._scraper = scraper
+        app.state._discovered_profiles = profiles
+
+        return {
+            "success": True,
+            "provider": provider,
+            "discovered_count": len(scraped),
+            "generated_profiles": len(profiles),
+            "models": [
+                {
+                    "model_profile_id": p["model_profile_id"],
+                    "model_name": p["model_name"],
+                    "display_name": p.get("display_name", p["model_name"]),
+                    "cost_per_input_token": p["cost_per_input_token"],
+                    "cost_per_output_token": p["cost_per_output_token"],
+                    "context_window": p["context_window"],
+                    "is_free": p.get("is_free", False),
+                    "role_names": p["role_names"],
+                    "quality_class": p["quality_class"],
+                }
+                for p in ranked
+            ],
+        }
+
+    @app.get("/admin/models/discovered")
+    async def admin_models_discovered() -> dict[str, Any]:
+        profiles = getattr(app.state, "_discovered_profiles", None)
+        if profiles is None:
+            return {"profiles": []}
+        return {
+            "profiles": [
+                {
+                    "model_profile_id": p["model_profile_id"],
+                    "model_name": p["model_name"],
+                    "display_name": p.get("display_name", p["model_name"]),
+                    "cost_per_input_token": p["cost_per_input_token"],
+                    "cost_per_output_token": p["cost_per_output_token"],
+                    "context_window": p["context_window"],
+                    "is_free": p.get("is_free", False),
+                    "role_names": p["role_names"],
+                    "quality_class": p["quality_class"],
+                    "enabled": p.get("enabled", True),
+                }
+                for p in profiles
+            ]
+        }
 
     @app.get("/admin/models")
     async def admin_list_models() -> dict[str, Any]:
