@@ -8,7 +8,7 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import func, select
-from sqlalchemy.ext.asyncio import AsyncSession
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from sqlalchemy.orm import selectinload
 
 from general_ludd.db.models import (
@@ -412,9 +412,25 @@ class PromptProfileRepository:
         ]
 
 
+
 class BenchmarkRepository:
-    def __init__(self, session: AsyncSession) -> None:
-        self._session = session
+    def __init__(
+        self,
+        session: AsyncSession | async_sessionmaker[AsyncSession],
+    ) -> None:
+        if isinstance(session, AsyncSession):
+            self._session: AsyncSession | None = session
+            self._session_factory: async_sessionmaker[AsyncSession] | None = None
+        else:
+            self._session = None
+            self._session_factory = session
+
+    async def _get_session(self) -> AsyncSession:
+        if self._session is not None:
+            return self._session
+        if self._session_factory is not None:
+            return self._session_factory()
+        raise RuntimeError("No session available in BenchmarkRepository")
 
     async def record_result(
         self,
@@ -448,8 +464,9 @@ class BenchmarkRepository:
             error_message=error_message,
             raw_output=raw_output,
         )
-        self._session.add(row)
-        await self._session.flush()
+        session = await self._get_session()
+        session.add(row)
+        await session.flush()
         return row
 
     async def get_aggregate_scores(
@@ -484,7 +501,8 @@ class BenchmarkRepository:
             BenchmarkResultModel.model_profile_id,
             BenchmarkResultModel.task_type,
         )
-        result = await self._session.execute(q)
+        session = await self._get_session()
+        result = await session.execute(q)
         return [dict(row._mapping) for row in result.all()]
 
     async def get_best_for_task(

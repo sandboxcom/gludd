@@ -229,7 +229,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
-        ext = _get_or_create_extended_subsystems(app)
+        ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
 
         secrets_resolver = build_secrets_resolver(
             openbao_config=startup_config.get("openbao_config"),
@@ -272,6 +272,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "model_profiles": startup_config.get("model_profiles", []),
                 "rules": startup_config.get("rules", []),
             },
+            adaptive_router=ext["adaptive_router"],
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -312,7 +313,10 @@ def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
     }
 
 
-def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
+def _get_or_create_extended_subsystems(
+    app: FastAPI,
+    session_factory: Any | None = None,
+) -> dict[str, Any]:
     from general_ludd.infra.utilization import UtilizationTracker
     from general_ludd.metrics.collector import MetricsCollector
     from general_ludd.models.model_registry import ModelRegistry
@@ -336,12 +340,25 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
             for skill in discovered:
                 registry.register(skill)
         app.state._skill_registry = registry
+
+    adaptive_router = None
+    if session_factory is not None and not hasattr(app.state, "_adaptive_router"):
+        from general_ludd.db.repository import BenchmarkRepository
+        from general_ludd.scoring.router import AdaptiveRouter
+
+        benchmark_repo = BenchmarkRepository(session_factory)  # type: ignore[arg-type]
+        adaptive_router = AdaptiveRouter(benchmark_repo=benchmark_repo)
+        app.state._adaptive_router = adaptive_router
+    elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
+        adaptive_router = app.state._adaptive_router
+
     return {
         "metrics": app.state._metrics_collector,
         "projects": app.state._project_manager,
         "utilization": app.state._utilization_tracker,
         "model_registry": app.state._model_registry,
         "skill_registry": app.state._skill_registry,
+        "adaptive_router": adaptive_router,
     }
 
 
@@ -367,6 +384,7 @@ def create_daemon_app(
     app.state._utilization_tracker = None
     app.state._model_registry = None
     app.state._skill_registry = None
+    app.state._adaptive_router = None
     app.state._startup_config = load_startup_config(config_dir)
 
     if log_level == "debug":
