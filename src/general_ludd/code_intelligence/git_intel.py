@@ -18,20 +18,24 @@ class GitIntelligence:
     def __init__(self, repo_path: str) -> None:
         self._repo = repo_path
 
-    def _run_git(self, args: list[str]) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", "-C", self._repo, *args],
-            capture_output=True,
-            text=True,
-            timeout=30,
-        )
+    def _run_git(self, args: list[str]) -> subprocess.CompletedProcess[str] | None:
+        try:
+            return subprocess.run(
+                ["git", "-C", self._repo, *args],
+                capture_output=True,
+                text=True,
+                timeout=30,
+            )
+        except Exception as exc:
+            logger.debug("git command failed: %s", exc)
+            return None
 
     def files_changed_together(self, limit: int = 20) -> list[dict[str, Any]]:
         """Find files that are frequently changed together in the same commit."""
         result = self._run_git([
             "log", "--name-only", "--format=", "-n", str(limit * 5)
         ])
-        if result.returncode != 0:
+        if result is None or result.returncode != 0:
             return []
 
         file_pairs: dict[str, int] = {}
@@ -54,7 +58,7 @@ class GitIntelligence:
     def blame_analysis(self, file_path: str) -> dict[str, Any]:
         """Get blame information for a file."""
         result = self._run_git(["blame", "--line-porcelain", file_path])
-        if result.returncode != 0:
+        if result is None or result.returncode != 0:
             return {}
 
         authors: dict[str, int] = {}
@@ -81,7 +85,7 @@ class GitIntelligence:
         result = self._run_git([
             "shortlog", "-sne", "-n", str(limit), "HEAD"
         ])
-        if result.returncode != 0:
+        if result is None or result.returncode != 0:
             return []
 
         contributors: list[dict[str, Any]] = []
@@ -104,7 +108,7 @@ class GitIntelligence:
         result = self._run_git([
             "log", "-n", str(limit), "--format=%H\t%s\t%an\t%aI"
         ])
-        if result.returncode != 0:
+        if result is None or result.returncode != 0:
             return []
 
         commits: list[dict[str, Any]] = []
@@ -126,7 +130,7 @@ class GitIntelligence:
         result = self._run_git([
             "log", "--format=", "--name-only", "-n", str(limit * 10)
         ])
-        if result.returncode != 0:
+        if result is None or result.returncode != 0:
             return []
 
         file_counts: dict[str, int] = {}
