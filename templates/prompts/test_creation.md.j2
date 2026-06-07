@@ -1,0 +1,34 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Create or update tests for the specified code change.
+
+Todo:
+- Title: {{ todo_title | default('Test creation task') }}
+- Description: {{ todo_description | default('Create tests that verify the expected behavior.') }}
+- Work type: {{ work_type | default('test') }}
+- Queue: {{ queue | default('qa') }}
+- Priority: {{ priority | default('medium') }}
+
+Instructions:
+1. Identify the behavior that needs to be tested.
+2. Write unit tests first (>85% line coverage per file).
+3. Write integration tests covering 2+ subsystem interaction.
+4. Write E2E tests if the change has user-facing impact.
+5. Write Molecule scenarios for any Ansible playbooks, roles, or tool wrappers.
+6. Verify tests FAIL before implementation, PASS after.
+7. Verify coverage meets the configured threshold.
+
+Test quality requirements:
+- Each test must have Arrange-Act-Assert structure.
+- Test names must describe the behavior: test_<subject>_<condition>_<expected>.
+- Include positive and negative cases.
+- Test edge cases (empty input, invalid input, boundary values).
+- Test error paths and fallback behavior.
+- Use realistic test data, not placeholders.
+
+Molecule requirements for Ansible content:
+- Scenario must call the real playbook/role/wrapper.
+- Verify must use explicit assert tasks with fail_msg.
+- Include idempotence check for idempotent content.
+- Include at least one negative-path scenario.

@@ -1,0 +1,22 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Implement a self-improvement to the harness itself.
+
+Todo:
+- Title: {{ todo_title | default('Self-improvement task') }}
+- Description: {{ todo_description | default('Improve the harness through the tested self-improvement workflow.') }}
+- Work type: {{ work_type | default('self_improvement') }}
+- Queue: {{ queue | default('self_improve') }}
+
+Instructions:
+1. Create failing test for the improvement.
+2. Run library research gate for any new dependencies.
+3. Implement minimal change in an isolated worktree.
+4. Run full validation: lint, typecheck, tests, Molecule, quality gates.
+5. Build and validate pip bundle and container if packaging surfaces change.
+6. Run dogfood smoke test.
+7. Run log audit.
+8. Commit and merge automatically after all gates pass.
+9. Request staged reload.
+10. Roll back automatically if health checks fail.

@@ -26,17 +26,13 @@ class FileStore:
             root_path = os.path.expanduser("~/.local/share/general-ludd/filestore")
         self._root_path = root_path
         self._fs = OSFS(root_path, create=True)
-
-        if overlay_path is False:
-            self._overlay_path = None
-            self._overlay_fs = None
+        self._overlay_fs: OSFS | None = None
+        if overlay_path is None:
+            self._overlay_path = os.path.expanduser("~/.config/gludd/fs")
         else:
-            if overlay_path is None:
-                overlay_path = os.path.expanduser("~/.config/gludd/fs")
-            self._overlay_path: str | None = overlay_path
-            self._overlay_fs: OSFS | None = None
-            if os.path.isdir(overlay_path):
-                self._overlay_fs = OSFS(overlay_path)
+            self._overlay_path = overlay_path
+        if self._overlay_path is not None and os.path.isdir(self._overlay_path):
+            self._overlay_fs = OSFS(self._overlay_path)
 
     def _resolve_path(self, path: str) -> tuple[OSFS, str]:
         if self._overlay_fs is not None and self._overlay_fs.exists(path):

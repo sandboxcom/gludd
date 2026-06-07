@@ -1,0 +1,27 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Implement the following change in the codebase.
+
+Todo:
+- Title: {{ todo_title | default('Implementation task') }}
+- Description: {{ todo_description | default('Implement the requested change.') }}
+- Work type: {{ work_type | default('code') }}
+- Queue: {{ queue | default('core') }}
+- Priority: {{ priority | default('medium') }}
+
+Instructions:
+1. Understand the existing code and constraints before writing.
+2. Write or update tests FIRST following the TDD policy.
+3. Implement the minimal change to make tests pass.
+4. Run lint, typecheck, and tests. Fix all failures.
+5. Run Molecule scenarios for any changed Ansible content.
+6. Record evidence: test output, coverage, Molecule results.
+7. If work is blocked, incomplete, or risky, create child todos with evidence.
+
+Constraints:
+- Prefer mature FOSS libraries over custom code.
+- Use the TDD workflow: failing test → implementation → green test.
+- Do not lower coverage thresholds to pass.
+- Record assumptions, confidence, and evidence.
+- Keep changes small and reversible.

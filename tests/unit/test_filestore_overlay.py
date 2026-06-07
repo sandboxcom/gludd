@@ -108,11 +108,11 @@ class TestConfigOverlay:
         store = FileStore()
         assert "config/gludd/fs" in store._overlay_path.replace("\\", "/")
 
-    def test_overlay_none_disables(self):
+    def test_overlay_custom_path(self):
         from general_ludd.filestore.store import FileStore
 
-        store = FileStore(overlay_path=False)  # type: ignore[arg-type]
-        assert store._overlay_path is None
+        store = FileStore(overlay_path="/custom/overlay")
+        assert "/custom/overlay" in store._overlay_path
 
     def test_overlay_write_goes_to_store_not_overlay(self):
         from general_ludd.filestore.store import FileStore

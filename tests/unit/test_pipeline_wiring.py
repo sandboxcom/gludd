@@ -329,7 +329,8 @@ class TestPromptResolution:
         registry.render.side_effect = Exception("template not found")
         assert _resolve_prompt_text_static(registry, "missing.j2") is None
 
-    def test_event_loop_resolves_prompt_in_dispatch(self):
+    @pytest.mark.asyncio
+    async def test_event_loop_resolves_prompt_in_dispatch(self):
         prompt_reg = MagicMock()
         prompt_reg.render.return_value = "Execute: fix the bug"
 
@@ -348,10 +349,11 @@ class TestPromptResolution:
         todo.plan_artifact = None
         todo.project_id = None
 
-        import asyncio
-        asyncio.run(loop._dispatch_execute_job(todo))
+        await loop._dispatch_execute_job(todo)
 
-        prompt_reg.render.assert_called_once_with("execute.md.j2")
+        prompt_reg.render.assert_called_once()
+        call_args = prompt_reg.render.call_args
+        assert call_args[0][0] == "execute.md.j2"
 
 
 class TestSkillsInjection:

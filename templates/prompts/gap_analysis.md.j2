@@ -1,0 +1,30 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Analyze the project for gaps between requirements and implementation.
+
+Todo:
+- Title: {{ todo_title | default('Gap analysis') }}
+- Description: {{ todo_description | default('Compare sprint requirements against code, tests, playbooks, and prompts.') }}
+- Work type: {{ work_type | default('analysis') }}
+- Queue: {{ queue | default('audit') }}
+
+Instructions:
+1. Inventory repository files, tests, playbooks, and prompts.
+2. Compare against sprint requirements.
+3. Identify missing implementations, tests, playbook validations, and Molecule scenarios.
+4. Identify missing prompt templates per task type.
+5. Identify coverage gaps below configured thresholds.
+6. Prioritize findings by severity and impact.
+7. Create high-confidence gap todos automatically.
+8. Record confidence level and evidence for each finding.
+
+Gap categories to check:
+- Requirements with no tests
+- Tests with no implementation
+- Implementation with no playbook validation
+- Playbooks with no Molecule scenario
+- Molecule scenarios with weak verify assertions
+- Playbooks with no audit/log capture
+- Missing prompt templates per task type
+- Missing per-work-type playbook dispatch

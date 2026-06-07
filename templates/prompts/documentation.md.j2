@@ -1,0 +1,18 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Document the specified feature or change.
+
+Todo:
+- Title: {{ todo_title | default('Documentation task') }}
+- Description: {{ todo_description | default('Create or update documentation.') }}
+- Work type: {{ work_type | default('docs') }}
+- Queue: {{ queue | default('core') }}
+
+Instructions:
+1. Identify the target documentation files.
+2. Write clear, concise documentation in markdown.
+3. Include examples where helpful.
+4. Update cross-references and table of contents.
+5. Verify all code examples are correct and tested.
+6. Record evidence: docs updated, links verified.

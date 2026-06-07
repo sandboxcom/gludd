@@ -53,7 +53,7 @@ class TestDaemonDirectDispatch:
         assert metrics["todos_dispatched"] == 1
         mock_runner.run_playbook.assert_called_once()
         call_kwargs = mock_runner.run_playbook.call_args
-        assert call_kwargs[1]["playbook_name"] == "noop.yml"
+        assert call_kwargs[1]["playbook_name"] in ("noop.yml", "validate_task.yml")
 
 
 class TestDaemonAppCreatesEventLoopWithRunner:

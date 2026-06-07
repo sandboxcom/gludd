@@ -1,0 +1,18 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Audit logs for anomalies, errors, and improvement signals.
+
+Todo:
+- Title: {{ todo_title | default('Log audit') }}
+- Description: {{ todo_description | default('Audit system logs for issues and patterns.') }}
+- Work type: {{ work_type | default('audit') }}
+- Queue: {{ queue | default('audit') }}
+
+Instructions:
+1. Run deterministic checks first (missing correlation IDs, secret-like values).
+2. Detect retries, loops, stuck todos, unreviewed returns.
+3. Detect expensive prompts/models with poor success rates.
+4. Run qualitative model-based audit only after redaction.
+5. Create todos for confirmed findings.
+6. Do NOT include raw secrets or sensitive values in audit output.

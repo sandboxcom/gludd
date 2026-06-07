@@ -64,3 +64,25 @@ class PromptRegistry:
 
             self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))
         return {"templates": discovered, "refreshed": True}
+
+
+_WORK_TYPE_TEMPLATE_MAP: dict[str, str] = {
+    "code": "implementation.md.j2",
+    "test": "test_creation.md.j2",
+    "review": "code_review.md.j2",
+    "refactor": "implementation.md.j2",
+    "docs": "documentation.md.j2",
+    "infra": "implementation.md.j2",
+    "prompt": "prompt_eval.md.j2",
+    "analysis": "gap_analysis.md.j2",
+    "audit": "log_audit.md.j2",
+    "release": "implementation.md.j2",
+    "dependency": "dependency_update.md.j2",
+    "security": "implementation.md.j2",
+    "model": "implementation.md.j2",
+    "unknown": "implementation.md.j2",
+}
+
+
+def get_template_name_for_work_type(work_type: str) -> str | None:
+    return _WORK_TYPE_TEMPLATE_MAP.get(work_type)

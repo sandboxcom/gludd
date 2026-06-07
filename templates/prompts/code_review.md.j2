@@ -1,0 +1,22 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Review the task return and determine the appropriate next action.
+
+Todo:
+- Return ID: {{ return_id | default('unknown') }}
+- Task return data: {{ task_return_json | default('{}') }}
+- Candidate todos: {{ candidate_todos_json | default('[]') }}
+
+Instructions:
+1. Determine which todo this return belongs to.
+2. Assess completion based on acceptance criteria and evidence.
+3. Identify concrete evidence: test results, coverage, lint, Molecule output.
+4. For complete work: verify all gates passed.
+5. For incomplete work: create child todos with reproduction steps.
+6. For failed work: identify root cause and create fix todos.
+7. Do not mark complete without validation evidence.
+8. Require Molecule evidence for Ansible content changes.
+9. Do not wait for human approval — create more validation work instead.
+
+Return only a valid TaskDecision JSON document.

@@ -1,0 +1,19 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Evaluate and improve prompt templates for better task performance.
+
+Todo:
+- Title: {{ todo_title | default('Prompt evaluation') }}
+- Description: {{ todo_description | default('Evaluate prompt variants and optimize for task performance.') }}
+- Work type: {{ work_type | default('prompt') }}
+- Queue: {{ queue | default('model') }}
+
+Instructions:
+1. Select sample tasks for the target task category.
+2. Run prompt variants against the same inputs.
+3. Score by: test pass rate, cost, latency, todo churn, schema validity.
+4. Compare against baseline prompt performance.
+5. Promote better prompts when evidence supports it.
+6. Record benchmark results for future adaptive routing.
+7. Do not require human approval unless prompt policy explicitly requires it.

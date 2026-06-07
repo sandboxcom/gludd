@@ -59,6 +59,56 @@ def _resolve_prompt_text_static(
         return None
 
 
+_WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
+    "bug_fix": "bug_fix",
+    "code": "feature",
+    "test": "test_write",
+    "review": "code_review",
+    "refactor": "refactor",
+    "docs": "documentation",
+    "infra": "feature",
+    "prompt": "feature",
+    "analysis": "feature",
+    "audit": "feature",
+    "release": "feature",
+    "dependency": "feature",
+    "security": "security_fix",
+    "model": "feature",
+    "unknown": "feature",
+}
+
+
+def _work_type_to_task_type(work_type: str) -> Any:
+    from general_ludd.schemas.benchmark import TaskType
+
+    mapped = _WORK_TYPE_TASK_TYPE_MAP.get(work_type, "feature")
+    try:
+        return TaskType(mapped)
+    except ValueError:
+        return TaskType.FEATURE
+
+
+_WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
+    "code": "validate_task.yml",
+    "test": "molecule_test.yml",
+    "analysis": "gap_analysis.yml",
+    "audit": "log_audit.yml",
+    "prompt": "prompt_eval.yml",
+    "self_improvement": "self_improve_harness.yml",
+    "dependency": "dependency_update.yml",
+    "review": "return_review.yml",
+    "docs": "noop.yml",
+    "infra": "noop.yml",
+    "security": "noop.yml",
+    "model": "noop.yml",
+    "release": "noop.yml",
+}
+
+
+def _playbook_for_work_type(work_type: str, default: str = "noop.yml") -> str:
+    return _WORK_TYPE_PLAYBOOK_MAP.get(work_type, default)
+
+
 class EventLoop:
     def __init__(
         self,
@@ -132,14 +182,9 @@ class EventLoop:
     ) -> tuple[str | None, str | None, Any | None]:
         if self._adaptive_router is None:
             return None, None, None
-        from general_ludd.schemas.benchmark import TaskType
 
         work_type = _safe_str(todo, "work_type", "feature") or "feature"
-        task_type_str = work_type.replace("-", "_").lower()
-        try:
-            task_type = TaskType(task_type_str)
-        except ValueError:
-            task_type = TaskType.FEATURE
+        task_type = _work_type_to_task_type(work_type)
         default_prompt = _safe_str(todo, "prompt_profile")
         decision = await self._adaptive_router.route(
             task_type=task_type,
@@ -431,7 +476,9 @@ class EventLoop:
         budget_context: dict[str, Any] = {}
         if self._mcp_tool_registry is not None:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
-        playbook = self._config_snapshot.get("default_playbook", "noop.yml")
+        default_playbook = self._config_snapshot.get("default_playbook", "noop.yml")
+        work_type = _safe_str(todo, "work_type", "code") or "code"
+        playbook = _playbook_for_work_type(work_type, default_playbook)
 
         rule_overrides = self._get_rule_overrides_for_todo(todo)
 
@@ -448,8 +495,15 @@ class EventLoop:
         resolved_model_profile = rule_overrides.get("model_profile") or resolved_model_profile
         resolved_prompt_profile = rule_overrides.get("prompt_profile") or resolved_prompt_profile
 
+        task_context = {
+            "todo_title": _safe_str(todo, "title") or "",
+            "todo_description": _safe_str(todo, "description") or "",
+            "work_type": work_type,
+            "queue": _safe_str(todo, "queue") or "core",
+            "priority": str(getattr(todo, "priority", "medium") or "medium"),
+        }
         prompt_text = _resolve_prompt_text_static(
-            self._prompt_registry, resolved_prompt_profile
+            self._prompt_registry, resolved_prompt_profile, **task_context
         )
         if prompt_text is None:
             prompt_text = self._resolve_prompt_text(todo)
@@ -475,6 +529,7 @@ class EventLoop:
                     "prompt_profile": resolved_prompt_profile,
                     "prompt_text": prompt_text,
                     "skill_body": skill_body,
+                    "playbook": playbook,
                     **budget_context,
                 },
                 shared_vars=shared_vars,

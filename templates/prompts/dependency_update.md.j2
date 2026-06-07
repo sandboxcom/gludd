@@ -1,0 +1,22 @@
+{% include 'base_harness_aware.md.j2' %}
+
+Task:
+Update project dependencies through the tested dependency workflow.
+
+Todo:
+- Title: {{ todo_title | default('Dependency update') }}
+- Description: {{ todo_description | default('Update project dependencies to latest compatible versions.') }}
+- Work type: {{ work_type | default('dependency') }}
+- Queue: {{ queue | default('dependency') }}
+
+Instructions:
+1. Identify the dependency to update or install.
+2. Update pyproject.toml or dependency file.
+3. Update lockfile.
+4. Sync environment.
+5. Run dependency checks and compatibility verification.
+6. Update tests that assert provider availability.
+7. Update Molecule scenarios if dependency behavior changes Ansible pipelines.
+8. Update documentation if dependency behavior changes.
+9. Run full validation suite.
+10. Commit through git automation.
