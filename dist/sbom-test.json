@@ -1380,6 +1380,49 @@
       "version": "0.7.1"
     },
     {
+      "bom-ref": "diskcache==5.6.3",
+      "description": "Disk Cache -- Disk and file backed persistent cache.",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Documentation",
+          "type": "documentation",
+          "url": "http://www.grantjenks.com/docs/diskcache/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Tracker",
+          "type": "issue-tracker",
+          "url": "https://github.com/grantjenks/python-diskcache/issues"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Source",
+          "type": "other",
+          "url": "https://github.com/grantjenks/python-diskcache"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Funding",
+          "type": "other",
+          "url": "https://gum.co/diskcache"
+        },
+        {
+          "comment": "from packaging metadata: Home-page",
+          "type": "website",
+          "url": "http://www.grantjenks.com/docs/diskcache/"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "name": "License :: OSI Approved :: Apache Software License"
+          }
+        }
+      ],
+      "name": "diskcache",
+      "purl": "pkg:pypi/diskcache@5.6.3",
+      "type": "library",
+      "version": "5.6.3"
+    },
+    {
       "bom-ref": "distlib==0.4.0",
       "description": "Distribution utilities",
       "externalReferences": [
@@ -5953,6 +5996,9 @@
       "ref": "defusedxml==0.7.1"
     },
     {
+      "ref": "diskcache==5.6.3"
+    },
+    {
       "ref": "distlib==0.4.0"
     },
     {
@@ -6020,6 +6066,7 @@
         "ansible-lint==26.4.0",
         "bandit==1.9.4",
         "cyclonedx-py==1.0.1",
+        "diskcache==5.6.3",
         "fastapi==0.136.3",
         "fs==2.4.16",
         "greenlet==3.5.1",
@@ -6868,7 +6915,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-06-07T09:11:31.793452+00:00",
+    "timestamp": "2026-06-07T09:17:52.396382+00:00",
     "tools": {
       "components": [
         {
@@ -6972,7 +7019,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:6548ae88-dc53-44f8-ac5c-01935a638fa0",
+  "serialNumber": "urn:uuid:0f3d6473-82d6-44f3-80bb-1980e89bac6b",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",

@@ -66,6 +66,7 @@ class ModelGateway:
         worker_broadcaster: Any | None = None,
         metrics_collector: Any | None = None,
         metrics_agent_id: str | None = None,
+        response_cache: Any | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -81,6 +82,7 @@ class ModelGateway:
         self._broadcaster = worker_broadcaster
         self._metrics_collector = metrics_collector
         self._metrics_agent_id = metrics_agent_id
+        self._response_cache = response_cache
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -119,8 +121,17 @@ class ModelGateway:
             raise ValueError(
                 f"Call to '{profile_id}' rejected: over budget "
                 f"(estimated={estimated_cost}, remaining={budget_remaining}, "
-                f"profile_budget={profile.run_budget_usd})"
+                f"profile_budget={profile.run_budget_usd}"
             )
+
+        if self._response_cache is not None:
+            from general_ludd.models.response_cache import _make_cache_key
+
+            cache_key = _make_cache_key(profile_id, messages, **kwargs)
+            cached = self._response_cache.get(cache_key)
+            if cached is not None:
+                logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
+                return ModelResponse(**cached)
 
         provider_name = profile.provider
         registry = self._registry
@@ -192,13 +203,26 @@ class ModelGateway:
                 cost_per_output_token=profile.cost_per_output_token,
             )
 
-        return ModelResponse(
+        response = ModelResponse(
             content=str(content),
             usage_metadata=dict(usage),
             cost_estimate=cost,
             model_name=profile.model_name,
             raw_response=raw_response,
         )
+
+        if self._response_cache is not None:
+            from general_ludd.models.response_cache import _make_cache_key
+
+            cache_key = _make_cache_key(profile_id, messages, **kwargs)
+            self._response_cache.set(cache_key, {
+                "content": response.content,
+                "usage_metadata": response.usage_metadata,
+                "cost_estimate": response.cost_estimate,
+                "model_name": response.model_name,
+            })
+
+        return response
 
     def call_model_by_role(
         self,

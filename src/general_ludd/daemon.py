@@ -633,12 +633,15 @@ def create_daemon_app(
 
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_model_gateway") or app.state._model_gateway is None:
+            from general_ludd.models.response_cache import ModelResponseCache
+
             app.state._model_gateway = ModelGateway(
                 provider_registry=ProviderRegistry(),
                 router=ModelRouter(),
                 event_bus=subsys["bus"],
                 hook_system=subsys["hooks"],
                 worker_broadcaster=subsys["broadcaster"],
+                response_cache=ModelResponseCache(),
             )
         gateway: ModelGateway = app.state._model_gateway
         profile = gateway.add_profile(
