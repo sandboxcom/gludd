@@ -238,6 +238,178 @@ class TestBinaryBootstrapper:
             assert "podman" in names
             assert "openbao" in names
 
+    def test_get_binary_path_found(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store)
+            boot.store_binary("openbao", b"openbao-data")
+            path = boot.get_binary_path("openbao")
+            assert path is not None
+            assert "openbao" in path
+
+    def test_get_binary_path_not_found(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store)
+            path = boot.get_binary_path("nonexistent")
+            assert path is None
+
+    def test_is_platform_available(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+
+        boot = BinaryBootstrapper()
+        result = boot.is_platform_available("openbao")
+        assert isinstance(result, bool)
+
+    def test_check_openbao_in_store_found(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store)
+            boot.store_binary("openbao", b"openbao-data")
+            assert boot.check_openbao_in_store() is True
+
+    def test_check_openbao_in_store_not_found(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=None)
+            assert boot.check_openbao_in_store() is False
+
+    def test_get_platform_info_amd64(self):
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+
+        boot = BinaryBootstrapper()
+        with patch("general_ludd.filestore.bootstrap.platform.machine", return_value="x86_64"):
+            info = boot.get_platform_info()
+            assert info["arch"] == "amd64"
+
+    def test_get_platform_info_unknown_arch(self):
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+
+        boot = BinaryBootstrapper()
+        with patch("general_ludd.filestore.bootstrap.platform.machine", return_value="riscv64"):
+            info = boot.get_platform_info()
+            assert info["arch"] == "riscv64"
+
+    def test_sync_bundled_to_filestore(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "bundled"
+            bundled.mkdir()
+            (bundled / "openbao").write_bytes(b"fake-bao")
+            (bundled / "opentofu").write_bytes(b"fake-tofu")
+
+            store_dir = Path(tmp) / "store"
+            store_dir.mkdir()
+            store = FileStore(root_path=str(store_dir))
+            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=str(bundled))
+            synced = boot.sync_bundled_to_filestore()
+            assert "openbao" in synced
+            assert "opentofu" in synced
+            assert store.exists("binaries/openbao")
+
+    def test_sync_bundled_skips_existing(self):
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "bundled"
+            bundled.mkdir()
+            (bundled / "openbao").write_bytes(b"fake-bao")
+
+            store_dir = Path(tmp) / "store"
+            store_dir.mkdir()
+            store = FileStore(root_path=str(store_dir))
+            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=str(bundled))
+            boot.store_binary("openbao", b"existing")
+            synced = boot.sync_bundled_to_filestore()
+            assert "openbao" not in synced
+
+    def test_download_uses_bundled(self):
+        import asyncio
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            bundled = Path(tmp) / "bundled"
+            bundled.mkdir()
+            (bundled / "openbao").write_bytes(b"bundled-bao")
+
+            store_dir = Path(tmp) / "store"
+            store_dir.mkdir()
+            store = FileStore(root_path=str(store_dir))
+            boot = BinaryBootstrapper(store=store, bundled_binaries_dir=str(bundled))
+            result = asyncio.run(boot.download("openbao"))
+            assert result is True
+            assert store.exists("binaries/openbao")
+
+    def test_download_returns_false_when_no_url(self):
+        import asyncio
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store)
+            with patch.object(boot, "get_download_url", return_value=None), \
+                 patch.object(boot, "get_bundled_binary_path", return_value=None):
+                result = asyncio.run(boot.download("fake"))
+            assert result is False
+
+    def test_download_openbao_delegates(self):
+        import asyncio
+        from unittest.mock import AsyncMock, patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store)
+            mock_dl = AsyncMock(return_value=True)
+            with patch.object(boot, "download", mock_dl):
+                result = asyncio.run(boot.download_openbao())
+            assert result is True
+
+    def test_download_all(self):
+        import asyncio
+        from unittest.mock import patch
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = FileStore(root_path=tmp)
+            boot = BinaryBootstrapper(store=store)
+
+            async def fake_download(name):
+                return name == "openbao"
+
+            with patch.object(boot, "download", side_effect=fake_download):
+                results = asyncio.run(boot.download_all())
+            assert results["openbao"] is True
+            assert results["opentofu"] is False
+
 
 class TestFilestoreCLI:
     def test_cli_parsing(self):

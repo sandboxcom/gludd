@@ -100,3 +100,117 @@ class TestAnsibleGalaxySearch:
         from general_ludd.ansible.galaxy import parse_galaxy_search_output
         results = parse_galaxy_search_output("")
         assert results == []
+
+
+class TestSearchGalaxy:
+    def test_search_galaxy_returns_parsed_results(self):
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.ansible.galaxy import search_galaxy
+
+        mock_result = MagicMock()
+        mock_result.stdout = (
+            "Found 1 roles:\n\n"
+            " Name              Description\n"
+            " ----              -----------\n"
+            " geerlingguy.redis Redis installation\n"
+        )
+        with patch("general_ludd.ansible.galaxy.subprocess.run", return_value=mock_result):
+            results = search_galaxy("redis")
+        assert len(results) == 1
+        assert results[0]["name"] == "geerlingguy.redis"
+
+    def test_search_galaxy_timeout_returns_error(self):
+        import subprocess
+        from unittest.mock import patch
+
+        from general_ludd.ansible.galaxy import search_galaxy
+
+        with patch("general_ludd.ansible.galaxy.subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 60)):
+            results = search_galaxy("nginx")
+        assert len(results) == 1
+        assert results[0]["name"] == "error"
+
+    def test_search_galaxy_not_found_returns_error(self):
+        from unittest.mock import patch
+
+        from general_ludd.ansible.galaxy import search_galaxy
+
+        with patch("general_ludd.ansible.galaxy.subprocess.run", side_effect=FileNotFoundError("no ansible-galaxy")):
+            results = search_galaxy("nginx")
+        assert len(results) == 1
+        assert results[0]["name"] == "error"
+
+    def test_search_galaxy_uses_collection_type(self):
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.ansible.galaxy import search_galaxy
+
+        mock_result = MagicMock()
+        mock_result.stdout = ""
+        with patch("general_ludd.ansible.galaxy.subprocess.run", return_value=mock_result) as mock_run:
+            search_galaxy("community", galaxy_type="collection")
+        args = mock_run.call_args[0][0]
+        assert "collection" in args
+
+
+class TestInstallGalaxy:
+    def test_install_galaxy_success(self):
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.ansible.galaxy import install_galaxy
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "installed successfully"
+        with patch("general_ludd.ansible.galaxy.subprocess.run", return_value=mock_result):
+            result = install_galaxy("geerlingguy.nginx")
+        assert result["success"] is True
+        assert result["name"] == "geerlingguy.nginx"
+
+    def test_install_galaxy_failure(self):
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.ansible.galaxy import install_galaxy
+
+        mock_result = MagicMock()
+        mock_result.returncode = 1
+        mock_result.stderr = "role not found"
+        with patch("general_ludd.ansible.galaxy.subprocess.run", return_value=mock_result):
+            result = install_galaxy("nonexistent.role")
+        assert result["success"] is False
+        assert "not found" in result["output"]
+
+    def test_install_galaxy_timeout(self):
+        import subprocess
+        from unittest.mock import patch
+
+        from general_ludd.ansible.galaxy import install_galaxy
+
+        with patch("general_ludd.ansible.galaxy.subprocess.run", side_effect=subprocess.TimeoutExpired("cmd", 300)):
+            result = install_galaxy("geerlingguy.nginx")
+        assert result["success"] is False
+        assert "timed out" in result["output"]
+
+    def test_install_galaxy_not_found(self):
+        from unittest.mock import patch
+
+        from general_ludd.ansible.galaxy import install_galaxy
+
+        with patch("general_ludd.ansible.galaxy.subprocess.run", side_effect=FileNotFoundError("no ansible-galaxy")):
+            result = install_galaxy("geerlingguy.nginx")
+        assert result["success"] is False
+        assert "no ansible-galaxy" in result["output"]
+
+    def test_install_galaxy_uses_collection_type(self):
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.ansible.galaxy import install_galaxy
+
+        mock_result = MagicMock()
+        mock_result.returncode = 0
+        mock_result.stdout = "ok"
+        with patch("general_ludd.ansible.galaxy.subprocess.run", return_value=mock_result) as mock_run:
+            install_galaxy("community.general", galaxy_type="collection")
+        args = mock_run.call_args[0][0]
+        assert "collection" in args

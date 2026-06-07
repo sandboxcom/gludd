@@ -64,3 +64,35 @@ class TestQualityGate:
         checker = QualityGateChecker()
         result = checker.check_molecule_coverage(covered=0, required=0)
         assert result["passed"] is True
+
+
+class TestQualityConfigReexports:
+    def test_config_module_exports_all_names(self):
+        from general_ludd.quality import config
+
+        assert "EnforcementGate" in config.__all__
+        assert "MoleculeQualityGate" in config.__all__
+        assert "PythonQualityGate" in config.__all__
+        assert "QualityGateConfig" in config.__all__
+
+    def test_config_reexports_match_schemas(self):
+        from general_ludd.quality import config
+        from general_ludd.schemas import quality_gate
+
+        assert config.EnforcementGate is quality_gate.EnforcementGate
+        assert config.MoleculeQualityGate is quality_gate.MoleculeQualityGate
+        assert config.PythonQualityGate is quality_gate.PythonQualityGate
+        assert config.QualityGateConfig is quality_gate.QualityGateConfig
+
+    def test_config_reexports_are_importable(self):
+        from general_ludd.quality.config import (
+            EnforcementGate,
+            MoleculeQualityGate,
+            PythonQualityGate,
+            QualityGateConfig,
+        )
+
+        assert EnforcementGate is not None
+        assert MoleculeQualityGate is not None
+        assert PythonQualityGate is not None
+        assert QualityGateConfig is not None
