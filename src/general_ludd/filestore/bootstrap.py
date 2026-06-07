@@ -114,7 +114,7 @@ class BinaryBootstrapper:
     def get_download_url(self, name: str) -> str | None:
         info = self.get_platform_info()
         os_name = info["os"]
-        ext = ".zip" if os_name == "darwin" else ".tar.gz"
+        ext = ".zip" if os_name in ("darwin", "windows") else ".tar.gz"
         if name == "openbao":
             version = OPENBAO_VERSION
             base = OPENBAO_BASE_URL
