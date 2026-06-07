@@ -10,13 +10,38 @@ from fs.path import dirname, join
 
 
 class FileStore:
-    """Virtual filesystem store for artifacts, binaries, configs, and cache."""
+    """Virtual filesystem store for artifacts, binaries, configs, and cache.
 
-    def __init__(self, root_path: str | None = None) -> None:
+    Supports a config overlay: files in ~/.config/gludd/fs/ take precedence
+    over files in the main store (~/.local/share/general-ludd/filestore/).
+    Writes always go to the main store.
+    """
+
+    def __init__(
+        self,
+        root_path: str | None = None,
+        overlay_path: str | None = None,
+    ) -> None:
         if root_path is None:
             root_path = os.path.expanduser("~/.local/share/general-ludd/filestore")
         self._root_path = root_path
         self._fs = OSFS(root_path, create=True)
+
+        if overlay_path is False:
+            self._overlay_path = None
+            self._overlay_fs = None
+        else:
+            if overlay_path is None:
+                overlay_path = os.path.expanduser("~/.config/gludd/fs")
+            self._overlay_path: str | None = overlay_path
+            self._overlay_fs: OSFS | None = None
+            if os.path.isdir(overlay_path):
+                self._overlay_fs = OSFS(overlay_path)
+
+    def _resolve_path(self, path: str) -> tuple[OSFS, str]:
+        if self._overlay_fs is not None and self._overlay_fs.exists(path):
+            return self._overlay_fs, path
+        return self._fs, path
 
     @property
     def root_path(self) -> str:
@@ -27,29 +52,52 @@ class FileStore:
         self._fs.writetext(path, content)
 
     def read_text(self, path: str) -> str:
-        return self._fs.readtext(path)
+        fs, resolved = self._resolve_path(path)
+        return fs.readtext(resolved)
+
+    def read_bytes(self, path: str) -> bytes:
+        fs, resolved = self._resolve_path(path)
+        return fs.readbytes(resolved)
 
     def write_bytes(self, path: str, data: bytes) -> None:
         self._fs.makedirs(dirname(path), recreate=True)
         self._fs.writebytes(path, data)
 
-    def read_bytes(self, path: str) -> bytes:
-        return self._fs.readbytes(path)
+    def exists(self, path: str) -> bool:
+        if self._overlay_fs is not None and self._overlay_fs.exists(path):
+            return True
+        return self._fs.exists(path)
+
+    def is_dir(self, path: str) -> bool:
+        if self._overlay_fs is not None and self._overlay_fs.exists(path):
+            return self._overlay_fs.isdir(path)
+        return self._fs.isdir(path)
 
     def list_dir(self, path: str = "/") -> list[dict[str, Any]]:
-        if not self._fs.isdir(path):
-            return []
+        seen: set[str] = set()
         entries: list[dict[str, Any]] = []
-        for entry in self._fs.scandir(path):
-            full_path = join(path, entry.name).lstrip("/")
-            info = self._fs.getinfo(full_path, namespaces=["details"])
-            entries.append({
-                "name": entry.name,
-                "path": full_path,
-                "is_dir": entry.is_dir,
-                "size": info.size,
-                "modified": info.modified.isoformat() if info.modified else None,
-            })
+
+        def _add_from(fs: Any, base_path: str) -> None:
+            if not fs.isdir(base_path):
+                return
+            for entry in fs.scandir(base_path):
+                if entry.name in seen:
+                    continue
+                seen.add(entry.name)
+                full_path = join(path, entry.name).lstrip("/")
+                info = fs.getinfo(full_path, namespaces=["details"])
+                entries.append({
+                    "name": entry.name,
+                    "path": full_path,
+                    "is_dir": entry.is_dir,
+                    "size": info.size,
+                    "modified": info.modified.isoformat() if info.modified else None,
+                })
+
+        if self._overlay_fs is not None:
+            _add_from(self._overlay_fs, path)
+        _add_from(self._fs, path)
+
         entries.sort(key=lambda e: (not e["is_dir"], e["name"]))
         return entries
 
@@ -63,12 +111,6 @@ class FileStore:
                 full = join(step.path, subdir.name).lstrip("/")
                 entries.append({"path": full, "is_dir": True, "name": subdir.name})
         return entries
-
-    def exists(self, path: str) -> bool:
-        return self._fs.exists(path)
-
-    def is_dir(self, path: str) -> bool:
-        return self._fs.isdir(path)
 
     def makedirs(self, path: str) -> None:
         self._fs.makedirs(path, recreate=True)

@@ -430,17 +430,20 @@ export default (async ({ }) => {
     "experimental.chat.response.transform": async (_input, output) => {
       if (typeof output !== "string") return
       if (detectStopPattern(output)) {
-        output += "\n\n" + [
-          "════════════════════════════════════════════════════════",
-          "⚠️ ANTI-STOP GUARDRAIL TRIGGERED",
+        const override = [
+          "⛔ STOP-PATTERN DETECTED — OVERRIDING RESPONSE ⛔",
           "",
-          "Your response contains a stop pattern. You appear to be",
-          "stopping work to report status, ask for permission, or wait",
-          "for approval instead of continuing to work.",
+          "Your previous message was a completion report / status summary.",
+          "This is FORBIDDEN while work remains. That message has been",
+          "intercepted and you will now resume work.",
           "",
-          RESUME_COMMAND,
-          "════════════════════════════════════════════════════════",
+          "CRITICAL: Call your tools IMMEDIATELY to continue working.",
+          "Do NOT explain. Do NOT apologize. Just continue.",
+          "",
+          "Check todowrite. Items pending/in_progress? → TOOL CALL NOW.",
+          "",
         ].join("\n")
+        output = override + "\n\n[INTERCEPTED MESSAGE BELOW]\n\n" + output
       }
     },
   }
