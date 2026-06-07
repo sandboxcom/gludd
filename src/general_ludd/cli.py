@@ -395,6 +395,23 @@ def main() -> None:
 
     integrity_parser = sub.add_parser("integrity", help="File integrity monitoring commands")
     int_sub = integrity_parser.add_subparsers(dest="integrity_command")
+
+    ansible_parser = sub.add_parser("ansible", help="Ansible Galaxy and builtin module commands")
+    ansible_sub = ansible_parser.add_subparsers(dest="ansible_command")
+    ansible_search = ansible_sub.add_parser("search", help="Search Ansible Galaxy")
+    ansible_search.add_argument("query", help="Search query")
+    ansible_search.add_argument("--type", default="role", choices=["role", "collection"])
+    ansible_search.add_argument("--daemon-url", default="http://localhost:8000")
+    ansible_search.set_defaults(func=_cmd_ansible_search)
+    ansible_install = ansible_sub.add_parser("install", help="Install from Ansible Galaxy")
+    ansible_install.add_argument("name", help="Role or collection name")
+    ansible_install.add_argument("--type", default="role", choices=["role", "collection"])
+    ansible_install.add_argument("--daemon-url", default="http://localhost:8000")
+    ansible_install.set_defaults(func=_cmd_ansible_install)
+    ansible_builtins = ansible_sub.add_parser("builtins", help="List ansible.builtin modules")
+    ansible_builtins.add_argument("--daemon-url", default="http://localhost:8000")
+    ansible_builtins.set_defaults(func=_cmd_ansible_builtins)
+
     int_scan = int_sub.add_parser("scan", help="Scan files for changes")
     int_scan.add_argument("--daemon-url", default="http://localhost:8000")
     int_scan.add_argument("--paths", nargs="*", default=None, help="Paths to scan")
@@ -1687,6 +1704,73 @@ def _load_config_editor() -> dict[str, Any]:
         "editing_value": False,
         "current_items": cats,
     }
+
+
+def _cmd_ansible_search(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/ansible/search",
+            params={"query": args.query, "type": args.type},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if results:
+                for r in results:
+                    print(f"  {r['name']:<40} {r.get('description', '')}")
+            else:
+                print(f"No results found for '{args.query}'")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        from general_ludd.ansible.galaxy import search_galaxy
+        results = search_galaxy(args.query, args.type)
+        if results:
+            for r in results:
+                print(f"  {r['name']:<40} {r.get('description', '')}")
+        else:
+            print(f"No results for '{args.query}' (offline)")
+
+
+def _cmd_ansible_install(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/ansible/install",
+            json={"name": args.name, "type": args.type},
+            timeout=120.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            status = "OK" if data.get("success") else "FAILED"
+            print(f"[{status}] {args.name}")
+            print(data.get("output", ""))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        from general_ludd.ansible.galaxy import install_galaxy
+        result = install_galaxy(args.name, args.type)
+        status = "OK" if result.get("success") else "FAILED"
+        print(f"[{status}] {args.name}")
+        print(result.get("output", ""))
+
+
+def _cmd_ansible_builtins(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/ansible/builtins", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            for m in data.get("modules", []):
+                print(f"  {m}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        from general_ludd.ansible.galaxy import get_builtin_modules
+        for m in get_builtin_modules():
+            print(f"  {m}")
 
 
 if __name__ == "__main__":

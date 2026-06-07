@@ -1654,4 +1654,21 @@ def create_daemon_app(
     async def admin_project_logging() -> dict[str, Any]:
         return {"status": "ok", "result": "ProjectLogAdapter wired into daemon"}
 
+    @app.get("/admin/ansible/search")
+    async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, Any]:
+        from general_ludd.ansible.galaxy import search_galaxy
+        results = search_galaxy(query, type)
+        return {"query": query, "type": type, "results": results}
+
+    @app.post("/admin/ansible/install")
+    async def admin_ansible_install(req: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.ansible.galaxy import install_galaxy
+        result = install_galaxy(req.get("name", ""), req.get("type", "role"))
+        return result
+
+    @app.get("/admin/ansible/builtins")
+    async def admin_ansible_builtins() -> dict[str, Any]:
+        from general_ludd.ansible.galaxy import get_builtin_modules
+        return {"modules": get_builtin_modules()}
+
     return app
