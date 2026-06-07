@@ -25,3 +25,6 @@ class ProjectSecretsManager:
     def resolve(self, alias_name: str) -> str | None:
         result: str | None = self._base.resolve(alias_name)
         return result
+
+    def delete_secret(self, path: str) -> None:
+        self._base.delete_secret(self._scoped_path(path))

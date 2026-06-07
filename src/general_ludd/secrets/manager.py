@@ -145,6 +145,13 @@ class SecretsManager:
             return None
         return None
 
+    def delete_secret(self, path: str) -> None:
+        if self._client is None:
+            raise RuntimeError("Not connected. Call connect() first.")
+        self._client.secrets.kv.v2.delete_metadata_and_all_versions(
+            path=path, mount_point=self._config.kv_mount,
+        )
+
     def pin_image_digest(self, image_ref: str, digest: str) -> None:
         self.write_secret(
             f"image-pins/{image_ref}",

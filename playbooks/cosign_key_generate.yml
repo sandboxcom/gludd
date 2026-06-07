@@ -1,0 +1,60 @@
+---
+- name: Generate cosign key pair and store in OpenBao
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_id: "{{ project_id | default('default') }}"
+    key_name: "{{ key_name | default('default') }}"
+    password: "{{ cosign_key_password | default(omit) }}"
+    output_dir: "{{ cosign_output_dir | default(omit) }}"
+  tasks:
+    - name: Generate cosign key pair
+      ansible.builtin.script:
+        cmd: |
+          import sys, os, json
+          sys.path.insert(0, "{{ lookup('env', 'PWD') }}/src")
+          from general_ludd.secrets.cosign import generate_cosign_key
+          key = generate_cosign_key(
+              key_name="{{ key_name }}",
+              output_dir="{{ output_dir }}" if "{{ output_dir }}" else None,
+              password="{{ password }}" if "{{ password }}" != "__omit_place_holder__" else None,
+          )
+          print(json.dumps({"key_name": key.key_name, "public_key": key.public_key[:80] + "..."}))
+      args:
+        executable: python3
+      register: key_gen
+
+    - name: Store cosign key in OpenBao
+      ansible.builtin.script:
+        cmd: |
+          import sys, os
+          sys.path.insert(0, "{{ lookup('env', 'PWD') }}/src")
+          from general_ludd.secrets.manager import SecretsManager, OpenBaoConfig
+          from general_ludd.secrets.cosign import write_cosign_key
+          config = OpenBaoConfig()
+          mgr = SecretsManager(config=config)
+          mgr.bootstrap_local()
+          mgr.connect()
+          key_path = os.path.join("{{ output_dir }}", "cosign.key") if "{{ output_dir }}" != "__omit_place_holder__" else None
+          pub_path = os.path.join("{{ output_dir }}", "cosign.pub") if "{{ output_dir }}" != "__omit_place_holder__" else None
+          if key_path and os.path.isfile(key_path):
+              with open(key_path) as f:
+                  private_key = f.read()
+              with open(pub_path) as f:
+                  public_key = f.read()
+              write_cosign_key(
+                  mgr, project_id="{{ project_id }}", key_name="{{ key_name }}",
+                  private_key=private_key, public_key=public_key,
+                  password="{{ password }}" if "{{ password }}" != "__omit_place_holder__" else None,
+              )
+              print(f"COSIGN KEY STORED: project={{{{ project_id }}}} key={{{{ key_name }}}}")
+          else:
+              print("COSIGN KEY NOT FOUND ON DISK — skipping store")
+      args:
+        executable: python3
+      register: key_store
+
+    - name: Report cosign key generation result
+      ansible.builtin.debug:
+        msg: "Cosign key '{{ key_name }}' generated for project '{{ project_id }}'"

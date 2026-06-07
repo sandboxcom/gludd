@@ -1,0 +1,50 @@
+---
+- name: Configure gitsign for a project via OpenBao
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_id: "{{ project_id | default('default') }}"
+    fulcio_url: "https://fulcio.sigstore.dev"
+    rekor_url: "https://rekor.sigstore.dev"
+    oidc_issuer: "https://oauth2.sigstore.dev/auth"
+    key_ref: "cosign/default"
+    git_root: "{{ git_root | default(omit) }}"
+  tasks:
+    - name: Write gitsign config to OpenBao
+      ansible.builtin.script:
+        cmd: |
+          import sys
+          sys.path.insert(0, "{{ lookup('env', 'PWD') }}/src")
+          from general_ludd.secrets.manager import SecretsManager, OpenBaoConfig
+          from general_ludd.secrets.gitsign import write_gitsign_config
+          config = OpenBaoConfig()
+          mgr = SecretsManager(config=config)
+          mgr.bootstrap_local()
+          mgr.connect()
+          write_gitsign_config(
+              mgr,
+              project_id="{{ project_id }}",
+              fulcio_url="{{ fulcio_url }}",
+              rekor_url="{{ rekor_url }}",
+              oidc_issuer="{{ oidc_issuer }}",
+              key_ref="{{ key_ref }}",
+          )
+          print(f"GITSIGN CONFIGURED: project={{{{ project_id }}}} key_ref={{{{ key_ref }}}}")
+      args:
+        executable: python3
+      register: gitsign_store
+
+    - name: Configure git to use gitsign
+      ansible.builtin.shell:
+        cmd: |
+          git config --local gpg.x509.program gitsign
+          git config --local gpg.format x509
+          git config --local commit.gpgsign true
+          git config --local tag.gpgsign true
+        chdir: "{{ git_root }}"
+      when: git_root is defined and git_root | length > 0
+
+    - name: Report gitsign configuration
+      ansible.builtin.debug:
+        msg: "Gitsign configured for project '{{ project_id }}' with key '{{ key_ref }}'"
