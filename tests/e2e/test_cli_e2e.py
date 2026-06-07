@@ -179,14 +179,15 @@ class TestStatusE2E:
 
     def test_status_offline(self, capsys):
         with patch("httpx.get", side_effect=httpx.ConnectError("refused")):
-            out, err, code = _run_cli_output(["status"], capsys)
-        assert code == 1
-        assert ("daemon" in (err + out).lower()) or ("refused" in (err + out).lower())
+            out, _err, code = _run_cli_output(["status"], capsys)
+        assert code == 0
+        assert "General Ludd Agent" in out
 
     def test_status_timeout(self, capsys):
         with patch("httpx.get", side_effect=httpx.ConnectTimeout("timeout")):
-            _out, _err, code = _run_cli_output(["status"], capsys)
-        assert code == 1
+            out, _err, code = _run_cli_output(["status"], capsys)
+        assert code == 0
+        assert "General Ludd Agent" in out
 
 
 class TestListE2E:
@@ -1186,9 +1187,9 @@ class TestCLIProjectFlag:
 class TestCLITimeoutErrors:
     def test_status_request_timeout(self, capsys):
         with patch("httpx.get", side_effect=httpx.TimeoutException("Request timeout")):
-            out, err, code = _run_cli_output(["status"], capsys)
-        assert code == 1
-        assert ("time" in (err + out).lower()) or ("error" in (err + out).lower())
+            out, _err, code = _run_cli_output(["status"], capsys)
+        assert code == 0
+        assert "General Ludd Agent" in out
 
     def test_add_request_timeout(self, capsys):
         with patch("httpx.post", side_effect=httpx.TimeoutException("Request timeout")):

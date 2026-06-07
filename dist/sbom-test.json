@@ -6043,6 +6043,7 @@
         "pytest-cov==7.1.0",
         "pytest==9.0.3",
         "requests==2.34.2",
+        "rich==15.0.0",
         "ruff==0.15.15",
         "structlog==25.5.0",
         "tenacity==9.1.4",
@@ -6867,7 +6868,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-06-07T04:41:54.920887+00:00",
+    "timestamp": "2026-06-07T04:56:51.538338+00:00",
     "tools": {
       "components": [
         {
@@ -6971,7 +6972,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:0182d02e-15c1-4cce-b1e3-f6f94c6705dd",
+  "serialNumber": "urn:uuid:e0c1fbfd-0f9b-4b69-921b-96700f43a808",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",

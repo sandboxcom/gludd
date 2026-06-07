@@ -295,11 +295,11 @@ class TestClientCommands:
 
             from general_ludd.cli import _cmd_status
             args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000")
-            with pytest.raises(SystemExit) as exc_info:
-                _cmd_status(args)
-            assert exc_info.value.code == 1
+            _cmd_status(args)
         captured = capsys.readouterr()
-        assert "daemon" in (captured.err + captured.out).lower()
+        assert "General Ludd Agent" in captured.out
+        assert "Filestore:" in captured.out
+        assert "Database:" in captured.out
 
     def test_add_connection_error_message(self, capsys):
         with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):

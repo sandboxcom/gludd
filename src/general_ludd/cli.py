@@ -389,6 +389,10 @@ def main() -> None:
     selftest_p.add_argument("--daemon-url", default="http://localhost:8000")
     selftest_p.set_defaults(func=_cmd_selftest)
 
+    tui_parser = sub.add_parser("tui", help="Launch the interactive TUI dashboard")
+    tui_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    tui_parser.set_defaults(func=_cmd_tui)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -456,6 +460,131 @@ def _cmd_add(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
+    import os
+    import platform
+    import sys
+    from pathlib import Path
+
+    from general_ludd import __version__
+
+    cdir = config_dir or os.environ.get("GL_CONFIG_DIR")
+    if not cdir:
+        home = os.path.expanduser("~")
+        cdir = os.path.join(home, ".config", "gludd")
+    info: dict[str, Any] = {
+        "version": __version__,
+        "python_version": sys.version.split()[0],
+        "platform": platform.platform(),
+        "cwd": os.getcwd(),
+    }
+    cfiles: list[dict[str, Any]] = []
+    if cdir and os.path.isdir(cdir):
+        for f in sorted(os.listdir(cdir)):
+            if f.endswith(".yml") or f.endswith(".yaml"):
+                fp = os.path.join(cdir, f)
+                try:
+                    st = os.stat(fp)
+                    cfiles.append({
+                        "name": f,
+                        "path": fp,
+                        "size_bytes": st.st_size,
+                        "modified": st.st_mtime,
+                    })
+                except OSError:
+                    cfiles.append({"name": f, "path": fp, "size_bytes": 0, "modified": 0})
+    info["config_dir"] = cdir
+    info["config_files"] = cfiles
+
+    from general_ludd.filestore.bootstrap import BinaryBootstrapper
+    from general_ludd.filestore.store import FileStore
+
+    store = FileStore()
+    boot = BinaryBootstrapper(store=store)
+    fs_root = store.root_path
+    fs_exists = os.path.isdir(fs_root) if fs_root else False
+    fs_size = 0
+    fs_file_count = 0
+    if fs_exists and fs_root:
+        import contextlib
+        for dirpath, _dirnames, filenames in os.walk(fs_root):
+            for fn in filenames:
+                fp = os.path.join(dirpath, fn)
+                with contextlib.suppress(OSError):
+                    fs_size += os.path.getsize(fp)
+                fs_file_count += 1
+    info["filestore_root"] = fs_root
+    info["filestore_exists"] = fs_exists
+    info["filestore_size_bytes"] = fs_size
+    info["filestore_file_count"] = fs_file_count
+    info["filestore_binaries"] = [b["name"] for b in boot.list_binaries()]
+
+    from general_ludd.db.session import get_default_db_url, is_sqlite_url
+
+    db_url = get_default_db_url()
+    db_is_sqlite = is_sqlite_url(db_url)
+    db_path = db_url.replace("sqlite+aiosqlite:///", "") if db_is_sqlite else db_url
+    db_exists = False
+    db_size = 0
+    if db_is_sqlite:
+        expanded = Path(db_path).expanduser()
+        if expanded.exists():
+            db_exists = True
+            db_size = expanded.stat().st_size
+    info["db_path"] = str(db_path)
+    info["db_exists"] = db_exists
+    info["db_size_bytes"] = db_size
+    info["db_engine"] = "sqlite" if db_is_sqlite else "postgresql"
+
+    from general_ludd.config.binary_paths import BinaryPathResolver
+    resolver = BinaryPathResolver()
+    info["binary_paths"] = {}
+    for bname in ("podman", "docker", "ansible-playbook", "openbao"):
+        label = bname.replace("-playbook", "")
+        info["binary_paths"][label] = resolver.resolve(bname) if resolver.is_available(bname) else None
+    return info
+
+
+def _format_offline_status(info: dict[str, Any]) -> None:
+    print(f"General Ludd Agent v{info['version']}  (python {info['python_version']}, {info['platform']})")
+    print("\u2500" * 72)
+    print(f"CWD:         {info['cwd']}")
+    print(f"Config dir:  {info['config_dir']}")
+    for cf in info.get("config_files", []):
+        s = _fmt_size(cf["size_bytes"])
+        print(f"  \u251c\u2500 {cf['name']}  ({s})")
+    print()
+    print(f"Filestore:   {info['filestore_root']}")
+    if info["filestore_exists"]:
+        s = _fmt_size(info["filestore_size_bytes"])
+        print(f"  Files:     {info['filestore_file_count']}  ({s})")
+    else:
+        print("  (not created)")
+    bins = info.get("filestore_binaries", [])
+    if bins:
+        print(f"  Binaries:  {', '.join(bins)}")
+    print()
+    print(f"Database:    {info['db_path']}")
+    if info["db_exists"]:
+        s = _fmt_size(info["db_size_bytes"])
+        print(f"  Engine:    {info['db_engine']}  ({s})")
+    else:
+        print(f"  Engine:    {info['db_engine']}  (not yet created)")
+    print()
+    print("Binary detection:")
+    for name, path in info.get("binary_paths", {}).items():
+        found = "found" if path else "not found"
+        print(f"  {name:<12} {found:<12} {path or ''}")
+
+
+def _fmt_size(size_bytes: int) -> str:
+    if size_bytes < 1024:
+        return f"{size_bytes} B"
+    if size_bytes < 1024 * 1024:
+        return f"{size_bytes / 1024:.1f} KB"
+    return f"{size_bytes / 1024 / 1024:.1f} MB"
+
+
 def _cmd_status(args: argparse.Namespace) -> None:
     try:
         if args.todo_id:
@@ -465,43 +594,47 @@ def _cmd_status(args: argparse.Namespace) -> None:
             else:
                 print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
                 sys.exit(1)
+            return
+        resp = httpx.get(f"{args.daemon_url}/api/status", timeout=5.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"General Ludd Agent v{data.get('version', 'unknown')}  [daemon running]")
+            print("\u2500" * 72)
+            print(f"Config dir:  {data.get('config_dir', 'not set')}")
+            for cf in data.get("config_files", []):
+                print(f"  \u251c\u2500 {cf}")
+            print(f"Filestore:   {data.get('filestore_root', '')}")
+            bins = data.get("filestore_binaries", [])
+            if bins:
+                print(f"  Binaries:  {', '.join(bins)}")
+            print(f"DB engine:   {data.get('db_engine', 'sqlite')}")
+            print(f"DB URL:      {data.get('db_url', '')}")
+            print(f"Uptime:      {data.get('uptime_ticks', 0)} ticks")
+            print(f"Todos:       {data.get('todos_total', 0)} total")
+            print("Queue depths:")
+            for q, d in sorted(data.get("queue_depths", {}).items()):
+                print(f"  {q:<20} {d}")
+            metrics = data.get("tick_metrics", {})
+            if metrics:
+                print(f"Dispatch:    {metrics.get('todos_dispatched', 0)} dispatched")
+                print(f"Leases:      {metrics.get('leases_reclaimed', 0)} reclaimed")
+            qg = data.get("quality_gate", {})
+            overall = qg.get("overall", "not_run")
+            passed = qg.get("passed_count", 0)
+            total = qg.get("total_count", 0)
+            print(f"\nQuality Gate: {overall} ({passed}/{total} checks)")
+            for check in qg.get("checks", []):
+                status_icon = "\u2713" if check.get("passed") else "\u2717"
+                print(f"  {status_icon} {check['name']}")
         else:
-            resp = httpx.get(f"{args.daemon_url}/api/status", timeout=10.0)
-            if resp.status_code == 200:
-                data = resp.json()
-                print(f"General Ludd Agent v{data.get('version', 'unknown')}")
-                print("─────────────────────────────────────────────")
-                print(f"Config dir:  {data.get('config_dir', 'not set')}")
-                for cf in data.get("config_files", []):
-                    print(f"  ├─ {cf}")
-                print(f"Filestore:   {data.get('filestore_root', '')}")
-                bins = data.get("filestore_binaries", [])
-                if bins:
-                    print(f"  Binaries:  {', '.join(bins)}")
-                print(f"DB engine:   {data.get('db_engine', 'sqlite')}")
-                print(f"DB URL:      {data.get('db_url', '')}")
-                print(f"Uptime:      {data.get('uptime_ticks', 0)} ticks")
-                print(f"Todos:       {data.get('todos_total', 0)} total")
-                print("Queue depths:")
-                for q, d in sorted(data.get("queue_depths", {}).items()):
-                    print(f"  {q:<20} {d}")
-                metrics = data.get("tick_metrics", {})
-                if metrics:
-                    print(f"Dispatch:    {metrics.get('todos_dispatched', 0)} dispatched")
-                    print(f"Leases:      {metrics.get('leases_reclaimed', 0)} reclaimed")
-                qg = data.get("quality_gate", {})
-                overall = qg.get("overall", "not_run")
-                passed = qg.get("passed_count", 0)
-                total = qg.get("total_count", 0)
-                print(f"\nQuality Gate: {overall} ({passed}/{total} checks)")
-                for check in qg.get("checks", []):
-                    status_icon = "✓" if check.get("passed") else "✗"
-                    print(f"  {status_icon} {check['name']}")
-            else:
-                print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-                sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        if getattr(args, "todo_id", None):
+            _handle_connection_error(Exception("Cannot connect"), args.daemon_url)
+            return
+        info = _gather_offline_status()
+        _format_offline_status(info)
 
 
 def _cmd_list(args: argparse.Namespace) -> None:
@@ -1075,6 +1208,146 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception as exc:
         _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_tui(args: argparse.Namespace) -> None:
+    import subprocess
+    import threading
+    import time
+
+    from rich.console import Console
+    from rich.layout import Layout
+    from rich.live import Live
+    from rich.panel import Panel
+    from rich.table import Table
+
+    daemon_proc: subprocess.Popen[bytes] | None = None
+    daemon_running = False
+
+    def build_daemon_table() -> Table:
+        t = Table(title="Daemon")
+        t.add_column("Key", style="cyan")
+        t.add_column("Value", style="green")
+        t.add_row("Status", "running" if daemon_running else "stopped")
+        t.add_row("URL", args.daemon_url)
+        return t
+
+    def build_info_table(info: dict[str, Any]) -> Table:
+        t = Table(title="System Info")
+        t.add_column("Key", style="cyan")
+        t.add_column("Value", style="green")
+        t.add_row("Version", str(info.get("version", "?")))
+        t.add_row("Python", str(info.get("python_version", "?")))
+        t.add_row("Platform", str(info.get("platform", "?")))
+        t.add_row("CWD", str(info.get("cwd", "?")))
+        t.add_row("Config Dir", str(info.get("config_dir", "?")))
+        t.add_row("Config Files", str(len(info.get("config_files", []))))
+        t.add_row("Filestore", str(info.get("filestore_root", "?")))
+        t.add_row("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0)))
+        t.add_row("Filestore Files", str(info.get("filestore_file_count", 0)))
+        t.add_row("DB Engine", str(info.get("db_engine", "?")))
+        t.add_row("DB Path", str(info.get("db_path", "?")))
+        t.add_row("DB Exists", "yes" if info.get("db_exists") else "no")
+        if info.get("db_exists"):
+            t.add_row("DB Size", _fmt_size(info.get("db_size_bytes", 0)))
+        return t
+
+    def build_binary_table(info: dict[str, Any]) -> Table:
+        t = Table(title="Binaries")
+        t.add_column("Binary", style="cyan")
+        t.add_column("Found", style="green")
+        t.add_column("Path", style="dim")
+        for name, path in info.get("binary_paths", {}).items():
+            t.add_row(name, "yes" if path else "no", str(path or ""))
+        return t
+
+    def build_controls_table() -> Table:
+        t = Table(title="Controls")
+        t.add_column("Key", style="yellow")
+        t.add_column("Action")
+        t.add_row("s", "Start daemon")
+        t.add_row("k", "Kill daemon")
+        t.add_row("r", "Refresh")
+        t.add_row("q", "Quit")
+        return t
+
+    def start_daemon() -> None:
+        nonlocal daemon_proc, daemon_running
+        if daemon_running:
+            return
+        daemon_proc = subprocess.Popen(
+            [sys.executable, "-m", "general_ludd.cli", "daemon"],
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+        )
+        daemon_running = True
+
+    def stop_daemon() -> None:
+        nonlocal daemon_proc, daemon_running
+        if daemon_proc is not None:
+            daemon_proc.terminate()
+            try:
+                daemon_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                daemon_proc.kill()
+            daemon_proc = None
+        daemon_running = False
+
+    def make_layout(info: dict[str, Any]) -> Layout:
+        layout = Layout()
+        layout.split(
+            Layout(name="header", size=3),
+            Layout(name="body"),
+            Layout(name="footer", size=8),
+        )
+        layout["body"].split_row(
+            Layout(name="left"),
+            Layout(name="right"),
+        )
+        layout["left"].split(
+            Layout(build_daemon_table(), name="daemon"),
+            Layout(build_binary_table(info), name="binaries"),
+        )
+        layout["right"].split(
+            Layout(build_info_table(info), name="info"),
+        )
+        layout["header"].update(
+            Panel("General Ludd Agent — TUI Dashboard  [q]uit  [s]tart  [k]ill  [r]efresh", style="bold white on blue")
+        )
+        layout["footer"].update(build_controls_table())
+        return layout
+
+    info = _gather_offline_status()
+    console = Console()
+
+    def input_thread(live: Live) -> None:
+        nonlocal info
+        while True:
+            try:
+                ch = console.input("").strip().lower()
+            except (EOFError, KeyboardInterrupt):
+                break
+            if ch == "q":
+                stop_daemon()
+                import os as _os
+                _os._exit(0)
+            elif ch == "s":
+                start_daemon()
+            elif ch == "k":
+                stop_daemon()
+            elif ch == "r":
+                pass
+            info = _gather_offline_status()
+            live.update(make_layout(info))
+
+    layout = make_layout(info)
+    with Live(layout, console=console, refresh_per_second=2, screen=True) as live:
+        thread = threading.Thread(target=input_thread, args=(live,), daemon=True)
+        thread.start()
+        while True:
+            time.sleep(0.5)
+            info = _gather_offline_status()
+            live.update(make_layout(info))
 
 
 if __name__ == "__main__":
