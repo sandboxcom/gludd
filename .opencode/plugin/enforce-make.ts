@@ -246,17 +246,17 @@ export default (async ({ }) => {
           )
         }
 
-        // Preflight hook: BLOCK test-and-commit if preflight checks would fail
+        // Preflight hook: warn before test-and-commit
         const isCommitTarget = /\bmake\s+test-and-commit\b/.test(trimmed)
         if (isCommitTarget) {
           const PREFLIGHT_GATE = [
             "⛔ PREFLIGHT QUALITY GATE ACTIVE",
             "",
             "Before commit, you MUST verify all quality checks pass.",
-            "Run `make preflight` and confirm ALL 8 checks pass.",
+            "Run `make preflight` and confirm ALL 9 checks pass.",
             "",
             "Checks: coverage>85%, lint, mypy, templates, playbooks,",
-            "molecule, filestore, sprint boxes.",
+            "molecule, filestore, sprint boxes, completion_audit.",
             "",
             "If preflight fails, fix the issues BEFORE attempting commit.",
             "The commit will be BLOCKED until preflight passes.",

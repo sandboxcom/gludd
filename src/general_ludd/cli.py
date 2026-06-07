@@ -393,6 +393,30 @@ def main() -> None:
     tui_parser.add_argument("--daemon-url", default="http://localhost:8000")
     tui_parser.set_defaults(func=_cmd_tui)
 
+    integrity_parser = sub.add_parser("integrity", help="File integrity monitoring commands")
+    int_sub = integrity_parser.add_subparsers(dest="integrity_command")
+    int_scan = int_sub.add_parser("scan", help="Scan files for changes")
+    int_scan.add_argument("--daemon-url", default="http://localhost:8000")
+    int_scan.add_argument("--paths", nargs="*", default=None, help="Paths to scan")
+    int_scan.set_defaults(func=_cmd_integrity_scan)
+    int_report = int_sub.add_parser("report", help="Show integrity change report")
+    int_report.add_argument("--daemon-url", default="http://localhost:8000")
+    int_report.set_defaults(func=_cmd_integrity_report)
+    int_approve = int_sub.add_parser("approve", help="Approve an integrity change")
+    int_approve.add_argument("change_id", help="File path of the change to approve")
+    int_approve.add_argument("--reason", required=True, help="Reason for approval")
+    int_approve.add_argument("--signer", default="admin", help="Who is signing")
+    int_approve.add_argument("--daemon-url", default="http://localhost:8000")
+    int_approve.set_defaults(func=_cmd_integrity_approve)
+    int_reject = int_sub.add_parser("reject", help="Reject an integrity change")
+    int_reject.add_argument("change_id", help="File path of the change to reject")
+    int_reject.add_argument("--reason", default="Rejected", help="Reason for rejection")
+    int_reject.add_argument("--daemon-url", default="http://localhost:8000")
+    int_reject.set_defaults(func=_cmd_integrity_reject)
+    int_log = int_sub.add_parser("log", help="Show approval/rejection log")
+    int_log.add_argument("--daemon-url", default="http://localhost:8000")
+    int_log.set_defaults(func=_cmd_integrity_log)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -1354,6 +1378,121 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             time.sleep(0.5)
             info = _gather_offline_status()
             live.update(make_layout(info))
+
+
+def _cmd_integrity_scan(args: argparse.Namespace) -> None:
+    try:
+        payload: dict[str, Any] = {}
+        if args.paths:
+            payload["paths"] = args.paths
+        resp = httpx.post(f"{args.daemon_url}/admin/integrity/scan", json=payload, timeout=60.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Scanned: {data.get('scanned', 0)} files")
+            changes = data.get("changes", [])
+            if changes:
+                print(f"\nChanges detected: {len(changes)}")
+                for c in changes:
+                    icon = {"new": "+", "modified": "~", "removed": "-"}.get(c.get("type", ""), "?")
+                    status = "approved" if c.get("approved") else "pending"
+                    print(f"  {icon} {c['file']}  [{c.get('type')}] [{status}]")
+            else:
+                print("No changes detected.")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        info = _gather_offline_status()
+        scanner = _scan_local_integrity(info)
+        print(f"Local scan: {scanner['scanned']} files")
+        changes = scanner.get("changes", [])
+        if changes:
+            print(f"Changes detected: {len(changes)}")
+            for c in changes:
+                icon = {"new": "+", "modified": "~", "removed": "-"}.get(c.get("type", ""), "?")
+                print(f"  {icon} {c['file']}  [{c.get('type')}] [pending]")
+        else:
+            print("No changes detected.")
+
+
+def _scan_local_integrity(info: dict[str, Any]) -> dict[str, Any]:
+    import os
+
+    from general_ludd.integrity.scanner import FileIntegrityScanner
+
+    paths = [
+        info.get("config_dir", ""),
+        info.get("filestore_root", ""),
+        os.path.expanduser("~/.config/gludd"),
+        os.path.expanduser("~/.local/share/general-ludd"),
+    ]
+    paths = [p for p in paths if p and os.path.isdir(p)]
+    scanner = FileIntegrityScanner()
+    return scanner.scan(paths, exclude_patterns=[r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"])
+
+
+def _cmd_integrity_report(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/integrity/report", timeout=10.0)
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        info = _gather_offline_status()
+        scanner = _scan_local_integrity(info)
+        print(json.dumps(scanner, indent=2))
+
+
+def _cmd_integrity_approve(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/integrity/approve",
+            json={"path": args.change_id, "reason": args.reason, "signer": args.signer},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Approved: {data.get('path')}")
+            print(f"Signature: {data.get('signature', '')[:16]}...")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception:
+        from general_ludd.integrity.scanner import sign_change_openbao
+        result = sign_change_openbao(args.change_id, args.signer, args.reason)
+        print(json.dumps(result, indent=2))
+
+
+def _cmd_integrity_reject(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/integrity/reject",
+            json={"path": args.change_id, "reason": args.reason},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            print(f"Rejected: {resp.json().get('path')}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+    except Exception as exc:
+        print(f"Cannot connect to daemon: {exc}")
+
+
+def _cmd_integrity_log(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/integrity/log", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            for entry in data.get("entries", []):
+                print(f"[{entry.get('timestamp','?')}] {entry.get('action')}: {entry.get('path')}")
+                print(f"  Reason: {entry.get('reason')}  Signer: {entry.get('signer')}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        print(f"Cannot connect to daemon: {exc}")
 
 
 if __name__ == "__main__":

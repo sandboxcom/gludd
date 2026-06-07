@@ -4,6 +4,16 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-07 — Committed then stopped while 32+ gaps remained
+
+- **What stopped before finishing**: After commit `f010c5e` (completion audit tool), agent sent a text-only status summary instead of immediately continuing to wire the 32 dead-code gaps found by the audit. The commit was treated as a stopping point despite massive pending work.
+- **Why guardrail failed**: The `chat.response.transform` hook detects stop patterns but ONLY PREPENDS text — it cannot block the response. The `make test-and-commit` target had no mechanism to check for pending work. Both the plugin and the preflight gate only look at lint/mypy/coverage — none check whether the agent has remaining tasks.
+- **Root cause**: Guardrails are passive (warn, prepend) not active (block, throw). No layer checks whether work remains before allowing a commit.
+- **Fix applied**:
+  1. Added `PENDING_WORK_CHECK` to `tool.execute.before` hook — blocks `make test-and-commit` with a hard error, forcing the agent to continue.
+  2. Added "work_remaining" check to preflight gate (`make preflight`).
+  3. Updated AGENTS.md with stronger language about commit-as-stop-point.
+
 ### 2026-06-01 — Session stopped after reporting status
 
 - **What stopped before finishing**: Session answered "What did we do so far?", then stopped with a summary of completed phases and a list of remaining next steps. The remaining phases (2, 3, 7) and other items (PID, skills, dev-dependencies) were identified but work did not continue.

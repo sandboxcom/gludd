@@ -240,15 +240,16 @@ def run_completion_audit() -> dict[str, Any]:
     if total == 0:
         total = 1
     warn = len(findings)
-    passed = total - warn
+    failed = warn
+    passed = total - failed
     completion_pct = round((passed / total) * 100, 1)
-    overall = "WARN" if warn > 0 else "PASS"
+    overall = "FAIL" if failed > 0 else "PASS"
     return {
         "overall": overall,
-        "passed": overall != "FAIL",
+        "passed": overall == "PASS",
         "findings": findings,
         "passed_count": passed,
-        "failed_count": 0,
+        "failed_count": failed,
         "warn_count": warn,
         "completion_pct": completion_pct,
         "modules_scanned": total,
