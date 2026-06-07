@@ -83,6 +83,9 @@ class BinaryBootstrapper:
     def _has_bundled(self, name: str) -> bool:
         return self.get_bundled_binary_path(name) is not None
 
+    def is_platform_available(self, name: str) -> bool:
+        return self.get_download_url(name) is not None
+
     @staticmethod
     def _find_dist_bundled_dir() -> str | None:
         candidates = [

@@ -580,6 +580,7 @@ def create_daemon_app(
             "filestore_root": store.root_path,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
+            "platform_available": {n: boot.is_platform_available(n) for n in boot.KNOWN_VERSIONS},
             "db_engine": str(getattr(app.state, "_db_engine", None)),
             "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
             "quality_gate": qg,
