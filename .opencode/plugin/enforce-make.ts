@@ -304,45 +304,55 @@ export default (async ({ }) => {
         const targetName = words[0] || ""
         const restArgs = words.slice(1).join(" ")
 
-        // only scan arguments (not target name) for forbidden patterns
-        // target names like git-status, git-diff, etc. are valid Makefile targets
         const toScan = restArgs
 
-        const invalidPatterns = [
-          /\b2>&1\b/,
-          /\b>\s/,
-          /\b<\s/,
-          /\brg\b/,
-          /\btail\b/,
-          /\bhead\b/,
-          /\bgrep\b/,
-          /\bcat\b/,
-          /\bfind\b/,
-          /\bls\b/,
-          /\bcd\b/,
-          /\bpython\b/,
-          /\bpython3\b/,
-          /\buv\b/,
-          /\bpip\b/,
-          /\bgit\b/,
-          /\brm\b/,
-          /\bcp\b/,
-          /\bmv\b/,
-          /\bwhich\b/,
-          /\bcommand\b/,
-          /\bexport\b/,
-          /\bsource\b/,
+        const MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES = [
+          "git-status", "git-diff", "git-staged", "git-init", "git-log",
+          "git-add", "git-add-all", "git-commit", "git-reset", "git-branch",
+          "git-checkout", "git-merge", "feature-start", "feature-done",
+          "delete-file",
         ]
-        for (const pattern of invalidPatterns) {
-          if (pattern.test(toScan)) {
-            throw new Error(
-              formatBashBlockedMessage(
-                trimmed,
-                `Forbidden command/shell builtin detected: ${pattern.source}. ` +
-                `Only 'make <target> VAR=val' is allowed. ` +
-                `Create a Makefile target for this operation.`
+
+        if (MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES.includes(targetName) && toScan === "") {
+          // Valid Makefile target that happens to contain a forbidden word in its name
+          // Skip argument scanning since there are no args to scan
+        } else {
+          const invalidPatterns = [
+            /\b2>&1\b/,
+            /\b>\s/,
+            /\b<\s/,
+            /\brg\b/,
+            /\btail\b/,
+            /\bhead\b/,
+            /\bgrep\b/,
+            /\bcat\b/,
+            /\bfind\b/,
+            /\bls\b/,
+            /\bcd\b/,
+            /\bpython\b/,
+            /\bpython3\b/,
+            /\buv\b/,
+            /\bpip\b/,
+            /\bgit\b/,
+            /\brm\b/,
+            /\bcp\b/,
+            /\bmv\b/,
+            /\bwhich\b/,
+            /\bcommand\b/,
+            /\bexport\b/,
+            /\bsource\b/,
+          ]
+          for (const pattern of invalidPatterns) {
+            if (pattern.test(toScan)) {
+              throw new Error(
+                formatBashBlockedMessage(
+                  trimmed,
+                  `Forbidden command/shell builtin detected: ${pattern.source}. ` +
+                  `Only 'make <target> VAR=val' is allowed. ` +
+                  `Create a Makefile target for this operation.`
+                )
               )
-            )
+            }
           }
         }
       }

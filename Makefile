@@ -19,6 +19,7 @@ TESTS_DIR := tests
         ansible-syntax ansible-lint-playbooks playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
+        repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
 		molecule-version molecule-test \
 		container-build container-run container-push \
@@ -160,10 +161,19 @@ molecule-test:
 git-status:
 	@git status --short || echo "Not a git repo"
 
+repo-status:
+	@git status --short || echo "Not a git repo"
+
 git-diff:
 	@git diff --stat || echo "No diff"
 
+repo-diff:
+	@git diff --stat || echo "No diff"
+
 git-staged:
+	@git diff --cached --stat || echo "Nothing staged"
+
+repo-staged:
 	@git diff --cached --stat || echo "Nothing staged"
 
 git-init:
@@ -172,6 +182,9 @@ git-init:
 	@git config user.name "General Ludd Agent" || true
 
 git-log:
+	@git log --oneline -10 || echo "No git history"
+
+repo-log:
 	@git log --oneline -10 || echo "No git history"
 
 git-add:
@@ -348,3 +361,5 @@ collect-prompts:
 	@echo "Collecting system prompts from open-source coding agents..."
 	@$(UV) run python scripts/collect_prompts.py --output-dir config/prompt_profiles/collected
 	@echo "Done. Run 'make collect-prompts SOURCE=aider' for a specific agent."
+
+
