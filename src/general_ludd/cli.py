@@ -542,6 +542,10 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
     for bname in ("podman", "docker", "ansible-playbook", "openbao"):
         label = bname.replace("-playbook", "")
         info["binary_paths"][label] = resolver.resolve(bname) if resolver.is_available(bname) else None
+
+    info["binary_versions"] = boot.get_known_versions()
+    stored = boot.list_binaries_with_versions()
+    info["filestore_binaries"] = [{"name": b["binary_name"], "version": b.get("version", "?")} for b in stored]
     return info
 
 
@@ -562,7 +566,9 @@ def _format_offline_status(info: dict[str, Any]) -> None:
         print("  (not created)")
     bins = info.get("filestore_binaries", [])
     if bins:
-        print(f"  Binaries:  {', '.join(bins)}")
+        print("  Binaries:")
+        for b in bins:
+            print(f"    \u251c\u2500 {b['name']:<12} v{b.get('version', '?')}")
     print()
     print(f"Database:    {info['db_path']}")
     if info["db_exists"]:

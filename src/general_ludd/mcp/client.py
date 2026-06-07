@@ -40,3 +40,8 @@ class MCPClient:
         if transport is None:
             raise MCPTransportError(f"No transport for server: {server_id}")
         return await transport.call_tool(tool_name, arguments)
+
+    def list_for_project(self, project_id: str | None) -> list[MCPServerConfig]:
+        if project_id is None:
+            return list(self._configs.values())
+        return [c for c in self._configs.values() if c.project_id == project_id]

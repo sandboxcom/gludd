@@ -40,6 +40,18 @@ class ProjectWorkspace:
     def private_data_dir(self) -> Path:
         return self.root / "runner"
 
+    @property
+    def playbooks_dir(self) -> Path:
+        return self.root / "playbooks"
+
+    @property
+    def templates_dir(self) -> Path:
+        return self.root / "templates"
+
+    @property
+    def roles_dir(self) -> Path:
+        return self.root / "roles"
+
     def ensure_dirs(self) -> None:
         for d in (
             self.root,
@@ -48,6 +60,9 @@ class ProjectWorkspace:
             self.config_dir,
             self.repo_dir,
             self.private_data_dir,
+            self.playbooks_dir,
+            self.templates_dir,
+            self.roles_dir,
         ):
             d.mkdir(parents=True, exist_ok=True)
 

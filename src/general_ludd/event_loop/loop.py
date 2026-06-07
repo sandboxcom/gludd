@@ -105,7 +105,7 @@ _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
 }
 
 
-def _playbook_for_work_type(work_type: str, default: str = "noop.yml") -> str:
+def _playbook_for_work_type(work_type: str, default: str = "noop.yml", *, project_id: str | None = None) -> str:
     return _WORK_TYPE_PLAYBOOK_MAP.get(work_type, default)
 
 
@@ -130,10 +130,14 @@ class EventLoop:
         variable_repo: Any | None = None,
         adaptive_router: Any | None = None,
         daemon_state: dict[str, Any] | None = None,
+        project_secrets_manager: Any | None = None,
+        project_workspace: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
+        self._project_secrets_manager = project_secrets_manager
+        self._project_workspace = project_workspace
         if isinstance(session, async_sessionmaker):
             self._session_factory: async_sessionmaker[AsyncSession] | None = session
             self.session: AsyncSession | None = None

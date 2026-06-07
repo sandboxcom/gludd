@@ -20,6 +20,7 @@ from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
 from general_ludd.config.user_config import UserConfig
+from general_ludd.logging.project_log import ProjectLogAdapter, ProjectLogFilter  # noqa: F401
 from general_ludd.secrets.config import OpenBaoConfig
 
 logger = logging.getLogger(__name__)
@@ -104,9 +105,11 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
 def build_secrets_resolver(
     openbao_config: OpenBaoConfig | None = None,
     env_overrides: dict[str, str] | None = None,
+    projects_active: bool = False,
 ) -> Any:
     from general_ludd.secrets.env import EnvSecretsManager
 
+    base: Any
     if openbao_config is not None and openbao_config.mode not in ("disabled", None):
         try:
             from general_ludd.secrets.manager import SecretsManager
@@ -115,12 +118,28 @@ def build_secrets_resolver(
             if openbao_config.mode == "external" and openbao_config.external_url:
                 mgr.connect()
                 logger.info("OpenBao secrets backend connected: %s", openbao_config.external_url)
-                return mgr
-            logger.warning("OpenBao not reachable, falling back to env var secrets")
+                base = mgr
+            else:
+                logger.warning("OpenBao not reachable, falling back to env var secrets")
+                base = EnvSecretsManager(overrides=env_overrides)
         except Exception as exc:
             logger.warning("OpenBao init failed (%s), falling back to env var secrets", exc)
+            base = EnvSecretsManager(overrides=env_overrides)
+    else:
+        base = EnvSecretsManager(overrides=env_overrides)
 
-    return EnvSecretsManager(overrides=env_overrides)
+    if projects_active:
+        from general_ludd.secrets.project_secrets import ProjectSecretsManager
+
+        class _LazyProjectSecrets:
+            def __init__(self, base: Any):
+                self._base = base
+            def resolve(self, alias_name: str) -> str | None:
+                return self._base.resolve(alias_name)  # type: ignore[no-any-return]
+            def for_project(self, project_id: str) -> ProjectSecretsManager:
+                return ProjectSecretsManager(base_manager=self._base, project_id=project_id)
+        return _LazyProjectSecrets(base)
+    return base
 
 
 def load_model_profiles(profiles_dir: str | None = None) -> list[Any]:
@@ -234,6 +253,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         secrets_resolver = build_secrets_resolver(
             openbao_config=startup_config.get("openbao_config"),
+            projects_active=bool(ext.get("projects")),
         )
         app.state._secrets_resolver = secrets_resolver
 

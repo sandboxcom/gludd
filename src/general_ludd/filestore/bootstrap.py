@@ -16,9 +16,12 @@ OPENBAO_BASE_URL = f"https://github.com/openbao/openbao/releases/download/v{OPEN
 class BinaryBootstrapper:
     """Downloads and manages platform-specific binaries in the filestore."""
 
+    KNOWN_VERSIONS: dict[str, str]
+
     def __init__(self, store: Any = None) -> None:
         from general_ludd.filestore.store import FileStore
 
+        self.KNOWN_VERSIONS = {"openbao": OPENBAO_VERSION}
         self._store = store or FileStore()
         self._store.makedirs("binaries")
 
@@ -41,11 +44,18 @@ class BinaryBootstrapper:
         self._store.write_bytes(path, data)
         logger.info("Stored binary %s (%d bytes)", name, len(data))
 
+    def get_known_versions(self) -> dict[str, str]:
+        return dict(self.KNOWN_VERSIONS)
+
     def list_binaries(self) -> list[dict[str, Any]]:
         entries = self._store.list_dir("binaries")
         for e in entries:
             e["binary_name"] = e["name"]
+            e["version"] = self.KNOWN_VERSIONS.get(e["name"], "unknown")
         return entries
+
+    def list_binaries_with_versions(self) -> list[dict[str, Any]]:
+        return self.list_binaries()
 
     def get_binary_path(self, name: str) -> str | None:
         path = f"binaries/{name}"

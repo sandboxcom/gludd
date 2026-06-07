@@ -12,6 +12,7 @@ class MCPServerConfig(BaseModel):
     url: str | None = None
     timeout_seconds: float = 30.0
     enabled: bool = True
+    project_id: str | None = None
 
     @model_validator(mode="after")
     def _validate_transport(self) -> MCPServerConfig:
