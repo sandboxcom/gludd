@@ -1446,14 +1446,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg, config_nav
-        ch = ch.lower()
+        if len(ch) == 1:
+            ch = ch.lower()
         if current_view == "edit":
+            if ch in ("\t", " ", "\r", "\n"):
+                ch = "\r"
             cats = config_nav["current_items"]
             if ch == "\x1b[A" and isinstance(cats, list) and len(cats) > 0:
                 config_nav["selected_cat"] = max(0, config_nav["selected_cat"] - 1)
             elif ch == "\x1b[B" and isinstance(cats, list) and len(cats) > 0:
                 config_nav["selected_cat"] = min(len(cats) - 1, config_nav["selected_cat"] + 1)
-            elif ch in ("\r", "\n"):
+            elif ch in ("\t", " ", "\r", "\n"):
                 if isinstance(cats, list) and 0 <= config_nav["selected_cat"] < len(cats):
                     cat = cats[config_nav["selected_cat"]]
                     if hasattr(cat, "menu_items"):
@@ -1516,7 +1519,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         if r:
             data = os.read(fd, 1)
             if data == b"\x1b":
-                r2, _w2, _e2 = select.select([fd], [], [], 0.01)
+                r2, _w2, _e2 = select.select([fd], [], [], 0.05)
                 if r2:
                     more = os.read(fd, 2)
                     if more in (b"[A", b"[B", b"[C", b"[D", b"OH", b"OF"):
