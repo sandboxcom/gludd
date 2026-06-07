@@ -143,7 +143,7 @@ class LocalInferenceManager:
     def _build_command(self, config: LocalServerConfig) -> list[str]:
         if config.engine == "vllm":
             model = config.model_name or config.model_path
-            cmd = ["vllm", "serve", model, "--host", config.host, "--port", str(config.port)]
+            cmd: list[str] = ["vllm", "serve", model, "--host", config.host, "--port", str(config.port)]
             cmd.extend(config.extra_args)
             return cmd
         elif config.engine == "llamacpp":
@@ -154,6 +154,20 @@ class LocalInferenceManager:
             cmd.extend(["--n_gpu_layers", str(config.gpu_layers)])
             cmd.extend(["--n_ctx", str(config.context_size)])
             cmd.extend(config.extra_args)
+            return cmd
+        elif config.engine == "slurm":
+            model = config.model_name or config.model_path
+            cmd = ["sbatch"]
+            cmd.extend(config.extra_args)
+            cmd.extend([
+                "--wrap",
+                f"python3 -m llama_cpp.server "
+                f"--model {model} "
+                f"--host {config.host} "
+                f"--port {config.port} "
+                f"--n_gpu_layers {config.gpu_layers} "
+                f"--n_ctx {config.context_size}",
+            ])
             return cmd
         else:
             raise ValueError(f"Unsupported engine: {config.engine}")
