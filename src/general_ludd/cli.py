@@ -1255,7 +1255,7 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
 
 
 def _cmd_tui(args: argparse.Namespace) -> None:
-    import time
+    import subprocess
 
     from rich.console import Console
     from rich.layout import Layout
@@ -1263,11 +1263,76 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     from rich.panel import Panel
     from rich.table import Table
 
+    daemon_proc: subprocess.Popen[bytes] | None = None
+    daemon_running = False
+    current_view = "main"
+    status_msg = ""
+
+    def detect_daemon() -> bool:
+        try:
+            import httpx
+            resp = httpx.get(f"{args.daemon_url}/healthz", timeout=1.0)
+            return resp.status_code == 200
+        except Exception:
+            return False
+
+    daemon_running = detect_daemon()
+
+    def start_daemon() -> None:
+        nonlocal daemon_proc, daemon_running, status_msg
+        if daemon_running or detect_daemon():
+            status_msg = "Daemon already running"
+            daemon_running = True
+            return
+        try:
+            daemon_proc = subprocess.Popen(
+                [sys.executable, "-m", "general_ludd.cli", "daemon"],
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
+            )
+            daemon_running = True
+            status_msg = "Daemon started"
+        except Exception as exc:
+            status_msg = f"Start failed: {exc}"
+
+    def stop_daemon() -> None:
+        nonlocal daemon_proc, daemon_running, status_msg
+        if daemon_proc is not None:
+            daemon_proc.terminate()
+            try:
+                daemon_proc.wait(timeout=3)
+            except subprocess.TimeoutExpired:
+                daemon_proc.kill()
+            daemon_proc = None
+            daemon_running = False
+            status_msg = "Daemon stopped"
+        elif daemon_running:
+            daemon_running = False
+            status_msg = "Daemon running externally (not managed by TUI)"
+        else:
+            status_msg = "No daemon to stop"
+
+    def build_controls_table() -> Table:
+        t = Table(title="Controls")
+        t.add_column("Key", style="yellow", width=3)
+        t.add_column("Action", style="cyan")
+        t.add_column("Status", style="green")
+        t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
+        t.add_row("k", "Kill daemon", "")
+        t.add_row("p", "Run preflight", "")
+        t.add_row("i", "Integrity scan", "")
+        t.add_row("v", "View config files", "")
+        t.add_row("r", "Refresh", "")
+        t.add_row("q", "Quit", "")
+        if status_msg:
+            t.add_row("", f"[bold yellow]{status_msg}[/]", "")
+        return t
+
     def build_daemon_table() -> Table:
         t = Table(title="Daemon")
         t.add_column("Key", style="cyan")
         t.add_column("Value", style="green")
-        t.add_row("Status", "checking...")
+        t.add_row("Status", "running" if daemon_running else "stopped")
         t.add_row("URL", args.daemon_url)
         return t
 
@@ -1298,6 +1363,20 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         t.add_column("Path", style="dim")
         for name, path in info.get("binary_paths", {}).items():
             t.add_row(name, "yes" if path else "no", str(path or ""))
+        if info.get("binary_versions"):
+            for name, ver in sorted(info["binary_versions"].items()):
+                stored = any(b.get("name") == name for b in info.get("filestore_binaries", []))
+                label = "stored" if stored else "not downloaded"
+                t.add_row(name, f"v{ver} [{label}]", "")
+        return t
+
+    def build_config_table(info: dict[str, Any]) -> Table:
+        t = Table(title="Config Files")
+        t.add_column("File", style="cyan")
+        t.add_column("Size", style="green")
+        t.add_column("Index", style="yellow")
+        for idx, cf in enumerate(info.get("config_files", []), 1):
+            t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)), str(idx))
         return t
 
     def make_layout(info: dict[str, Any]) -> Layout:
@@ -1305,36 +1384,110 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         layout.split(
             Layout(name="header", size=3),
             Layout(name="body"),
-            Layout(name="footer", size=8),
+            Layout(name="footer", size=12),
         )
         layout["body"].split_row(
             Layout(name="left"),
             Layout(name="right"),
         )
-        left = layout["body"]["left"]
-        left.split(
+        body = layout["body"]
+        body["left"].split(
             Layout(build_daemon_table(), name="daemon"),
             Layout(build_binary_table(info), name="binaries"),
         )
-        right = layout["body"]["right"]
-        right.split(
-            Layout(build_info_table(info), name="info"),
+        if current_view == "config":
+            body["right"].split(
+                Layout(build_config_table(info), name="config"),
+            )
+        else:
+            body["right"].split(
+                Layout(build_info_table(info), name="info"),
+            )
+        header_text = (
+            f"General Ludd Agent — TUI  [{current_view}]"
+            f"  [s]tart  [k]ill  [p]reflight  [i]ntegrity  [v]config  [r]efresh  [q]uit"
         )
-        layout["header"].update(
-            Panel("General Ludd Agent — TUI Dashboard  [Ctrl+C to exit]", style="bold white on blue")
-        )
-        layout["footer"].update(Panel("Auto-refreshing every 0.5s", style="dim"))
+        layout["header"].update(Panel(header_text, style="bold white on blue"))
+        layout["footer"].update(build_controls_table())
         return layout
+
+    def handle_key(info: dict[str, Any], ch: str) -> bool:
+        nonlocal current_view, daemon_running, status_msg
+        ch = ch.lower().strip()
+        if ch == "q":
+            return False
+        elif ch == "s":
+            start_daemon()
+        elif ch == "k":
+            stop_daemon()
+        elif ch == "p":
+            try:
+                from general_ludd.quality.preflight import run_preflight
+                result = run_preflight()
+                status_msg = f"Preflight: {result['overall']} ({result['passed_count']}/{result['total_count']} checks)"
+            except Exception as exc:
+                status_msg = f"Preflight error: {exc}"
+        elif ch == "i":
+            try:
+                from general_ludd.integrity.scanner import FileIntegrityScanner
+                scanner = FileIntegrityScanner()
+                paths = [
+                    info.get("config_dir", ""),
+                    info.get("filestore_root", ""),
+                ]
+                paths = [p for p in paths if p]
+                result = scanner.scan(paths) if paths else {"scanned": 0, "changes": []}
+                changes = len(result["changes"])
+                status_msg = f"Integrity: {result['scanned']} scanned, {changes} changes"
+            except Exception as exc:
+                status_msg = f"Integrity error: {exc}"
+        elif ch == "v":
+            current_view = "config" if current_view != "config" else "main"
+        elif ch == "r":
+            status_msg = "Refreshing..."
+            daemon_running = detect_daemon()
+        return True
 
     info = _gather_offline_status()
     console = Console()
     layout = make_layout(info)
+    running = True
+
     try:
-        with Live(layout, console=console, refresh_per_second=2, screen=True) as live:
-            while True:
-                time.sleep(0.5)
+        import threading
+        from threading import Event
+
+        input_ch = ""
+        input_ready = Event()
+
+        def input_thread() -> None:
+            nonlocal input_ch, running
+            while running:
+                try:
+                    ch = console.input("")
+                    input_ch = ch
+                    input_ready.set()
+                except (EOFError, KeyboardInterrupt):
+                    running = False
+                    input_ready.set()
+                    break
+
+        thread = threading.Thread(target=input_thread, daemon=True)
+        thread.start()
+
+        with Live(layout, console=console, refresh_per_second=4, screen=True) as live:
+            while running:
+                if input_ready.wait(0.5):
+                    input_ready.clear()
+                    if not running:
+                        break
+                    if not handle_key(info, input_ch):
+                        running = False
+                        break
+                    input_ch = ""
                 info = _gather_offline_status()
                 live.update(make_layout(info))
+        print("\nTUI exited.")
     except KeyboardInterrupt:
         print("\nTUI exited.")
 
