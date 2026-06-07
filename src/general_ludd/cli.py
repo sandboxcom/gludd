@@ -1468,6 +1468,27 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_model_table, name="models"),
                 )
+            elif current_view == "worktrees":
+                _wt_table = Table(title="Projects & Worktrees", show_header=True)
+                _wt_table.add_column("Type", style="cyan")
+                _wt_table.add_column("ID/Name", style="green")
+                _wt_table.add_column("Path", style="yellow")
+                _wt_table.add_column("Status", style="bold")
+                import os as _os
+                home = _os.path.expanduser("~")
+                wt_dirs = [
+                    d for d in _os.listdir(home)
+                    if _os.path.isdir(_os.path.join(home, d)) and not d.startswith(".")
+                ]
+                for d in sorted(wt_dirs)[:20]:
+                    full = _os.path.join(home, d)
+                    agents = _os.path.join(full, "AGENTS.md")
+                    is_worktree = _os.path.isfile(agents)
+                    status = "has AGENTS.md" if is_worktree else "directory"
+                    _wt_table.add_row("dir", d, full, f"[{'green' if is_worktree else 'dim'}]{status}[/]")
+                body["right"].split(
+                    Layout(_wt_table, name="worktrees"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -1475,7 +1496,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         if current_view == "edit":
             header_text = "Config Editor — [c] exit  [q] quit"
         elif current_view == "models":
-            header_text = "Model Services — [m] exit  [q] quit  [Ctrl+C] quit"
+            header_text = "Model Services — [m] exit  [q] quit"
+        elif current_view == "worktrees":
+            header_text = "Projects & Worktrees — [w] exit  [q] quit"
         elif current_view == "config":
             header_text = (
                 "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
@@ -1484,7 +1507,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         else:
             header_text = (
                 "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
-                " [v]config [c]edit [r]efresh [q]uit"
+                " [v]config [c]edit [m]odels [w]trees [r]efresh [q]uit"
             )
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
@@ -1559,6 +1582,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif ch == "m":
             current_view = "models" if current_view != "models" else "main"
             status_msg = f"Model services: {len(model_mgr.list_servers())} configured"
+        elif ch == "w":
+            current_view = "worktrees" if current_view != "worktrees" else "main"
+            if current_view == "worktrees":
+                status_msg = "Projects & Worktrees — [w] exit  [q] quit"
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
