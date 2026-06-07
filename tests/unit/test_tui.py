@@ -3,9 +3,133 @@
 from __future__ import annotations
 
 import io
+import os as _os
+import select as _select
 
 from rich.console import Console
 from rich.live import Live
+
+
+class TestTUIGetch:
+    def test_getch_returns_empty_string_on_timeout(self):
+        import select
+
+        class FakeSelect:
+            def select(self, r, _w, _e, _t):
+                return ([], [], [])
+        orig = select.select
+        select.select = FakeSelect().select
+        try:
+            result = TUICode._test_getch(0)
+            assert result == ""
+        finally:
+            select.select = orig
+
+    def test_getch_returns_single_char(self):
+        import select
+
+        class FakeSelect:
+            call = 0
+            def select(self, r, _w, _e, _t):
+                FakeSelect.call += 1
+                return ([r[0]], [], [])
+
+        class FakeOs:
+            @staticmethod
+            def read(fd, n):
+                return b"q"
+
+        orig_sel = select.select
+        orig_os = _os.read
+        select.select = FakeSelect().select
+        _os.read = FakeOs.read
+        try:
+            result = TUICode._test_getch(0)
+            assert result == "q"
+        finally:
+            select.select = orig_sel
+            _os.read = orig_os
+
+    def test_getch_stands_alone_escape_returns_escape(self):
+        import select
+
+        class FakeSelect:
+            calls: list[bool]
+            idx: int
+            def __init__(self):
+                self.calls = [True, False]
+                self.idx = 0
+            def select(self, r, _w, _e, _t):
+                val = self.calls[self.idx]
+                self.idx += 1
+                if self.idx >= len(self.calls):
+                    self.idx = 0
+                return ([r[0]], [], []) if val else ([], [], [])
+
+        class FakeOs:
+            @staticmethod
+            def read(fd, n):
+                return b"\x1b"
+
+        orig_sel = select.select
+        orig_os = _os.read
+        select.select = FakeSelect().select
+        _os.read = FakeOs.read
+        FakeSelect.calls = [True, False]
+        FakeSelect.idx = 0
+        try:
+            result = TUICode._test_getch(0)
+            assert result == "\x1b"
+        finally:
+            select.select = orig_sel
+            _os.read = orig_os
+
+    def test_getch_arrow_key_returns_full_sequence(self):
+        import select
+
+        class FakeSelect:
+            def select(self, r, _w, _e, _t):
+                return ([r[0]], [], [])
+
+        read_sequence = [b"\x1b", b"[A"]
+        read_idx = [0]
+
+        class FakeOs:
+            @staticmethod
+            def read(fd, n):
+                val = read_sequence[read_idx[0]]
+                read_idx[0] += 1
+                return val
+
+        orig_sel = select.select
+        orig_os = _os.read
+        select.select = FakeSelect().select
+        _os.read = FakeOs.read
+        read_idx[0] = 0
+        try:
+            result = TUICode._test_getch(0)
+            assert result == "\x1b[A"
+            assert result != "\x1b"
+        finally:
+            select.select = orig_sel
+            _os.read = orig_os
+
+
+class TUICode:
+    @staticmethod
+    def _test_getch(fd: int) -> str:
+        r, _w, _e = _select.select([fd], [], [], 0.3)
+        if r:
+            data = _os.read(fd, 1)
+            if data == b"\x1b":
+                r2, _w2, _e2 = _select.select([fd], [], [], 0.01)
+                if r2:
+                    more = _os.read(fd, 2)
+                    if more in (b"[A", b"[B", b"[C", b"[D", b"OH", b"OF"):
+                        return data.decode() + more.decode()
+                return "\x1b"
+            return data.decode("utf-8", errors="ignore") or ""
+        return ""
 
 
 class TestTUIComponents:

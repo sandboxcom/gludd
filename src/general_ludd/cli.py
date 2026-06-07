@@ -1451,7 +1451,15 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     def getch(fd: int, timeout: float = 0.3) -> str:
         r, _w, _e = select.select([fd], [], [], timeout)
         if r:
-            return os.read(fd, 1).decode("utf-8", errors="ignore") or ""
+            data = os.read(fd, 1)
+            if data == b"\x1b":
+                r2, _w2, _e2 = select.select([fd], [], [], 0.01)
+                if r2:
+                    more = os.read(fd, 2)
+                    if more in (b"[A", b"[B", b"[C", b"[D", b"OH", b"OF"):
+                        return data.decode() + more.decode()
+                return "\x1b"
+            return data.decode("utf-8", errors="ignore") or ""
         return ""
 
     info = _gather_offline_status()
