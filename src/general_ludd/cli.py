@@ -1255,7 +1255,11 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
 
 
 def _cmd_tui(args: argparse.Namespace) -> None:
+    import os
+    import select
     import subprocess
+    import termios
+    import tty
 
     from rich.console import Console
     from rich.layout import Layout
@@ -1266,7 +1270,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     daemon_proc: subprocess.Popen[bytes] | None = None
     daemon_running = False
     current_view = "main"
-    status_msg = ""
+    status_msg = "Press q to quit, s to start daemon"
 
     def detect_daemon() -> bool:
         try:
@@ -1289,9 +1293,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 [sys.executable, "-m", "general_ludd.cli", "daemon"],
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
+                start_new_session=True,
             )
             daemon_running = True
-            status_msg = "Daemon started"
+            status_msg = f"Daemon started PID={daemon_proc.pid}"
         except Exception as exc:
             status_msg = f"Start failed: {exc}"
 
@@ -1308,7 +1313,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = "Daemon stopped"
         elif daemon_running:
             daemon_running = False
-            status_msg = "Daemon running externally (not managed by TUI)"
+            status_msg = "Daemon running externally"
         else:
             status_msg = "No daemon to stop"
 
@@ -1319,9 +1324,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         t.add_column("Status", style="green")
         t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
         t.add_row("k", "Kill daemon", "")
-        t.add_row("p", "Run preflight", "")
+        t.add_row("p", "Preflight", "")
         t.add_row("i", "Integrity scan", "")
-        t.add_row("v", "View config files", "")
+        t.add_row("v", "Config files", current_view)
         t.add_row("r", "Refresh", "")
         t.add_row("q", "Quit", "")
         if status_msg:
@@ -1374,9 +1379,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         t = Table(title="Config Files")
         t.add_column("File", style="cyan")
         t.add_column("Size", style="green")
-        t.add_column("Index", style="yellow")
-        for idx, cf in enumerate(info.get("config_files", []), 1):
-            t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)), str(idx))
+        for cf in info.get("config_files", []):
+            t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
         return t
 
     def make_layout(info: dict[str, Any]) -> Layout:
@@ -1403,38 +1407,34 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             body["right"].split(
                 Layout(build_info_table(info), name="info"),
             )
-        header_text = (
-            f"General Ludd Agent — TUI  [{current_view}]"
-            f"  [s]tart  [k]ill  [p]reflight  [i]ntegrity  [v]config  [r]efresh  [q]uit"
-        )
+        header_text = "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity [v]config [r]efresh [q]uit"
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg
-        ch = ch.lower().strip()
+        ch = ch.lower()
         if ch == "q":
             return False
         elif ch == "s":
+            status_msg = "Starting daemon..."
             start_daemon()
         elif ch == "k":
+            status_msg = "Stopping daemon..."
             stop_daemon()
         elif ch == "p":
             try:
                 from general_ludd.quality.preflight import run_preflight
                 result = run_preflight()
-                status_msg = f"Preflight: {result['overall']} ({result['passed_count']}/{result['total_count']} checks)"
+                status_msg = f"Preflight: {result['overall']} ({result['passed_count']}/{result['total_count']})"
             except Exception as exc:
                 status_msg = f"Preflight error: {exc}"
         elif ch == "i":
             try:
                 from general_ludd.integrity.scanner import FileIntegrityScanner
                 scanner = FileIntegrityScanner()
-                paths = [
-                    info.get("config_dir", ""),
-                    info.get("filestore_root", ""),
-                ]
+                paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
                 paths = [p for p in paths if p]
                 result = scanner.scan(paths) if paths else {"scanned": 0, "changes": []}
                 changes = len(result["changes"])
@@ -1444,52 +1444,37 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif ch == "v":
             current_view = "config" if current_view != "config" else "main"
         elif ch == "r":
-            status_msg = "Refreshing..."
             daemon_running = detect_daemon()
+            status_msg = "Refreshed"
         return True
+
+    def getch(fd: int, timeout: float = 0.3) -> str:
+        r, _w, _e = select.select([fd], [], [], timeout)
+        if r:
+            return os.read(fd, 1).decode("utf-8", errors="ignore") or ""
+        return ""
 
     info = _gather_offline_status()
     console = Console()
+    stdin_fd = sys.stdin.fileno()
+    old_settings = termios.tcgetattr(stdin_fd)
+
     layout = make_layout(info)
-    running = True
-
     try:
-        import threading
-        from threading import Event
-
-        input_ch = ""
-        input_ready = Event()
-
-        def input_thread() -> None:
-            nonlocal input_ch, running
-            while running:
-                try:
-                    ch = console.input("")
-                    input_ch = ch
-                    input_ready.set()
-                except (EOFError, KeyboardInterrupt):
-                    running = False
-                    input_ready.set()
-                    break
-
-        thread = threading.Thread(target=input_thread, daemon=True)
-        thread.start()
-
+        tty.setcbreak(stdin_fd)
         with Live(layout, console=console, refresh_per_second=4, screen=True) as live:
-            while running:
-                if input_ready.wait(0.5):
-                    input_ready.clear()
-                    if not running:
+            while True:
+                ch = getch(stdin_fd, 0.3)
+                if ch:
+                    if ch in ("\x03", "\x1b"):
                         break
-                    if not handle_key(info, input_ch):
-                        running = False
+                    if not handle_key(info, ch):
                         break
-                    input_ch = ""
                 info = _gather_offline_status()
                 live.update(make_layout(info))
-        print("\nTUI exited.")
-    except KeyboardInterrupt:
-        print("\nTUI exited.")
+    finally:
+        termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
+    print("TUI exited.")
 
 
 def _cmd_integrity_scan(args: argparse.Namespace) -> None:
