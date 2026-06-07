@@ -27,6 +27,7 @@ logger = logging.getLogger(__name__)
 _daemon_state: dict[str, Any] = {
     "todos": [],
     "tick_metrics": {},
+    "quality_gate": {},
 }
 
 
@@ -281,6 +282,21 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
+
+        async def _init_preflight() -> None:
+            from general_ludd.quality.preflight import run_preflight
+
+            loop = asyncio.get_running_loop()
+            result: dict[str, Any] = await loop.run_in_executor(None, run_preflight)
+            _daemon_state["quality_gate"] = result
+            logger.info(
+                "Preflight quality gate: %s (%d/%d)",
+                result["overall"],
+                result["passed_count"],
+                result["total_count"],
+            )
+
+        app.state._preflight_task = asyncio.create_task(_init_preflight())
     except Exception as exc:
         logger.warning("Could not start event loop: %s", exc)
 
@@ -398,6 +414,14 @@ def create_daemon_app(
     async def healthz() -> dict[str, str]:
         return {"status": "healthy"}
 
+    @app.post("/admin/preflight")
+    async def admin_run_preflight() -> dict[str, Any]:
+        from general_ludd.quality.preflight import run_preflight
+
+        result = run_preflight()
+        _daemon_state["quality_gate"] = result
+        return result
+
     @app.post("/api/todos", status_code=201)
     async def api_add_todo(req: AddTodoRequest) -> dict[str, Any]:
         todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
@@ -463,6 +487,9 @@ def create_daemon_app(
         stored_binaries = [b["name"] for b in boot.list_binaries()]
 
         elapsed = _daemon_state.get("tick_metrics", {})
+        qg = _daemon_state.get("quality_gate", {})
+        if not qg:
+            qg = {"overall": "not_run", "passed_count": 0, "total_count": 0}
         return {
             "version": __version__,
             "uptime_ticks": elapsed.get("total_ticks", 0),
@@ -475,6 +502,7 @@ def create_daemon_app(
             "filestore_binaries": stored_binaries,
             "db_engine": str(getattr(app.state, "_db_engine", None)),
             "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
+            "quality_gate": qg,
         }
 
     @app.get("/api/deployments")

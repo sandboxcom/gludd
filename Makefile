@@ -264,6 +264,9 @@ build-executable:
 	@$(UV) run pyinstaller gludd.spec --clean --noconfirm
 	@echo "Built dist/gludd"
 
+verify-status:
+	@$(UV) run python scripts/verify_status.py
+
 dist: build-executable
 	@echo "Assembling tarball..."
 	@chmod +x dist/install.sh

@@ -489,6 +489,14 @@ def _cmd_status(args: argparse.Namespace) -> None:
                 if metrics:
                     print(f"Dispatch:    {metrics.get('todos_dispatched', 0)} dispatched")
                     print(f"Leases:      {metrics.get('leases_reclaimed', 0)} reclaimed")
+                qg = data.get("quality_gate", {})
+                overall = qg.get("overall", "not_run")
+                passed = qg.get("passed_count", 0)
+                total = qg.get("total_count", 0)
+                print(f"\nQuality Gate: {overall} ({passed}/{total} checks)")
+                for check in qg.get("checks", []):
+                    status_icon = "✓" if check.get("passed") else "✗"
+                    print(f"  {status_icon} {check['name']}")
             else:
                 print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
                 sys.exit(1)
