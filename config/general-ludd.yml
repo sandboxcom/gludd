@@ -20,11 +20,23 @@
 #   config/ansible/isolation.yml  - Process isolation settings
 #   config/mcp_servers/example.yml - MCP server connections
 #   config/tasks/example_tasks.yml - Reusable task templates
+#
+# ── Filestore ────────────────────────────────────────────────────────────────
+#
+# The filestore (~/.local/share/general-ludd/filestore/) stores artifacts,
+# binaries, and cached data. Files placed in ~/.config/gludd/fs/ overlay
+# the filestore — user configs, playbooks, and binaries here take priority.
+#
+# Run "gludd filestore bootstrap --binary openbao" to download OpenBao.
+# Run "gludd filestore list /" to browse stored files.
 
 # ── Model Routing ───────────────────────────────────────────────────────────
 #
 # Controls which AI model is used for each task type.
 # Profile IDs must match a model_profile_id from config/model_profiles/*.yml
+#
+# When OPENROUTER_API_KEY is set, run "gludd models discover" to
+# auto-populate model profiles from OpenRouter's free model catalog.
 #
 model_routing:
   default_profile: zai_coder
