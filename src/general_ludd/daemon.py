@@ -552,7 +552,11 @@ def create_daemon_app(
 
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
-        stored_binaries = [b["name"] for b in boot.list_binaries()]
+        bare_binaries = [
+            {"name": b["binary_name"], "version": b.get("version", "?")}
+            for b in boot.list_binaries_with_versions()
+        ]
+        known_versions = boot.get_known_versions()
 
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
@@ -567,7 +571,8 @@ def create_daemon_app(
             "config_dir": config_dir,
             "config_files": config_paths,
             "filestore_root": store.root_path,
-            "filestore_binaries": stored_binaries,
+            "filestore_binaries": bare_binaries,
+            "binary_versions": known_versions,
             "db_engine": str(getattr(app.state, "_db_engine", None)),
             "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
             "quality_gate": qg,
