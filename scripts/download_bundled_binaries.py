@@ -23,6 +23,10 @@ async def download_one(client: httpx.AsyncClient, boot: BinaryBootstrapper, name
         return True
 
     url = boot.get_download_url(name)
+    if url is None:
+        print(f"  {name}: no binary available for this platform (server-side only)")
+        return True  # Not a failure — just not applicable
+
     version = boot.KNOWN_VERSIONS.get(name, "?")
     print(f"  {name}: downloading v{version} from {url}...")
 

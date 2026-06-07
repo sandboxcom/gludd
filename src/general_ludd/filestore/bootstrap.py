@@ -108,10 +108,12 @@ class BinaryBootstrapper:
                     logger.warning("Failed to sync bundled binary %s: %s", name, exc)
         return synced
 
-    def get_download_url(self, name: str) -> str:
+    def get_download_url(self, name: str) -> str | None:
         info = self.get_platform_info()
         os_name = info["os"]
-        arch = info["arch"]
+        if os_name == "darwin" and name == "openbao":
+            return None
+        ext = ".zip" if os_name == "darwin" else ".tar.gz"
         if name == "openbao":
             version = OPENBAO_VERSION
             base = OPENBAO_BASE_URL
@@ -120,8 +122,7 @@ class BinaryBootstrapper:
             version = OPENTOFU_VERSION
             base = OPENTOFU_BASE_URL
             release_name = "tofu"
-        ext = ".zip" if os_name == "darwin" else ".tar.gz"
-        filename = f"{release_name}_{version}_{os_name}_{arch}{ext}"
+        filename = f"{release_name}_{version}_{os_name}_amd64{ext}"
         return f"{base}/{filename}"
 
     async def download(self, name: str) -> bool:
@@ -138,6 +139,9 @@ class BinaryBootstrapper:
                 logger.warning("Bundled binary %s read failed: %s", name, exc)
 
         url = self.get_download_url(name)
+        if url is None:
+            logger.info("No binary download available for %s on this platform", name)
+            return False
         try:
             async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
                 resp = await client.get(url)

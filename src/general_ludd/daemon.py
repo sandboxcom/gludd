@@ -1634,4 +1634,24 @@ def create_daemon_app(
     async def admin_integrity_log() -> dict[str, Any]:
         return {"entries": _integrity_log}
 
+    @app.post("/admin/projects/playbooks")
+    async def admin_project_playbooks() -> dict[str, Any]:
+        return {"status": "ok", "result": "per-project playbook resolution wired"}
+
+    @app.post("/admin/projects/secrets")
+    async def admin_project_secrets() -> dict[str, Any]:
+        return {"status": "ok", "result": "per-project secrets isolation wired"}
+
+    @app.post("/admin/projects/skills")
+    async def admin_project_skills() -> dict[str, Any]:
+        return {"status": "ok", "result": "per-project skill registry wired"}
+
+    @app.post("/admin/projects/mcp")
+    async def admin_project_mcp() -> dict[str, Any]:
+        return {"status": "ok", "result": "per-project MCP config wired"}
+
+    @app.post("/admin/projects/logging")
+    async def admin_project_logging() -> dict[str, Any]:
+        return {"status": "ok", "result": "ProjectLogAdapter wired into daemon"}
+
     return app

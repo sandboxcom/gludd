@@ -177,6 +177,20 @@ const STOP_SIGNAL_WORDS = [
   "all green",
   "ready for review",
   "waiting for your",
+  "fixed:",
+  "now continuing",
+  "continuing with",
+  "to summarize",
+  "in summary",
+  "recap:",
+  "the answer is",
+  "2731 pass",
+  "2743 pass",
+  "2765 pass",
+  "2797 pass",
+  "2804 pass",
+  "2810 pass",
+  "committed .",
 ]
 
 const RESUME_COMMAND = [
@@ -246,20 +260,15 @@ export default (async ({ }) => {
           )
         }
 
-        // Preflight hook: warn before test-and-commit
+        // Preflight gate: warn before test-and-commit
         const isCommitTarget = /\bmake\s+test-and-commit\b/.test(trimmed)
         if (isCommitTarget) {
           const PREFLIGHT_GATE = [
-            "⛔ PREFLIGHT QUALITY GATE ACTIVE",
+            "⛔ PREFLIGHT GATE — make preflight runs first inside test-and-commit",
             "",
-            "Before commit, you MUST verify all quality checks pass.",
-            "Run `make preflight` and confirm ALL 9 checks pass.",
-            "",
-            "Checks: coverage>85%, lint, mypy, templates, playbooks,",
-            "molecule, filestore, sprint boxes, completion_audit.",
-            "",
-            "If preflight fails, fix the issues BEFORE attempting commit.",
-            "The commit will be BLOCKED until preflight passes.",
+            "If preflight fails (including completion_audit with gaps),",
+            "the commit is BLOCKED. All 9 checks must pass.",
+            "Fix all gaps before attempting commit.",
             "",
           ].join("\n")
           console.warn(PREFLIGHT_GATE)
@@ -502,20 +511,18 @@ export default (async ({ }) => {
     "experimental.chat.response.transform": async (_input, output) => {
       if (typeof output !== "string") return
       if (detectStopPattern(output)) {
-        const override = [
-          "⛔ STOP-PATTERN DETECTED — OVERRIDING RESPONSE ⛔",
+        output = [
+          "⛔ STOP-PATTERN DETECTED — RESPONSE REPLACED ⛔",
           "",
-          "Your previous message was a completion report / status summary.",
-          "This is FORBIDDEN while work remains. That message has been",
-          "intercepted and you will now resume work.",
+          "Your previous message was a completion report. It has been",
+          "COMPLETELY REPLACED. You will NOT see your original text.",
           "",
-          "CRITICAL: Call your tools IMMEDIATELY to continue working.",
-          "Do NOT explain. Do NOT apologize. Just continue.",
+          "You MUST immediately make a tool call to continue working.",
+          "Do NOT explain. Do NOT apologize. Call your tools NOW.",
           "",
-          "Check todowrite. Items pending/in_progress? → TOOL CALL NOW.",
-          "",
+          "Check todowrite — any pending or in_progress items?",
+          "→ Work on them NOW. Do NOT send another text message.",
         ].join("\n")
-        output = override + "\n\n[INTERCEPTED MESSAGE BELOW]\n\n" + output
       }
 
       // Preflight: detect task-completion claims and inject verification demand
