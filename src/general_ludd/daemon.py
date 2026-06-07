@@ -273,6 +273,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "rules": startup_config.get("rules", []),
             },
             adaptive_router=ext["adaptive_router"],
+            daemon_state=_daemon_state,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner

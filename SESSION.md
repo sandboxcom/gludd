@@ -6,13 +6,11 @@
 - 2026-06-06
 
 ## Current Status
-- **Phase**: Sprint 1 complete — Intelligent Model Routing, LangGraph Orchestration, Worktree Monitor
-- **Test Suite**: 2498 passed, 26 skipped, 0 failures, 94.88% coverage
+- **Phase**: Sprint 1 complete + Preflight Quality Gate + Enhanced Status
+- **Test Suite**: 2731 passed, 26 skipped, 0 failures, 92.19% coverage
 - **Branch**: master
-- **Latest commit**: 8c904aa — langgraph-based multi-step model invocation gateway
-- **Mypy**: 0 errors (strict mode)
-- **Lint**: 0 errors (ruff)
-- **Mypy**: 4 errors (pre-existing import-not-found for alembic.config and types-psutil)
+- **Latest commit**: e06903e — preflight quality gate + task completion verification
+- **Mypy**: 0 errors (strict mode, 154 source files)
 - **Lint**: 0 errors (ruff)
 - **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum (rebuilt)
 
@@ -235,10 +233,9 @@ EventLoop auto-creates from session (when available):
 - `VariableNamespaceRepository` (new)
 
 ## Quality Status
-- **Mypy**: 0 errors in 136 source files (strict mode)
+- **Mypy**: 0 errors in 154 source files (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 2238 passed, 26 skipped, 93.91% coverage
-- **No deprecation warnings**: `tool.uv.dev-dependencies` removed
+- **Tests**: 2731 passed, 26 skipped, 92.19% coverage
 
 ## Key Gaps (Known)
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
@@ -294,6 +291,27 @@ EventLoop auto-creates from session (when available):
 - ModelGateway routing with real model
 - Code generation with real model
 - Conversation planning with real model
+
+## Preflight Quality Gate (COMPLETE)
+- `src/general_ludd/quality/preflight.py` — 8 pre-commit checks: coverage>85%, lint, mypy, templates, playbooks, molecule, filestore, sprint boxes
+- `verify_task_completion(criteria, evidence)` — task completion verification with keyword matching
+- `make preflight` target — runs all 8 checks, exits non-zero on failure
+- `make test-and-commit` — now runs preflight BEFORE tests
+- Enforce-make plugin — pre-commit warning + task-verification injection on completion claims
+- `delete-file` Makefile target added
+- 15 unit tests + 8 integration tests (real daemon via ASGITransport)
+
+## Status Audit & Fixes (COMPLETE)
+- **Bug: uptime_ticks always 0** — EventLoop never wrote `total_ticks` to `_daemon_state`. Fixed by:
+  - EventLoop now accepts `daemon_state` parameter
+  - `tick()` increments persistent `_total_ticks` counter and writes metrics to daemon_state
+  - Daemon lifespan passes `_daemon_state` to EventLoop constructor
+- **False-positive test deleted**: `test_enhanced_status.py` duplicated handler code instead of testing real daemon
+- **Real integration tests**: `tests/integration/test_enhanced_status_real.py` — 8 tests against actual daemon via ASGITransport
+- **test_daemon.py:test_status_endpoint** expanded from 2 field checks to all 11 enhanced fields
+- **Benchmark schemas exported** from `schemas/__init__.py` (BenchmarkResult, BenchmarkScores, PromptProfile, RoutingCandidate, RoutingDecision, TaskType)
+- **config/prompt_profiles/collected/.gitkeep** created (directory now exists)
+- **SESSION.md cleaned**: duplicate/contradictory lines removed, test counts updated, commit hash current
 
 ## Commits This Session
 1. `c0bdcf8` — fix: VariableNamespaceRepository project-scoped loading with global override semantics

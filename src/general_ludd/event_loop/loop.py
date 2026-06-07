@@ -129,9 +129,11 @@ class EventLoop:
         skill_registry: Any | None = None,
         variable_repo: Any | None = None,
         adaptive_router: Any | None = None,
+        daemon_state: dict[str, Any] | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
+        self._daemon_state = daemon_state
         if isinstance(session, async_sessionmaker):
             self._session_factory: async_sessionmaker[AsyncSession] | None = session
             self.session: AsyncSession | None = None
@@ -151,6 +153,7 @@ class EventLoop:
         self._mcp_client = mcp_client
         self._mcp_tool_registry = mcp_tool_registry
         self._running = False
+        self._total_ticks = 0
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
@@ -220,7 +223,9 @@ class EventLoop:
 
     async def tick(self) -> dict[str, Any]:
         self._tick_state = {}
+        self._total_ticks += 1
         self._tick_metrics = {
+            "total_ticks": self._total_ticks,
             "phases_completed": 0,
             "tick_duration_ms": 0.0,
             "returns_reviewed": 0,
@@ -237,6 +242,8 @@ class EventLoop:
             self._tick_metrics["phases_completed"] += 1
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
+        if self._daemon_state is not None:
+            self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
         return self._tick_metrics
 
     async def run_forever(self, interval: float = 1.0) -> None:

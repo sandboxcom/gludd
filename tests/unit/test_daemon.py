@@ -107,8 +107,19 @@ class TestDaemonApp:
             resp = await client.get("/api/status")
             assert resp.status_code == 200
             data = resp.json()
+            assert "version" in data
+            assert isinstance(data["version"], str)
+            assert "uptime_ticks" in data
+            assert isinstance(data["uptime_ticks"], int)
+            assert "todos_total" in data
             assert "queue_depths" in data
             assert "tick_metrics" in data
+            assert "config_dir" in data
+            assert "config_files" in data
+            assert "filestore_root" in data
+            assert "filestore_binaries" in data
+            assert "db_engine" in data
+            assert "db_url" in data
 
     @pytest.mark.asyncio
     async def test_deployments_endpoint(self, transport):
