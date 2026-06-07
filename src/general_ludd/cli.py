@@ -1405,10 +1405,16 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             _editor_table.add_column("Option", style="cyan", no_wrap=True)
             _editor_table.add_column("Value", style="green")
             _editor_table.add_column("Help", style="dim")
-            for cat in config_nav["categories"]:
-                _editor_table.add_row(f"[bold yellow]{cat.name}[/]", "", "")
-                for item in cat.menu_items:
-                    _editor_table.add_row(f"  {item.label}", str(item.value), item.help_text)
+            items = config_nav["current_items"]
+            sel = config_nav["selected_cat"]
+            if config_nav["depth"] == 0:
+                for i, cat in enumerate(items):
+                    prefix = "\u25b6" if i == sel else " "
+                    _editor_table.add_row(f"{prefix} [bold]{cat.name}[/]", "", "")
+            else:
+                for i, item in enumerate(items):
+                    prefix = "\u25b6" if i == sel else " "
+                    _editor_table.add_row(f"{prefix} {item.label}", str(item.value), item.help_text)
             body["left"].split(
                 Layout(build_daemon_table(), name="daemon"),
             )
@@ -1463,16 +1469,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                         config_nav["current_items"] = cat.menu_items
                         config_nav["depth"] = 1
                         config_nav["selected_item"] = 0
-                        config_nav["selected_cat"] = config_nav["selected_cat"]
+                        config_nav["selected_cat"] = 0
             elif ch == "\x1b":
                 if config_nav["depth"] > 0:
                     config_nav["depth"] = 0
                     config_nav["current_items"] = config_nav["categories"]
                     config_nav["selected_item"] = 0
+                    config_nav["selected_cat"] = 0
                 else:
                     current_view = "main"
                     status_msg = ""
-            elif ch == "q":
+            elif ch in ("c", "q"):
                 current_view = "main"
                 status_msg = ""
             return True
