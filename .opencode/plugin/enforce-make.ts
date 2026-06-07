@@ -246,6 +246,25 @@ export default (async ({ }) => {
           )
         }
 
+        // Preflight hook: BLOCK test-and-commit if preflight checks would fail
+        const isCommitTarget = /\bmake\s+test-and-commit\b/.test(trimmed)
+        if (isCommitTarget) {
+          const PREFLIGHT_GATE = [
+            "⛔ PREFLIGHT QUALITY GATE ACTIVE",
+            "",
+            "Before commit, you MUST verify all quality checks pass.",
+            "Run `make preflight` and confirm ALL 8 checks pass.",
+            "",
+            "Checks: coverage>85%, lint, mypy, templates, playbooks,",
+            "molecule, filestore, sprint boxes.",
+            "",
+            "If preflight fails, fix the issues BEFORE attempting commit.",
+            "The commit will be BLOCKED until preflight passes.",
+            "",
+          ].join("\n")
+          console.warn(PREFLIGHT_GATE)
+        }
+
         const afterMake = trimmed.slice(5).trim()
         const invalidPatterns = [
           /\b2>&1\b/,
@@ -384,7 +403,8 @@ export default (async ({ }) => {
         "Never ask. Never wait. Just do the work.",
         "",
       ].join("\n")
-        "you to stop if they want you to stop.",
+      const selfDirected = [
+        "If the user wants you to stop if they want you to stop.",
         "",
         "CORRECT BEHAVIOR: When asked for status, answer briefly, then",
         "immediately continue working on the next pending task. Do not ask",
@@ -419,10 +439,41 @@ export default (async ({ }) => {
         '"I don\'t have evidence for this" or "Based on [source], ..."',
         "",
       ].join("\n")
+
+      const preflightCommitPrompt = [
+        "",
+        "## CRITICAL: Preflight Quality Gate — Pre-Commit Verification",
+        "",
+        "Before committing (make test-and-commit), the preflight gate runs:",
+        "  1. Coverage >85% line rate",
+        "  2. Lint zero errors",
+        "  3. Mypy zero errors",
+        "  4. All prompt templates exist",
+        "  5. All playbooks exist",
+        "  6. Molecule scenarios present",
+        "  7. FileStore readable",
+        "  8. Sprint checkboxes all checked [x]",
+        "",
+        "If ANY check fails, the commit is BLOCKED. You MUST fix the failing",
+        "checks before commit will succeed.",
+        "",
+        "BEFORE calling a task 'complete':",
+        "  1. Define explicit acceptance criteria for the task.",
+        "  2. Run make preflight to verify all quality gates.",
+        "  3. Run verify_task_completion(criteria, evidence) to confirm.",
+        "  4. Only mark todo 'completed' if verify_task_completion returns",
+        "     complete=true with confidence > 0.8.",
+        "",
+        "This is a HARD gate. Do not mark tasks complete without verification.",
+        "",
+      ].join("\n")
+
       if (typeof output === "string") {
         output = preResponseAudit + "\n\n" + instructionFollowing + "\n\n" + output
         output += "\n\n" + completionRules
+        output += "\n\n" + selfDirected
         output += evidencePrompt
+        output += preflightCommitPrompt
         output += BASH_METACHAR_POLICY
       }
     },
@@ -444,6 +495,44 @@ export default (async ({ }) => {
           "",
         ].join("\n")
         output = override + "\n\n[INTERCEPTED MESSAGE BELOW]\n\n" + output
+      }
+
+      // Preflight: detect task-completion claims and inject verification demand
+      const lower = output.toLowerCase()
+      const completionClaims = [
+        "task is complete",
+        "all tasks complete",
+        "tasks are complete",
+        "mark done",
+        "mark complete",
+        "now done",
+        "now complete",
+        "all done",
+        "all complete",
+        "completed successfully",
+        "sprint complete",
+        "objectives delivered",
+        "all objectives",
+        "task completed",
+        "tasks completed",
+      ]
+      if (completionClaims.some(c => lower.includes(c))) {
+        const verification = [
+          "",
+          "⛔ PREFLIGHT: TASK COMPLETION VERIFICATION REQUIRED",
+          "",
+          "You claimed a task is complete. BEFORE marking it complete:",
+          "  1. Run `make preflight` — all 8 checks must PASS.",
+          "  2. Use verify_task_completion(criteria, evidence) from",
+          "     general_ludd.quality.preflight.",
+          "  3. Only mark complete if confidence > 0.8.",
+          "  4. Evidence required: coverage%, lint errors, mypy errors,",
+          "     test pass/fail counts.",
+          "",
+          "Without this verification, do NOT call the task complete.",
+          "",
+        ].join("\n")
+        output = output + verification
       }
     },
   }

@@ -19,7 +19,7 @@ TESTS_DIR := tests
         ansible-syntax ansible-lint-playbooks playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
-		feature-start feature-done test-and-commit \
+		feature-start feature-done test-and-commit preflight \
 		molecule-version \
         container-build container-run container-push \
         build-executable dist dist-clean \
@@ -173,6 +173,10 @@ git-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
+delete-file:
+	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
+	@$(RM) $(FILES)
+
 git-reset:
 	@if [ -z "$(FILES)" ]; then \
 		echo "Usage: make git-reset FILES='HEAD~1' (or specific ref)"; \
@@ -208,10 +212,18 @@ feature-done:
 	@$(MAKE) dist
 	@echo "Feature complete. Tests green, distributables built."
 
+preflight:
+	@echo "========================================"
+	@echo "  PREFLIGHT QUALITY GATE"
+	@echo "========================================"
+	@$(UV) run python -c "import json, sys; from general_ludd.quality.preflight import run_preflight; r = run_preflight(); json.dump(r, sys.stdout, indent=2); sys.exit(0 if r['overall'] == 'PASS' else 1)"
+
 test-and-commit:
+	@echo "Running preflight checks..."
+	@$(MAKE) preflight
 	@echo "Running tests before commit..."
 	@$(UV) run python -m pytest tests/ --cov=general_ludd -q
-	@echo "Tests passed. Committing..."
+	@echo "Preflight passed. Tests passed. Committing..."
 	@git add -A
 	@if [ -n "$(MSG)" ]; then \
 		git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"; \
