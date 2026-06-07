@@ -117,3 +117,21 @@ class TestDaemonPidFile:
                 child.wait(timeout=3)
             except Exception:
                 pass
+
+    def test_child_survives_parent_with_detached_popen(self):
+        import subprocess
+        import sys
+
+        child = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(5)"],
+            stdin=subprocess.DEVNULL,
+            stdout=subprocess.DEVNULL,
+            stderr=subprocess.DEVNULL,
+            start_new_session=True,
+            close_fds=True,
+        )
+        assert child.pid > 0
+        assert child.poll() is None
+        child.kill()
+        child.wait(timeout=3)
+

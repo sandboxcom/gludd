@@ -509,7 +509,16 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         "--bind",
         f"{args.host}:{args.port}",
     ]
-    sys.exit(subprocess.call(cmd))
+    proc = subprocess.Popen(
+        cmd,
+        stdin=subprocess.DEVNULL,
+        stdout=subprocess.DEVNULL,
+        stderr=subprocess.DEVNULL,
+        start_new_session=True,
+        close_fds=True,
+    )
+    proc.wait()
+    sys.exit(proc.returncode)
 
 
 def _cmd_add(args: argparse.Namespace) -> None:
@@ -1553,9 +1562,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         try:
             daemon_proc = subprocess.Popen(
                 [sys.executable, "-m", "general_ludd.cli", "daemon"],
+                stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,
                 start_new_session=True,
+                close_fds=True,
             )
             daemon_running = True
             _get_daemon_pid_dir()
