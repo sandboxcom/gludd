@@ -363,7 +363,16 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
    - Are secrets scoped? (per-project secret paths)
    - Is the config per-project? (project-level config overrides)
 
-7. **Evidence**: After completing the audit, run `make test` and cite the pass count.
+7. **Cross-Interface Completeness Audit**: For every NEW feature or capability added:
+   - If added to CLI, is it ALSO available in the TUI? (e.g., project add → TUI project view)
+   - If added to daemon API, is there a CLI command AND a TUI action?
+   - If added as a config option, is there a daemon endpoint AND a CLI flag?
+   - If added to one view, is it accessible from ALL relevant views?
+   - **Pattern**: "CLI get project add" → MUST also have TUI project management.
+     "CLI get dispatch_mode" → TUI must show and allow setting it.
+   - **Anti-pattern**: Declaring a feature done because it exists in ONE interface.
+
+8. **Evidence**: After completing the audit, run `make test` and cite the pass count.
    Run `make lint` and `make typecheck` and cite the results.
 
 ### How to Execute

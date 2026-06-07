@@ -3,15 +3,27 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-07
+- 2026-06-07 (session 2)
 
 ## Current Status
-- **Phase**: Sprint 1 complete + Preflight Quality Gate + Enhanced Status + TUI + Binary Bundling + Integrity + Project Isolation
-- **Test Suite**: 2161 passed (unit), 0 failures, 91.01% coverage
+- **Phase**: Guardrail hardening for premature-stop prevention
+- **Test Suite**: 49 guardrail tests passing (49 passed, 1 skipped)
 - **Branch**: master
-- **Latest commit**: e2e7380 (approximate — voice session), uncommitted changes pending
+- **Latest commit**: e2e7380 (approximate — voice session), guardrail hardening uncommitted
 - **Mypy**: 0 errors (strict mode, 159 source files)
 - **Lint**: 0 errors (ruff)
+
+## This Session: Guardrail Hardening (IN PROGRESS)
+- Audited BUGS.md: 6 premature-stop incidents, all sharing same root cause
+- Root cause: `chat.response.transform` detects patterns but cannot throw/block
+- System prompt audit was buried, not front-loaded
+- Pattern detection too narrow — missed test results, coverage, commit+summary combos
+- **Fixes applied**:
+  1. Expanded STOP_SIGNAL_WORDS from ~40 to ~60+ patterns
+  2. Rewrote `detectStopPattern()` with 6 new heuristic checks
+  3. Added `stopAuditOverride` as FIRST section in system transform
+  4. New BUGS.md incident entry documenting this audit
+- **Pending**: commit changes, verify full test suite still green
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.

@@ -4,7 +4,20 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
-### 2026-06-07 — Agent stopped with analysis/report instead of continuing work (RECURRING)
+### 2026-06-07 — Agent shipped CLI project management without TUI project management (INTERFACE PARITY FAILURE)
+
+- **What stopped before finishing**: User asked "how do i add repos or locations to be worked on?" Agent implemented `gludd project add/list/remove` CLI commands, `dispatch_mode` on ProjectWeight, config YAML seeding, and watchdog event dispatcher — then committed and stopped. The TUI (`_cmd_tui`) was not updated. User had to ask again.
+- **Why guardrail failed**: The `completion_audit` only checks whether source classes are imported/wired — it doesn't check for feature parity across interfaces (CLI vs TUI). There is no automated check that a feature added to one interface must also be added to others (TUI, daemon API, playbooks, config).
+- **Root cause**: Missing "cross-interface completeness" check. When a feature is added to one interface (CLI), there should be a guardrail that prompts the agent to check whether it also belongs in the TUI, daemon endpoints, ansible playbooks, and config files.
+- **Fix applied**:
+  1. This incident logged.
+  2. Added TUI project management (add/list/remove with dispatch_mode) — see next commit.
+  3. Added cross-interface completeness check to AGENTS.md guardrails.
+  4. The agent must now audit: "If I added this to CLI, does it belong in TUI? If to daemon, does it need a CLI command? If to config, does it need a daemon endpoint?"
+
+**Pattern**: Agent treats "feature done" as "feature done in one interface" rather than "feature done in ALL interfaces where it applies."
+
+
 
 - **What stopped before finishing**: After committing guardrail fixes, agent sent text explaining "The guardrails failed because chat.response.transform only prepended..." — an analysis report instead of continuing to work on the pending project isolation wiring tasks. The todowrite had 7 pending items.
 - **Why guardrail failed**: The stop-pattern detection list didn't include phrases like "Fixed:", "continuing with", "now continuing", "the answer is", "to summarize", etc. The `chat.response.transform` replacement worked for pure completion reports but not for analysis/explanation patterns that end a response without a tool call.
@@ -57,3 +70,16 @@ All premature-stop incidents and process failures are tracked here.
   3. Front-loaded the system-prompt injection with "READ FIRST" stop-policy as the FIRST section
   4. Added 8 new stop-signal phrases ("shall i do", "now everything is truly complete", "this is truly done", "all green", "ready for review", "waiting for your")
   5. This BUGS.md entry tracks the recurring pattern
+
+### 2026-06-07 (SESSION START AUDIT) — Guardrail hardening for recurring premature stops
+
+- **Root cause analysis**: 6 incidents in BUGS.md. All share the same pattern: agent generates text-only response when todowrite has pending/in_progress items. The `chat.response.transform` hook can replace detected stop patterns but CANNOT throw/block like `tool.execute.before` can. The system prompt injection was buried after other sections rather than being the first thing the model reads.
+- **Why fixes kept failing**: 
+  1. Pattern detection was too narrow — missed test results, coverage lines, commit+summary combos
+  2. System prompt had the audit rule but not as the FIRST/HIGHEST PRIORITY section
+  3. No heuristic for "long response with test results + bullet lists" = status report
+- **Fix applied (this session)**:
+  1. Expanded STOP_SIGNAL_WORDS from ~40 to ~60+ patterns, adding: test result phrases, coverage phrases, "what did we do", "summary of changes", "wrapping up", "finishing up", etc.
+  2. Rewrote `detectStopPattern()` with 6 new heuristic checks: commit+passed (lowered threshold), test+coverage lines, commit+table, test+bullet-list, coverage+last-line-summary
+  3. Added `stopAuditOverride` as the VERY FIRST section in `system.transform` — triple-stop-sign emoji, "HIGHEST PRIORITY", references BUGS.md incident count
+  4. This BUGS.md entry for audit trail

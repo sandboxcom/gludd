@@ -184,13 +184,27 @@ const STOP_SIGNAL_WORDS = [
   "in summary",
   "recap:",
   "the answer is",
-  "2731 pass",
-  "2743 pass",
-  "2765 pass",
-  "2797 pass",
-  "2804 pass",
-  "2810 pass",
   "committed .",
+  "tests pass",
+  "test-and-commit",
+  "passed, 0 failed",
+  "0 failures",
+  "coverage:",
+  "mypy: 0 errors",
+  "lint: 0 errors",
+  "here's what was",
+  "here is what was",
+  "what did we do",
+  "summary of changes",
+  "changes made",
+  "completed work",
+  "finished work",
+  "done with",
+  "wrapped up",
+  "that completes",
+  "this completes",
+  "wrapping up",
+  "finishing up",
 ]
 
 const RESUME_COMMAND = [
@@ -220,19 +234,30 @@ function detectStopPattern(responseText: string): boolean {
   let passedCount = false
   let summaryTable = false
   let lastLineIsSummary = false
+  let testResultLine = false
+  let coverageLine = false
+  let bulletListCount = 0
   for (const line of lines) {
-    if (/^\[master [a-f0-9]{7}\]/.test(line.trim())) commitHashCount++
-    if (/\d+ passed/.test(line) && /0 failed/.test(line)) passedCount = true
-    if (line.includes("|") && line.includes("---") && line.includes(":")) summaryTable = true
+    const trimmed = line.trim()
+    if (/^\[master [a-f0-9]{7}\]/.test(trimmed)) commitHashCount++
+    if (/\d+ passed/.test(trimmed) && /0 failed/.test(trimmed)) passedCount = true
+    if (/^\d+ passed/.test(trimmed)) testResultLine = true
+    if (/^\d+\.\d+%/.test(trimmed) || /coverage.*\d+%/.test(trimmed)) coverageLine = true
+    if (trimmed.includes("|") && trimmed.includes("---")) summaryTable = true
+    if (/^[-*]\s/.test(trimmed)) bulletListCount++
   }
   if (lines.length > 0) {
     const last = lines[lines.length - 1].trim().toLowerCase()
-    if (last === "done." || last === "done!" || last === "complete." || last === "all green." || last === "ready.") {
+    if (last === "done." || last === "done!" || last === "complete." || last === "all green." || last === "ready." || last === "committed." || last === "finished.") {
       lastLineIsSummary = true
     }
   }
-  if (commitHashCount >= 2 && passedCount) return true
-  if (passedCount && lastLineIsSummary && summaryTable) return true
+  if (commitHashCount >= 1 && passedCount) return true
+  if (passedCount && lastLineIsSummary) return true
+  if (testResultLine && coverageLine) return true
+  if (commitHashCount >= 1 && summaryTable) return true
+  if (testResultLine && bulletListCount >= 3) return true
+  if (coverageLine && lastLineIsSummary) return true
   return false
 }
 
@@ -506,7 +531,24 @@ export default (async ({ }) => {
       ].join("\n")
 
       if (typeof output === "string") {
-        output = preResponseAudit + "\n\n" + instructionFollowing + "\n\n" + output
+        const stopAuditOverride = [
+          "⛔⛔⛔ PRE-RESPONSE STOP AUDIT — HIGHEST PRIORITY ⛔⛔⛔",
+          "",
+          "BEFORE generating ANY text response, you MUST check:",
+          "  1. Are there items in todowrite with status 'pending' or 'in_progress'?",
+          "  2. If YES → your response MUST contain at least one tool call.",
+          "     Text-only responses are FORBIDDEN when work remains.",
+          "  3. The ONLY time to send text-only: ALL items are 'completed' or 'cancelled'.",
+          "",
+          "THIS IS NOT ADVISORY. THIS IS A HARD RULE.",
+          "Every past session failure was caused by violating this rule.",
+          "BUGS.md documents 6+ incidents of premature stops.",
+          "",
+          "STOP = tool call required. PERIOD.",
+          "",
+        ].join("\n")
+
+        output = stopAuditOverride + "\n\n" + preResponseAudit + "\n\n" + instructionFollowing + "\n\n" + output
         output += "\n\n" + completionRules
         output += "\n\n" + selfDirected
         output += evidencePrompt

@@ -1607,7 +1607,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         t.add_column("Status", style="green")
         t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
         t.add_row("k", "Kill daemon", "")
-        t.add_row("p", "Preflight", "")
+        t.add_row("p", "Preflight + Projects", "")
         t.add_row("i", "Integrity scan", "")
         t.add_row("v", "Config files", current_view)
         t.add_row("r", "Refresh", "")
@@ -1739,6 +1739,33 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_wt_table, name="worktrees"),
                 )
+            elif current_view == "projects":
+                _proj_table = Table(title="Registered Projects", show_header=True)
+                _proj_table.add_column("ID", style="cyan")
+                _proj_table.add_column("Name", style="green")
+                _proj_table.add_column("Weight", style="yellow")
+                _proj_table.add_column("Mode", style="bold")
+                _proj_table.add_column("Repo / Workspace", style="dim")
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
+                    if resp.status_code == 200:
+                        data = resp.json()
+                        for p in data.get("projects", []):
+                            mode = p.get("dispatch_mode", "active")
+                            mode_color = "green" if mode == "active" else "yellow"
+                            repo = p.get("repo_url", "") or p.get("workspace_path", "") or ""
+                            _proj_table.add_row(
+                                p.get("project_id", "?")[:12],
+                                p.get("name", "?"),
+                                f"{p.get('weight', 0)}%",
+                                f"[{mode_color}]{mode}[/]",
+                                repo[:40],
+                            )
+                except Exception:
+                    _proj_table.add_row("?", "Daemon not running", "", "", "Start with [s]")
+                body["right"].split(
+                    Layout(_proj_table, name="projects"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -1749,6 +1776,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             header_text = "Model Services — [m] exit  [q] quit"
         elif current_view == "worktrees":
             header_text = "Projects & Worktrees — [w] exit  [q] quit"
+        elif current_view == "projects":
+            header_text = "Registered Projects — [p] exit  [a]dd  [d]elete  [q] quit"
         elif current_view == "config":
             header_text = (
                 "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
@@ -1765,8 +1794,6 @@ def _cmd_tui(args: argparse.Namespace) -> None:
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg, config_nav, model_mgr
-        if len(ch) == 1:
-            ch = ch.lower()
         if current_view == "edit":
             if ch in ("\t", " ", "\r", "\n"):
                 ch = "\r"
@@ -1811,6 +1838,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 status_msg = f"Preflight: {result['overall']} ({result['passed_count']}/{result['total_count']})"
             except Exception as exc:
                 status_msg = f"Preflight error: {exc}"
+            current_view = "projects" if current_view != "projects" else "main"
+            if current_view == "projects":
+                status_msg = "Projects — [a]dd  [d]elete  [p] exit"
         elif ch == "i":
             try:
                 from general_ludd.integrity.scanner import FileIntegrityScanner
@@ -1826,7 +1856,47 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             current_view = "config" if current_view != "config" else "main"
         elif ch == "c":
             current_view = "edit" if current_view != "edit" else "main"
-            if current_view == "edit":
+        if len(ch) == 1:
+            ch = ch.lower()
+        if current_view == "projects" and ch == "a":
+            try:
+                import json as _json
+                resp = httpx.post(
+                    f"{args.daemon_url}/admin/projects",
+                    content=_json.dumps({"name": "new-project", "weight": 10}),
+                    headers={"Content-Type": "application/json"},
+                    timeout=5.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    status_msg = f"Added project: {data.get('project_id', '?')}"
+                else:
+                    status_msg = f"Add failed: {resp.status_code}"
+            except Exception as exc:
+                status_msg = f"Add error: {exc}"
+                _handle_connection_error(exc, args.daemon_url)
+            return True
+        if current_view == "projects" and ch == "d":
+            try:
+                resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
+                if resp.status_code == 200:
+                    projects = resp.json().get("projects", [])
+                    if projects:
+                        pid = projects[0].get("project_id", "")
+                        resp2 = httpx.delete(
+                            f"{args.daemon_url}/admin/projects/{pid}", timeout=5.0,
+                        )
+                        status_msg = (
+                            f"Removed {pid}"
+                            if resp2.status_code == 200
+                            else f"Remove failed: {resp2.status_code}"
+                        )
+                    else:
+                        status_msg = "No projects to remove"
+            except Exception as exc:
+                status_msg = f"Remove error: {exc}"
+            return True
+        if current_view == "edit":
                 config_nav = _load_config_editor()
                 status_msg = "Config editor: arrows navigate  Enter select  Esc back"
         elif ch == "m":
