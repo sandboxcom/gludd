@@ -35,7 +35,7 @@ class TestConfigMenu:
         editor = ConfigEditor()
         cats = editor.get_categories()
         assert isinstance(cats, list)
-        assert len(cats) >= 4
+        assert len(cats) >= 6
         names = {c.name for c in cats}
         assert "Database" in names
         assert "Model Routing" in names

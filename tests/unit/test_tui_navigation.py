@@ -52,7 +52,7 @@ class TestTUINavigationState:
         nav["depth"] = 0
         nav["current_items"] = nav["categories"]
         assert nav["depth"] == 0
-        assert len(nav["current_items"]) >= 4
+        assert len(nav["current_items"]) >= 6
 
     def test_escape_from_top_level_exits_edit(self):
         nav = self._make_nav()

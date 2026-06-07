@@ -110,6 +110,44 @@ class ConfigEditor:
                     MenuItem(label="Auth Method", key="auth_method", value="approle", item_type="str"),
                 ],
             ),
+            ConfigCategory(
+                name="AI Provider Keys",
+                overlay_path=self._overlay_path_for("ai_providers.yml"),
+                menu_items=[
+                    MenuItem(label="Z.AI API Key", key="ZAI_API_KEY", value="", item_type="str",
+                             help_text="Z.AI (z.ai) coding model API key"),
+                    MenuItem(label="OpenRouter Key", key="OPENROUTER_API_KEY", value="", item_type="str",
+                             help_text="OpenRouter unified API key"),
+                    MenuItem(label="OpenCode Key", key="OPENCODE_API_KEY", value="", item_type="str",
+                             help_text="OpenCode agent API key"),
+                    MenuItem(label="OpenAI API Key", key="OPENAI_API_KEY", value="", item_type="str",
+                             help_text="OpenAI API key"),
+                    MenuItem(label="Anthropic Key", key="ANTHROPIC_API_KEY", value="", item_type="str",
+                             help_text="Anthropic Claude API key"),
+                    MenuItem(label="HuggingFace Key", key="HF_TOKEN", value="", item_type="str",
+                             help_text="HuggingFace Hub API token"),
+                    MenuItem(label="Together Key", key="TOGETHER_API_KEY", value="", item_type="str",
+                             help_text="Together AI API key"),
+                ],
+            ),
+            ConfigCategory(
+                name="Cloud Credentials",
+                overlay_path=self._overlay_path_for("cloud_creds.yml"),
+                menu_items=[
+                    MenuItem(label="AWS Access Key", key="AWS_ACCESS_KEY_ID", value="", item_type="str"),
+                    MenuItem(label="AWS Secret Key", key="AWS_SECRET_ACCESS_KEY", value="", item_type="str"),
+                    MenuItem(label="AWS Region", key="AWS_DEFAULT_REGION", value="us-east-1", item_type="str"),
+                    MenuItem(label="Azure Client ID", key="ARM_CLIENT_ID", value="", item_type="str"),
+                    MenuItem(label="Azure Client Secret", key="ARM_CLIENT_SECRET", value="", item_type="str"),
+                    MenuItem(label="Azure Tenant ID", key="ARM_TENANT_ID", value="", item_type="str"),
+                    MenuItem(label="Azure Subscription", key="ARM_SUBSCRIPTION_ID", value="", item_type="str"),
+                    MenuItem(label="GCP Project", key="GOOGLE_PROJECT", value="", item_type="str"),
+                    MenuItem(
+                        label="GCP Credentials", key="GOOGLE_APPLICATION_CREDENTIALS",
+                        value="", item_type="str",
+                    ),
+                ],
+            ),
         ]
 
     def read_yaml(self, path: str) -> dict[str, Any]:
