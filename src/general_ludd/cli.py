@@ -6,9 +6,12 @@ import argparse
 import json
 import logging
 import sys
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import httpx
+
+if TYPE_CHECKING:
+    from rich.table import Table
 
 MAN_PAGE = """\
 NAME
@@ -1271,6 +1274,64 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _build_model_table(
+    servers: list[Any],
+    downloaded: list[Any],
+) -> Table:
+    from rich.table import Table
+
+    title = "Model Services"
+    if servers and downloaded:
+        title = "Model Services — Servers + Downloads"
+    elif servers:
+        title = "Model Services — Local Servers"
+    elif downloaded:
+        title = "Model Services — Downloaded Models"
+
+    t = Table(title=title, show_header=True)
+    t.add_column("ID", style="cyan")
+    t.add_column("Engine", style="green")
+    t.add_column("Model", style="yellow")
+    t.add_column("Status / Size", style="bold")
+    t.add_column("Path", style="dim")
+
+    for s in servers:
+        status_color = "green" if getattr(s, "is_running", False) else "red"
+        status_text = getattr(s, "status", "stopped")
+        t.add_row(
+            f"[s]{s.server_id}",
+            s.config.engine,
+            s.config.model_name or s.config.model_path or "?",
+            f"[{status_color}]{status_text}[/]",
+            "",
+        )
+
+    for dm in downloaded:
+        size_str = _fmt_size(dm.size_bytes) if dm.size_bytes else "?"
+        model_label = dm.model_id
+        if getattr(dm, "filename", None):
+            model_label = f"{dm.model_id} ({dm.filename})"
+        t.add_row(
+            f"[d]{dm.model_id[:30]}",
+            dm.engine,
+            model_label,
+            f"[dim]{size_str}[/]",
+            dm.local_path,
+        )
+    return t
+
+
+def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
+    parts: list[str] = []
+    if servers:
+        parts.append(f"{len(servers)} configured")
+    if downloaded:
+        parts.append(f"{len(downloaded)} downloaded")
+    if not parts:
+        return "Model services: no servers or downloads"
+    return f"Model services: {', '.join(parts)}"
+
+
 def _cmd_tui(args: argparse.Namespace) -> None:
     import os
     import select
@@ -1300,9 +1361,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     daemon_running = detect_daemon()
     config_nav = _load_config_editor()
     from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+    from general_ludd.models.model_registry import ModelRegistry
+
     model_mgr = LocalInferenceManager()
     model_mgr.create_server(LocalServerConfig(engine="llamacpp", model_path="/models/llama-7b.gguf", port=8081))
     model_mgr.create_server(LocalServerConfig(engine="vllm", model_name="meta-llama/Llama-3.2-1B", port=8000))
+    model_registry = ModelRegistry()
+    downloaded_models = model_registry.list_downloaded()
 
     def start_daemon() -> None:
         nonlocal daemon_proc, daemon_running, status_msg
@@ -1452,19 +1517,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     Layout(build_config_table(info), name="config"),
                 )
             elif current_view == "models":
-                _model_table = Table(title="Model Services", show_header=True)
-                _model_table.add_column("ID", style="cyan")
-                _model_table.add_column("Engine", style="green")
-                _model_table.add_column("Model", style="yellow")
-                _model_table.add_column("Status", style="bold")
-                _model_table.add_column("Endpoint", style="dim")
                 servers = model_mgr.list_servers()
-                for s in servers:
-                    status_color = "green" if s.is_running else "red"
-                    _model_table.add_row(
-                        s.server_id, s.config.engine, s.config.model_name or s.config.model_path or "?",
-                        f"[{status_color}]{s.status}[/]", s.endpoint_url,
-                    )
+                _model_table = _build_model_table(servers, downloaded_models)
                 body["right"].split(
                     Layout(_model_table, name="models"),
                 )
@@ -1581,7 +1635,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 status_msg = "Config editor: arrows navigate  Enter select  Esc back"
         elif ch == "m":
             current_view = "models" if current_view != "models" else "main"
-            status_msg = f"Model services: {len(model_mgr.list_servers())} configured"
+            if current_view == "models":
+                nonlocal downloaded_models
+                downloaded_models = model_registry.list_downloaded()
+                status_msg = _build_model_status_msg(model_mgr.list_servers(), downloaded_models)
         elif ch == "w":
             current_view = "worktrees" if current_view != "worktrees" else "main"
             if current_view == "worktrees":

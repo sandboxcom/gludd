@@ -3,16 +3,15 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-06
+- 2026-06-07
 
 ## Current Status
-- **Phase**: Sprint 1 complete + Preflight Quality Gate + Enhanced Status
-- **Test Suite**: 2731 passed, 26 skipped, 0 failures, 92.19% coverage
+- **Phase**: Sprint 1 complete + Preflight Quality Gate + Enhanced Status + TUI + Binary Bundling + Integrity + Project Isolation
+- **Test Suite**: 2161 passed (unit), 0 failures, 91.01% coverage
 - **Branch**: master
-- **Latest commit**: e06903e — preflight quality gate + task completion verification
-- **Mypy**: 0 errors (strict mode, 154 source files)
+- **Latest commit**: e2e7380 (approximate — voice session), uncommitted changes pending
+- **Mypy**: 0 errors (strict mode, 159 source files)
 - **Lint**: 0 errors (ruff)
-- **Distributables**: dist/general-ludd-agent-0.1.0-Darwin-arm64.tar.gz + .sha256 checksum (rebuilt)
 
 ## Sprint0 Objectives (ALL COMPLETE)
 obj01-obj16 all complete.

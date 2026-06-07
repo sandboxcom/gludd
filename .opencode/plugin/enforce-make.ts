@@ -275,6 +275,14 @@ export default (async ({ }) => {
         }
 
         const afterMake = trimmed.slice(5).trim()
+        const words = afterMake.split(/\s+/)
+        const targetName = words[0] || ""
+        const restArgs = words.slice(1).join(" ")
+
+        // only scan arguments (not target name) for forbidden patterns
+        // target names like git-status, git-diff, etc. are valid Makefile targets
+        const toScan = restArgs
+
         const invalidPatterns = [
           /\b2>&1\b/,
           /\b>\s/,
@@ -301,7 +309,7 @@ export default (async ({ }) => {
           /\bsource\b/,
         ]
         for (const pattern of invalidPatterns) {
-          if (pattern.test(afterMake)) {
+          if (pattern.test(toScan)) {
             throw new Error(
               formatBashBlockedMessage(
                 trimmed,
