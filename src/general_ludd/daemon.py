@@ -438,12 +438,42 @@ def create_daemon_app(
     @app.get("/api/status")
     async def api_status() -> dict[str, Any]:
         queue_depths: dict[str, int] = {}
+        todo_count = 0
         for todo in _daemon_state["todos"]:
             q = todo.get("queue", "unknown")
             queue_depths[q] = queue_depths.get(q, 0) + 1
+            todo_count += 1
+
+        import os
+
+        from general_ludd import __version__
+        config_dir = getattr(app.state, "_config_dir", None)
+        config_paths: list[str] = []
+        if config_dir and os.path.isdir(config_dir):
+            for f in sorted(os.listdir(config_dir)):
+                if f.endswith(".yml") or f.endswith(".yaml"):
+                    config_paths.append(os.path.join(config_dir, f))
+
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        boot = BinaryBootstrapper(store=store)
+        stored_binaries = [b["name"] for b in boot.list_binaries()]
+
+        elapsed = _daemon_state.get("tick_metrics", {})
         return {
+            "version": __version__,
+            "uptime_ticks": elapsed.get("total_ticks", 0),
+            "todos_total": todo_count,
             "queue_depths": queue_depths,
-            "tick_metrics": _daemon_state["tick_metrics"],
+            "tick_metrics": elapsed,
+            "config_dir": config_dir,
+            "config_files": config_paths,
+            "filestore_root": store.root_path,
+            "filestore_binaries": stored_binaries,
+            "db_engine": str(getattr(app.state, "_db_engine", None)),
+            "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
         }
 
     @app.get("/api/deployments")

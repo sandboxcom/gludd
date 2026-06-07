@@ -456,13 +456,38 @@ def _cmd_status(args: argparse.Namespace) -> None:
     try:
         if args.todo_id:
             resp = httpx.get(f"{args.daemon_url}/api/todos/{args.todo_id}", timeout=10.0)
+            if resp.status_code == 200:
+                print(json.dumps(resp.json(), indent=2))
+            else:
+                print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+                sys.exit(1)
         else:
             resp = httpx.get(f"{args.daemon_url}/api/status", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
+            if resp.status_code == 200:
+                data = resp.json()
+                print(f"General Ludd Agent v{data.get('version', 'unknown')}")
+                print("─────────────────────────────────────────────")
+                print(f"Config dir:  {data.get('config_dir', 'not set')}")
+                for cf in data.get("config_files", []):
+                    print(f"  ├─ {cf}")
+                print(f"Filestore:   {data.get('filestore_root', '')}")
+                bins = data.get("filestore_binaries", [])
+                if bins:
+                    print(f"  Binaries:  {', '.join(bins)}")
+                print(f"DB engine:   {data.get('db_engine', 'sqlite')}")
+                print(f"DB URL:      {data.get('db_url', '')}")
+                print(f"Uptime:      {data.get('uptime_ticks', 0)} ticks")
+                print(f"Todos:       {data.get('todos_total', 0)} total")
+                print("Queue depths:")
+                for q, d in sorted(data.get("queue_depths", {}).items()):
+                    print(f"  {q:<20} {d}")
+                metrics = data.get("tick_metrics", {})
+                if metrics:
+                    print(f"Dispatch:    {metrics.get('todos_dispatched', 0)} dispatched")
+                    print(f"Leases:      {metrics.get('leases_reclaimed', 0)} reclaimed")
+            else:
+                print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+                sys.exit(1)
     except Exception as exc:
         _handle_connection_error(exc, args.daemon_url)
 

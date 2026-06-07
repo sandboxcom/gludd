@@ -1,0 +1,45 @@
+---
+- name: Verify runtime validation results
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Assert worker import succeeded
+      ansible.builtin.assert:
+        that:
+          - worker_import.rc == 0
+          - "'WORKER OK' in worker_import.stdout"
+        fail_msg: "Worker import failed: {{ worker_import.stdout }}"
+        success_msg: "Worker app factory OK"
+
+    - name: Assert event loop import succeeded
+      ansible.builtin.assert:
+        that:
+          - loop_import.rc == 0
+          - "'EVENT_LOOP OK' in loop_import.stdout"
+        fail_msg: "EventLoop import failed: {{ loop_import.stdout }}"
+        success_msg: "EventLoop import OK"
+
+    - name: Assert runner adapter succeeded
+      ansible.builtin.assert:
+        that:
+          - runner_import.rc == 0
+          - "'RUNNER OK' in runner_import.stdout"
+        fail_msg: "Runner import failed: {{ runner_import.stdout }}"
+        success_msg: "AnsibleRunnerAdapter OK"
+
+    - name: Assert core runner succeeded
+      ansible.builtin.assert:
+        that:
+          - core_runner.rc == 0
+          - "'CORE_RUNNER OK' in core_runner.stdout"
+        fail_msg: "CoreAnsibleRunner failed: {{ core_runner.stdout }}"
+        success_msg: "CoreAnsibleRunner OK"
+
+    - name: Assert gunicorn config valid
+      ansible.builtin.assert:
+        that:
+          - gunicorn_conf.rc == 0
+          - "'GUNICORN OK' in gunicorn_conf.stdout"
+        fail_msg: "Gunicorn config failed: {{ gunicorn_conf.stdout }}"
+        success_msg: "Gunicorn config OK"

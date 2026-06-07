@@ -478,6 +478,44 @@
       "version": "0.7.0"
     },
     {
+      "bom-ref": "ansible-compat==26.3.0",
+      "description": "Ansible compatibility goodies",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: documentation",
+          "type": "documentation",
+          "url": "https://ansible.readthedocs.io/projects/compat/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: changelog",
+          "type": "release-notes",
+          "url": "https://github.com/ansible/ansible-compat/releases"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: repository",
+          "type": "vcs",
+          "url": "https://github.com/ansible/ansible-compat"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: homepage",
+          "type": "website",
+          "url": "https://github.com/ansible/ansible-compat"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "ansible-compat",
+      "purl": "pkg:pypi/ansible-compat@26.3.0",
+      "type": "library",
+      "version": "26.3.0"
+    },
+    {
       "bom-ref": "ansible-core==2.21.0",
       "description": "Radically simple IT automation",
       "externalReferences": [
@@ -524,6 +562,44 @@
       "purl": "pkg:pypi/ansible-core@2.21.0",
       "type": "library",
       "version": "2.21.0"
+    },
+    {
+      "bom-ref": "ansible-lint==26.4.0",
+      "description": "Checks playbooks for practices and behavior that could potentially be improved",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: documentation",
+          "type": "documentation",
+          "url": "https://docs.ansible.com/projects/lint/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: changelog",
+          "type": "release-notes",
+          "url": "https://github.com/ansible/ansible-lint/releases"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: repository",
+          "type": "vcs",
+          "url": "https://github.com/ansible/ansible-lint"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: homepage",
+          "type": "website",
+          "url": "https://github.com/ansible/ansible-lint"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "GPL-3.0-or-later"
+          }
+        }
+      ],
+      "name": "ansible-lint",
+      "purl": "pkg:pypi/ansible-lint@26.4.0",
+      "type": "library",
+      "version": "26.4.0"
     },
     {
       "bom-ref": "anyio==4.13.0",
@@ -744,6 +820,44 @@
       "version": "1.9.4"
     },
     {
+      "bom-ref": "black==26.5.1",
+      "description": "The uncompromising code formatter.",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Documentation",
+          "type": "documentation",
+          "url": "https://black.readthedocs.io/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Issues",
+          "type": "issue-tracker",
+          "url": "https://github.com/psf/black/issues"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Changelog",
+          "type": "release-notes",
+          "url": "https://github.com/psf/black/blob/main/CHANGES.md"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Repository",
+          "type": "vcs",
+          "url": "https://github.com/psf/black"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "black",
+      "purl": "pkg:pypi/black@26.5.1",
+      "type": "library",
+      "version": "26.5.1"
+    },
+    {
       "bom-ref": "boolean.py==5.0",
       "description": "Define boolean algebras, create and parse boolean expressions and create custom boolean DSL.",
       "externalReferences": [
@@ -765,6 +879,29 @@
       "purl": "pkg:pypi/boolean.py@5.0",
       "type": "library",
       "version": "5.0"
+    },
+    {
+      "bom-ref": "bracex==2.6",
+      "description": "Bash style brace expander.",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Homepage",
+          "type": "website",
+          "url": "https://github.com/facelessuser/bracex"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "bracex",
+      "purl": "pkg:pypi/bracex@2.6",
+      "type": "library",
+      "version": "2.6"
     },
     {
       "bom-ref": "certifi==2026.5.20",
@@ -1308,6 +1445,49 @@
       "purl": "pkg:pypi/distro@1.9.0",
       "type": "library",
       "version": "1.9.0"
+    },
+    {
+      "bom-ref": "enrich==1.2.7",
+      "description": "enrich",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Bug Tracker",
+          "type": "issue-tracker",
+          "url": "https://github.com/pycontribs/enrich/issues"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Source Code",
+          "type": "other",
+          "url": "https://github.com/pycontribs/enrich"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: CI",
+          "type": "other",
+          "url": "https://github.com/pycontribs/enrich/actions"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Release Management",
+          "type": "other",
+          "url": "https://github.com/pycontribs/enrich/releases"
+        },
+        {
+          "comment": "from packaging metadata: Home-page",
+          "type": "website",
+          "url": "https://github.com/pycontribs/enrich"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "enrich",
+      "purl": "pkg:pypi/enrich@1.2.7",
+      "type": "library",
+      "version": "1.2.7"
     },
     {
       "bom-ref": "fastapi==0.136.3",
@@ -2739,6 +2919,44 @@
       "version": "0.1.2"
     },
     {
+      "bom-ref": "molecule==26.4.0",
+      "description": "Molecule aids in the development and testing of Ansible roles",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: documentation",
+          "type": "documentation",
+          "url": "https://docs.ansible.com/projects/molecule/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: changelog",
+          "type": "release-notes",
+          "url": "https://github.com/ansible-community/molecule/releases"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: repository",
+          "type": "vcs",
+          "url": "https://github.com/ansible-community/molecule"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: homepage",
+          "type": "website",
+          "url": "https://github.com/ansible-community/molecule"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "molecule",
+      "purl": "pkg:pypi/molecule@26.4.0",
+      "type": "library",
+      "version": "26.4.0"
+    },
+    {
       "bom-ref": "msgpack==1.1.2",
       "description": "MessagePack serializer",
       "externalReferences": [
@@ -3853,6 +4071,29 @@
       "version": "1.4.0"
     },
     {
+      "bom-ref": "pytokens==0.4.1",
+      "description": "A Fast, spec compliant Python 3.14+ tokenizer that runs on older Pythons.",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Homepage",
+          "type": "website",
+          "url": "https://github.com/tusharsadhwani/pytokens"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "pytokens",
+      "purl": "pkg:pypi/pytokens@0.4.1",
+      "type": "library",
+      "version": "0.4.1"
+    },
+    {
       "bom-ref": "referencing==0.37.0",
       "description": "JSON Referencing + Python",
       "externalReferences": [
@@ -4182,6 +4423,44 @@
       "version": "2026.5.1"
     },
     {
+      "bom-ref": "ruamel.yaml==0.19.1",
+      "description": "ruamel.yaml is a YAML parser/emitter that supports roundtrip preservation of comments, seq/map flow style, and map key order",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Documentation",
+          "type": "documentation",
+          "url": "https://yaml.dev/doc/ruamel.yaml"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Tracker",
+          "type": "issue-tracker",
+          "url": "https://sourceforge.net/p/ruamel-yaml/tickets/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Source",
+          "type": "other",
+          "url": "https://sourceforge.net/p/ruamel-yaml/code/ci/default/tree/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Home",
+          "type": "website",
+          "url": "https://sourceforge.net/p/ruamel-yaml/"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "ruamel.yaml",
+      "purl": "pkg:pypi/ruamel.yaml@0.19.1",
+      "type": "library",
+      "version": "0.19.1"
+    },
+    {
       "bom-ref": "ruff==0.15.15",
       "description": "An extremely fast Python linter and code formatter, written in Rust.",
       "externalReferences": [
@@ -4494,6 +4773,44 @@
       "purl": "pkg:pypi/structlog@25.5.0",
       "type": "library",
       "version": "25.5.0"
+    },
+    {
+      "bom-ref": "subprocess-tee==0.4.2",
+      "description": "subprocess-tee",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: documentation",
+          "type": "documentation",
+          "url": "https://subprocess-tee.readthedocs.io"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: changelog",
+          "type": "release-notes",
+          "url": "https://github.com/pycontribs/subprocess-tee/releases"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: repository",
+          "type": "vcs",
+          "url": "https://github.com/pycontribs/subprocess-tee"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: homepage",
+          "type": "website",
+          "url": "https://github.com/pycontribs/subprocess-tee"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "subprocess-tee",
+      "purl": "pkg:pypi/subprocess-tee@0.4.2",
+      "type": "library",
+      "version": "0.4.2"
     },
     {
       "bom-ref": "tenacity==9.1.4",
@@ -5208,6 +5525,29 @@
       "version": "6.0.0"
     },
     {
+      "bom-ref": "wcmatch==10.1",
+      "description": "Wildcard/glob file name matcher.",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Homepage",
+          "type": "website",
+          "url": "https://github.com/facelessuser/wcmatch"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "wcmatch",
+      "purl": "pkg:pypi/wcmatch@10.1",
+      "type": "library",
+      "version": "10.1"
+    },
+    {
       "bom-ref": "webcolors==25.10.0",
       "description": "A library for working with the color formats defined by HTML and CSS.",
       "externalReferences": [
@@ -5308,6 +5648,39 @@
       "version": "3.7.0"
     },
     {
+      "bom-ref": "yamllint==1.38.0",
+      "description": "A linter for YAML files.",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: documentation",
+          "type": "documentation",
+          "url": "https://yamllint.readthedocs.io"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: repository",
+          "type": "vcs",
+          "url": "https://github.com/adrienverge/yamllint"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: homepage",
+          "type": "website",
+          "url": "https://github.com/adrienverge/yamllint"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "GPL-3.0-or-later"
+          }
+        }
+      ],
+      "name": "yamllint",
+      "purl": "pkg:pypi/yamllint@1.38.0",
+      "type": "library",
+      "version": "1.38.0"
+    },
+    {
       "bom-ref": "zstandard==0.25.0",
       "description": "Zstandard bindings for Python",
       "externalReferences": [
@@ -5384,6 +5757,7 @@
     },
     {
       "dependsOn": [
+        "black==26.5.1",
         "coverage==7.14.1",
         "mypy==2.1.0"
       ],
@@ -5413,6 +5787,16 @@
     },
     {
       "dependsOn": [
+        "PyYAML==6.0.3",
+        "ansible-core==2.21.0",
+        "jsonschema==4.26.0",
+        "packaging==26.2",
+        "subprocess-tee==0.4.2"
+      ],
+      "ref": "ansible-compat==26.3.0"
+    },
+    {
+      "dependsOn": [
         "Jinja2==3.1.6",
         "PyYAML==6.0.3",
         "cryptography==48.0.0",
@@ -5420,6 +5804,27 @@
         "resolvelib==1.2.1"
       ],
       "ref": "ansible-core==2.21.0"
+    },
+    {
+      "dependsOn": [
+        "PyYAML==6.0.3",
+        "ansible-compat==26.3.0",
+        "ansible-core==2.21.0",
+        "black==26.5.1",
+        "cffi==2.0.0",
+        "cryptography==48.0.0",
+        "distro==1.9.0",
+        "filelock==3.29.0",
+        "jsonschema==4.26.0",
+        "packaging==26.2",
+        "pathspec==1.0.4",
+        "referencing==0.37.0",
+        "ruamel.yaml==0.19.1",
+        "subprocess-tee==0.4.2",
+        "wcmatch==10.1",
+        "yamllint==1.38.0"
+      ],
+      "ref": "ansible-lint==26.4.0"
     },
     {
       "dependsOn": [
@@ -5459,9 +5864,26 @@
     },
     {
       "dependsOn": [
+        "click==8.4.1",
+        "mypy_extensions==1.1.0",
+        "packaging==26.2",
+        "pathspec==1.0.4",
+        "platformdirs==4.10.0",
+        "pytokens==0.4.1",
+        "tomli==2.4.1",
+        "typing_extensions==4.15.0"
+      ],
+      "ref": "black==26.5.1"
+    },
+    {
+      "dependsOn": [
+        "black==26.5.1",
         "pytest==9.0.3"
       ],
       "ref": "boolean.py==5.0"
+    },
+    {
+      "ref": "bracex==2.6"
     },
     {
       "ref": "certifi==2026.5.20"
@@ -5538,6 +5960,14 @@
     },
     {
       "dependsOn": [
+        "pytest-cov==7.1.0",
+        "pytest==9.0.3",
+        "rich==15.0.0"
+      ],
+      "ref": "enrich==1.2.7"
+    },
+    {
+      "dependsOn": [
         "Jinja2==3.1.6",
         "PyYAML==6.0.3",
         "annotated-doc==0.0.4",
@@ -5587,6 +6017,7 @@
         "aiosqlite==0.22.1",
         "alembic==1.18.4",
         "ansible-core==2.21.0",
+        "ansible-lint==26.4.0",
         "bandit==1.9.4",
         "cyclonedx-py==1.0.1",
         "fastapi==0.136.3",
@@ -5599,6 +6030,7 @@
         "langchain-openai==1.2.2",
         "langchain==1.3.2",
         "langgraph==1.2.2",
+        "molecule==26.4.0",
         "mypy==2.1.0",
         "pip_audit==2.10.0",
         "pre_commit==4.6.0",
@@ -5885,6 +6317,22 @@
       "ref": "mdurl==0.1.2"
     },
     {
+      "dependsOn": [
+        "Jinja2==3.1.6",
+        "PyYAML==6.0.3",
+        "ansible-compat==26.3.0",
+        "ansible-core==2.21.0",
+        "click==8.4.1",
+        "enrich==1.2.7",
+        "jsonschema==4.26.0",
+        "packaging==26.2",
+        "pluggy==1.6.0",
+        "rich==15.0.0",
+        "wcmatch==10.1"
+      ],
+      "ref": "molecule==26.4.0"
+    },
+    {
       "ref": "msgpack==1.1.2"
     },
     {
@@ -5932,6 +6380,7 @@
     {
       "dependsOn": [
         "SQLAlchemy==2.0.50",
+        "black==26.5.1",
         "mypy==2.1.0",
         "pytest==9.0.3",
         "setuptools==80.10.2"
@@ -5956,6 +6405,7 @@
     },
     {
       "dependsOn": [
+        "black==26.5.1",
         "packaging==26.2",
         "pyparsing==3.3.2",
         "pytest==9.0.3"
@@ -6011,6 +6461,7 @@
     },
     {
       "dependsOn": [
+        "black==26.5.1",
         "coverage==7.14.1",
         "packaging==26.2",
         "pytest-cov==7.1.0",
@@ -6028,6 +6479,7 @@
     {
       "dependsOn": [
         "anyio==4.13.0",
+        "black==26.5.1",
         "mypy==2.1.0",
         "pre_commit==4.6.0",
         "psycopg-binary==3.3.4",
@@ -6136,6 +6588,16 @@
     },
     {
       "dependsOn": [
+        "black==26.5.1",
+        "mypy==2.1.0",
+        "pytest-cov==7.1.0",
+        "pytest==9.0.3",
+        "setuptools==80.10.2"
+      ],
+      "ref": "pytokens==0.4.1"
+    },
+    {
+      "dependsOn": [
         "attrs==26.1.0",
         "rpds-py==2026.5.1",
         "typing_extensions==4.15.0"
@@ -6198,6 +6660,9 @@
       "ref": "rpds-py==2026.5.1"
     },
     {
+      "ref": "ruamel.yaml==0.19.1"
+    },
+    {
       "ref": "ruff==0.15.15"
     },
     {
@@ -6246,6 +6711,15 @@
         "typing_extensions==4.15.0"
       ],
       "ref": "structlog==25.5.0"
+    },
+    {
+      "dependsOn": [
+        "enrich==1.2.7",
+        "molecule==26.4.0",
+        "pytest-cov==7.1.0",
+        "pytest==9.0.3"
+      ],
+      "ref": "subprocess-tee==0.4.2"
     },
     {
       "dependsOn": [
@@ -6363,6 +6837,12 @@
       "ref": "watchdog==6.0.0"
     },
     {
+      "dependsOn": [
+        "bracex==2.6"
+      ],
+      "ref": "wcmatch==10.1"
+    },
+    {
       "ref": "webcolors==25.10.0"
     },
     {
@@ -6373,13 +6853,21 @@
     },
     {
       "dependsOn": [
+        "PyYAML==6.0.3",
+        "pathspec==1.0.4",
+        "ruff==0.15.15"
+      ],
+      "ref": "yamllint==1.38.0"
+    },
+    {
+      "dependsOn": [
         "cffi==2.0.0"
       ],
       "ref": "zstandard==0.25.0"
     }
   ],
   "metadata": {
-    "timestamp": "2026-06-07T02:33:20.067332+00:00",
+    "timestamp": "2026-06-07T02:43:20.832011+00:00",
     "tools": {
       "components": [
         {
@@ -6483,7 +6971,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:57978a56-a7cb-414d-9e16-903cd7e63ecc",
+  "serialNumber": "urn:uuid:2b470a73-4cf8-41bb-93a6-7ae356b4283b",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",

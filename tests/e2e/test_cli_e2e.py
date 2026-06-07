@@ -144,11 +144,24 @@ class TestStatusE2E:
         assert args.project == "proj-1"
 
     def test_status_system_status_success(self, capsys):
-        mock_resp = MagicMock(status_code=200, json=lambda: {"tick_count": 10, "status": "ok"})
+        mock_resp = MagicMock(status_code=200, json=lambda: {
+            "version": "0.1.0",
+            "uptime_ticks": 10,
+            "todos_total": 5,
+            "queue_depths": {"core": 3, "qa": 2},
+            "tick_metrics": {"todos_dispatched": 8},
+            "config_dir": "/etc/gludd",
+            "config_files": [],
+            "filestore_root": "/tmp",
+            "filestore_binaries": [],
+            "db_engine": "sqlite",
+            "db_url": "sqlite:///gludd.db",
+        })
         with patch("httpx.get", return_value=mock_resp):
             out, _err, code = _run_cli_output(["status"], capsys)
         assert code == 0
-        assert "tick_count" in out
+        assert "v0.1.0" in out
+        assert "Todos" in out
 
     def test_status_todo_detail_success(self, capsys):
         mock_resp = MagicMock(status_code=200, json=lambda: {"todo_id": "TODO-001", "title": "Fix"})

@@ -1,0 +1,33 @@
+---
+- name: Verify prompt template compilation results
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: Assert templates compiled successfully
+      ansible.builtin.assert:
+        that:
+          - template_compile.rc == 0
+          - "'FAIL' not in template_compile.stdout"
+        fail_msg: "Template compilation failed: {{ template_compile.stdout }}"
+        success_msg: "All templates compiled successfully"
+
+    - name: Assert templates rendered successfully
+      ansible.builtin.assert:
+        that:
+          - template_render.rc == 0
+          - "'EMPTY' not in template_render.stdout"
+          - "'RENDER_FAIL' not in template_render.stdout"
+        fail_msg: "Template rendering failed: {{ template_render.stdout }}"
+        success_msg: "All templates rendered with context"
+
+    - name: Count rendered templates
+      ansible.builtin.set_fact:
+        rendered_count: "{{ template_render.stdout | regex_findall('RENDERED:') | length }}"
+
+    - name: Assert minimum templates rendered
+      ansible.builtin.assert:
+        that:
+          - rendered_count | int >= 2
+        fail_msg: "Only {{ rendered_count }} templates rendered, expected >= 2"
+        success_msg: "{{ rendered_count }} templates rendered successfully"

@@ -1,0 +1,99 @@
+---
+- name: Converge - test Jinja2 template compilation and prompt rendering
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    templates_dir: "{{ lookup('env', 'PWD') }}/templates/prompts"
+    python_executable: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr/bin/python3') }}/bin/python3"
+  tasks:
+    - name: Discover all Jinja2 templates
+      ansible.builtin.find:
+        paths: "{{ templates_dir }}"
+        patterns: "*.j2"
+        recurse: true
+      register: template_files
+
+    - name: Verify at least base template exists
+      ansible.builtin.assert:
+        that:
+          - template_files.files | length >= 2
+        fail_msg: "Expected at least 2 Jinja2 templates (base + one per type)"
+        success_msg: "Template files found: {{ template_files.files | length }}"
+
+    - name: Verify implementation template includes base
+      ansible.builtin.shell:
+        cmd: |
+          grep -q "include.*base_harness_aware" "{{ templates_dir }}/implementation.md.j2" && echo "OK"
+      register: include_check
+      failed_when: "'OK' not in include_check.stdout"
+
+    - name: Compile all Jinja2 templates with Python
+      ansible.builtin.script:
+        cmd: |
+          import sys
+          sys.path.insert(0, 'src')
+          from jinja2 import Environment, FileSystemLoader, TemplateSyntaxError
+          import os
+          templates_dir = "{{ templates_dir }}"
+          env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
+          errors = []
+          for root, dirs, files in os.walk(templates_dir):
+              for f in files:
+                  if f.endswith('.j2'):
+                      path = os.path.join(root, f)
+                      rel = os.path.relpath(path, templates_dir)
+                      try:
+                          env.get_template(rel)
+                          print(f"OK: {rel}")
+                      except TemplateSyntaxError as e:
+                          errors.append(f"FAIL: {rel} — {e}")
+                          print(f"FAIL: {rel} — {e}")
+                      except Exception as e:
+                          errors.append(f"ERROR: {rel} — {e}")
+                          print(f"ERROR: {rel} — {e}")
+          if errors:
+              sys.exit(1)
+      register: template_compile
+      failed_when: template_compile.rc != 0
+
+    - name: Render all templates with test context
+      ansible.builtin.script:
+        cmd: |
+          import sys
+          sys.path.insert(0, 'src')
+          from jinja2 import Environment, FileSystemLoader
+          import os
+          templates_dir = "{{ templates_dir }}"
+          env = Environment(loader=FileSystemLoader(templates_dir), autoescape=True)
+          context = {
+              "todo_title": "Test compilation task",
+              "todo_description": "Verify templates compile correctly",
+              "work_type": "code",
+              "queue": "core",
+              "priority": "medium",
+              "return_id": "RET-TEST",
+              "task_return_json": '{"status": "ok"}',
+              "candidate_todos_json": '["TODO-001"]',
+          }
+          errors = []
+          for root, dirs, files in os.walk(templates_dir):
+              for f in files:
+                  if f.endswith('.j2'):
+                      path = os.path.join(root, f)
+                      rel = os.path.relpath(path, templates_dir)
+                      try:
+                          tpl = env.get_template(rel)
+                          result = tpl.render(**context)
+                          if len(result) > 0:
+                              print(f"RENDERED: {rel} ({len(result)} chars)")
+                          else:
+                              errors.append(f"EMPTY: {rel}")
+                              print(f"EMPTY: {rel}")
+                      except Exception as e:
+                          errors.append(f"RENDER_FAIL: {rel} — {e}")
+                          print(f"RENDER_FAIL: {rel} — {e}")
+          if errors:
+              sys.exit(1)
+      register: template_render
+      failed_when: template_render.rc != 0

@@ -19,7 +19,8 @@ TESTS_DIR := tests
         ansible-syntax ansible-lint-playbooks playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
-        feature-start feature-done test-and-commit \
+		feature-start feature-done test-and-commit \
+		molecule-version \
         container-build container-run container-push \
         build-executable dist dist-clean \
         sast sbom pip-audit security \
@@ -140,6 +141,9 @@ ansible-lint-playbooks:
 
 playbook-list:
 	@ls -1 playbooks/*.yml 2>/dev/null || echo "No playbooks found"
+
+molecule-version:
+	@$(UV) run molecule --version
 
 git-status:
 	@git status --short || echo "Not a git repo"
