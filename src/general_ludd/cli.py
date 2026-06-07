@@ -136,6 +136,17 @@ COMMANDS
 
     help                Show this manual
 
+    filestore           Filestore management commands
+      list [PATH]         List filestore contents (default: /)
+        --daemon-url URL    Daemon URL
+      cat PATH             Read a file from filestore
+        --daemon-url URL    Daemon URL
+      bootstrap            Download binaries into filestore
+        --binary NAME        Binary to download (default: openbao)
+        --daemon-url URL     Daemon URL
+      binaries             List stored binaries
+        --daemon-url URL     Daemon URL
+
 EXAMPLES
     gludd daemon
     gludd add "Fix login bug" --work-type bug_fix
@@ -351,6 +362,29 @@ def main() -> None:
     help_p = sub.add_parser("help", help="Show full manual")
     help_p.set_defaults(func=_cmd_help)
 
+    filestore_parser = sub.add_parser("filestore", help="Filestore management commands")
+    filestore_parser.set_defaults(func=None)
+    fs_sub = filestore_parser.add_subparsers(dest="filestore_command")
+
+    fs_list = fs_sub.add_parser("list", help="List filestore contents")
+    fs_list.add_argument("path", nargs="?", default="/", help="Path to list")
+    fs_list.add_argument("--daemon-url", default="http://localhost:8000")
+    fs_list.set_defaults(func=_cmd_filestore_list)
+
+    fs_read = fs_sub.add_parser("cat", help="Read a file from filestore")
+    fs_read.add_argument("path", help="Path to read")
+    fs_read.add_argument("--daemon-url", default="http://localhost:8000")
+    fs_read.set_defaults(func=_cmd_filestore_cat)
+
+    fs_bootstrap = fs_sub.add_parser("bootstrap", help="Download binaries into filestore")
+    fs_bootstrap.add_argument("--binary", default="openbao", help="Binary to download")
+    fs_bootstrap.add_argument("--daemon-url", default="http://localhost:8000")
+    fs_bootstrap.set_defaults(func=_cmd_filestore_bootstrap)
+
+    fs_bins = fs_sub.add_parser("binaries", help="List stored binaries")
+    fs_bins.add_argument("--daemon-url", default="http://localhost:8000")
+    fs_bins.set_defaults(func=_cmd_filestore_binaries)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -359,6 +393,7 @@ def main() -> None:
             "skills": skills_parser,
             "compute": compute_parser,
             "worktree": worktree_parser,
+            "filestore": filestore_parser,
         }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
@@ -898,6 +933,81 @@ def _cmd_leaderboard(args: argparse.Namespace) -> None:
 def _cmd_help(args: argparse.Namespace) -> None:
     print(MAN_PAGE)
     sys.exit(0)
+
+
+def _cmd_filestore_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/filestore/list",
+            params={"path": args.path},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Path: {data['path']} ({data['count']} entries)")
+            for e in data["entries"]:
+                tag = "[DIR]" if e["is_dir"] else f"[{e['size']}B]"
+                print(f"  {tag} {e['name']}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_filestore_cat(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/filestore/read",
+            params={"path": args.path},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("error"):
+                print(f"Error: {data['error']}", file=sys.stderr)
+                sys.exit(1)
+            if data.get("binary"):
+                print(f"[Binary file: {data['path']}]")
+            else:
+                print(data.get("content", ""))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_filestore_bootstrap(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/filestore/bootstrap",
+            params={"binary": args.binary},
+            timeout=300.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data["success"]:
+                print(f"Downloaded {data['binary']} to filestore")
+            else:
+                print(f"Failed: {data.get('error', 'unknown')}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_filestore_binaries(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/filestore/binaries",
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Stored binaries: {data['count']}")
+            for b in data["binaries"]:
+                print(f"  {b['name']} ({b['size']}B)")
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
 
 
 if __name__ == "__main__":

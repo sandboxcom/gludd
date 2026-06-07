@@ -33,6 +33,7 @@ dependencies = [
     "huggingface-hub>=0.28.0",
     "langgraph>=0.2.0",
     "watchdog>=6.0.0",
+    "fs>=2.4.0",
 ]
 
 [project.optional-dependencies]

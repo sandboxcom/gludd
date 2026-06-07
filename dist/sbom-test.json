@@ -564,6 +564,29 @@
       "version": "4.13.0"
     },
     {
+      "bom-ref": "appdirs==1.4.4",
+      "description": "A small Python module for determining appropriate platform-specific dirs, e.g. a \"user data dir\".",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata: Home-page",
+          "type": "website",
+          "url": "http://github.com/ActiveState/appdirs"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "appdirs",
+      "purl": "pkg:pypi/appdirs@1.4.4",
+      "type": "library",
+      "version": "1.4.4"
+    },
+    {
       "bom-ref": "arrow==1.4.0",
       "description": "Better dates & times for Python",
       "externalReferences": [
@@ -1389,6 +1412,44 @@
       "purl": "pkg:pypi/fqdn@1.5.1",
       "type": "library",
       "version": "1.5.1"
+    },
+    {
+      "bom-ref": "fs==2.4.16",
+      "description": "Python's filesystem abstraction layer",
+      "externalReferences": [
+        {
+          "comment": "from packaging metadata Project-URL: Documentation",
+          "type": "documentation",
+          "url": "https://pyfilesystem2.readthedocs.io/en/latest/"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Bug Reports",
+          "type": "issue-tracker",
+          "url": "https://github.com/PyFilesystem/pyfilesystem2/issues"
+        },
+        {
+          "comment": "from packaging metadata Project-URL: Wiki",
+          "type": "other",
+          "url": "https://www.pyfilesystem.org/"
+        },
+        {
+          "comment": "from packaging metadata: Home-page",
+          "type": "website",
+          "url": "https://github.com/PyFilesystem/pyfilesystem2"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "acknowledgement": "declared",
+            "id": "MIT"
+          }
+        }
+      ],
+      "name": "fs",
+      "purl": "pkg:pypi/fs@2.4.16",
+      "type": "library",
+      "version": "2.4.16"
     },
     {
       "bom-ref": "fsspec==2026.4.0",
@@ -5368,6 +5429,9 @@
       "ref": "anyio==4.13.0"
     },
     {
+      "ref": "appdirs==1.4.4"
+    },
+    {
       "dependsOn": [
         "pre_commit==4.6.0",
         "pytest-cov==7.1.0",
@@ -5494,6 +5558,14 @@
     },
     {
       "dependsOn": [
+        "appdirs==1.4.4",
+        "setuptools==80.10.2",
+        "six==1.17.0"
+      ],
+      "ref": "fs==2.4.16"
+    },
+    {
+      "dependsOn": [
         "Jinja2==3.1.6",
         "pre_commit==4.6.0",
         "pytest-asyncio==1.4.0",
@@ -5518,6 +5590,7 @@
         "bandit==1.9.4",
         "cyclonedx-py==1.0.1",
         "fastapi==0.136.3",
+        "fs==2.4.16",
         "greenlet==3.5.1",
         "gunicorn==26.0.0",
         "httpx==0.28.1",
@@ -6306,7 +6379,7 @@
     }
   ],
   "metadata": {
-    "timestamp": "2026-06-06T22:33:58.974211+00:00",
+    "timestamp": "2026-06-07T02:06:25.162096+00:00",
     "tools": {
       "components": [
         {
@@ -6410,7 +6483,7 @@
       ]
     }
   },
-  "serialNumber": "urn:uuid:ed7ccfe1-0d40-4239-8dc7-94d0f11f1b0a",
+  "serialNumber": "urn:uuid:9c38e8ca-c044-42d4-a6fc-b8da1f444f8c",
   "version": 1,
   "$schema": "http://cyclonedx.org/schema/bom-1.6.schema.json",
   "bomFormat": "CycloneDX",

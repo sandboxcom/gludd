@@ -1245,4 +1245,73 @@ def create_daemon_app(
             "tracked_count": len(tracked),
         }
 
+    @app.get("/admin/filestore/list")
+    async def admin_filestore_list(path: str = "/") -> dict[str, Any]:
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        entries = store.list_dir(path)
+        return {"path": path, "entries": entries, "count": len(entries)}
+
+    @app.get("/admin/filestore/read")
+    async def admin_filestore_read(path: str = "") -> dict[str, Any]:
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        if not store.exists(path):
+            return {"error": f"Path not found: {path}"}
+        if store.is_dir(path):
+            entries = store.list_dir(path)
+            return {"path": path, "is_dir": True, "entries": entries}
+        try:
+            content = store.read_text(path)
+            return {"path": path, "is_dir": False, "content": content}
+        except Exception:
+            return {"path": path, "is_dir": False, "binary": True}
+
+    @app.post("/admin/filestore/write")
+    async def admin_filestore_write(request: Any) -> dict[str, Any]:
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        body = await request.json()
+        path = body.get("path", "")
+        content = body.get("content", "")
+        store.write_text(path, content)
+        return {"success": True, "path": path}
+
+    @app.delete("/admin/filestore/remove")
+    async def admin_filestore_remove(path: str = "") -> dict[str, Any]:
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        if not store.exists(path):
+            return {"error": f"Path not found: {path}"}
+        store.remove(path)
+        return {"success": True, "path": path}
+
+    @app.post("/admin/filestore/bootstrap")
+    async def admin_filestore_bootstrap(
+        binary: str = "openbao",
+    ) -> dict[str, Any]:
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        boot = BinaryBootstrapper(store=store)
+        if binary == "openbao":
+            success = await boot.download_openbao()
+            return {"success": success, "binary": binary, "stored": boot.check_openbao_in_store()}
+        return {"success": False, "error": f"Unknown binary: {binary}"}
+
+    @app.get("/admin/filestore/binaries")
+    async def admin_filestore_binaries() -> dict[str, Any]:
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore
+
+        store = FileStore()
+        boot = BinaryBootstrapper(store=store)
+        bins = boot.list_binaries()
+        return {"binaries": bins, "count": len(bins)}
+
     return app
