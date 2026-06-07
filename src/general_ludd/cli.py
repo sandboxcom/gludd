@@ -3,9 +3,13 @@
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import logging
+import os
+import signal
 import sys
+import time
 from typing import TYPE_CHECKING, Any
 
 import httpx
@@ -1332,6 +1336,66 @@ def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
     return f"Model services: {', '.join(parts)}"
 
 
+_DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
+_DAEMON_PID_FILE = os.path.join(_DAEMON_PID_DIR, "daemon.pid")
+
+
+def _get_daemon_pid_dir() -> str:
+    os.makedirs(_DAEMON_PID_DIR, exist_ok=True)
+    return _DAEMON_PID_DIR
+
+
+def _write_daemon_pid_file(pid_file: str, pid: int, daemon_url: str) -> None:
+    os.makedirs(os.path.dirname(pid_file), exist_ok=True)
+    data = {"pid": pid, "daemon_url": daemon_url}
+    with open(pid_file, "w") as f:
+        json.dump(data, f)
+
+
+def _read_daemon_pid_file(pid_file: str) -> dict[str, Any] | None:
+    try:
+        with open(pid_file) as f:
+            data = json.load(f)
+            if isinstance(data, dict) and "pid" in data:
+                return data
+    except (json.JSONDecodeError, FileNotFoundError, OSError):
+        return None
+    return None
+
+
+def _is_daemon_pid_alive(pid_file: str) -> bool:
+    data = _read_daemon_pid_file(pid_file)
+    if data is None:
+        return False
+    try:
+        os.kill(data["pid"], 0)
+        return True
+    except (OSError, ProcessLookupError):
+        return False
+
+
+def _stop_daemon_via_pid_file(pid_file: str) -> bool:
+    data = _read_daemon_pid_file(pid_file)
+    if data is None:
+        return False
+    pid = data["pid"]
+    try:
+        os.kill(pid, signal.SIGTERM)
+        for _ in range(30):
+            try:
+                os.kill(pid, 0)
+                time.sleep(0.1)
+            except (OSError, ProcessLookupError):
+                break
+        else:
+            os.kill(pid, signal.SIGKILL)
+    except (OSError, ProcessLookupError):
+        pass
+    with contextlib.suppress(OSError):
+        os.unlink(pid_file)
+    return True
+
+
 def _cmd_tui(args: argparse.Namespace) -> None:
     import os
     import select
@@ -1351,6 +1415,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     status_msg = "Press q to quit, s to start daemon"
 
     def detect_daemon() -> bool:
+        if _is_daemon_pid_alive(_DAEMON_PID_FILE):
+            return True
         try:
             import httpx
             resp = httpx.get(f"{args.daemon_url}/healthz", timeout=1.0)
@@ -1359,6 +1425,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             return False
 
     daemon_running = detect_daemon()
+    if daemon_running:
+        pid_data = _read_daemon_pid_file(_DAEMON_PID_FILE)
+        if pid_data:
+            args.daemon_url = pid_data.get("daemon_url", args.daemon_url)
     config_nav = _load_config_editor()
     from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
     from general_ludd.models.model_registry import ModelRegistry
@@ -1383,6 +1453,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 start_new_session=True,
             )
             daemon_running = True
+            _get_daemon_pid_dir()
+            _write_daemon_pid_file(_DAEMON_PID_FILE, daemon_proc.pid, args.daemon_url)
             status_msg = f"Daemon started PID={daemon_proc.pid}"
         except Exception as exc:
             status_msg = f"Start failed: {exc}"
@@ -1397,10 +1469,18 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 daemon_proc.kill()
             daemon_proc = None
             daemon_running = False
+            with contextlib.suppress(OSError):
+                os.unlink(_DAEMON_PID_FILE)
             status_msg = "Daemon stopped"
+        elif _is_daemon_pid_alive(_DAEMON_PID_FILE):
+            if _stop_daemon_via_pid_file(_DAEMON_PID_FILE):
+                daemon_running = False
+                status_msg = "Daemon stopped via PID"
+            else:
+                status_msg = "Failed to stop daemon"
         elif daemon_running:
             daemon_running = False
-            status_msg = "Daemon running externally"
+            status_msg = "Daemon status cleared (not running)"
         else:
             status_msg = "No daemon to stop"
 
