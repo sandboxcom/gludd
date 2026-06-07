@@ -22,7 +22,7 @@ async def download_one(client: httpx.AsyncClient, boot: BinaryBootstrapper, name
         print(f"  {name}: already bundled at {dest}")
         return True
 
-    url = boot._get_download_url(name)
+    url = boot.get_download_url(name)
     version = boot.KNOWN_VERSIONS.get(name, "?")
     print(f"  {name}: downloading v{version} from {url}...")
 

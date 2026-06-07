@@ -115,11 +115,13 @@ class BinaryBootstrapper:
         if name == "openbao":
             version = OPENBAO_VERSION
             base = OPENBAO_BASE_URL
+            release_name = "bao"
         else:
             version = OPENTOFU_VERSION
             base = OPENTOFU_BASE_URL
+            release_name = "tofu"
         ext = ".zip" if os_name == "darwin" else ".tar.gz"
-        filename = f"{name}_{version}_{os_name}_{arch}{ext}"
+        filename = f"{release_name}_{version}_{os_name}_{arch}{ext}"
         return f"{base}/{filename}"
 
     async def download(self, name: str) -> bool:
