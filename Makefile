@@ -22,7 +22,7 @@ TESTS_DIR := tests
 		feature-start feature-done test-and-commit preflight \
 		molecule-version \
         container-build container-run container-push \
-        build-executable dist dist-clean \
+        build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
         qa validate
 
@@ -267,7 +267,7 @@ build-executable:
 verify-status:
 	@$(UV) run python scripts/verify_status.py
 
-dist: build-executable
+dist: build-executable bundle-binaries
 	@echo "Assembling tarball..."
 	@chmod +x dist/install.sh
 	@rm -rf $(TARBALL_DIR)
@@ -278,6 +278,7 @@ dist: build-executable
 	@cp dist/README.md $(TARBALL_DIR)/README.md
 	@cp -r config $(TARBALL_DIR)/config
 	@cp -r templates $(TARBALL_DIR)/templates
+	@cp -r dist/binaries $(TARBALL_DIR)/binaries 2>/dev/null || true
 	@mkdir -p $(TARBALL_DIR)/docs
 	@if [ -f docs/quickstart.md ]; then cp docs/quickstart.md $(TARBALL_DIR)/docs/; fi
 	@if [ -f docs/configuration.md ]; then cp docs/configuration.md $(TARBALL_DIR)/docs/; fi
@@ -290,7 +291,11 @@ dist: build-executable
 
 dist-clean:
 	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot build
-	@echo "Dist artifacts cleaned."
+
+bundle-binaries:
+	@echo "Checking for bundled binaries..."
+	@mkdir -p dist/binaries
+	@$(UV) run python scripts/check_bundled_binaries.py
 
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi

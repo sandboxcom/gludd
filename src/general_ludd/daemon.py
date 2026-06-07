@@ -351,6 +351,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+        from general_ludd.filestore.store import FileStore as _FS
+        bootloader = BinaryBootstrapper(store=_FS())
+        synced = bootloader.sync_bundled_to_filestore()
+        if synced:
+            logger.info("Synced bundled binaries to filestore: %s", ", ".join(synced))
+
         async def _init_preflight() -> None:
             from general_ludd.quality.preflight import run_preflight
 
