@@ -105,7 +105,19 @@ _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
 }
 
 
-def _playbook_for_work_type(work_type: str, default: str = "noop.yml", *, project_id: str | None = None) -> str:
+def _playbook_for_work_type(
+    work_type: str,
+    default: str = "noop.yml",
+    *,
+    project_id: str | None = None,
+    workspaces: dict[str, Any] | None = None,
+) -> str:
+    ws = workspaces.get(project_id) if workspaces and project_id else None
+    if ws is not None and hasattr(ws, "playbooks_dir"):
+        from pathlib import Path as _Path
+        pb_path = _Path(ws.playbooks_dir) / f"{work_type}.yml"
+        if pb_path.is_file():
+            return str(pb_path)
     return _WORK_TYPE_PLAYBOOK_MAP.get(work_type, default)
 
 
@@ -489,7 +501,17 @@ class EventLoop:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
         default_playbook = self._config_snapshot.get("default_playbook", "noop.yml")
         work_type = _safe_str(todo, "work_type", "code") or "code"
-        playbook = _playbook_for_work_type(work_type, default_playbook)
+        project_id_val = (
+            todo.project_id
+            if hasattr(todo, "project_id")
+            and isinstance(todo.project_id, str)
+            else None
+        )
+        workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
+        ws = workspaces.get(project_id_val) if workspaces and project_id_val else None
+        playbook = _playbook_for_work_type(
+            work_type, default_playbook, project_id=project_id_val, workspaces=workspaces,
+        )
 
         rule_overrides = self._get_rule_overrides_for_todo(todo)
 
@@ -519,16 +541,19 @@ class EventLoop:
         if prompt_text is None:
             prompt_text = self._resolve_prompt_text(todo)
         skill_body = self._resolve_skill_body(todo)
-        project_id_val = (
-            todo.project_id
-            if hasattr(todo, "project_id")
-            and isinstance(todo.project_id, str)
-            else None
-        )
         shared_vars = await self._load_shared_vars(project_id_val)
         if self._runner is not None:
             job_id = f"EXEC-{todo.todo_id}"
-            dirs = self._runner.prepare_job_dirs(job_id)
+            if ws is not None and hasattr(ws, "private_data_dir"):
+                import os as _os
+                job_dir = _os.path.join(str(ws.private_data_dir), job_id)
+                _os.makedirs(job_dir, exist_ok=True)
+                env_dir = _os.path.join(job_dir, "env")
+                _os.makedirs(env_dir, exist_ok=True)
+                pdd = str(ws.private_data_dir)
+            else:
+                dirs = self._runner.prepare_job_dirs(job_id)
+                pdd = dirs["root"]
             self._runner.write_vars(
                 job_id,
                 job_vars={
@@ -547,7 +572,7 @@ class EventLoop:
             )
             self._runner.run_playbook(
                 playbook_name=playbook,
-                private_data_dir=dirs["root"],
+                private_data_dir=pdd,
             )
             return
         if self._http_client is None:
