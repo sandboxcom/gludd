@@ -1344,4 +1344,65 @@ def create_daemon_app(
         bins = boot.list_binaries()
         return {"binaries": bins, "count": len(bins)}
 
+    @app.post("/admin/selftest")
+    async def admin_selftest() -> dict[str, Any]:
+        import subprocess
+
+        from general_ludd.config.binary_paths import BinaryPathResolver
+
+        resolver = BinaryPathResolver()
+        podman_available = resolver.is_available("podman")
+
+        results: list[dict[str, Any]] = []
+        scenarios_run = 0
+        scenarios_passed = 0
+        errors: list[str] = []
+
+        molecule_dir = "molecule/playbooks"
+        import os
+
+        if os.path.isdir(molecule_dir):
+            for scenario in sorted(os.listdir(molecule_dir)):
+                scenario_path = os.path.join(molecule_dir, scenario, "default")
+                if not os.path.isdir(scenario_path):
+                    continue
+                if not podman_available and scenario in ("runtime_validate",):
+                    results.append({
+                        "scenario": scenario,
+                        "passed": None,
+                        "skipped": True,
+                        "reason": "podman not available",
+                    })
+                    continue
+                try:
+                    result = subprocess.run(
+                        ["uv", "run", "molecule", "test", "-s", scenario],
+                        capture_output=True,
+                        text=True,
+                        timeout=300,
+                        cwd=os.getcwd(),
+                    )
+                    scenarios_run += 1
+                    passed = result.returncode == 0
+                    if passed:
+                        scenarios_passed += 1
+                    results.append({
+                        "scenario": scenario,
+                        "passed": passed,
+                        "returncode": result.returncode,
+                    })
+                    if not passed:
+                        errors.append(f"{scenario}: {result.stderr[:200]}")
+                except Exception as exc:
+                    errors.append(f"{scenario}: {exc}")
+
+        return {
+            "success": len(errors) == 0,
+            "podman_available": podman_available,
+            "scenarios_run": scenarios_run,
+            "scenarios_passed": scenarios_passed,
+            "results": results,
+            "errors": errors,
+        }
+
     return app

@@ -385,6 +385,10 @@ def main() -> None:
     fs_bins.add_argument("--daemon-url", default="http://localhost:8000")
     fs_bins.set_defaults(func=_cmd_filestore_binaries)
 
+    selftest_p = sub.add_parser("selftest", help="Run self-tests via molecule scenarios")
+    selftest_p.add_argument("--daemon-url", default="http://localhost:8000")
+    selftest_p.set_defaults(func=_cmd_selftest)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -1031,6 +1035,36 @@ def _cmd_filestore_binaries(args: argparse.Namespace) -> None:
             print(f"Stored binaries: {data['count']}")
             for b in data["binaries"]:
                 print(f"  {b['name']} ({b['size']}B)")
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_selftest(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/selftest",
+            timeout=120.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("podman_available"):
+                print("Container runtime: podman (available)")
+            else:
+                print("Container runtime: podman NOT available — some tests skipped")
+            print(f"Scenarios run:    {data.get('scenarios_run', 0)}")
+            print(f"Scenarios passed: {data.get('scenarios_passed', 0)}")
+            if data.get("errors"):
+                print(f"Errors:           {len(data['errors'])}")
+                for e in data["errors"]:
+                    print(f"  {e}")
+            for r in data.get("results", []):
+                status = "PASS" if r.get("passed") else "FAIL"
+                print(f"  [{status}] {r.get('scenario', 'unknown')}")
+            if not data.get("success"):
+                sys.exit(1)
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
     except Exception as exc:
         _handle_connection_error(exc, args.daemon_url)
 
