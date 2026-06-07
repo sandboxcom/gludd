@@ -570,7 +570,6 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
     info["binary_versions"] = boot.get_known_versions()
     stored = boot.list_binaries_with_versions()
     info["filestore_binaries"] = [{"name": b["binary_name"], "version": b.get("version", "?")} for b in stored]
-    info["platform_available"] = {n: boot.is_platform_available(n) for n in boot.KNOWN_VERSIONS}
     return info
 
 
@@ -595,17 +594,11 @@ def _format_offline_status(info: dict[str, Any]) -> None:
         for b in bins:
             print(f"    \u251c\u2500 {b['name']:<12} v{b.get('version', '?')}")
     versions = info.get("binary_versions", {})
-    platform_avail = info.get("platform_available", {})
     if versions:
         print("  Available versions:")
         for name, ver in sorted(versions.items()):
             stored = any(b.get("name") == name for b in bins)
-            if stored:
-                status = "stored"
-            elif not platform_avail.get(name, True):
-                status = "server-side only"
-            else:
-                status = "not downloaded"
+            status = "stored" if stored else "not downloaded"
             print(f"    \u251c\u2500 {name:<12} v{ver:<8} [{status}]")
     print()
     print(f"Database:    {info['db_path']}")
@@ -650,19 +643,13 @@ def _cmd_status(args: argparse.Namespace) -> None:
             print(f"Filestore:   {data.get('filestore_root', '')}")
             bins = data.get("filestore_binaries", [])
             versions = data.get("binary_versions", {})
-            platform_avail = data.get("platform_available", {})
             if versions:
                 for name, ver in sorted(versions.items()):
                     stored = any(
                         (b.get("name") if isinstance(b, dict) else b) == name
                         for b in bins
                     )
-                    if stored:
-                        status = "stored"
-                    elif not platform_avail.get(name, True):
-                        status = "server-side only"
-                    else:
-                        status = "not downloaded"
+                    status = "stored" if stored else "not downloaded"
                     print(f"  \u251c\u2500 {name} v{ver} [{status}]")
             print(f"DB engine:   {data.get('db_engine', 'sqlite')}")
             print(f"DB URL:      {data.get('db_url', '')}")
