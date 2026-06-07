@@ -1255,8 +1255,6 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
 
 
 def _cmd_tui(args: argparse.Namespace) -> None:
-    import subprocess
-    import threading
     import time
 
     from rich.console import Console
@@ -1265,14 +1263,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     from rich.panel import Panel
     from rich.table import Table
 
-    daemon_proc: subprocess.Popen[bytes] | None = None
-    daemon_running = False
-
     def build_daemon_table() -> Table:
         t = Table(title="Daemon")
         t.add_column("Key", style="cyan")
         t.add_column("Value", style="green")
-        t.add_row("Status", "running" if daemon_running else "stopped")
+        t.add_row("Status", "checking...")
         t.add_row("URL", args.daemon_url)
         return t
 
@@ -1305,38 +1300,6 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             t.add_row(name, "yes" if path else "no", str(path or ""))
         return t
 
-    def build_controls_table() -> Table:
-        t = Table(title="Controls")
-        t.add_column("Key", style="yellow")
-        t.add_column("Action")
-        t.add_row("s", "Start daemon")
-        t.add_row("k", "Kill daemon")
-        t.add_row("r", "Refresh")
-        t.add_row("q", "Quit")
-        return t
-
-    def start_daemon() -> None:
-        nonlocal daemon_proc, daemon_running
-        if daemon_running:
-            return
-        daemon_proc = subprocess.Popen(
-            [sys.executable, "-m", "general_ludd.cli", "daemon"],
-            stdout=subprocess.DEVNULL,
-            stderr=subprocess.DEVNULL,
-        )
-        daemon_running = True
-
-    def stop_daemon() -> None:
-        nonlocal daemon_proc, daemon_running
-        if daemon_proc is not None:
-            daemon_proc.terminate()
-            try:
-                daemon_proc.wait(timeout=3)
-            except subprocess.TimeoutExpired:
-                daemon_proc.kill()
-            daemon_proc = None
-        daemon_running = False
-
     def make_layout(info: dict[str, Any]) -> Layout:
         layout = Layout()
         layout.split(
@@ -1348,50 +1311,32 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             Layout(name="left"),
             Layout(name="right"),
         )
-        layout["left"].split(
+        left = layout["body"]["left"]
+        left.split(
             Layout(build_daemon_table(), name="daemon"),
             Layout(build_binary_table(info), name="binaries"),
         )
-        layout["right"].split(
+        right = layout["body"]["right"]
+        right.split(
             Layout(build_info_table(info), name="info"),
         )
         layout["header"].update(
-            Panel("General Ludd Agent — TUI Dashboard  [q]uit  [s]tart  [k]ill  [r]efresh", style="bold white on blue")
+            Panel("General Ludd Agent — TUI Dashboard  [Ctrl+C to exit]", style="bold white on blue")
         )
-        layout["footer"].update(build_controls_table())
+        layout["footer"].update(Panel("Auto-refreshing every 0.5s", style="dim"))
         return layout
 
     info = _gather_offline_status()
     console = Console()
-
-    def input_thread(live: Live) -> None:
-        nonlocal info
-        while True:
-            try:
-                ch = console.input("").strip().lower()
-            except (EOFError, KeyboardInterrupt):
-                break
-            if ch == "q":
-                stop_daemon()
-                import os as _os
-                _os._exit(0)
-            elif ch == "s":
-                start_daemon()
-            elif ch == "k":
-                stop_daemon()
-            elif ch == "r":
-                pass
-            info = _gather_offline_status()
-            live.update(make_layout(info))
-
     layout = make_layout(info)
-    with Live(layout, console=console, refresh_per_second=2, screen=True) as live:
-        thread = threading.Thread(target=input_thread, args=(live,), daemon=True)
-        thread.start()
-        while True:
-            time.sleep(0.5)
-            info = _gather_offline_status()
-            live.update(make_layout(info))
+    try:
+        with Live(layout, console=console, refresh_per_second=2, screen=True) as live:
+            while True:
+                time.sleep(0.5)
+                info = _gather_offline_status()
+                live.update(make_layout(info))
+    except KeyboardInterrupt:
+        print("\nTUI exited.")
 
 
 def _cmd_integrity_scan(args: argparse.Namespace) -> None:
