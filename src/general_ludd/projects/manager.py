@@ -109,6 +109,9 @@ class ProjectManager:
             projects = [p for p in projects if p.active]
         return projects
 
+    def list_active(self) -> list[ProjectWeight]:
+        return self.list_projects(active_only=True)
+
     def total_weight(self) -> float:
         return sum(p.weight for p in self._projects.values() if p.active)
 

@@ -649,14 +649,22 @@ def _fmt_size(size_bytes: int) -> str:
 def _cmd_status(args: argparse.Namespace) -> None:
     try:
         if args.todo_id:
-            resp = httpx.get(f"{args.daemon_url}/api/todos/{args.todo_id}", timeout=10.0)
+            params = ""
+            if getattr(args, "project", None):
+                params = f"?project_id={args.project}"
+            resp = httpx.get(
+                f"{args.daemon_url}/api/todos/{args.todo_id}{params}", timeout=10.0,
+            )
             if resp.status_code == 200:
                 print(json.dumps(resp.json(), indent=2))
             else:
                 print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
                 sys.exit(1)
             return
-        resp = httpx.get(f"{args.daemon_url}/api/status", timeout=5.0)
+        params = ""
+        if getattr(args, "project", None):
+            params = f"?project_id={args.project}"
+        resp = httpx.get(f"{args.daemon_url}/api/status{params}", timeout=5.0)
         if resp.status_code == 200:
             data = resp.json()
             print(f"General Ludd Agent v{data.get('version', 'unknown')}  [daemon running]")
@@ -1862,7 +1870,7 @@ def _cmd_integrity_reject(args: argparse.Namespace) -> None:
         else:
             print(f"Error: {resp.status_code}", file=sys.stderr)
     except Exception as exc:
-        print(f"Cannot connect to daemon: {exc}")
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_integrity_log(args: argparse.Namespace) -> None:
@@ -1877,7 +1885,7 @@ def _cmd_integrity_log(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
-        print(f"Cannot connect to daemon: {exc}")
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _load_config_editor() -> dict[str, Any]:

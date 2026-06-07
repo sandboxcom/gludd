@@ -44,8 +44,10 @@ class TodoRepository:
         await self._session.flush()
         return todo
 
-    async def get_by_id(self, todo_id: str) -> TodoModel | None:
+    async def get_by_id(self, todo_id: str, project_id: str | None = None) -> TodoModel | None:
         stmt = select(TodoModel).where(TodoModel.todo_id == todo_id)
+        if project_id is not None:
+            stmt = stmt.where(TodoModel.project_id == project_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 

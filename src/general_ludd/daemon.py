@@ -1568,7 +1568,13 @@ def create_daemon_app(
 
     @app.post("/admin/self-improve")
     async def admin_self_improve() -> dict[str, Any]:
-        return {"status": "ok", "result": "SelfImprovementWorkflow wired"}
+        from general_ludd.self_improve.harness import SelfImprovementHarness
+
+        harness = SelfImprovementHarness()
+        result = harness.run_full_cycle()
+        return {"status": "ok", "findings_count": result["findings_count"],
+                "todos_generated": result["todos_generated"],
+                "todos_enqueued": result["todos_enqueued"]}
 
     @app.post("/admin/scoring/run")
     async def admin_scoring_run() -> dict[str, Any]:
