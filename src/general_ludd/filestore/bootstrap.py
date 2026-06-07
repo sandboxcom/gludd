@@ -108,7 +108,7 @@ class BinaryBootstrapper:
                     logger.warning("Failed to sync bundled binary %s: %s", name, exc)
         return synced
 
-    def _get_download_url(self, name: str) -> str:
+    def get_download_url(self, name: str) -> str:
         info = self.get_platform_info()
         os_name = info["os"]
         arch = info["arch"]
@@ -135,7 +135,7 @@ class BinaryBootstrapper:
             except Exception as exc:
                 logger.warning("Bundled binary %s read failed: %s", name, exc)
 
-        url = self._get_download_url(name)
+        url = self.get_download_url(name)
         try:
             async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
                 resp = await client.get(url)
@@ -155,3 +155,9 @@ class BinaryBootstrapper:
 
     def check_openbao_in_store(self) -> bool:
         return self._store.exists("binaries/openbao") or self._has_bundled("openbao")
+
+    async def download_all(self) -> dict[str, bool]:
+        results: dict[str, bool] = {}
+        for name in self.KNOWN_VERSIONS:
+            results[name] = await self.download(name)
+        return results

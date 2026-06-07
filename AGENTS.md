@@ -115,6 +115,25 @@ This is enforced by:
 - This AGENTS.md section — proactive instruction
 - If you stopped early: RESUME WORK NOW.
 
+## CRITICAL: No-Manual-Default Policy
+
+**Every process MUST be fully automated. No step may require manual intervention by default.**
+
+When you build a feature (downloader, installer, bundler, bootstrapper, etc.):
+
+1. **No "run X manually" instructions.** Everything must be triggered by a `make` target or daemon initialization.
+2. **No "config required" defaults.** Every config value must have a safe, working default. The system must boot without any user-created config files.
+3. **No "download on request" workflows.** If a binary or resource is needed, it must be prefetched during the build cycle (`make dist`), not downloaded at first use.
+4. **No dead-code isolation.** Every class in `src/` must be importable and instantiatable from daemon startup, even if function calls are deferred lazily.
+5. **No check-only gateways.** Verify/download scripts must do the action, not just report "not done." If `make bundle-binaries` runs, it must bundle. If a healthcheck runs, it must remedy if possible.
+
+**Manual default is a BUG. Fix it immediately.**
+
+This is enforced by:
+- The `completion_audit` in `make preflight` — flags unused classes
+- The `no-manual-default` check in this section
+- Plugin guardrail in `enforce-make.ts`
+
 ## Meta-Rule: Guardrail Policy
 
 When you introduce ANY new restriction or policy on agent behavior, you MUST

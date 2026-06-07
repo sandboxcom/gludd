@@ -293,9 +293,9 @@ dist-clean:
 	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot build
 
 bundle-binaries:
-	@echo "Checking for bundled binaries..."
+	@echo "Bundling OpenBao and OpenTofu binaries into dist/binaries..."
 	@mkdir -p dist/binaries
-	@$(UV) run python scripts/check_bundled_binaries.py
+	@$(UV) run python scripts/download_bundled_binaries.py
 
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi

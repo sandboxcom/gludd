@@ -468,12 +468,33 @@ export default (async ({ }) => {
         "",
       ].join("\n")
 
+      const noManualDefault = [
+        "",
+        "## CRITICAL: No-Manual-Default Policy",
+        "",
+        "Every process you build MUST be fully automated by default.",
+        "No manual steps allowed. Specifically:",
+        "",
+        "  1. If you create a downloader, the make target MUST download.",
+        "     Not check — DO the download.",
+        "  2. If you create a bootstrapper, it MUST run at init time.",
+        "  3. If you create a healthcheck, it MUST remedy if possible.",
+        "  4. Every config value must have a working zero-config default.",
+        "  5. Every binary/resource needed must be prefetched in make dist.",
+        "  6. Every class in src/ must be importable from daemon startup.",
+        "",
+        "Leaving a step as 'run X manually' is a BUG. Fix it immediately.",
+        "Never say 'download with' or 'run manually' — make it automatic.",
+        "",
+      ].join("\n")
+
       if (typeof output === "string") {
         output = preResponseAudit + "\n\n" + instructionFollowing + "\n\n" + output
         output += "\n\n" + completionRules
         output += "\n\n" + selfDirected
         output += evidencePrompt
         output += preflightCommitPrompt
+        output += noManualDefault
         output += BASH_METACHAR_POLICY
       }
     },

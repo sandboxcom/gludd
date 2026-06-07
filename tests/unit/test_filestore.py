@@ -209,7 +209,7 @@ class TestBinaryBootstrapper:
         from general_ludd.filestore.bootstrap import BinaryBootstrapper
 
         boot = BinaryBootstrapper()
-        url = boot._get_download_url("openbao")
+        url = boot.get_download_url("openbao")
         assert "openbao" in url.lower()
         assert "github" in url.lower()
 
