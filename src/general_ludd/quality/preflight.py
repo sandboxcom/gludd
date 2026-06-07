@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 import os
 import subprocess
@@ -130,6 +131,7 @@ def run_preflight() -> dict[str, Any]:
         {"name": "molecule_scenarios", **check_molecule_scenarios()},
         {"name": "filestore_readable", **check_filestore()},
         {"name": "sprint_boxes_checked", **check_sprint_boxes()},
+        {"name": "completion_audit", **run_completion_audit()},
     ]
     all_passed = all(c.get("passed", False) for c in checks)
     return {
@@ -193,3 +195,79 @@ def verify_task_completion(
         "passed": passed,
         "total": len(criteria),
     }
+
+
+def run_completion_audit() -> dict[str, Any]:
+    src_root = REPO_ROOT / "src" / "general_ludd"
+    findings: list[dict[str, Any]] = []
+
+    py_files = sorted(src_root.rglob("*.py"))
+    all_src_text = ""
+    for pf in py_files:
+        if pf.name == "__init__.py":
+            continue
+        with contextlib.suppress(Exception):
+            all_src_text += pf.read_text() + "\n"
+
+    for pf in py_files:
+        if pf.name == "__init__.py":
+            continue
+        try:
+            contents = pf.read_text()
+        except Exception:
+            continue
+        module_relative = str(pf.relative_to(REPO_ROOT))
+        lines = contents.split("\n")
+        for i, line in enumerate(lines):
+            stripped = line.strip()
+            if stripped.startswith("class ") and ":" in stripped:
+                cls_name = stripped.split("class ")[1].split("(")[0].split(":")[0].strip()
+                if cls_name.startswith("_"):
+                    continue
+                if cls_name in ("main",):
+                    continue
+                total_uses = all_src_text.count(cls_name)
+                definition_uses = 1
+                if total_uses <= definition_uses:
+                    findings.append({
+                        "class_name": cls_name,
+                        "file": module_relative,
+                        "line": i + 1,
+                        "reason": "class defined but never instantiated or referenced anywhere",
+                        "severity": "warn",
+                    })
+    total = sum(1 for f in py_files if f.name != "__init__.py")
+    if total == 0:
+        total = 1
+    warn = len(findings)
+    passed = total - warn
+    completion_pct = round((passed / total) * 100, 1)
+    overall = "WARN" if warn > 0 else "PASS"
+    return {
+        "overall": overall,
+        "passed": overall != "FAIL",
+        "findings": findings,
+        "passed_count": passed,
+        "failed_count": 0,
+        "warn_count": warn,
+        "completion_pct": completion_pct,
+        "modules_scanned": total,
+    }
+
+
+def generate_backlog_from_audit(audit: dict[str, Any]) -> list[dict[str, Any]]:
+    todos: list[dict[str, Any]] = []
+    for f in audit.get("findings", []):
+        name = f.get("class_name") or f.get("function_name", "unknown")
+        todos.append({
+            "title": f"Wire {name} into the pipeline",
+            "description": (
+                f"Module {f['file']} defines {name} but it has no callers "
+                f"in production code. {f['reason']}."
+            ),
+            "work_type": "code",
+            "priority": "high" if f.get("severity") == "fail" else "medium",
+            "source_file": f["file"],
+            "audit_severity": f["severity"],
+        })
+    return todos

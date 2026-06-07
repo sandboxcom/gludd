@@ -142,6 +142,21 @@ def build_secrets_resolver(
     return base
 
 
+def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
+    from general_ludd.projects.workspace import ProjectWorkspace
+
+    workspaces: dict[str, Any] = {}
+    if project_manager is not None:
+        try:
+            for p in project_manager.list_active():
+                pid = getattr(p, "project_id", str(p))
+                workspaces[pid] = ProjectWorkspace(project_id=pid)
+                workspaces[pid].ensure_dirs()
+        except Exception:
+            pass
+    return workspaces
+
+
 def load_model_profiles(profiles_dir: str | None = None) -> list[Any]:
     from general_ludd.models.gateway import ModelProfile
 
@@ -295,6 +310,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=_daemon_state,
+            project_workspace=_init_project_workspaces(ext["projects"]),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
