@@ -1281,6 +1281,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             return False
 
     daemon_running = detect_daemon()
+    config_nav = _load_config_editor()
 
     def start_daemon() -> None:
         nonlocal daemon_proc, daemon_running, status_msg
@@ -1395,26 +1396,83 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             Layout(name="right"),
         )
         body = layout["body"]
-        body["left"].split(
-            Layout(build_daemon_table(), name="daemon"),
-            Layout(build_binary_table(info), name="binaries"),
-        )
-        if current_view == "config":
+        if current_view == "edit":
+            body.split_row(
+                Layout(name="left"),
+                Layout(name="right"),
+            )
+            _editor_table = Table(title="Config Editor", show_header=True)
+            _editor_table.add_column("Option", style="cyan", no_wrap=True)
+            _editor_table.add_column("Value", style="green")
+            _editor_table.add_column("Help", style="dim")
+            for cat in config_nav["categories"]:
+                _editor_table.add_row(f"[bold yellow]{cat.name}[/]", "", "")
+                for item in cat.menu_items:
+                    _editor_table.add_row(f"  {item.label}", str(item.value), item.help_text)
+            body["left"].split(
+                Layout(build_daemon_table(), name="daemon"),
+            )
             body["right"].split(
-                Layout(build_config_table(info), name="config"),
+                Layout(_editor_table, name="editor"),
             )
         else:
-            body["right"].split(
-                Layout(build_info_table(info), name="info"),
+            body["left"].split(
+                Layout(build_daemon_table(), name="daemon"),
+                Layout(build_binary_table(info), name="binaries"),
             )
-        header_text = "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity [v]config [r]efresh [q]uit"
+            if current_view == "config":
+                body["right"].split(
+                    Layout(build_config_table(info), name="config"),
+                )
+            else:
+                body["right"].split(
+                    Layout(build_info_table(info), name="info"),
+                )
+        if current_view == "edit":
+            header_text = "Config Editor — [c] exit  [q] quit"
+        elif current_view == "config":
+            header_text = (
+                "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
+                " [v]main [c]edit [r]efresh [q]uit"
+            )
+        else:
+            header_text = (
+                "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
+                " [v]config [c]edit [r]efresh [q]uit"
+            )
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
-        nonlocal current_view, daemon_running, status_msg
+        nonlocal current_view, daemon_running, status_msg, config_nav
         ch = ch.lower()
+        if current_view == "edit":
+            cats = config_nav["current_items"]
+            if ch == "\x1b[A" and isinstance(cats, list) and len(cats) > 0:
+                config_nav["selected_cat"] = max(0, config_nav["selected_cat"] - 1)
+            elif ch == "\x1b[B" and isinstance(cats, list) and len(cats) > 0:
+                config_nav["selected_cat"] = min(len(cats) - 1, config_nav["selected_cat"] + 1)
+            elif ch in ("\r", "\n"):
+                if isinstance(cats, list) and 0 <= config_nav["selected_cat"] < len(cats):
+                    cat = cats[config_nav["selected_cat"]]
+                    if hasattr(cat, "menu_items"):
+                        config_nav["current_items"] = cat.menu_items
+                        config_nav["depth"] = 1
+                        config_nav["selected_item"] = 0
+                        config_nav["selected_cat"] = config_nav["selected_cat"]
+            elif ch == "\x1b":
+                if config_nav["depth"] > 0:
+                    config_nav["depth"] = 0
+                    config_nav["current_items"] = config_nav["categories"]
+                    config_nav["selected_item"] = 0
+                else:
+                    current_view = "main"
+                    status_msg = ""
+            elif ch == "q":
+                current_view = "main"
+                status_msg = ""
+            return True
         if ch == "q":
             return False
         elif ch == "s":
@@ -1443,6 +1501,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 status_msg = f"Integrity error: {exc}"
         elif ch == "v":
             current_view = "config" if current_view != "config" else "main"
+        elif ch == "c":
+            current_view = "edit" if current_view != "edit" else "main"
+            if current_view == "edit":
+                config_nav = _load_config_editor()
+                status_msg = "Config editor: arrows navigate  Enter select  Esc back"
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
@@ -1598,6 +1661,22 @@ def _cmd_integrity_log(args: argparse.Namespace) -> None:
             sys.exit(1)
     except Exception as exc:
         print(f"Cannot connect to daemon: {exc}")
+
+
+def _load_config_editor() -> dict[str, Any]:
+    from general_ludd.tui.config_editor import ConfigEditor
+
+    editor = ConfigEditor()
+    cats = editor.get_categories()
+    return {
+        "editor": editor,
+        "categories": cats,
+        "selected_cat": 0,
+        "selected_item": 0,
+        "depth": 0,
+        "editing_value": False,
+        "current_items": cats,
+    }
 
 
 if __name__ == "__main__":
