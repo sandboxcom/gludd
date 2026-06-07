@@ -20,8 +20,8 @@ TESTS_DIR := tests
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
 		feature-start feature-done test-and-commit preflight \
-		molecule-version \
-        container-build container-run container-push \
+		molecule-version molecule-test \
+		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
         qa validate
@@ -144,6 +144,18 @@ playbook-list:
 
 molecule-version:
 	@$(UV) run molecule --version
+
+molecule-test:
+	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
+	@echo "Running molecule scenario: $(SCENARIO)"
+	@cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default" 2>/dev/null; \
+	mkdir -p "molecule/$(SCENARIO)/default"; \
+	cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "molecule/$(SCENARIO)/"; \
+	cp "molecule/playbooks/$(SCENARIO)/default"/*.yml "molecule/$(SCENARIO)/default/" 2>/dev/null; \
+	$(UV) run molecule test -s "$(SCENARIO)"; \
+	EXIT_CODE=$$?; \
+	rm -rf "molecule/$(SCENARIO)"; \
+	exit $$EXIT_CODE
 
 git-status:
 	@git status --short || echo "Not a git repo"

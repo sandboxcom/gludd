@@ -1,0 +1,11 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  playbooks:
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible

@@ -4,9 +4,9 @@
   connection: local
   gather_facts: false
   vars:
-    job_id: "{{ job_id | default('NOOP-00000000') }}"
-    todo_id: "{{ todo_id | default('none') }}"
-    artifact_dir: "{{ artifact_dir | default('/tmp/harness-noop') }}"
+    job_id: "NOOP-00000000"
+    todo_id: "none"
+    artifact_dir: "/tmp/harness-noop"
 
   tasks:
     - name: Create artifact directory
