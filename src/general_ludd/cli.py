@@ -1299,6 +1299,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
 
     daemon_running = detect_daemon()
     config_nav = _load_config_editor()
+    from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+    model_mgr = LocalInferenceManager()
+    model_mgr.create_server(LocalServerConfig(engine="llamacpp", model_path="/models/llama-7b.gguf", port=8081))
+    model_mgr.create_server(LocalServerConfig(engine="vllm", model_name="meta-llama/Llama-3.2-1B", port=8000))
 
     def start_daemon() -> None:
         nonlocal daemon_proc, daemon_running, status_msg
@@ -1447,12 +1451,31 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(build_config_table(info), name="config"),
                 )
+            elif current_view == "models":
+                _model_table = Table(title="Model Services", show_header=True)
+                _model_table.add_column("ID", style="cyan")
+                _model_table.add_column("Engine", style="green")
+                _model_table.add_column("Model", style="yellow")
+                _model_table.add_column("Status", style="bold")
+                _model_table.add_column("Endpoint", style="dim")
+                servers = model_mgr.list_servers()
+                for s in servers:
+                    status_color = "green" if s.is_running else "red"
+                    _model_table.add_row(
+                        s.server_id, s.config.engine, s.config.model_name or s.config.model_path or "?",
+                        f"[{status_color}]{s.status}[/]", s.endpoint_url,
+                    )
+                body["right"].split(
+                    Layout(_model_table, name="models"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
                 )
         if current_view == "edit":
             header_text = "Config Editor — [c] exit  [q] quit"
+        elif current_view == "models":
+            header_text = "Model Services — [m] exit  [q] quit  [Ctrl+C] quit"
         elif current_view == "config":
             header_text = (
                 "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
@@ -1468,7 +1491,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         return layout
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
-        nonlocal current_view, daemon_running, status_msg, config_nav
+        nonlocal current_view, daemon_running, status_msg, config_nav, model_mgr
         if len(ch) == 1:
             ch = ch.lower()
         if current_view == "edit":
@@ -1533,6 +1556,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             if current_view == "edit":
                 config_nav = _load_config_editor()
                 status_msg = "Config editor: arrows navigate  Enter select  Esc back"
+        elif ch == "m":
+            current_view = "models" if current_view != "models" else "main"
+            status_msg = f"Model services: {len(model_mgr.list_servers())} configured"
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
