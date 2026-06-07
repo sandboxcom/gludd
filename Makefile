@@ -219,6 +219,7 @@ test-and-commit:
 		git diff --cached --quiet && echo "Nothing to commit" || git commit -m "agent: test-green $(shell date +%Y%m%d%H%M%S)"; \
 	fi
 	@echo "Committed."
+	@$(MAKE) dist
 
 clean:
 	@rm -rf .venv dist build *.egg-info src/*.egg-info .pytest_cache .mypy_cache .coverage coverage.xml htmlcov .ruff_cache
