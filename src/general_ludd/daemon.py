@@ -249,6 +249,9 @@ class AddProjectRequest(BaseModel):
     name: str
     weight: float
     description: str = ""
+    repo_url: str = ""
+    workspace_path: str = ""
+    dispatch_mode: str = "active"
 
 
 class SetWeightRequest(BaseModel):
@@ -413,14 +416,16 @@ def _get_or_create_extended_subsystems(
     from general_ludd.infra.utilization import UtilizationTracker
     from general_ludd.metrics.collector import MetricsCollector
     from general_ludd.models.model_registry import ModelRegistry
-    from general_ludd.projects.manager import ProjectManager
     from general_ludd.skills.loader import discover_skills
     from general_ludd.skills.registry import SkillRegistry
 
     if not hasattr(app.state, "_metrics_collector") or app.state._metrics_collector is None:
         app.state._metrics_collector = MetricsCollector()
     if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
-        app.state._project_manager = ProjectManager()
+        from general_ludd.projects.manager import seed_from_config
+
+        startup_cfg = app.state._startup_config if hasattr(app.state, "_startup_config") else {}
+        app.state._project_manager = seed_from_config(startup_cfg)
     if not hasattr(app.state, "_utilization_tracker") or app.state._utilization_tracker is None:
         app.state._utilization_tracker = UtilizationTracker()
     if not hasattr(app.state, "_model_registry") or app.state._model_registry is None:
@@ -962,13 +967,18 @@ def create_daemon_app(
         ext = _get_or_create_extended_subsystems(app)
         try:
             project = ext["projects"].add_project(
-                name=req.name, weight=req.weight, description=req.description
+                name=req.name, weight=req.weight, description=req.description,
+                repo_url=req.repo_url, workspace_path=req.workspace_path,
+                dispatch_mode=req.dispatch_mode,
             )
             return {
                 "project_id": project.project_id,
                 "name": project.name,
                 "weight": project.weight,
                 "description": project.description,
+                "repo_url": project.repo_url,
+                "workspace_path": project.workspace_path,
+                "dispatch_mode": project.dispatch_mode,
                 "active": project.active,
             }
         except Exception as exc:

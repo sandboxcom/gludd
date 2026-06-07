@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import os
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
+from typing import Any
 
 
 @dataclass
@@ -247,13 +249,22 @@ class WorktreeScanner:
 class WorktreeEventDispatcher:
     """Dispatches watchdog filesystem events to the worktree monitor."""
 
-    def __init__(self, scanner: WorktreeScanner, config: WorktreeMonitorConfig) -> None:
+    def __init__(
+        self,
+        scanner: WorktreeScanner,
+        config: WorktreeMonitorConfig,
+        monitor: Any | None = None,
+        watch_paths: list[str] | None = None,
+    ) -> None:
         self._scanner = scanner
         self._config = config
+        self._monitor = monitor
+        self._watch_paths = watch_paths or []
+        self._observer: Any = None
 
-    def on_agents_md_event(self, event_path: str) -> str | None:
-        """Handle a watchdog event for an AGENTS.md file. Returns worktree path if relevant."""
-        import os
+    def on_agents_md_event(self, event: Any) -> str | None:
+        event_path = getattr(event, "src_path", event) if not isinstance(event, str) else event
+        getattr(event, "event_type", "modified") if not isinstance(event, str) else "modified"
 
         if not event_path.endswith("AGENTS.md"):
             return None
@@ -262,8 +273,43 @@ class WorktreeEventDispatcher:
             return None
         if self._scanner._is_excluded(worktree_path):
             return None
+        if self._monitor is not None and hasattr(self._monitor, "evaluate"):
+            self._monitor.evaluate(watch_paths=[worktree_path])
         self._scanner._process_worktree(worktree_path)
         return worktree_path
+
+    @staticmethod
+    def _is_worktree(path: str) -> bool:
+        return is_git_worktree(path)
+
+    def start_watching(self) -> Any | None:
+        try:
+            from watchdog.events import FileSystemEventHandler
+            from watchdog.observers import Observer
+        except ImportError:
+            return None
+
+        class Handler(FileSystemEventHandler):
+            def __init__(self, dispatcher: WorktreeEventDispatcher):
+                self._dispatcher = dispatcher
+
+            def on_created(self, event: Any) -> None:
+                self._dispatcher.on_agents_md_event(event)
+
+            def on_modified(self, event: Any) -> None:
+                self._dispatcher.on_agents_md_event(event)
+
+        self._observer = Observer()
+        for path in self._watch_paths:
+            if os.path.isdir(path):
+                self._observer.schedule(Handler(self), path, recursive=True)
+        self._observer.start()
+        return self._observer
+
+    def stop_watching(self) -> None:
+        if self._observer is not None:
+            self._observer.stop()
+            self._observer.join(timeout=5)
 
 
 class WorktreeMonitor:

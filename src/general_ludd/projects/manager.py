@@ -17,6 +17,7 @@ class ProjectWeight:
     config: dict[str, Any] = field(default_factory=dict)
     workspace_path: str = ""
     repo_url: str = ""
+    dispatch_mode: str = "active"
     created_at: float = 0.0
     active: bool = True
 
@@ -36,6 +37,7 @@ class ProjectManager:
         description: str = "",
         workspace_path: str = "",
         repo_url: str = "",
+        dispatch_mode: str = "active",
         **config: Any,
     ) -> ProjectWeight:
         total = sum(p.weight for p in self._projects.values() if p.active)
@@ -55,10 +57,11 @@ class ProjectManager:
             config=config,
             workspace_path=workspace_path,
             repo_url=repo_url,
+            dispatch_mode=dispatch_mode,
             created_at=time.time(),
         )
         self._projects[project_id] = project
-        logger.info("Added project %s (%s) at %.1f%%", name, project_id, weight)
+        logger.info("Added project %s (%s) at %.1f%% mode=%s", name, project_id, weight, dispatch_mode)
         return project
 
     def remove_project(self, project_id: str) -> None:
@@ -121,7 +124,8 @@ class ProjectManager:
     def select_project(self) -> ProjectWeight | None:
         import random
 
-        active = self.list_projects(active_only=True)
+        active = [p for p in self.list_projects(active_only=True)
+                  if p.dispatch_mode == "active"]
         if not active:
             return None
         weights = [p.weight for p in active]
@@ -142,16 +146,41 @@ class ProjectManager:
         return {
             "total_projects": len(projects),
             "active_projects": len(active),
-            "total_weight": self.total_weight(),
-            "unallocated": 100.0 - self.total_weight(),
+            "total_weight": sum(p.weight for p in active),
+            "unallocated": 100.0 - sum(p.weight for p in active),
             "projects": [
                 {
                     "project_id": p.project_id,
                     "name": p.name,
                     "weight": p.weight,
-                    "active": p.active,
                     "description": p.description,
+                    "dispatch_mode": p.dispatch_mode,
+                    "repo_url": p.repo_url,
+                    "workspace_path": p.workspace_path,
+                    "active": p.active,
                 }
                 for p in projects
             ],
         }
+
+
+def seed_from_config(config: dict[str, Any]) -> ProjectManager:
+    mgr = ProjectManager()
+    projects_list = config.get("projects", [])
+    if not isinstance(projects_list, list):
+        return mgr
+    for pcfg in projects_list:
+        if not isinstance(pcfg, dict):
+            continue
+        try:
+            mgr.add_project(
+                name=pcfg.get("name", "unnamed"),
+                weight=float(pcfg.get("weight", 10)),
+                description=pcfg.get("description", ""),
+                workspace_path=pcfg.get("workspace_path", ""),
+                repo_url=pcfg.get("repo_url", ""),
+                dispatch_mode=pcfg.get("dispatch_mode", "active"),
+            )
+        except ProjectAllocationError:
+            logger.warning("Skipping project '%s': allocation would exceed 100%%", pcfg.get("name", "?"))
+    return mgr

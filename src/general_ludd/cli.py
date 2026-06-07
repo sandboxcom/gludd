@@ -299,6 +299,31 @@ def main() -> None:
     wt_status.add_argument("--daemon-url", default="http://localhost:8000")
     wt_status.set_defaults(func=_cmd_worktree_status)
 
+    project_parser = sub.add_parser("project", help="Project management commands")
+    project_parser.set_defaults(func=None)
+    proj_sub = project_parser.add_subparsers(dest="project_command")
+
+    proj_add = proj_sub.add_parser("add", help="Add a project to the daemon")
+    proj_add.add_argument("name", help="Project name")
+    proj_add.add_argument("--repo-url", default="", help="Git repository URL")
+    proj_add.add_argument("--workspace-path", default="", help="Local workspace path")
+    proj_add.add_argument("--weight", type=float, default=30.0, help="Allocation weight (0-100)")
+    proj_add.add_argument("--description", default="", help="Project description")
+    proj_add.add_argument("--dispatch-mode", default="active",
+                          choices=["active", "passive_external", "worktree_monitor"],
+                          help="Dispatch: active, passive_external, or worktree_monitor")
+    proj_add.add_argument("--daemon-url", default="http://localhost:8000")
+    proj_add.set_defaults(func=_cmd_project_add)
+
+    proj_list = proj_sub.add_parser("list", help="List registered projects")
+    proj_list.add_argument("--daemon-url", default="http://localhost:8000")
+    proj_list.set_defaults(func=_cmd_project_list)
+
+    proj_remove = proj_sub.add_parser("remove", help="Remove a project")
+    proj_remove.add_argument("project_id", help="Project ID to remove")
+    proj_remove.add_argument("--daemon-url", default="http://localhost:8000")
+    proj_remove.set_defaults(func=_cmd_project_remove)
+
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
     mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
@@ -450,6 +475,7 @@ def main() -> None:
             "compute": compute_parser,
             "worktree": worktree_parser,
             "filestore": filestore_parser,
+            "project": project_parser,
         }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
@@ -772,6 +798,77 @@ def _cmd_health(args: argparse.Namespace) -> None:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_project_add(args: argparse.Namespace) -> None:
+    import json
+
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/projects",
+            content=json.dumps({
+                "name": args.name,
+                "weight": args.weight,
+                "description": args.description,
+                "repo_url": args.repo_url,
+                "workspace_path": args.workspace_path,
+                "dispatch_mode": args.dispatch_mode,
+            }),
+            headers={"Content-Type": "application/json"},
+            timeout=10.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Project added: {data['project_id']} ({data['name']})")
+            print(f"  Weight: {data['weight']}%  Mode: {data.get('dispatch_mode', 'active')}")
+            print(f"  Repo: {data.get('repo_url', '')}")
+            print(f"  Workspace: {data.get('workspace_path', '')}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except httpx.ConnectError as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_project_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            projects = data.get("projects", [])
+            if not projects:
+                print("No projects registered.")
+                print("Add one with: gludd project add <name> [--repo-url URL] [--workspace-path PATH]")
+                print("Or configure in config/general-ludd.yml under 'projects:'")
+                return
+            print(f"Projects: {len(projects)}")
+            for p in projects:
+                mode = p.get("dispatch_mode", "active")
+                active_marker = "[active]" if p.get("active") else "[inactive]"
+                print(f"  {p['project_id']}  {p['name']}  {p['weight']}%  {mode}  {active_marker}")
+                if p.get("repo_url"):
+                    print(f"    Repo: {p['repo_url']}")
+                if p.get("workspace_path"):
+                    print(f"    Workspace: {p['workspace_path']}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except httpx.ConnectError as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_project_remove(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.delete(
+            f"{args.daemon_url}/admin/projects/{args.project_id}", timeout=10.0,
+        )
+        if resp.status_code == 200:
+            print(f"Project removed: {args.project_id}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except httpx.ConnectError as exc:
         _handle_connection_error(exc, args.daemon_url)
 
 
