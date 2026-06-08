@@ -3,48 +3,41 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 8)
+- 2026-06-08 (session 10)
 
 ## Current Status
-- **Phase**: Coverage push + TUI project management
-- **Test Suite**: 3500 passed, 26 skipped, 90% coverage
+- **Phase**: Coverage push + TUI body tests
+- **Test Suite**: 3722 passed, 27 skipped, 92.56% coverage
 - **Branch**: master
-- **Latest commit**: e2ec78a — TUI project management: cursor selection, add input mode, delete selected, weight edit
+- **Latest commit**: ba1040a — Add 30 TUI body tests covering all view toggles, daemon start/stop, and exit paths
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: Coverage + TUI Features
+## This Session: Coverage Push Session 10
 
-### CLI Coverage Push (commit fa25a1b)
-- 65 new tests in `tests/unit/test_cli_execution_coverage.py`
-- Covers: models discover/discovered, project add/list/remove, worktree scan/status, selftest, status quality gate, daemon body, fmt_size, connection error, all error-path edge cases
-- cli.py: 66% → 73%
+### Connection Error Test Fixes (commit 9289c3f)
+- Fixed 16 connection_error tests to use `pytest.raises(SystemExit)` instead of checking stdout
+- `_handle_connection_error` calls `sys.exit(1)` — tests must catch SystemExit
+- Fixed `test_integrity_reject_error` to check stderr instead of stdout
+- Fixed long line in `test_integrity_log_success`
 
-### Daemon Coverage Push (commit c0e5f4b)
-- 21 new tests in `tests/unit/test_daemon_uncovered_endpoints.py`
-- Covers: models discover/discovered, code blocks/graph/search, local inference start, worktree scan/status, quantization detect/get/drift, benchmark no-session paths, observability comparison
-- Fixed `POST /admin/code/blocks` type annotation: `request: Any` → `request: Request`
-- daemon.py: 82% → 89%
+### Error Path Coverage (commit a1090e9)
+- 8 new tests in `TestErrorPathCoverage` class
+- Covers: integrity scan/report/approve HTTP error exits, ansible search/install/builtins HTTP error exits, `main()` entry point
+- cli.py: 75% → 75% (small lift from error paths)
 
-### TUI Project Management (commit e2ec78a)
-- 20 new tests in `tests/unit/test_tui_project_management.py`
-- `TUIKeyHandler` now handles: cursor up/down in projects view, add project input mode (name+weight), delete selected project, set weight input mode
-- `handle_key_down()` / `handle_key_up()` for cursor navigation with wrapping
-- `delete_selected_project()` uses `selected_project_idx` instead of always `projects[0]`
-- `projects_add` input mode: 2-field flow (name → weight) with submit/escape
-- `projects_set_weight` input mode: single-field flow with PUT to `/admin/projects/{id}/weight`
-- keybindings.py: 171 → 256 lines, coverage 88%
-
-### Gaps Closed This Session
-1. **Per-project templates/roles in dispatch** (commit `a158568`): `_resolve_prompt_text_static()` checks project `templates_dir` first via Jinja2 rendering. `_dispatch_execute_job()` injects `ANSIBLE_ROLES_PATH` from project `roles_dir`. 7 tests.
-2. **TUI config editor text input** (commit `59abe98`): `ConfigEditor` now has `start_editing()`, `handle_input_key()`, `_save_edit()`, `get_input_display()`. Enter on leaf item enters edit mode, typing appends to buffer, Enter saves via `write_overlay()`, Escape cancels. Type coercion for str/int/float/bool. 24 tests.
-3. **TUI keybindings for models add, ansible search, dispatch mode** (commit `4250d33`): New `src/general_ludd/tui/keybindings.py` with `TUIKeyHandler` class. `a` from models view adds model (multi-field input). `s` from ansible view searches galaxy. `d` from main view cycles dispatch mode. New `PUT /admin/dispatch/mode` daemon endpoint. 20 tests.
-4. **Slurm integration beyond stub** (commit `12d1d0a`): `src/general_ludd/infra/slurm.py` with `SlurmAdapter` — `submit()` builds sbatch script and pipes to sbatch, `status()` queries sacct, `cancel()` calls scancel, `available()` probes sbatch --version. All methods catch `FileNotFoundError` and raise `SlurmNotInstalledError`. Wired into `local_inference.py` for engine="slurm" path. 24 tests.
+### TUI Body Tests (commit ba1040a)
+- 30 new tests in `tests/unit/test_tui_body.py`
+- Tests `_cmd_tui` via mocked terminal I/O (termios, tty, select, os.read, Rich.Live)
+- Covers: all 16 view toggles (main→sub→main), daemon start/stop/already running/immediate exit, Ctrl-C, quit, refresh
+- Uses `ExitStack` pattern for 15+ stacked patches with `_TermSize` namedtuple
+- cli.py: 75% → **92%** (biggest single-session coverage lift)
+- Total coverage: 89.51% → **92.56%**
 
 ## Files Below 85% Coverage (priority order)
-1. cli.py — 73% (2125 lines, 564 miss — TUI `_cmd_tui` body ~577 lines still untested)
+1. tui/keybindings.py — 77% (627 lines, 144 miss — input mode handlers)
 2. ansible/core_runner.py — 79% (136 lines, 29 miss)
-3. session.py — 86% (86 lines, 12 miss)
+3. db/session.py — 86% (86 lines, 12 miss)
 4. git_automation/repo.py — 86% (129 lines, 18 miss)
 5. worktree/__init__.py — 86% (268 lines, 38 miss)
 
@@ -491,3 +484,9 @@ EventLoop auto-creates from session (when available):
 - **New command**: `gludd compute unregister <endpoint_id>` wires up the existing `DELETE /admin/compute/endpoints/{endpoint_id}` daemon endpoint
 - **Top-level httpx import**: Moved `import httpx` to module top-level since `_handle_connection_error` needs exception types
 - **Tests**: 13 new offline-error tests in `tests/e2e/test_cli_e2e.py`, 4 subcommand-help tests, 3 compute-unregister tests, 1 command-existence audit; 6 new tests in `tests/unit/test_cli.py` (unregister, status/add offline errors, subcommand-help tests, unregister parsing)
+
+## Next Steps
+- Push `tui/keybindings.py` coverage higher (77% → 85%+) — test input mode handlers
+- Wire remaining TUI CLI parity (playbooks refresh, code search, quantization detect/drift from TUI views)
+- Push `daemon.py` coverage higher (89% → 92%+) — remaining uncovered error paths
+- Push `core_runner.py` coverage higher (79% → 85%+) — async execution paths

@@ -298,3 +298,350 @@ class TestSkillsInstallAction:
         with patch("httpx.post", side_effect=Exception("fail")):
             handler.handle_key("\r")
         assert "error" in state["status_msg"].lower()
+
+
+class TestTextSearchInput:
+    def test_models_search_typing_and_submit(self) -> None:
+        handler, state = _make_handler("models")
+        handler.handle_key("s")
+        assert state["input_mode"] == "models_search"
+        for ch in "gpt":
+            handler.handle_key(ch)
+        assert state["input_buffer"] == "gpt"
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {"results": [{"name": "gpt-4"}]}
+            handler.handle_key("\r")
+        assert "Found 1" in state["status_msg"]
+
+    def test_models_search_error(self) -> None:
+        handler, state = _make_handler("models")
+        handler.handle_key("s")
+        for ch in "x":
+            handler.handle_key(ch)
+        with patch("httpx.get", side_effect=Exception("fail")):
+            handler.handle_key("\r")
+        assert "error" in state["status_msg"].lower()
+
+    def test_models_search_no_results(self) -> None:
+        handler, state = _make_handler("models")
+        handler.handle_key("s")
+        for ch in "z":
+            handler.handle_key(ch)
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {"results": []}
+            handler.handle_key("\r")
+        assert "Found 0" in state["status_msg"]
+
+    def test_models_search_http_error(self) -> None:
+        handler, state = _make_handler("models")
+        handler.handle_key("s")
+        for ch in "z":
+            handler.handle_key(ch)
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value.status_code = 500
+            handler.handle_key("\r")
+        assert "failed" in state["status_msg"].lower()
+
+    def test_models_search_escape_cancels(self) -> None:
+        handler, state = _make_handler("models")
+        handler.handle_key("s")
+        handler.handle_key("\x1b")
+        assert state["input_mode"] is None
+
+    def test_models_search_backspace(self) -> None:
+        handler, state = _make_handler("models")
+        handler.handle_key("s")
+        for ch in "gp":
+            handler.handle_key(ch)
+        handler.handle_key("\x7f")
+        assert state["input_buffer"] == "g"
+
+    def test_mcp_search_submit(self) -> None:
+        handler, state = _make_handler("mcp")
+        handler.handle_key("s")
+        for ch in "web":
+            handler.handle_key(ch)
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {"servers": [{"name": "webhook"}]}
+            handler.handle_key("\r")
+        assert "Found 1" in state["status_msg"]
+
+    def test_skills_search_submit(self) -> None:
+        handler, state = _make_handler("skills")
+        handler.handle_key("s")
+        for ch in "tdd":
+            handler.handle_key(ch)
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value.status_code = 200
+            mock_get.return_value.json.return_value = {"skills": [{"name": "tdd"}]}
+            handler.handle_key("\r")
+        assert "Found 1" in state["status_msg"]
+
+
+class TestTodosAddInput:
+    def test_todos_add_full_flow(self) -> None:
+        handler, state = _make_handler("todos")
+        handler.handle_key("a")
+        assert state["input_mode"] == "todos_add"
+        for ch in "My Task":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        assert "priority" in state["status_msg"].lower()
+        for ch in "3":
+            handler.handle_key(ch)
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"todo_id": "t1"}
+            handler.handle_key("\r")
+        assert "t1" in state["status_msg"]
+
+    def test_todos_add_error(self) -> None:
+        handler, state = _make_handler("todos")
+        handler.handle_key("a")
+        for ch in "Task":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        for ch in "bad":
+            handler.handle_key(ch)
+        with patch("httpx.post", side_effect=Exception("fail")):
+            handler.handle_key("\r")
+        assert "error" in state["status_msg"].lower()
+
+    def test_todos_add_http_error(self) -> None:
+        handler, state = _make_handler("todos")
+        handler.handle_key("a")
+        for ch in "Task":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        handler.handle_key("\r")
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 500
+            handler.handle_key("\r")
+        assert "failed" in state["status_msg"].lower() or "error" in state["status_msg"].lower()
+
+    def test_todos_add_escape_cancels(self) -> None:
+        handler, state = _make_handler("todos")
+        handler.handle_key("a")
+        handler.handle_key("\x1b")
+        assert state["input_mode"] is None
+
+    def test_todos_add_backspace(self) -> None:
+        handler, state = _make_handler("todos")
+        handler.handle_key("a")
+        handler.handle_key("X")
+        handler.handle_key("\x7f")
+        assert state["input_buffer"] == ""
+
+
+class TestComputeRegisterInput:
+    def test_compute_register_full_flow(self) -> None:
+        handler, state = _make_handler("compute")
+        handler.handle_key("a")
+        assert state["input_mode"] == "compute_register"
+        for ch in "http://gpu:8000":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        assert "provider" in state["status_msg"].lower()
+        for ch in "nvidia":
+            handler.handle_key(ch)
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"endpoint_id": "e1"}
+            handler.handle_key("\r")
+        mock_post.assert_called_once()
+
+    def test_compute_register_error(self) -> None:
+        handler, state = _make_handler("compute")
+        handler.handle_key("a")
+        for ch in "url":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        handler.handle_key("\r")
+        with patch("httpx.post", side_effect=Exception("fail")):
+            handler.handle_key("\r")
+        assert "error" in state["status_msg"].lower()
+
+
+class TestProjectsAddInput:
+    def test_projects_add_full_flow(self) -> None:
+        handler, state = _make_handler("projects")
+        state["projects_data"] = []
+        handler.handle_key("a")
+        assert state["input_mode"] == "projects_add"
+        for ch in "my-proj":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        assert "weight" in state["status_msg"].lower()
+        for ch in "20":
+            handler.handle_key(ch)
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"project_id": "p1"}
+            handler.handle_key("\r")
+        assert "p1" in state["status_msg"]
+
+    def test_projects_add_error(self) -> None:
+        handler, state = _make_handler("projects")
+        state["projects_data"] = []
+        handler.handle_key("a")
+        for ch in "proj":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        handler.handle_key("\r")
+        with patch("httpx.post", side_effect=Exception("fail")):
+            handler.handle_key("\r")
+        assert "error" in state["status_msg"].lower()
+
+
+class TestProjectsSetWeightInput:
+    def test_set_weight_success(self) -> None:
+        handler, state = _make_handler("projects")
+        state["projects_data"] = [{"project_id": "p1", "name": "test"}]
+        state["selected_project_idx"] = 0
+        handler.handle_key("w")
+        assert state["input_mode"] == "projects_set_weight"
+        for ch in "50":
+            handler.handle_key(ch)
+        with patch("httpx.put") as mock_put:
+            mock_put.return_value.status_code = 200
+            handler.handle_key("\r")
+        assert "50" in state["status_msg"]
+
+    def test_set_weight_invalid(self) -> None:
+        handler, state = _make_handler("projects")
+        state["projects_data"] = [{"project_id": "p1", "name": "test"}]
+        state["selected_project_idx"] = 0
+        handler.handle_key("w")
+        for ch in "abc":
+            handler.handle_key(ch)
+        handler.handle_key("\r")
+        assert "invalid" in state["status_msg"].lower()
+
+    def test_set_weight_error(self) -> None:
+        handler, state = _make_handler("projects")
+        state["projects_data"] = [{"project_id": "p1", "name": "test"}]
+        state["selected_project_idx"] = 0
+        handler.handle_key("w")
+        for ch in "50":
+            handler.handle_key(ch)
+        with patch("httpx.put", side_effect=Exception("fail")):
+            handler.handle_key("\r")
+        assert "error" in state["status_msg"].lower()
+
+    def test_set_weight_http_error(self) -> None:
+        handler, state = _make_handler("projects")
+        state["projects_data"] = [{"project_id": "p1", "name": "test"}]
+        state["selected_project_idx"] = 0
+        handler.handle_key("w")
+        for ch in "50":
+            handler.handle_key(ch)
+        with patch("httpx.put") as mock_put:
+            mock_put.return_value.status_code = 500
+            handler.handle_key("\r")
+        assert "failed" in state["status_msg"].lower()
+
+
+class TestCycleDispatchMode:
+    def test_cycle_dispatch_success(self) -> None:
+        handler, state = _make_handler("main")
+        with patch("httpx.put") as mock_put:
+            mock_put.return_value.status_code = 200
+            mock_put.return_value.json.return_value = {"dispatch_mode": "passive_external"}
+            handler.handle_key("d")
+        assert state["dispatch_mode"] == "passive_external"
+
+    def test_cycle_dispatch_error(self) -> None:
+        handler, state = _make_handler("main")
+        with patch("httpx.put", side_effect=Exception("fail")):
+            handler.handle_key("d")
+        assert "error" in state["status_msg"].lower()
+
+    def test_cycle_dispatch_http_error(self) -> None:
+        handler, state = _make_handler("main")
+        with patch("httpx.put") as mock_put:
+            mock_put.return_value.status_code = 500
+            handler.handle_key("d")
+        assert "failed" in state["status_msg"].lower()
+
+    def test_cycle_dispatch_unknown_mode(self) -> None:
+        handler, state = _make_handler("main")
+        state["dispatch_mode"] = "unknown"
+        with patch("httpx.put") as mock_put:
+            mock_put.return_value.status_code = 200
+            mock_put.return_value.json.return_value = {"dispatch_mode": "active"}
+            handler.handle_key("d")
+        assert state["dispatch_mode"] == "active"
+
+
+class TestAnsibleInstallInput:
+    def test_ansible_install_success(self) -> None:
+        handler, state = _make_handler("ansible")
+        handler.handle_key("i")
+        assert state["input_mode"] == "ansible_install"
+        for ch in "nginx":
+            handler.handle_key(ch)
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {"name": "nginx"}
+            handler.handle_key("\r")
+        assert "nginx" in state["status_msg"]
+
+    def test_ansible_install_http_error(self) -> None:
+        handler, state = _make_handler("ansible")
+        handler.handle_key("i")
+        for ch in "x":
+            handler.handle_key(ch)
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 500
+            handler.handle_key("\r")
+        assert "failed" in state["status_msg"].lower()
+
+
+class TestToggleViews:
+    def test_toggle_mcp_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("u")
+        assert state["current_view"] == "mcp"
+
+    def test_toggle_mcp_back_to_main(self) -> None:
+        handler, state = _make_handler("mcp")
+        handler.handle_key("u")
+        assert state["current_view"] == "main"
+
+    def test_toggle_skills_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("j")
+        assert state["current_view"] == "skills"
+
+    def test_toggle_compute_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("e")
+        assert state["current_view"] == "compute"
+
+    def test_toggle_scores_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("b")
+        assert state["current_view"] == "scores"
+
+    def test_toggle_templates_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("l")
+        assert state["current_view"] == "templates"
+
+    def test_toggle_quantization_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("n")
+        assert state["current_view"] == "quantization"
+
+    def test_toggle_filestore_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("f")
+        assert state["current_view"] == "filestore"
+
+    def test_toggle_deployments_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("z")
+        assert state["current_view"] == "deployments"
