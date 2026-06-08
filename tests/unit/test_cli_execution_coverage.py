@@ -1462,3 +1462,80 @@ class TestPostTUICommands:
              patch("general_ludd.ansible.galaxy.get_builtin_modules", return_value=["copy"]):
             _cmd_ansible_builtins(_ns())
         assert "copy" in capsys.readouterr().out
+
+
+class TestErrorPathCoverage:
+
+    @staticmethod
+    def _mock_resp(status: int, data: dict | None = None) -> MagicMock:
+        resp = MagicMock()
+        resp.status_code = status
+        resp.json.return_value = data or {}
+        resp.text = "server error"
+        return resp
+
+    def test_integrity_scan_http_error_exits(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_scan
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_integrity_scan(_ns(paths=None))
+        assert "Error" in capsys.readouterr().err
+
+    def test_integrity_scan_offline_with_changes(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_scan
+
+        changes = [{"file": "/b.yml", "type": "modified"}]
+        with patch("httpx.post", side_effect=Exception("fail")), \
+             patch("general_ludd.cli._gather_offline_status", return_value={}), \
+             patch("general_ludd.cli._scan_local_integrity",
+                   return_value={"scanned": 2, "changes": changes}):
+            _cmd_integrity_scan(_ns(paths=None))
+        out = capsys.readouterr().out
+        assert "Local scan" in out and "b.yml" in out
+
+    def test_integrity_report_http_error_exits(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_report
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_integrity_report(_ns())
+        assert "Error" in capsys.readouterr().err
+
+    def test_integrity_approve_http_error_exits(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_approve
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_integrity_approve(_ns(change_id="/a.yml", reason="ok", signer="admin"))
+
+    def test_ansible_search_http_error_exits(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_search
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_ansible_search(_ns(query="nginx", type="role"))
+        assert "Error" in capsys.readouterr().err
+
+    def test_ansible_install_http_error_exits(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_install
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_ansible_install(_ns(name="nginx", type="role"))
+        assert "Error" in capsys.readouterr().err
+
+    def test_ansible_builtins_http_error_exits(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_builtins
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_ansible_builtins(_ns())
+        assert "Error" in capsys.readouterr().err
+
+    def test_main_entry_point(self, capsys) -> None:
+        with patch("general_ludd.cli._cmd_tui") as mock_tui, \
+             patch("sys.argv", ["gludd", "tui"]):
+            from general_ludd.cli import main
+            main()
+        mock_tui.assert_called_once()
