@@ -1,4 +1,4 @@
-"""TUI keybinding handler for models add, ansible search, and dispatch mode toggle."""
+"""TUI keybinding handler for models add, ansible search, project management, and dispatch mode toggle."""
 
 from __future__ import annotations
 
@@ -22,6 +22,34 @@ class TUIKeyHandler:
             return self._handle_models_add_input(ch)
         if input_mode == "ansible_search":
             return self._handle_ansible_search_input(ch)
+        if input_mode == "projects_add":
+            return self._handle_projects_add_input(ch)
+        if input_mode == "projects_set_weight":
+            return self._handle_projects_set_weight_input(ch)
+
+        if view == "projects" and ch == "a":
+            state["input_mode"] = "projects_add"
+            state["input_buffer"] = ""
+            state["input_field_index"] = 0
+            state["input_fields"] = [
+                {"label": "name", "value": ""},
+                {"label": "weight", "value": ""},
+            ]
+            state["status_msg"] = "Add project — enter name"
+            return True
+
+        if view == "projects" and ch == "d":
+            self.delete_selected_project()
+            return True
+
+        if view == "projects" and ch == "w":
+            projects: list[dict[str, Any]] = state.get("projects_data", [])
+            idx: int = state.get("selected_project_idx", 0)
+            if idx < len(projects):
+                state["input_mode"] = "projects_set_weight"
+                state["input_buffer"] = ""
+                state["status_msg"] = f"Set weight for {projects[idx].get('name', '?')} — enter weight"
+            return True
 
         if view == "models" and ch == "a":
             state["input_mode"] = "models_add"
@@ -59,6 +87,136 @@ class TUIKeyHandler:
         if view == "main" and ch == "d":
             return self._cycle_dispatch_mode()
 
+        return True
+
+    def handle_key_down(self) -> None:
+        state = self._state
+        projects = state.get("projects_data", [])
+        if not projects:
+            return
+        idx: int = state.get("selected_project_idx", 0)
+        state["selected_project_idx"] = (idx + 1) % len(projects)
+
+    def handle_key_up(self) -> None:
+        state = self._state
+        projects = state.get("projects_data", [])
+        if not projects:
+            return
+        idx: int = state.get("selected_project_idx", 0)
+        state["selected_project_idx"] = (idx - 1) % len(projects)
+
+    def delete_selected_project(self) -> None:
+        state = self._state
+        projects: list[dict[str, Any]] = state.get("projects_data", [])
+        idx: int = state.get("selected_project_idx", 0)
+        if not projects:
+            state["status_msg"] = "No projects to remove"
+            return
+        if idx >= len(projects):
+            idx = len(projects) - 1
+        pid = projects[idx].get("project_id", "")
+        try:
+            resp = httpx.delete(
+                f"{state['daemon_url']}/admin/projects/{pid}",
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                state["status_msg"] = f"Removed {pid}"
+            else:
+                state["status_msg"] = f"Remove failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Remove error: {exc}"
+
+    def _handle_projects_add_input(self, ch: str) -> bool:
+        state = self._state
+        if ch == "\x1b":
+            state["input_mode"] = None
+            state["input_buffer"] = ""
+            state["status_msg"] = "Add cancelled"
+            return True
+        if ch == "\x7f":
+            state["input_buffer"] = state["input_buffer"][:-1]
+            return True
+        if ch == "\r":
+            idx = state["input_field_index"]
+            state["input_fields"][idx]["value"] = state["input_buffer"]
+            state["input_buffer"] = ""
+            if idx < len(state["input_fields"]) - 1:
+                state["input_field_index"] = idx + 1
+                next_label = state["input_fields"][idx + 1]["label"]
+                state["status_msg"] = f"Add project — enter {next_label}"
+            else:
+                self._submit_projects_add()
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _submit_projects_add(self) -> None:
+        state = self._state
+        fields = state["input_fields"]
+        name = fields[0]["value"]
+        weight_raw = fields[1]["value"]
+        try:
+            weight = float(weight_raw) if weight_raw else 10.0
+        except ValueError:
+            weight = 10.0
+        payload: dict[str, Any] = {"name": name, "weight": weight}
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/projects",
+                json=payload,
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                pid = data.get("project_id", "?")
+                state["status_msg"] = f"Project added: {pid}"
+            else:
+                state["status_msg"] = f"Add failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Add error: {exc}"
+        state["input_mode"] = None
+        state["input_buffer"] = ""
+
+    def _handle_projects_set_weight_input(self, ch: str) -> bool:
+        state = self._state
+        if ch == "\x1b":
+            state["input_mode"] = None
+            state["input_buffer"] = ""
+            state["status_msg"] = "Weight edit cancelled"
+            return True
+        if ch == "\x7f":
+            state["input_buffer"] = state["input_buffer"][:-1]
+            return True
+        if ch == "\r":
+            raw = state["input_buffer"]
+            try:
+                weight = float(raw)
+            except ValueError:
+                state["status_msg"] = f"Invalid weight: {raw}"
+                state["input_mode"] = None
+                state["input_buffer"] = ""
+                return True
+            projects: list[dict[str, Any]] = state.get("projects_data", [])
+            idx: int = state.get("selected_project_idx", 0)
+            if idx < len(projects):
+                pid = projects[idx].get("project_id", "")
+                try:
+                    resp = httpx.put(
+                        f"{state['daemon_url']}/admin/projects/{pid}/weight",
+                        json={"weight": weight},
+                        timeout=5.0,
+                    )
+                    if resp.status_code == 200:
+                        state["status_msg"] = f"Weight set to {weight}% for {pid}"
+                    else:
+                        state["status_msg"] = f"Weight change failed: {resp.status_code}"
+                except Exception as exc:
+                    state["status_msg"] = f"Weight error: {exc}"
+            state["input_mode"] = None
+            state["input_buffer"] = ""
+            return True
+        state["input_buffer"] += ch
         return True
 
     def _handle_models_add_input(self, ch: str) -> bool:
