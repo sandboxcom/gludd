@@ -64,6 +64,55 @@ class TUIKeyHandler:
             return self._handle_compute_register_input(ch)
         if input_mode == "todos_add":
             return self._handle_todos_add_input(ch)
+        if input_mode == "hooks_register":
+            return self._handle_hooks_register_input(ch)
+        if input_mode == "ansible_install":
+            return self._handle_ansible_install_input(ch)
+        if input_mode == "skills_install":
+            return self._handle_skills_install_input(ch)
+
+        if view == "hooks" and ch == "r":
+            state["input_mode"] = "hooks_register"
+            state["input_buffer"] = ""
+            state["input_field_index"] = 0
+            state["input_fields"] = [
+                {"label": "event_name", "value": ""},
+                {"label": "url", "value": ""},
+            ]
+            state["status_msg"] = "Register hook — enter event_name"
+            return True
+
+        if view == "hooks" and ch == "d":
+            self._delete_selected_hook()
+            return True
+
+        if view == "integrity" and ch == "s":
+            self._integrity_scan()
+            return True
+
+        if view == "integrity" and ch == "a":
+            self._integrity_approve()
+            return True
+
+        if view == "integrity" and ch == "r":
+            self._integrity_reject()
+            return True
+
+        if view == "models" and ch == "x":
+            self._remove_selected_model()
+            return True
+
+        if view == "ansible" and ch == "i":
+            state["input_mode"] = "ansible_install"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Install role — enter name"
+            return True
+
+        if view == "skills" and ch == "i":
+            state["input_mode"] = "skills_install"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Install skill — enter name"
+            return True
 
         if view == "todos" and ch == "a":
             state["input_mode"] = "todos_add"
@@ -541,6 +590,212 @@ class TUIKeyHandler:
                 state["status_msg"] = f"Search error: {exc}"
             state["input_mode"] = None
             state["input_buffer"] = ""
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _delete_selected_hook(self) -> None:
+        state = self._state
+        hooks: list[dict[str, Any]] = state.get("hooks_data", [])
+        if not hooks:
+            state["status_msg"] = "No hooks to delete"
+            return
+        idx: int = state.get("selected_hook_idx", 0)
+        if idx >= len(hooks):
+            idx = len(hooks) - 1
+        hook_id = hooks[idx].get("hook_id", "")
+        try:
+            resp = httpx.delete(
+                f"{state['daemon_url']}/admin/hooks/{hook_id}",
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                state["status_msg"] = f"Hook deleted: {hook_id}"
+            else:
+                state["status_msg"] = f"Delete failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Delete error: {exc}"
+
+    def _integrity_scan(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/integrity/scan",
+                json={},
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                changes = data.get("changes", [])
+                state["integrity_changes"] = changes
+                state["status_msg"] = f"Scan complete: {len(changes)} changes"
+            else:
+                state["status_msg"] = f"Scan failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Scan error: {exc}"
+
+    def _integrity_approve(self) -> None:
+        state = self._state
+        changes: list[dict[str, Any]] = state.get("integrity_changes", [])
+        if not changes:
+            state["status_msg"] = "No changes to approve"
+            return
+        idx: int = state.get("selected_integrity_idx", 0)
+        if idx >= len(changes):
+            idx = len(changes) - 1
+        path = changes[idx].get("path", "")
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/integrity/approve",
+                json={"path": path, "signer": "tui"},
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                state["status_msg"] = f"Approved: {path}"
+            else:
+                state["status_msg"] = f"Approve failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Approve error: {exc}"
+
+    def _integrity_reject(self) -> None:
+        state = self._state
+        changes: list[dict[str, Any]] = state.get("integrity_changes", [])
+        if not changes:
+            state["status_msg"] = "No changes to reject"
+            return
+        idx: int = state.get("selected_integrity_idx", 0)
+        if idx >= len(changes):
+            idx = len(changes) - 1
+        path = changes[idx].get("path", "")
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/integrity/reject",
+                json={"path": path, "signer": "tui"},
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                state["status_msg"] = f"Rejected: {path}"
+            else:
+                state["status_msg"] = f"Reject failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Reject error: {exc}"
+
+    def _remove_selected_model(self) -> None:
+        state = self._state
+        models: list[dict[str, Any]] = state.get("models_data", [])
+        if not models:
+            state["status_msg"] = "No models to remove"
+            return
+        idx: int = state.get("selected_model_idx", 0)
+        if idx >= len(models):
+            idx = len(models) - 1
+        model_id = models[idx].get("model_id", "")
+        try:
+            resp = httpx.delete(
+                f"{state['daemon_url']}/admin/models/{model_id}",
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                state["status_msg"] = f"Model removed: {model_id}"
+            else:
+                state["status_msg"] = f"Remove failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Remove error: {exc}"
+
+    def _handle_hooks_register_input(self, ch: str) -> bool:
+        state = self._state
+        if ch == "\x1b":
+            state["input_mode"] = None
+            state["input_buffer"] = ""
+            state["status_msg"] = "Register cancelled"
+            return True
+        if ch == "\x7f":
+            state["input_buffer"] = state["input_buffer"][:-1]
+            return True
+        if ch == "\r":
+            idx = state["input_field_index"]
+            state["input_fields"][idx]["value"] = state["input_buffer"]
+            state["input_buffer"] = ""
+            if idx < len(state["input_fields"]) - 1:
+                state["input_field_index"] = idx + 1
+                next_label = state["input_fields"][idx + 1]["label"]
+                state["status_msg"] = f"Register hook — enter {next_label}"
+            else:
+                self._submit_hooks_register()
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _submit_hooks_register(self) -> None:
+        state = self._state
+        fields = state["input_fields"]
+        payload = {
+            "event_name": fields[0]["value"],
+            "url": fields[1]["value"],
+        }
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/hooks",
+                json=payload,
+                timeout=10.0,
+            )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                hook_id = data.get("hook_id", "?")
+                state["status_msg"] = f"Hook registered: {hook_id}"
+            else:
+                state["status_msg"] = f"Register failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Register error: {exc}"
+        state["input_mode"] = None
+        state["input_buffer"] = ""
+
+    def _handle_ansible_install_input(self, ch: str) -> bool:
+        state = self._state
+        if _handle_text_input(state, ch):
+            return True
+        if ch == "\r":
+            name = state["input_buffer"]
+            try:
+                resp = httpx.post(
+                    f"{state['daemon_url']}/admin/ansible/install",
+                    json={"name": name, "type": "role"},
+                    timeout=30.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    installed = data.get("name", name)
+                    state["status_msg"] = f"Installed: {installed}"
+                else:
+                    state["status_msg"] = f"Install failed: {resp.status_code}"
+            except Exception as exc:
+                state["status_msg"] = f"Install error: {exc}"
+            _submit_text_input(state)
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _handle_skills_install_input(self, ch: str) -> bool:
+        state = self._state
+        if _handle_text_input(state, ch):
+            return True
+        if ch == "\r":
+            name = state["input_buffer"]
+            try:
+                resp = httpx.post(
+                    f"{state['daemon_url']}/admin/skills/install",
+                    json={"name": name},
+                    timeout=30.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    installed = data.get("installed", name)
+                    state["status_msg"] = f"Installed: {installed}"
+                else:
+                    state["status_msg"] = f"Install failed: {resp.status_code}"
+            except Exception as exc:
+                state["status_msg"] = f"Install error: {exc}"
+            _submit_text_input(state)
             return True
         state["input_buffer"] += ch
         return True
