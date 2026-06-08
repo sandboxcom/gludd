@@ -2041,6 +2041,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     import select
     import subprocess
     import termios
+    import time
     import tty
 
     from rich.console import Console
@@ -2113,9 +2114,14 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 start_new_session=True,
                 close_fds=True,
             )
-            daemon_running = True
+            time.sleep(0.5)
+            if daemon_proc.poll() is not None:
+                status_msg = f"Daemon exited immediately (rc={daemon_proc.returncode})"
+                daemon_proc = None
+                return
             _get_daemon_pid_dir()
             _write_daemon_pid_file(_DAEMON_PID_FILE, daemon_proc.pid, args.daemon_url)
+            daemon_running = True
             status_msg = f"Daemon started PID={daemon_proc.pid}"
         except Exception as exc:
             status_msg = f"Start failed: {exc}"

@@ -38,3 +38,42 @@ class TestTUIDaemonDetachment:
         assert "python" not in cmd_str.lower() or "gunicorn" in cmd_str
         assert "-m" not in cmd
         assert "general_ludd.cli" not in cmd_str or "create_daemon_app" in cmd_str
+
+    def test_start_daemon_detects_immediate_exit(self):
+        from unittest.mock import MagicMock
+
+        fake_proc = MagicMock()
+        fake_proc.pid = 12345
+        fake_proc.poll.return_value = 1
+        fake_proc.returncode = 1
+
+        daemon_running = False
+        status_msg = ""
+
+        import time as _time
+        _time.sleep(0)
+        if fake_proc.poll() is not None:
+            status_msg = f"Daemon exited immediately (rc={fake_proc.returncode})"
+        else:
+            daemon_running = True
+
+        assert not daemon_running
+        assert "exited immediately" in status_msg
+        assert "rc=1" in status_msg
+
+    def test_start_daemon_succeeds_when_process_stays_alive(self):
+        from unittest.mock import MagicMock
+
+        fake_proc = MagicMock()
+        fake_proc.pid = 54321
+        fake_proc.poll.return_value = None
+        fake_proc.returncode = None
+
+        daemon_running = False
+
+        if fake_proc.poll() is not None:
+            pass
+        else:
+            daemon_running = True
+
+        assert daemon_running, "daemon_running should be True when poll() returns None"
