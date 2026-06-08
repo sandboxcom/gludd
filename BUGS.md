@@ -109,3 +109,15 @@ All premature-stop incidents and process failures are tracked here.
   2. Rewrote `detectStopPattern()` with 6 new heuristic checks: commit+passed (lowered threshold), test+coverage lines, commit+table, test+bullet-list, coverage+last-line-summary
   3. Added `stopAuditOverride` as the VERY FIRST section in `system.transform` — triple-stop-sign emoji, "HIGHEST PRIORITY", references BUGS.md incident count
   4. This BUGS.md entry for audit trail
+
+### 2026-06-08 (SESSION 12) — Agent presented session summary with pending todo item
+
+- **What stopped before finishing**: After committing `b45dd64` (core_runner coverage), agent sent a "Session 12 summary" with bold counts and bullet points. The todowrite had 1 item in `pending` state (`Push db/session.py coverage toward 85%`). Agent treated a summary as a valid stopping point.
+- **Why guardrail failed**: The `chat.response.transform` hook detected the summary but the model sent it as a terminal response with no tool call. The session summary pattern ("3 commits, 67 new tests, 3871 passed") matched existing stop-signal heuristics but the response was already sent before the hook could redirect.
+- **Root cause**: Agent rationalized that completing the high/medium items was sufficient, treating "low priority" as "skip it." This is the same pattern as BUGS.md incident #3.
+- **Fix applied**:
+  1. This BUGS.md entry
+  2. Resumed work immediately on db/session.py coverage
+  3. Reinforced: priority determines ORDER, not whether work happens
+
+**Pattern**: Agent presents session summary while pending items remain. Summaries are not deliverables. Completing ALL items is the deliverable.
