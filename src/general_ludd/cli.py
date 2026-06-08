@@ -1547,6 +1547,122 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Todos", show_header=True)
+    t.add_column("ID", style="cyan", max_width=12)
+    t.add_column("Title", style="green")
+    t.add_column("Status", style="yellow")
+    t.add_column("Priority", style="bold")
+    for todo in todos:
+        status = todo.get("status", "?")
+        status_color = {
+            "pending": "yellow",
+            "in_progress": "cyan",
+            "completed": "green",
+            "cancelled": "dim",
+        }.get(status, "white")
+        t.add_row(
+            str(todo.get("todo_id", "?"))[:12],
+            str(todo.get("title", "")),
+            f"[{status_color}]{status}[/]",
+            str(todo.get("priority", "")),
+        )
+    return t
+
+
+def _build_hooks_table(hooks: list[dict[str, Any]]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Registered Hooks", show_header=True)
+    t.add_column("Hook ID", style="cyan", max_width=20)
+    t.add_column("Event", style="green")
+    t.add_column("Type", style="yellow")
+    t.add_column("URL", style="dim", max_width=40)
+    for h in hooks:
+        t.add_row(
+            str(h.get("hook_id", "?")),
+            str(h.get("event_name", "?")),
+            str(h.get("hook_type", "?")),
+            str(h.get("url", "") or ""),
+        )
+    return t
+
+
+def _build_workers_table(workers: list[dict[str, Any]]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Workers", show_header=True)
+    t.add_column("Worker ID", style="cyan", max_width=20)
+    t.add_column("Address", style="green")
+    t.add_column("Last Seen", style="dim")
+    for w in workers:
+        t.add_row(
+            str(w.get("worker_id", "?")),
+            str(w.get("address", "?")),
+            str(w.get("last_seen", "?")),
+        )
+    return t
+
+
+def _build_metrics_table(cost_data: dict[str, Any]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Metrics — Cost Overview", show_header=True)
+    t.add_column("Metric", style="cyan")
+    t.add_column("Value", style="green")
+    labels = [
+        ("Total Cost", "total_cost_usd", "${:.2f}"),
+        ("Subscription", "subscription_name", "{}"),
+        ("Sub Cost/Month", "subscription_cost_usd_per_month", "${:.2f}"),
+        ("Tokens Used", "tokens_used", "{:,}"),
+        ("Tokens Remaining", "tokens_remaining_this_week", "{:,}"),
+        ("Cost % of Sub", "cost_as_pct_of_subscription", "{:.1f}%"),
+        ("Tokens % of Weekly", "tokens_as_pct_of_weekly", "{:.1f}%"),
+    ]
+    for label, key, fmt in labels:
+        val = cost_data.get(key)
+        if val is not None:
+            if isinstance(val, (int, float)):
+                try:
+                    t.add_row(label, fmt.format(val))
+                except (ValueError, TypeError):
+                    t.add_row(label, str(val))
+            else:
+                t.add_row(label, str(val))
+    return t
+
+
+def _build_agents_table(agents: list[dict[str, Any]]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Agents", show_header=True)
+    t.add_column("Agent ID", style="cyan", max_width=12)
+    t.add_column("Name", style="green")
+    t.add_column("Status", style="yellow")
+    t.add_column("Project", style="bold")
+    t.add_column("Uptime", style="dim")
+    t.add_column("Tokens", style="dim")
+    t.add_column("Cost", style="dim")
+    for a in agents:
+        status = a.get("status", "?")
+        status_color = "green" if status == "running" else "yellow" if status == "idle" else "red"
+        uptime_s = a.get("uptime_seconds", 0)
+        uptime_h = uptime_s // 3600
+        uptime_m = (uptime_s % 3600) // 60
+        t.add_row(
+            str(a.get("agent_id", "?"))[:12],
+            str(a.get("agent_name", "?")),
+            f"[{status_color}]{status}[/]",
+            str(a.get("project", "")),
+            f"{uptime_h}h{uptime_m}m",
+            f"{a.get('total_tokens', 0):,}",
+            f"${a.get('total_cost_usd', 0):.2f}",
+        )
+    return t
+
+
 def _build_model_table(
     servers: list[Any],
     downloaded: list[Any],
@@ -1765,6 +1881,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         t.add_row("p", "Preflight + Projects", "")
         t.add_row("i", "Integrity scan", "")
         t.add_row("v", "Config files", current_view)
+        t.add_row("t", "Todos", "")
+        t.add_row("h", "Hooks", "")
+        t.add_row("o", "Workers", "")
+        t.add_row("x", "Metrics", "")
+        t.add_row("g", "Agents", "")
         t.add_row("r", "Refresh", "")
         t.add_row("q", "Quit", "")
         if status_msg:
@@ -1921,6 +2042,61 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_proj_table, name="projects"),
                 )
+            elif current_view == "todos":
+                _todos_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/todos", timeout=3.0)
+                    if resp.status_code == 200:
+                        _todos_data = resp.json().get("todos", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_todos_table(_todos_data), name="todos"),
+                )
+            elif current_view == "hooks":
+                _hooks_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/hooks", timeout=3.0)
+                    if resp.status_code == 200:
+                        _hooks_data = resp.json().get("hooks", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_hooks_table(_hooks_data), name="hooks"),
+                )
+            elif current_view == "workers":
+                _workers_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/workers", timeout=3.0)
+                    if resp.status_code == 200:
+                        _workers_data = resp.json().get("workers", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_workers_table(_workers_data), name="workers"),
+                )
+            elif current_view == "metrics":
+                _cost_data: dict[str, Any] = {}
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/metrics/cost", timeout=3.0)
+                    if resp.status_code == 200:
+                        _cost_data = resp.json()
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_metrics_table(_cost_data), name="metrics"),
+                )
+            elif current_view == "agents":
+                _agents_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/agents", timeout=3.0)
+                    if resp.status_code == 200:
+                        _agents_data = resp.json().get("agents", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_agents_table(_agents_data), name="agents"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -1933,6 +2109,16 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             header_text = "Projects & Worktrees — [w] exit  [q] quit"
         elif current_view == "projects":
             header_text = "Registered Projects — [p] exit  [a]dd  [d]elete  [q] quit"
+        elif current_view == "todos":
+            header_text = "Todos — [t] exit  [q] quit"
+        elif current_view == "hooks":
+            header_text = "Hooks — [h] exit  [q] quit"
+        elif current_view == "workers":
+            header_text = "Workers — [o] exit  [q] quit"
+        elif current_view == "metrics":
+            header_text = "Metrics — [x] exit  [q] quit"
+        elif current_view == "agents":
+            header_text = "Agents — [g] exit  [q] quit"
         elif current_view == "config":
             header_text = (
                 "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
@@ -1941,7 +2127,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         else:
             header_text = (
                 "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
-                " [v]config [c]edit [m]odels [w]trees [r]efresh [q]uit"
+                " [v]config [c]edit [m]odels [w]trees [t]odos [h]ooks [o]orkers"
+                " [x]metrics [g]agents [r]efresh [q]uit"
             )
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
@@ -2064,6 +2251,26 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             current_view = "worktrees" if current_view != "worktrees" else "main"
             if current_view == "worktrees":
                 status_msg = "Projects & Worktrees — [w] exit  [q] quit"
+        elif ch == "t":
+            current_view = "todos" if current_view != "todos" else "main"
+            if current_view == "todos":
+                status_msg = "Todos — [t] exit  [q] quit"
+        elif ch == "h":
+            current_view = "hooks" if current_view != "hooks" else "main"
+            if current_view == "hooks":
+                status_msg = "Hooks — [h] exit  [q] quit"
+        elif ch == "o":
+            current_view = "workers" if current_view != "workers" else "main"
+            if current_view == "workers":
+                status_msg = "Workers — [o] exit  [q] quit"
+        elif ch == "x":
+            current_view = "metrics" if current_view != "metrics" else "main"
+            if current_view == "metrics":
+                status_msg = "Metrics — [x] exit  [q] quit"
+        elif ch == "g":
+            current_view = "agents" if current_view != "agents" else "main"
+            if current_view == "agents":
+                status_msg = "Agents — [g] exit  [q] quit"
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
