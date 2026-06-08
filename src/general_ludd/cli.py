@@ -1562,6 +1562,95 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
+def _build_controls_table(daemon_running: bool, status_msg: str) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Controls", show_header=False)
+    t.add_column("Key", style="yellow", width=3, no_wrap=True)
+    t.add_column("Action", style="cyan", no_wrap=True, max_width=20)
+    t.add_column("Status", style="green", no_wrap=True, max_width=18)
+    t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
+    t.add_row("k", "Kill daemon", "")
+    t.add_row("r", "Refresh", "")
+    t.add_row("i", "Integrity scan", "")
+    t.add_row("v", "Config files", "")
+    t.add_row("c", "Config editor", "")
+    t.add_row("m", "Models", "")
+    t.add_row("w", "Worktrees", "")
+    t.add_row("p", "Projects", "")
+    t.add_row("t", "Todos", "")
+    t.add_row("h", "Hooks", "")
+    t.add_row("o", "Workers", "")
+    t.add_row("x", "Metrics", "")
+    t.add_row("g", "Agents", "")
+    t.add_row("q", "Quit", "")
+    if status_msg:
+        t.add_row("", f"[bold yellow]{status_msg[:50]}[/]", "")
+    return t
+
+
+def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Daemon", show_header=False)
+    t.add_column("Key", style="cyan", no_wrap=True, max_width=10)
+    t.add_column("Value", style="green", no_wrap=True, max_width=30)
+    t.add_row("Status", "running" if daemon_running else "stopped")
+    url_display = daemon_url
+    if len(url_display) > 28:
+        url_display = url_display[:25] + "..."
+    t.add_row("URL", url_display)
+    t.add_row("View", current_view)
+    return t
+
+
+def _build_info_table(info: dict[str, Any]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="System Info", show_header=False)
+    t.add_column("Key", style="cyan", no_wrap=True, max_width=14)
+    t.add_column("Value", style="green", no_wrap=True, max_width=36)
+    rows = [
+        ("Version", str(info.get("version", "?"))),
+        ("Python", str(info.get("python_version", "?"))),
+        ("Platform", str(info.get("platform", "?"))),
+        ("CWD", str(info.get("cwd", "?"))[:34]),
+        ("Config Dir", str(info.get("config_dir", "?"))[:34]),
+        ("Config Files", str(len(info.get("config_files", [])))),
+        ("Filestore", str(info.get("filestore_root", "?"))[:34]),
+        ("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0))),
+        ("DB Engine", str(info.get("db_engine", "?"))),
+        ("DB Exists", "yes" if info.get("db_exists") else "no"),
+    ]
+    if info.get("db_exists"):
+        rows.append(("DB Size", _fmt_size(info.get("db_size_bytes", 0))))
+    for k, v in rows:
+        t.add_row(k, v)
+    return t
+
+
+def _build_binary_table(info: dict[str, Any]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Binaries", show_header=False)
+    t.add_column("Binary", style="cyan", no_wrap=True, max_width=12)
+    t.add_column("Found", style="green", no_wrap=True, max_width=5)
+    for name, path in info.get("binary_paths", {}).items():
+        t.add_row(name, "yes" if path else "no")
+    return t
+
+
+def _build_config_table(info: dict[str, Any]) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Config Files", show_header=True)
+    t.add_column("File", style="cyan", no_wrap=True, max_width=24)
+    t.add_column("Size", style="green", no_wrap=True, max_width=10)
+    for cf in info.get("config_files", []):
+        t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
+    return t
+
+
 def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
     from rich.table import Table
 
@@ -1865,78 +1954,19 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = "No daemon to stop"
 
     def build_controls_table() -> Table:
-        t = Table(title="Controls", show_header=False)
-        t.add_column("Key", style="yellow", width=3, no_wrap=True)
-        t.add_column("Action", style="cyan", no_wrap=True, max_width=20)
-        t.add_column("Status", style="green", no_wrap=True, max_width=18)
-        t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
-        t.add_row("k", "Kill daemon", "")
-        t.add_row("r", "Refresh", "")
-        t.add_row("i", "Integrity scan", "")
-        t.add_row("v", "Config files", "")
-        t.add_row("c", "Config editor", "")
-        t.add_row("m", "Models", "")
-        t.add_row("w", "Worktrees", "")
-        t.add_row("p", "Projects", "")
-        t.add_row("t", "Todos", "")
-        t.add_row("h", "Hooks", "")
-        t.add_row("o", "Workers", "")
-        t.add_row("x", "Metrics", "")
-        t.add_row("g", "Agents", "")
-        t.add_row("q", "Quit", "")
-        if status_msg:
-            t.add_row("", f"[bold yellow]{status_msg[:50]}[/]", "")
-        return t
+        return _build_controls_table(daemon_running, status_msg)
 
     def build_daemon_table() -> Table:
-        t = Table(title="Daemon", show_header=False)
-        t.add_column("Key", style="cyan", no_wrap=True, max_width=10)
-        t.add_column("Value", style="green", no_wrap=True, max_width=30)
-        t.add_row("Status", "running" if daemon_running else "stopped")
-        url_display = args.daemon_url
-        if len(url_display) > 28:
-            url_display = url_display[:25] + "..."
-        t.add_row("URL", url_display)
-        t.add_row("View", current_view)
-        return t
+        return _build_daemon_table(daemon_running, args.daemon_url, current_view)
 
     def build_info_table(info: dict[str, Any]) -> Table:
-        t = Table(title="System Info", show_header=False)
-        t.add_column("Key", style="cyan", no_wrap=True, max_width=14)
-        t.add_column("Value", style="green", no_wrap=True, max_width=36)
-        rows = [
-            ("Version", str(info.get("version", "?"))),
-            ("Python", str(info.get("python_version", "?"))),
-            ("Platform", str(info.get("platform", "?"))),
-            ("CWD", str(info.get("cwd", "?"))[:34]),
-            ("Config Dir", str(info.get("config_dir", "?"))[:34]),
-            ("Config Files", str(len(info.get("config_files", [])))),
-            ("Filestore", str(info.get("filestore_root", "?"))[:34]),
-            ("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0))),
-            ("DB Engine", str(info.get("db_engine", "?"))),
-            ("DB Exists", "yes" if info.get("db_exists") else "no"),
-        ]
-        if info.get("db_exists"):
-            rows.append(("DB Size", _fmt_size(info.get("db_size_bytes", 0))))
-        for k, v in rows:
-            t.add_row(k, v)
-        return t
+        return _build_info_table(info)
 
     def build_binary_table(info: dict[str, Any]) -> Table:
-        t = Table(title="Binaries", show_header=False)
-        t.add_column("Binary", style="cyan", no_wrap=True, max_width=12)
-        t.add_column("Found", style="green", no_wrap=True, max_width=5)
-        for name, path in info.get("binary_paths", {}).items():
-            t.add_row(name, "yes" if path else "no")
-        return t
+        return _build_binary_table(info)
 
     def build_config_table(info: dict[str, Any]) -> Table:
-        t = Table(title="Config Files", show_header=True)
-        t.add_column("File", style="cyan", no_wrap=True, max_width=24)
-        t.add_column("Size", style="green", no_wrap=True, max_width=10)
-        for cf in info.get("config_files", []):
-            t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
-        return t
+        return _build_config_table(info)
 
     def make_layout(info: dict[str, Any]) -> Layout:
         import shutil as _shutil
