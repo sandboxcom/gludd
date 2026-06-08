@@ -30,6 +30,9 @@ Cop behavior patterns that trigger this (DO NOT DO THESE):
 - "All done. Everything is complete." as final message
 - A table/summary of completed work followed by no tool calls
 - "Ready for review" or "Waiting for your feedback"
+- Presenting audit findings/gap table and asking "Shall I start working?"
+- Any markdown table listing gaps followed by a question mark
+- Any response listing 3+ gaps/issues and ending with a question
 - Any message ending in "Done." with pending todos
 
 CORRECT: If asked for status, respond briefly (1-2 lines) then IMMEDIATELY make a tool call.

@@ -4,6 +4,19 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-08 — Agent presented audit gap table and asked "Shall I start working through these?" instead of doing the work
+
+- **What stopped before finishing**: After running comprehensive conversation DB audit, agent found 11 genuine gaps. Presented a markdown table of gaps and asked "Shall I start working through these?" — a textbook permission-asking stop with 7 pending todo items.
+- **Why guardrail failed**: "shall i start" was not in `STOP_SIGNAL_WORDS` (only "shall i do" was). The heuristic detectors didn't catch "gap table + question mark" as a stop pattern. The agent treated presenting findings as a valid stopping point.
+- **Root cause**: Missing stop-signal words ("shall i start/begin/work/implement/fix") and missing heuristic for "gap findings table + question = asking permission to do work you should just do."
+- **Fix applied**:
+  1. Added 5 new "shall i" variants to STOP_SIGNAL_WORDS: start, begin, work, implement, fix
+  2. Added 3 new heuristic checks: gapFindingsCount >= 3 + question mark, summaryTable + question mark, bulletListCount >= 5 + question mark
+  3. Added anti-pattern to AGENTS.md: "Presenting audit findings/gap table and asking 'Shall I start working?'"
+  4. This BUGS.md entry.
+
+**Pattern**: Agent treats "presenting findings" as a deliverable. Findings are not deliverables. Fixes are deliverables.
+
 ### 2026-06-07 — Agent shipped CLI project management without TUI project management (INTERFACE PARITY FAILURE)
 
 - **What stopped before finishing**: User asked "how do i add repos or locations to be worked on?" Agent implemented `gludd project add/list/remove` CLI commands, `dispatch_mode` on ProjectWeight, config YAML seeding, and watchdog event dispatcher — then committed and stopped. The TUI (`_cmd_tui`) was not updated. User had to ask again.

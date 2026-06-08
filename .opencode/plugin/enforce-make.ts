@@ -151,6 +151,11 @@ const STOP_SIGNAL_WORDS = [
   "shall i proceed",
   "shall i finish",
   "shall i do",
+  "shall i start",
+  "shall i begin",
+  "shall i work",
+  "shall i implement",
+  "shall i fix",
   "next steps are",
   "remaining tasks",
   "here are the remaining",
@@ -237,6 +242,8 @@ function detectStopPattern(responseText: string): boolean {
   let testResultLine = false
   let coverageLine = false
   let bulletListCount = 0
+  let hasQuestionMark = false
+  let gapFindingsCount = 0
   for (const line of lines) {
     const trimmed = line.trim()
     if (/^\[master [a-f0-9]{7}\]/.test(trimmed)) commitHashCount++
@@ -245,6 +252,8 @@ function detectStopPattern(responseText: string): boolean {
     if (/^\d+\.\d+%/.test(trimmed) || /coverage.*\d+%/.test(trimmed)) coverageLine = true
     if (trimmed.includes("|") && trimmed.includes("---")) summaryTable = true
     if (/^[-*]\s/.test(trimmed)) bulletListCount++
+    if (trimmed.endsWith("?")) hasQuestionMark = true
+    if (/gap|incomplete|missing|not wired|dead code|not implemented|stub/i.test(trimmed)) gapFindingsCount++
   }
   if (lines.length > 0) {
     const last = lines[lines.length - 1].trim().toLowerCase()
@@ -258,6 +267,9 @@ function detectStopPattern(responseText: string): boolean {
   if (commitHashCount >= 1 && summaryTable) return true
   if (testResultLine && bulletListCount >= 3) return true
   if (coverageLine && lastLineIsSummary) return true
+  if (gapFindingsCount >= 3 && hasQuestionMark) return true
+  if (summaryTable && hasQuestionMark) return true
+  if (bulletListCount >= 5 && hasQuestionMark) return true
   return false
 }
 

@@ -185,7 +185,10 @@ git-log:
 	@git log --oneline -10 || echo "No git history"
 
 audit-messages:
-	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT p.content FROM message m JOIN part p ON m.id = p.message_id WHERE m.role = 'user' ORDER BY m.id;" 2>/dev/null || echo "No opencode database found"
+	@$(PYTHON) scripts/audit_messages.py 2>&1 || echo "No opencode database found"
+
+audit-schema:
+	@$(PYTHON) scripts/db_schema.py
 
 repo-log:
 	@git log --oneline -10 || echo "No git history"
