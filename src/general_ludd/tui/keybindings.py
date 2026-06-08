@@ -17,6 +17,8 @@ _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
     "n": ("quantization", "Quantization — [d]etect  [n] exit"),
     "f": ("filestore", "Filestore — [f] exit"),
     "z": ("deployments", "Deployments — [z] exit"),
+    "y": ("leaderboard", "Leaderboard — [y] exit"),
+    "P": ("playbooks", "Playbooks — [r]efresh  [P] exit"),
 }
 
 
@@ -198,6 +200,14 @@ class TUIKeyHandler:
                 {"label": "provider", "value": ""},
             ]
             state["status_msg"] = "Register endpoint — enter URL"
+            return True
+
+        if view == "templates" and ch == "r":
+            self._refresh_templates()
+            return True
+
+        if view == "quantization" and ch == "d":
+            self._detect_quantization()
             return True
 
         if view == "main" and ch == "R":
@@ -799,6 +809,39 @@ class TUIKeyHandler:
             return True
         state["input_buffer"] += ch
         return True
+
+    def _refresh_templates(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/templates/refresh",
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                count = len(data.get("templates", []))
+                state["status_msg"] = f"Refreshed: {count} templates"
+            else:
+                state["status_msg"] = f"Refresh failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Refresh error: {exc}"
+
+    def _detect_quantization(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/quantization/detect",
+                json={},
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                count = len(data.get("detections", []))
+                state["status_msg"] = f"Detected: {count} models"
+            else:
+                state["status_msg"] = f"Detect failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Detect error: {exc}"
 
     def _cycle_dispatch_mode(self) -> bool:
         state = self._state

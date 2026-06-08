@@ -2681,6 +2681,28 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_build_deployments_table(_deploy_data, term_width=_term_w), name="deployments"),
                 )
+            elif current_view == "leaderboard":
+                _lb_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/benchmark/leaderboard", timeout=3.0)
+                    if resp.status_code == 200:
+                        _lb_data = resp.json().get("leaderboard", resp.json().get("entries", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_leaderboard_table(_lb_data, term_width=_term_w), name="leaderboard"),
+                )
+            elif current_view == "playbooks":
+                _pb_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/playbooks", timeout=3.0)
+                    if resp.status_code == 200:
+                        _pb_data = resp.json().get("playbooks", resp.json().get("entries", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_playbooks_table(_pb_data, term_width=_term_w), name="playbooks"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -2745,10 +2767,14 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             header_text = "Filestore — [f] exit  [q] quit"
         elif current_view == "deployments":
             header_text = "Deployments — [z] exit  [q] quit"
+        elif current_view == "leaderboard":
+            header_text = "Leaderboard — [y] exit  [q] quit"
+        elif current_view == "playbooks":
+            header_text = "Playbooks — [r]efresh  [P] exit  [q] quit"
         elif current_view == "config":
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
-            header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g | u:j:e:b:l:n:f:z"
+            header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g | u:j:e:b:l:n:f:z:y:P"
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
@@ -2944,7 +2970,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
-        elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "R") or current_view in (
+        elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "y", "P", "R") or current_view in (
             "todos", "workers", "models", "mcp", "skills", "compute",
         ):
             tui_state["current_view"] = current_view

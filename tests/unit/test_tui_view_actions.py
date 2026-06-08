@@ -600,6 +600,90 @@ class TestAnsibleInstallInput:
         assert "failed" in state["status_msg"].lower()
 
 
+class TestTemplatesRefreshAction:
+    def test_r_key_in_templates_view_refreshes(self) -> None:
+        handler, state = _make_handler("templates")
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                "templates": ["default", "bug_fix"],
+                "refreshed": True,
+            }
+            handler.handle_key("r")
+        mock_post.assert_called_once_with(
+            "http://localhost:8000/admin/templates/refresh",
+            timeout=30.0,
+        )
+        assert "Refreshed" in state["status_msg"]
+
+    def test_templates_refresh_http_error(self) -> None:
+        handler, state = _make_handler("templates")
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 500
+            handler.handle_key("r")
+        assert "Refresh failed" in state["status_msg"]
+
+    def test_templates_refresh_connection_error(self) -> None:
+        handler, state = _make_handler("templates")
+        with patch("httpx.post") as mock_post:
+            mock_post.side_effect = Exception("connection refused")
+            handler.handle_key("r")
+        assert "Refresh error" in state["status_msg"]
+
+
+class TestQuantizationDetectAction:
+    def test_d_key_in_quantization_view_detects(self) -> None:
+        handler, state = _make_handler("quantization")
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                "detections": [
+                    {"model_id": "gpt-4", "precision": "fp16", "confidence": 0.95}
+                ]
+            }
+            handler.handle_key("d")
+        mock_post.assert_called_once_with(
+            "http://localhost:8000/admin/quantization/detect",
+            json={},
+            timeout=30.0,
+        )
+        assert "Detected" in state["status_msg"]
+
+    def test_quantization_detect_http_error(self) -> None:
+        handler, state = _make_handler("quantization")
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 500
+            handler.handle_key("d")
+        assert "Detect failed" in state["status_msg"]
+
+    def test_quantization_detect_connection_error(self) -> None:
+        handler, state = _make_handler("quantization")
+        with patch("httpx.post") as mock_post:
+            mock_post.side_effect = Exception("timeout")
+            handler.handle_key("d")
+        assert "Detect error" in state["status_msg"]
+
+
+class TestWorkersPingSuccess:
+    def test_ping_workers_success(self) -> None:
+        handler, state = _make_handler("workers")
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value.status_code = 200
+            mock_post.return_value.json.return_value = {
+                "workers": [
+                    {"worker_id": "w1", "status": "alive"},
+                    {"worker_id": "w2", "status": "alive"},
+                ]
+            }
+            handler.handle_key("p")
+        mock_post.assert_called_once_with(
+            "http://localhost:8000/admin/workers/ping",
+            timeout=10.0,
+        )
+        assert "Ping OK" in state["status_msg"]
+        assert "2 workers" in state["status_msg"]
+
+
 class TestToggleViews:
     def test_toggle_mcp_from_main(self) -> None:
         handler, state = _make_handler("main")
@@ -645,3 +729,25 @@ class TestToggleViews:
         handler, state = _make_handler("main")
         handler.handle_key("z")
         assert state["current_view"] == "deployments"
+
+    def test_toggle_leaderboard_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("y")
+        assert state["current_view"] == "leaderboard"
+        assert "Leaderboard" in state["status_msg"]
+
+    def test_toggle_leaderboard_back_to_main(self) -> None:
+        handler, state = _make_handler("leaderboard")
+        handler.handle_key("y")
+        assert state["current_view"] == "main"
+
+    def test_toggle_playbooks_from_main(self) -> None:
+        handler, state = _make_handler("main")
+        handler.handle_key("P")
+        assert state["current_view"] == "playbooks"
+        assert "Playbooks" in state["status_msg"]
+
+    def test_toggle_playbooks_back_to_main(self) -> None:
+        handler, state = _make_handler("playbooks")
+        handler.handle_key("P")
+        assert state["current_view"] == "main"
