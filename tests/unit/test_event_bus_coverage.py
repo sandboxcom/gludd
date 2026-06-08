@@ -263,3 +263,39 @@ class TestSubscribeIdIncrementing:
         assert id1 == "sub-0"
         assert id2 == "sub-1"
         assert id3 == "sub-2"
+
+
+class TestAsyncFallbackNoRunningLoop:
+    def test_coroutine_result_asyncio_run_fallback(self):
+        bus = EventBus()
+        results: list[str] = []
+
+        async def handler(event: Event) -> None:
+            results.append(event.type)
+
+        bus.subscribe("test.noloop", handler)
+        count = bus.publish(Event(type="test.noloop"))
+        assert count == 1
+        assert results == ["test.noloop"]
+
+    def test_coroutine_function_asyncio_run_fallback(self):
+        bus = EventBus()
+        results: list[str] = []
+
+        async def handler(event: Event) -> None:
+            results.append(event.type)
+
+        bus.subscribe("test.noloop_corofn", handler)
+        count = bus.publish(Event(type="test.noloop_corofn"))
+        assert count == 1
+        assert results == ["test.noloop_corofn"]
+
+    def test_async_callback_exception_no_loop(self):
+        bus = EventBus()
+
+        async def bad(event: Event) -> None:
+            raise RuntimeError("async boom no loop")
+
+        bus.subscribe("test.async_exc_noloop", bad)
+        count = bus.publish(Event(type="test.async_exc_noloop"))
+        assert count == 1
