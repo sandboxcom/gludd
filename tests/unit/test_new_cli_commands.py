@@ -349,3 +349,42 @@ class TestModelsCrudCliParsing:
             _parse(["models", "remove", "test-model"])
             out = capsys.readouterr().out
             assert "test-model" in out
+
+
+class TestQuantizationCli:
+    def test_quantization_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"models": [{"model_id": "test-model", "precision": "bf16", "confidence": 0.95}]},
+            )
+            _parse(["quantization", "list"])
+            out = capsys.readouterr().out
+            assert "test-model" in out
+
+    def test_quantization_detect(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"model_id": "test-model", "precision": "fp16", "confidence": 0.9},
+            )
+            _parse(["quantization", "detect", "--model-id", "test-model"])
+            out = capsys.readouterr().out
+            assert "test-model" in out
+
+    def test_quantization_drift_check(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"drift_detected": False, "checked_models": 3},
+            )
+            _parse(["quantization", "drift-check"])
+            out = capsys.readouterr().out
+            assert "No drift" in out
+
+    def test_quantization_detect_missing_model(self):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=422, text="validation error")
+            with patch("sys.exit") as mock_exit:
+                _parse(["quantization", "detect"])
+                mock_exit.assert_called()

@@ -565,6 +565,20 @@ def main() -> None:
     codeintel_search.add_argument("--daemon-url", default="http://localhost:8000")
     codeintel_search.set_defaults(func=_cmd_code_search)
 
+    quant_parser = sub.add_parser("quantization", help="Model quantization detection")
+    quant_parser.set_defaults(func=None)
+    quant_sub = quant_parser.add_subparsers(dest="quantization_command")
+    quant_list = quant_sub.add_parser("list", help="List known quantization info")
+    quant_list.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_list.set_defaults(func=_cmd_quantization_list)
+    quant_detect = quant_sub.add_parser("detect", help="Detect quantization for a model")
+    quant_detect.add_argument("--model-id", required=True, help="Model ID to detect")
+    quant_detect.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_detect.set_defaults(func=_cmd_quantization_detect)
+    quant_drift = quant_sub.add_parser("drift-check", help="Check for quantization drift")
+    quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
+    quant_drift.set_defaults(func=_cmd_quantization_drift_check)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -582,6 +596,7 @@ def main() -> None:
             "templates": templates_parser,
             "playbooks": playbooks_parser,
             "code": codeintel_parser,
+            "quantization": quant_parser,
         }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
@@ -2511,6 +2526,64 @@ def _cmd_code_search(args: argparse.Namespace) -> None:
                     print(f"  {r.get('file', '?')}:{r.get('line', '?')} {r.get('text', '')[:80]}")
             else:
                 print(f"No results for '{args.query}'")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_quantization_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/quantization", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            models = data.get("models", [])
+            if models:
+                for m in models:
+                    prec = m.get("precision", "unknown")
+                    conf = m.get("confidence", 0)
+                    print(f"  {m.get('model_id', '?')}  prec={prec}  conf={conf:.2f}")
+            else:
+                print("No quantization data available. Use 'detect' to scan models.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_quantization_detect(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/quantization/detect",
+            json={"model_id": args.model_id},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            mid = data.get("model_id", "?")
+            prec = data.get("precision", "unknown")
+            conf = data.get("confidence", 0)
+            print(f"  {mid}  prec={prec}  conf={conf:.2f}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_quantization_drift_check(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(f"{args.daemon_url}/admin/quantization/drift-check", timeout=30.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            if data.get("drift_detected"):
+                print(f"Drift detected in {len(data.get('drifted_models', []))} model(s)")
+                for m in data.get("drifted_models", []):
+                    print(f"  {m.get('model_id')}: {m.get('old_precision')} -> {m.get('new_precision')}")
+            else:
+                print("No drift detected.")
         else:
             print(f"Error: {resp.status_code}", file=sys.stderr)
             sys.exit(1)
