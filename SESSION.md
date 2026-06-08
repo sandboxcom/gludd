@@ -6,26 +6,22 @@
 - 2026-06-07 (session 6)
 
 ## Current Status
-- **Phase**: Coverage improvement — cli.py and daemon.py coverage lifts
-- **Test Suite**: 3262 passed, 26 skipped, 88.39% coverage
+- **Phase**: Coverage improvement + audit hardening
+- **Test Suite**: 3265 passed, 26 skipped, ~88% coverage
 - **Branch**: master
-- **Latest commit**: 446de31 — Wire quantization tracker into AdaptiveRouter at daemon startup
+- **Latest commit**: 5c1db04 — TUI daemon detach fix: start gunicorn directly, not intermediate wrapper
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: Coverage Improvement (COMPLETE)
-- cli.py coverage lift (9ca4817): Extracted 5 TUI table builders (`_build_controls_table`, `_build_daemon_table`, `_build_info_table`, `_build_binary_table`, `_build_config_table`) from `_cmd_tui` closures to module-level. Added 39 tests in `test_tui_extracted_builders.py` covering: table builders, `_cmd_help`, filestore CLI (4 cmds), integrity CLI (5 cmds), ansible CLI (3 cmds), `_scan_local_integrity`, `_load_config_editor`. cli.py: 59% → 66%
-- daemon.py coverage lift (14e73c0): Added 22 tests in `test_daemon_filestore_integrity.py` covering 6 filestore endpoints, 5 integrity endpoints, 3 ansible endpoints, selftest endpoint. Fixed `/admin/filestore/write` bug (`request: Any` → `request: Request`). daemon.py: 73% → 81%
-- Quantization router wiring (446de31): `AdaptiveRouter` now receives `quantization_map` from `_quantization_tracker` state at daemon startup. 2 tests in `TestQuantizationWiring`. daemon.py: 81%
+## This Session: TUI Daemon Detach + Audit Hardening (IN PROGRESS)
+- TUI daemon detach fix (5c1db04): `_build_daemon_start_cmd()` extracted helper launches gunicorn directly (not via intermediate `python -m general_ludd.cli daemon` wrapper). TUI `start_daemon()` uses `start_new_session=True` so daemon survives TUI exit. 3 tests in `test_tui_daemon_detach.py`
+- AGENTS.md audit hardening: Strengthened Self-Audit step 1 with concrete SQL query instructions, common missed patterns list, and explicit "prior sessions matter" rule
+- Added `make audit-messages` Makefile target: queries opencode.db for all user messages
 
 ## Files Below 85% Coverage (priority order)
 1. cli.py — 66% (1954 lines, 664 miss — TUI `_cmd_tui` body still untested)
 2. daemon.py — 81% (1035 lines, 192 miss — models discover/discovered, local inference, code blocks)
 3. ansible/core_runner.py — 79% (136 lines, 29 miss)
-4. filestore/bootstrap.py — 87% (133 lines, 17 miss)
-5. agents/dispatcher.py — 92% (66 lines, 5 miss)
-6. secrets/manager.py — 87% (135 lines, 18 miss)
-7. planning/repo_map.py — 90% (163 lines, 17 miss)
 
 ## Previous Session: Guardrail Hardening (COMPLETE)
 - Guardrail hardening committed as e0916b6
@@ -258,16 +254,14 @@ EventLoop auto-creates from session (when available):
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
 - `build_secrets_resolver()` cannot call async `health_check()` from sync context
 - ZAI API 429 (balance exhaustion) — live identity tests xfail until recharged
-- Files still below 85%: quality/config.py (0%), cli.py (58%), daemon.py (75%), ansible/core_runner.py (79%)
+- Files still below 85%: cli.py (66%), daemon.py (81%), ansible/core_runner.py (79%)
 - events/bus.py (88%) — async subscriber paths with `asyncio.run()` fallback not covered
 - enforce-make plugin has runtime bug: scans full command for forbidden words including target names (fix committed but requires opencode restart)
-- No `/admin/todos` daemon endpoint — TUI todos view will show empty until endpoint is added
 
 ## Next Steps
-- Improve `cli.py` coverage — extract TUI sub-functions for testability
-- Improve `daemon.py` coverage — test stub endpoints returning 503 without DB
+- Push cli.py coverage higher (66% — TUI `_cmd_tui` body still large)
+- Push daemon.py coverage higher (81% — models discover/discovered, local inference, code blocks)
 - Add integration tests for new TUI views against daemon API
-- Wire quantization map from daemon state into AdaptiveRouter at daemon startup
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases

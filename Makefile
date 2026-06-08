@@ -25,7 +25,7 @@ TESTS_DIR := tests
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
-        qa validate
+        audit-messages qa validate
 
 search-google:
 	@$(PYTHON) $(SEARCH_SCRIPT) "$(SEARCH)" -n $(MAX_RESULTS) -f $(FORMAT)
@@ -183,6 +183,9 @@ git-init:
 
 git-log:
 	@git log --oneline -10 || echo "No git history"
+
+audit-messages:
+	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT p.content FROM message m JOIN part p ON m.id = p.message_id WHERE m.role = 'user' ORDER BY m.id;" 2>/dev/null || echo "No opencode database found"
 
 repo-log:
 	@git log --oneline -10 || echo "No git history"

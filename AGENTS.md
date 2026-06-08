@@ -332,9 +332,16 @@ This is enforced by:
 
 Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 
-1. **Conversation History Audit**: Read ALL user messages from the opencode conversation
-   database at `~/.local/share/opencode/opencode.db` (table: `message`, join `part` for content).
-   Extract every explicit request. Cross-reference each against implementation.
+1. **Conversation History Audit**: This is the MOST IMPORTANT step. Do it FIRST and THOROUGHLY.
+   - Query the opencode conversation database at `~/.local/share/opencode/opencode.db`
+   - Use the Bash tool with a Makefile target (e.g., `make audit-messages`) to extract ALL user messages:
+     `SELECT p.content FROM message m JOIN part p ON m.id = p.message_id WHERE m.role = 'user' ORDER BY m.id;`
+   - For EACH user message, identify explicit requests (features, fixes, behaviors, bugs)
+   - Cross-reference each request against: (a) code in `src/`, (b) tests in `tests/`, (c) SESSION.md completed items
+   - Any request NOT found in implementation is a GAP — fix it immediately
+   - **Common missed patterns**: TUI detach fixes, keybinding changes, view additions, CLI subcommands,
+     daemon endpoint wiring, config defaults. These get requested in early sessions and forgotten.
+   - Do NOT skip this step because "the current conversation doesn't mention it." Prior sessions matter.
 
 2. **Dead Code Audit**: For every new class/module you created, search the ENTIRE `src/` tree
    for imports of that class. If it is only imported in test files, it is dead code — wire it
