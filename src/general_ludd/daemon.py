@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, cast
 
 import yaml
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
 from general_ludd.agents.context import ContextCompactor  # noqa: F401
@@ -1572,7 +1572,7 @@ def create_daemon_app(
             return {"path": safe_path, "is_dir": False, "binary": True}
 
     @app.post("/admin/filestore/write")
-    async def admin_filestore_write(request: Any) -> dict[str, Any]:
+    async def admin_filestore_write(request: Request) -> dict[str, Any]:
         from general_ludd.filestore.store import FileStore
         from general_ludd.security.sanitize import sanitize_path
 
