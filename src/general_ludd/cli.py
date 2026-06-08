@@ -1566,6 +1566,7 @@ def _build_controls_table(daemon_running: bool, status_msg: str) -> Table:
     t.add_row("v", "Config files", "")
     t.add_row("c", "Config editor", "")
     t.add_row("m", "Models", "")
+    t.add_row("a", "Ansible", "")
     t.add_row("w", "Worktrees", "")
     t.add_row("p", "Projects", "")
     t.add_row("t", "Todos", "")
@@ -1573,6 +1574,7 @@ def _build_controls_table(daemon_running: bool, status_msg: str) -> Table:
     t.add_row("o", "Workers", "")
     t.add_row("x", "Metrics", "")
     t.add_row("g", "Agents", "")
+    t.add_row("d", "Dispatch", "")
     t.add_row("q", "Quit", "")
     if status_msg:
         t.add_row("", f"[bold yellow]{status_msg[:50]}[/]", "")
@@ -1884,10 +1886,25 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     from rich.panel import Panel
     from rich.table import Table
 
+    from general_ludd.tui.keybindings import TUIKeyHandler
+
     daemon_proc: subprocess.Popen[bytes] | None = None
     daemon_running = False
     current_view = "main"
     status_msg = "Press q to quit, s to start daemon"
+    tui_state: dict[str, Any] = {
+        "current_view": "main",
+        "daemon_running": False,
+        "status_msg": "",
+        "daemon_url": args.daemon_url,
+        "input_mode": None,
+        "input_buffer": "",
+        "input_field_index": 0,
+        "input_fields": [],
+        "dispatch_mode": "active",
+        "ansible_search_results": [],
+    }
+    tui_handler = TUIKeyHandler(tui_state)
 
     def detect_daemon() -> bool:
         if _is_daemon_pid_alive(_DAEMON_PID_FILE):
@@ -2161,6 +2178,22 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_int_table, name="integrity"),
                 )
+            elif current_view == "ansible":
+                _ans_table = Table(title="Ansible Galaxy", show_header=True)
+                _ans_table.add_column("Name", style="cyan", no_wrap=True, max_width=30)
+                _ans_table.add_column("Description", style="green", no_wrap=True, max_width=40)
+                _ans_results = tui_state.get("ansible_search_results", [])
+                if _ans_results:
+                    for _r in _ans_results:
+                        _ans_table.add_row(
+                            str(_r.get("name", "?"))[:30],
+                            str(_r.get("description", ""))[:40],
+                        )
+                else:
+                    _ans_table.add_row("Press [s] to search", "")
+                body["right"].split(
+                    Layout(_ans_table, name="ansible"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -2168,7 +2201,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         if current_view == "edit":
             header_text = "Config Editor — [c] exit  [q] quit"
         elif current_view == "models":
-            header_text = "Model Services — [m] exit  [q] quit"
+            if tui_state.get("input_mode") == "models_add":
+                _idx = tui_state.get("input_field_index", 0)
+                _fields = tui_state.get("input_fields", [])
+                _label = _fields[_idx]["label"] if _idx < len(_fields) else "?"
+                header_text = (
+                    f"Add Model — enter {_label}: "
+                    f"{tui_state.get('input_buffer', '')}_ "
+                    "— [Enter] next [Esc] cancel"
+                )
+            else:
+                header_text = "Model Services — [m] exit  [a]dd  [q] quit"
         elif current_view == "worktrees":
             header_text = "Projects & Worktrees — [w] exit  [q] quit"
         elif current_view == "projects":
@@ -2185,16 +2228,28 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             header_text = "Agents — [g] exit  [q] quit"
         elif current_view == "integrity":
             header_text = "Integrity — [i] exit  [q] quit"
+        elif current_view == "ansible":
+            if tui_state.get("input_mode") == "ansible_search":
+                header_text = f"Search Galaxy: {tui_state.get('input_buffer', '')}_ — [Enter] search [Esc] cancel"
+            else:
+                header_text = "Ansible Galaxy — [a] exit  [s]earch  [q] quit"
         elif current_view == "config":
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
-            header_text = "TUI | s:k:r:i:c:v | m:w:p:t:h:o:x:g"
+            header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g"
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg, config_nav, model_mgr
+        if tui_state.get("input_mode") in ("models_add", "ansible_search"):
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            current_view = tui_state["current_view"]
+            status_msg = tui_state["status_msg"]
+            return True
         if current_view == "edit":
             editor = config_nav["editor"]
             if editor.editing:
@@ -2312,6 +2367,32 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                         status_msg = "No projects to remove"
             except Exception as exc:
                 status_msg = f"Remove error: {exc}"
+            return True
+        if current_view == "models" and ch == "a":
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            status_msg = tui_state["status_msg"]
+            return True
+        if current_view == "ansible" and ch in ("s", "a", "\x1b"):
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            current_view = tui_state["current_view"]
+            status_msg = tui_state["status_msg"]
+            return True
+        if current_view == "main" and ch == "a":
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            current_view = tui_state["current_view"]
+            status_msg = tui_state["status_msg"]
+            return True
+        if current_view == "main" and ch == "d":
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            status_msg = tui_state["status_msg"]
             return True
         if ch == "m":
             current_view = "models" if current_view != "models" else "main"

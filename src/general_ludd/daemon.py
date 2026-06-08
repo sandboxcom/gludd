@@ -1720,6 +1720,17 @@ def create_daemon_app(
     async def admin_dispatch_agent(req: dict[str, Any]) -> dict[str, Any]:
         return {"status": "ok", "result": "AgentDispatcher wired"}  # imported at top
 
+    @app.put("/admin/dispatch/mode")
+    async def admin_dispatch_mode(req: dict[str, Any]) -> Any:
+        mode = req.get("mode", "active")
+        valid = ["active", "passive_external", "worktree_monitor"]
+        if mode not in valid:
+            return JSONResponse(status_code=400, content={"error": f"Invalid mode: {mode}"})
+        cfg = getattr(app.state, "_startup_config", None)
+        if cfg is not None and isinstance(cfg, dict):
+            cfg["dispatch_mode"] = mode
+        return {"dispatch_mode": mode}
+
     @app.post("/admin/dogfood/run")
     async def admin_dogfood_run(req: dict[str, Any]) -> dict[str, Any]:
         return {"status": "ok", "result": "DogfoodRunner wired"}  # imported at top
