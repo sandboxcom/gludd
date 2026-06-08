@@ -497,6 +497,16 @@ def create_daemon_app(
     app.state._skill_registry = None
     app.state._adaptive_router = None
     app.state._startup_config = load_startup_config(config_dir)
+    app.state._stats_start_time = time.monotonic()
+    app.state._stats_requests = 0
+    app.state._stats_responses = 0
+
+    @app.middleware("http")
+    async def stats_middleware(request: Any, call_next: Any) -> Any:
+        app.state._stats_requests += 1
+        response = await call_next(request)
+        app.state._stats_responses += 1
+        return response
 
     if log_level == "debug":
         logging.getLogger("httpx").setLevel(logging.DEBUG)
@@ -505,6 +515,23 @@ def create_daemon_app(
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "healthy"}
+
+    @app.get("/admin/daemon/stats")
+    async def admin_daemon_stats() -> dict[str, Any]:
+        import os
+
+        import psutil
+
+        uptime = time.monotonic() - app.state._stats_start_time
+        proc = psutil.Process(os.getpid())
+        mem_mb = proc.memory_info().rss / (1024 * 1024)
+        return {
+            "pid": os.getpid(),
+            "requests_total": app.state._stats_requests,
+            "responses_total": app.state._stats_responses,
+            "memory_mb": round(mem_mb, 2),
+            "uptime_s": round(uptime, 2),
+        }
 
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, Any]:
