@@ -421,4 +421,72 @@ class TestAdaptiveRouter:
         )
         router._cache_time = None
         router.invalidate_cache()
+
+    @pytest.mark.asyncio
+    async def test_route_with_quantization_penalty(self):
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            return_value=[
+                {
+                    "prompt_profile_id": "pp-a",
+                    "model_profile_id": "quantized-model",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_completion": 0.9,
+                    "avg_code_quality": 0.9,
+                    "avg_instruction": 0.9,
+                    "avg_token_efficiency": 0.9,
+                    "avg_cost": 0.01,
+                    "composite_score": 0.9,
+                },
+                {
+                    "prompt_profile_id": "pp-b",
+                    "model_profile_id": "full-precision-model",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_completion": 0.85,
+                    "avg_code_quality": 0.85,
+                    "avg_instruction": 0.85,
+                    "avg_token_efficiency": 0.85,
+                    "avg_cost": 0.02,
+                    "composite_score": 0.85,
+                },
+            ]
+        )
+        quant_map = {
+            "quantized-model": ("int4", 0.3),
+            "full-precision-model": ("bf16", 0.95),
+        }
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=3,
+            quantization_map=quant_map,
+        )
+        decision = await router.route(task_type=TaskType.BUG_FIX)
+        assert decision.selected_model_profile_id == "full-precision-model"
+
+    @pytest.mark.asyncio
+    async def test_route_quantization_no_penalty_for_high_precision(self):
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            return_value=[
+                {
+                    "prompt_profile_id": "pp-a",
+                    "model_profile_id": "bf16-model",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_cost": 0.01,
+                    "composite_score": 0.9,
+                },
+            ]
+        )
+        quant_map = {"bf16-model": ("bf16", 0.95)}
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            min_samples=3,
+            quantization_map=quant_map,
+        )
+        decision = await router.route(task_type=TaskType.BUG_FIX)
+        assert decision.selected_model_profile_id == "bf16-model"
+        assert decision.composite_score == 0.9
         assert len(router._cache) == 0

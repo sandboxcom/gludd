@@ -22,11 +22,13 @@ class AdaptiveRouter:
         min_samples: int = 3,
         cost_weight: float = 0.2,
         quality_weight: float = 0.8,
+        quantization_map: dict[str, tuple[str, float]] | None = None,
     ) -> None:
         self._repo = benchmark_repo
         self._min_samples = min_samples
         self._cost_weight = cost_weight
         self._quality_weight = quality_weight
+        self._quantization_map = quantization_map or {}
         self._cache: dict[str, RoutingDecision] = {}
         self._cache_time: datetime | None = None
         self._cache_ttl_seconds: float = 300.0
@@ -99,7 +101,19 @@ class AdaptiveRouter:
             )
         if not candidates:
             return None
-        return max(candidates, key=lambda c: c.composite_score)
+        adjusted = [(self._apply_quantization_penalty(c), c) for c in candidates]
+        return max(adjusted, key=lambda pair: pair[0])[1]
+
+    def _apply_quantization_penalty(self, candidate: RoutingCandidate) -> float:
+        score = candidate.composite_score
+        model_id = candidate.model_profile_id
+        if model_id in self._quantization_map:
+            _prec, confidence = self._quantization_map[model_id]
+            if confidence < 0.5:
+                score *= 0.6
+            elif confidence < 0.7:
+                score *= 0.8
+        return score
 
     async def _get_cheapest_for_task(
         self, task_type: TaskType, max_cost: float
