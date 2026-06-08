@@ -704,10 +704,12 @@ def create_daemon_app(
         scraper = OpenRouterScraper()
         if detect_credential_alias(provider):
             import os
-            scraper._api_key = os.environ.get(
-                "OPENROUTER_API_KEY" if provider == "openrouter" else "",
-                None,
-            )
+
+            from general_ludd.models.provider_presets import get_provider_preset
+
+            preset = get_provider_preset(provider)
+            env_var = preset["credential_env_var"] if preset else "OPENROUTER_API_KEY"
+            scraper._api_key = os.environ.get(env_var, None)
         scraped = await scraper.fetch_models()
         configurator = AutoConfigurator()
         profiles = configurator.generate_profiles(provider, scraped)

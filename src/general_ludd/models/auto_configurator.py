@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import time
 from typing import Any
 
 from general_ludd.models.provider_presets import get_provider_preset
@@ -75,7 +76,7 @@ class AutoConfigurator:
                 "resource_profile": "ai_heavy",
                 "enabled": True,
                 "auto_discovered": True,
-                "auto_discovered_at": None,
+                "auto_discovered_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "is_free": input_cost == 0.0 and output_cost == 0.0,
             }
             profiles.append(profile)
@@ -167,9 +168,9 @@ class ModelPrioritizer:
     def _score(self, model: dict[str, Any]) -> float:
         user_priority = model.get("user_priority", "")
         if user_priority == "prioritized":
-            return 1000.0
+            return 1e9
         if user_priority == "deprioritized":
-            return -1000.0
+            return -1e9
         if model.get("enabled") is False:
             return -500.0
 
