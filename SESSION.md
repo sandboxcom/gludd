@@ -3,20 +3,27 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-07 (session 6)
+- 2026-06-08 (session 7)
 
 ## Current Status
-- **Phase**: Coverage improvement + audit hardening
-- **Test Suite**: 3265 passed, 26 skipped, ~88% coverage
+- **Phase**: Audit gap closure — all 11 gaps addressed
+- **Test Suite**: 3349 passed, 26 skipped, ~88% coverage
 - **Branch**: master
-- **Latest commit**: 5c1db04 — TUI daemon detach fix: start gunicorn directly, not intermediate wrapper
+- **Latest commit**: 12d1d0a — Slurm adapter: real sbatch/sacct/scancel with graceful degradation
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: TUI Daemon Detach + Audit Hardening (IN PROGRESS)
-- TUI daemon detach fix (5c1db04): `_build_daemon_start_cmd()` extracted helper launches gunicorn directly (not via intermediate `python -m general_ludd.cli daemon` wrapper). TUI `start_daemon()` uses `start_new_session=True` so daemon survives TUI exit. 3 tests in `test_tui_daemon_detach.py`
-- AGENTS.md audit hardening: Strengthened Self-Audit step 1 with concrete SQL query instructions, common missed patterns list, and explicit "prior sessions matter" rule
-- Added `make audit-messages` Makefile target: queries opencode.db for all user messages
+## This Session: Audit Gap Closure (COMPLETE)
+
+### Conversation DB Audit
+- Ran `make audit-messages` to extract all prior user requests across sessions
+- Identified 11 gaps between requested features and implementation
+
+### Gaps Closed This Session
+1. **Per-project templates/roles in dispatch** (commit `a158568`): `_resolve_prompt_text_static()` checks project `templates_dir` first via Jinja2 rendering. `_dispatch_execute_job()` injects `ANSIBLE_ROLES_PATH` from project `roles_dir`. 7 tests.
+2. **TUI config editor text input** (commit `59abe98`): `ConfigEditor` now has `start_editing()`, `handle_input_key()`, `_save_edit()`, `get_input_display()`. Enter on leaf item enters edit mode, typing appends to buffer, Enter saves via `write_overlay()`, Escape cancels. Type coercion for str/int/float/bool. 24 tests.
+3. **TUI keybindings for models add, ansible search, dispatch mode** (commit `4250d33`): New `src/general_ludd/tui/keybindings.py` with `TUIKeyHandler` class. `a` from models view adds model (multi-field input). `s` from ansible view searches galaxy. `d` from main view cycles dispatch mode. New `PUT /admin/dispatch/mode` daemon endpoint. 20 tests.
+4. **Slurm integration beyond stub** (commit `12d1d0a`): `src/general_ludd/infra/slurm.py` with `SlurmAdapter` — `submit()` builds sbatch script and pipes to sbatch, `status()` queries sacct, `cancel()` calls scancel, `available()` probes sbatch --version. All methods catch `FileNotFoundError` and raise `SlurmNotInstalledError`. Wired into `local_inference.py` for engine="slurm" path. 24 tests.
 
 ## Files Below 85% Coverage (priority order)
 1. cli.py — 66% (1954 lines, 664 miss — TUI `_cmd_tui` body still untested)
@@ -248,20 +255,26 @@ EventLoop auto-creates from session (when available):
 ## Quality Status
 - **Mypy**: 0 errors (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 3032 passed, 26 skipped, 87.16% coverage
+- **Tests**: 3349 passed, 26 skipped, ~88% coverage
 
 ## Key Gaps (Known)
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
 - `build_secrets_resolver()` cannot call async `health_check()` from sync context
 - ZAI API 429 (balance exhaustion) — live identity tests xfail until recharged
-- Files still below 85%: cli.py (66%), daemon.py (81%), ansible/core_runner.py (79%)
-- events/bus.py (88%) — async subscriber paths with `asyncio.run()` fallback not covered
+- Files still below 85%: cli.py (66%), daemon.py (82%), ansible/core_runner.py (79%)
 - enforce-make plugin has runtime bug: scans full command for forbidden words including target names (fix committed but requires opencode restart)
+
+## Remaining Audit Gaps (Lower Priority)
+- TUI CLI parity: 28+ CLI commands not yet in TUI (compute, deployments, scores, etc.)
+- TUI API key entry: menu only, no text input yet (config editor pattern reusable)
+- TUI project management: skeleton only, no add/remove/switch
+- Model auto-population from provider APIs
 
 ## Next Steps
 - Push cli.py coverage higher (66% — TUI `_cmd_tui` body still large)
-- Push daemon.py coverage higher (81% — models discover/discovered, local inference, code blocks)
+- Push daemon.py coverage higher (82% — models discover/discovered, local inference, code blocks)
 - Add integration tests for new TUI views against daemon API
+- Wire TUI project management (add/remove/switch projects)
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases
