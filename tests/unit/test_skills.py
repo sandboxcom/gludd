@@ -162,6 +162,42 @@ class TestSkillRegistry:
         reg.register(Skill(name="a", trigger_patterns=["xyz"]))
         assert reg.match_trigger("nothing matches") == []
 
+    def test_skill_registry_get_with_project_id(self):
+        reg = SkillRegistry()
+        skill = Skill(name="proj_skill", description="project skill")
+        reg.register(skill, project_id="proj1")
+        got = reg.get("proj_skill", project_id="proj1")
+        assert got is not None
+        assert got.name == "proj_skill"
+
+    def test_skill_registry_get_project_falls_back_to_global(self):
+        reg = SkillRegistry()
+        reg.register(Skill(name="global_skill", description="global"))
+        got = reg.get("global_skill", project_id="nonexistent_proj")
+        assert got is not None
+        assert got.name == "global_skill"
+
+    def test_skill_registry_list_skills_with_project(self):
+        reg = SkillRegistry()
+        reg.register(Skill(name="global"))
+        reg.register(Skill(name="proj", description="p"), project_id="p1")
+        skills = reg.list_skills(project_id="p1")
+        names = [s.name for s in skills]
+        assert "global" in names
+        assert "proj" in names
+
+    def test_skill_registry_match_trigger_with_project(self):
+        reg = SkillRegistry()
+        reg.register(Skill(name="proj_review", trigger_patterns=["review code"]), project_id="p1")
+        matches = reg.match_trigger("please review code", project_id="p1")
+        assert len(matches) == 1
+        assert matches[0].name == "proj_review"
+
+    def test_skill_registry_refresh_with_project(self):
+        reg = SkillRegistry()
+        result = reg.refresh(search_paths=[], project_id="p1")
+        assert "skills" in result
+
 
 class TestSkillModel:
     def test_skill_has_required_fields(self):
