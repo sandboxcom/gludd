@@ -34,6 +34,66 @@ class ConfigEditor:
     def __init__(self, config_dir: str | None = None) -> None:
         self._config_dir = config_dir or os.path.expanduser("~/.config/gludd")
         self._overlay_dir = os.path.join(self._config_dir, "fs")
+        self.editing: bool = False
+        self.input_buffer: str = ""
+        self.editing_item: MenuItem | None = None
+        self._active_overlay_path: str = ""
+
+    def start_editing(self, item: MenuItem, overlay_path: str = "") -> None:
+        if item.is_menu:
+            return
+        self.editing = True
+        self.editing_item = item
+        self.input_buffer = str(item.value) if item.value is not None else ""
+        self._active_overlay_path = overlay_path or item.overlay_path
+
+    def handle_input_key(self, ch: str) -> str | None:
+        if ch == "\x7f":
+            if self.editing:
+                self.input_buffer = self.input_buffer[:-1]
+            return None
+        if ch == "\r":
+            if not self.editing:
+                return None
+            self._save_edit()
+            return "saved"
+        if ch == "\x1b":
+            if not self.editing:
+                return None
+            self.editing = False
+            self.input_buffer = ""
+            self.editing_item = None
+            return "cancelled"
+        if self.editing:
+            self.input_buffer += ch
+        return None
+
+    def _save_edit(self) -> None:
+        if self.editing_item is None:
+            return
+        raw = self.input_buffer
+        coerced: Any = raw
+        t = self.editing_item.item_type
+        if t == "int":
+            coerced = int(raw)
+        elif t == "float":
+            coerced = float(raw)
+        elif t == "bool":
+            coerced = raw.lower() in ("true", "1", "yes")
+        self.editing_item.value = coerced
+        overlay_path = self._active_overlay_path
+        if overlay_path:
+            existing = self.read_yaml(overlay_path)
+            existing[self.editing_item.key] = coerced
+            self.write_overlay(overlay_path, existing)
+        self.editing = False
+        self.input_buffer = ""
+        self.editing_item = None
+
+    def get_input_display(self) -> str:
+        if not self.editing:
+            return ""
+        return self.input_buffer + "_"
 
     def get_categories(self) -> list[ConfigCategory]:
         return [

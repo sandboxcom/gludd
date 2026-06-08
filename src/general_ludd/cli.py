@@ -2196,6 +2196,15 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg, config_nav, model_mgr
         if current_view == "edit":
+            editor = config_nav["editor"]
+            if editor.editing:
+                edit_result = editor.handle_input_key(ch)
+                config_nav["editing_value"] = editor.editing
+                if edit_result == "saved":
+                    status_msg = "Value saved"
+                elif edit_result == "cancelled":
+                    status_msg = "Edit cancelled"
+                return True
             if ch in ("\t", " ", "\r", "\n"):
                 ch = "\r"
             cats = config_nav["current_items"]
@@ -2203,14 +2212,25 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 config_nav["selected_cat"] = max(0, config_nav["selected_cat"] - 1)
             elif ch == "\x1b[B" and isinstance(cats, list) and len(cats) > 0:
                 config_nav["selected_cat"] = min(len(cats) - 1, config_nav["selected_cat"] + 1)
-            elif ch in ("\t", " ", "\r", "\n"):
+            elif ch == "\r":
                 if isinstance(cats, list) and 0 <= config_nav["selected_cat"] < len(cats):
-                    cat = cats[config_nav["selected_cat"]]
-                    if hasattr(cat, "menu_items"):
-                        config_nav["current_items"] = cat.menu_items
-                        config_nav["depth"] = 1
+                    item = cats[config_nav["selected_cat"]]
+                    if hasattr(item, "menu_items"):
+                        config_nav["current_items"] = item.menu_items
+                        config_nav["depth"] += 1
                         config_nav["selected_item"] = 0
                         config_nav["selected_cat"] = 0
+                        if hasattr(item, "overlay_path") and item.overlay_path:
+                            config_nav["active_overlay_path"] = item.overlay_path
+                    elif hasattr(item, "is_menu") and item.is_menu:
+                        config_nav["current_items"] = item.submenu
+                        config_nav["depth"] += 1
+                        config_nav["selected_item"] = 0
+                        config_nav["selected_cat"] = 0
+                    elif hasattr(item, "is_menu") and not item.is_menu:
+                        editor.start_editing(item, config_nav["active_overlay_path"])
+                        config_nav["editing_value"] = True
+                        status_msg = f"Editing {item.label}"
             elif ch == "\x1b":
                 if config_nav["depth"] > 0:
                     config_nav["depth"] = 0
@@ -2796,6 +2816,7 @@ def _load_config_editor() -> dict[str, Any]:
         "depth": 0,
         "editing_value": False,
         "current_items": cats,
+        "active_overlay_path": "",
     }
 
 
