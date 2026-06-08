@@ -1660,11 +1660,22 @@ def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Binaries", show_header=False)
-    t.add_column("Binary", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.3, 6))
-    t.add_column("Found", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.1, 3))
+    t = Table(title="Binaries", show_header=True)
+    name_w = _scale_col(term_width, 0.18, 6)
+    found_w = _scale_col(term_width, 0.08, 3)
+    ver_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("Binary", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Found", style="green", no_wrap=True, max_width=found_w)
+    t.add_column("Version", style="yellow", no_wrap=True, max_width=ver_w)
+    versions: dict[str, str] = info.get("binary_versions", {})
     for name, path in info.get("binary_paths", {}).items():
-        t.add_row(name, "yes" if path else "no")
+        ver = versions.get(name, versions.get(name.replace("-", ""), ""))
+        t.add_row(name, "yes" if path else "no", ver if ver else "?")
+    fs_bins: list[dict[str, Any]] = info.get("filestore_binaries", [])
+    for b in fs_bins:
+        bname = b.get("name", b.get("binary_name", "?"))
+        bver = b.get("version", "?")
+        t.add_row(f"[fs]{bname}", "bundled", bver)
     return t
 
 

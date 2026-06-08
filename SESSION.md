@@ -3,21 +3,62 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 14)
+- 2026-06-08 (session 15)
 
 ## Current Status
-- **Phase**: Coverage lift — all core modules at 90%+
-- **Test Suite**: 4381 passed, 27 skipped, 96.25% coverage
+- **Phase**: TUI real functionality — selection, activation, logging
+- **Test Suite**: 3615 passed, 2 failed (pre-existing), 2 skipped
 - **Branch**: master
-- **Latest commit**: 4aa130e — coverage lift daemon.py to 98% and event_loop/loop.py to 99%
+- **Latest commit**: cb66cec — strengthen TDD guardrail, fix message leak
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: TUI Wiring Gaps + Coverage Lift (Session 14)
+## This Session: TDD Enforcement + Real TUI Functionality (Session 15)
 
-### TUI Keybinding Wiring (commit e24dcfb)
-- Wired templates `r` refresh keybinding → `POST /admin/templates/refresh`
-- Wired quantization `d` detect keybinding → `POST /admin/quantization/detect`
+### Root Cause Analysis: Why TUI Features Didn't Work
+The user reported arrow keys, space/enter, and daemon stats all not working despite
+"passing tests". Investigation revealed:
+1. **Table builders never received selection state** — `selected_idx` param didn't exist
+2. **`tui_state` never populated with fetched data** — data fetched into local vars only
+3. **Space bar not handled** — only Enter (`\r`) triggered `_activate_selected()`
+4. **Selection index never shown in status** — no feedback when navigating
+5. **Tests were shallow** — tested function return types, not observable behavior
+
+### Guardrail Fixes
+- **Message leak fix**: `console.warn(PREFLIGHT_GATE)` and `console.warn(COMMIT_REMINDER)`
+  now store in module-level vars and inject via `chat.system.transform` instead
+- **Test quality gate**: New `tool.execute.before` check rejects test edits without assertions
+- **System prompt reminder**: Added test quality requirements section to system transform
+
+### TUI Selection Highlighting (commit c2119d6)
+- All table builders (`_build_projects_table`, `_build_todos_table`, `_build_hooks_table`,
+  `_build_workers_table`, `_build_model_table`) now accept `selected_idx` param
+- Selected row shows `▶ ` marker and `bold reverse` style
+- 15 new tests in `test_tui_selection_highlight.py`
+
+### Space Bar Activation (commit c2119d6)
+- Space bar (` `) now activates selected item in projects/todos/hooks/workers/models
+- Sets `active_project_id`, `active_todo_id`, `active_hook_id`, `active_worker_id`
+- Updates `status_msg` with selected item info
+- 4 tests for space bar activation
+
+### Data Flow Wiring (commit c2119d6)
+- `make_layout()` now populates `tui_state["projects_data"]`, `tui_state["todos_data"]`,
+  `tui_state["hooks_data"]`, `tui_state["workers_data"]` from API responses
+- Table builders receive `selected_idx` from `tui_state`
+- Arrow key navigation status shows selected item name
+
+### TUILogger (commit c2119d6)
+- New `general_ludd.tui.logger.TUILogger` module
+- Logs to JSONL file and daemon database (`/admin/tui-log`)
+- `V` key toggles verbose mode (on/off)
+- Logs: key presses, view changes, daemon actions, selections, status messages
+- 11 tests in `test_tui_logger.py`
+
+### Daemon TUI-Log Endpoint (commit c2119d6)
+- `POST /admin/tui-log` — store TUI log entries (in-memory, capped at 10k)
+- `GET /admin/tui-log` — retrieve last 200 entries
+- Other agent daemons can see what a user session has done
 - Added workers `p` ping success-path test
 - Added leaderboard view (toggle key `y`) with body rendering and header
 - Added playbooks view (toggle key `P`) with body rendering and header
