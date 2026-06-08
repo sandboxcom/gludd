@@ -396,6 +396,30 @@ export default (async ({ }) => {
         const filePath: string = output?.args?.filePath ?? ""
         const isTest = filePath.includes("/tests/") || filePath.includes("\\tests\\")
         const isProduction = filePath.includes("/src/") || filePath.includes("\\src\\")
+
+        if (isTest) {
+          const newContent: string = output?.args?.newString ?? ""
+          const hasAssertion = newContent.includes("assert ") || newContent.includes("assert ")
+          if (newContent.length > 50 && !hasAssertion) {
+            throw new Error([
+              "TDD QUALITY VIOLATION: Test code must contain assertions.",
+              "",
+              "File: " + filePath,
+              "",
+              "Every test MUST assert OBSERVABLE BEHAVIOR, not just call functions.",
+              "Examples of good assertions:",
+              '  assert "▶" in rendered  — verify visual output changes',
+              "  assert state['selected_idx'] == 1  — verify state mutation",
+              "  assert resp.status_code == 200  — verify HTTP behavior",
+              "",
+              "BAD: just calling a function without checking the result.",
+              "GOOD: checking that the output/state/rendering actually changed.",
+              "",
+              "Past bugs were caused by tests that 'passed' but tested nothing.",
+            ].join("\n"))
+          }
+        }
+
         if (isProduction && !isTest) {
           throw new Error([
             "TDD VIOLATION: You are editing production code without writing a test first.",
@@ -600,6 +624,29 @@ export default (async ({ }) => {
         output += preflightCommitPrompt
         output += noManualDefault
         output += BASH_METACHAR_POLICY
+
+        const testQualityReminder = [
+          "",
+          "## CRITICAL: Test Quality Requirements",
+          "",
+          "Tests MUST verify OBSERVABLE BEHAVIOR, not just that code runs.",
+          "Every test MUST include assertions that verify:",
+          "  - Visual/rendered output contains expected markers (▶, bold, reverse)",
+          "  - State mutations happen (selected_idx changes, active_id set)",
+          "  - Status messages contain meaningful info (name/id of selected item)",
+          "  - Data flows from API → state → table builder → rendering",
+          "",
+          "FORBIDDEN test patterns (these caused real bugs in past sessions):",
+          "  - Just calling a function and checking isinstance()",
+          "  - Only checking return type, not actual content",
+          "  - Testing individual functions but never the full pipeline",
+          "  - Mocking everything so the test can't fail for real bugs",
+          "",
+          "REQUIRED: At least one test per feature that verifies the END-TO-END",
+          "pipeline: input → state change → rendering includes marker.",
+          "",
+        ].join("\n")
+        output += testQualityReminder
 
         if (_pendingCommitReminder) {
           output += "\n\n" + COMMIT_REMINDER
