@@ -64,7 +64,7 @@ class TestTUIWithDownloadedModels:
         ]
         t = _build_model_table([], downloaded)
         assert isinstance(t, Table)
-        assert "Downloaded Models" in t.title
+        assert "Models" in t.title
         assert t.row_count == 1
 
     def test_build_model_table_splits_servers_and_downloaded(self):
@@ -89,7 +89,7 @@ class TestTUIWithDownloadedModels:
         ]
         t = _build_model_table([server], downloaded)
         assert isinstance(t, Table)
-        assert "Servers + Downloads" in t.title
+        assert "Models" in t.title
         assert t.row_count == 2
 
     def test_build_model_status_msg_shows_counts(self):

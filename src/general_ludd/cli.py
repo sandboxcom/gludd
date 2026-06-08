@@ -1551,10 +1551,10 @@ def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
     from rich.table import Table
 
     t = Table(title="Todos", show_header=True)
-    t.add_column("ID", style="cyan", max_width=12)
-    t.add_column("Title", style="green")
-    t.add_column("Status", style="yellow")
-    t.add_column("Priority", style="bold")
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=10)
+    t.add_column("Title", style="green", no_wrap=True, max_width=24)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=10)
+    t.add_column("Pri", style="bold", no_wrap=True, max_width=6)
     for todo in todos:
         status = todo.get("status", "?")
         status_color = {
@@ -1564,10 +1564,10 @@ def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
             "cancelled": "dim",
         }.get(status, "white")
         t.add_row(
-            str(todo.get("todo_id", "?"))[:12],
-            str(todo.get("title", "")),
+            str(todo.get("todo_id", "?"))[:10],
+            str(todo.get("title", ""))[:24],
             f"[{status_color}]{status}[/]",
-            str(todo.get("priority", "")),
+            str(todo.get("priority", ""))[:6],
         )
     return t
 
@@ -1575,17 +1575,15 @@ def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
 def _build_hooks_table(hooks: list[dict[str, Any]]) -> Table:
     from rich.table import Table
 
-    t = Table(title="Registered Hooks", show_header=True)
-    t.add_column("Hook ID", style="cyan", max_width=20)
-    t.add_column("Event", style="green")
-    t.add_column("Type", style="yellow")
-    t.add_column("URL", style="dim", max_width=40)
+    t = Table(title="Hooks", show_header=True)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=16)
+    t.add_column("Event", style="green", no_wrap=True, max_width=16)
+    t.add_column("Type", style="yellow", no_wrap=True, max_width=8)
     for h in hooks:
         t.add_row(
-            str(h.get("hook_id", "?")),
-            str(h.get("event_name", "?")),
-            str(h.get("hook_type", "?")),
-            str(h.get("url", "") or ""),
+            str(h.get("hook_id", "?"))[:16],
+            str(h.get("event_name", "?"))[:16],
+            str(h.get("hook_type", "?"))[:8],
         )
     return t
 
@@ -1594,14 +1592,12 @@ def _build_workers_table(workers: list[dict[str, Any]]) -> Table:
     from rich.table import Table
 
     t = Table(title="Workers", show_header=True)
-    t.add_column("Worker ID", style="cyan", max_width=20)
-    t.add_column("Address", style="green")
-    t.add_column("Last Seen", style="dim")
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=16)
+    t.add_column("Address", style="green", no_wrap=True, max_width=24)
     for w in workers:
         t.add_row(
-            str(w.get("worker_id", "?")),
-            str(w.get("address", "?")),
-            str(w.get("last_seen", "?")),
+            str(w.get("worker_id", "?"))[:16],
+            str(w.get("address", "?"))[:24],
         )
     return t
 
@@ -1609,17 +1605,17 @@ def _build_workers_table(workers: list[dict[str, Any]]) -> Table:
 def _build_metrics_table(cost_data: dict[str, Any]) -> Table:
     from rich.table import Table
 
-    t = Table(title="Metrics — Cost Overview", show_header=True)
-    t.add_column("Metric", style="cyan")
-    t.add_column("Value", style="green")
+    t = Table(title="Metrics", show_header=False)
+    t.add_column("Metric", style="cyan", no_wrap=True, max_width=18)
+    t.add_column("Value", style="green", no_wrap=True, max_width=16)
     labels = [
         ("Total Cost", "total_cost_usd", "${:.2f}"),
         ("Subscription", "subscription_name", "{}"),
-        ("Sub Cost/Month", "subscription_cost_usd_per_month", "${:.2f}"),
+        ("Sub Cost/Mo", "subscription_cost_usd_per_month", "${:.2f}"),
         ("Tokens Used", "tokens_used", "{:,}"),
-        ("Tokens Remaining", "tokens_remaining_this_week", "{:,}"),
-        ("Cost % of Sub", "cost_as_pct_of_subscription", "{:.1f}%"),
-        ("Tokens % of Weekly", "tokens_as_pct_of_weekly", "{:.1f}%"),
+        ("Tokens Left", "tokens_remaining_this_week", "{:,}"),
+        ("Cost % Sub", "cost_as_pct_of_subscription", "{:.1f}%"),
+        ("Tokens % Wk", "tokens_as_pct_of_weekly", "{:.1f}%"),
     ]
     for label, key, fmt in labels:
         val = cost_data.get(key)
@@ -1638,13 +1634,11 @@ def _build_agents_table(agents: list[dict[str, Any]]) -> Table:
     from rich.table import Table
 
     t = Table(title="Agents", show_header=True)
-    t.add_column("Agent ID", style="cyan", max_width=12)
-    t.add_column("Name", style="green")
-    t.add_column("Status", style="yellow")
-    t.add_column("Project", style="bold")
-    t.add_column("Uptime", style="dim")
-    t.add_column("Tokens", style="dim")
-    t.add_column("Cost", style="dim")
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=10)
+    t.add_column("Name", style="green", no_wrap=True, max_width=14)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=8)
+    t.add_column("Project", style="bold", no_wrap=True, max_width=12)
+    t.add_column("Up", style="dim", no_wrap=True, max_width=8)
     for a in agents:
         status = a.get("status", "?")
         status_color = "green" if status == "running" else "yellow" if status == "idle" else "red"
@@ -1652,13 +1646,11 @@ def _build_agents_table(agents: list[dict[str, Any]]) -> Table:
         uptime_h = uptime_s // 3600
         uptime_m = (uptime_s % 3600) // 60
         t.add_row(
-            str(a.get("agent_id", "?"))[:12],
-            str(a.get("agent_name", "?")),
+            str(a.get("agent_id", "?"))[:10],
+            str(a.get("agent_name", "?"))[:14],
             f"[{status_color}]{status}[/]",
-            str(a.get("project", "")),
+            str(a.get("project", ""))[:12],
             f"{uptime_h}h{uptime_m}m",
-            f"{a.get('total_tokens', 0):,}",
-            f"${a.get('total_cost_usd', 0):.2f}",
         )
     return t
 
@@ -1669,43 +1661,29 @@ def _build_model_table(
 ) -> Table:
     from rich.table import Table
 
-    title = "Model Services"
-    if servers and downloaded:
-        title = "Model Services — Servers + Downloads"
-    elif servers:
-        title = "Model Services — Local Servers"
-    elif downloaded:
-        title = "Model Services — Downloaded Models"
-
-    t = Table(title=title, show_header=True)
-    t.add_column("ID", style="cyan")
-    t.add_column("Engine", style="green")
-    t.add_column("Model", style="yellow")
-    t.add_column("Status / Size", style="bold")
-    t.add_column("Path", style="dim")
+    t = Table(title="Models", show_header=True)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=14)
+    t.add_column("Engine", style="green", no_wrap=True, max_width=8)
+    t.add_column("Model", style="yellow", no_wrap=True, max_width=20)
+    t.add_column("Status", style="bold", no_wrap=True, max_width=10)
 
     for s in servers:
         status_color = "green" if getattr(s, "is_running", False) else "red"
         status_text = getattr(s, "status", "stopped")
         t.add_row(
-            f"[s]{s.server_id}",
-            s.config.engine,
-            s.config.model_name or s.config.model_path or "?",
+            f"[s]{s.server_id}"[:14],
+            s.config.engine[:8],
+            (s.config.model_name or s.config.model_path or "?")[:20],
             f"[{status_color}]{status_text}[/]",
-            "",
         )
 
     for dm in downloaded:
         size_str = _fmt_size(dm.size_bytes) if dm.size_bytes else "?"
-        model_label = dm.model_id
-        if getattr(dm, "filename", None):
-            model_label = f"{dm.model_id} ({dm.filename})"
         t.add_row(
-            f"[d]{dm.model_id[:30]}",
-            dm.engine,
-            model_label,
+            f"[d]{dm.model_id[:12]}",
+            dm.engine[:8],
+            dm.model_id[:20],
             f"[dim]{size_str}[/]",
-            dm.local_path,
         )
     return t
 
@@ -1872,66 +1850,60 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = "No daemon to stop"
 
     def build_controls_table() -> Table:
-        t = Table(title="Controls")
-        t.add_column("Key", style="yellow", width=3)
-        t.add_column("Action", style="cyan")
-        t.add_column("Status", style="green")
+        t = Table(title="Controls", show_header=False)
+        t.add_column("Key", style="yellow", width=3, no_wrap=True)
+        t.add_column("Action", style="cyan", no_wrap=True, max_width=20)
+        t.add_column("Status", style="green", no_wrap=True, max_width=14)
         t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
         t.add_row("k", "Kill daemon", "")
-        t.add_row("p", "Preflight + Projects", "")
-        t.add_row("i", "Integrity scan", "")
-        t.add_row("v", "Config files", current_view)
-        t.add_row("t", "Todos", "")
-        t.add_row("h", "Hooks", "")
-        t.add_row("o", "Workers", "")
-        t.add_row("x", "Metrics", "")
-        t.add_row("g", "Agents", "")
+        t.add_row("p", "Preflight", "")
+        t.add_row("i", "Integrity", "")
         t.add_row("r", "Refresh", "")
         t.add_row("q", "Quit", "")
         if status_msg:
-            t.add_row("", f"[bold yellow]{status_msg}[/]", "")
+            t.add_row("", f"[bold yellow]{status_msg[:30]}[/]", "")
         return t
 
     def build_daemon_table() -> Table:
-        t = Table(title="Daemon")
-        t.add_column("Key", style="cyan")
-        t.add_column("Value", style="green")
+        t = Table(title="Daemon", show_header=False)
+        t.add_column("Key", style="cyan", no_wrap=True, max_width=10)
+        t.add_column("Value", style="green", no_wrap=True, max_width=30)
         t.add_row("Status", "running" if daemon_running else "stopped")
-        t.add_row("URL", args.daemon_url)
+        url_display = args.daemon_url
+        if len(url_display) > 28:
+            url_display = url_display[:25] + "..."
+        t.add_row("URL", url_display)
+        t.add_row("View", current_view)
         return t
 
     def build_info_table(info: dict[str, Any]) -> Table:
-        t = Table(title="System Info")
-        t.add_column("Key", style="cyan")
-        t.add_column("Value", style="green")
-        t.add_row("Version", str(info.get("version", "?")))
-        t.add_row("Python", str(info.get("python_version", "?")))
-        t.add_row("Platform", str(info.get("platform", "?")))
-        t.add_row("CWD", str(info.get("cwd", "?")))
-        t.add_row("Config Dir", str(info.get("config_dir", "?")))
-        t.add_row("Config Files", str(len(info.get("config_files", []))))
-        t.add_row("Filestore", str(info.get("filestore_root", "?")))
-        t.add_row("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0)))
-        t.add_row("Filestore Files", str(info.get("filestore_file_count", 0)))
-        t.add_row("DB Engine", str(info.get("db_engine", "?")))
-        t.add_row("DB Path", str(info.get("db_path", "?")))
-        t.add_row("DB Exists", "yes" if info.get("db_exists") else "no")
+        t = Table(title="System Info", show_header=False)
+        t.add_column("Key", style="cyan", no_wrap=True, max_width=14)
+        t.add_column("Value", style="green", no_wrap=True, max_width=36)
+        rows = [
+            ("Version", str(info.get("version", "?"))),
+            ("Python", str(info.get("python_version", "?"))),
+            ("Platform", str(info.get("platform", "?"))),
+            ("CWD", str(info.get("cwd", "?"))[:34]),
+            ("Config Dir", str(info.get("config_dir", "?"))[:34]),
+            ("Config Files", str(len(info.get("config_files", [])))),
+            ("Filestore", str(info.get("filestore_root", "?"))[:34]),
+            ("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0))),
+            ("DB Engine", str(info.get("db_engine", "?"))),
+            ("DB Exists", "yes" if info.get("db_exists") else "no"),
+        ]
         if info.get("db_exists"):
-            t.add_row("DB Size", _fmt_size(info.get("db_size_bytes", 0)))
+            rows.append(("DB Size", _fmt_size(info.get("db_size_bytes", 0))))
+        for k, v in rows:
+            t.add_row(k, v)
         return t
 
     def build_binary_table(info: dict[str, Any]) -> Table:
-        t = Table(title="Binaries")
-        t.add_column("Binary", style="cyan")
-        t.add_column("Found", style="green")
-        t.add_column("Path", style="dim")
+        t = Table(title="Binaries", show_header=False)
+        t.add_column("Binary", style="cyan", no_wrap=True, max_width=12)
+        t.add_column("Found", style="green", no_wrap=True, max_width=5)
         for name, path in info.get("binary_paths", {}).items():
-            t.add_row(name, "yes" if path else "no", str(path or ""))
-        if info.get("binary_versions"):
-            for name, ver in sorted(info["binary_versions"].items()):
-                stored = any(b.get("name") == name for b in info.get("filestore_binaries", []))
-                label = "stored" if stored else "not downloaded"
-                t.add_row(name, f"v{ver} [{label}]", "")
+            t.add_row(name, "yes" if path else "no")
         return t
 
     def build_config_table(info: dict[str, Any]) -> Table:
@@ -1943,15 +1915,23 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         return t
 
     def make_layout(info: dict[str, Any]) -> Layout:
+        import shutil as _shutil
+
+        _term_w, _term_h = _shutil.get_terminal_size((80, 24))
+        footer_rows = 8
+        header_rows = 1
+        left_ratio = 2
+        right_ratio = 3
+
         layout = Layout()
         layout.split(
-            Layout(name="header", size=3),
+            Layout(name="header", size=header_rows),
             Layout(name="body"),
-            Layout(name="footer", size=12),
+            Layout(name="footer", size=footer_rows),
         )
         layout["body"].split_row(
-            Layout(name="left"),
-            Layout(name="right"),
+            Layout(name="left", ratio=left_ratio),
+            Layout(name="right", ratio=right_ratio),
         )
         body = layout["body"]
         if current_view == "edit":
@@ -1996,32 +1976,29 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 )
             elif current_view == "worktrees":
                 _wt_table = Table(title="Projects & Worktrees", show_header=True)
-                _wt_table.add_column("Type", style="cyan")
-                _wt_table.add_column("ID/Name", style="green")
-                _wt_table.add_column("Path", style="yellow")
-                _wt_table.add_column("Status", style="bold")
+                _wt_table.add_column("Name", style="green", no_wrap=True, max_width=20)
+                _wt_table.add_column("Status", style="bold", no_wrap=True, max_width=14)
                 import os as _os
                 home = _os.path.expanduser("~")
                 wt_dirs = [
                     d for d in _os.listdir(home)
                     if _os.path.isdir(_os.path.join(home, d)) and not d.startswith(".")
                 ]
-                for d in sorted(wt_dirs)[:20]:
+                for d in sorted(wt_dirs)[:15]:
                     full = _os.path.join(home, d)
                     agents = _os.path.join(full, "AGENTS.md")
                     is_worktree = _os.path.isfile(agents)
                     status = "has AGENTS.md" if is_worktree else "directory"
-                    _wt_table.add_row("dir", d, full, f"[{'green' if is_worktree else 'dim'}]{status}[/]")
+                    _wt_table.add_row(d, f"[{'green' if is_worktree else 'dim'}]{status}[/]")
                 body["right"].split(
                     Layout(_wt_table, name="worktrees"),
                 )
             elif current_view == "projects":
-                _proj_table = Table(title="Registered Projects", show_header=True)
-                _proj_table.add_column("ID", style="cyan")
-                _proj_table.add_column("Name", style="green")
-                _proj_table.add_column("Weight", style="yellow")
-                _proj_table.add_column("Mode", style="bold")
-                _proj_table.add_column("Repo / Workspace", style="dim")
+                _proj_table = Table(title="Projects", show_header=True)
+                _proj_table.add_column("ID", style="cyan", no_wrap=True, max_width=12)
+                _proj_table.add_column("Name", style="green", no_wrap=True, max_width=16)
+                _proj_table.add_column("Wt", style="yellow", no_wrap=True, max_width=4)
+                _proj_table.add_column("Mode", style="bold", no_wrap=True, max_width=8)
                 try:
                     resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
                     if resp.status_code == 200:
@@ -2029,16 +2006,14 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                         for p in data.get("projects", []):
                             mode = p.get("dispatch_mode", "active")
                             mode_color = "green" if mode == "active" else "yellow"
-                            repo = p.get("repo_url", "") or p.get("workspace_path", "") or ""
                             _proj_table.add_row(
                                 p.get("project_id", "?")[:12],
-                                p.get("name", "?"),
+                                p.get("name", "?")[:16],
                                 f"{p.get('weight', 0)}%",
                                 f"[{mode_color}]{mode}[/]",
-                                repo[:40],
                             )
                 except Exception:
-                    _proj_table.add_row("?", "Daemon not running", "", "", "Start with [s]")
+                    _proj_table.add_row("?", "Daemon not running", "", "Start [s]")
                 body["right"].split(
                     Layout(_proj_table, name="projects"),
                 )
@@ -2120,16 +2095,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif current_view == "agents":
             header_text = "Agents — [g] exit  [q] quit"
         elif current_view == "config":
-            header_text = (
-                "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
-                " [v]main [c]edit [r]efresh [q]uit"
-            )
+            header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
-            header_text = (
-                "General Ludd Agent — TUI | [s]tart [k]ill [p]reflight [i]ntegrity"
-                " [v]config [c]edit [m]odels [w]trees [t]odos [h]ooks [o]orkers"
-                " [x]metrics [g]agents [r]efresh [q]uit"
-            )
+            header_text = "TUI | s:k:p:i:r:q | v:c:m:w:t:h:o:x:g"
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout

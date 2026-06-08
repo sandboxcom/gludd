@@ -36,7 +36,7 @@ class TestBuildTodosView:
         assert "ID" in col_names
         assert "Title" in col_names
         assert "Status" in col_names
-        assert "Priority" in col_names
+        assert "Pri" in col_names
 
 
 class TestBuildHooksView:
@@ -63,10 +63,9 @@ class TestBuildHooksView:
         hooks = [{"hook_id": "h1", "event_name": "e", "hook_type": "w", "url": "u", "priority": 1}]
         t = _build_hooks_table(hooks)
         col_names = [c.header for c in t.columns]
-        assert "Hook ID" in col_names
+        assert "ID" in col_names
         assert "Event" in col_names
         assert "Type" in col_names
-        assert "URL" in col_names
 
 
 class TestBuildWorkersView:
@@ -93,9 +92,8 @@ class TestBuildWorkersView:
         workers = [{"worker_id": "w1", "address": "a", "last_seen": "ls"}]
         t = _build_workers_table(workers)
         col_names = [c.header for c in t.columns]
-        assert "Worker ID" in col_names
+        assert "ID" in col_names
         assert "Address" in col_names
-        assert "Last Seen" in col_names
 
 
 class TestBuildMetricsView:
@@ -177,7 +175,7 @@ class TestBuildAgentsView:
         ]
         t = _build_agents_table(agents)
         col_names = [c.header for c in t.columns]
-        assert "Agent ID" in col_names
+        assert "ID" in col_names
         assert "Name" in col_names
         assert "Status" in col_names
         assert "Project" in col_names
