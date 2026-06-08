@@ -663,7 +663,10 @@ def create_daemon_app(
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_model_gateway") or app.state._model_gateway is None:
             from general_ludd.models.response_cache import ModelResponseCache
+            from general_ludd.models.timeout_detector import ModelHealthTracker
 
+            if not hasattr(app.state, "_health_tracker"):
+                app.state._health_tracker = ModelHealthTracker()
             app.state._model_gateway = ModelGateway(
                 provider_registry=ProviderRegistry(),
                 router=ModelRouter(),
@@ -671,6 +674,7 @@ def create_daemon_app(
                 hook_system=subsys["hooks"],
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
+                health_tracker=app.state._health_tracker,
             )
         gateway: ModelGateway = app.state._model_gateway
         profile = gateway.add_profile(
@@ -828,6 +832,16 @@ def create_daemon_app(
             profiles = app.state._model_gateway.list_profiles()
             return {"profiles": [p.model_dump() for p in profiles]}
         return {"profiles": []}
+
+    @app.get("/admin/models/health")
+    async def admin_models_health() -> dict[str, Any]:
+        if hasattr(app.state, "_health_tracker") and app.state._health_tracker is not None:
+            tracker = app.state._health_tracker
+            if hasattr(app.state, "_model_gateway") and app.state._model_gateway is not None:
+                profiles = app.state._model_gateway.list_profiles()
+                return {"health": [tracker.get_health(p.model_profile_id) for p in profiles]}
+            return {"health": []}
+        return {"health": []}
 
     @app.post("/admin/templates/refresh")
     async def admin_templates_refresh() -> dict[str, Any]:

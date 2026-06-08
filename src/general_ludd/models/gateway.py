@@ -67,6 +67,7 @@ class ModelGateway:
         metrics_collector: Any | None = None,
         metrics_agent_id: str | None = None,
         response_cache: Any | None = None,
+        health_tracker: Any | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
         if profiles:
@@ -83,6 +84,7 @@ class ModelGateway:
         self._metrics_collector = metrics_collector
         self._metrics_agent_id = metrics_agent_id
         self._response_cache = response_cache
+        self._health_tracker = health_tracker
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -170,7 +172,11 @@ class ModelGateway:
         )
 
         lc_messages = messages
-        raw_response = chat_model.invoke(lc_messages)
+        try:
+            raw_response = chat_model.invoke(lc_messages)
+        except Exception as exc:
+            self.record_timeout_on_failure(profile_id, exc)
+            raise
 
         content = getattr(raw_response, "content", str(raw_response))
         usage = getattr(raw_response, "usage_metadata", {}) or {}
@@ -223,6 +229,108 @@ class ModelGateway:
             })
 
         return response
+
+    def call_model_with_retry(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        max_retries: int = 3,
+        base_backoff_seconds: float = 1.0,
+        **kwargs: Any,
+    ) -> ModelResponse:
+        import time as _time
+
+        import httpx
+
+        from general_ludd.models.timeout_detector import (
+            TimeoutClassifier,
+            TimeoutEvent,
+            TimeoutRetryPolicy,
+        )
+
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile '{profile_id}' not found")
+
+        tracker = self._health_tracker
+        policy = TimeoutRetryPolicy(
+            max_retries=max_retries,
+            base_backoff_seconds=base_backoff_seconds,
+        )
+
+        if tracker is not None and not tracker.is_healthy(profile_id):
+            fallback_ids = list(profile.fallback_profiles)
+            for fb_id in fallback_ids:
+                if tracker.is_healthy(fb_id):
+                    return self.call_model(fb_id, messages, **kwargs)
+            if fallback_ids:
+                return self.call_model(fallback_ids[0], messages, **kwargs)
+
+        attempt = 0
+        last_exc: BaseException | None = None
+
+        while True:
+            attempt += 1
+            try:
+                result = self.call_model(profile_id, messages, **kwargs)
+                if tracker is not None:
+                    tracker.record_success(profile_id)
+                return result
+            except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.ConnectError, TimeoutError) as exc:
+                last_exc = exc
+                kind = TimeoutClassifier.classify(exc)
+
+                if tracker is not None:
+                    tracker.record_event(TimeoutEvent(
+                        model_id=profile_id,
+                        kind=kind,
+                        timestamp=_time.monotonic(),
+                        duration_s=0.0,
+                    ))
+
+                decision = policy.decide(kind, attempt)
+
+                if decision.should_failover:
+                    fallback_ids = list(profile.fallback_profiles)
+                    for fb_id in fallback_ids:
+                        try:
+                            return self.call_model(fb_id, messages, **kwargs)
+                        except Exception:
+                            continue
+                    if last_exc is not None:
+                        raise last_exc from None
+
+                if not decision.should_retry:
+                    if last_exc is not None:
+                        raise last_exc from None
+                    raise exc
+
+                if decision.wait_seconds > 0:
+                    _time.sleep(decision.wait_seconds)
+
+    def record_timeout_on_failure(
+        self,
+        profile_id: str,
+        exc: BaseException,
+    ) -> None:
+        import time as _time
+
+        from general_ludd.models.timeout_detector import (
+            TimeoutClassifier,
+            TimeoutEvent,
+        )
+
+        if self._health_tracker is None:
+            return
+
+        kind = TimeoutClassifier.classify(exc)
+        self._health_tracker.record_event(TimeoutEvent(
+            model_id=profile_id,
+            kind=kind,
+            timestamp=_time.monotonic(),
+            duration_s=0.0,
+        ))
 
     def call_model_by_role(
         self,

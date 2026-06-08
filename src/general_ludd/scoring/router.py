@@ -23,12 +23,14 @@ class AdaptiveRouter:
         cost_weight: float = 0.2,
         quality_weight: float = 0.8,
         quantization_map: dict[str, tuple[str, float]] | None = None,
+        health_tracker: Any | None = None,
     ) -> None:
         self._repo = benchmark_repo
         self._min_samples = min_samples
         self._cost_weight = cost_weight
         self._quality_weight = quality_weight
         self._quantization_map = quantization_map or {}
+        self._health_tracker = health_tracker
         self._cache: dict[str, RoutingDecision] = {}
         self._cache_time: datetime | None = None
         self._cache_ttl_seconds: float = 300.0
@@ -87,12 +89,18 @@ class AdaptiveRouter:
             sample_count = int(agg.get("sample_count", 0))
             if sample_count < self._min_samples:
                 continue
+            model_id = agg["model_profile_id"]
+            if (
+                self._health_tracker is not None
+                and not self._health_tracker.is_healthy(model_id)
+            ):
+                continue
             composite = float(agg.get("composite_score", 0.0))
             avg_cost = float(agg.get("avg_cost", 0.0))
             candidates.append(
                 RoutingCandidate(
                     prompt_profile_id=agg.get("prompt_profile_id"),
-                    model_profile_id=agg["model_profile_id"],
+                    model_profile_id=model_id,
                     composite_score=composite,
                     avg_cost_usd=avg_cost,
                     sample_count=sample_count,
@@ -129,11 +137,17 @@ class AdaptiveRouter:
             avg_cost = float(agg.get("avg_cost", 0.0))
             if avg_cost > max_cost:
                 continue
+            model_id = agg["model_profile_id"]
+            if (
+                self._health_tracker is not None
+                and not self._health_tracker.is_healthy(model_id)
+            ):
+                continue
             composite = float(agg.get("composite_score", 0.0))
             candidates.append(
                 RoutingCandidate(
                     prompt_profile_id=agg.get("prompt_profile_id"),
-                    model_profile_id=agg["model_profile_id"],
+                    model_profile_id=model_id,
                     composite_score=composite,
                     avg_cost_usd=avg_cost,
                     sample_count=sample_count,
