@@ -6,10 +6,10 @@
 - 2026-06-07 (session 3)
 
 ## Current Status
-- **Phase**: Coverage improvement on low-coverage files
-- **Test Suite**: 3032 passed, 26 skipped, 87.16% coverage
+- **Phase**: Full audit gap fixes — security hardening, CLI coverage, schema wiring, endpoint tests
+- **Test Suite**: 3109 passed, 26 skipped, 87.09% coverage
 - **Branch**: master
-- **Latest commit**: 7056549 — fix: allow vcs make targets in enforce-make plugin
+- **Latest commit**: 387bbc6 — schema field wiring
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 

@@ -193,3 +193,142 @@ class TestDaemonEndpointCoverage:
         assert resp.status_code == 200
         data = resp.json()
         assert data["count"] == 0
+
+
+class TestDaemonAdminEndpoints:
+    @pytest.fixture
+    def daemon_app(self):
+        from general_ludd.daemon import create_daemon_app
+
+        return create_daemon_app(tick_interval=0.01)
+
+    @pytest.fixture
+    def client(self, daemon_app):
+        return TestClient(daemon_app)
+
+    def test_admin_preflight(self, client):
+        resp = client.post("/admin/preflight")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "checks" in data
+
+    def test_admin_reload_status(self, client):
+        resp = client.get("/admin/reload/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "recent_events" in data
+
+    def test_admin_add_model(self, client):
+        resp = client.post("/admin/models", json={
+            "model_id": "test-model",
+            "provider": "openai",
+            "model": "gpt-4",
+        })
+        assert resp.status_code == 200
+
+    def test_admin_remove_model(self, client):
+        resp = client.delete("/admin/models/nonexistent")
+        assert resp.status_code == 200
+
+    def test_admin_list_models(self, client):
+        resp = client.get("/admin/models")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "profiles" in data
+
+    def test_admin_list_templates(self, client):
+        resp = client.get("/admin/templates")
+        assert resp.status_code == 200
+
+    def test_admin_templates_refresh(self, client):
+        resp = client.post("/admin/templates/refresh")
+        assert resp.status_code == 200
+
+    def test_admin_list_playbooks(self, client):
+        resp = client.get("/admin/playbooks")
+        assert resp.status_code == 200
+
+    def test_admin_playbooks_refresh(self, client):
+        resp = client.post("/admin/playbooks/refresh")
+        assert resp.status_code == 200
+
+    def test_admin_list_hooks_empty(self, client):
+        resp = client.get("/admin/hooks")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hooks" in data
+
+    def test_admin_register_hook(self, client):
+        resp = client.post("/admin/hooks", json={
+            "event_name": "todo.completed",
+            "url": "http://localhost:9999/hook",
+        })
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "hook_id" in data
+
+    def test_admin_register_list_delete_hook(self, client):
+        reg = client.post("/admin/hooks", json={
+            "event_name": "job.started",
+            "url": "http://localhost:9000/webhook",
+        })
+        assert reg.status_code == 200
+        hook_id = reg.json()["hook_id"]
+
+        list_resp = client.get("/admin/hooks")
+        assert list_resp.status_code == 200
+        hooks = list_resp.json()["hooks"]
+        assert any(h["hook_id"] == hook_id for h in hooks)
+
+        del_resp = client.delete(f"/admin/hooks/{hook_id}")
+        assert del_resp.status_code == 200
+
+    def test_admin_workers_ping(self, client):
+        resp = client.post("/admin/workers/ping")
+        assert resp.status_code == 200
+
+    def test_admin_list_workers(self, client):
+        resp = client.get("/admin/workers")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "workers" in data
+
+    def test_admin_list_agents(self, client):
+        resp = client.get("/admin/agents")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "agents" in data
+
+    def test_admin_get_agent_not_found(self, client):
+        resp = client.get("/admin/agents/nonexistent")
+        assert resp.status_code == 404
+
+    def test_admin_metrics_cost(self, client):
+        resp = client.get("/admin/metrics/cost")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "total_cost_usd" in data
+
+    def test_admin_metrics_report(self, client):
+        resp = client.get("/admin/metrics/report")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "total_agents" in data
+
+    def test_admin_compute_utilization(self, client):
+        resp = client.get("/admin/compute/utilization")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "overall_utilization_pct" in data
+
+    def test_admin_benchmark_recent(self, client):
+        resp = client.get("/admin/benchmark/recent")
+        assert resp.status_code == 200
+
+    def test_admin_prompt_profiles(self, client):
+        resp = client.get("/admin/prompt-profiles")
+        assert resp.status_code == 200
+
+    def test_admin_observability_comparison(self, client):
+        resp = client.get("/admin/observability/comparison")
+        assert resp.status_code == 200
