@@ -1611,6 +1611,22 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
         url_display = url_display[: val_w - 5] + "..."
     t.add_row("URL", url_display)
     t.add_row("View", current_view)
+    if daemon_running:
+        try:
+            resp = httpx.get(f"{daemon_url}/admin/daemon/stats", timeout=2.0)
+            if resp.status_code == 200:
+                stats = resp.json()
+                pid = stats.get("pid", "?")
+                t.add_row("PID", str(pid))
+                reqs = stats.get("requests_total", 0)
+                resps = stats.get("responses_total", 0)
+                t.add_row("Requests", f"{reqs} req / {resps} resp")
+                mem = stats.get("memory_mb", 0)
+                t.add_row("Memory", f"{mem:.1f} MB")
+                uptime = stats.get("uptime_s", 0)
+                t.add_row("Uptime", f"{uptime:.0f}s")
+        except Exception:
+            pass
     return t
 
 
@@ -2367,13 +2383,27 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
                 start_new_session=True,
                 close_fds=True,
             )
-            time.sleep(0.5)
-            if daemon_proc.poll() is not None:
-                status_msg = f"Daemon exited immediately (rc={daemon_proc.returncode})"
+            alive = False
+            for _ in range(20):
+                time.sleep(0.25)
+                if daemon_proc.poll() is not None:
+                    stderr_out = daemon_proc.stderr.read().decode(errors="replace") if daemon_proc.stderr else ""
+                    status_msg = f"Daemon exited (rc={daemon_proc.returncode}): {stderr_out[:200]}"
+                    daemon_proc = None
+                    return
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/healthz", timeout=1.0)
+                    if resp.status_code == 200:
+                        alive = True
+                        break
+                except Exception:
+                    pass
+            if not alive and daemon_proc.poll() is not None:
+                status_msg = "Daemon failed to start"
                 daemon_proc = None
                 return
             _get_daemon_pid_dir()
@@ -2844,13 +2874,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             return True
         if ch == "q":
             return False
-        elif ch == "s":
-            status_msg = "Starting daemon..."
-            start_daemon()
-        elif ch == "k":
-            status_msg = "Stopping daemon..."
-            stop_daemon()
-        elif ch == "p":
+        if ch in ("S", "K"):
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_state["daemon_running"] = daemon_running
+            tui_handler.handle_key(ch)
+            status_msg = tui_state["status_msg"]
+            daemon_running = tui_state.get("daemon_running", daemon_running)
+            return True
+        if len(ch) == 1:
+            ch = ch.lower()
+        if ch == "p":
             current_view = "projects" if current_view != "projects" else "main"
             if current_view == "projects":
                 status_msg = "Projects — [a]dd  [d]elete  [p] exit"
@@ -2972,7 +3006,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = "Refreshed"
         elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "y", "P", "R") or current_view in (
             "todos", "workers", "models", "mcp", "skills", "compute",
-        ):
+            "projects", "hooks", "integrity", "agents",
+        ) or ch in ("\x1b[B", "\x1b[A", "\r"):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg
             tui_handler.handle_key(ch)

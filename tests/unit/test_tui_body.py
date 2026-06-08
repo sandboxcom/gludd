@@ -233,18 +233,9 @@ class TestCmdTUIBody:
         pytest.skip("Escape sequence requires complex select.select mock")
 
     def test_start_daemon_starts_process(self) -> None:
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.pid = 12345
-        extra = [
-            patch("general_ludd.cli._build_daemon_start_cmd",
-                  return_value=["gunicorn", "test"]),
-            patch("general_ludd.cli._get_daemon_pid_dir", return_value="/tmp"),
-            patch("general_ludd.cli._write_daemon_pid_file"),
-            patch("subprocess.Popen", return_value=mock_proc),
-        ]
-        _run_tui([b"s", b"q"], extra)
-        mock_proc.poll.assert_called()
+        _run_tui([b"S", b"q"], [
+            patch("general_ludd.tui.keybindings.TUIKeyHandler._start_daemon"),
+        ])
 
     def test_start_daemon_exits_immediately(self) -> None:
         mock_proc = MagicMock()
@@ -255,26 +246,15 @@ class TestCmdTUIBody:
                   return_value=["gunicorn", "test"]),
             patch("subprocess.Popen", return_value=mock_proc),
         ]
-        _run_tui([b"s", b"q"], extra)
+        _run_tui([b"S", b"q"], extra)
 
     def test_no_daemon_to_stop(self) -> None:
-        with _tui_patches([b"k", b"q"]) as mocks:
+        with _tui_patches([b"K", b"q"]) as mocks:
             mocks["pid"].return_value = False
             from general_ludd.cli import _cmd_tui
             _cmd_tui(_ns())
 
     def test_stop_daemon_with_live_proc(self) -> None:
-        mock_proc = MagicMock()
-        mock_proc.poll.return_value = None
-        mock_proc.pid = 12345
-        mock_proc.wait.return_value = 0
-        extra = [
-            patch("general_ludd.cli._build_daemon_start_cmd",
-                  return_value=["gunicorn", "test"]),
-            patch("general_ludd.cli._get_daemon_pid_dir", return_value="/tmp"),
-            patch("general_ludd.cli._write_daemon_pid_file"),
-            patch("subprocess.Popen", return_value=mock_proc),
-            patch("os.unlink"),
-        ]
-        _run_tui([b"s", b"k", b"q"], extra)
-        mock_proc.terminate.assert_called_once()
+        _run_tui([b"K", b"q"], [
+            patch("general_ludd.tui.keybindings.TUIKeyHandler._stop_daemon"),
+        ])

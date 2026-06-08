@@ -127,7 +127,7 @@ class TestTUIDaemonStart:
 
             _collect_pty_output(master_fd, timeout=2.0)
 
-            os.write(master_fd, b"s")
+            os.write(master_fd, b"S")
 
             healthz_ok = False
             pid_data = None
@@ -227,7 +227,7 @@ class TestTUIDaemonStart:
                 f"Daemon should show 'stopped' before pressing 's'. Got:\n{initial_text}"
             )
 
-            os.write(master_fd, b"s")
+            os.write(master_fd, b"S")
             time.sleep(3.0)
 
             post_output = _collect_pty_output(master_fd, timeout=1.0)

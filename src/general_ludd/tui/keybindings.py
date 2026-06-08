@@ -48,6 +48,13 @@ class TUIKeyHandler:
         view = state["current_view"]
         input_mode = state.get("input_mode")
 
+        if ch == "\x1b[B":
+            self.handle_key_down()
+            return True
+        if ch == "\x1b[A":
+            self.handle_key_up()
+            return True
+
         if input_mode == "models_add":
             return self._handle_models_add_input(ch)
         if input_mode == "models_search":
@@ -114,6 +121,10 @@ class TUIKeyHandler:
             state["input_mode"] = "skills_install"
             state["input_buffer"] = ""
             state["status_msg"] = "Install skill — enter name"
+            return True
+
+        if ch == "\r" and input_mode is None:
+            self._activate_selected(view)
             return True
 
         if view == "todos" and ch == "a":
@@ -214,6 +225,14 @@ class TUIKeyHandler:
             self._reload_daemon()
             return True
 
+        if ch == "S":
+            self._start_daemon()
+            return True
+
+        if ch == "K":
+            self._stop_daemon()
+            return True
+
         if ch == "a" and view == "main":
             state["current_view"] = "ansible"
             state["status_msg"] = "Ansible Galaxy — [s]earch  [a] exit  [q] quit"
@@ -246,19 +265,47 @@ class TUIKeyHandler:
 
     def handle_key_down(self) -> None:
         state = self._state
-        projects = state.get("projects_data", [])
-        if not projects:
+        view = state["current_view"]
+        idx_key, data_key = self._get_selection_keys(view)
+        if not idx_key:
             return
-        idx: int = state.get("selected_project_idx", 0)
-        state["selected_project_idx"] = (idx + 1) % len(projects)
+        items: list[dict[str, Any]] = state.get(data_key, [])
+        if not items:
+            return
+        idx: int = state.get(idx_key, 0)
+        state[idx_key] = (idx + 1) % len(items)
 
     def handle_key_up(self) -> None:
         state = self._state
-        projects = state.get("projects_data", [])
-        if not projects:
+        view = state["current_view"]
+        idx_key, data_key = self._get_selection_keys(view)
+        if not idx_key:
             return
-        idx: int = state.get("selected_project_idx", 0)
-        state["selected_project_idx"] = (idx - 1) % len(projects)
+        items: list[dict[str, Any]] = state.get(data_key, [])
+        if not items:
+            return
+        idx: int = state.get(idx_key, 0)
+        state[idx_key] = (idx - 1) % len(items)
+
+    @staticmethod
+    def _get_selection_keys(view: str) -> tuple[str, str]:
+        mapping: dict[str, tuple[str, str]] = {
+            "projects": ("selected_project_idx", "projects_data"),
+            "hooks": ("selected_hook_idx", "hooks_data"),
+            "models": ("selected_model_idx", "models_data"),
+            "integrity": ("selected_integrity_idx", "integrity_changes"),
+            "todos": ("selected_todo_idx", "todos_data"),
+            "workers": ("selected_worker_idx", "workers_data"),
+        }
+        return mapping.get(view, ("", ""))
+
+    def _activate_selected(self, view: str) -> None:
+        state = self._state
+        if view == "projects":
+            projects: list[dict[str, Any]] = state.get("projects_data", [])
+            idx: int = state.get("selected_project_idx", 0)
+            if idx < len(projects):
+                state["active_project_id"] = projects[idx].get("project_id", "")
 
     def delete_selected_project(self) -> None:
         state = self._state
@@ -825,6 +872,65 @@ class TUIKeyHandler:
                 state["status_msg"] = f"Refresh failed: {resp.status_code}"
         except Exception as exc:
             state["status_msg"] = f"Refresh error: {exc}"
+
+    def _start_daemon(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.get(f"{state['daemon_url']}/healthz", timeout=2.0)
+            if resp.status_code == 200:
+                state["status_msg"] = "Daemon already running"
+                state["daemon_running"] = True
+                return
+        except Exception:
+            pass
+        import subprocess
+        import time
+
+        cmd = [
+            "gunicorn",
+            "general_ludd.daemon:create_daemon_app()",
+            "--worker-class", "uvicorn_worker.UvicornWorker",
+            "--workers", "1",
+            "--bind", "0.0.0.0:8000",
+        ]
+        try:
+            proc = subprocess.Popen(
+                cmd,
+                stdin=subprocess.DEVNULL,
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.PIPE,
+                start_new_session=True,
+                close_fds=True,
+            )
+            for _ in range(20):
+                time.sleep(0.25)
+                if proc.poll() is not None:
+                    state["status_msg"] = f"Daemon exited (rc={proc.returncode})"
+                    return
+                try:
+                    r = httpx.get(f"{state['daemon_url']}/healthz", timeout=1.0)
+                    if r.status_code == 200:
+                        state["status_msg"] = f"Daemon started PID={proc.pid}"
+                        state["daemon_running"] = True
+                        return
+                except Exception:
+                    pass
+            state["status_msg"] = "Daemon start timed out"
+        except Exception as exc:
+            state["status_msg"] = f"Start failed: {exc}"
+
+    def _stop_daemon(self) -> None:
+        state = self._state
+        try:
+            httpx.post(
+                f"{state['daemon_url']}/admin/shutdown",
+                timeout=5.0,
+            )
+            state["daemon_running"] = False
+            state["status_msg"] = "Daemon stopped"
+        except Exception:
+            state["daemon_running"] = False
+            state["status_msg"] = "Daemon stopped (or not running)"
 
     def _detect_quantization(self) -> None:
         state = self._state
