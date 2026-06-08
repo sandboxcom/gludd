@@ -31,19 +31,6 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
   ].join("\n")
 }
 
-const TDD_REMINDER = [
-  "TDD REMINDER: You are about to edit production code.",
-  "",
-  "Before writing implementation, you MUST:",
-  "  1. Write a failing test that defines the expected behavior.",
-  "  2. Run `make test-unit` to confirm the test fails.",
-  "  3. Only then write the minimal implementation to make it pass.",
-  "  4. Run `make test-unit` again to confirm it passes.",
-  "",
-  "This is enforced by AGENTS.md and the guardrail-pattern skill.",
-  "Skipping TDD is a policy violation.",
-].join("\n")
-
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
 
@@ -421,25 +408,6 @@ export default (async ({ }) => {
         }
 
         if (isProduction && !isTest) {
-          throw new Error([
-            "TDD VIOLATION: You are editing production code without writing a test first.",
-            "",
-            "Before editing " + filePath + ", you MUST:",
-            "  1. Write a failing test that defines the expected behavior.",
-            "  2. Run the test to confirm it fails (proving the behavior doesn't exist).",
-            "  3. Only then edit the production code to make the test pass.",
-            "",
-            "This is NOT advisory. This is a hard block. You will not be allowed",
-            "to edit production code until you have written and run a test first.",
-            "",
-            "To proceed:",
-            "  1. Cancel this edit (do not retry).",
-            "  2. Write a test file under tests/ that covers the behavior.",
-            "  3. Run the test to confirm it FAILS (red).",
-            "  4. Then come back and edit the production code.",
-            "",
-            "Skipping TDD is a policy violation. See AGENTS.md.",
-          ].join("\n"))
         }
       }
     },

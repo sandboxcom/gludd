@@ -6,10 +6,10 @@
 - 2026-06-08 (session 15)
 
 ## Current Status
-- **Phase**: TUI real functionality — selection, activation, logging
+- **Phase**: TUI breadcrumb navigation complete
 - **Test Suite**: 3615 passed, 2 failed (pre-existing), 2 skipped
 - **Branch**: master
-- **Latest commit**: cb66cec — strengthen TDD guardrail, fix message leak
+- **Latest commit**: ef36032 — fix breadcrumb escape handler and view toggle ordering
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
@@ -54,6 +54,16 @@ The user reported arrow keys, space/enter, and daemon stats all not working desp
 - `V` key toggles verbose mode (on/off)
 - Logs: key presses, view changes, daemon actions, selections, status messages
 - 11 tests in `test_tui_logger.py`
+
+### Breadcrumb System (commit ef36032)
+- New `general_ludd/tui/breadcrumb.py` — `push_breadcrumb()`, `pop_breadcrumb()`, `render_breadcrumb()`
+- All view toggles (`p/m/t/h/o/x/g/w/u/j/e/b/l/n/f/z/y/P/a`) tracked in breadcrumb trail
+- Escape key (`\x1b`) pops breadcrumb and returns to main view
+- Toggle same key again pops back to main (e.g., `p` from projects → main)
+- Header renders breadcrumb trail via `render_breadcrumb()`
+- View toggle ordering fix: all view-specific handlers (projects+w=weight, workers+p=ping, etc.) run BEFORE toggle keys, preventing false matches
+- `_TOGGLE_VIEWS` dict consolidated (previously split into two dicts)
+- 15 tests in `test_tui_breadcrumb.py`
 
 ### Daemon TUI-Log Endpoint (commit c2119d6)
 - `POST /admin/tui-log` — store TUI log entries (in-memory, capped at 10k)
@@ -341,10 +351,10 @@ EventLoop auto-creates from session (when available):
 - Model auto-population from provider APIs
 
 ## Next Steps
-- Push cli.py coverage higher (73% — TUI `_cmd_tui` body still large, ~577 lines)
-- Wire TUI project management into `_cmd_tui` handle_key (delegate `a`/`d`/`w` to TUIKeyHandler)
+- Push cli.py coverage higher (92% — TUI body render paths, 198 uncovered lines)
 - Wire remaining TUI CLI parity (28+ commands not yet in TUI)
 - Model auto-population from provider APIs
+- events/bus.py async coroutine paths (88%)
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases
