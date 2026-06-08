@@ -354,3 +354,43 @@ class TestDaemonAdminEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["drift_detected"] is False
+
+    def test_admin_todos_empty(self, client):
+        resp = client.get("/admin/todos")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "todos" in data
+        assert isinstance(data["todos"], list)
+
+    def test_admin_todos_returns_items(self, client):
+        client.post(
+            "/api/todos",
+            json={
+                "title": "Test todo",
+                "description": "desc",
+                "queue": "core",
+                "priority": "high",
+                "work_type": "fix",
+            },
+        )
+        resp = client.get("/admin/todos")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert len(data["todos"]) >= 1
+        assert data["todos"][0]["title"] == "Test todo"
+
+    def test_admin_todos_status_filter(self, client):
+        client.post(
+            "/api/todos",
+            json={
+                "title": "Queued",
+                "description": "",
+                "queue": "core",
+                "priority": "medium",
+                "work_type": "feature",
+            },
+        )
+        resp = client.get("/admin/todos", params={"status": "queued"})
+        assert resp.status_code == 200
+        data = resp.json()
+        assert all(t["status"] == "queued" for t in data["todos"])

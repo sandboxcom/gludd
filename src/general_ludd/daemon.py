@@ -541,6 +541,18 @@ def create_daemon_app(
                 return dict(todo)
         raise HTTPException(status_code=404, detail="Todo not found")
 
+    @app.get("/admin/todos")
+    async def admin_list_todos(
+        status: str | None = None,
+        project_id: str | None = None,
+    ) -> dict[str, Any]:
+        results = list(_daemon_state["todos"])
+        if status is not None:
+            results = [t for t in results if t.get("status") == status]
+        if project_id is not None:
+            results = [t for t in results if t.get("project_id") == project_id]
+        return {"todos": results, "count": len(results)}
+
     @app.get("/api/status")
     async def api_status() -> dict[str, Any]:
         queue_depths: dict[str, int] = {}
