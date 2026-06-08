@@ -3,36 +3,28 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-07 (session 4)
+- 2026-06-07 (session 5)
 
 ## Current Status
-- **Phase**: TUI view gap fixes — todos, hooks, workers, metrics, agents views added
-- **Test Suite**: 3149 passed, 26 skipped, 86.64% coverage
+- **Phase**: Feature completion — TUI fixes, quantization CLI, router integration
+- **Test Suite**: 3199 passed, 26 skipped, 86.48% coverage
 - **Branch**: master
-- **Latest commit**: 44395f8 — TUI views for todos hooks workers metrics agents
+- **Latest commit**: 504749e — Wire quantization penalty into adaptive router scoring
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: TUI View Gap Fixes (IN PROGRESS)
-- Fixed enforce-make plugin bug: `make git-*` targets blocked by regex matching "git" in target name
-- Added `repo-*` alias Makefile targets (repo-status, repo-diff, repo-log, repo-staged)
-- Added allowlist for Makefile targets containing forbidden words (git-*, feature-*, delete-file)
-- Committed as 7056549
-- Guardrail hardening (e0916b6): expanded STOP_SIGNAL_WORDS to 60+
-- Security hardening (ddf06f0): AddTodoRequest validation, sanitize_path(), sanitize_job_id()
-- 8 new CLI command groups + models CRUD (ddf06f0)
-- Orphaned worker endpoints wired (ddf06f0)
-- Dead schema fields wired (387bbc6)
-- 22 new daemon endpoint tests (ddf06f0)
-- **TUI views for todos, hooks, workers, metrics, agents** (44395f8): 5 new builder functions (`_build_todos_table`, `_build_hooks_table`, `_build_workers_table`, `_build_metrics_table`, `_build_agents_table`), wired into `_cmd_tui` make_layout + handle_key, keybindings t/h/o/x/g, controls table updated, header text for each view
-- **18 new TUI tests**: `tests/unit/test_tui_new_views.py` — table builders, empty states, column checks, keybinding logic
+## This Session: Feature Completion (COMPLETE)
+- TUI screen-size fix (b1d1281): constrained all tables to terminal width, `shutil.get_terminal_size()`, `no_wrap=True` + `max_width` on all columns, compressed footer/header, simplified views
+- `/admin/todos` daemon endpoint (4ec8f8f): TUI todos view now fetches from daemon, supports status/project filters
+- Quantization CLI commands (e3ee858): `gludd quantization list|detect|drift-check` with daemon integration
+- Quantization wired into adaptive router (504749e): `quantization_map` param on `AdaptiveRouter`, penalizes low-confidence models in scoring
 
 ## Files Below 85% Coverage (priority order)
-1. quality/config.py — 0% (3 lines)
-2. cli.py — 58% (1880 lines, 784 miss — TUI function ~400 lines hard to unit test)
-3. filestore/bootstrap.py — 87% (133 lines, 17 miss)
-4. daemon.py — 75% (957 lines, 241 miss)
-5. ansible/core_runner.py — 79% (136 lines, 29 miss)
+1. cli.py — 59% (1906 lines, 781 miss — TUI function ~400 lines hard to unit test)
+2. daemon.py — 73% (1031 lines, 283 miss)
+3. ansible/core_runner.py — 79% (136 lines, 29 miss)
+4. quality/config.py — 100% (3 lines)
+5. filestore/bootstrap.py — 87% (133 lines, 17 miss)
 6. agents/dispatcher.py — 92% (66 lines, 5 miss)
 7. secrets/manager.py — 87% (135 lines, 18 miss)
 8. planning/repo_map.py — 90% (163 lines, 17 miss)
@@ -274,10 +266,10 @@ EventLoop auto-creates from session (when available):
 - No `/admin/todos` daemon endpoint — TUI todos view will show empty until endpoint is added
 
 ## Next Steps
-- Add `/admin/todos` daemon endpoint for TUI todos view
 - Improve `cli.py` coverage — extract TUI sub-functions for testability
 - Improve `daemon.py` coverage — test stub endpoints returning 503 without DB
 - Add integration tests for new TUI views against daemon API
+- Wire quantization map from daemon state into AdaptiveRouter at daemon startup
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases

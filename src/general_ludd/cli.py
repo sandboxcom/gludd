@@ -1868,15 +1868,24 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         t = Table(title="Controls", show_header=False)
         t.add_column("Key", style="yellow", width=3, no_wrap=True)
         t.add_column("Action", style="cyan", no_wrap=True, max_width=20)
-        t.add_column("Status", style="green", no_wrap=True, max_width=14)
+        t.add_column("Status", style="green", no_wrap=True, max_width=18)
         t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
         t.add_row("k", "Kill daemon", "")
-        t.add_row("p", "Preflight", "")
-        t.add_row("i", "Integrity", "")
         t.add_row("r", "Refresh", "")
+        t.add_row("i", "Integrity scan", "")
+        t.add_row("v", "Config files", "")
+        t.add_row("c", "Config editor", "")
+        t.add_row("m", "Models", "")
+        t.add_row("w", "Worktrees", "")
+        t.add_row("p", "Projects", "")
+        t.add_row("t", "Todos", "")
+        t.add_row("h", "Hooks", "")
+        t.add_row("o", "Workers", "")
+        t.add_row("x", "Metrics", "")
+        t.add_row("g", "Agents", "")
         t.add_row("q", "Quit", "")
         if status_msg:
-            t.add_row("", f"[bold yellow]{status_msg[:30]}[/]", "")
+            t.add_row("", f"[bold yellow]{status_msg[:50]}[/]", "")
         return t
 
     def build_daemon_table() -> Table:
@@ -1922,9 +1931,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         return t
 
     def build_config_table(info: dict[str, Any]) -> Table:
-        t = Table(title="Config Files")
-        t.add_column("File", style="cyan")
-        t.add_column("Size", style="green")
+        t = Table(title="Config Files", show_header=True)
+        t.add_column("File", style="cyan", no_wrap=True, max_width=24)
+        t.add_column("Size", style="green", no_wrap=True, max_width=10)
         for cf in info.get("config_files", []):
             t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
         return t
@@ -1933,7 +1942,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         import shutil as _shutil
 
         _term_w, _term_h = _shutil.get_terminal_size((80, 24))
-        footer_rows = 8
+        footer_rows = 18
         header_rows = 1
         left_ratio = 2
         right_ratio = 3
@@ -2087,6 +2096,28 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_build_agents_table(_agents_data), name="agents"),
                 )
+            elif current_view == "integrity":
+                _int_table = Table(title="Integrity", show_header=True)
+                _int_table.add_column("File", style="cyan", no_wrap=True, max_width=30)
+                _int_table.add_column("Type", style="yellow", no_wrap=True, max_width=10)
+                _int_table.add_column("Status", style="bold", no_wrap=True, max_width=10)
+                try:
+                    from general_ludd.integrity.scanner import FileIntegrityScanner as _FIS
+                    _scanner = _FIS()
+                    _paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
+                    _paths = [p for p in _paths if p]
+                    _iresult: dict[str, Any] = _scanner.scan(_paths) if _paths else {"scanned": 0, "changes": []}
+                    for _ch in _iresult.get("changes", []):
+                        _icon = {"new": "+", "modified": "~", "removed": "-"}.get(_ch.get("type", ""), "?")
+                        _approved = "approved" if _ch.get("approved") else "pending"
+                        _int_table.add_row(_ch.get("file", "?")[:30], f"{_icon} {_ch.get('type', '?')}", _approved)
+                    if not _iresult.get("changes"):
+                        _int_table.add_row("No changes", "", "")
+                except Exception:
+                    _int_table.add_row("Scan failed", "", "error")
+                body["right"].split(
+                    Layout(_int_table, name="integrity"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -2109,10 +2140,12 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             header_text = "Metrics — [x] exit  [q] quit"
         elif current_view == "agents":
             header_text = "Agents — [g] exit  [q] quit"
+        elif current_view == "integrity":
+            header_text = "Integrity — [i] exit  [q] quit"
         elif current_view == "config":
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
-            header_text = "TUI | s:k:p:i:r:q | v:c:m:w:t:h:o:x:g"
+            header_text = "TUI | s:k:r:i:c:v | m:w:p:t:h:o:x:g"
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
@@ -2157,26 +2190,22 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = "Stopping daemon..."
             stop_daemon()
         elif ch == "p":
-            try:
-                from general_ludd.quality.preflight import run_preflight
-                result = run_preflight()
-                status_msg = f"Preflight: {result['overall']} ({result['passed_count']}/{result['total_count']})"
-            except Exception as exc:
-                status_msg = f"Preflight error: {exc}"
             current_view = "projects" if current_view != "projects" else "main"
             if current_view == "projects":
                 status_msg = "Projects — [a]dd  [d]elete  [p] exit"
         elif ch == "i":
-            try:
-                from general_ludd.integrity.scanner import FileIntegrityScanner
-                scanner = FileIntegrityScanner()
-                paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
-                paths = [p for p in paths if p]
-                result = scanner.scan(paths) if paths else {"scanned": 0, "changes": []}
-                changes = len(result["changes"])
-                status_msg = f"Integrity: {result['scanned']} scanned, {changes} changes"
-            except Exception as exc:
-                status_msg = f"Integrity error: {exc}"
+            current_view = "integrity" if current_view != "integrity" else "main"
+            if current_view == "integrity":
+                try:
+                    from general_ludd.integrity.scanner import FileIntegrityScanner
+                    scanner = FileIntegrityScanner()
+                    paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
+                    paths = [p for p in paths if p]
+                    result: dict[str, Any] = scanner.scan(paths) if paths else {"scanned": 0, "changes": []}
+                    changes: list[Any] = result["changes"]
+                    status_msg = f"Integrity: {result['scanned']} scanned, {len(changes)} changes"
+                except Exception as exc:
+                    status_msg = f"Integrity error: {exc}"
         elif ch == "v":
             current_view = "config" if current_view != "config" else "main"
         elif ch == "c":
@@ -2221,10 +2250,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             except Exception as exc:
                 status_msg = f"Remove error: {exc}"
             return True
-        if current_view == "edit":
-                config_nav = _load_config_editor()
-                status_msg = "Config editor: arrows navigate  Enter select  Esc back"
-        elif ch == "m":
+        if ch == "m":
             current_view = "models" if current_view != "models" else "main"
             if current_view == "models":
                 nonlocal downloaded_models
@@ -2285,7 +2311,15 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             while True:
                 ch = getch(stdin_fd, 0.3)
                 if ch:
-                    if ch in ("\x03", "\x1b"):
+                    if ch == "\x03":
+                        break
+                    if ch == "\x1b":
+                        if current_view != "main":
+                            current_view = "main"
+                            status_msg = ""
+                            info = _gather_offline_status()
+                            live.update(make_layout(info))
+                            continue
                         break
                     if not handle_key(info, ch):
                         break
