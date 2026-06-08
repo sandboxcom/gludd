@@ -1959,6 +1959,254 @@ def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
     return f"Model services: {', '.join(parts)}"
 
 
+def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="MCP Servers", show_header=True)
+    name_w = _scale_col(term_width, 0.25, 6)
+    trans_w = _scale_col(term_width, 0.15, 4)
+    stat_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Transport", style="green", no_wrap=True, max_width=trans_w)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    if not servers:
+        t.add_row("No MCP servers", "", "")
+    else:
+        for s in servers:
+            status = str(s.get("status", "?"))
+            color = "green" if status == "active" else "red"
+            t.add_row(
+                str(s.get("name", "?"))[:name_w],
+                str(s.get("transport", "?"))[:trans_w],
+                f"[{color}]{status}[/]",
+            )
+    return t
+
+
+def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Skills", show_header=True)
+    name_w = _scale_col(term_width, 0.3, 6)
+    cat_w = _scale_col(term_width, 0.15, 4)
+    inst_w = _scale_col(term_width, 0.1, 3)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Category", style="green", no_wrap=True, max_width=cat_w)
+    t.add_column("Installed", style="yellow", no_wrap=True, max_width=inst_w)
+    if not skills:
+        t.add_row("No skills", "", "")
+    else:
+        for sk in skills:
+            installed = "yes" if sk.get("installed") else "no"
+            color = "green" if sk.get("installed") else "dim"
+            t.add_row(
+                str(sk.get("name", "?"))[:name_w],
+                str(sk.get("category", ""))[:cat_w],
+                f"[{color}]{installed}[/]",
+            )
+    return t
+
+
+def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Compute Endpoints", show_header=True)
+    id_w = _scale_col(term_width, 0.2, 6)
+    prov_w = _scale_col(term_width, 0.15, 4)
+    stat_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
+    t.add_column("Provider", style="green", no_wrap=True, max_width=prov_w)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    if not endpoints:
+        t.add_row("No endpoints", "", "")
+    else:
+        for ep in endpoints:
+            status = str(ep.get("status", "?"))
+            color = "green" if status == "active" else "red"
+            t.add_row(
+                str(ep.get("endpoint_id", "?"))[:id_w],
+                str(ep.get("provider", "?"))[:prov_w],
+                f"[{color}]{status}[/]",
+            )
+    return t
+
+
+def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Benchmark Scores", show_header=True)
+    prompt_w = _scale_col(term_width, 0.2, 6)
+    model_w = _scale_col(term_width, 0.2, 6)
+    task_w = _scale_col(term_width, 0.12, 4)
+    score_w = _scale_col(term_width, 0.1, 3)
+    t.add_column("Prompt", style="cyan", no_wrap=True, max_width=prompt_w)
+    t.add_column("Model", style="green", no_wrap=True, max_width=model_w)
+    t.add_column("Task", style="yellow", no_wrap=True, max_width=task_w)
+    t.add_column("Score", style="bold", no_wrap=True, max_width=score_w)
+    if not scores:
+        t.add_row("No scores", "", "", "")
+    else:
+        for s in scores:
+            score_val = s.get("composite_score", 0)
+            color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
+            t.add_row(
+                str(s.get("prompt_profile", "?"))[:prompt_w],
+                str(s.get("model_profile", "?"))[:model_w],
+                str(s.get("task_type", "?"))[:task_w],
+                f"[{color}]{score_val:.2f}[/]",
+            )
+    return t
+
+
+def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Leaderboard", show_header=True)
+    rank_w = _scale_col(term_width, 0.06, 3)
+    prompt_w = _scale_col(term_width, 0.22, 6)
+    model_w = _scale_col(term_width, 0.22, 6)
+    score_w = _scale_col(term_width, 0.1, 3)
+    t.add_column("#", style="bold", no_wrap=True, max_width=rank_w)
+    t.add_column("Prompt", style="cyan", no_wrap=True, max_width=prompt_w)
+    t.add_column("Model", style="green", no_wrap=True, max_width=model_w)
+    t.add_column("Score", style="yellow", no_wrap=True, max_width=score_w)
+    if not entries:
+        t.add_row("", "No entries", "", "")
+    else:
+        for e in entries:
+            score_val = e.get("score", 0)
+            color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
+            t.add_row(
+                str(e.get("rank", ""))[:rank_w],
+                str(e.get("prompt", "?"))[:prompt_w],
+                str(e.get("model", "?"))[:model_w],
+                f"[{color}]{score_val:.2f}[/]",
+            )
+    return t
+
+
+def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Templates", show_header=True)
+    name_w = _scale_col(term_width, 0.25, 6)
+    types_w = _scale_col(term_width, 0.3, 6)
+    src_w = _scale_col(term_width, 0.15, 4)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Task Types", style="green", no_wrap=True, max_width=types_w)
+    t.add_column("Source", style="yellow", no_wrap=True, max_width=src_w)
+    if not templates:
+        t.add_row("No templates", "", "")
+    else:
+        for tp in templates:
+            task_types = tp.get("task_types", [])
+            types_str = ", ".join(str(t) for t in task_types) if isinstance(task_types, list) else str(task_types)
+            t.add_row(
+                str(tp.get("name", "?"))[:name_w],
+                types_str[:types_w],
+                str(tp.get("source", ""))[:src_w],
+            )
+    return t
+
+
+def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Playbooks", show_header=True)
+    name_w = _scale_col(term_width, 0.3, 6)
+    tasks_w = _scale_col(term_width, 0.1, 3)
+    stat_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Tasks", style="green", no_wrap=True, max_width=tasks_w)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    if not playbooks:
+        t.add_row("No playbooks", "", "")
+    else:
+        for pb in playbooks:
+            status = str(pb.get("status", "?"))
+            color = "green" if status == "ready" else "yellow"
+            t.add_row(
+                str(pb.get("name", "?"))[:name_w],
+                str(pb.get("tasks", 0))[:tasks_w],
+                f"[{color}]{status}[/]",
+            )
+    return t
+
+
+def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Quantization", show_header=True)
+    model_w = _scale_col(term_width, 0.25, 6)
+    prec_w = _scale_col(term_width, 0.1, 4)
+    conf_w = _scale_col(term_width, 0.1, 3)
+    src_w = _scale_col(term_width, 0.15, 4)
+    t.add_column("Model", style="cyan", no_wrap=True, max_width=model_w)
+    t.add_column("Precision", style="green", no_wrap=True, max_width=prec_w)
+    t.add_column("Conf", style="yellow", no_wrap=True, max_width=conf_w)
+    t.add_column("Source", style="dim", no_wrap=True, max_width=src_w)
+    if not entries:
+        t.add_row("No data", "", "", "")
+    else:
+        for e in entries:
+            conf = e.get("confidence", 0)
+            color = "green" if conf >= 0.8 else "yellow" if conf >= 0.5 else "red"
+            t.add_row(
+                str(e.get("model_id", "?"))[:model_w],
+                str(e.get("precision", "?"))[:prec_w],
+                f"[{color}]{conf:.2f}[/]",
+                str(e.get("source", ""))[:src_w],
+            )
+    return t
+
+
+def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Filestore", show_header=True)
+    name_w = _scale_col(term_width, 0.35, 6)
+    size_w = _scale_col(term_width, 0.12, 4)
+    type_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Size", style="green", no_wrap=True, max_width=size_w)
+    t.add_column("Type", style="yellow", no_wrap=True, max_width=type_w)
+    if not files:
+        t.add_row("No files", "", "")
+    else:
+        for f in files:
+            size_bytes = f.get("size_bytes", 0)
+            t.add_row(
+                str(f.get("name", "?"))[:name_w],
+                _fmt_size(size_bytes)[:size_w],
+                str(f.get("type", ""))[:type_w],
+            )
+    return t
+
+
+def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Deployments", show_header=True)
+    name_w = _scale_col(term_width, 0.3, 6)
+    prov_w = _scale_col(term_width, 0.15, 4)
+    stat_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Provider", style="green", no_wrap=True, max_width=prov_w)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    if not deployments:
+        t.add_row("No deployments", "", "")
+    else:
+        for d in deployments:
+            status = str(d.get("status", "?"))
+            color = "green" if status == "running" else "red" if status == "stopped" else "yellow"
+            t.add_row(
+                str(d.get("name", "?"))[:name_w],
+                str(d.get("provider", "?"))[:prov_w],
+                f"[{color}]{status}[/]",
+            )
+    return t
+
+
 _DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
 _DAEMON_PID_FILE = os.path.join(_DAEMON_PID_DIR, "daemon.pid")
 

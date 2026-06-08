@@ -1,4 +1,4 @@
-"""TUI keybinding handler for models add, ansible search, project management, and dispatch mode toggle."""
+"""TUI keybinding handler for view switching, input modes, and daemon actions."""
 
 from __future__ import annotations
 
@@ -7,6 +7,34 @@ from typing import Any
 import httpx
 
 DISPATCH_MODES = ["active", "passive_external", "worktree_monitor"]
+
+_TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
+    "u": ("mcp", "MCP Servers — [s]earch  [u] exit"),
+    "j": ("skills", "Skills — [s]earch  [i]nstall  [j] exit"),
+    "e": ("compute", "Compute — [a]dd endpoint  [e] exit"),
+    "b": ("scores", "Scores — [b] exit"),
+    "l": ("templates", "Templates — [r]efresh  [l] exit"),
+    "n": ("quantization", "Quantization — [d]etect  [n] exit"),
+    "f": ("filestore", "Filestore — [f] exit"),
+    "z": ("deployments", "Deployments — [z] exit"),
+}
+
+
+def _handle_text_input(state: dict[str, Any], ch: str) -> bool:
+    if ch == "\x1b":
+        state["input_mode"] = None
+        state["input_buffer"] = ""
+        state["status_msg"] = "Cancelled"
+        return True
+    if ch == "\x7f":
+        state["input_buffer"] = state["input_buffer"][:-1]
+        return True
+    return False
+
+
+def _submit_text_input(state: dict[str, Any]) -> None:
+    state["input_mode"] = None
+    state["input_buffer"] = ""
 
 
 class TUIKeyHandler:
@@ -20,12 +48,37 @@ class TUIKeyHandler:
 
         if input_mode == "models_add":
             return self._handle_models_add_input(ch)
+        if input_mode == "models_search":
+            return self._handle_text_search_input(ch, "models_search", "/admin/models/search", "models_search_results")
         if input_mode == "ansible_search":
             return self._handle_ansible_search_input(ch)
         if input_mode == "projects_add":
             return self._handle_projects_add_input(ch)
         if input_mode == "projects_set_weight":
             return self._handle_projects_set_weight_input(ch)
+        if input_mode == "mcp_search":
+            return self._handle_text_search_input(ch, "mcp_search", "/admin/mcp/search", "mcp_search_results")
+        if input_mode == "skills_search":
+            return self._handle_text_search_input(ch, "skills_search", "/admin/skills/search", "skills_search_results")
+        if input_mode == "compute_register":
+            return self._handle_compute_register_input(ch)
+        if input_mode == "todos_add":
+            return self._handle_todos_add_input(ch)
+
+        if view == "todos" and ch == "a":
+            state["input_mode"] = "todos_add"
+            state["input_buffer"] = ""
+            state["input_field_index"] = 0
+            state["input_fields"] = [
+                {"label": "title", "value": ""},
+                {"label": "priority", "value": ""},
+            ]
+            state["status_msg"] = "Add todo — enter title"
+            return True
+
+        if view == "workers" and ch == "p":
+            self._ping_workers()
+            return True
 
         if view == "projects" and ch == "a":
             state["input_mode"] = "projects_add"
@@ -63,10 +116,43 @@ class TUIKeyHandler:
             state["status_msg"] = "Add model — enter model_id"
             return True
 
+        if view == "models" and ch == "s":
+            state["input_mode"] = "models_search"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Search models — enter query"
+            return True
+
         if view == "ansible" and ch == "s":
             state["input_mode"] = "ansible_search"
             state["input_buffer"] = ""
             state["status_msg"] = "Search Galaxy — enter query"
+            return True
+
+        if view == "mcp" and ch == "s":
+            state["input_mode"] = "mcp_search"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Search MCP servers — enter query"
+            return True
+
+        if view == "skills" and ch == "s":
+            state["input_mode"] = "skills_search"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Search skills — enter query"
+            return True
+
+        if view == "compute" and ch == "a":
+            state["input_mode"] = "compute_register"
+            state["input_buffer"] = ""
+            state["input_field_index"] = 0
+            state["input_fields"] = [
+                {"label": "endpoint_url", "value": ""},
+                {"label": "provider", "value": ""},
+            ]
+            state["status_msg"] = "Register endpoint — enter URL"
+            return True
+
+        if view == "main" and ch == "R":
+            self._reload_daemon()
             return True
 
         if ch == "a" and view == "main":
@@ -86,6 +172,16 @@ class TUIKeyHandler:
 
         if view == "main" and ch == "d":
             return self._cycle_dispatch_mode()
+
+        for key, (view_name, msg) in _TOGGLE_VIEWS.items():
+            if ch == key:
+                if view == view_name:
+                    state["current_view"] = "main"
+                    state["status_msg"] = ""
+                else:
+                    state["current_view"] = view_name
+                    state["status_msg"] = msg
+                return True
 
         return True
 
@@ -126,6 +222,153 @@ class TUIKeyHandler:
                 state["status_msg"] = f"Remove failed: {resp.status_code}"
         except Exception as exc:
             state["status_msg"] = f"Remove error: {exc}"
+
+    def _ping_workers(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/workers/ping",
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                count = len(data.get("workers", []))
+                state["status_msg"] = f"Ping OK: {count} workers responded"
+            else:
+                state["status_msg"] = f"Ping failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Ping error: {exc}"
+
+    def _reload_daemon(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/reload",
+                json={"scope": "all"},
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                scope = data.get("scope", "all")
+                state["status_msg"] = f"Reloaded: {scope}"
+                state["last_reload"] = True
+            else:
+                state["status_msg"] = f"Reload failed: {resp.status_code}"
+                state["last_reload"] = False
+        except Exception as exc:
+            state["status_msg"] = f"Reload error: {exc}"
+            state["last_reload"] = False
+
+    def _handle_text_search_input(self, ch: str, mode: str, endpoint: str, result_key: str) -> bool:
+        state = self._state
+        if _handle_text_input(state, ch):
+            return True
+        if ch == "\r":
+            query = state["input_buffer"]
+            try:
+                resp = httpx.get(
+                    f"{state['daemon_url']}{endpoint}",
+                    params={"query": query},
+                    timeout=30.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    results = data.get("results", data.get("servers", data.get("skills", [])))
+                    state["status_msg"] = f"Found {len(results)} results for '{query}'"
+                    state[result_key] = results
+                else:
+                    state["status_msg"] = f"Search failed: {resp.status_code}"
+            except Exception as exc:
+                state["status_msg"] = f"Search error: {exc}"
+            _submit_text_input(state)
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _handle_todos_add_input(self, ch: str) -> bool:
+        state = self._state
+        if _handle_text_input(state, ch):
+            return True
+        if ch == "\r":
+            idx = state["input_field_index"]
+            state["input_fields"][idx]["value"] = state["input_buffer"]
+            state["input_buffer"] = ""
+            if idx < len(state["input_fields"]) - 1:
+                state["input_field_index"] = idx + 1
+                next_label = state["input_fields"][idx + 1]["label"]
+                state["status_msg"] = f"Add todo — enter {next_label}"
+            else:
+                self._submit_todos_add()
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _submit_todos_add(self) -> None:
+        state = self._state
+        fields = state["input_fields"]
+        title = fields[0]["value"]
+        priority_raw = fields[1]["value"]
+        try:
+            priority = int(priority_raw) if priority_raw else 5
+        except ValueError:
+            priority = 5
+        payload: dict[str, Any] = {"title": title, "priority": priority}
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/todos",
+                json=payload,
+                timeout=10.0,
+            )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                tid = data.get("todo_id", "?")
+                state["status_msg"] = f"Todo added: {tid}"
+            else:
+                state["status_msg"] = f"Add failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Add error: {exc}"
+        _submit_text_input(state)
+
+    def _handle_compute_register_input(self, ch: str) -> bool:
+        state = self._state
+        if _handle_text_input(state, ch):
+            return True
+        if ch == "\r":
+            idx = state["input_field_index"]
+            state["input_fields"][idx]["value"] = state["input_buffer"]
+            state["input_buffer"] = ""
+            if idx < len(state["input_fields"]) - 1:
+                state["input_field_index"] = idx + 1
+                next_label = state["input_fields"][idx + 1]["label"]
+                state["status_msg"] = f"Register endpoint — enter {next_label}"
+            else:
+                self._submit_compute_register()
+            return True
+        state["input_buffer"] += ch
+        return True
+
+    def _submit_compute_register(self) -> None:
+        state = self._state
+        fields = state["input_fields"]
+        payload = {
+            "endpoint_url": fields[0]["value"],
+            "provider": fields[1]["value"] or "custom",
+        }
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/compute/endpoints",
+                json=payload,
+                timeout=10.0,
+            )
+            if resp.status_code in (200, 201):
+                data = resp.json()
+                eid = data.get("endpoint_id", "?")
+                state["status_msg"] = f"Endpoint registered: {eid}"
+            else:
+                state["status_msg"] = f"Register failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Register error: {exc}"
+        _submit_text_input(state)
 
     def _handle_projects_add_input(self, ch: str) -> bool:
         state = self._state
