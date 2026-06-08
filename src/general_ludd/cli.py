@@ -2027,7 +2027,6 @@ def _build_daemon_start_cmd(
     return [
         "gunicorn",
         "general_ludd.daemon:create_daemon_app()",
-        "--factory",
         "--worker-class",
         "uvicorn_worker.UvicornWorker",
         "--workers",

@@ -15,7 +15,6 @@ class TestTUIDaemonDetachment:
         cmd = _build_daemon_start_cmd(host="0.0.0.0", port=8000, workers=1)
         assert cmd[0] == "gunicorn"
         assert "general_ludd.daemon:create_daemon_app()" in cmd
-        assert "--factory" in cmd
         assert "--bind" in cmd
         assert "0.0.0.0:8000" in cmd
 

@@ -11,9 +11,9 @@ UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 
-.PHONY: search-google search-json \
+ .PHONY: search-google search-json \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
-        test-guardrails test-scripts test-db test-live-zai \
+        test-guardrails test-scripts test-db test-live-zai test-tui-daemon diag-gunicorn \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks playbook-list \
@@ -120,6 +120,12 @@ test-integration:
 
 test-e2e:
 	@$(UV) run python -m pytest tests/e2e/ -v
+
+test-tui-daemon:
+	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
+
+diag-gunicorn:
+	@$(UV) run python /Users/shawnwilson/tmp/opencode/diag_gunicorn.py
 
 test-guardrails:
 	@$(UV) run python -m pytest tests/unit/test_guardrails.py -v

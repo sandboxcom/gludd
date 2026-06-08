@@ -1,0 +1,6 @@
+"""Makefile helper: diagnose gunicorn startup."""
+
+.PHONY: diag-gunicorn
+
+diag-gunicorn:
+	@$(UV) run python /Users/shawnwilson/tmp/opencode/diag_gunicorn.py
