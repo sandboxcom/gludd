@@ -445,7 +445,17 @@ def _get_or_create_extended_subsystems(
         from general_ludd.scoring.router import AdaptiveRouter
 
         benchmark_repo = BenchmarkRepository(session_factory)
-        adaptive_router = AdaptiveRouter(benchmark_repo=benchmark_repo)
+        quantization_map: dict[str, tuple[str, float]] = {}
+        tracker = getattr(app.state, "_quantization_tracker", None)
+        if tracker is not None:
+            quantization_map = {
+                mid: (info.precision, info.confidence)
+                for mid, info in tracker._data.items()
+            }
+        adaptive_router = AdaptiveRouter(
+            benchmark_repo=benchmark_repo,
+            quantization_map=quantization_map,
+        )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
         adaptive_router = app.state._adaptive_router

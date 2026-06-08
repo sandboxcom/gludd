@@ -490,3 +490,36 @@ class TestAdaptiveRouter:
         assert decision.selected_model_profile_id == "bf16-model"
         assert decision.composite_score == 0.9
         assert len(router._cache) == 0
+
+
+class TestQuantizationWiring:
+    def test_quantization_tracker_to_router_map(self):
+        from general_ludd.models.quantization import QuantizationInfo, QuantizationTracker
+        from general_ludd.scoring.router import AdaptiveRouter
+
+        tracker = QuantizationTracker()
+        tracker.update("model-a", QuantizationInfo(
+            precision="int4", source="self_probe", confidence=0.3,
+        ))
+        tracker.update("model-b", QuantizationInfo(
+            precision="bf16", source="provider_api", confidence=0.95,
+        ))
+        qmap = {
+            mid: (info.precision, info.confidence)
+            for mid, info in tracker._data.items()
+        }
+        router = AdaptiveRouter(quantization_map=qmap)
+        assert router._quantization_map["model-a"] == ("int4", 0.3)
+        assert router._quantization_map["model-b"] == ("bf16", 0.95)
+
+    def test_empty_tracker_produces_empty_map(self):
+        from general_ludd.models.quantization import QuantizationTracker
+        from general_ludd.scoring.router import AdaptiveRouter
+
+        tracker = QuantizationTracker()
+        qmap = {
+            mid: (info.precision, info.confidence)
+            for mid, info in tracker._data.items()
+        }
+        router = AdaptiveRouter(quantization_map=qmap)
+        assert router._quantization_map == {}
