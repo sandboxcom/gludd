@@ -100,10 +100,16 @@ class AnsibleRunnerAdapter:
         playbook_name: str,
         private_data_dir: str | None = None,
         extravars: dict[str, Any] | None = None,
+        env: dict[str, str] | None = None,
         **runner_kwargs: Any,
     ) -> dict[str, Any]:
         playbook_path = self.resolve_playbook(playbook_name)
         _ = private_data_dir or self.private_data_dir
+        saved_env: dict[str, str | None] = {}
+        if env:
+            for key, val in env.items():
+                saved_env[key] = os.environ.get(key)
+                os.environ[key] = val
         try:
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
@@ -113,6 +119,12 @@ class AnsibleRunnerAdapter:
         except Exception as exc:
             logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
+        finally:
+            for key, orig in saved_env.items():
+                if orig is None:
+                    os.environ.pop(key, None)
+                else:
+                    os.environ[key] = orig
 
     def refresh_playbooks(self) -> dict[str, Any]:
         if self._playbooks_dir:

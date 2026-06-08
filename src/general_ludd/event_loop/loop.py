@@ -48,9 +48,28 @@ def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
 
 
 def _resolve_prompt_text_static(
-    prompt_registry: Any, prompt_profile: str | None, **kwargs: object
+    prompt_registry: Any,
+    prompt_profile: str | None,
+    **kwargs: object,
 ) -> str | None:
-    if prompt_registry is None or not prompt_profile:
+    project_templates_dir: object = kwargs.pop("project_templates_dir", None)
+    if not prompt_profile:
+        return None
+    if project_templates_dir is not None:
+        from pathlib import Path as _Path
+
+        tmpl_path = _Path(str(project_templates_dir)) / prompt_profile
+        if tmpl_path.is_file():
+            try:
+                from jinja2 import Environment as _Env
+                from jinja2 import FileSystemLoader as _FSL
+
+                env = _Env(loader=_FSL(str(project_templates_dir)), autoescape=True)
+                tmpl = env.get_template(prompt_profile)
+                return tmpl.render(**kwargs)
+            except Exception:
+                pass
+    if prompt_registry is None:
         return None
     try:
         result: str = prompt_registry.render(prompt_profile, **kwargs)
@@ -535,8 +554,15 @@ class EventLoop:
             "queue": _safe_str(todo, "queue") or "core",
             "priority": str(getattr(todo, "priority", "medium") or "medium"),
         }
+        project_templates_dir = (
+            str(ws.templates_dir)
+            if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir()
+            else None
+        )
         prompt_text = _resolve_prompt_text_static(
-            self._prompt_registry, resolved_prompt_profile, **task_context
+            self._prompt_registry, resolved_prompt_profile,
+            project_templates_dir=project_templates_dir,
+            **task_context,
         )
         if prompt_text is None:
             prompt_text = self._resolve_prompt_text(todo)
@@ -570,9 +596,13 @@ class EventLoop:
                 },
                 shared_vars=shared_vars,
             )
+            runner_env: dict[str, str] = {}
+            if ws is not None and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir():
+                runner_env["ANSIBLE_ROLES_PATH"] = str(ws.roles_dir)
             self._runner.run_playbook(
                 playbook_name=playbook,
                 private_data_dir=pdd,
+                env=runner_env,
             )
             return
         if self._http_client is None:
