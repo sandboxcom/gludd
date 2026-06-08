@@ -1583,6 +1583,15 @@ def _build_controls_table(daemon_running: bool, status_msg: str, *, term_width: 
     t.add_row("x", "Metrics", "")
     t.add_row("g", "Agents", "")
     t.add_row("d", "Dispatch", "")
+    t.add_row("u", "MCP", "")
+    t.add_row("j", "Skills", "")
+    t.add_row("e", "Compute", "")
+    t.add_row("b", "Scores", "")
+    t.add_row("l", "Templates", "")
+    t.add_row("n", "Quantize", "")
+    t.add_row("f", "Filestore", "")
+    t.add_row("z", "Deploys", "")
+    t.add_row("R", "Reload", "")
     t.add_row("q", "Quit", "")
     if status_msg:
         t.add_row("", f"[bold yellow]{status_msg[:50]}[/]", "")
@@ -2584,6 +2593,94 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 body["right"].split(
                     Layout(_ans_table, name="ansible"),
                 )
+            elif current_view == "mcp":
+                _mcp_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/mcp/list", timeout=3.0)
+                    if resp.status_code == 200:
+                        _mcp_data = resp.json().get("servers", resp.json().get("results", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_mcp_table(_mcp_data, term_width=_term_w), name="mcp"),
+                )
+            elif current_view == "skills":
+                _skills_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/skills/list", timeout=3.0)
+                    if resp.status_code == 200:
+                        _skills_data = resp.json().get("skills", resp.json().get("results", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_skills_table(_skills_data, term_width=_term_w), name="skills"),
+                )
+            elif current_view == "compute":
+                _compute_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/compute/endpoints", timeout=3.0)
+                    if resp.status_code == 200:
+                        _compute_data = resp.json().get("endpoints", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_compute_table(_compute_data, term_width=_term_w), name="compute"),
+                )
+            elif current_view == "scores":
+                _scores_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/benchmark/scores", timeout=3.0)
+                    if resp.status_code == 200:
+                        _scores_data = resp.json().get("scores", resp.json().get("results", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_scores_table(_scores_data, term_width=_term_w), name="scores"),
+                )
+            elif current_view == "templates":
+                _templates_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/templates", timeout=3.0)
+                    if resp.status_code == 200:
+                        _templates_data = resp.json().get("templates", resp.json().get("profiles", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_templates_table(_templates_data, term_width=_term_w), name="templates"),
+                )
+            elif current_view == "quantization":
+                _quant_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/quantization", timeout=3.0)
+                    if resp.status_code == 200:
+                        _quant_data = resp.json().get("entries", resp.json().get("results", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_quantization_table(_quant_data, term_width=_term_w), name="quantization"),
+                )
+            elif current_view == "filestore":
+                _fs_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/filestore/list", timeout=3.0)
+                    if resp.status_code == 200:
+                        _fs_data = resp.json().get("files", resp.json().get("entries", []))
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_filestore_table(_fs_data, term_width=_term_w), name="filestore"),
+                )
+            elif current_view == "deployments":
+                _deploy_data: list[dict[str, Any]] = []
+                try:
+                    resp = httpx.get(f"{args.daemon_url}/admin/deployments", timeout=3.0)
+                    if resp.status_code == 200:
+                        _deploy_data = resp.json().get("deployments", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(_build_deployments_table(_deploy_data, term_width=_term_w), name="deployments"),
+                )
             else:
                 body["right"].split(
                     Layout(build_info_table(info), name="info"),
@@ -2623,17 +2720,47 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 header_text = f"Search Galaxy: {tui_state.get('input_buffer', '')}_ — [Enter] search [Esc] cancel"
             else:
                 header_text = "Ansible Galaxy — [a] exit  [s]earch  [q] quit"
+        elif current_view == "mcp":
+            if tui_state.get("input_mode") == "mcp_search":
+                header_text = f"Search MCP: {tui_state.get('input_buffer', '')}_ — [Enter] search [Esc] cancel"
+            else:
+                header_text = "MCP Servers — [u] exit  [s]earch  [q] quit"
+        elif current_view == "skills":
+            if tui_state.get("input_mode") == "skills_search":
+                header_text = f"Search Skills: {tui_state.get('input_buffer', '')}_ — [Enter] search [Esc] cancel"
+            else:
+                header_text = "Skills — [j] exit  [s]earch  [i]nstall  [q] quit"
+        elif current_view == "compute":
+            if tui_state.get("input_mode") == "compute_register":
+                header_text = f"Register: {tui_state.get('input_buffer', '')}_ — [Enter] next [Esc] cancel"
+            else:
+                header_text = "Compute — [e] exit  [a]dd  [q] quit"
+        elif current_view == "scores":
+            header_text = "Scores — [b] exit  [q] quit"
+        elif current_view == "templates":
+            header_text = "Templates — [l] exit  [r]efresh  [q] quit"
+        elif current_view == "quantization":
+            header_text = "Quantization — [n] exit  [d]etect  [q] quit"
+        elif current_view == "filestore":
+            header_text = "Filestore — [f] exit  [q] quit"
+        elif current_view == "deployments":
+            header_text = "Deployments — [z] exit  [q] quit"
         elif current_view == "config":
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
-            header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g"
+            header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g | u:j:e:b:l:n:f:z"
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
 
     def handle_key(info: dict[str, Any], ch: str) -> bool:
         nonlocal current_view, daemon_running, status_msg, config_nav, model_mgr
-        if tui_state.get("input_mode") in ("models_add", "ansible_search"):
+        if tui_state.get("input_mode") in (
+            "models_add", "models_search", "ansible_search",
+            "projects_add", "projects_set_weight",
+            "mcp_search", "skills_search", "compute_register",
+            "todos_add",
+        ):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg
             tui_handler.handle_key(ch)
@@ -2797,7 +2924,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif ch == "t":
             current_view = "todos" if current_view != "todos" else "main"
             if current_view == "todos":
-                status_msg = "Todos — [t] exit  [q] quit"
+                status_msg = "Todos — [t] exit  [a]dd  [q] quit"
         elif ch == "h":
             current_view = "hooks" if current_view != "hooks" else "main"
             if current_view == "hooks":
@@ -2805,7 +2932,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif ch == "o":
             current_view = "workers" if current_view != "workers" else "main"
             if current_view == "workers":
-                status_msg = "Workers — [o] exit  [q] quit"
+                status_msg = "Workers — [o] exit  [p]ing  [q] quit"
         elif ch == "x":
             current_view = "metrics" if current_view != "metrics" else "main"
             if current_view == "metrics":
@@ -2817,6 +2944,14 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
+        elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "R") or current_view in (
+            "todos", "workers", "models", "mcp", "skills", "compute",
+        ):
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            current_view = tui_state["current_view"]
+            status_msg = tui_state["status_msg"]
         return True
 
     def getch(fd: int, timeout: float = 0.3) -> str:
