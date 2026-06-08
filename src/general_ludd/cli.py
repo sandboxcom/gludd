@@ -1679,7 +1679,7 @@ def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     return t
 
 
-def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
     from rich.table import Table
 
     t = Table(title="Todos", show_header=True)
@@ -1691,7 +1691,7 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80) -> 
     t.add_column("Title", style="green", no_wrap=True, max_width=title_w)
     t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
     t.add_column("Pri", style="bold", no_wrap=True, max_width=pri_w)
-    for todo in todos:
+    for i, todo in enumerate(todos):
         status = todo.get("status", "?")
         status_color = {
             "pending": "yellow",
@@ -1699,32 +1699,43 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80) -> 
             "completed": "green",
             "cancelled": "dim",
         }.get(status, "white")
+        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
+        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            str(todo.get("todo_id", "?"))[:id_w],
+            sel_marker + str(todo.get("todo_id", "?"))[:id_w],
             str(todo.get("title", ""))[:title_w],
             f"[{status_color}]{status}[/]",
             str(todo.get("priority", ""))[:pri_w],
+            style=style,
         )
     return t
 
 
-def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
     from rich.table import Table
 
     t = Table(title="Hooks", show_header=True)
     t.add_column("ID", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
     t.add_column("Event", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
     t.add_column("Type", style="yellow", no_wrap=True, max_width=_scale_col(term_width, 0.12, 4))
-    for h in hooks:
+    for i, h in enumerate(hooks):
+        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
+        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            str(h.get("hook_id", "?"))[:_scale_col(term_width, 0.25, 6)],
+            sel_marker + str(h.get("hook_id", "?"))[:_scale_col(term_width, 0.25, 6)],
             str(h.get("event_name", h.get("event_type", "?")))[:_scale_col(term_width, 0.25, 6)],
             str(h.get("hook_type", "?"))[:_scale_col(term_width, 0.12, 4)],
+            style=style,
         )
     return t
 
 
-def _build_workers_table(workers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+def _build_workers_table(
+    workers: list[dict[str, Any]],
+    *,
+    term_width: int = 80,
+    selected_idx: int | None = None,
+) -> Table:
     from rich.table import Table
 
     t = Table(title="Workers", show_header=True)
@@ -1732,10 +1743,13 @@ def _build_workers_table(workers: list[dict[str, Any]], *, term_width: int = 80)
     addr_w = _scale_col(term_width, 0.3, 8)
     t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
     t.add_column("Address", style="green", no_wrap=True, max_width=addr_w)
-    for w in workers:
+    for i, w in enumerate(workers):
+        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
+        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            str(w.get("worker_id", "?"))[:id_w],
+            sel_marker + str(w.get("worker_id", "?"))[:id_w],
             str(w.get("address", "?"))[:addr_w],
+            style=style,
         )
     return t
 
@@ -1803,6 +1817,7 @@ def _build_model_table(
     downloaded: list[Any],
     *,
     term_width: int = 80,
+    selected_idx: int | None = None,
 ) -> Table:
     from rich.table import Table
 
@@ -1816,7 +1831,10 @@ def _build_model_table(
     t.add_column("Model", style="yellow", no_wrap=True, max_width=model_w)
     t.add_column("Status", style="bold", no_wrap=True, max_width=stat_w)
 
+    row_idx = 0
     for s in servers:
+        sel_marker = "▶ " if selected_idx is not None and row_idx == selected_idx else "  "
+        style = "bold reverse" if selected_idx is not None and row_idx == selected_idx else None
         if isinstance(s, dict):
             sid = str(s.get("id", s.get("server_id", "?")))
             engine = str(s.get("engine", "?"))
@@ -1824,39 +1842,47 @@ def _build_model_table(
             status_text = str(s.get("status", "stopped"))
             status_color = "green" if status_text == "running" else "red"
             t.add_row(
-                f"[s]{sid}"[:id_w],
+                sel_marker + f"[s]{sid}"[:id_w],
                 engine[:eng_w],
                 model_name[:model_w],
                 f"[{status_color}]{status_text}[/]",
+                style=style,
             )
         else:
             status_color = "green" if getattr(s, "is_running", False) else "red"
             status_text = getattr(s, "status", "stopped")
             t.add_row(
-                f"[s]{s.server_id}"[:id_w],
+                sel_marker + f"[s]{s.server_id}"[:id_w],
                 s.config.engine[:eng_w],
                 (s.config.model_name or s.config.model_path or "?")[:model_w],
                 f"[{status_color}]{status_text}[/]",
+                style=style,
             )
+        row_idx += 1
 
     for dm in downloaded:
+        sel_marker = "▶ " if selected_idx is not None and row_idx == selected_idx else "  "
+        style = "bold reverse" if selected_idx is not None and row_idx == selected_idx else None
         if isinstance(dm, dict):
             size_str = _fmt_size(dm.get("size_bytes", 0)) if dm.get("size_bytes") else "?"
             mid = str(dm.get("model_id", "?"))
             t.add_row(
-                f"[d]{mid[:12]}",
+                sel_marker + f"[d]{mid[:12]}",
                 str(dm.get("engine", "?"))[:eng_w],
                 mid[:model_w],
                 f"[dim]{size_str}[/]",
+                style=style,
             )
         else:
             size_str = _fmt_size(dm.size_bytes) if dm.size_bytes else "?"
             t.add_row(
-                f"[d]{dm.model_id[:12]}",
+                sel_marker + f"[d]{dm.model_id[:12]}",
                 dm.engine[:eng_w],
                 dm.model_id[:model_w],
                 f"[dim]{size_str}[/]",
+                style=style,
             )
+        row_idx += 1
     return t
 
 
@@ -1906,7 +1932,12 @@ def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 
     return t
 
 
-def _build_projects_table(projects: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+def _build_projects_table(
+    projects: list[dict[str, Any]],
+    *,
+    term_width: int = 80,
+    selected_idx: int | None = None,
+) -> Table:
     from rich.table import Table
 
     t = Table(title="Projects", show_header=True)
@@ -1918,14 +1949,17 @@ def _build_projects_table(projects: list[dict[str, Any]], *, term_width: int = 8
     t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
     t.add_column("Wt", style="yellow", no_wrap=True, max_width=wt_w)
     t.add_column("Mode", style="bold", no_wrap=True, max_width=mode_w)
-    for p in projects:
+    for i, p in enumerate(projects):
         mode = str(p.get("dispatch_mode", "active"))
         mode_color = "green" if mode == "active" else "yellow"
+        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
+        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            str(p.get("project_id", "?"))[:id_w],
+            sel_marker + str(p.get("project_id", "?"))[:id_w],
             str(p.get("name", "?"))[:name_w],
             f"{p.get('weight', 0)}%",
             f"[{mode_color}]{mode}[/]",
+            style=style,
         )
     return t
 
@@ -2339,8 +2373,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         "input_fields": [],
         "dispatch_mode": "active",
         "ansible_search_results": [],
+        "verbose_logging": False,
     }
     tui_handler = TUIKeyHandler(tui_state)
+
+    from general_ludd.tui.logger import TUILogger
+    _tui_log_dir = os.path.join(_get_daemon_pid_dir(), "tui_logs")
+    tui_logger = TUILogger(log_dir=_tui_log_dir, daemon_url=args.daemon_url, verbose=False)
 
     def detect_daemon() -> bool:
         if _is_daemon_pid_alive(_DAEMON_PID_FILE):
@@ -2506,7 +2545,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 )
             elif current_view == "models":
                 servers = model_mgr.list_servers()
-                _model_table = _build_model_table(servers, downloaded_models, term_width=_term_w)
+                _model_table = _build_model_table(
+                    servers, downloaded_models,
+                    selected_idx=tui_state.get("selected_model_idx", 0),
+                    term_width=_term_w,
+                )
                 body["right"].split(
                     Layout(_model_table, name="models"),
                 )
@@ -2543,7 +2586,9 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                             "dispatch_mode": "Start [s]",
                         }
                     ]
-                _proj_table = _build_projects_table(_proj_data, term_width=_term_w)
+                tui_state["projects_data"] = _proj_data
+                _proj_sel = tui_state.get("selected_project_idx", 0)
+                _proj_table = _build_projects_table(_proj_data, selected_idx=_proj_sel, term_width=_term_w)
                 body["right"].split(
                     Layout(_proj_table, name="projects"),
                 )
@@ -2555,8 +2600,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                         _todos_data = resp.json().get("todos", [])
                 except Exception:
                     pass
+                tui_state["todos_data"] = _todos_data
+                _todos_sel = tui_state.get("selected_todo_idx", 0)
                 body["right"].split(
-                    Layout(_build_todos_table(_todos_data), name="todos"),
+                    Layout(_build_todos_table(_todos_data, selected_idx=_todos_sel), name="todos"),
                 )
             elif current_view == "hooks":
                 _hooks_data: list[dict[str, Any]] = []
@@ -2566,8 +2613,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                         _hooks_data = resp.json().get("hooks", [])
                 except Exception:
                     pass
+                tui_state["hooks_data"] = _hooks_data
+                _hooks_sel = tui_state.get("selected_hook_idx", 0)
                 body["right"].split(
-                    Layout(_build_hooks_table(_hooks_data), name="hooks"),
+                    Layout(_build_hooks_table(_hooks_data, selected_idx=_hooks_sel), name="hooks"),
                 )
             elif current_view == "workers":
                 _workers_data: list[dict[str, Any]] = []
@@ -2577,8 +2626,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                         _workers_data = resp.json().get("workers", [])
                 except Exception:
                     pass
+                tui_state["workers_data"] = _workers_data
+                _workers_sel = tui_state.get("selected_worker_idx", 0)
                 body["right"].split(
-                    Layout(_build_workers_table(_workers_data), name="workers"),
+                    Layout(_build_workers_table(_workers_data, selected_idx=_workers_sel), name="workers"),
                 )
             elif current_view == "metrics":
                 _cost_data: dict[str, Any] = {}
@@ -3041,21 +3092,30 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             while True:
                 ch = getch(stdin_fd, 0.3)
                 if ch:
+                    tui_logger.verbose = tui_state.get("verbose_logging", False)
+                    tui_logger.log_key_press(current_view, repr(ch))
                     if ch == "\x03":
                         break
                     if ch == "\x1b":
                         if current_view != "main":
+                            old_view = current_view
                             current_view = "main"
                             status_msg = ""
                             info = _gather_offline_status()
                             live.update(make_layout(info))
+                            tui_logger.log_view_change(old_view, "main")
                             continue
                         break
+                    old_view = current_view
                     if not handle_key(info, ch):
                         break
+                    if current_view != old_view:
+                        tui_logger.log_view_change(old_view, current_view)
+                    tui_logger.log_status_msg(status_msg)
                 info = _gather_offline_status()
                 live.update(make_layout(info))
     finally:
+        tui_logger.close()
         termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
     print("TUI exited.")
 

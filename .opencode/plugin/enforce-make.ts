@@ -44,6 +44,9 @@ const TDD_REMINDER = [
   "Skipping TDD is a policy violation.",
 ].join("\n")
 
+let _pendingCommitReminder = false
+let _pendingPreflightGate = ""
+
 const COMMIT_REMINDER = [
   "COMMIT REMINDER: Tests are passing.",
   "",
@@ -328,7 +331,7 @@ export default (async ({ }) => {
             "Fix all gaps before attempting commit.",
             "",
           ].join("\n")
-          console.warn(PREFLIGHT_GATE)
+          _pendingPreflightGate = PREFLIGHT_GATE
         }
 
         const afterMake = trimmed.slice(5).trim()
@@ -430,7 +433,7 @@ export default (async ({ }) => {
             stdout.includes("passed") &&
             !stdout.includes("failed")
           ) {
-            console.warn(COMMIT_REMINDER)
+            _pendingCommitReminder = true
           }
         }
       }
@@ -597,6 +600,15 @@ export default (async ({ }) => {
         output += preflightCommitPrompt
         output += noManualDefault
         output += BASH_METACHAR_POLICY
+
+        if (_pendingCommitReminder) {
+          output += "\n\n" + COMMIT_REMINDER
+          _pendingCommitReminder = false
+        }
+        if (_pendingPreflightGate) {
+          output += "\n\n" + _pendingPreflightGate
+          _pendingPreflightGate = ""
+        }
       }
     },
 

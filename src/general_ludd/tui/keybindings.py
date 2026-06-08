@@ -123,6 +123,10 @@ class TUIKeyHandler:
             state["status_msg"] = "Install skill — enter name"
             return True
 
+        if ch == " " and input_mode is None:
+            self._activate_selected(view)
+            return True
+
         if ch == "\r" and input_mode is None:
             self._activate_selected(view)
             return True
@@ -221,6 +225,10 @@ class TUIKeyHandler:
             self._detect_quantization()
             return True
 
+        if ch == "V":
+            self._toggle_verbose()
+            return True
+
         if view == "main" and ch == "R":
             self._reload_daemon()
             return True
@@ -274,6 +282,10 @@ class TUIKeyHandler:
             return
         idx: int = state.get(idx_key, 0)
         state[idx_key] = (idx + 1) % len(items)
+        new_idx = state[idx_key]
+        if new_idx < len(items):
+            item_name = items[new_idx].get("name", items[new_idx].get("title", items[new_idx].get("todo_id", "")))
+            state["status_msg"] = f"Selected: {item_name}"
 
     def handle_key_up(self) -> None:
         state = self._state
@@ -286,6 +298,10 @@ class TUIKeyHandler:
             return
         idx: int = state.get(idx_key, 0)
         state[idx_key] = (idx - 1) % len(items)
+        new_idx = state[idx_key]
+        if new_idx < len(items):
+            item_name = items[new_idx].get("name", items[new_idx].get("title", items[new_idx].get("todo_id", "")))
+            state["status_msg"] = f"Selected: {item_name}"
 
     @staticmethod
     def _get_selection_keys(view: str) -> tuple[str, str]:
@@ -305,7 +321,37 @@ class TUIKeyHandler:
             projects: list[dict[str, Any]] = state.get("projects_data", [])
             idx: int = state.get("selected_project_idx", 0)
             if idx < len(projects):
-                state["active_project_id"] = projects[idx].get("project_id", "")
+                pid = projects[idx].get("project_id", "")
+                state["active_project_id"] = pid
+                state["status_msg"] = f"Activated: {pid}"
+        elif view == "todos":
+            todos: list[dict[str, Any]] = state.get("todos_data", [])
+            idx = state.get("selected_todo_idx", 0)
+            if idx < len(todos):
+                tid = todos[idx].get("todo_id", "")
+                state["active_todo_id"] = tid
+                state["status_msg"] = f"Selected todo: {tid}"
+        elif view == "hooks":
+            hooks: list[dict[str, Any]] = state.get("hooks_data", [])
+            idx = state.get("selected_hook_idx", 0)
+            if idx < len(hooks):
+                hid = hooks[idx].get("hook_id", "")
+                state["active_hook_id"] = hid
+                state["status_msg"] = f"Selected hook: {hid}"
+        elif view == "workers":
+            workers: list[dict[str, Any]] = state.get("workers_data", [])
+            idx = state.get("selected_worker_idx", 0)
+            if idx < len(workers):
+                wid = workers[idx].get("worker_id", "")
+                state["active_worker_id"] = wid
+                state["status_msg"] = f"Selected worker: {wid}"
+        elif view == "models":
+            models: list[dict[str, Any]] = state.get("models_data", [])
+            idx = state.get("selected_model_idx", 0)
+            if idx < len(models):
+                mid = models[idx].get("model_id", "")
+                state["active_model_id"] = mid
+                state["status_msg"] = f"Selected model: {mid}"
 
     def delete_selected_project(self) -> None:
         state = self._state
@@ -974,3 +1020,9 @@ class TUIKeyHandler:
         except Exception as exc:
             state["status_msg"] = f"Dispatch error: {exc}"
         return True
+
+    def _toggle_verbose(self) -> None:
+        state = self._state
+        current = state.get("verbose_logging", False)
+        state["verbose_logging"] = not current
+        state["status_msg"] = f"Verbose logging: {'ON' if not current else 'OFF'}"

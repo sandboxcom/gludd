@@ -1751,6 +1751,20 @@ def create_daemon_app(
         _ = LogAuditor()
         return {"status": "ok", "result": "LogAuditor wired"}
 
+    _tui_log_entries: list[dict[str, Any]] = []
+
+    @app.post("/admin/tui-log")
+    async def admin_tui_log(req: dict[str, Any]) -> dict[str, Any]:
+        entries = req.get("entries", [])
+        _tui_log_entries.extend(entries)
+        if len(_tui_log_entries) > 10000:
+            del _tui_log_entries[:len(_tui_log_entries) - 10000]
+        return {"status": "ok", "stored": len(entries)}
+
+    @app.get("/admin/tui-log")
+    async def admin_tui_log_get() -> dict[str, Any]:
+        return {"entries": list(_tui_log_entries[-200:])}
+
     @app.post("/admin/evidence-check")
     async def admin_evidence_check(req: dict[str, Any]) -> dict[str, Any]:
         return {"status": "ok", "claim": req.get("text", "")}
