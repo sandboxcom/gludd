@@ -156,3 +156,196 @@ class TestComputeCliParsing:
             with patch("sys.exit") as mock_exit:
                 _parse(["compute", "register", "--id", "", "--url", ""])
                 mock_exit.assert_called_with(1)
+
+
+class TestHooksCliParsing:
+    def test_hooks_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"hooks": [{"hook_id": "h1", "event": "todo.created", "handler": "my_handler"}]},
+            )
+            _parse(["hooks", "list"])
+            out = capsys.readouterr().out
+            assert "h1" in out
+
+    def test_hooks_list_empty(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(status_code=200, json=lambda: {"hooks": []})
+            _parse(["hooks", "list"])
+            out = capsys.readouterr().out
+            assert "No hooks" in out
+
+    def test_hooks_register(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200, json=lambda: {"hook_id": "new-hook"},
+            )
+            _parse(["hooks", "register", "--event", "todo.created", "--handler", "mod.fn"])
+            out = capsys.readouterr().out
+            assert "new-hook" in out
+
+    def test_hooks_delete(self, capsys):
+        with patch("httpx.delete") as mock_delete:
+            mock_delete.return_value = MagicMock(status_code=200)
+            _parse(["hooks", "delete", "h1"])
+            out = capsys.readouterr().out
+            assert "h1" in out
+
+
+class TestWorkersCliParsing:
+    def test_workers_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"workers": [{"worker_id": "w1", "status": "healthy", "url": "http://w:8000"}]},
+            )
+            _parse(["workers", "list"])
+            out = capsys.readouterr().out
+            assert "w1" in out
+
+    def test_workers_ping(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200, json=lambda: {"pinged": 1},
+            )
+            _parse(["workers", "ping"])
+            out = capsys.readouterr().out
+            assert "pinged" in out
+
+
+class TestAgentsCliParsing:
+    def test_agents_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"agents": [{"agent_id": "coder", "status": "idle", "model": "gpt-4"}]},
+            )
+            _parse(["agents", "list"])
+            out = capsys.readouterr().out
+            assert "coder" in out
+
+    def test_agents_list_empty(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(status_code=200, json=lambda: {"agents": []})
+            _parse(["agents", "list"])
+            out = capsys.readouterr().out
+            assert "No agents" in out
+
+
+class TestMetricsCliParsing:
+    def test_metrics_cost(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, json=lambda: {"total_cost_usd": 1.23},
+            )
+            _parse(["metrics", "cost"])
+            out = capsys.readouterr().out
+            assert "1.23" in out
+
+    def test_metrics_report(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, json=lambda: {"report": "ok"},
+            )
+            _parse(["metrics", "report"])
+            out = capsys.readouterr().out
+            assert "ok" in out
+
+
+class TestReloadCliParsing:
+    def test_reload(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200, json=lambda: {"scope": "all"},
+            )
+            _parse(["reload"])
+            out = capsys.readouterr().out
+            assert "Reloaded" in out
+
+
+class TestTemplatesCliParsing:
+    def test_templates_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, json=lambda: {"templates": ["prompt_a.txt", "prompt_b.txt"]},
+            )
+            _parse(["templates", "list"])
+            out = capsys.readouterr().out
+            assert "prompt_a" in out
+
+    def test_templates_refresh(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200, json=lambda: {"count": 5},
+            )
+            _parse(["templates", "refresh"])
+            out = capsys.readouterr().out
+            assert "5" in out
+
+
+class TestPlaybooksCliParsing:
+    def test_playbooks_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, json=lambda: {"playbooks": ["noop.yml", "run.yml"]},
+            )
+            _parse(["playbooks", "list"])
+            out = capsys.readouterr().out
+            assert "noop.yml" in out
+
+    def test_playbooks_refresh(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(
+                status_code=200, json=lambda: {"count": 3},
+            )
+            _parse(["playbooks", "refresh"])
+            out = capsys.readouterr().out
+            assert "3" in out
+
+
+class TestCodeIntelCliParsing:
+    def test_code_graph(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200, json=lambda: {"nodes": [], "edges": []},
+            )
+            _parse(["code", "graph"])
+            out = capsys.readouterr().out
+            assert "nodes" in out
+
+    def test_code_search(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"results": [{"file": "a.py", "line": 10, "text": "def foo()"}]},
+            )
+            _parse(["code", "search", "foo"])
+            out = capsys.readouterr().out
+            assert "a.py" in out
+
+
+class TestModelsCrudCliParsing:
+    def test_models_list(self, capsys):
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=lambda: {"models": [{"model_id": "gpt4", "provider": "openai", "model": "gpt-4"}]},
+            )
+            _parse(["models", "list"])
+            out = capsys.readouterr().out
+            assert "gpt4" in out
+
+    def test_models_add(self, capsys):
+        with patch("httpx.post") as mock_post:
+            mock_post.return_value = MagicMock(status_code=200)
+            _parse(["models", "add", "--model-id", "test-model", "--provider", "openai"])
+            out = capsys.readouterr().out
+            assert "test-model" in out
+
+    def test_models_remove(self, capsys):
+        with patch("httpx.delete") as mock_delete:
+            mock_delete.return_value = MagicMock(status_code=200)
+            _parse(["models", "remove", "test-model"])
+            out = capsys.readouterr().out
+            assert "test-model" in out

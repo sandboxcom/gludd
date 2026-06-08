@@ -597,6 +597,27 @@ class EventLoop:
         )
         await self._persist_task_return(todo, job, resp)
 
+    async def _dispatch_validate_job(self, todo: Any) -> None:
+        if self._http_client is None:
+            return
+        job = JobSpec(
+            job_id=f"VALIDATE-{todo.todo_id}",
+            todo_id=todo.todo_id,
+            playbook="validate_task.yml",
+            queue=_safe_str(todo, "queue", "core") or "core",
+            work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
+            project_id=getattr(todo, "project_id", None),
+        )
+        resp = await self._http_client.post(
+            f"{self.worker_base_url}/jobs/validate",
+            json=job.model_dump(mode="json"),
+        )
+        logger.info(
+            "Validation dispatch for todo %s: status=%s",
+            todo.todo_id,
+            getattr(resp, "status_code", None),
+        )
+
     async def _persist_task_return(self, todo: Any, job: JobSpec, resp: Any) -> None:
         if self._task_return_repo is None:
             return

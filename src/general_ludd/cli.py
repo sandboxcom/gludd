@@ -276,6 +276,23 @@ def main() -> None:
     models_list_discovered.add_argument("--daemon-url", default="http://localhost:8000")
     models_list_discovered.set_defaults(func=_cmd_models_discovered)
 
+    models_list = models_sub.add_parser("list", help="List registered models")
+    models_list.add_argument("--daemon-url", default="http://localhost:8000")
+    models_list.set_defaults(func=_cmd_models_list)
+
+    models_add = models_sub.add_parser("add", help="Add a model profile")
+    models_add.add_argument("--model-id", required=True, help="Model ID")
+    models_add.add_argument("--provider", default="openai", help="Provider name")
+    models_add.add_argument("--model", default="", help="Model name")
+    models_add.add_argument("--api-key-env", default=None, help="API key environment variable")
+    models_add.add_argument("--daemon-url", default="http://localhost:8000")
+    models_add.set_defaults(func=_cmd_models_add)
+
+    models_remove = models_sub.add_parser("remove", help="Remove a model profile")
+    models_remove.add_argument("model_id", help="Model ID to remove")
+    models_remove.add_argument("--daemon-url", default="http://localhost:8000")
+    models_remove.set_defaults(func=_cmd_models_remove)
+
     local_serve_parser = sub.add_parser("local-serve", help="Start a local inference server")
     local_serve_parser.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"])
     local_serve_parser.add_argument("--model", required=True, help="Model name or path")
@@ -466,6 +483,88 @@ def main() -> None:
     int_log.add_argument("--daemon-url", default="http://localhost:8000")
     int_log.set_defaults(func=_cmd_integrity_log)
 
+    hooks_parser = sub.add_parser("hooks", help="Hook management commands")
+    hooks_parser.set_defaults(func=None)
+    hooks_sub = hooks_parser.add_subparsers(dest="hooks_command")
+    hooks_list = hooks_sub.add_parser("list", help="List registered hooks")
+    hooks_list.add_argument("--daemon-url", default="http://localhost:8000")
+    hooks_list.set_defaults(func=_cmd_hooks_list)
+    hooks_register = hooks_sub.add_parser("register", help="Register a hook")
+    hooks_register.add_argument("--event", required=True, help="Event type")
+    hooks_register.add_argument("--handler", required=True, help="Handler module path")
+    hooks_register.add_argument("--daemon-url", default="http://localhost:8000")
+    hooks_register.set_defaults(func=_cmd_hooks_register)
+    hooks_delete = hooks_sub.add_parser("delete", help="Delete a hook")
+    hooks_delete.add_argument("hook_id", help="Hook ID to delete")
+    hooks_delete.add_argument("--daemon-url", default="http://localhost:8000")
+    hooks_delete.set_defaults(func=_cmd_hooks_delete)
+
+    workers_parser = sub.add_parser("workers", help="Worker management commands")
+    workers_parser.set_defaults(func=None)
+    workers_sub = workers_parser.add_subparsers(dest="workers_command")
+    workers_list = workers_sub.add_parser("list", help="List workers")
+    workers_list.add_argument("--daemon-url", default="http://localhost:8000")
+    workers_list.set_defaults(func=_cmd_workers_list)
+    workers_ping = workers_sub.add_parser("ping", help="Ping workers")
+    workers_ping.add_argument("--daemon-url", default="http://localhost:8000")
+    workers_ping.set_defaults(func=_cmd_workers_ping)
+
+    agents_parser = sub.add_parser("agents", help="Agent management commands")
+    agents_parser.set_defaults(func=None)
+    agents_sub = agents_parser.add_subparsers(dest="agents_command")
+    agents_list = agents_sub.add_parser("list", help="List agents")
+    agents_list.add_argument("--daemon-url", default="http://localhost:8000")
+    agents_list.set_defaults(func=_cmd_agents_list)
+
+    metrics_parser = sub.add_parser("metrics", help="Metrics commands")
+    metrics_parser.set_defaults(func=None)
+    metrics_sub = metrics_parser.add_subparsers(dest="metrics_command")
+    metrics_cost = metrics_sub.add_parser("cost", help="Show cost metrics")
+    metrics_cost.add_argument("--daemon-url", default="http://localhost:8000")
+    metrics_cost.set_defaults(func=_cmd_metrics_cost)
+    metrics_report = metrics_sub.add_parser("report", help="Show full metrics report")
+    metrics_report.add_argument("--daemon-url", default="http://localhost:8000")
+    metrics_report.set_defaults(func=_cmd_metrics_report)
+
+    reload_parser = sub.add_parser("reload", help="Hot-reload daemon configuration")
+    reload_parser.add_argument("--scope", default="all", help="Reload scope (all, config, templates, playbooks)")
+    reload_parser.add_argument("--daemon-url", default="http://localhost:8000")
+    reload_parser.set_defaults(func=_cmd_reload)
+
+    templates_parser = sub.add_parser("templates", help="Template management commands")
+    templates_parser.set_defaults(func=None)
+    templates_sub = templates_parser.add_subparsers(dest="templates_command")
+    templates_list = templates_sub.add_parser("list", help="List templates")
+    templates_list.add_argument("--daemon-url", default="http://localhost:8000")
+    templates_list.set_defaults(func=_cmd_templates_list)
+    templates_refresh = templates_sub.add_parser("refresh", help="Refresh template cache")
+    templates_refresh.add_argument("--daemon-url", default="http://localhost:8000")
+    templates_refresh.set_defaults(func=_cmd_templates_refresh)
+
+    playbooks_parser = sub.add_parser("playbooks", help="Playbook management commands")
+    playbooks_parser.set_defaults(func=None)
+    playbooks_sub = playbooks_parser.add_subparsers(dest="playbooks_command")
+    playbooks_list = playbooks_sub.add_parser("list", help="List playbooks")
+    playbooks_list.add_argument("--daemon-url", default="http://localhost:8000")
+    playbooks_list.set_defaults(func=_cmd_playbooks_list)
+    playbooks_refresh = playbooks_sub.add_parser("refresh", help="Refresh playbook cache")
+    playbooks_refresh.add_argument("--daemon-url", default="http://localhost:8000")
+    playbooks_refresh.set_defaults(func=_cmd_playbooks_refresh)
+
+    codeintel_parser = sub.add_parser("code", help="Code intelligence commands")
+    codeintel_parser.set_defaults(func=None)
+    codeintel_sub = codeintel_parser.add_subparsers(dest="code_command")
+    codeintel_graph = codeintel_sub.add_parser("graph", help="Show call graph")
+    codeintel_graph.add_argument("--source", default="", help="Source file")
+    codeintel_graph.add_argument("--language", default="python", help="Language")
+    codeintel_graph.add_argument("--daemon-url", default="http://localhost:8000")
+    codeintel_graph.set_defaults(func=_cmd_code_graph)
+    codeintel_search = codeintel_sub.add_parser("search", help="Search code")
+    codeintel_search.add_argument("query", help="Search query")
+    codeintel_search.add_argument("--language", default="python", help="Language")
+    codeintel_search.add_argument("--daemon-url", default="http://localhost:8000")
+    codeintel_search.set_defaults(func=_cmd_code_search)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -476,6 +575,13 @@ def main() -> None:
             "worktree": worktree_parser,
             "filestore": filestore_parser,
             "project": project_parser,
+            "hooks": hooks_parser,
+            "workers": workers_parser,
+            "agents": agents_parser,
+            "metrics": metrics_parser,
+            "templates": templates_parser,
+            "playbooks": playbooks_parser,
+            "code": codeintel_parser,
         }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
@@ -981,6 +1087,55 @@ def _cmd_models_discovered(args: argparse.Namespace) -> None:
                 print(f"  {p['display_name']} ({p['model_profile_id']}) {enabled}")
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_models_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/models", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            models = data.get("models", [])
+            if models:
+                for m in models:
+                    print(f"  {m.get('model_id', '?'):<30} {m.get('provider', '?'):<12} {m.get('model', '?')}")
+            else:
+                print("No models registered.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_models_add(args: argparse.Namespace) -> None:
+    try:
+        payload: dict[str, Any] = {
+            "model_id": args.model_id,
+            "provider": args.provider,
+            "model": args.model,
+        }
+        if args.api_key_env:
+            payload["api_key_env"] = args.api_key_env
+        resp = httpx.post(f"{args.daemon_url}/admin/models", json=payload, timeout=10.0)
+        if resp.status_code in (200, 201):
+            print(f"Model added: {args.model_id}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_models_remove(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.delete(f"{args.daemon_url}/admin/models/{args.model_id}", timeout=10.0)
+        if resp.status_code == 200:
+            print(f"Model removed: {args.model_id}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
             sys.exit(1)
     except Exception as exc:
         _handle_connection_error(exc, args.daemon_url)
@@ -1949,6 +2104,243 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     finally:
         termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
     print("TUI exited.")
+
+
+def _cmd_hooks_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/hooks", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            hooks = data.get("hooks", [])
+            if hooks:
+                for h in hooks:
+                    print(f"  {h.get('hook_id', '?'):<20} {h.get('event', '?'):<20} {h.get('handler', '?')}")
+            else:
+                print("No hooks registered.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_hooks_register(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/hooks",
+            json={"event": args.event, "handler": args.handler},
+            timeout=10.0,
+        )
+        if resp.status_code in (200, 201):
+            data = resp.json()
+            print(f"Hook registered: {data.get('hook_id', '?')}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_hooks_delete(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.delete(f"{args.daemon_url}/admin/hooks/{args.hook_id}", timeout=10.0)
+        if resp.status_code == 200:
+            print(f"Hook deleted: {args.hook_id}")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_workers_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/workers", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            workers = data.get("workers", [])
+            if workers:
+                for w in workers:
+                    print(f"  {w.get('worker_id', '?'):<20} {w.get('status', '?'):<12} {w.get('url', '?')}")
+            else:
+                print("No workers registered.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_workers_ping(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(f"{args.daemon_url}/admin/workers/ping", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(json.dumps(data, indent=2))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_agents_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/agents", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            agents = data.get("agents", [])
+            if agents:
+                for a in agents:
+                    print(f"  {a.get('agent_id', '?'):<20} {a.get('status', '?'):<12} {a.get('model', '?')}")
+            else:
+                print("No agents configured.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_metrics_cost(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/metrics/cost", timeout=10.0)
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_metrics_report(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/metrics/report", timeout=10.0)
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_reload(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/reload",
+            json={"scope": args.scope},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Reloaded: {data.get('scope', args.scope)}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_templates_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/templates", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            templates = data.get("templates", [])
+            if templates:
+                for t in templates:
+                    print(f"  {t}")
+            else:
+                print("No templates found.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_templates_refresh(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(f"{args.daemon_url}/admin/templates/refresh", timeout=30.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Refreshed: {data.get('count', 0)} templates")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_playbooks_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/playbooks", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            playbooks = data.get("playbooks", [])
+            if playbooks:
+                for p in playbooks:
+                    print(f"  {p}")
+            else:
+                print("No playbooks found.")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_playbooks_refresh(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.post(f"{args.daemon_url}/admin/playbooks/refresh", timeout=30.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Refreshed: {data.get('count', 0)} playbooks")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_code_graph(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/code/graph",
+            params={"source": args.source, "language": args.language},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_code_search(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(
+            f"{args.daemon_url}/admin/code/search",
+            params={"query": args.query, "language": args.language},
+            timeout=30.0,
+        )
+        if resp.status_code == 200:
+            data = resp.json()
+            results = data.get("results", [])
+            if results:
+                for r in results:
+                    print(f"  {r.get('file', '?')}:{r.get('line', '?')} {r.get('text', '')[:80]}")
+            else:
+                print(f"No results for '{args.query}'")
+        else:
+            print(f"Error: {resp.status_code}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
 
 
 def _cmd_integrity_scan(args: argparse.Namespace) -> None:

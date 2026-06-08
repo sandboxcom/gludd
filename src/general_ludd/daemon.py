@@ -14,7 +14,7 @@ from typing import Any, cast
 
 import yaml
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from general_ludd.agents.context import ContextCompactor  # noqa: F401
 from general_ludd.agents.dispatcher import AgentDispatcher  # noqa: F401
@@ -213,11 +213,11 @@ def load_model_profiles(profiles_dir: str | None = None) -> list[Any]:
 
 
 class AddTodoRequest(BaseModel):
-    title: str
-    description: str = ""
-    queue: str = "core"
-    priority: str = "medium"
-    work_type: str = "code"
+    title: str = Field(min_length=1, max_length=512)
+    description: str = Field(default="", max_length=4096)
+    queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
+    priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
+    work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
     project_id: str | None = None
 
 
@@ -1401,47 +1401,61 @@ def create_daemon_app(
     @app.get("/admin/filestore/list")
     async def admin_filestore_list(path: str = "/") -> dict[str, Any]:
         from general_ludd.filestore.store import FileStore
+        from general_ludd.security.sanitize import sanitize_path
 
+        safe_path = sanitize_path(path.lstrip("/")) or ""
         store = FileStore()
-        entries = store.list_dir(path)
-        return {"path": path, "entries": entries, "count": len(entries)}
+        entries = store.list_dir(safe_path)
+        return {"path": safe_path, "entries": entries, "count": len(entries)}
 
     @app.get("/admin/filestore/read")
     async def admin_filestore_read(path: str = "") -> dict[str, Any]:
         from general_ludd.filestore.store import FileStore
+        from general_ludd.security.sanitize import sanitize_path
 
+        safe_path = sanitize_path(path.lstrip("/"))
+        if safe_path is None:
+            return {"error": "Invalid path"}
         store = FileStore()
-        if not store.exists(path):
-            return {"error": f"Path not found: {path}"}
-        if store.is_dir(path):
-            entries = store.list_dir(path)
-            return {"path": path, "is_dir": True, "entries": entries}
+        if not store.exists(safe_path):
+            return {"error": f"Path not found: {safe_path}"}
+        if store.is_dir(safe_path):
+            entries = store.list_dir(safe_path)
+            return {"path": safe_path, "is_dir": True, "entries": entries}
         try:
-            content = store.read_text(path)
-            return {"path": path, "is_dir": False, "content": content}
+            content = store.read_text(safe_path)
+            return {"path": safe_path, "is_dir": False, "content": content}
         except Exception:
-            return {"path": path, "is_dir": False, "binary": True}
+            return {"path": safe_path, "is_dir": False, "binary": True}
 
     @app.post("/admin/filestore/write")
     async def admin_filestore_write(request: Any) -> dict[str, Any]:
         from general_ludd.filestore.store import FileStore
+        from general_ludd.security.sanitize import sanitize_path
 
         store = FileStore()
         body = await request.json()
-        path = body.get("path", "")
+        raw_path = body.get("path", "")
+        safe_path = sanitize_path(raw_path)
+        if safe_path is None:
+            return {"error": "Invalid path", "success": False}
         content = body.get("content", "")
-        store.write_text(path, content)
-        return {"success": True, "path": path}
+        store.write_text(safe_path, content)
+        return {"success": True, "path": safe_path}
 
     @app.delete("/admin/filestore/remove")
     async def admin_filestore_remove(path: str = "") -> dict[str, Any]:
         from general_ludd.filestore.store import FileStore
+        from general_ludd.security.sanitize import sanitize_path
 
+        safe_path = sanitize_path(path)
+        if safe_path is None:
+            return {"error": "Invalid path", "success": False}
         store = FileStore()
-        if not store.exists(path):
-            return {"error": f"Path not found: {path}"}
-        store.remove(path)
-        return {"success": True, "path": path}
+        if not store.exists(safe_path):
+            return {"error": f"Path not found: {safe_path}"}
+        store.remove(safe_path)
+        return {"success": True, "path": safe_path}
 
     @app.post("/admin/filestore/bootstrap")
     async def admin_filestore_bootstrap(

@@ -60,7 +60,12 @@ class AnsibleRunnerAdapter:
         return self.registry[playbook_name]
 
     def prepare_job_dirs(self, job_id: str) -> dict[str, str]:
-        job_dir = os.path.join(self.private_data_dir, job_id)
+        from general_ludd.security.sanitize import sanitize_job_id
+
+        safe_id = sanitize_job_id(job_id)
+        if safe_id is None:
+            raise ValueError(f"Invalid job_id: {job_id!r}")
+        job_dir = os.path.join(self.private_data_dir, safe_id)
         dirs = {
             "root": job_dir,
             "env": os.path.join(job_dir, "env"),
