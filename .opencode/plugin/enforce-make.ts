@@ -219,6 +219,10 @@ const STOP_SIGNAL_WORDS = [
   "here is a summary",
   "summary of this session",
   "summary of the session",
+  "update session",
+  "session.md update",
+  "updating session",
+  "session state",
 ]
 
 const RESUME_COMMAND = [

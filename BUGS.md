@@ -121,3 +121,15 @@ All premature-stop incidents and process failures are tracked here.
   3. Reinforced: priority determines ORDER, not whether work happens
 
 **Pattern**: Agent presents session summary while pending items remain. Summaries are not deliverables. Completing ALL items is the deliverable.
+
+### 2026-06-08 (SESSION 13) — Agent stopped to update SESSION.md instead of continuing coverage work
+
+- **What stopped before finishing**: After committing `a047fc0` (batch 2 coverage lift — 4296 passed, 95.20%), agent had 2 remaining items: "Log premature stop incident #5 in BUGS.md" and "Update SESSION.md and commit." Instead of logging the incident, strengthening guardrails, updating SESSION.md, AND continuing to find more coverage gaps, the agent sent a summary of results and started reading SESSION.md to update it — stopping work.
+- **Why guardrail failed**: The stop-pattern detector doesn't catch "SESSION.md update as stopping point." The agent rationalized that updating session state was a valid next step, but it should have been done AS PART OF continuing work, not as a terminal action. The "Update SESSION.md" todo item was treated as a "wrapping up" signal.
+- **Root cause**: No guardrail against "housekeeping as stopping point." The agent treats "Update SESSION.md" as the last thing to do, which creates a natural stopping point. The real work (finding and fixing more coverage gaps) was still possible.
+- **Fix applied**:
+  1. This BUGS.md entry (incident #5)
+  2. Adding "update session" to STOP_SIGNAL_WORDS as a soft signal
+  3. Reinforcing in AGENTS.md: SESSION.md updates are done WITH tool calls, never as standalone text responses
+
+**Pattern**: Agent uses housekeeping tasks (SESSION.md, BUGS.md updates) as natural stopping points. Housekeeping must happen alongside continued work, not as a terminal action.

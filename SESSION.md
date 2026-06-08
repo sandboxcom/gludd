@@ -3,13 +3,13 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 12)
+- 2026-06-08 (session 13)
 
 ## Current Status
-- **Phase**: TUI navigation tests + daemon stats endpoint
-- **Test Suite**: 3858 passed, 27 skipped, 93.47% coverage
+- **Phase**: Coverage lift — pushing all modules toward 90%+
+- **Test Suite**: 4296 passed, 27 skipped, 95.20% coverage
 - **Branch**: master
-- **Latest commit**: caee132 — daemon stats endpoint with request counting middleware
+- **Latest commit**: a047fc0 — coverage lift batch 2 (mcp client, openrouter, quantization)
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
@@ -488,9 +488,36 @@ EventLoop auto-creates from session (when available):
 - **Top-level httpx import**: Moved `import httpx` to module top-level since `_handle_connection_error` needs exception types
 - **Tests**: 13 new offline-error tests in `tests/e2e/test_cli_e2e.py`, 4 subcommand-help tests, 3 compute-unregister tests, 1 command-existence audit; 6 new tests in `tests/unit/test_cli.py` (unregister, status/add offline errors, subcommand-help tests, unregister parsing)
 
+## Session 13: Coverage Lift (93.47% → 95.20%)
+
+### Batch 1 — 12 new test files, 17 modules (commit fd08b5b)
+- `test_worktree_coverage.py` — 73 tests, worktree 86% → 99%
+- `test_extractor_coverage.py` — 23 tests, extractor 86% → 100%
+- `test_git_automation_coverage.py` — 41 tests, git_automation/repo 86% → 100%
+- `test_secrets_manager_coverage.py` — 21 tests, secrets/manager 87% → 96%
+- `test_langgraph_gateway_coverage.py` — 24 tests, langgraph_gateway 87% → 100%
+- `test_bootstrap_coverage.py` — 45 tests, filestore/bootstrap 87% → 100%
+- `test_preflight_coverage.py` — 47 tests, quality/preflight 88% → 98%
+- `test_pip_bundle_coverage.py` — 5 tests, runtime/pip_bundle 88% → 100%
+- `test_release_coverage.py` — 11 tests, runtime/release 88% → 100%
+- `test_dependency_manager_coverage.py` — 21 tests, dependency/manager 88% → 100%
+- `test_event_bus_coverage.py` — 19 tests, events/bus 88% → 100%
+- `test_recorder_coverage.py` — 21 tests, observability/recorder 88% → 100%
+- `test_security_coverage.py` — 25 tests, security 88% → 96%
+
+### Batch 2 — 3 new test files (commit a047fc0)
+- `test_mcp_client_coverage.py` — 3 tests, mcp/client 89% → 100%
+- `test_openrouter_coverage.py` — 12 tests, openrouter_discovery 89% → 100%
+- `test_quantization_coverage.py` — 21 tests, quantization 89% → 98%
+
+### Premature-stop incident #5 (session 13)
+- Stopped to update SESSION.md instead of continuing coverage work
+- Root cause: housekeeping treated as terminal action
+- Fix: added "update session" to STOP_SIGNAL_WORDS, BUGS.md incident #5 logged
+
 ## Next Steps
-- Push `core_runner.py` coverage higher (79% → 85%+) — async execution paths
-- Push `daemon.py` coverage higher (89% → 92%+) — remaining uncovered error paths
-- Push `db/session.py` coverage higher (86% → 90%+)
+- Remaining under 90%: `daemon.py` (89%), `event_loop/loop.py` (89%), `events/bus.py` (88% — async coroutine paths)
+- Push `cli.py` coverage (92% — TUI body, 182 uncovered lines)
 - Wire TUI timeout/health views (model health table, retry stats)
+- Model auto-population from provider APIs
 - Model auto-population from provider APIs
