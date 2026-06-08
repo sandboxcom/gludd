@@ -1552,13 +1552,21 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
         _handle_connection_error(exc, args.daemon_url)
 
 
-def _build_controls_table(daemon_running: bool, status_msg: str) -> Table:
+def _scale_col(term_width: int, fraction: float, min_w: int = 4) -> int:
+    return max(min_w, int(term_width * fraction))
+
+
+def _compute_footer_rows(term_height: int) -> int:
+    return min(18, max(6, term_height - 20))
+
+
+def _build_controls_table(daemon_running: bool, status_msg: str, *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Controls", show_header=False)
     t.add_column("Key", style="yellow", width=3, no_wrap=True)
-    t.add_column("Action", style="cyan", no_wrap=True, max_width=20)
-    t.add_column("Status", style="green", no_wrap=True, max_width=18)
+    t.add_column("Action", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
+    t.add_column("Status", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.22, 6))
     t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
     t.add_row("k", "Kill daemon", "")
     t.add_row("r", "Refresh", "")
@@ -1581,35 +1589,38 @@ def _build_controls_table(daemon_running: bool, status_msg: str) -> Table:
     return t
 
 
-def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str) -> Table:
+def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str, *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Daemon", show_header=False)
-    t.add_column("Key", style="cyan", no_wrap=True, max_width=10)
-    t.add_column("Value", style="green", no_wrap=True, max_width=30)
+    t.add_column("Key", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.12, 6))
+    val_w = _scale_col(term_width, 0.38, 10)
+    t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
     t.add_row("Status", "running" if daemon_running else "stopped")
     url_display = daemon_url
-    if len(url_display) > 28:
-        url_display = url_display[:25] + "..."
+    if len(url_display) > val_w - 2:
+        url_display = url_display[: val_w - 5] + "..."
     t.add_row("URL", url_display)
     t.add_row("View", current_view)
     return t
 
 
-def _build_info_table(info: dict[str, Any]) -> Table:
+def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="System Info", show_header=False)
-    t.add_column("Key", style="cyan", no_wrap=True, max_width=14)
-    t.add_column("Value", style="green", no_wrap=True, max_width=36)
+    key_w = _scale_col(term_width, 0.17, 6)
+    val_w = _scale_col(term_width, 0.45, 10)
+    t.add_column("Key", style="cyan", no_wrap=True, max_width=key_w)
+    t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
     rows = [
         ("Version", str(info.get("version", "?"))),
         ("Python", str(info.get("python_version", "?"))),
         ("Platform", str(info.get("platform", "?"))),
-        ("CWD", str(info.get("cwd", "?"))[:34]),
-        ("Config Dir", str(info.get("config_dir", "?"))[:34]),
+        ("CWD", str(info.get("cwd", "?"))[: val_w]),
+        ("Config Dir", str(info.get("config_dir", "?"))[: val_w]),
         ("Config Files", str(len(info.get("config_files", [])))),
-        ("Filestore", str(info.get("filestore_root", "?"))[:34]),
+        ("Filestore", str(info.get("filestore_root", "?"))[: val_w]),
         ("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0))),
         ("DB Engine", str(info.get("db_engine", "?"))),
         ("DB Exists", "yes" if info.get("db_exists") else "no"),
@@ -1621,36 +1632,40 @@ def _build_info_table(info: dict[str, Any]) -> Table:
     return t
 
 
-def _build_binary_table(info: dict[str, Any]) -> Table:
+def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Binaries", show_header=False)
-    t.add_column("Binary", style="cyan", no_wrap=True, max_width=12)
-    t.add_column("Found", style="green", no_wrap=True, max_width=5)
+    t.add_column("Binary", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.3, 6))
+    t.add_column("Found", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.1, 3))
     for name, path in info.get("binary_paths", {}).items():
         t.add_row(name, "yes" if path else "no")
     return t
 
 
-def _build_config_table(info: dict[str, Any]) -> Table:
+def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Config Files", show_header=True)
-    t.add_column("File", style="cyan", no_wrap=True, max_width=24)
-    t.add_column("Size", style="green", no_wrap=True, max_width=10)
+    t.add_column("File", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.5, 8))
+    t.add_column("Size", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.15, 4))
     for cf in info.get("config_files", []):
         t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
     return t
 
 
-def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
+def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Todos", show_header=True)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=10)
-    t.add_column("Title", style="green", no_wrap=True, max_width=24)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=10)
-    t.add_column("Pri", style="bold", no_wrap=True, max_width=6)
+    id_w = _scale_col(term_width, 0.12, 4)
+    title_w = _scale_col(term_width, 0.3, 6)
+    status_w = _scale_col(term_width, 0.12, 4)
+    pri_w = _scale_col(term_width, 0.08, 3)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
+    t.add_column("Title", style="green", no_wrap=True, max_width=title_w)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
+    t.add_column("Pri", style="bold", no_wrap=True, max_width=pri_w)
     for todo in todos:
         status = todo.get("status", "?")
         status_color = {
@@ -1660,50 +1675,52 @@ def _build_todos_table(todos: list[dict[str, Any]]) -> Table:
             "cancelled": "dim",
         }.get(status, "white")
         t.add_row(
-            str(todo.get("todo_id", "?"))[:10],
-            str(todo.get("title", ""))[:24],
+            str(todo.get("todo_id", "?"))[:id_w],
+            str(todo.get("title", ""))[:title_w],
             f"[{status_color}]{status}[/]",
-            str(todo.get("priority", ""))[:6],
+            str(todo.get("priority", ""))[:pri_w],
         )
     return t
 
 
-def _build_hooks_table(hooks: list[dict[str, Any]]) -> Table:
+def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Hooks", show_header=True)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=16)
-    t.add_column("Event", style="green", no_wrap=True, max_width=16)
-    t.add_column("Type", style="yellow", no_wrap=True, max_width=8)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
+    t.add_column("Event", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
+    t.add_column("Type", style="yellow", no_wrap=True, max_width=_scale_col(term_width, 0.12, 4))
     for h in hooks:
         t.add_row(
-            str(h.get("hook_id", "?"))[:16],
-            str(h.get("event_name", "?"))[:16],
-            str(h.get("hook_type", "?"))[:8],
+            str(h.get("hook_id", "?"))[:_scale_col(term_width, 0.25, 6)],
+            str(h.get("event_name", h.get("event_type", "?")))[:_scale_col(term_width, 0.25, 6)],
+            str(h.get("hook_type", "?"))[:_scale_col(term_width, 0.12, 4)],
         )
     return t
 
 
-def _build_workers_table(workers: list[dict[str, Any]]) -> Table:
+def _build_workers_table(workers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Workers", show_header=True)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=16)
-    t.add_column("Address", style="green", no_wrap=True, max_width=24)
+    id_w = _scale_col(term_width, 0.2, 6)
+    addr_w = _scale_col(term_width, 0.3, 8)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
+    t.add_column("Address", style="green", no_wrap=True, max_width=addr_w)
     for w in workers:
         t.add_row(
-            str(w.get("worker_id", "?"))[:16],
-            str(w.get("address", "?"))[:24],
+            str(w.get("worker_id", "?"))[:id_w],
+            str(w.get("address", "?"))[:addr_w],
         )
     return t
 
 
-def _build_metrics_table(cost_data: dict[str, Any]) -> Table:
+def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Metrics", show_header=False)
-    t.add_column("Metric", style="cyan", no_wrap=True, max_width=18)
-    t.add_column("Value", style="green", no_wrap=True, max_width=16)
+    t.add_column("Metric", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.22, 6))
+    t.add_column("Value", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.2, 6))
     labels = [
         ("Total Cost", "total_cost_usd", "${:.2f}"),
         ("Subscription", "subscription_name", "{}"),
@@ -1726,15 +1743,20 @@ def _build_metrics_table(cost_data: dict[str, Any]) -> Table:
     return t
 
 
-def _build_agents_table(agents: list[dict[str, Any]]) -> Table:
+def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Agents", show_header=True)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=10)
-    t.add_column("Name", style="green", no_wrap=True, max_width=14)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=8)
-    t.add_column("Project", style="bold", no_wrap=True, max_width=12)
-    t.add_column("Up", style="dim", no_wrap=True, max_width=8)
+    id_w = _scale_col(term_width, 0.12, 4)
+    name_w = _scale_col(term_width, 0.18, 5)
+    status_w = _scale_col(term_width, 0.1, 4)
+    proj_w = _scale_col(term_width, 0.15, 5)
+    up_w = _scale_col(term_width, 0.1, 4)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
+    t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
+    t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
+    t.add_column("Project", style="bold", no_wrap=True, max_width=proj_w)
+    t.add_column("Up", style="dim", no_wrap=True, max_width=up_w)
     for a in agents:
         status = a.get("status", "?")
         status_color = "green" if status == "running" else "yellow" if status == "idle" else "red"
@@ -1742,10 +1764,10 @@ def _build_agents_table(agents: list[dict[str, Any]]) -> Table:
         uptime_h = uptime_s // 3600
         uptime_m = (uptime_s % 3600) // 60
         t.add_row(
-            str(a.get("agent_id", "?"))[:10],
-            str(a.get("agent_name", "?"))[:14],
+            str(a.get("agent_id", "?"))[:id_w],
+            str(a.get("agent_name", a.get("name", "?")))[:name_w],
             f"[{status_color}]{status}[/]",
-            str(a.get("project", ""))[:12],
+            str(a.get("project", ""))[:proj_w],
             f"{uptime_h}h{uptime_m}m",
         )
     return t
@@ -1754,33 +1776,175 @@ def _build_agents_table(agents: list[dict[str, Any]]) -> Table:
 def _build_model_table(
     servers: list[Any],
     downloaded: list[Any],
+    *,
+    term_width: int = 80,
 ) -> Table:
     from rich.table import Table
 
     t = Table(title="Models", show_header=True)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=14)
-    t.add_column("Engine", style="green", no_wrap=True, max_width=8)
-    t.add_column("Model", style="yellow", no_wrap=True, max_width=20)
-    t.add_column("Status", style="bold", no_wrap=True, max_width=10)
+    id_w = _scale_col(term_width, 0.17, 5)
+    eng_w = _scale_col(term_width, 0.1, 4)
+    model_w = _scale_col(term_width, 0.25, 6)
+    stat_w = _scale_col(term_width, 0.12, 4)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
+    t.add_column("Engine", style="green", no_wrap=True, max_width=eng_w)
+    t.add_column("Model", style="yellow", no_wrap=True, max_width=model_w)
+    t.add_column("Status", style="bold", no_wrap=True, max_width=stat_w)
 
     for s in servers:
-        status_color = "green" if getattr(s, "is_running", False) else "red"
-        status_text = getattr(s, "status", "stopped")
-        t.add_row(
-            f"[s]{s.server_id}"[:14],
-            s.config.engine[:8],
-            (s.config.model_name or s.config.model_path or "?")[:20],
-            f"[{status_color}]{status_text}[/]",
-        )
+        if isinstance(s, dict):
+            sid = str(s.get("id", s.get("server_id", "?")))
+            engine = str(s.get("engine", "?"))
+            model_name = str(s.get("model", "?"))
+            status_text = str(s.get("status", "stopped"))
+            status_color = "green" if status_text == "running" else "red"
+            t.add_row(
+                f"[s]{sid}"[:id_w],
+                engine[:eng_w],
+                model_name[:model_w],
+                f"[{status_color}]{status_text}[/]",
+            )
+        else:
+            status_color = "green" if getattr(s, "is_running", False) else "red"
+            status_text = getattr(s, "status", "stopped")
+            t.add_row(
+                f"[s]{s.server_id}"[:id_w],
+                s.config.engine[:eng_w],
+                (s.config.model_name or s.config.model_path or "?")[:model_w],
+                f"[{status_color}]{status_text}[/]",
+            )
 
     for dm in downloaded:
-        size_str = _fmt_size(dm.size_bytes) if dm.size_bytes else "?"
+        if isinstance(dm, dict):
+            size_str = _fmt_size(dm.get("size_bytes", 0)) if dm.get("size_bytes") else "?"
+            mid = str(dm.get("model_id", "?"))
+            t.add_row(
+                f"[d]{mid[:12]}",
+                str(dm.get("engine", "?"))[:eng_w],
+                mid[:model_w],
+                f"[dim]{size_str}[/]",
+            )
+        else:
+            size_str = _fmt_size(dm.size_bytes) if dm.size_bytes else "?"
+            t.add_row(
+                f"[d]{dm.model_id[:12]}",
+                dm.engine[:eng_w],
+                dm.model_id[:model_w],
+                f"[dim]{size_str}[/]",
+            )
+    return t
+
+
+def _build_config_editor_table(
+    items: list[dict[str, Any]],
+    selected: int,
+    depth: int,
+    *,
+    term_width: int = 80,
+) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Config Editor", show_header=True)
+    opt_w = _scale_col(term_width, 0.3, 6)
+    val_w = _scale_col(term_width, 0.3, 6)
+    help_w = _scale_col(term_width, 0.3, 6)
+    t.add_column("Option", style="cyan", no_wrap=True, max_width=opt_w)
+    t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
+    t.add_column("Help", style="dim", no_wrap=True, max_width=help_w)
+    if depth == 0:
+        for i, item in enumerate(items):
+            prefix = "\u25b6" if i == selected else " "
+            label = str(item.get("label", ""))[:opt_w]
+            t.add_row(f"{prefix} [bold]{label}[/]", "", "")
+    else:
+        for i, item in enumerate(items):
+            prefix = "\u25b6" if i == selected else " "
+            label = str(item.get("label", ""))[:opt_w]
+            value = str(item.get("value", ""))[:val_w]
+            help_text = str(item.get("help_text", ""))[:help_w]
+            t.add_row(f"{prefix} {label}", value, help_text)
+    return t
+
+
+def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Projects & Worktrees", show_header=True)
+    name_w = _scale_col(term_width, 0.35, 6)
+    status_w = _scale_col(term_width, 0.25, 6)
+    t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
+    t.add_column("Status", style="bold", no_wrap=True, max_width=status_w)
+    for name, status in entries:
+        is_wt = "AGENTS.md" in status
+        color = "green" if is_wt else "dim"
+        t.add_row(name[:name_w], f"[{color}]{status[:status_w]}[/]")
+    return t
+
+
+def _build_projects_table(projects: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Projects", show_header=True)
+    id_w = _scale_col(term_width, 0.15, 5)
+    name_w = _scale_col(term_width, 0.2, 6)
+    wt_w = _scale_col(term_width, 0.06, 3)
+    mode_w = _scale_col(term_width, 0.1, 4)
+    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
+    t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
+    t.add_column("Wt", style="yellow", no_wrap=True, max_width=wt_w)
+    t.add_column("Mode", style="bold", no_wrap=True, max_width=mode_w)
+    for p in projects:
+        mode = str(p.get("dispatch_mode", "active"))
+        mode_color = "green" if mode == "active" else "yellow"
         t.add_row(
-            f"[d]{dm.model_id[:12]}",
-            dm.engine[:8],
-            dm.model_id[:20],
-            f"[dim]{size_str}[/]",
+            str(p.get("project_id", "?"))[:id_w],
+            str(p.get("name", "?"))[:name_w],
+            f"{p.get('weight', 0)}%",
+            f"[{mode_color}]{mode}[/]",
         )
+    return t
+
+
+def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Integrity", show_header=True)
+    file_w = _scale_col(term_width, 0.4, 6)
+    type_w = _scale_col(term_width, 0.15, 4)
+    stat_w = _scale_col(term_width, 0.15, 4)
+    t.add_column("File", style="cyan", no_wrap=True, max_width=file_w)
+    t.add_column("Type", style="yellow", no_wrap=True, max_width=type_w)
+    t.add_column("Status", style="bold", no_wrap=True, max_width=stat_w)
+    if not changes:
+        t.add_row("No changes", "", "")
+    else:
+        for ch in changes:
+            icon = {"new": "+", "modified": "~", "removed": "-"}.get(ch.get("type", ""), "?")
+            approved = "approved" if ch.get("approved") else "pending"
+            t.add_row(
+                str(ch.get("file", "?"))[:file_w],
+                f"{icon} {ch.get('type', '?')}"[:type_w],
+                approved[:stat_w],
+            )
+    return t
+
+
+def _build_ansible_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Ansible Galaxy", show_header=True)
+    name_w = _scale_col(term_width, 0.35, 6)
+    desc_w = _scale_col(term_width, 0.45, 8)
+    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
+    t.add_column("Description", style="green", no_wrap=True, max_width=desc_w)
+    if not results:
+        t.add_row("Press [s] to search", "")
+    else:
+        for r in results:
+            t.add_row(
+                str(r.get("name", "?"))[:name_w],
+                str(r.get("description", ""))[:desc_w],
+            )
     return t
 
 
@@ -1884,7 +2048,6 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     from rich.layout import Layout
     from rich.live import Live
     from rich.panel import Panel
-    from rich.table import Table
 
     from general_ludd.tui.keybindings import TUIKeyHandler
 
@@ -2002,7 +2165,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         import shutil as _shutil
 
         _term_w, _term_h = _shutil.get_terminal_size((80, 24))
-        footer_rows = 18
+        footer_rows = _compute_footer_rows(_term_h)
         header_rows = 1
         left_ratio = 2
         right_ratio = 3
@@ -2023,20 +2186,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 Layout(name="left"),
                 Layout(name="right"),
             )
-            _editor_table = Table(title="Config Editor", show_header=True)
-            _editor_table.add_column("Option", style="cyan", no_wrap=True)
-            _editor_table.add_column("Value", style="green")
-            _editor_table.add_column("Help", style="dim")
             items = config_nav["current_items"]
             sel = config_nav["selected_cat"]
-            if config_nav["depth"] == 0:
-                for i, cat in enumerate(items):
-                    prefix = "\u25b6" if i == sel else " "
-                    _editor_table.add_row(f"{prefix} [bold]{cat.name}[/]", "", "")
+            depth = config_nav["depth"]
+            dict_items = []
+            if depth == 0:
+                for cat in items:
+                    dict_items.append({"label": cat.name, "value": "", "help_text": ""})
             else:
-                for i, item in enumerate(items):
-                    prefix = "\u25b6" if i == sel else " "
-                    _editor_table.add_row(f"{prefix} {item.label}", str(item.value), item.help_text)
+                for item in items:
+                    dict_items.append({"label": item.label, "value": str(item.value), "help_text": item.help_text})
+            _editor_table = _build_config_editor_table(dict_items, sel, depth, term_width=_term_w)
             body["left"].split(
                 Layout(build_daemon_table(), name="daemon"),
             )
@@ -2054,50 +2214,44 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 )
             elif current_view == "models":
                 servers = model_mgr.list_servers()
-                _model_table = _build_model_table(servers, downloaded_models)
+                _model_table = _build_model_table(servers, downloaded_models, term_width=_term_w)
                 body["right"].split(
                     Layout(_model_table, name="models"),
                 )
             elif current_view == "worktrees":
-                _wt_table = Table(title="Projects & Worktrees", show_header=True)
-                _wt_table.add_column("Name", style="green", no_wrap=True, max_width=20)
-                _wt_table.add_column("Status", style="bold", no_wrap=True, max_width=14)
                 import os as _os
                 home = _os.path.expanduser("~")
                 wt_dirs = [
                     d for d in _os.listdir(home)
                     if _os.path.isdir(_os.path.join(home, d)) and not d.startswith(".")
                 ]
+                wt_entries = []
                 for d in sorted(wt_dirs)[:15]:
                     full = _os.path.join(home, d)
-                    agents = _os.path.join(full, "AGENTS.md")
-                    is_worktree = _os.path.isfile(agents)
+                    agents_path = _os.path.join(full, "AGENTS.md")
+                    is_worktree = _os.path.isfile(agents_path)
                     status = "has AGENTS.md" if is_worktree else "directory"
-                    _wt_table.add_row(d, f"[{'green' if is_worktree else 'dim'}]{status}[/]")
+                    wt_entries.append((d, status))
+                _wt_table = _build_worktrees_table(wt_entries, term_width=_term_w)
                 body["right"].split(
                     Layout(_wt_table, name="worktrees"),
                 )
             elif current_view == "projects":
-                _proj_table = Table(title="Projects", show_header=True)
-                _proj_table.add_column("ID", style="cyan", no_wrap=True, max_width=12)
-                _proj_table.add_column("Name", style="green", no_wrap=True, max_width=16)
-                _proj_table.add_column("Wt", style="yellow", no_wrap=True, max_width=4)
-                _proj_table.add_column("Mode", style="bold", no_wrap=True, max_width=8)
+                _proj_data: list[dict[str, Any]] = []
                 try:
                     resp = httpx.get(f"{args.daemon_url}/admin/projects", timeout=3.0)
                     if resp.status_code == 200:
-                        data = resp.json()
-                        for p in data.get("projects", []):
-                            mode = p.get("dispatch_mode", "active")
-                            mode_color = "green" if mode == "active" else "yellow"
-                            _proj_table.add_row(
-                                p.get("project_id", "?")[:12],
-                                p.get("name", "?")[:16],
-                                f"{p.get('weight', 0)}%",
-                                f"[{mode_color}]{mode}[/]",
-                            )
+                        _proj_data = resp.json().get("projects", [])
                 except Exception:
-                    _proj_table.add_row("?", "Daemon not running", "", "Start [s]")
+                    _proj_data = [
+                        {
+                            "project_id": "?",
+                            "name": "Daemon not running",
+                            "weight": 0,
+                            "dispatch_mode": "Start [s]",
+                        }
+                    ]
+                _proj_table = _build_projects_table(_proj_data, term_width=_term_w)
                 body["right"].split(
                     Layout(_proj_table, name="projects"),
                 )
@@ -2157,40 +2311,23 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     Layout(_build_agents_table(_agents_data), name="agents"),
                 )
             elif current_view == "integrity":
-                _int_table = Table(title="Integrity", show_header=True)
-                _int_table.add_column("File", style="cyan", no_wrap=True, max_width=30)
-                _int_table.add_column("Type", style="yellow", no_wrap=True, max_width=10)
-                _int_table.add_column("Status", style="bold", no_wrap=True, max_width=10)
+                _int_changes: list[dict[str, Any]] = []
                 try:
                     from general_ludd.integrity.scanner import FileIntegrityScanner as _FIS
                     _scanner = _FIS()
                     _paths = [info.get("config_dir", ""), info.get("filestore_root", "")]
                     _paths = [p for p in _paths if p]
                     _iresult: dict[str, Any] = _scanner.scan(_paths) if _paths else {"scanned": 0, "changes": []}
-                    for _ch in _iresult.get("changes", []):
-                        _icon = {"new": "+", "modified": "~", "removed": "-"}.get(_ch.get("type", ""), "?")
-                        _approved = "approved" if _ch.get("approved") else "pending"
-                        _int_table.add_row(_ch.get("file", "?")[:30], f"{_icon} {_ch.get('type', '?')}", _approved)
-                    if not _iresult.get("changes"):
-                        _int_table.add_row("No changes", "", "")
+                    _int_changes = _iresult.get("changes", [])
                 except Exception:
-                    _int_table.add_row("Scan failed", "", "error")
+                    _int_changes = [{"file": "Scan failed", "type": "error", "approved": False}]
+                _int_table = _build_integrity_table(_int_changes, term_width=_term_w)
                 body["right"].split(
                     Layout(_int_table, name="integrity"),
                 )
             elif current_view == "ansible":
-                _ans_table = Table(title="Ansible Galaxy", show_header=True)
-                _ans_table.add_column("Name", style="cyan", no_wrap=True, max_width=30)
-                _ans_table.add_column("Description", style="green", no_wrap=True, max_width=40)
                 _ans_results = tui_state.get("ansible_search_results", [])
-                if _ans_results:
-                    for _r in _ans_results:
-                        _ans_table.add_row(
-                            str(_r.get("name", "?"))[:30],
-                            str(_r.get("description", ""))[:40],
-                        )
-                else:
-                    _ans_table.add_row("Press [s] to search", "")
+                _ans_table = _build_ansible_table(_ans_results, term_width=_term_w)
                 body["right"].split(
                     Layout(_ans_table, name="ansible"),
                 )
