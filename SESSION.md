@@ -3,17 +3,32 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 13)
+- 2026-06-08 (session 14)
 
 ## Current Status
-- **Phase**: Coverage lift — pushing all modules toward 90%+
-- **Test Suite**: 4296 passed, 27 skipped, 95.20% coverage
+- **Phase**: Coverage lift — all core modules at 90%+
+- **Test Suite**: 4381 passed, 27 skipped, 96.25% coverage
 - **Branch**: master
-- **Latest commit**: a047fc0 — coverage lift batch 2 (mcp client, openrouter, quantization)
+- **Latest commit**: 4aa130e — coverage lift daemon.py to 98% and event_loop/loop.py to 99%
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: TUI Navigation + Daemon Stats (Session 12)
+## This Session: TUI Wiring Gaps + Coverage Lift (Session 14)
+
+### TUI Keybinding Wiring (commit e24dcfb)
+- Wired templates `r` refresh keybinding → `POST /admin/templates/refresh`
+- Wired quantization `d` detect keybinding → `POST /admin/quantization/detect`
+- Added workers `p` ping success-path test
+- Added leaderboard view (toggle key `y`) with body rendering and header
+- Added playbooks view (toggle key `P`) with body rendering and header
+- 17 new tests in `tests/unit/test_tui_view_actions.py`
+
+### Coverage Lift (commit 4aa130e)
+- daemon.py: 89% → **98%** (49 new tests in `tests/unit/test_daemon_coverage_lift.py`)
+- event_loop/loop.py: 89% → **99%** (22 new tests in `tests/unit/test_event_loop_coverage_lift.py`)
+- Total: 4381 passed, 96.25% coverage
+
+## Previous Session: Coverage Lift Batch 1+2 (Session 13)
 
 ### TUI Navigation Test Fix (commit c2c406d)
 - Fixed 29 failing TUI navigation e2e tests in `tests/unit/test_tui_navigation_e2e.py`
@@ -38,11 +53,11 @@
 - `b"\x00"` dummy byte consumed by `os.read(fd, 2)` escape handler — safe for all tests
 - Coverage: 93.47% (up from 93.35%)
 
-## Files Below 85% Coverage (priority order)
-1. ansible/core_runner.py — 79% (136 lines, 29 miss)
-2. db/session.py — 86% (86 lines, 12 miss)
-3. git_automation/repo.py — 86% (129 lines, 18 miss)
-4. worktree/__init__.py — 86% (268 lines, 38 miss)
+## Files Below 90% Coverage (priority order)
+1. cli.py — 92% (198 miss, TUI body render paths)
+2. events/bus.py — 88% (async coroutine paths)
+3. integrity/scanner.py — 90% (11 miss)
+4. secrets/project_secrets.py — 89% (2 miss)
 
 ## Previous Session: Guardrail Hardening (COMPLETE)
 - Guardrail hardening committed as e0916b6
@@ -516,8 +531,7 @@ EventLoop auto-creates from session (when available):
 - Fix: added "update session" to STOP_SIGNAL_WORDS, BUGS.md incident #5 logged
 
 ## Next Steps
-- Remaining under 90%: `daemon.py` (89%), `event_loop/loop.py` (89%), `events/bus.py` (88% — async coroutine paths)
-- Push `cli.py` coverage (92% — TUI body, 182 uncovered lines)
+- Push cli.py coverage higher (92% — TUI body render paths, 198 uncovered lines)
 - Wire TUI timeout/health views (model health table, retry stats)
 - Model auto-population from provider APIs
-- Model auto-population from provider APIs
+- events/bus.py async coroutine paths (88%)

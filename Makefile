@@ -206,8 +206,15 @@ git-add:
 git-add-all:
 	@git add -A
 
+repo-add-all:
+	@git add -A
+
 git-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+
+repo-commit:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 delete-file:
