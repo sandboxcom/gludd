@@ -3,43 +3,55 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 10)
+- 2026-06-08 (session 11)
 
 ## Current Status
-- **Phase**: Coverage push + TUI body tests
-- **Test Suite**: 3722 passed, 27 skipped, 92.56% coverage
+- **Phase**: Timeout detection system + health-aware routing
+- **Test Suite**: 3804 passed, 27 skipped, 93.35% coverage
 - **Branch**: master
-- **Latest commit**: ba1040a — Add 30 TUI body tests covering all view toggles, daemon start/stop, and exit paths
+- **Latest commit**: faf7379 — timeout detection with retry and failover
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: Coverage Push Session 10
+## This Session: Timeout Detection System (Session 11)
 
-### Connection Error Test Fixes (commit 9289c3f)
-- Fixed 16 connection_error tests to use `pytest.raises(SystemExit)` instead of checking stdout
-- `_handle_connection_error` calls `sys.exit(1)` — tests must catch SystemExit
-- Fixed `test_integrity_reject_error` to check stderr instead of stdout
-- Fixed long line in `test_integrity_log_success`
+### Timeout Detector Module (commit faf7379)
+- `src/general_ludd/models/timeout_detector.py` — 6 classes/dataclasses:
+  - `TimeoutKind` enum: 8 values (CONNECTION_TIMEOUT, READ_TIMEOUT, RATE_LIMITED, CONTEXT_LENGTH, PROVIDER_ERROR, AUTH_ERROR, INFERENCE_STALLED, UNKNOWN)
+  - `TimeoutClassifier`: classifies httpx exceptions and HTTP errors into TimeoutKind
+  - `TimeoutEvent`: model_id, kind, timestamp, duration_s
+  - `ModelHealthTracker`: per-model health state with failure thresholds, cooldowns, non-retryable exemptions (rate_limit, auth_error, context_length don't count toward unhealthy)
+  - `TimeoutRetryPolicy`: decides retry/failover/wait with exponential backoff, connection timeout gets 2x backoff, rate limit uses Retry-After header
+  - `RetryDecision`: should_retry, should_failover, wait_seconds, reason
+- 40 unit tests in `tests/unit/test_timeout_detector.py`
 
-### Error Path Coverage (commit a1090e9)
-- 8 new tests in `TestErrorPathCoverage` class
-- Covers: integrity scan/report/approve HTTP error exits, ansible search/install/builtins HTTP error exits, `main()` entry point
-- cli.py: 75% → 75% (small lift from error paths)
+### Gateway Integration (commit faf7379)
+- `health_tracker` param on `ModelGateway.__init__()`
+- `call_model_with_retry()` method: wraps `call_model` with retry loop, failover to `fallback_profiles`, health tracking
+- `call_model()` now wraps `chat_model.invoke()` in try/except and records timeout events via `record_timeout_on_failure()`
+- Unhealthy models are skipped immediately in `call_model_with_retry()`
 
-### TUI Body Tests (commit ba1040a)
-- 30 new tests in `tests/unit/test_tui_body.py`
-- Tests `_cmd_tui` via mocked terminal I/O (termios, tty, select, os.read, Rich.Live)
-- Covers: all 16 view toggles (main→sub→main), daemon start/stop/already running/immediate exit, Ctrl-C, quit, refresh
-- Uses `ExitStack` pattern for 15+ stacked patches with `_TermSize` namedtuple
-- cli.py: 75% → **92%** (biggest single-session coverage lift)
-- Total coverage: 89.51% → **92.56%**
+### Health-Aware Routing (commit faf7379)
+- `health_tracker` param on `AdaptiveRouter.__init__()`
+- `_get_best_from_history()` and `_get_cheapest_for_task()` skip unhealthy models
+- All-unhealthy scenario returns fallback decision
+
+### Daemon Wiring (commit faf7379)
+- `ModelHealthTracker` created at gateway initialization in daemon
+- `GET /admin/models/health` endpoint: returns health status for all profiles
+- 6 wiring tests in `tests/unit/test_model_health_wiring.py` (3 daemon + 3 router)
+
+### Key Design Decisions
+- `failover_after_retries=3` with `>=` check: attempts 1-2 retry, attempt 3 triggers failover (with backoff preserved for exponential test)
+- Rate-limited, auth-error, context-length events do NOT count toward unhealthy threshold (not model reliability issues)
+- Connection timeout gets 2x longer backoff than read timeout
+- `from __future__ import annotations` causes name-mangling with double-underscore private attrs — used property accessors to avoid
 
 ## Files Below 85% Coverage (priority order)
-1. tui/keybindings.py — 77% (627 lines, 144 miss — input mode handlers)
-2. ansible/core_runner.py — 79% (136 lines, 29 miss)
-3. db/session.py — 86% (86 lines, 12 miss)
-4. git_automation/repo.py — 86% (129 lines, 18 miss)
-5. worktree/__init__.py — 86% (268 lines, 38 miss)
+1. ansible/core_runner.py — 79% (136 lines, 29 miss)
+2. db/session.py — 86% (86 lines, 12 miss)
+3. git_automation/repo.py — 86% (129 lines, 18 miss)
+4. worktree/__init__.py — 86% (268 lines, 38 miss)
 
 ## Previous Session: Guardrail Hardening (COMPLETE)
 - Guardrail hardening committed as e0916b6
@@ -486,7 +498,8 @@ EventLoop auto-creates from session (when available):
 - **Tests**: 13 new offline-error tests in `tests/e2e/test_cli_e2e.py`, 4 subcommand-help tests, 3 compute-unregister tests, 1 command-existence audit; 6 new tests in `tests/unit/test_cli.py` (unregister, status/add offline errors, subcommand-help tests, unregister parsing)
 
 ## Next Steps
-- Push `tui/keybindings.py` coverage higher (77% → 85%+) — test input mode handlers
-- Wire remaining TUI CLI parity (playbooks refresh, code search, quantization detect/drift from TUI views)
-- Push `daemon.py` coverage higher (89% → 92%+) — remaining uncovered error paths
 - Push `core_runner.py` coverage higher (79% → 85%+) — async execution paths
+- Push `daemon.py` coverage higher (89% → 92%+) — remaining uncovered error paths
+- Push `db/session.py` coverage higher (86% → 90%+)
+- Wire TUI timeout/health views (model health table, retry stats)
+- Model auto-population from provider APIs
