@@ -779,7 +779,7 @@ def create_daemon_app(
         return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
 
     @app.post("/admin/code/blocks")
-    async def admin_code_blocks(request: Any) -> dict[str, Any]:
+    async def admin_code_blocks(request: Request) -> dict[str, Any]:
         import json
 
         from general_ludd.code_intelligence.extractor import ASTBlockExtractor
