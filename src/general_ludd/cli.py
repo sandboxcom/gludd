@@ -619,17 +619,7 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     create_daemon_app(tick_interval=args.tick_interval, log_level=args.log_level, config_dir=config_dir)
 
-    cmd = [
-        "gunicorn",
-        "general_ludd.daemon:create_daemon_app()",
-        "--factory",
-        "--worker-class",
-        "uvicorn_worker.UvicornWorker",
-        "--workers",
-        str(args.workers),
-        "--bind",
-        f"{args.host}:{args.port}",
-    ]
+    cmd = _build_daemon_start_cmd(host=args.host, port=args.port, workers=args.workers)
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -1863,6 +1853,24 @@ def _stop_daemon_via_pid_file(pid_file: str) -> bool:
     return True
 
 
+def _build_daemon_start_cmd(
+    host: str = "0.0.0.0",
+    port: int = 8000,
+    workers: int = 1,
+) -> list[str]:
+    return [
+        "gunicorn",
+        "general_ludd.daemon:create_daemon_app()",
+        "--factory",
+        "--worker-class",
+        "uvicorn_worker.UvicornWorker",
+        "--workers",
+        str(workers),
+        "--bind",
+        f"{host}:{port}",
+    ]
+
+
 def _cmd_tui(args: argparse.Namespace) -> None:
     import os
     import select
@@ -1913,8 +1921,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             daemon_running = True
             return
         try:
+            cmd = _build_daemon_start_cmd(
+                host=getattr(args, "host", "0.0.0.0"),
+                port=getattr(args, "port", 8000),
+                workers=getattr(args, "workers", 1),
+            )
             daemon_proc = subprocess.Popen(
-                [sys.executable, "-m", "general_ludd.cli", "daemon"],
+                cmd,
                 stdin=subprocess.DEVNULL,
                 stdout=subprocess.DEVNULL,
                 stderr=subprocess.DEVNULL,

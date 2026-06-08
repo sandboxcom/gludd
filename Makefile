@@ -357,6 +357,22 @@ validate: lint typecheck test ansible-syntax healthcheck
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."
 
+db-sample-message:
+	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT substr(m.data, 1, 500) FROM message m LIMIT 3;" 2>/dev/null
+
+db-sample-part:
+	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT substr(p.data, 1, 500) FROM part p LIMIT 3;" 2>/dev/null
+	@sqlite3 ~/.local/share/opencode/opencode.db ".schema" 2>/dev/null
+
+db-tables:
+	@sqlite3 ~/.local/share/opencode/opencode.db ".tables" 2>/dev/null
+
+db-count:
+	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT COUNT(*) FROM message;" 2>/dev/null
+
+search-opencode:
+	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(m.data, '$$.role'), json_extract(p.data, '$$.text') FROM message m JOIN part p ON m.id = p.message_id WHERE json_extract(m.data, '$$.role')='user' AND json_extract(p.data, '$$.text') LIKE '%$(SEARCH)%' LIMIT $(MAX_RESULTS);" 2>/dev/null
+
 collect-prompts:
 	@echo "Collecting system prompts from open-source coding agents..."
 	@$(UV) run python scripts/collect_prompts.py --output-dir config/prompt_profiles/collected

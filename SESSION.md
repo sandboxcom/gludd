@@ -3,31 +3,29 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-07 (session 5)
+- 2026-06-07 (session 6)
 
 ## Current Status
-- **Phase**: Feature completion — TUI fixes, quantization CLI, router integration
-- **Test Suite**: 3199 passed, 26 skipped, 86.48% coverage
+- **Phase**: Coverage improvement — cli.py and daemon.py coverage lifts
+- **Test Suite**: 3262 passed, 26 skipped, 88.39% coverage
 - **Branch**: master
-- **Latest commit**: 504749e — Wire quantization penalty into adaptive router scoring
+- **Latest commit**: 446de31 — Wire quantization tracker into AdaptiveRouter at daemon startup
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: Feature Completion (COMPLETE)
-- TUI screen-size fix (b1d1281): constrained all tables to terminal width, `shutil.get_terminal_size()`, `no_wrap=True` + `max_width` on all columns, compressed footer/header, simplified views
-- `/admin/todos` daemon endpoint (4ec8f8f): TUI todos view now fetches from daemon, supports status/project filters
-- Quantization CLI commands (e3ee858): `gludd quantization list|detect|drift-check` with daemon integration
-- Quantization wired into adaptive router (504749e): `quantization_map` param on `AdaptiveRouter`, penalizes low-confidence models in scoring
+## This Session: Coverage Improvement (COMPLETE)
+- cli.py coverage lift (9ca4817): Extracted 5 TUI table builders (`_build_controls_table`, `_build_daemon_table`, `_build_info_table`, `_build_binary_table`, `_build_config_table`) from `_cmd_tui` closures to module-level. Added 39 tests in `test_tui_extracted_builders.py` covering: table builders, `_cmd_help`, filestore CLI (4 cmds), integrity CLI (5 cmds), ansible CLI (3 cmds), `_scan_local_integrity`, `_load_config_editor`. cli.py: 59% → 66%
+- daemon.py coverage lift (14e73c0): Added 22 tests in `test_daemon_filestore_integrity.py` covering 6 filestore endpoints, 5 integrity endpoints, 3 ansible endpoints, selftest endpoint. Fixed `/admin/filestore/write` bug (`request: Any` → `request: Request`). daemon.py: 73% → 81%
+- Quantization router wiring (446de31): `AdaptiveRouter` now receives `quantization_map` from `_quantization_tracker` state at daemon startup. 2 tests in `TestQuantizationWiring`. daemon.py: 81%
 
 ## Files Below 85% Coverage (priority order)
-1. cli.py — 59% (1906 lines, 781 miss — TUI function ~400 lines hard to unit test)
-2. daemon.py — 73% (1031 lines, 283 miss)
+1. cli.py — 66% (1954 lines, 664 miss — TUI `_cmd_tui` body still untested)
+2. daemon.py — 81% (1035 lines, 192 miss — models discover/discovered, local inference, code blocks)
 3. ansible/core_runner.py — 79% (136 lines, 29 miss)
-4. quality/config.py — 100% (3 lines)
-5. filestore/bootstrap.py — 87% (133 lines, 17 miss)
-6. agents/dispatcher.py — 92% (66 lines, 5 miss)
-7. secrets/manager.py — 87% (135 lines, 18 miss)
-8. planning/repo_map.py — 90% (163 lines, 17 miss)
+4. filestore/bootstrap.py — 87% (133 lines, 17 miss)
+5. agents/dispatcher.py — 92% (66 lines, 5 miss)
+6. secrets/manager.py — 87% (135 lines, 18 miss)
+7. planning/repo_map.py — 90% (163 lines, 17 miss)
 
 ## Previous Session: Guardrail Hardening (COMPLETE)
 - Guardrail hardening committed as e0916b6
