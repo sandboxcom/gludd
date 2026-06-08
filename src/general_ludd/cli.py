@@ -2388,6 +2388,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     }
     tui_handler = TUIKeyHandler(tui_state)
 
+    from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb, render_breadcrumb
     from general_ludd.tui.logger import TUILogger
     _tui_log_dir = os.path.join(_get_daemon_pid_dir(), "tui_logs")
     tui_logger = TUILogger(log_dir=_tui_log_dir, daemon_url=args.daemon_url, verbose=False)
@@ -2867,6 +2868,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
             header_text = "TUI | s:k:r:i:c:v | a:d:m:w:p:t:h:o:x:g | u:j:e:b:l:n:f:z:y:P"
+        _bc = render_breadcrumb(tui_state.get("breadcrumb", ["main"]))
+        header_text = f"{_bc}  |  {status_msg}" if status_msg else _bc
         layout["header"].update(Panel(header_text, style="bold white on blue"))
         layout["footer"].update(build_controls_table())
         return layout
@@ -2947,12 +2950,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         if len(ch) == 1:
             ch = ch.lower()
         if ch == "p":
-            current_view = "projects" if current_view != "projects" else "main"
-            if current_view == "projects":
+            if current_view != "projects":
+                current_view = "projects"
+                push_breadcrumb(tui_state, "projects")
                 status_msg = "Projects — [a]dd  [d]elete  [p] exit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
+                status_msg = ""
         elif ch == "i":
-            current_view = "integrity" if current_view != "integrity" else "main"
-            if current_view == "integrity":
+            if current_view != "integrity":
+                current_view = "integrity"
+                push_breadcrumb(tui_state, "integrity")
                 try:
                     from general_ludd.integrity.scanner import FileIntegrityScanner
                     scanner = FileIntegrityScanner()
@@ -2963,10 +2971,21 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     status_msg = f"Integrity: {result['scanned']} scanned, {len(changes)} changes"
                 except Exception as exc:
                     status_msg = f"Integrity error: {exc}"
+            else:
+                current_view = pop_breadcrumb(tui_state)
+                status_msg = ""
         elif ch == "v":
-            current_view = "config" if current_view != "config" else "main"
+            if current_view != "config":
+                current_view = "config"
+                push_breadcrumb(tui_state, "config")
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "c":
-            current_view = "edit" if current_view != "edit" else "main"
+            if current_view != "edit":
+                current_view = "edit"
+                push_breadcrumb(tui_state, "edit")
+            else:
+                current_view = pop_breadcrumb(tui_state)
         if len(ch) == 1:
             ch = ch.lower()
         if current_view == "projects" and ch == "a":
@@ -3034,35 +3053,56 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = tui_state["status_msg"]
             return True
         if ch == "m":
-            current_view = "models" if current_view != "models" else "main"
-            if current_view == "models":
+            if current_view != "models":
+                current_view = "models"
+                push_breadcrumb(tui_state, "models")
                 nonlocal downloaded_models
                 downloaded_models = model_registry.list_downloaded()
                 status_msg = _build_model_status_msg(model_mgr.list_servers(), downloaded_models)
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "w":
-            current_view = "worktrees" if current_view != "worktrees" else "main"
-            if current_view == "worktrees":
+            if current_view != "worktrees":
+                current_view = "worktrees"
+                push_breadcrumb(tui_state, "worktrees")
                 status_msg = "Projects & Worktrees — [w] exit  [q] quit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "t":
-            current_view = "todos" if current_view != "todos" else "main"
-            if current_view == "todos":
+            if current_view != "todos":
+                current_view = "todos"
+                push_breadcrumb(tui_state, "todos")
                 status_msg = "Todos — [t] exit  [a]dd  [q] quit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "h":
-            current_view = "hooks" if current_view != "hooks" else "main"
-            if current_view == "hooks":
+            if current_view != "hooks":
+                current_view = "hooks"
+                push_breadcrumb(tui_state, "hooks")
                 status_msg = "Hooks — [h] exit  [q] quit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "o":
-            current_view = "workers" if current_view != "workers" else "main"
-            if current_view == "workers":
+            if current_view != "workers":
+                current_view = "workers"
+                push_breadcrumb(tui_state, "workers")
                 status_msg = "Workers — [o] exit  [p]ing  [q] quit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "x":
-            current_view = "metrics" if current_view != "metrics" else "main"
-            if current_view == "metrics":
+            if current_view != "metrics":
+                current_view = "metrics"
+                push_breadcrumb(tui_state, "metrics")
                 status_msg = "Metrics — [x] exit  [q] quit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "g":
-            current_view = "agents" if current_view != "agents" else "main"
-            if current_view == "agents":
+            if current_view != "agents":
+                current_view = "agents"
+                push_breadcrumb(tui_state, "agents")
                 status_msg = "Agents — [g] exit  [q] quit"
+            else:
+                current_view = pop_breadcrumb(tui_state)
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"

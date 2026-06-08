@@ -6,6 +6,8 @@ from typing import Any
 
 import httpx
 
+from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb
+
 DISPATCH_MODES = ["active", "passive_external", "worktree_monitor"]
 
 _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
@@ -19,6 +21,14 @@ _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
     "z": ("deployments", "Deployments — [z] exit"),
     "y": ("leaderboard", "Leaderboard — [y] exit"),
     "P": ("playbooks", "Playbooks — [r]efresh  [P] exit"),
+    "p": ("projects", "Projects — [a]dd  [d]elete  [p] exit"),
+    "m": ("models", "Models — [a]dd  [x] remove  [m] exit"),
+    "t": ("todos", "Todos — [t] exit  [a]dd  [q] quit"),
+    "h": ("hooks", "Hooks — [h] exit  [q] quit"),
+    "o": ("workers", "Workers — [o] exit  [p]ing  [q] quit"),
+    "x": ("metrics", "Metrics — [x] exit  [q] quit"),
+    "g": ("agents", "Agents — [g] exit  [q] quit"),
+    "w": ("worktrees", "Worktrees — [w] exit  [q] quit"),
 }
 
 
@@ -53,6 +63,12 @@ class TUIKeyHandler:
             return True
         if ch == "\x1b[A":
             self.handle_key_up()
+            return True
+
+        if ch == "\x1b" and input_mode is None and view != "main":
+            state["current_view"] = "main"
+            state["status_msg"] = ""
+            pop_breadcrumb(state)
             return True
 
         if input_mode == "models_add":
@@ -244,16 +260,19 @@ class TUIKeyHandler:
         if ch == "a" and view == "main":
             state["current_view"] = "ansible"
             state["status_msg"] = "Ansible Galaxy — [s]earch  [a] exit  [q] quit"
+            push_breadcrumb(state, "ansible")
             return True
 
         if view == "ansible" and ch == "a":
             state["current_view"] = "main"
             state["status_msg"] = ""
+            pop_breadcrumb(state)
             return True
 
         if view == "ansible" and ch == "\x1b":
             state["current_view"] = "main"
             state["status_msg"] = ""
+            pop_breadcrumb(state)
             return True
 
         if view == "main" and ch == "d":
@@ -264,9 +283,11 @@ class TUIKeyHandler:
                 if view == view_name:
                     state["current_view"] = "main"
                     state["status_msg"] = ""
+                    pop_breadcrumb(state)
                 else:
                     state["current_view"] = view_name
                     state["status_msg"] = msg
+                    push_breadcrumb(state, view_name)
                 return True
 
         return True
@@ -312,6 +333,7 @@ class TUIKeyHandler:
             "integrity": ("selected_integrity_idx", "integrity_changes"),
             "todos": ("selected_todo_idx", "todos_data"),
             "workers": ("selected_worker_idx", "workers_data"),
+            "agents": ("selected_agent_idx", "agents_data"),
         }
         return mapping.get(view, ("", ""))
 
