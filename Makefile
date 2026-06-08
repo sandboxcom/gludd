@@ -362,4 +362,14 @@ collect-prompts:
 	@$(UV) run python scripts/collect_prompts.py --output-dir config/prompt_profiles/collected
 	@echo "Done. Run 'make collect-prompts SOURCE=aider' for a specific agent."
 
+extract-openrouter-fields:
+	@$(PYTHON) /Users/shawnwilson/tmp/opencode/extract_openrouter_fields.py /Users/shawnwilson/.local/share/opencode/tool-output/tool_ea4b4a35b001WxQ34qm9c8wiD9
+
+analyze-models:
+	@$(PYTHON) /Users/shawnwilson/tmp/opencode/analyze_models.py
+
+extract-models:
+	@$(PYTHON) /Users/shawnwilson/tmp/opencode/extract_models.py
+
+
 

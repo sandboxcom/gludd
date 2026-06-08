@@ -332,3 +332,25 @@ class TestDaemonAdminEndpoints:
     def test_admin_observability_comparison(self, client):
         resp = client.get("/admin/observability/comparison")
         assert resp.status_code == 200
+
+    def test_admin_quantization_list_empty(self, client):
+        resp = client.get("/admin/quantization")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "models" in data
+
+    def test_admin_quantization_get_unknown(self, client):
+        resp = client.get("/admin/quantization/nonexistent-model")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["precision"] is None
+
+    def test_admin_quantization_detect_missing_model_id(self, client):
+        resp = client.post("/admin/quantization/detect", json={})
+        assert resp.status_code == 422
+
+    def test_admin_quantization_drift_check_empty(self, client):
+        resp = client.post("/admin/quantization/drift-check")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["drift_detected"] is False

@@ -3,34 +3,39 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-07 (session 3)
+- 2026-06-07 (session 4)
 
 ## Current Status
-- **Phase**: Full audit gap fixes — security hardening, CLI coverage, schema wiring, endpoint tests
-- **Test Suite**: 3109 passed, 26 skipped, 87.09% coverage
+- **Phase**: TUI view gap fixes — todos, hooks, workers, metrics, agents views added
+- **Test Suite**: 3149 passed, 26 skipped, 86.64% coverage
 - **Branch**: master
-- **Latest commit**: 387bbc6 — schema field wiring
+- **Latest commit**: 44395f8 — TUI views for todos hooks workers metrics agents
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: Plugin Fix + Coverage Gaps (IN PROGRESS)
+## This Session: TUI View Gap Fixes (IN PROGRESS)
 - Fixed enforce-make plugin bug: `make git-*` targets blocked by regex matching "git" in target name
 - Added `repo-*` alias Makefile targets (repo-status, repo-diff, repo-log, repo-staged)
 - Added allowlist for Makefile targets containing forbidden words (git-*, feature-*, delete-file)
 - Committed as 7056549
-- **In Progress**: Improving coverage on lowest-coverage files
+- Guardrail hardening (e0916b6): expanded STOP_SIGNAL_WORDS to 60+
+- Security hardening (ddf06f0): AddTodoRequest validation, sanitize_path(), sanitize_job_id()
+- 8 new CLI command groups + models CRUD (ddf06f0)
+- Orphaned worker endpoints wired (ddf06f0)
+- Dead schema fields wired (387bbc6)
+- 22 new daemon endpoint tests (ddf06f0)
+- **TUI views for todos, hooks, workers, metrics, agents** (44395f8): 5 new builder functions (`_build_todos_table`, `_build_hooks_table`, `_build_workers_table`, `_build_metrics_table`, `_build_agents_table`), wired into `_cmd_tui` make_layout + handle_key, keybindings t/h/o/x/g, controls table updated, header text for each view
+- **18 new TUI tests**: `tests/unit/test_tui_new_views.py` — table builders, empty states, column checks, keybinding logic
 
 ## Files Below 85% Coverage (priority order)
 1. quality/config.py — 0% (3 lines)
-2. cli.py — 57% (1447 lines, 629 miss)
-3. ansible/galaxy.py — 64% (36 lines, 13 miss)
-4. filestore/bootstrap.py — 65% (133 lines, 46 miss)
-5. daemon.py — 75% (943 lines, 235 miss)
-6. ansible/core_runner.py — 79% (136 lines, 29 miss)
-7. code_intelligence/extractor.py — 86% (93 lines, 13 miss)
-8. db/session.py — 86% (86 lines, 12 miss)
-9. git_automation/repo.py — 86% (129 lines, 18 miss)
-10. integrity/scanner.py — 87% (112 lines, 15 miss)
+2. cli.py — 58% (1880 lines, 784 miss — TUI function ~400 lines hard to unit test)
+3. filestore/bootstrap.py — 87% (133 lines, 17 miss)
+4. daemon.py — 75% (957 lines, 241 miss)
+5. ansible/core_runner.py — 79% (136 lines, 29 miss)
+6. agents/dispatcher.py — 92% (66 lines, 5 miss)
+7. secrets/manager.py — 87% (135 lines, 18 miss)
+8. planning/repo_map.py — 90% (163 lines, 17 miss)
 
 ## Previous Session: Guardrail Hardening (COMPLETE)
 - Guardrail hardening committed as e0916b6
@@ -263,11 +268,16 @@ EventLoop auto-creates from session (when available):
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
 - `build_secrets_resolver()` cannot call async `health_check()` from sync context
 - ZAI API 429 (balance exhaustion) — live identity tests xfail until recharged
-- MCP catalog search hits real registry APIs (no offline fallback) — now has `refresh()` for cache invalidation
-- Skills catalog is curated-only (no GitHub auto-discovery yet) — now has `refresh()` for cache invalidation
-- Files still below 85%: quality/config.py (0%), cli.py (57%), ansible/galaxy.py (64%), filestore/bootstrap.py (65%), daemon.py (75%), ansible/core_runner.py (79%)
+- Files still below 85%: quality/config.py (0%), cli.py (58%), daemon.py (75%), ansible/core_runner.py (79%)
 - events/bus.py (88%) — async subscriber paths with `asyncio.run()` fallback not covered
 - enforce-make plugin has runtime bug: scans full command for forbidden words including target names (fix committed but requires opencode restart)
+- No `/admin/todos` daemon endpoint — TUI todos view will show empty until endpoint is added
+
+## Next Steps
+- Add `/admin/todos` daemon endpoint for TUI todos view
+- Improve `cli.py` coverage — extract TUI sub-functions for testability
+- Improve `daemon.py` coverage — test stub endpoints returning 503 without DB
+- Add integration tests for new TUI views against daemon API
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases
