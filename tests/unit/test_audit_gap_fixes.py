@@ -215,3 +215,105 @@ class TestFilestorePathSanitization:
         dirs = runner.prepare_job_dirs("EXEC-TEST123")
         assert "root" in dirs
         assert "artifacts" in dirs
+
+
+class TestJobSpecWiring:
+    def test_jobspec_has_artifact_dir_field(self):
+        from general_ludd.schemas.job import JobSpec
+
+        job = JobSpec(
+            job_id="EXEC-TEST",
+            playbook="noop.yml",
+            queue="core",
+            artifact_dir="/tmp/artifacts",
+        )
+        assert job.artifact_dir == "/tmp/artifacts"
+
+    def test_jobspec_has_vars_namespace_refs_field(self):
+        from general_ludd.schemas.job import JobSpec
+
+        job = JobSpec(
+            job_id="EXEC-TEST",
+            playbook="noop.yml",
+            queue="core",
+            vars_namespace_refs=["SECRET_API_KEY", "DB_URL"],
+        )
+        assert job.vars_namespace_refs == ["SECRET_API_KEY", "DB_URL"]
+
+    def test_jobspec_defaults_are_empty(self):
+        from general_ludd.schemas.job import JobSpec
+
+        job = JobSpec(job_id="TEST", playbook="noop.yml", queue="core")
+        assert job.artifact_dir is None
+        assert job.vars_namespace_refs == []
+        assert job.candidate_todos == []
+        assert job.artifact_summaries == []
+
+
+class TestTaskReturnSchemaFields:
+    def test_task_return_has_all_ref_fields(self):
+        from general_ludd.schemas.task_return import TaskReturn
+
+        tr = TaskReturn(
+            return_id="RET-001",
+            job_id="JOB-001",
+            playbook="noop.yml",
+            queue="core",
+            diff_ref="/tmp/diff.patch",
+            test_results_ref="/tmp/results.json",
+            coverage_results_ref="/tmp/coverage.xml",
+            producer_worker_id="worker-1",
+        )
+        assert tr.diff_ref == "/tmp/diff.patch"
+        assert tr.test_results_ref == "/tmp/results.json"
+        assert tr.coverage_results_ref == "/tmp/coverage.xml"
+        assert tr.producer_worker_id == "worker-1"
+
+    def test_task_return_ref_fields_default_none(self):
+        from general_ludd.schemas.task_return import TaskReturn
+
+        tr = TaskReturn(
+            return_id="RET-001",
+            job_id="JOB-001",
+            playbook="noop.yml",
+            queue="core",
+        )
+        assert tr.diff_ref is None
+        assert tr.test_results_ref is None
+        assert tr.molecule_results_ref is None
+        assert tr.coverage_results_ref is None
+        assert tr.model_usage_ref is None
+        assert tr.producer_worker_id is None
+
+
+class TestTaskDecisionSchemaFields:
+    def test_task_decision_has_all_fields(self):
+        from general_ludd.schemas.task_decision import TaskDecision
+
+        td = TaskDecision(
+            return_id="RET-001",
+            decision="complete",
+            confidence=0.95,
+            todo_updates={"priority": "high"},
+            child_todos=[{"title": "sub-task"}],
+            validation_requests=["run_tests"],
+            git_requests=["commit"],
+            audit_notes=["reviewed by agent"],
+            policy_flags=["budget_ok"],
+        )
+        assert td.todo_updates == {"priority": "high"}
+        assert len(td.child_todos) == 1
+        assert td.validation_requests == ["run_tests"]
+        assert td.git_requests == ["commit"]
+        assert td.audit_notes == ["reviewed by agent"]
+        assert td.policy_flags == ["budget_ok"]
+
+    def test_task_decision_defaults(self):
+        from general_ludd.schemas.task_decision import TaskDecision
+
+        td = TaskDecision(return_id="RET-001", decision="complete")
+        assert td.todo_updates == {}
+        assert td.child_todos == []
+        assert td.validation_requests == []
+        assert td.git_requests == []
+        assert td.policy_flags == []

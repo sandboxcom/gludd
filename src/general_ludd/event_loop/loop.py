@@ -590,6 +590,8 @@ class EventLoop:
             prompt_text=prompt_text,
             budget_context=budget_context,
             project_id=project_id_val,
+            artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
+            vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
         )
         resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
