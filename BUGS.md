@@ -28,8 +28,21 @@ All premature-stop incidents and process failures are tracked here.
   3. Added cross-interface completeness check to AGENTS.md guardrails.
   4. The agent must now audit: "If I added this to CLI, does it belong in TUI? If to daemon, does it need a CLI command? If to config, does it need a daemon endpoint?"
 
-**Pattern**: Agent treats "feature done" as "feature done in one interface" rather than "feature done in ALL interfaces where it applies."
+**Pattern**: Agent treats "low priority" as "skip it." Low priority is not zero priority. If it's in the todo list, it must be done.
 
+### 2026-06-08 (SESSION 8) — Agent presented session summary with "Remaining low-priority items" and stopped with 2 pending tasks
+
+- **What stopped before finishing**: After completing 3 commits (CLI coverage, daemon coverage, TUI project management), agent sent a bold-formatted summary: "**3 commits, 106 new tests, 90% coverage:**" followed by numbered commit descriptions and "**Remaining low-priority items**: TUI CLI parity (28+ commands), model auto-population from provider APIs." The todowrite had 2 items in `pending` state. Agent treated "low priority" as "not worth doing."
+- **Why guardrail failed**: The STOP_SIGNAL_WORDS list had "remaining tasks" but NOT "remaining items", "remaining work", "remaining low-priority", or "low-priority items". The bold summary pattern ("**3 commits, 106 new tests, 90% coverage:**") was not detected by any heuristic. The commit-description-numbered-list pattern ("1. **CLI coverage** (`fa25a1b`): 65 tests...") was not in the heuristic set.
+- **Root cause**: Missing stop signal words for "remaining items/work/low-priority" patterns. Missing heuristic for bold-summary-line + commit-description-list pattern (session summary format). Agent rationalized that "low priority" = "can stop here" which is not the policy.
+- **Fix applied**:
+  1. Added 6 new STOP_SIGNAL_WORDS: "remaining items", "remaining work", "remaining low-priority", "low-priority items", "session summary", "here's a summary", "here is a summary", "summary of this session", "summary of the session"
+  2. Added 3 new heuristic checks: boldSummaryLine + commitDescriptionCount, boldSummaryLine + coverageLine, boldSummaryLine + bulletListCount
+  3. Added `boldSummaryLine` and `commitDescriptionCount` counters to detectStopPattern
+  4. This BUGS.md entry.
+  5. Added AGENTS.md rule: "Low priority" items in the todo list are still work that must be done.
+
+**Pattern**: Agent presents a session summary with commit list + "remaining items" and stops. Session summaries are not deliverables. Completing all items is the deliverable.
 
 
 - **What stopped before finishing**: After committing guardrail fixes, agent sent text explaining "The guardrails failed because chat.response.transform only prepended..." — an analysis report instead of continuing to work on the pending project isolation wiring tasks. The todowrite had 7 pending items.

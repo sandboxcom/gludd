@@ -210,6 +210,15 @@ const STOP_SIGNAL_WORDS = [
   "this completes",
   "wrapping up",
   "finishing up",
+  "remaining items",
+  "remaining work",
+  "remaining low-priority",
+  "low-priority items",
+  "session summary",
+  "here's a summary",
+  "here is a summary",
+  "summary of this session",
+  "summary of the session",
 ]
 
 const RESUME_COMMAND = [
@@ -244,6 +253,8 @@ function detectStopPattern(responseText: string): boolean {
   let bulletListCount = 0
   let hasQuestionMark = false
   let gapFindingsCount = 0
+  let boldSummaryLine = false
+  let commitDescriptionCount = 0
   for (const line of lines) {
     const trimmed = line.trim()
     if (/^\[master [a-f0-9]{7}\]/.test(trimmed)) commitHashCount++
@@ -254,6 +265,8 @@ function detectStopPattern(responseText: string): boolean {
     if (/^[-*]\s/.test(trimmed)) bulletListCount++
     if (trimmed.endsWith("?")) hasQuestionMark = true
     if (/gap|incomplete|missing|not wired|dead code|not implemented|stub/i.test(trimmed)) gapFindingsCount++
+    if (/^\*\*\d+ (commit|test|new)/i.test(trimmed)) boldSummaryLine = true
+    if (/^\d+\.\s+\*\*.*\*\* \(commit/.test(trimmed)) commitDescriptionCount++
   }
   if (lines.length > 0) {
     const last = lines[lines.length - 1].trim().toLowerCase()
@@ -270,6 +283,9 @@ function detectStopPattern(responseText: string): boolean {
   if (gapFindingsCount >= 3 && hasQuestionMark) return true
   if (summaryTable && hasQuestionMark) return true
   if (bulletListCount >= 5 && hasQuestionMark) return true
+  if (boldSummaryLine && commitDescriptionCount >= 1) return true
+  if (boldSummaryLine && coverageLine) return true
+  if (boldSummaryLine && bulletListCount >= 2) return true
   return false
 }
 

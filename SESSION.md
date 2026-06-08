@@ -3,21 +3,37 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 7)
+- 2026-06-08 (session 8)
 
 ## Current Status
-- **Phase**: Audit gap closure — all 11 gaps addressed
-- **Test Suite**: 3349 passed, 26 skipped, ~88% coverage
+- **Phase**: Coverage push + TUI project management
+- **Test Suite**: 3500 passed, 26 skipped, 90% coverage
 - **Branch**: master
-- **Latest commit**: 12d1d0a — Slurm adapter: real sbatch/sacct/scancel with graceful degradation
+- **Latest commit**: e2ec78a — TUI project management: cursor selection, add input mode, delete selected, weight edit
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
 
-## This Session: Audit Gap Closure (COMPLETE)
+## This Session: Coverage + TUI Features
 
-### Conversation DB Audit
-- Ran `make audit-messages` to extract all prior user requests across sessions
-- Identified 11 gaps between requested features and implementation
+### CLI Coverage Push (commit fa25a1b)
+- 65 new tests in `tests/unit/test_cli_execution_coverage.py`
+- Covers: models discover/discovered, project add/list/remove, worktree scan/status, selftest, status quality gate, daemon body, fmt_size, connection error, all error-path edge cases
+- cli.py: 66% → 73%
+
+### Daemon Coverage Push (commit c0e5f4b)
+- 21 new tests in `tests/unit/test_daemon_uncovered_endpoints.py`
+- Covers: models discover/discovered, code blocks/graph/search, local inference start, worktree scan/status, quantization detect/get/drift, benchmark no-session paths, observability comparison
+- Fixed `POST /admin/code/blocks` type annotation: `request: Any` → `request: Request`
+- daemon.py: 82% → 89%
+
+### TUI Project Management (commit e2ec78a)
+- 20 new tests in `tests/unit/test_tui_project_management.py`
+- `TUIKeyHandler` now handles: cursor up/down in projects view, add project input mode (name+weight), delete selected project, set weight input mode
+- `handle_key_down()` / `handle_key_up()` for cursor navigation with wrapping
+- `delete_selected_project()` uses `selected_project_idx` instead of always `projects[0]`
+- `projects_add` input mode: 2-field flow (name → weight) with submit/escape
+- `projects_set_weight` input mode: single-field flow with PUT to `/admin/projects/{id}/weight`
+- keybindings.py: 171 → 256 lines, coverage 88%
 
 ### Gaps Closed This Session
 1. **Per-project templates/roles in dispatch** (commit `a158568`): `_resolve_prompt_text_static()` checks project `templates_dir` first via Jinja2 rendering. `_dispatch_execute_job()` injects `ANSIBLE_ROLES_PATH` from project `roles_dir`. 7 tests.
@@ -26,9 +42,11 @@
 4. **Slurm integration beyond stub** (commit `12d1d0a`): `src/general_ludd/infra/slurm.py` with `SlurmAdapter` — `submit()` builds sbatch script and pipes to sbatch, `status()` queries sacct, `cancel()` calls scancel, `available()` probes sbatch --version. All methods catch `FileNotFoundError` and raise `SlurmNotInstalledError`. Wired into `local_inference.py` for engine="slurm" path. 24 tests.
 
 ## Files Below 85% Coverage (priority order)
-1. cli.py — 66% (1954 lines, 664 miss — TUI `_cmd_tui` body still untested)
-2. daemon.py — 81% (1035 lines, 192 miss — models discover/discovered, local inference, code blocks)
-3. ansible/core_runner.py — 79% (136 lines, 29 miss)
+1. cli.py — 73% (2125 lines, 564 miss — TUI `_cmd_tui` body ~577 lines still untested)
+2. ansible/core_runner.py — 79% (136 lines, 29 miss)
+3. session.py — 86% (86 lines, 12 miss)
+4. git_automation/repo.py — 86% (129 lines, 18 miss)
+5. worktree/__init__.py — 86% (268 lines, 38 miss)
 
 ## Previous Session: Guardrail Hardening (COMPLETE)
 - Guardrail hardening committed as e0916b6
@@ -255,7 +273,7 @@ EventLoop auto-creates from session (when available):
 ## Quality Status
 - **Mypy**: 0 errors (strict mode)
 - **Lint**: 0 errors (ruff)
-- **Tests**: 3349 passed, 26 skipped, ~88% coverage
+- **Tests**: 3500 passed, 26 skipped, 90% coverage
 
 ## Key Gaps (Known)
 - EventLoop session lifecycle: when session_factory is passed (production), DB-dependent phases silently skip
@@ -271,10 +289,10 @@ EventLoop auto-creates from session (when available):
 - Model auto-population from provider APIs
 
 ## Next Steps
-- Push cli.py coverage higher (66% — TUI `_cmd_tui` body still large)
-- Push daemon.py coverage higher (82% — models discover/discovered, local inference, code blocks)
-- Add integration tests for new TUI views against daemon API
-- Wire TUI project management (add/remove/switch projects)
+- Push cli.py coverage higher (73% — TUI `_cmd_tui` body still large, ~577 lines)
+- Wire TUI project management into `_cmd_tui` handle_key (delegate `a`/`d`/`w` to TUIKeyHandler)
+- Wire remaining TUI CLI parity (28+ commands not yet in TUI)
+- Model auto-population from provider APIs
 
 ## MCP Secrets from Vault (COMPLETE)
 - `env_aliases` field on `MCPServerConfig`: maps env var names to credential aliases

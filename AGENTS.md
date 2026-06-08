@@ -103,6 +103,11 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 Never ask. Never wait. Just do the work. If the user wants you to stop,
 THEY will tell you. Until then, keep working.
 
+**"Low priority" does NOT mean "skip it."** If an item is in the todo list
+with status `pending`, it MUST be done. Priority only determines ORDER, not
+whether the work happens. The only valid terminal states are `completed` or
+`cancelled`. A `pending` item is unfinished work, period.
+
 **When asked for status:** Answer briefly, then RESUME WORK immediately.
 Do not ask for permission. Do not wait for acknowledgment.
 
