@@ -8,6 +8,7 @@ from typing import Any
 
 from general_ludd.events.bus import EventBus
 from general_ludd.events.types import CustomEvent
+from general_ludd.infra.slurm import SlurmAdapter
 
 logger = logging.getLogger(__name__)
 
@@ -75,6 +76,10 @@ class LocalInferenceManager:
             raise ValueError(f"Server '{server_id}' not found")
         if server.is_running:
             return server
+
+        if server.config.engine == "slurm":
+            return await self._start_slurm_server(server)
+
         cmd = self._build_command(server.config)
         logger.info("Starting local inference server %s: %s", server_id, " ".join(cmd))
         process = await asyncio.create_subprocess_exec(
@@ -93,6 +98,47 @@ class LocalInferenceManager:
                     payload={
                         "server_id": server_id,
                         "engine": server.config.engine,
+                        "url": server.endpoint_url,
+                    },
+                )
+            )
+        return server
+
+    async def _start_slurm_server(self, server: LocalServer) -> LocalServer:
+        adapter = SlurmAdapter()
+        model = server.config.model_name or server.config.model_path
+        command = (
+            f"python3 -m llama_cpp.server "
+            f"--model {model} "
+            f"--host {server.config.host} "
+            f"--port {server.config.port} "
+            f"--n_gpu_layers {server.config.gpu_layers} "
+            f"--n_ctx {server.config.context_size}"
+        )
+        loop = asyncio.get_running_loop()
+        job_id = await loop.run_in_executor(
+            None,
+            lambda: adapter.submit(
+                command=command,
+                job_name=f"gludd-{server.server_id}",
+                extra_args=list(server.config.extra_args) if server.config.extra_args else None,
+            ),
+        )
+        server.status = "submitted"
+        server.started_at = time.time()
+        logger.info(
+            "Submitted Slurm job %s for server %s",
+            job_id,
+            server.server_id,
+        )
+        if self._event_bus:
+            self._event_bus.publish(
+                CustomEvent(
+                    name="local_server_submitted_slurm",
+                    payload={
+                        "server_id": server.server_id,
+                        "engine": "slurm",
+                        "slurm_job_id": job_id,
                         "url": server.endpoint_url,
                     },
                 )
@@ -157,17 +203,14 @@ class LocalInferenceManager:
             return cmd
         elif config.engine == "slurm":
             model = config.model_name or config.model_path
-            cmd = ["sbatch"]
-            cmd.extend(config.extra_args)
-            cmd.extend([
-                "--wrap",
+            command = (
                 f"python3 -m llama_cpp.server "
                 f"--model {model} "
                 f"--host {config.host} "
                 f"--port {config.port} "
                 f"--n_gpu_layers {config.gpu_layers} "
-                f"--n_ctx {config.context_size}",
-            ])
-            return cmd
+                f"--n_ctx {config.context_size}"
+            )
+            return ["sbatch", *config.extra_args, "--wrap", command]
         else:
             raise ValueError(f"Unsupported engine: {config.engine}")
