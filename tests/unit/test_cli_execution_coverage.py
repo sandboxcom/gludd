@@ -837,3 +837,628 @@ class TestModelsAddRemoveExecution:
         mock_resp.status_code = 500
         with patch("httpx.get", return_value=mock_resp), pytest.raises(SystemExit):
             _cmd_models_list(_ns())
+
+
+class TestPostTUICommands:
+    def _mock_resp(self, status: int = 200, json_data: dict | None = None) -> MagicMock:
+        r = MagicMock()
+        r.status_code = status
+        r.json.return_value = json_data or {}
+        r.text = "error text"
+        return r
+
+    def test_hooks_list_with_hooks(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_list
+
+        resp = self._mock_resp(200, {"hooks": [{"hook_id": "h1", "event": "todo.done", "handler": "cb"}]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_hooks_list(_ns())
+        assert "h1" in capsys.readouterr().out
+
+    def test_hooks_list_empty(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_list
+
+        resp = self._mock_resp(200, {"hooks": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_hooks_list(_ns())
+        assert "No hooks" in capsys.readouterr().out
+
+    def test_hooks_list_error(self) -> None:
+        from general_ludd.cli import _cmd_hooks_list
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_hooks_list(_ns())
+
+    def test_hooks_list_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_list
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_hooks_list(_ns())
+
+    def test_hooks_register_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_register
+
+        resp = self._mock_resp(200, {"hook_id": "h2"})
+        with patch("httpx.post", return_value=resp):
+            _cmd_hooks_register(_ns(event="todo.done", handler="cb"))
+        assert "h2" in capsys.readouterr().out
+
+    def test_hooks_register_error(self) -> None:
+        from general_ludd.cli import _cmd_hooks_register
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_hooks_register(_ns(event="e", handler="h"))
+
+    def test_hooks_register_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_register
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_hooks_register(_ns(event="e", handler="h"))
+
+    def test_hooks_delete_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_delete
+
+        resp = self._mock_resp(200)
+        with patch("httpx.delete", return_value=resp):
+            _cmd_hooks_delete(_ns(hook_id="h1"))
+        assert "h1" in capsys.readouterr().out
+
+    def test_hooks_delete_error(self) -> None:
+        from general_ludd.cli import _cmd_hooks_delete
+
+        resp = self._mock_resp(500)
+        with patch("httpx.delete", return_value=resp), pytest.raises(SystemExit):
+            _cmd_hooks_delete(_ns(hook_id="h1"))
+
+    def test_hooks_delete_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_hooks_delete
+
+        with patch("httpx.delete", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_hooks_delete(_ns(hook_id="h1"))
+
+    def test_workers_list_with_workers(self, capsys) -> None:
+        from general_ludd.cli import _cmd_workers_list
+
+        resp = self._mock_resp(200, {"workers": [{"worker_id": "w1", "status": "active", "url": "http://w"}]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_workers_list(_ns())
+        assert "w1" in capsys.readouterr().out
+
+    def test_workers_list_empty(self, capsys) -> None:
+        from general_ludd.cli import _cmd_workers_list
+
+        resp = self._mock_resp(200, {"workers": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_workers_list(_ns())
+        assert "No workers" in capsys.readouterr().out
+
+    def test_workers_list_error(self) -> None:
+        from general_ludd.cli import _cmd_workers_list
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_workers_list(_ns())
+
+    def test_workers_list_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_workers_list
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_workers_list(_ns())
+
+    def test_workers_ping_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_workers_ping
+
+        resp = self._mock_resp(200, {"workers": []})
+        with patch("httpx.post", return_value=resp):
+            _cmd_workers_ping(_ns())
+        assert "workers" in capsys.readouterr().out
+
+    def test_workers_ping_error(self) -> None:
+        from general_ludd.cli import _cmd_workers_ping
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_workers_ping(_ns())
+
+    def test_workers_ping_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_workers_ping
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_workers_ping(_ns())
+
+    def test_agents_list_with_agents(self, capsys) -> None:
+        from general_ludd.cli import _cmd_agents_list
+
+        resp = self._mock_resp(200, {"agents": [{"agent_id": "a1", "status": "active", "model": "gpt-4"}]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_agents_list(_ns())
+        assert "a1" in capsys.readouterr().out
+
+    def test_agents_list_empty(self, capsys) -> None:
+        from general_ludd.cli import _cmd_agents_list
+
+        resp = self._mock_resp(200, {"agents": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_agents_list(_ns())
+        assert "No agents" in capsys.readouterr().out
+
+    def test_agents_list_error(self) -> None:
+        from general_ludd.cli import _cmd_agents_list
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_agents_list(_ns())
+
+    def test_agents_list_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_agents_list
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_agents_list(_ns())
+
+    def test_metrics_cost_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_metrics_cost
+
+        resp = self._mock_resp(200, {"total_cost": 1.50})
+        with patch("httpx.get", return_value=resp):
+            _cmd_metrics_cost(_ns())
+        assert "total_cost" in capsys.readouterr().out
+
+    def test_metrics_cost_error(self) -> None:
+        from general_ludd.cli import _cmd_metrics_cost
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_metrics_cost(_ns())
+
+    def test_metrics_cost_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_metrics_cost
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_metrics_cost(_ns())
+
+    def test_metrics_report_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_metrics_report
+
+        resp = self._mock_resp(200, {"report": "ok"})
+        with patch("httpx.get", return_value=resp):
+            _cmd_metrics_report(_ns())
+        assert "report" in capsys.readouterr().out
+
+    def test_metrics_report_error(self) -> None:
+        from general_ludd.cli import _cmd_metrics_report
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_metrics_report(_ns())
+
+    def test_metrics_report_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_metrics_report
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_metrics_report(_ns())
+
+    def test_reload_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_reload
+
+        resp = self._mock_resp(200, {"scope": "all"})
+        with patch("httpx.post", return_value=resp):
+            _cmd_reload(_ns(scope="all"))
+        assert "all" in capsys.readouterr().out
+
+    def test_reload_error(self) -> None:
+        from general_ludd.cli import _cmd_reload
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_reload(_ns(scope="all"))
+
+    def test_reload_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_reload
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_reload(_ns(scope="all"))
+
+    def test_templates_list_with_templates(self, capsys) -> None:
+        from general_ludd.cli import _cmd_templates_list
+
+        resp = self._mock_resp(200, {"templates": ["code", "test"]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_templates_list(_ns())
+        out = capsys.readouterr().out
+        assert "code" in out and "test" in out
+
+    def test_templates_list_empty(self, capsys) -> None:
+        from general_ludd.cli import _cmd_templates_list
+
+        resp = self._mock_resp(200, {"templates": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_templates_list(_ns())
+        assert "No templates" in capsys.readouterr().out
+
+    def test_templates_list_error(self) -> None:
+        from general_ludd.cli import _cmd_templates_list
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_templates_list(_ns())
+
+    def test_templates_list_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_templates_list
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_templates_list(_ns())
+
+    def test_templates_refresh_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_templates_refresh
+
+        resp = self._mock_resp(200, {"count": 5})
+        with patch("httpx.post", return_value=resp):
+            _cmd_templates_refresh(_ns())
+        assert "5" in capsys.readouterr().out
+
+    def test_templates_refresh_error(self) -> None:
+        from general_ludd.cli import _cmd_templates_refresh
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_templates_refresh(_ns())
+
+    def test_templates_refresh_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_templates_refresh
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_templates_refresh(_ns())
+
+    def test_playbooks_list_with_playbooks(self, capsys) -> None:
+        from general_ludd.cli import _cmd_playbooks_list
+
+        resp = self._mock_resp(200, {"playbooks": ["noop", "validate"]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_playbooks_list(_ns())
+        assert "noop" in capsys.readouterr().out
+
+    def test_playbooks_list_empty(self, capsys) -> None:
+        from general_ludd.cli import _cmd_playbooks_list
+
+        resp = self._mock_resp(200, {"playbooks": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_playbooks_list(_ns())
+        assert "No playbooks" in capsys.readouterr().out
+
+    def test_playbooks_list_error(self) -> None:
+        from general_ludd.cli import _cmd_playbooks_list
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_playbooks_list(_ns())
+
+    def test_playbooks_list_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_playbooks_list
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_playbooks_list(_ns())
+
+    def test_playbooks_refresh_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_playbooks_refresh
+
+        resp = self._mock_resp(200, {"count": 3})
+        with patch("httpx.post", return_value=resp):
+            _cmd_playbooks_refresh(_ns())
+        assert "3" in capsys.readouterr().out
+
+    def test_playbooks_refresh_error(self) -> None:
+        from general_ludd.cli import _cmd_playbooks_refresh
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_playbooks_refresh(_ns())
+
+    def test_playbooks_refresh_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_playbooks_refresh
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_playbooks_refresh(_ns())
+
+    def test_code_graph_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_code_graph
+
+        resp = self._mock_resp(200, {"nodes": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_code_graph(_ns(source="main.py", language="python"))
+        assert "nodes" in capsys.readouterr().out
+
+    def test_code_graph_error(self) -> None:
+        from general_ludd.cli import _cmd_code_graph
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_code_graph(_ns(source="main.py", language="python"))
+
+    def test_code_graph_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_code_graph
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_code_graph(_ns(source="main.py", language="python"))
+
+    def test_code_search_with_results(self, capsys) -> None:
+        from general_ludd.cli import _cmd_code_search
+
+        resp = self._mock_resp(200, {"results": [{"file": "cli.py", "line": 1, "text": "def main"}]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_code_search(_ns(query="main", language="python"))
+        assert "cli.py" in capsys.readouterr().out
+
+    def test_code_search_no_results(self, capsys) -> None:
+        from general_ludd.cli import _cmd_code_search
+
+        resp = self._mock_resp(200, {"results": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_code_search(_ns(query="xyz", language="python"))
+        assert "No results" in capsys.readouterr().out
+
+    def test_code_search_error(self) -> None:
+        from general_ludd.cli import _cmd_code_search
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_code_search(_ns(query="q", language="python"))
+
+    def test_code_search_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_code_search
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_code_search(_ns(query="q", language="python"))
+
+    def test_quantization_list_with_models(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_list
+
+        resp = self._mock_resp(200, {"models": [{"model_id": "gpt-4", "precision": "fp16", "confidence": 0.9}]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_quantization_list(_ns())
+        out = capsys.readouterr().out
+        assert "gpt-4" in out and "fp16" in out
+
+    def test_quantization_list_empty(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_list
+
+        resp = self._mock_resp(200, {"models": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_quantization_list(_ns())
+        assert "No quantization" in capsys.readouterr().out
+
+    def test_quantization_list_error(self) -> None:
+        from general_ludd.cli import _cmd_quantization_list
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_quantization_list(_ns())
+
+    def test_quantization_list_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_list
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_quantization_list(_ns())
+
+    def test_quantization_detect_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_detect
+
+        resp = self._mock_resp(200, {"model_id": "gpt-4", "precision": "fp16", "confidence": 0.95})
+        with patch("httpx.post", return_value=resp):
+            _cmd_quantization_detect(_ns(model_id="gpt-4"))
+        out = capsys.readouterr().out
+        assert "gpt-4" in out and "fp16" in out
+
+    def test_quantization_detect_error(self) -> None:
+        from general_ludd.cli import _cmd_quantization_detect
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_quantization_detect(_ns(model_id="gpt-4"))
+
+    def test_quantization_detect_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_detect
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_quantization_detect(_ns(model_id="gpt-4"))
+
+    def test_quantization_drift_detected(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_drift_check
+
+        resp = self._mock_resp(200, {
+            "drift_detected": True,
+            "drifted_models": [{"model_id": "gpt-4", "old_precision": "fp16", "new_precision": "int8"}],
+        })
+        with patch("httpx.post", return_value=resp):
+            _cmd_quantization_drift_check(_ns())
+        out = capsys.readouterr().out
+        assert "Drift detected" in out and "gpt-4" in out
+
+    def test_quantization_drift_no_drift(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_drift_check
+
+        resp = self._mock_resp(200, {"drift_detected": False})
+        with patch("httpx.post", return_value=resp):
+            _cmd_quantization_drift_check(_ns())
+        assert "No drift" in capsys.readouterr().out
+
+    def test_quantization_drift_error(self) -> None:
+        from general_ludd.cli import _cmd_quantization_drift_check
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp), pytest.raises(SystemExit):
+            _cmd_quantization_drift_check(_ns())
+
+    def test_quantization_drift_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_quantization_drift_check
+
+        with patch("httpx.post", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_quantization_drift_check(_ns())
+
+    def test_integrity_scan_success_with_changes(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_scan
+
+        resp = self._mock_resp(200, {"scanned": 10, "changes": [{"file": "/a.yml", "type": "modified"}]})
+        with patch("httpx.post", return_value=resp):
+            _cmd_integrity_scan(_ns(paths=None))
+        out = capsys.readouterr().out
+        assert "10" in out and "a.yml" in out
+
+    def test_integrity_scan_success_no_changes(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_scan
+
+        resp = self._mock_resp(200, {"scanned": 5, "changes": []})
+        with patch("httpx.post", return_value=resp):
+            _cmd_integrity_scan(_ns(paths=None))
+        assert "No changes" in capsys.readouterr().out
+
+    def test_integrity_scan_error_falls_back(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_scan
+
+        with patch("httpx.post", side_effect=Exception("fail")), \
+             patch("general_ludd.cli._gather_offline_status", return_value={}), \
+             patch("general_ludd.cli._scan_local_integrity", return_value={"scanned": 3, "changes": []}):
+            _cmd_integrity_scan(_ns(paths=None))
+        assert "Local scan" in capsys.readouterr().out
+
+    def test_integrity_report_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_report
+
+        resp = self._mock_resp(200, {"changes": [], "log_entries": 0})
+        with patch("httpx.get", return_value=resp):
+            _cmd_integrity_report(_ns())
+        assert "changes" in capsys.readouterr().out
+
+    def test_integrity_report_error_falls_back(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_report
+
+        with patch("httpx.get", side_effect=Exception("fail")), \
+             patch("general_ludd.cli._gather_offline_status", return_value={}), \
+             patch("general_ludd.cli._scan_local_integrity", return_value={"scanned": 0, "changes": []}):
+            _cmd_integrity_report(_ns())
+        assert "scanned" in capsys.readouterr().out
+
+    def test_integrity_approve_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_approve
+
+        resp = self._mock_resp(200, {"path": "/a.yml", "signature": "abc123def456"})
+        with patch("httpx.post", return_value=resp):
+            _cmd_integrity_approve(_ns(change_id="/a.yml", reason="ok", signer="admin"))
+        out = capsys.readouterr().out
+        assert "Approved" in out and "abc123" in out
+
+    def test_integrity_approve_error_falls_back(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_approve
+
+        mock_result = {"path": "/a.yml", "signature": "sig"}
+        with patch("httpx.post", side_effect=Exception("fail")), \
+             patch("general_ludd.integrity.scanner.sign_change_openbao", return_value=mock_result):
+            _cmd_integrity_approve(_ns(change_id="/a.yml", reason="ok", signer="admin"))
+        assert "sig" in capsys.readouterr().out
+
+    def test_integrity_reject_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_reject
+
+        resp = self._mock_resp(200, {"path": "/a.yml", "status": "rejected"})
+        with patch("httpx.post", return_value=resp):
+            _cmd_integrity_reject(_ns(change_id="/a.yml", reason="bad"))
+        assert "Rejected" in capsys.readouterr().out
+
+    def test_integrity_reject_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_reject
+
+        resp = self._mock_resp(500)
+        with patch("httpx.post", return_value=resp):
+            _cmd_integrity_reject(_ns(change_id="/a.yml", reason="bad"))
+        assert "Error" in capsys.readouterr().err
+
+    def test_integrity_log_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_log
+
+        entry = {"timestamp": "2026-01-01", "action": "approved",
+                 "path": "/a.yml", "reason": "ok", "signer": "admin"}
+        resp = self._mock_resp(200, {"entries": [entry]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_integrity_log(_ns())
+        out = capsys.readouterr().out
+        assert "approved" in out and "/a.yml" in out
+
+    def test_integrity_log_error(self) -> None:
+        from general_ludd.cli import _cmd_integrity_log
+
+        resp = self._mock_resp(500)
+        with patch("httpx.get", return_value=resp), pytest.raises(SystemExit):
+            _cmd_integrity_log(_ns())
+
+    def test_integrity_log_connection_error(self, capsys) -> None:
+        from general_ludd.cli import _cmd_integrity_log
+
+        with patch("httpx.get", side_effect=httpx.ConnectError("refused")), pytest.raises(SystemExit):
+            _cmd_integrity_log(_ns())
+
+    def test_ansible_search_with_results(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_search
+
+        resp = self._mock_resp(200, {"results": [{"name": "nginx", "description": "web server"}]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_ansible_search(_ns(query="nginx", type="role"))
+        assert "nginx" in capsys.readouterr().out
+
+    def test_ansible_search_no_results(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_search
+
+        resp = self._mock_resp(200, {"results": []})
+        with patch("httpx.get", return_value=resp):
+            _cmd_ansible_search(_ns(query="nonexistent", type="role"))
+        assert "No results" in capsys.readouterr().out
+
+    def test_ansible_search_error_falls_back(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_search
+
+        with patch("httpx.get", side_effect=Exception("fail")), \
+             patch("general_ludd.ansible.galaxy.search_galaxy", return_value=[{"name": "nginx", "description": "web"}]):
+            _cmd_ansible_search(_ns(query="nginx", type="role"))
+        assert "nginx" in capsys.readouterr().out
+
+    def test_ansible_search_error_falls_back_no_results(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_search
+
+        with patch("httpx.get", side_effect=Exception("fail")), \
+             patch("general_ludd.ansible.galaxy.search_galaxy", return_value=[]):
+            _cmd_ansible_search(_ns(query="xyz", type="role"))
+        assert "offline" in capsys.readouterr().out
+
+    def test_ansible_install_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_install
+
+        resp = self._mock_resp(200, {"success": True, "output": "installed"})
+        with patch("httpx.post", return_value=resp):
+            _cmd_ansible_install(_ns(name="nginx", type="role"))
+        out = capsys.readouterr().out
+        assert "OK" in out and "nginx" in out
+
+    def test_ansible_install_error_falls_back(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_install
+
+        with patch("httpx.post", side_effect=Exception("fail")), \
+             patch("general_ludd.ansible.galaxy.install_galaxy", return_value={"success": True, "output": "ok"}):
+            _cmd_ansible_install(_ns(name="nginx", type="role"))
+        assert "OK" in capsys.readouterr().out
+
+    def test_ansible_builtins_success(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_builtins
+
+        resp = self._mock_resp(200, {"modules": ["copy", "file"]})
+        with patch("httpx.get", return_value=resp):
+            _cmd_ansible_builtins(_ns())
+        out = capsys.readouterr().out
+        assert "copy" in out and "file" in out
+
+    def test_ansible_builtins_error_falls_back(self, capsys) -> None:
+        from general_ludd.cli import _cmd_ansible_builtins
+
+        with patch("httpx.get", side_effect=Exception("fail")), \
+             patch("general_ludd.ansible.galaxy.get_builtin_modules", return_value=["copy"]):
+            _cmd_ansible_builtins(_ns())
+        assert "copy" in capsys.readouterr().out
