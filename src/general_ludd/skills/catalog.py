@@ -545,4 +545,286 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
             "- Set performance budgets and measure against them"
         ),
     ),
+    "medium-frontend-design": CatalogSkillEntry(
+        name="medium-frontend-design",
+        description=(
+            "Production-grade UI generation escaping AI's default visual "
+            "signature. Bold typography, intentional color, purposeful "
+            "animations. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="frontend",
+        tags=[
+            "frontend", "design", "ui", "css", "animations", "medium-2026",
+        ],
+        body_preview=(
+            "# Frontend Design\n\n"
+            "Escape distributional convergence — the statistical center of "
+            "AI-generated design.\n\n"
+            "Principles:\n"
+            "1. Distinctive typography — avoid Inter/Roboto/system-ui as primary\n"
+            "2. Intentional color — no default blue-purple gradients\n"
+            "3. Purposeful animation — animate to communicate, not decorate\n"
+            "4. Layout variety — break the card grid habit\n"
+            "5. Visual signature — output should NOT look AI-generated\n\n"
+            "Process: describe design system (tokens, scale, palette) before "
+            "writing any code. Choose reference sites. Build tokens first, "
+            "then components.\n"
+        ),
+    ),
+    "medium-browser-use": CatalogSkillEntry(
+        name="medium-browser-use",
+        description=(
+            "Live web and browser automation. Navigate, click, fill forms, "
+            "extract JS-rendered content, screenshot. End-to-end QA and "
+            "research. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="automation",
+        tags=[
+            "browser", "automation", "qa", "testing", "scraping",
+            "medium-2026",
+        ],
+        body_preview=(
+            "# Browser Use\n\n"
+            "Give the agent control of a headless browser.\n\n"
+            "Capabilities: navigate URLs, click elements, fill forms, extract "
+            "JS-rendered content, take screenshots, handle multi-step "
+            "workflows.\n\n"
+            "Use for: end-to-end QA, live research, form automation, "
+            "deployment validation.\n"
+        ),
+    ),
+    "medium-code-reviewer": CatalogSkillEntry(
+        name="medium-code-reviewer",
+        description=(
+            "Automated code quality review: simplifiable logic, single "
+            "responsibility, duplicated patterns, performance, dead code, "
+            "naming. Fixes before presenting. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="quality",
+        tags=[
+            "code-review", "quality", "simplification", "refactoring",
+            "medium-2026",
+        ],
+        body_preview=(
+            "# Code Reviewer\n\n"
+            "Structured review pass before presenting code to user.\n\n"
+            "Checklist: simplifiable logic, single responsibility (30-line "
+            "limit), duplicated patterns (>2x = extract), performance "
+            "(N+1, blocking I/O), dead code, naming clarity.\n\n"
+            "The user sees the second draft, not the first.\n"
+        ),
+    ),
+    "medium-remotion": CatalogSkillEntry(
+        name="medium-remotion",
+        description=(
+            "React-based programmatic video creation. Product demos, release "
+            "videos, explainer animations from natural language. Uses "
+            "Remotion framework. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="media",
+        tags=[
+            "video", "remotion", "react", "animation", "demos",
+            "medium-2026",
+        ],
+        body_preview=(
+            "# Remotion Video Generation\n\n"
+            "Create videos programmatically using React components.\n"
+            "Animation = state changing over time.\n\n"
+            "Process: describe video -> generate Remotion component with "
+            "useCurrentFrame() -> preview in Studio -> render to MP4.\n\n"
+            "Use for: product demos, release videos, explainers, animated "
+            "README headers. Keep under 60 seconds.\n"
+        ),
+    ),
+    "medium-google-workspace": CatalogSkillEntry(
+        name="medium-google-workspace",
+        description=(
+            "Unified Google Workspace automation. 50+ APIs: Gmail, Drive, "
+            "Calendar, Docs, Sheets, Slides, Chat, Admin. Built-in MCP "
+            "server. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="automation",
+        tags=[
+            "google", "workspace", "gmail", "drive", "calendar",
+            "automation", "medium-2026",
+        ],
+        body_preview=(
+            "# Google Workspace (GWS)\n\n"
+            "Unified interface to 50+ Google Workspace APIs.\n\n"
+            "Setup: npm install -g @googleworkspace/cli && gws mcp "
+            "-s drive,gmail,calendar,sheets\n\n"
+            "Patterns: executive assistant (email+calendar), project manager "
+            "(Sheets+Chat), IT admin (users+audit), sales (CRM+proposals).\n"
+        ),
+    ),
+    "medium-valyu": CatalogSkillEntry(
+        name="medium-valyu",
+        description=(
+            "Real-time web search and 36+ specialised data sources. SEC "
+            "filings, PubMed, ChEMBL, FRED, patents. Grounded answers with "
+            "citations. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="data",
+        tags=[
+            "search", "data", "research", "sec", "pubmed", "finance",
+            "medium-2026",
+        ],
+        body_preview=(
+            "# Valyu\n\n"
+            "36+ specialised data sources through single API.\n\n"
+            "Sources: SEC filings, PubMed, ChEMBL (2.5M compounds), "
+            "ClinicalTrials.gov, FRED, BLS, patent databases, academic "
+            "publishers.\n\n"
+            "FreshQA benchmark: 79% vs Google 39%. Finance: 73% vs 55%.\n"
+            "Always surface sources. Never fabricate data.\n"
+        ),
+    ),
+    "medium-antigravity-skills": CatalogSkillEntry(
+        name="medium-antigravity-skills",
+        description=(
+            "1,234+ curated agent skills library. Brainstorming, "
+            "architecture, debugging, API design, security, PR creation, "
+            "documentation. Universal SKILL.md format. "
+            "Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="meta",
+        tags=[
+            "skills", "library", "community", "antigravity", "medium-2026",
+        ],
+        body_preview=(
+            "# Antigravity Awesome Skills\n\n"
+            "1,234+ curated skills in universal SKILL.md format.\n\n"
+            "Key skills: @brainstorming, @architecture, @debugging-strategies, "
+            "@api-design-principles, @security-auditor, @lint-and-validate, "
+            "@create-pr, @doc-coauthoring.\n\n"
+            "Role bundles: Web Wizard, Security Engineer, Essentials.\n"
+            "22K+ GitHub stars. v7.3.0.\n"
+        ),
+    ),
+    "medium-planetscale": CatalogSkillEntry(
+        name="medium-planetscale",
+        description=(
+            "Serverless MySQL/Postgres with schema branching, index-aware "
+            "queries, migration workflows. Schema changes as reviewable, "
+            "reversible code. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="database",
+        tags=[
+            "database", "mysql", "planetscale", "schema", "migrations",
+            "indexing", "medium-2026",
+        ],
+        body_preview=(
+            "# PlanetScale Database Skills\n\n"
+            "Branch-based schema changes, index-first design.\n\n"
+            "Workflow: create branch -> design schema with indexes -> verify "
+            "query coverage -> deploy request -> review.\n\n"
+            "Rules: never SELECT *, design indexes with tables, estimate at "
+            "10M rows, use DECIMAL for money.\n"
+        ),
+    ),
+    "medium-shannon": CatalogSkillEntry(
+        name="medium-shannon",
+        description=(
+            "Autonomous AI pentesting. 96.15% exploit success rate. 50+ "
+            "vulnerability types across 5 OWASP categories. No false "
+            "positives. Runs in Docker. Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="security",
+        tags=[
+            "security", "pentesting", "owasp", "xss", "injection",
+            "authentication", "medium-2026",
+        ],
+        body_preview=(
+            "# Shannon: Autonomous AI Pentester\n\n"
+            "96.15% exploit success rate (XBOW benchmark, 100/104). No false "
+            "positives.\n\n"
+            "5-phase pipeline: Pre-Recon -> Recon -> Vulnerability Analysis "
+            "(5 parallel agents) -> Exploitation -> Reporting.\n\n"
+            "Covers: SQL injection, XSS, SSRF, broken authN, broken authZ. "
+            "~1-1.5h per pentest, ~$50 with Sonnet. Docker-only.\n"
+        ),
+    ),
+    "medium-excalidraw": CatalogSkillEntry(
+        name="medium-excalidraw",
+        description=(
+            "Architecture diagram generation from natural language. "
+            "Self-validating: generates JSON, renders PNG, reviews layout, "
+            "fixes issues. Visual structure = conceptual structure. "
+            "Source: unicodeveloper/medium-2026."
+        ),
+        source="unicodeveloper",
+        source_url=(
+            "https://medium.com/@unicodeveloper/"
+            "10-must-have-skills-for-claude-and-any-coding-agent-in-2026"
+            "-b5451b013051"
+        ),
+        category="documentation",
+        tags=[
+            "diagrams", "architecture", "excalidraw", "visual",
+            "documentation", "medium-2026",
+        ],
+        body_preview=(
+            "# Excalidraw Diagram Generator\n\n"
+            "Production-quality diagrams from natural language.\n\n"
+            "Design: visual structure maps to conceptual structure (fan-out "
+            "for 1:N, timelines for sequential, convergence for aggregation). "
+            "Include real code/data, not placeholders.\n\n"
+            "Self-validation: generate JSON -> render PNG -> review layout -> "
+            "fix issues -> present final.\n"
+        ),
+    ),
 }
