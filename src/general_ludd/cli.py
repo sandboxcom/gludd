@@ -2525,8 +2525,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         _term_w, _term_h = _shutil.get_terminal_size((80, 24))
         footer_rows = _compute_footer_rows(_term_h)
         header_rows = 1
-        left_ratio = 2
-        right_ratio = 3
+        left_width = tui_state.get("left_panel_width") or max(30, _term_w * 2 // 5)
 
         layout = Layout()
         layout.split(
@@ -2535,13 +2534,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             Layout(name="footer", size=footer_rows),
         )
         layout["body"].split_row(
-            Layout(name="left", ratio=left_ratio),
-            Layout(name="right", ratio=right_ratio),
+            Layout(name="left", size=left_width),
+            Layout(name="right"),
         )
         body = layout["body"]
         if current_view == "edit":
             body.split_row(
-                Layout(name="left"),
+                Layout(name="left", size=left_width),
                 Layout(name="right"),
             )
             items = config_nav["current_items"]
@@ -3142,6 +3141,15 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     more = os.read(fd, 2)
                     if more in (b"[A", b"[B", b"[C", b"[D", b"OH", b"OF"):
                         return data.decode() + more.decode()
+                    if more == b"[M":
+                        r3, _w3, _e3 = select.select([fd], [], [], 0.05)
+                        if r3:
+                            mouse_data = os.read(fd, 3)
+                            if len(mouse_data) == 3:
+                                btn = mouse_data[0] - 32
+                                col = mouse_data[1] - 32
+                                row = mouse_data[2] - 32
+                                return f"\x1b[M{btn}:{col}:{row}"
                 return "\x1b"
             return data.decode("utf-8", errors="ignore") or ""
         return ""
@@ -3152,14 +3160,33 @@ def _cmd_tui(args: argparse.Namespace) -> None:
     old_settings = termios.tcgetattr(stdin_fd)
 
     layout = make_layout(info)
+    _mouse_dragging = False
     try:
         tty.setcbreak(stdin_fd)
+        sys.stdout.write("\x1b[?1002h")
+        sys.stdout.flush()
         with Live(layout, console=console, refresh_per_second=4, screen=True) as live:
             while True:
                 ch = getch(stdin_fd, 0.3)
                 if ch:
                     tui_logger.verbose = tui_state.get("verbose_logging", False)
                     tui_logger.log_key_press(current_view, repr(ch))
+
+                    if ch.startswith("\x1b[M") and ":" in ch:
+                        parts = ch[3:].split(":")
+                        btn_code = int(parts[0])
+                        col = int(parts[1])
+                        is_release = btn_code == 3
+                        if _mouse_dragging and is_release:
+                            _mouse_dragging = False
+                        elif not is_release and btn_code in (0, 1, 2, 32, 33, 34):
+                            _mouse_dragging = True
+                            import shutil as _shutil_mouse
+                            tw, _th = _shutil_mouse.get_terminal_size((80, 24))
+                            new_w = max(20, min(col, tw - 20))
+                            tui_state["left_panel_width"] = new_w
+                        continue
+
                     if ch == "\x03":
                         break
                     if ch == "\x1b":
@@ -3181,6 +3208,8 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 info = _gather_offline_status()
                 live.update(make_layout(info))
     finally:
+        sys.stdout.write("\x1b[?1002l")
+        sys.stdout.flush()
         tui_logger.close()
         termios.tcsetattr(stdin_fd, termios.TCSADRAIN, old_settings)
     print("TUI exited.")
