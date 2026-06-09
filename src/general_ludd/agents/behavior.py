@@ -23,6 +23,9 @@ class GuardrailConfig(BaseModel):
         if self.layer_count() == 0:
             raise ValueError("At least one guardrail layer must be enabled")
 
+    def model_post_init(self, __context: object) -> None:
+        self.ensure_valid()
+
 
 class AgentBehavior(BaseModel):
     completion_policy: str = "complete_all"

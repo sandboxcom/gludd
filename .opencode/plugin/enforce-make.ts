@@ -721,8 +721,43 @@ export default (async ({ }) => {
           "If ANY of these lack a passing test, the TUI work is NOT complete.",
           "Do NOT mark TUI tasks as completed until ALL have green tests.",
           "",
+          "RUN: make test-guardrails to verify all guardrail tests pass.",
+          "This runs test_guardrails.py + test_user_requested_guardrails.py",
+          "",
         ].join("\n")
         output += tuiCompletenessCheck
+
+        const userRequestGuardrail = [
+          "",
+          "## CRITICAL: User-Requested Feature Guardrail — RUN make test-guardrails",
+          "",
+          "The file tests/unit/test_user_requested_guardrails.py contains 79 tests",
+          "that verify EVERY feature the user has repeatedly requested. These tests",
+          "are NON-NEGOTIABLE. If any fail, the work is INCOMPLETE.",
+          "",
+          "Categories tested:",
+          "  - Arrow navigation in ALL TUI views (projects, todos, hooks, workers, models)",
+          "  - Tab panel focus switching",
+          "  - Escape/left-arrow breadcrumb and input cancellation",
+          "  - Space/Enter activation on main AND sub-views",
+          "  - Daemon start/stop keys (s/k)",
+          "  - Verbose toggle (V) vs config view (v)",
+          "  - Schema adversarial validation (JobSpec, TaskReturn, Todo, BenchmarkScores,",
+          "    Queue, TaskDecision, all daemon request models)",
+          "  - GuardrailConfig enforcement (must have at least one layer)",
+          "  - Breadcrumb integrity",
+          "  - TDD gate (test files exist for critical modules)",
+          "  - Panel focus state variable exists",
+          "",
+          "BEFORE declaring ANY work session complete:",
+          "  1. Run: make test-guardrails",
+          "  2. ALL 79 tests MUST pass",
+          "  3. If any fail, FIX THEM before continuing",
+          "",
+          "This is a HARD gate. Non-passing guardrails = incomplete work.",
+          "",
+        ].join("\n")
+        output += userRequestGuardrail
 
         if (_pendingCommitReminder) {
           output += "\n\n" + COMMIT_REMINDER

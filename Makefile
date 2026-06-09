@@ -128,7 +128,7 @@ diag-gunicorn:
 	@$(UV) run python /Users/shawnwilson/tmp/opencode/diag_gunicorn.py
 
 test-guardrails:
-	@$(UV) run python -m pytest tests/unit/test_guardrails.py -v
+	@$(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py -v
 
 test-db:
 	@$(UV) run python -m pytest tests/unit/test_db_models.py -v
