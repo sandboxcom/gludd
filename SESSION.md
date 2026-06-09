@@ -3,15 +3,30 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 15)
+- 2026-06-08 (session 16)
 
 ## Current Status
-- **Phase**: TUI breadcrumb navigation complete
-- **Test Suite**: 3615 passed, 2 failed (pre-existing), 2 skipped
+- **Phase**: PSK auth and DB URL composition complete
+- **Test Suite**: 3620+ passed, 2 failed (pre-existing), 2 skipped
 - **Branch**: master
-- **Latest commit**: ef36032 — fix breadcrumb escape handler and view toggle ordering
+- **Latest commit**: 5e51acd — PSK auth for external daemon binding
 - **Mypy**: 0 errors
 - **Lint**: 0 errors
+
+## Session 16: PSK Auth, DB URL Composition (commit 5e51acd)
+
+### PSK Auth for External Daemon Binding
+- `GLUDD_PSK` env var enables Bearer token auth on all non-public daemon endpoints
+- `stats_middleware` renamed to `auth_and_stats_middleware` — checks Authorization header when PSK set
+- Public paths (healthz, docs, openapi.json, redoc) bypass auth
+- `_cmd_daemon` generates `secrets.token_urlsafe(32)` when host is not localhost/127.0.0.1/::1
+- PSK printed to stdout at startup and passed to gunicorn subprocess via `GLUDD_PSK` env var
+- 5 tests in `tests/unit/test_psk_auth.py`
+
+### Database URL Composition (commit 5e51acd)
+- `_compose_db_url()` in `db/session.py` resolves URL from: url field > DATABASE_URL env var > host/port/name/user fields > SQLite default
+- `init_engine_from_config()` now calls `_compose_db_url()`
+- 8 tests in `tests/unit/test_db_url_composition.py`
 
 ## This Session: TDD Enforcement + Real TUI Functionality (Session 15)
 
@@ -582,7 +597,9 @@ EventLoop auto-creates from session (when available):
 - Fix: added "update session" to STOP_SIGNAL_WORDS, BUGS.md incident #5 logged
 
 ## Next Steps
+- Wire PSK into CLI client commands (add `--token` flag or read from config)
 - Push cli.py coverage higher (92% — TUI body render paths, 198 uncovered lines)
 - Wire TUI timeout/health views (model health table, retry stats)
 - Model auto-population from provider APIs
 - events/bus.py async coroutine paths (88%)
+- Wire remaining TUI CLI parity (28+ commands not yet in TUI)
