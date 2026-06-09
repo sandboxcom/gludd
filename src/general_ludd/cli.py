@@ -1644,9 +1644,10 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
     from rich.table import Table
 
     t = Table(title="Daemon", show_header=False, expand=True, title_justify="left")
-    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6)
-    val_w = max(10, term_width - _table_overhead(2) - 6)
-    t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10)
+    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
+    _available = term_width - _table_overhead(2)
+    val_w = max(10, _available * 3 // 4)
+    t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10, max_width=60)
     t.add_row("Status", "running" if daemon_running else "stopped")
     url_display = daemon_url
     if len(url_display) > val_w - 2:
@@ -2042,9 +2043,9 @@ def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> 
     from rich.table import Table
 
     t = Table(title="MCP Servers", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Transport", style="green", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
+    t.add_column("Transport", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not servers:
         t.add_row("No MCP servers", "", "")
     else:
@@ -2063,9 +2064,9 @@ def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -
     from rich.table import Table
 
     t = Table(title="Skills", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Category", style="green", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Installed", style="yellow", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
+    t.add_column("Category", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Installed", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
     if not skills:
         t.add_row("No skills", "", "")
     else:
@@ -2084,9 +2085,9 @@ def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 8
     from rich.table import Table
 
     t = Table(title="Compute Endpoints", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
+    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not endpoints:
         t.add_row("No endpoints", "", "")
     else:
@@ -2105,10 +2106,10 @@ def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -
     from rich.table import Table
 
     t = Table(title="Benchmark Scores", show_header=True, expand=True, title_justify="left")
-    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Task", style="yellow", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Score", style="bold", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("Task", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Score", style="bold", no_wrap=True, ratio=1, min_width=3, max_width=20)
     if not scores:
         t.add_row("No scores", "", "", "")
     else:
@@ -2128,10 +2129,10 @@ def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int =
     from rich.table import Table
 
     t = Table(title="Leaderboard", show_header=True, expand=True, title_justify="left")
-    t.add_column("#", style="bold", no_wrap=True, ratio=1, min_width=3)
-    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Score", style="yellow", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("#", style="bold", no_wrap=True, ratio=1, min_width=3, max_width=20)
+    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("Score", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
     if not entries:
         t.add_row("", "No entries", "", "")
     else:
@@ -2151,9 +2152,9 @@ def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int =
     from rich.table import Table
 
     t = Table(title="Templates", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Task Types", style="green", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Source", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("Task Types", style="green", no_wrap=True, ratio=3, min_width=6, max_width=40)
+    t.add_column("Source", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not templates:
         t.add_row("No templates", "", "")
     else:
@@ -2172,9 +2173,9 @@ def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int =
     from rich.table import Table
 
     t = Table(title="Playbooks", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Tasks", style="green", no_wrap=True, ratio=1, min_width=3)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=50)
+    t.add_column("Tasks", style="green", no_wrap=True, ratio=1, min_width=3, max_width=20)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not playbooks:
         t.add_row("No playbooks", "", "")
     else:
@@ -2193,10 +2194,10 @@ def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int 
     from rich.table import Table
 
     t = Table(title="Quantization", show_header=True, expand=True, title_justify="left")
-    t.add_column("Model", style="cyan", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Precision", style="green", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Conf", style="yellow", no_wrap=True, ratio=1, min_width=3)
-    t.add_column("Source", style="dim", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Model", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=40)
+    t.add_column("Precision", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Conf", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
+    t.add_column("Source", style="dim", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not entries:
         t.add_row("No data", "", "", "")
     else:
@@ -2216,9 +2217,9 @@ def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80)
     from rich.table import Table
 
     t = Table(title="Filestore", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=50)
+    t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not files:
         t.add_row("No files", "", "")
     else:
@@ -2236,9 +2237,9 @@ def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: i
     from rich.table import Table
 
     t = Table(title="Deployments", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
+    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
     if not deployments:
         t.add_row("No deployments", "", "")
     else:

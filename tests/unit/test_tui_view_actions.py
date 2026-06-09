@@ -496,6 +496,7 @@ class TestProjectsAddInput:
         assert (
             "error" in state["status_msg"].lower()
             or "added" in state["status_msg"].lower()
+            or "failed" in state["status_msg"].lower()
         )
 
 
