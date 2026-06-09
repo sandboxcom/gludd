@@ -112,7 +112,10 @@ def _build_skill_md(entry: CatalogSkillEntry) -> str:
 _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     "mp-diagnose": CatalogSkillEntry(
         name="mp-diagnose",
-        description="Disciplined diagnosis loop for hard bugs: reproduce, minimise, hypothesise, instrument, fix, regression-test. Adapted from mattpocock/skills.",
+        description=(
+            "Disciplined diagnosis loop for hard bugs: reproduce, minimise, "
+            "hypothesise, instrument, fix, regression-test. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnose",
         category="engineering",
@@ -135,7 +138,10 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-tdd": CatalogSkillEntry(
         name="mp-tdd",
-        description="Test-driven development with red-green-refactor loop. Vertical slices, not horizontal. Adapted from mattpocock/skills.",
+        description=(
+            "Test-driven development with red-green-refactor loop. "
+            "Vertical slices, not horizontal. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd",
         category="engineering",
@@ -156,7 +162,11 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-grill-me": CatalogSkillEntry(
         name="mp-grill-me",
-        description="Relentlessly interview the user about a plan or design until every branch of the decision tree is resolved. Adapted from mattpocock/skills.",
+        description=(
+            "Relentlessly interview the user about a plan or design until "
+            "every branch of the decision tree is resolved. "
+            "Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me",
         category="productivity",
@@ -171,7 +181,11 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-grill-with-docs": CatalogSkillEntry(
         name="mp-grill-with-docs",
-        description="Grilling session that challenges your plan against the existing domain model, sharpens terminology, updates CONTEXT.md and ADRs inline. Adapted from mattpocock/skills.",
+        description=(
+            "Grilling session that challenges your plan against the existing "
+            "domain model, sharpens terminology, updates CONTEXT.md and ADRs "
+            "inline. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs",
         category="engineering",
@@ -189,7 +203,11 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-caveman": CatalogSkillEntry(
         name="mp-caveman",
-        description="Ultra-compressed communication mode. Cuts token usage by dropping filler while keeping full technical accuracy. Adapted from mattpocock/skills.",
+        description=(
+            "Ultra-compressed communication mode. Cuts token usage by "
+            "dropping filler while keeping full technical accuracy. "
+            "Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/caveman",
         category="productivity",
@@ -209,7 +227,10 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-handoff": CatalogSkillEntry(
         name="mp-handoff",
-        description="Compact the current conversation into a handoff document so another agent can continue the work. Adapted from mattpocock/skills.",
+        description=(
+            "Compact the current conversation into a handoff document so "
+            "another agent can continue the work. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff",
         category="productivity",
@@ -219,14 +240,19 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
             "Write a handoff document summarizing the conversation for a fresh agent.\n\n"
             "- Save to OS temp directory (not workspace)\n"
             "- Include suggested skills section\n"
-            "- Don't duplicate content in other artifacts (PRDs, plans, ADRs, issues, commits) — reference by path/URL\n"
+            "- Don't duplicate content in other artifacts (PRDs, plans, ADRs, "
+            "issues, commits) — reference by path/URL\n"
             "- Redact sensitive info\n"
             "- Tailor to what the next session will focus on\n"
         ),
     ),
     "mp-to-prd": CatalogSkillEntry(
         name="mp-to-prd",
-        description="Turn the current conversation context into a PRD and publish to the issue tracker. No interview — synthesizes what you already know. Adapted from mattpocock/skills.",
+        description=(
+            "Turn the current conversation context into a PRD and publish to "
+            "the issue tracker. No interview — synthesizes what you already "
+            "know. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/to-prd",
         category="engineering",
@@ -245,7 +271,10 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-to-issues": CatalogSkillEntry(
         name="mp-to-issues",
-        description="Break a plan, spec, or PRD into independently-grabbable issues using tracer-bullet vertical slices. Adapted from mattpocock/skills.",
+        description=(
+            "Break a plan, spec, or PRD into independently-grabbable issues "
+            "using tracer-bullet vertical slices. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/to-issues",
         category="engineering",
@@ -265,7 +294,10 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-zoom-out": CatalogSkillEntry(
         name="mp-zoom-out",
-        description="Zoom out and give broader context or a higher-level perspective on unfamiliar code. Adapted from mattpocock/skills.",
+        description=(
+            "Zoom out and give broader context or a higher-level perspective "
+            "on unfamiliar code. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/zoom-out",
         category="engineering",
@@ -279,7 +311,11 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-improve-architecture": CatalogSkillEntry(
         name="mp-improve-architecture",
-        description="Find deepening opportunities in a codebase, informed by domain language and ADRs. Consolidate tightly-coupled modules. Adapted from mattpocock/skills.",
+        description=(
+            "Find deepening opportunities in a codebase, informed by domain "
+            "language and ADRs. Consolidate tightly-coupled modules. "
+            "Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/improve-codebase-architecture",
         category="engineering",
@@ -299,7 +335,11 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-teach": CatalogSkillEntry(
         name="mp-teach",
-        description="Teach the user a new skill or concept using a stateful teaching workspace with lessons, learning records, and reference docs. Adapted from mattpocock/skills.",
+        description=(
+            "Teach the user a new skill or concept using a stateful teaching "
+            "workspace with lessons, learning records, and reference docs. "
+            "Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/teach",
         category="productivity",
@@ -315,7 +355,10 @@ _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
     ),
     "mp-write-a-skill": CatalogSkillEntry(
         name="mp-write-a-skill",
-        description="Create new agent skills with proper structure, progressive disclosure, and bundled resources. Adapted from mattpocock/skills.",
+        description=(
+            "Create new agent skills with proper structure, progressive "
+            "disclosure, and bundled resources. Adapted from mattpocock/skills."
+        ),
         source="mattpocock",
         source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/write-a-skill",
         category="productivity",

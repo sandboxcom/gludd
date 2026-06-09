@@ -2717,7 +2717,12 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_wrap_table(_build_templates_table(_templates_data, term_width=right_width)), name="templates"),
+                    Layout(
+                        _wrap_table(_build_templates_table(
+                            _templates_data, term_width=right_width,
+                        )),
+                        name="templates",
+                    ),
                 )
             elif current_view == "quantization":
                 _quant_data: list[dict[str, Any]] = []
@@ -2728,7 +2733,12 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_wrap_table(_build_quantization_table(_quant_data, term_width=right_width)), name="quantization"),
+                    Layout(
+                        _wrap_table(_build_quantization_table(
+                            _quant_data, term_width=right_width,
+                        )),
+                        name="quantization",
+                    ),
                 )
             elif current_view == "filestore":
                 _fs_data: list[dict[str, Any]] = []
@@ -2750,7 +2760,12 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_wrap_table(_build_deployments_table(_deploy_data, term_width=right_width)), name="deployments"),
+                    Layout(
+                        _wrap_table(_build_deployments_table(
+                            _deploy_data, term_width=right_width,
+                        )),
+                        name="deployments",
+                    ),
                 )
             elif current_view == "leaderboard":
                 _lb_data: list[dict[str, Any]] = []

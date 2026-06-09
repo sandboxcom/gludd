@@ -565,12 +565,30 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
         with patch("httpx.get") as mock_get:
             mock_get.return_value = MagicMock(
                 status_code=200,
-                json=MagicMock(return_value={"pid": 12345, "requests_total": 100, "responses_total": 99, "memory_mb": 50.5, "uptime_s": 3600.0}),
+                json=MagicMock(return_value={
+                    "pid": 12345, "requests_total": 100,
+                    "responses_total": 99, "memory_mb": 50.5,
+                    "uptime_s": 3600.0,
+                }),
             )
-            daemon_table = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+            daemon_table = _build_daemon_table(
+                True, "http://127.0.0.1:8000", "main",
+                term_width=left_w,
+            )
 
-        binary_table = _build_binary_table({"binary_paths": {"python": "/usr/bin/python3"}, "binary_versions": {"python": "3.14.0"}}, term_width=left_w)
-        info_table = _build_info_table({"version": "0.1.0", "python_version": "3.14.0", "platform": "darwin", "cwd": "/home/user/proj", "config_dir": "/home/user/.cfg", "config_files": [], "filestore_root": "/home/user/.local/share/gludd", "filestore_size_bytes": 2048000, "db_engine": "sqlite", "db_exists": True, "db_size_bytes": 512000}, term_width=right_w)
+        binary_table = _build_binary_table({
+            "binary_paths": {"python": "/usr/bin/python3"},
+            "binary_versions": {"python": "3.14.0"},
+        }, term_width=left_w)
+        info_table = _build_info_table({
+            "version": "0.1.0", "python_version": "3.14.0",
+            "platform": "darwin", "cwd": "/home/user/proj",
+            "config_dir": "/home/user/.cfg", "config_files": [],
+            "filestore_root": "/home/user/.local/share/gludd",
+            "filestore_size_bytes": 2048000,
+            "db_engine": "sqlite", "db_exists": True,
+            "db_size_bytes": 512000,
+        }, term_width=right_w)
         controls_table = _build_controls_table(True, "ok", term_width=term_w)
 
         layout = Layout()
@@ -606,7 +624,12 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
             if not has_content and prev_had_content:
                 remaining = [lines[j].strip() for j in range(i + 1, len(lines))]
                 if any(remaining):
-                    raise AssertionError(f"Blank line {i} between content at tw={term_w}\n" f"  prev: |{lines[i - 1]}|\n" f"  this: |{line}|\n" f"  next: |{lines[min(i + 1, len(lines) - 1)]}|")
+                    raise AssertionError(
+                        f"Blank line {i} between content at tw={term_w}\n"
+                        f"  prev: |{lines[i - 1]}|\n"
+                        f"  this: |{line}|\n"
+                        f"  next: |{lines[min(i + 1, len(lines) - 1)]}|"
+                    )
             prev_had_content = has_content
 
     @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
@@ -630,12 +653,31 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
         with patch("httpx.get") as mock_get:
             mock_get.return_value = MagicMock(
                 status_code=200,
-                json=MagicMock(return_value={"pid": 12345, "requests_total": 100, "responses_total": 99, "memory_mb": 50.5, "uptime_s": 3600.0}),
+                json=MagicMock(return_value={
+                    "pid": 12345, "requests_total": 100,
+                    "responses_total": 99, "memory_mb": 50.5,
+                    "uptime_s": 3600.0,
+                }),
             )
-            daemon_table = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+            daemon_table = _build_daemon_table(
+                True, "http://127.0.0.1:8000", "main",
+                term_width=left_w,
+            )
 
-        binary_table = _build_binary_table({"binary_paths": {"python": "/usr/bin/python3"}, "binary_versions": {"python": "3.14.0"}}, term_width=left_w)
-        info_table = _build_info_table({"version": "0.1.0", "python_version": "3.14.0", "platform": "darwin", "cwd": "/home/user/proj", "config_dir": "/home/user/.config/gludd", "config_files": [], "filestore_root": "/home/user/.local/share/gludd", "filestore_size_bytes": 2048000, "db_engine": "sqlite", "db_exists": True, "db_size_bytes": 512000}, term_width=right_w)
+        binary_table = _build_binary_table({
+            "binary_paths": {"python": "/usr/bin/python3"},
+            "binary_versions": {"python": "3.14.0"},
+        }, term_width=left_w)
+        info_table = _build_info_table({
+            "version": "0.1.0", "python_version": "3.14.0",
+            "platform": "darwin", "cwd": "/home/user/proj",
+            "config_dir": "/home/user/.config/gludd",
+            "config_files": [],
+            "filestore_root": "/home/user/.local/share/gludd",
+            "filestore_size_bytes": 2048000,
+            "db_engine": "sqlite", "db_exists": True,
+            "db_size_bytes": 512000,
+        }, term_width=right_w)
         controls_table = _build_controls_table(True, "ok", term_width=term_w)
 
         layout = Layout()
@@ -682,9 +724,16 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
         with patch("httpx.get") as mock_get:
             mock_get.return_value = MagicMock(
                 status_code=200,
-                json=MagicMock(return_value={"pid": 12345, "requests_total": 100, "responses_total": 99, "memory_mb": 50.5, "uptime_s": 3600.0}),
+                json=MagicMock(return_value={
+                    "pid": 12345, "requests_total": 100,
+                    "responses_total": 99, "memory_mb": 50.5,
+                    "uptime_s": 3600.0,
+                }),
             )
-            daemon_table = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+            daemon_table = _build_daemon_table(
+                True, "http://127.0.0.1:8000", "main",
+                term_width=left_w,
+            )
 
         layout = Layout()
         layout.split_row(
