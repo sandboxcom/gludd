@@ -1569,6 +1569,17 @@ def _scale_col(term_width: int, fraction: float, min_w: int = 4) -> int:
     return max(min_w, int(term_width * fraction))
 
 
+def _compute_panel_widths(term_w: int, tui_state: dict[str, Any]) -> tuple[int, int]:
+    left = tui_state.get("left_panel_width") or max(30, term_w * 2 // 5)
+    left = max(20, min(left, term_w - 20))
+    right = term_w - left
+    return left, right
+
+
+def _table_overhead(ncols: int) -> int:
+    return 2 + (ncols - 1) + ncols * 2
+
+
 def _compute_footer_rows(term_height: int) -> int:
     return min(18, max(6, term_height - 20))
 
@@ -1627,8 +1638,9 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
     from rich.table import Table
 
     t = Table(title="Daemon", show_header=False)
-    t.add_column("Key", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.12, 6))
-    val_w = _scale_col(term_width, 0.38, 10)
+    _avail = term_width - _table_overhead(2)
+    t.add_column("Key", style="cyan", no_wrap=True, max_width=_scale_col(_avail, 0.25, 6))
+    val_w = _scale_col(_avail, 0.75, 10)
     t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
     t.add_row("Status", "running" if daemon_running else "stopped")
     url_display = daemon_url
@@ -1659,10 +1671,11 @@ def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="System Info", show_header=False)
-    key_w = _scale_col(term_width, 0.17, 6)
-    val_w = _scale_col(term_width, 0.45, 10)
+    _avail = term_width - _table_overhead(2)
+    key_w = _scale_col(_avail, 0.30, 6)
+    val_w = _scale_col(_avail, 0.70, 10)
     t.add_column("Key", style="cyan", no_wrap=True, max_width=key_w)
-    t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
+    t.add_column("Value", style="green", no_wrap=True, width=val_w)
     rows = [
         ("Version", str(info.get("version", "?"))),
         ("Python", str(info.get("python_version", "?"))),
@@ -1686,9 +1699,10 @@ def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Binaries", show_header=True)
-    name_w = _scale_col(term_width, 0.18, 6)
-    found_w = _scale_col(term_width, 0.08, 3)
-    ver_w = _scale_col(term_width, 0.12, 4)
+    _avail = term_width - _table_overhead(3)
+    name_w = _scale_col(_avail, 0.50, 6)
+    found_w = _scale_col(_avail, 0.20, 3)
+    ver_w = _scale_col(_avail, 0.30, 4)
     t.add_column("Binary", style="cyan", no_wrap=True, max_width=name_w)
     t.add_column("Found", style="green", no_wrap=True, max_width=found_w)
     t.add_column("Version", style="yellow", no_wrap=True, max_width=ver_w)
@@ -1708,8 +1722,9 @@ def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
     t = Table(title="Config Files", show_header=True)
-    t.add_column("File", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.5, 8))
-    t.add_column("Size", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.15, 4))
+    _avail = term_width - _table_overhead(2)
+    t.add_column("File", style="cyan", no_wrap=True, max_width=_scale_col(_avail, 0.70, 8))
+    t.add_column("Size", style="green", no_wrap=True, max_width=_scale_col(_avail, 0.30, 4))
     for cf in info.get("config_files", []):
         t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
     return t
@@ -1719,10 +1734,11 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, sel
     from rich.table import Table
 
     t = Table(title="Todos", show_header=True)
-    id_w = _scale_col(term_width, 0.12, 4)
-    title_w = _scale_col(term_width, 0.3, 6)
-    status_w = _scale_col(term_width, 0.12, 4)
-    pri_w = _scale_col(term_width, 0.08, 3)
+    _avail = term_width - _table_overhead(4)
+    id_w = _scale_col(_avail, 0.15, 4)
+    title_w = _scale_col(_avail, 0.45, 6)
+    status_w = _scale_col(_avail, 0.25, 4)
+    pri_w = _scale_col(_avail, 0.15, 3)
     t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
     t.add_column("Title", style="green", no_wrap=True, max_width=title_w)
     t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
@@ -2520,17 +2536,17 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         sel_idx = tui_state.get("selected_main_idx", -1) if current_view == "main" else -1
         return _build_controls_table(daemon_running, status_msg, term_width=_tw, selected_idx=sel_idx)
 
-    def build_daemon_table() -> Table:
-        return _build_daemon_table(daemon_running, args.daemon_url, current_view)
+    def build_daemon_table(*, term_width: int = 80) -> Table:
+        return _build_daemon_table(daemon_running, args.daemon_url, current_view, term_width=term_width)
 
-    def build_info_table(info: dict[str, Any]) -> Table:
-        return _build_info_table(info)
+    def build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
+        return _build_info_table(info, term_width=term_width)
 
-    def build_binary_table(info: dict[str, Any]) -> Table:
-        return _build_binary_table(info)
+    def build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
+        return _build_binary_table(info, term_width=term_width)
 
-    def build_config_table(info: dict[str, Any]) -> Table:
-        return _build_config_table(info)
+    def build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
+        return _build_config_table(info, term_width=term_width)
 
     def make_layout(info: dict[str, Any]) -> Layout:
         import shutil as _shutil
@@ -2538,7 +2554,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         _term_w, _term_h = _shutil.get_terminal_size((80, 24))
         footer_rows = _compute_footer_rows(_term_h)
         header_rows = 1
-        left_width = tui_state.get("left_panel_width") or max(30, _term_w * 2 // 5)
+        left_width, right_width = _compute_panel_widths(_term_w, tui_state)
 
         layout = Layout()
         layout.split(
@@ -2548,13 +2564,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         )
         layout["body"].split_row(
             Layout(name="left", size=left_width),
-            Layout(name="right"),
+            Layout(name="right", size=right_width),
         )
         body = layout["body"]
         if current_view == "edit":
             body.split_row(
                 Layout(name="left", size=left_width),
-                Layout(name="right"),
+                Layout(name="right", size=right_width),
             )
             items = config_nav["current_items"]
             sel = config_nav["selected_cat"]
@@ -2566,28 +2582,28 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             else:
                 for item in items:
                     dict_items.append({"label": item.label, "value": str(item.value), "help_text": item.help_text})
-            _editor_table = _build_config_editor_table(dict_items, sel, depth, term_width=_term_w)
+            _editor_table = _build_config_editor_table(dict_items, sel, depth, term_width=right_width)
             body["left"].split(
-                Layout(build_daemon_table(), name="daemon"),
+                Layout(build_daemon_table(term_width=left_width), name="daemon"),
             )
             body["right"].split(
                 Layout(_editor_table, name="editor"),
             )
         else:
             body["left"].split(
-                Layout(build_daemon_table(), name="daemon"),
-                Layout(build_binary_table(info), name="binaries"),
+                Layout(build_daemon_table(term_width=left_width), name="daemon"),
+                Layout(build_binary_table(info, term_width=left_width), name="binaries"),
             )
             if current_view == "config":
                 body["right"].split(
-                    Layout(build_config_table(info), name="config"),
+                    Layout(build_config_table(info, term_width=right_width), name="config"),
                 )
             elif current_view == "models":
                 servers = model_mgr.list_servers()
                 _model_table = _build_model_table(
                     servers, downloaded_models,
                     selected_idx=tui_state.get("selected_model_idx", 0),
-                    term_width=_term_w,
+                    term_width=right_width,
                 )
                 body["right"].split(
                     Layout(_model_table, name="models"),
@@ -2606,7 +2622,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     is_worktree = _os.path.isfile(agents_path)
                     status = "has AGENTS.md" if is_worktree else "directory"
                     wt_entries.append((d, status))
-                _wt_table = _build_worktrees_table(wt_entries, term_width=_term_w)
+                _wt_table = _build_worktrees_table(wt_entries, term_width=right_width)
                 body["right"].split(
                     Layout(_wt_table, name="worktrees"),
                 )
@@ -2627,7 +2643,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     ]
                 tui_state["projects_data"] = _proj_data
                 _proj_sel = tui_state.get("selected_project_idx", 0)
-                _proj_table = _build_projects_table(_proj_data, selected_idx=_proj_sel, term_width=_term_w)
+                _proj_table = _build_projects_table(_proj_data, selected_idx=_proj_sel, term_width=right_width)
                 body["right"].split(
                     Layout(_proj_table, name="projects"),
                 )
@@ -2703,13 +2719,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     _int_changes = _iresult.get("changes", [])
                 except Exception:
                     _int_changes = [{"file": "Scan failed", "type": "error", "approved": False}]
-                _int_table = _build_integrity_table(_int_changes, term_width=_term_w)
+                _int_table = _build_integrity_table(_int_changes, term_width=right_width)
                 body["right"].split(
                     Layout(_int_table, name="integrity"),
                 )
             elif current_view == "ansible":
                 _ans_results = tui_state.get("ansible_search_results", [])
-                _ans_table = _build_ansible_table(_ans_results, term_width=_term_w)
+                _ans_table = _build_ansible_table(_ans_results, term_width=right_width)
                 body["right"].split(
                     Layout(_ans_table, name="ansible"),
                 )
@@ -2722,7 +2738,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_mcp_table(_mcp_data, term_width=_term_w), name="mcp"),
+                    Layout(_build_mcp_table(_mcp_data, term_width=right_width), name="mcp"),
                 )
             elif current_view == "skills":
                 _skills_data: list[dict[str, Any]] = []
@@ -2733,7 +2749,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_skills_table(_skills_data, term_width=_term_w), name="skills"),
+                    Layout(_build_skills_table(_skills_data, term_width=right_width), name="skills"),
                 )
             elif current_view == "compute":
                 _compute_data: list[dict[str, Any]] = []
@@ -2744,7 +2760,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_compute_table(_compute_data, term_width=_term_w), name="compute"),
+                    Layout(_build_compute_table(_compute_data, term_width=right_width), name="compute"),
                 )
             elif current_view == "scores":
                 _scores_data: list[dict[str, Any]] = []
@@ -2755,7 +2771,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_scores_table(_scores_data, term_width=_term_w), name="scores"),
+                    Layout(_build_scores_table(_scores_data, term_width=right_width), name="scores"),
                 )
             elif current_view == "templates":
                 _templates_data: list[dict[str, Any]] = []
@@ -2766,7 +2782,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_templates_table(_templates_data, term_width=_term_w), name="templates"),
+                    Layout(_build_templates_table(_templates_data, term_width=right_width), name="templates"),
                 )
             elif current_view == "quantization":
                 _quant_data: list[dict[str, Any]] = []
@@ -2777,7 +2793,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_quantization_table(_quant_data, term_width=_term_w), name="quantization"),
+                    Layout(_build_quantization_table(_quant_data, term_width=right_width), name="quantization"),
                 )
             elif current_view == "filestore":
                 _fs_data: list[dict[str, Any]] = []
@@ -2788,7 +2804,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_filestore_table(_fs_data, term_width=_term_w), name="filestore"),
+                    Layout(_build_filestore_table(_fs_data, term_width=right_width), name="filestore"),
                 )
             elif current_view == "deployments":
                 _deploy_data: list[dict[str, Any]] = []
@@ -2799,7 +2815,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_deployments_table(_deploy_data, term_width=_term_w), name="deployments"),
+                    Layout(_build_deployments_table(_deploy_data, term_width=right_width), name="deployments"),
                 )
             elif current_view == "leaderboard":
                 _lb_data: list[dict[str, Any]] = []
@@ -2810,7 +2826,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_leaderboard_table(_lb_data, term_width=_term_w), name="leaderboard"),
+                    Layout(_build_leaderboard_table(_lb_data, term_width=right_width), name="leaderboard"),
                 )
             elif current_view == "playbooks":
                 _pb_data: list[dict[str, Any]] = []
@@ -2821,11 +2837,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_playbooks_table(_pb_data, term_width=_term_w), name="playbooks"),
+                    Layout(_build_playbooks_table(_pb_data, term_width=right_width), name="playbooks"),
                 )
             else:
                 body["right"].split(
-                    Layout(build_info_table(info), name="info"),
+                    Layout(build_info_table(info, term_width=right_width), name="info"),
                 )
         if current_view == "edit":
             header_text = "Config Editor — [c] exit  [q] quit"
