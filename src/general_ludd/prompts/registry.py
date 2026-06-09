@@ -80,6 +80,7 @@ _WORK_TYPE_TEMPLATE_MAP: dict[str, str] = {
     "dependency": "dependency_update.md.j2",
     "security": "implementation.md.j2",
     "model": "implementation.md.j2",
+    "self_improvement": "self_improvement.md.j2",
     "unknown": "implementation.md.j2",
 }
 

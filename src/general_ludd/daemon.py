@@ -327,6 +327,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:
                 logger.warning("Secret migration failed: %s", exc)
 
+        from general_ludd.prompts.registry import PromptRegistry
+
+        templates_dir = app.state._templates_dir
+        prompt_registry = PromptRegistry(
+            template_dir=templates_dir,
+            event_bus=subsys["bus"],
+        )
+        prompt_registry.refresh()
+        app.state._prompt_registry = prompt_registry
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -340,6 +350,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             event_bus=subsys["bus"],
             project_manager=ext["projects"],
             skill_registry=ext["skill_registry"],
+            prompt_registry=prompt_registry,
             config={
                 "default_playbook": "noop.yml",
                 "model_profiles": startup_config.get("model_profiles", []),
@@ -682,6 +693,7 @@ def create_daemon_app(
             worker_broadcaster=subsys["broadcaster"],
             templates_dir=app.state._templates_dir,
             playbooks_dir=app.state._playbooks_dir,
+            prompt_registry=getattr(app.state, "_prompt_registry", None),
         )
         scope = ReloadScope(req.scope)
         result = reloader.reload(scope)
