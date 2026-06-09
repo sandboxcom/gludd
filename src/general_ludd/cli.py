@@ -1593,7 +1593,7 @@ def _build_controls_table(
     t = Table(title="Controls", show_header=False)
     t.add_column("Key", style="yellow", width=3, no_wrap=True)
     t.add_column("Action", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
-    t.add_column("Status", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.22, 6))
+    t.add_column("Status", style="green", no_wrap=True, width=_scale_col(term_width, 0.22, 6))
     rows = [
         ("s", "Start daemon", "running" if daemon_running else "stopped"),
         ("k", "Kill daemon", ""),
@@ -1641,7 +1641,7 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
     _avail = term_width - _table_overhead(2)
     t.add_column("Key", style="cyan", no_wrap=True, max_width=_scale_col(_avail, 0.25, 6))
     val_w = _scale_col(_avail, 0.75, 10)
-    t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
+    t.add_column("Value", style="green", no_wrap=True, width=val_w)
     t.add_row("Status", "running" if daemon_running else "stopped")
     url_display = daemon_url
     if len(url_display) > val_w - 2:
@@ -1674,7 +1674,7 @@ def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     _avail = term_width - _table_overhead(2)
     key_w = _scale_col(_avail, 0.30, 6)
     val_w = _scale_col(_avail, 0.70, 10)
-    t.add_column("Key", style="cyan", no_wrap=True, max_width=key_w)
+    t.add_column("Key", style="cyan", no_wrap=True, width=key_w)
     t.add_column("Value", style="green", no_wrap=True, width=val_w)
     rows = [
         ("Version", str(info.get("version", "?"))),
@@ -1705,7 +1705,7 @@ def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     ver_w = _scale_col(_avail, 0.30, 4)
     t.add_column("Binary", style="cyan", no_wrap=True, max_width=name_w)
     t.add_column("Found", style="green", no_wrap=True, max_width=found_w)
-    t.add_column("Version", style="yellow", no_wrap=True, max_width=ver_w)
+    t.add_column("Version", style="yellow", no_wrap=True, width=ver_w)
     versions: dict[str, str] = info.get("binary_versions", {})
     for name, path in info.get("binary_paths", {}).items():
         ver = versions.get(name, versions.get(name.replace("-", ""), ""))
@@ -1724,7 +1724,7 @@ def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     t = Table(title="Config Files", show_header=True)
     _avail = term_width - _table_overhead(2)
     t.add_column("File", style="cyan", no_wrap=True, max_width=_scale_col(_avail, 0.70, 8))
-    t.add_column("Size", style="green", no_wrap=True, max_width=_scale_col(_avail, 0.30, 4))
+    t.add_column("Size", style="green", no_wrap=True, width=_scale_col(_avail, 0.30, 4))
     for cf in info.get("config_files", []):
         t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
     return t
@@ -1742,7 +1742,7 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, sel
     t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
     t.add_column("Title", style="green", no_wrap=True, max_width=title_w)
     t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
-    t.add_column("Pri", style="bold", no_wrap=True, max_width=pri_w)
+    t.add_column("Pri", style="bold", no_wrap=True, width=pri_w)
     for i, todo in enumerate(todos):
         status = todo.get("status", "?")
         status_color = {

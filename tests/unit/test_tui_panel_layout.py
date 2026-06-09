@@ -121,6 +121,119 @@ class TestRenderedLayoutFillsTerminalExactly:
                 )
 
 
+class TestTablesFillPanelWidthInLayout:
+    """Tables inside Layout cells must expand to fill their panel — no whitespace margin."""
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_daemon_table_fills_left_panel(self, term_w: int):
+        from general_ludd.cli import _build_daemon_table, _compute_panel_widths
+
+        left_w, _right_w = _compute_panel_widths(term_w, {})
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=MagicMock(
+                    return_value={
+                        "pid": 12345,
+                        "requests_total": 100,
+                        "responses_total": 99,
+                        "memory_mb": 50.5,
+                        "uptime_s": 3600.0,
+                    }
+                ),
+            )
+            t = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+
+        lines = _render_table(t, left_w)
+        assert len(lines) > 0
+        data_lines = [ln for ln in lines if ln.lstrip().startswith("\u2502")]
+        assert len(data_lines) > 0, f"No data rows at tw={term_w}"
+        for i, line in enumerate(data_lines):
+            trail = len(line) - len(line.rstrip(" "))
+            assert trail <= 2, (
+                f"Daemon table data row {i} has {trail} trailing spaces at tw={term_w} "
+                f"left_w={left_w} — table not filling panel"
+            )
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_info_table_fills_right_panel(self, term_w: int):
+        from general_ludd.cli import _build_info_table, _compute_panel_widths
+
+        _, right_w = _compute_panel_widths(term_w, {})
+        info = {
+            "version": "0.1.0",
+            "python_version": "3.14.0",
+            "platform": "darwin",
+            "cwd": "/home/user/projects/myapp",
+            "config_dir": "/home/user/.config/gludd",
+            "config_files": [{"name": "config.yml", "size_bytes": 1024}],
+            "filestore_root": "/home/user/.local/share/gludd",
+            "filestore_size_bytes": 2048000,
+            "db_engine": "sqlite",
+            "db_exists": True,
+            "db_size_bytes": 512000,
+        }
+        t = _build_info_table(info, term_width=right_w)
+
+        lines = _render_table(t, right_w)
+        data_lines = [ln for ln in lines if ln.lstrip().startswith("\u2502")]
+        assert len(data_lines) > 0, f"No data rows at tw={term_w}"
+        for i, line in enumerate(data_lines):
+            trail = len(line) - len(line.rstrip(" "))
+            assert trail <= 2, (
+                f"Info table data row {i} has {trail} trailing spaces at tw={term_w} "
+                f"right_w={right_w} — table not filling panel"
+            )
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_controls_table_fills_footer(self, term_w: int):
+        from general_ludd.cli import _build_controls_table
+
+        t = _build_controls_table(True, "ok", term_width=term_w, selected_idx=0)
+        lines = _render_table(t, term_w)
+        data_lines = [ln for ln in lines if ln.lstrip().startswith("\u2502")]
+        assert len(data_lines) > 0, f"No data rows at tw={term_w}"
+        for i, line in enumerate(data_lines):
+            trail = len(line) - len(line.rstrip(" "))
+            assert trail <= 2, (
+                f"Controls table data row {i} has {trail} trailing spaces at tw={term_w} "
+                f"— table not filling width"
+            )
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_binary_table_fills_left_panel(self, term_w: int):
+        from general_ludd.cli import _build_binary_table, _compute_panel_widths
+
+        left_w, _right_w = _compute_panel_widths(term_w, {})
+        info = {
+            "binary_paths": {
+                "ansible": "/usr/bin/ansible",
+                "ansible-playbook": "/usr/bin/ansible-playbook",
+                "python": "/usr/bin/python3",
+                "uv": "/home/user/.local/bin/uv",
+                "git": "/usr/bin/git",
+            },
+            "binary_versions": {
+                "ansible": "2.16.3",
+                "ansible-playbook": "2.16.3",
+                "python": "3.14.0",
+                "uv": "0.4.0",
+                "git": "2.44.0",
+            },
+        }
+        t = _build_binary_table(info, term_width=left_w)
+
+        lines = _render_table(t, left_w)
+        data_lines = [ln for ln in lines if ln.lstrip().startswith("\u2502")]
+        assert len(data_lines) > 0, f"No data rows at tw={term_w}"
+        for i, line in enumerate(data_lines):
+            trail = len(line) - len(line.rstrip(" "))
+            assert trail <= 2, (
+                f"Binary table data row {i} has {trail} trailing spaces at tw={term_w} "
+                f"left_w={left_w} — table not filling panel"
+            )
+
+
 class TestPanelWidthsAtAllSizes:
     """_compute_panel_widths must produce valid splits at every terminal size."""
 
