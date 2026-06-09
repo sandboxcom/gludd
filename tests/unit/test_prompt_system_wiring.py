@@ -30,13 +30,13 @@ class TestPromptRegistryWiredToEventLoop:
         )
 
     def test_event_loop_receives_prompt_registry(self, app_with_templates):
-        with TestClient(app_with_templates) as client:
+        with TestClient(app_with_templates):
             event_loop = app_with_templates.state.event_loop
             assert event_loop is not None
             assert event_loop._prompt_registry is not None
 
     def test_prompt_registry_loaded_templates(self, app_with_templates):
-        with TestClient(app_with_templates) as client:
+        with TestClient(app_with_templates):
             registry = app_with_templates.state._prompt_registry
             assert registry is not None
             templates = registry.list_templates()
@@ -44,7 +44,7 @@ class TestPromptRegistryWiredToEventLoop:
             assert "implementation.md.j2" in templates
 
     def test_prompt_registry_renders_implementation_template(self, app_with_templates):
-        with TestClient(app_with_templates) as client:
+        with TestClient(app_with_templates):
             registry = app_with_templates.state._prompt_registry
             rendered = registry.render(
                 "implementation.md.j2",
