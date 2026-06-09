@@ -8,6 +8,10 @@ from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
 from general_ludd.daemon import _get_or_create_extended_subsystems
+from general_ludd.self_improve.harness import SelfImprovementHarness
+from general_ludd.skills.catalog import SkillCatalog
+from general_ludd.skills.loader import discover_skills
+from general_ludd.skills.registry import SkillRegistry
 
 
 class AddProjectRequest(BaseModel):
@@ -90,7 +94,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         skill_name = req.get("skill_name", "")
         if not project_id or not skill_name:
             raise HTTPException(status_code=422, detail="project_id and skill_name required")
-        from general_ludd.skills.registry import SkillRegistry
 
         registry = getattr(app.state, "_skill_registry", None)
         if registry is None:
@@ -98,8 +101,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             app.state._skill_registry = registry
         skill = registry.get(skill_name)
         if skill is None:
-            from general_ludd.skills.catalog import SkillCatalog
-
             catalog = getattr(app.state, "_skill_catalog", None)
             if catalog is None:
                 catalog = SkillCatalog()
@@ -111,7 +112,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             path = catalog.install_skill(skill_name, config_dir)
             if path is None:
                 raise HTTPException(status_code=404, detail=f"Failed to install skill {skill_name}")
-            from general_ludd.skills.loader import discover_skills
 
             discovered = discover_skills(os.path.join(config_dir, "skills"))
             for s in discovered:
@@ -134,8 +134,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/self-improve")
     async def admin_self_improve() -> dict[str, Any]:
-        from general_ludd.self_improve.harness import SelfImprovementHarness
-
         harness = SelfImprovementHarness()
         result = harness.run_full_cycle()
         return {"status": "ok", "findings_count": result["findings_count"],

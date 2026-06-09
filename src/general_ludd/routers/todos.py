@@ -8,6 +8,11 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
+from general_ludd import __version__
+from general_ludd.filestore.bootstrap import BinaryBootstrapper
+from general_ludd.filestore.store import FileStore
+from general_ludd.quality.preflight import run_preflight
+
 
 class AddTodoRequest(BaseModel):
     title: str = Field(min_length=1, max_length=512)
@@ -25,8 +30,6 @@ class LogLevelRequest(BaseModel):
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, Any]:
-        from general_ludd.quality.preflight import run_preflight
-
         result = run_preflight()
         _daemon_state["quality_gate"] = result
         return result
@@ -90,7 +93,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             queue_depths[q] = queue_depths.get(q, 0) + 1
             todo_count += 1
 
-        from general_ludd import __version__
 
         config_dir = getattr(app.state, "_config_dir", None)
         config_paths: list[str] = []
@@ -98,9 +100,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             for f in sorted(os.listdir(config_dir)):
                 if f.endswith(".yml") or f.endswith(".yaml"):
                     config_paths.append(os.path.join(config_dir, f))
-
-        from general_ludd.filestore.bootstrap import BinaryBootstrapper
-        from general_ludd.filestore.store import FileStore
 
         store = FileStore()
         boot = BinaryBootstrapper(store=store)

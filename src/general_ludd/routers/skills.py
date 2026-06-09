@@ -5,10 +5,11 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.skills.catalog import SkillCatalog
+from general_ludd.skills.fetcher import GitHubSkillSource, RemoteSkillFetcher
+
 
 def _get_catalog(app: FastAPI) -> Any:
-    from general_ludd.skills.catalog import SkillCatalog
-
     catalog = getattr(app.state, "_skill_catalog", None)
     if catalog is None:
         catalog = SkillCatalog()
@@ -69,8 +70,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/skills/fetch")
     async def admin_skills_fetch(req: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.skills.fetcher import RemoteSkillFetcher
-
         url = req.get("url", "")
         if not url:
             raise HTTPException(status_code=422, detail="url required")
@@ -84,8 +83,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/skills/fetch-github")
     async def admin_skills_fetch_github(req: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.skills.fetcher import GitHubSkillSource
-
         repo = req.get("repo", "")
         skill_path = req.get("path", "")
         branch = req.get("branch", "main")

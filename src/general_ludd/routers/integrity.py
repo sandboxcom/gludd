@@ -5,6 +5,11 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from general_ludd.config.binary_paths import BinaryPathResolver
+from general_ludd.integrity.scanner import FileIntegrityScanner, sign_change_openbao
+from general_ludd.validation.gap_analyzer import GapAnalyzer
+from general_ludd.validation.log_auditor import LogAuditor
+
 _integrity_changes: list[dict[str, Any]] = []
 _integrity_log: list[dict[str, Any]] = []
 
@@ -13,8 +18,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/integrity/scan")
     async def admin_integrity_scan(req: dict[str, Any] | None = None) -> dict[str, Any]:
-        from general_ludd.integrity.scanner import FileIntegrityScanner
-
         req = req or {}
         paths = req.get("paths", [])
         if not paths:
@@ -36,8 +39,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/integrity/approve")
     async def admin_integrity_approve(req: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.integrity.scanner import sign_change_openbao
-
         result = sign_change_openbao(
             path=req.get("path", ""),
             signer=req.get("signer", "admin"),
@@ -71,8 +72,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/selftest")
     async def admin_selftest() -> dict[str, Any]:
         import subprocess
-
-        from general_ludd.config.binary_paths import BinaryPathResolver
 
         resolver = BinaryPathResolver()
         podman_available = resolver.is_available("podman")
@@ -131,8 +130,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/gap-analysis")
     async def admin_gap_analysis(req: dict[str, Any] | None = None) -> dict[str, Any]:
-        from general_ludd.validation.gap_analyzer import GapAnalyzer
-
         req = req or {}
         sprint_path = req.get("sprint_path", "")
         repo_root = req.get("repo_root", ".")
@@ -153,8 +150,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/log-audit")
     async def admin_log_audit(req: dict[str, Any] | None = None) -> dict[str, Any]:
-        from general_ludd.validation.log_auditor import LogAuditor
-
         req = req or {}
         log_entries = req.get("log_entries", [])
         auditor = LogAuditor()

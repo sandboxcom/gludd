@@ -8,8 +8,11 @@ from typing import Any, Protocol
 
 from pydantic import BaseModel, Field
 
+from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
 from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
+from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutEvent, TimeoutRetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -127,8 +130,6 @@ class ModelGateway:
             )
 
         if self._response_cache is not None:
-            from general_ludd.models.response_cache import _make_cache_key
-
             cache_key = _make_cache_key(profile_id, messages, **kwargs)
             cached = self._response_cache.get(cache_key)
             if cached is not None:
@@ -218,8 +219,6 @@ class ModelGateway:
         )
 
         if self._response_cache is not None:
-            from general_ludd.models.response_cache import _make_cache_key
-
             cache_key = _make_cache_key(profile_id, messages, **kwargs)
             self._response_cache.set(cache_key, {
                 "content": response.content,
@@ -242,12 +241,6 @@ class ModelGateway:
         import time as _time
 
         import httpx
-
-        from general_ludd.models.timeout_detector import (
-            TimeoutClassifier,
-            TimeoutEvent,
-            TimeoutRetryPolicy,
-        )
 
         profile = self._profiles.get(profile_id)
         if profile is None:
@@ -416,8 +409,6 @@ class ModelGateway:
         )
         self._profiles[model_id] = profile
         if self._event_bus:
-            from general_ludd.events.types import ModelAddedEvent
-
             self._event_bus.publish(ModelAddedEvent(model_id=model_id, profile=profile.model_dump()))
         if self._hooks:
             self._hooks.fire("on_model_added", {"model_id": model_id, "profile": profile.model_dump()})
@@ -431,8 +422,6 @@ class ModelGateway:
     def remove_profile(self, model_id: str) -> None:
         self._profiles.pop(model_id, None)
         if self._event_bus:
-            from general_ludd.events.types import ModelRemovedEvent
-
             self._event_bus.publish(ModelRemovedEvent(model_id=model_id))
         if self._hooks:
             self._hooks.fire("on_model_removed", {"model_id": model_id})

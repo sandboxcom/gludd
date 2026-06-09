@@ -15,6 +15,7 @@ from typing import Any
 from sqlalchemy import event, text
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
+from general_ludd.db.models import Base, QueueModel
 from general_ludd.schemas.queue import INITIAL_QUEUES
 
 logger = logging.getLogger(__name__)
@@ -111,8 +112,6 @@ async def get_async_session(session_factory: async_sessionmaker[AsyncSession]) -
 
 
 async def ensure_tables(engine: AsyncEngine) -> None:
-    from general_ludd.db.models import Base
-
     if is_sqlite_url(str(engine.url)):
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -120,8 +119,6 @@ async def ensure_tables(engine: AsyncEngine) -> None:
 
 
 async def seed_initial_queues(session: AsyncSession) -> int:
-    from general_ludd.db.models import QueueModel
-
     count = 0
     for q in INITIAL_QUEUES:
         existing = await session.execute(

@@ -14,6 +14,16 @@ from typing import TYPE_CHECKING, Any
 
 import httpx
 
+from general_ludd.config.binary_paths import BinaryPathResolver
+from general_ludd.daemon import create_daemon_app
+from general_ludd.db.session import get_default_db_url, is_sqlite_url
+from general_ludd.filestore.bootstrap import BinaryBootstrapper
+from general_ludd.filestore.store import FileStore
+from general_ludd.integrity.scanner import FileIntegrityScanner
+from general_ludd.tui.config_editor import ConfigEditor
+from general_ludd.tui.runner import run_tui
+from general_ludd.tui.tables import _make_table
+
 if TYPE_CHECKING:
     from rich.table import Table
 
@@ -616,8 +626,6 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     config_dir = getattr(args, "config_dir", None)
 
-    from general_ludd.daemon import create_daemon_app
-
     create_daemon_app(tick_interval=args.tick_interval, log_level=args.log_level, config_dir=config_dir)
 
     bind_host = args.host
@@ -703,9 +711,6 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
     info["config_dir"] = cdir
     info["config_files"] = cfiles
 
-    from general_ludd.filestore.bootstrap import BinaryBootstrapper
-    from general_ludd.filestore.store import FileStore
-
     store = FileStore()
     boot = BinaryBootstrapper(store=store)
     fs_root = store.root_path
@@ -726,8 +731,6 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
     info["filestore_file_count"] = fs_file_count
     info["filestore_binaries"] = [b["name"] for b in boot.list_binaries()]
 
-    from general_ludd.db.session import get_default_db_url, is_sqlite_url
-
     db_url = get_default_db_url()
     db_is_sqlite = is_sqlite_url(db_url)
     db_path = db_url.replace("sqlite+aiosqlite:///", "") if db_is_sqlite else db_url
@@ -743,7 +746,6 @@ def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
     info["db_size_bytes"] = db_size
     info["db_engine"] = "sqlite" if db_is_sqlite else "postgresql"
 
-    from general_ludd.config.binary_paths import BinaryPathResolver
     resolver = BinaryPathResolver()
     info["binary_paths"] = {}
     for bname in ("podman", "docker", "ansible-playbook", "openbao"):
@@ -1674,7 +1676,6 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
 
 
 def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     val_w = max(10, term_width - _table_overhead(2) - 6)
     rows = [
@@ -1720,7 +1721,6 @@ def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 
 
 def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     rows = [(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0))) for cf in info.get("config_files", [])]
     return _make_table(
@@ -1732,7 +1732,6 @@ def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 
 
 def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     _status_colors = {"pending": "yellow", "in_progress": "cyan", "completed": "green", "cancelled": "dim"}
     rows = [
@@ -1754,7 +1753,6 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, sel
 
 
 def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     rows = [
         (
@@ -1779,7 +1777,6 @@ def _build_workers_table(
     term_width: int = 80,
     selected_idx: int | None = None,
 ) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     rows = [
         (str(w.get("worker_id", "?")), str(w.get("address", "?")))
@@ -1795,7 +1792,6 @@ def _build_workers_table(
 
 
 def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     labels = [
         ("Total Cost", "total_cost_usd", "${:.2f}"),
@@ -1827,7 +1823,6 @@ def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> 
 
 
 def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     rows = []
     for a in agents:
@@ -1954,7 +1949,6 @@ def _build_config_editor_table(
 
 
 def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     rows = [
         (name, f"[{'green' if 'AGENTS.md' in status else 'dim'}]{status}[/]")
@@ -1974,7 +1968,6 @@ def _build_projects_table(
     term_width: int = 80,
     selected_idx: int | None = None,
 ) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     rows = [
         (
@@ -1996,7 +1989,6 @@ def _build_projects_table(
 
 
 def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     _icons = {"new": "+", "modified": "~", "removed": "-"}
     if not changes:
@@ -2019,7 +2011,6 @@ def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 8
 
 
 def _build_ansible_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from general_ludd.tui.tables import _make_table
 
     if not results:
         rows = [("Press [s] to search", "")]
@@ -2339,7 +2330,6 @@ def _build_daemon_start_cmd(
 def _cmd_tui(args: argparse.Namespace) -> None:
     from types import SimpleNamespace
 
-    from general_ludd.tui.runner import run_tui
 
     helpers = SimpleNamespace(
         _is_daemon_pid_alive=_is_daemon_pid_alive,
@@ -2719,7 +2709,6 @@ def _cmd_integrity_scan(args: argparse.Namespace) -> None:
 def _scan_local_integrity(info: dict[str, Any]) -> dict[str, Any]:
     import os
 
-    from general_ludd.integrity.scanner import FileIntegrityScanner
 
     paths = [
         info.get("config_dir", ""),
@@ -2797,7 +2786,6 @@ def _cmd_integrity_log(args: argparse.Namespace) -> None:
 
 
 def _load_config_editor() -> dict[str, Any]:
-    from general_ludd.tui.config_editor import ConfigEditor
 
     editor = ConfigEditor()
     cats = editor.get_categories()

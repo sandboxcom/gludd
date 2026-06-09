@@ -4,13 +4,19 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.models.quantization import (
+    FireworksDetector,
+    HuggingFaceDetector,
+    OpenRouterEndpointDetector,
+    QuantizationTracker,
+    SelfProbeDetector,
+)
+
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/quantization")
     async def admin_quantization_list() -> dict[str, Any]:
-        from general_ludd.models.quantization import QuantizationTracker
-
         tracker: QuantizationTracker | None = getattr(app.state, "_quantization_tracker", None)
         if tracker is None:
             return {"models": []}
@@ -19,14 +25,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/quantization/detect")
     async def admin_quantization_detect(req: dict[str, Any]) -> dict[str, Any]:
         import time as _time
-
-        from general_ludd.models.quantization import (
-            FireworksDetector,
-            HuggingFaceDetector,
-            OpenRouterEndpointDetector,
-            QuantizationTracker,
-            SelfProbeDetector,
-        )
 
         model_id = req.get("model_id", "")
         if not model_id:
@@ -87,8 +85,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/quantization/{model_id}")
     async def admin_quantization_get(model_id: str) -> dict[str, Any]:
-        from general_ludd.models.quantization import QuantizationTracker
-
         tracker: QuantizationTracker | None = getattr(app.state, "_quantization_tracker", None)
         if tracker is None:
             return {"model_id": model_id, "precision": None}
@@ -107,12 +103,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/quantization/drift-check")
     async def admin_quantization_drift_check() -> dict[str, Any]:
-        from general_ludd.models.quantization import (
-            HuggingFaceDetector,
-            OpenRouterEndpointDetector,
-            QuantizationTracker,
-        )
-
         tracker: QuantizationTracker | None = getattr(app.state, "_quantization_tracker", None)
         if tracker is None:
             return {"drift_detected": False, "changes": []}

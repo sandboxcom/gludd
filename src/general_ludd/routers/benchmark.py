@@ -4,6 +4,10 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.db.repository import BenchmarkRepository, PromptProfileRepository
+from general_ludd.schemas.benchmark import TaskType
+from general_ludd.scoring.router import AdaptiveRouter
+
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
@@ -11,8 +15,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_benchmark_scores(
         task_type: str | None = None,
     ) -> dict[str, Any]:
-        from general_ludd.db.repository import BenchmarkRepository
-
         session = getattr(app.state, "_session", None)
         if session is None:
             return {"scores": []}
@@ -22,8 +24,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/benchmark/recent")
     async def admin_benchmark_recent(limit: int = 50) -> dict[str, Any]:
-        from general_ludd.db.repository import BenchmarkRepository
-
         session = getattr(app.state, "_session", None)
         if session is None:
             return {"results": []}
@@ -52,10 +52,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_benchmark_leaderboard(
         task_type: str | None = None,
     ) -> dict[str, Any]:
-        from general_ludd.db.repository import BenchmarkRepository
-        from general_ludd.schemas.benchmark import TaskType
-        from general_ludd.scoring.router import AdaptiveRouter
-
         session = getattr(app.state, "_session", None)
         if session is None:
             return {"leaderboard": []}
@@ -79,8 +75,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/benchmark/record")
     async def admin_benchmark_record(req: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.db.repository import BenchmarkRepository
-
         session = getattr(app.state, "_session", None)
         if session is None:
             raise HTTPException(status_code=503, detail="No database session")
@@ -103,8 +97,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/prompt-profiles")
     async def admin_prompt_profiles() -> dict[str, Any]:
-        from general_ludd.db.repository import PromptProfileRepository
-
         session = getattr(app.state, "_session", None)
         if session is None:
             return {"profiles": []}

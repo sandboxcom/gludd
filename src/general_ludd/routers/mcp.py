@@ -4,13 +4,13 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.mcp.catalog import MCPCatalog
+
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/mcp/catalog/search")
     async def admin_mcp_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.mcp.catalog import MCPCatalog
-
         catalog = MCPCatalog()
         results = catalog.search(query=req.get("query", ""), limit=req.get("limit", 20))
         return {
@@ -31,8 +31,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/mcp/catalog/servers")
     async def admin_mcp_catalog_servers() -> dict[str, Any]:
-        from general_ludd.mcp.catalog import MCPCatalog
-
         catalog = MCPCatalog()
         servers = catalog.get_known_servers()
         return {
@@ -52,8 +50,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/mcp/catalog/servers/{name}")
     async def admin_mcp_catalog_server(name: str) -> dict[str, Any]:
-        from general_ludd.mcp.catalog import MCPCatalog
-
         catalog = MCPCatalog()
         server = catalog.get_server(name)
         if server is None:

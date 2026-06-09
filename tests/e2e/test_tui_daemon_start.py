@@ -76,8 +76,8 @@ def _ensure_no_daemon() -> None:
     time.sleep(0.5)
     if _is_port_listening(_DAEMON_URL):
         pytest.skip(
-            f"Port 8000 occupied by external process. "
-            f"Cannot run daemon E2E tests."
+            "Port 8000 occupied by external process. "
+            "Cannot run daemon E2E tests."
         )
 
 

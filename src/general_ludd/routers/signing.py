@@ -5,6 +5,9 @@ from typing import Any
 from fastapi import FastAPI
 from fastapi.responses import JSONResponse
 
+from general_ludd.secrets.cosign import delete_cosign_key, generate_and_store_cosign_key, read_cosign_key
+from general_ludd.secrets.gitsign import read_gitsign_config, write_gitsign_config
+
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
@@ -13,7 +16,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "write_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        from general_ludd.secrets.cosign import generate_and_store_cosign_key
         key = generate_and_store_cosign_key(
             mgr=resolver,
             project_id=req.get("project_id", "default"),
@@ -28,7 +30,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        from general_ludd.secrets.cosign import read_cosign_key
         prefix = f"projects/{project_id}/cosign/"
         keys = []
         if hasattr(resolver, "list_secrets"):
@@ -44,7 +45,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        from general_ludd.secrets.cosign import read_cosign_key
         key = read_cosign_key(resolver, project_id, key_name)
         if key is None:
             return JSONResponse(status_code=404, content={"error": "key not found"})
@@ -55,7 +55,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "delete_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        from general_ludd.secrets.cosign import delete_cosign_key
         delete_cosign_key(resolver, project_id, key_name)
         return {"status": "deleted", "project_id": project_id, "key_name": key_name}
 
@@ -64,7 +63,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "write_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        from general_ludd.secrets.gitsign import write_gitsign_config
         write_gitsign_config(
             mgr=resolver,
             project_id=req.get("project_id", "default"),
@@ -81,7 +79,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         resolver = getattr(app.state, "_secrets_resolver", None)
         if resolver is None or not hasattr(resolver, "read_secret"):
             return JSONResponse(status_code=503, content={"error": "secrets resolver not available"})
-        from general_ludd.secrets.gitsign import read_gitsign_config
         config = read_gitsign_config(resolver, project_id)
         if config is None:
             return JSONResponse(status_code=404, content={"error": "gitsign config not found"})

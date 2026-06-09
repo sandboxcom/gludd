@@ -12,6 +12,8 @@ from __future__ import annotations
 import logging
 from typing import Any, TypedDict
 
+from general_ludd.schemas.benchmark import TaskType
+
 log = logging.getLogger(__name__)
 
 
@@ -141,8 +143,6 @@ class LangGraphGateway:
     async def _select_step(self, state: GraphState) -> GraphState:
         if self._router is not None:
             try:
-                from general_ludd.schemas.benchmark import TaskType
-
                 ctx = state.get("task_context", {})
                 wt = ctx.get("work_type", "feature")
                 try:

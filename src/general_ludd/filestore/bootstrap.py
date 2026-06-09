@@ -9,6 +9,8 @@ import shutil
 from pathlib import Path
 from typing import Any
 
+from general_ludd.filestore.store import FileStore
+
 logger = logging.getLogger(__name__)
 
 OPENBAO_VERSION = "2.2.0"
@@ -23,8 +25,6 @@ class BinaryBootstrapper:
     KNOWN_VERSIONS: dict[str, str]
 
     def __init__(self, store: Any = None, bundled_binaries_dir: str | None = None) -> None:
-        from general_ludd.filestore.store import FileStore
-
         self.KNOWN_VERSIONS = {"openbao": OPENBAO_VERSION, "opentofu": OPENTOFU_VERSION}
         self._store = store or FileStore()
         self._store.makedirs("binaries")

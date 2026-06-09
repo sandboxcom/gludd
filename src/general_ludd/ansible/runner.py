@@ -17,6 +17,8 @@ import yaml
 
 from general_ludd.ansible.core_runner import CoreAnsibleRunner
 from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.events.types import PlaybookRegisteredEvent
+from general_ludd.security.sanitize import sanitize_job_id
 
 logger = logging.getLogger(__name__)
 
@@ -60,8 +62,6 @@ class AnsibleRunnerAdapter:
         return self.registry[playbook_name]
 
     def prepare_job_dirs(self, job_id: str) -> dict[str, str]:
-        from general_ludd.security.sanitize import sanitize_job_id
-
         safe_id = sanitize_job_id(job_id)
         if safe_id is None:
             raise ValueError(f"Invalid job_id: {job_id!r}")
@@ -134,8 +134,6 @@ class AnsibleRunnerAdapter:
     def register_playbook(self, name: str, path: str) -> None:
         self.registry[name] = path
         if self._event_bus:
-            from general_ludd.events.types import PlaybookRegisteredEvent
-
             self._event_bus.publish(PlaybookRegisteredEvent(playbook=name))
 
     def unregister_playbook(self, name: str) -> None:

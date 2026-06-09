@@ -4,15 +4,12 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
-from typing import TYPE_CHECKING
 
 import httpx
 
+from general_ludd.skills.catalog import CatalogSkillEntry
 from general_ludd.skills.loader import parse_skill_md
 from general_ludd.skills.skill import Skill
-
-if TYPE_CHECKING:
-    from general_ludd.skills.catalog import CatalogSkillEntry
 
 logger = logging.getLogger(__name__)
 
@@ -47,8 +44,6 @@ class GitHubSkillSource:
         return f"{GITHUB_RAW_BASE}/{self.owner}/{self.repo}/{self.branch}/{path}"
 
     def list_skills(self) -> list[CatalogSkillEntry]:
-        from general_ludd.skills.catalog import CatalogSkillEntry
-
         path = self.subdir.rstrip("/") if self.subdir else ""
         resp = httpx.get(self._api_url(path), timeout=15.0)
         if resp.status_code != 200:

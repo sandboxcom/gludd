@@ -15,6 +15,8 @@ import os
 from pathlib import Path
 from typing import Any
 
+from general_ludd.secrets.manager import SecretAlias
+
 logger = logging.getLogger(__name__)
 
 
@@ -46,8 +48,6 @@ def migrate_profile_secrets(
     for alias_name, vault_path, value in aliases_to_migrate:
         try:
             mgr.write_secret(vault_path, {"value": value})
-            from general_ludd.secrets.manager import SecretAlias
-
             mgr.register_alias(SecretAlias(alias_name, vault_path))
             migrated_count += 1
             migrated_aliases.append(alias_name)

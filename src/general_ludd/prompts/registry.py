@@ -8,6 +8,8 @@ from typing import Any
 
 from jinja2 import BaseLoader, Environment, FileSystemLoader
 
+from general_ludd.events.types import TemplateUpdatedEvent
+
 logger = logging.getLogger(__name__)
 
 
@@ -60,8 +62,6 @@ class PromptRegistry:
         self._loader = FileSystemLoader(self._template_dir) if self._template_dir else BaseLoader()
         self._env = Environment(loader=self._loader, autoescape=True)
         if self._event_bus:
-            from general_ludd.events.types import TemplateUpdatedEvent
-
             self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))
         return {"templates": discovered, "refreshed": True}
 

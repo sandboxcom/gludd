@@ -184,8 +184,6 @@ class SecretsManager:
         self,
         binary_resolver: BinaryPathResolver | None = None,
     ) -> str | None:
-        from general_ludd.config.binary_paths import BinaryPathResolver
-
         resolver = binary_resolver or BinaryPathResolver()
         runtime = resolver.get_container_runtime()
         image = self._config.local_image

@@ -14,14 +14,18 @@ import tty
 from types import SimpleNamespace
 from typing import Any
 
+from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+from general_ludd.models.model_registry import ModelRegistry
+from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb, render_breadcrumb
+from general_ludd.tui.keybindings import TUIKeyHandler
+from general_ludd.tui.logger import TUILogger
+
 
 def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
     from rich.console import Console
     from rich.layout import Layout
     from rich.live import Live
     from rich.panel import Panel
-
-    from general_ludd.tui.keybindings import TUIKeyHandler
 
     daemon_proc: subprocess.Popen[bytes] | None = None
     daemon_running = False
@@ -42,8 +46,6 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
     }
     tui_handler = TUIKeyHandler(tui_state)
 
-    from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb, render_breadcrumb
-    from general_ludd.tui.logger import TUILogger
     _tui_log_dir = os.path.join(h._get_daemon_pid_dir(), "tui_logs")
     tui_logger = TUILogger(log_dir=_tui_log_dir, daemon_url=args.daemon_url, verbose=False)
 
@@ -63,8 +65,6 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         if pid_data:
             args.daemon_url = pid_data.get("daemon_url", args.daemon_url)
     config_nav = h._load_config_editor()
-    from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
-    from general_ludd.models.model_registry import ModelRegistry
 
     model_mgr = LocalInferenceManager()
     model_mgr.create_server(LocalServerConfig(engine="llamacpp", model_path="/models/llama-7b.gguf", port=8081))

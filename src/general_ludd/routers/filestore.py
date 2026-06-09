@@ -4,14 +4,15 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 
+from general_ludd.filestore.bootstrap import BinaryBootstrapper
+from general_ludd.filestore.store import FileStore
+from general_ludd.security.sanitize import sanitize_path
+
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/filestore/list")
     async def admin_filestore_list(path: str = "/") -> dict[str, Any]:
-        from general_ludd.filestore.store import FileStore
-        from general_ludd.security.sanitize import sanitize_path
-
         safe_path = sanitize_path(path.lstrip("/")) or ""
         store = FileStore()
         entries = store.list_dir(safe_path)
@@ -19,9 +20,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/filestore/read")
     async def admin_filestore_read(path: str = "") -> dict[str, Any]:
-        from general_ludd.filestore.store import FileStore
-        from general_ludd.security.sanitize import sanitize_path
-
         safe_path = sanitize_path(path.lstrip("/"))
         if safe_path is None:
             return {"error": "Invalid path"}
@@ -39,9 +37,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/filestore/write")
     async def admin_filestore_write(request: Request) -> dict[str, Any]:
-        from general_ludd.filestore.store import FileStore
-        from general_ludd.security.sanitize import sanitize_path
-
         store = FileStore()
         body = await request.json()
         raw_path = body.get("path", "")
@@ -54,9 +49,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.delete("/admin/filestore/remove")
     async def admin_filestore_remove(path: str = "") -> dict[str, Any]:
-        from general_ludd.filestore.store import FileStore
-        from general_ludd.security.sanitize import sanitize_path
-
         safe_path = sanitize_path(path)
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
@@ -70,9 +62,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_filestore_bootstrap(
         binary: str = "openbao",
     ) -> dict[str, Any]:
-        from general_ludd.filestore.bootstrap import BinaryBootstrapper
-        from general_ludd.filestore.store import FileStore
-
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
         if binary == "openbao":
@@ -82,9 +71,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/filestore/binaries")
     async def admin_filestore_binaries() -> dict[str, Any]:
-        from general_ludd.filestore.bootstrap import BinaryBootstrapper
-        from general_ludd.filestore.store import FileStore
-
         store = FileStore()
         boot = BinaryBootstrapper(store=store)
         bins = boot.list_binaries()

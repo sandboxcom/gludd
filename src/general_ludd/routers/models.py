@@ -4,27 +4,38 @@ from typing import Any
 
 from fastapi import FastAPI, Request
 
+from general_ludd.code_intelligence.callgraph import CallGraph
+from general_ludd.code_intelligence.extractor import ASTBlockExtractor
+from general_ludd.code_intelligence.search import CodeSearch
 from general_ludd.daemon import (
     AddModelRequest,
     ModelSearchRequest,
     _get_or_create_extended_subsystems,
     _get_or_create_subsystems,
 )
+from general_ludd.db.repository import BenchmarkRepository
+from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
+from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
+from general_ludd.models.gateway import ModelGateway
+from general_ludd.models.openrouter_discovery import OpenRouterScraper
+from general_ludd.models.provider_presets import (
+    detect_credential_alias,
+    get_provider_preset,
+    list_configured_providers,
+)
+from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.models.response_cache import ModelResponseCache
+from general_ludd.models.router import ModelRouter
+from general_ludd.models.timeout_detector import ModelHealthTracker
+from general_ludd.observability.comparison import ModelComparison
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/models")
     async def admin_add_model(req: AddModelRequest) -> dict[str, Any]:
-        from general_ludd.models.gateway import ModelGateway
-        from general_ludd.models.provider_registry import ProviderRegistry
-        from general_ludd.models.router import ModelRouter
-
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_model_gateway") or app.state._model_gateway is None:
-            from general_ludd.models.response_cache import ModelResponseCache
-            from general_ludd.models.timeout_detector import ModelHealthTracker
-
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
             app.state._model_gateway = ModelGateway(
@@ -56,10 +67,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_models_discover(
         provider: str = "openrouter",
     ) -> dict[str, Any]:
-        from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
-        from general_ludd.models.openrouter_discovery import OpenRouterScraper
-        from general_ludd.models.provider_presets import detect_credential_alias, list_configured_providers
-
         configured = list_configured_providers()
         if provider not in configured and provider != "openrouter":
             msg = f"Provider '{provider}' not configured (missing credentials)"
@@ -68,8 +75,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         scraper = OpenRouterScraper()
         if detect_credential_alias(provider):
             import os
-
-            from general_ludd.models.provider_presets import get_provider_preset
 
             preset = get_provider_preset(provider)
             env_var = preset["credential_env_var"] if preset else "OPENROUTER_API_KEY"
@@ -133,13 +138,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         task_type: str | None = None,
         sort_by: str = "composite",
     ) -> dict[str, Any]:
-        from general_ludd.observability.comparison import ModelComparison
-
         session = getattr(app.state, "_session", None)
         if session is None:
             return {"rankings": [], "summary": "No DB session available"}
-        from general_ludd.db.repository import BenchmarkRepository
-
         repo = BenchmarkRepository(session)
         comparison = ModelComparison(benchmark_repo=repo)
         return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
@@ -147,8 +148,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/code/blocks")
     async def admin_code_blocks(request: Request) -> dict[str, Any]:
         import json
-
-        from general_ludd.code_intelligence.extractor import ASTBlockExtractor
 
         body = await request.json() if hasattr(request, "json") else {}
         if isinstance(body, str):
@@ -161,9 +160,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/code/graph")
     async def admin_code_graph(source: str = "", language: str = "python") -> dict[str, Any]:
-        from general_ludd.code_intelligence.callgraph import CallGraph
-        from general_ludd.code_intelligence.extractor import ASTBlockExtractor
-
         extractor = ASTBlockExtractor()
         blocks = extractor.extract_blocks(source, language=language)
         graph = CallGraph()
@@ -177,9 +173,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         type_filter: str | None = None,
         language: str = "python",
     ) -> dict[str, Any]:
-        from general_ludd.code_intelligence.extractor import ASTBlockExtractor
-        from general_ludd.code_intelligence.search import CodeSearch
-
         extractor = ASTBlockExtractor()
         blocks = extractor.extract_blocks(source, language=language)
         searcher = CodeSearch(blocks)
@@ -239,8 +232,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/local-inference/start")
     async def admin_local_inference_start(payload: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
-
         if not hasattr(app.state, "_local_inference") or app.state._local_inference is None:
             subsys = _get_or_create_subsystems(app)
             app.state._local_inference = LocalInferenceManager(event_bus=subsys["bus"])

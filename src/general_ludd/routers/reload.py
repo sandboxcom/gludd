@@ -5,7 +5,10 @@ from typing import Any, cast
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel
 
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.daemon import _get_or_create_extended_subsystems, _get_or_create_subsystems
+from general_ludd.prompts.registry import PromptRegistry
+from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
 
 
 class ReloadRequest(BaseModel):
@@ -24,8 +27,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/reload")
     async def admin_reload(req: ReloadRequest) -> dict[str, Any]:
-        from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
-
         subsys = _get_or_create_subsystems(app)
         reloader = HotReloader(
             config_dir=app.state._config_dir or "/tmp/gl-config",
@@ -52,8 +53,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/templates/refresh")
     async def admin_templates_refresh() -> dict[str, Any]:
-        from general_ludd.prompts.registry import PromptRegistry
-
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_prompt_registry") or app.state._prompt_registry is None:
             app.state._prompt_registry = PromptRegistry(
@@ -71,8 +70,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/playbooks/refresh")
     async def admin_playbooks_refresh() -> dict[str, Any]:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-
         subsys = _get_or_create_subsystems(app)
         if not hasattr(app.state, "_runner") or app.state._runner is None:
             app.state._runner = AnsibleRunnerAdapter(

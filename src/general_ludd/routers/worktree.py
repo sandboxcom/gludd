@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI
 
 from general_ludd.daemon import _get_or_create_extended_subsystems
+from general_ludd.worktree import WorktreeMonitor, WorktreeMonitorConfig
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -16,8 +17,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ext = _get_or_create_extended_subsystems(app)
         monitor = ext.get("worktree_monitor")
         if monitor is None:
-            from general_ludd.worktree import WorktreeMonitor, WorktreeMonitorConfig
-
             cfg = WorktreeMonitorConfig(
                 watch_paths=watch_paths.split(",") if watch_paths else [],
                 abandoned_after_hours=0,

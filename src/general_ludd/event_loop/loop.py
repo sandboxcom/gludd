@@ -12,6 +12,8 @@ from typing import Any
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
+from general_ludd.controllers.load_scrape import LoadSnapshot
+from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import TaskDecisionModel
 from general_ludd.db.repository import (
     AuditEventRepository,
@@ -22,7 +24,10 @@ from general_ludd.db.repository import (
 from general_ludd.event_loop.lease import reclaim_expired_leases
 from general_ludd.mcp.client import MCPClient
 from general_ludd.mcp.registry import MCPToolRegistry
+from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
+from general_ludd.schemas.benchmark import TaskType
 from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
@@ -98,8 +103,6 @@ _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
 
 
 def _work_type_to_task_type(work_type: str) -> Any:
-    from general_ludd.schemas.benchmark import TaskType
-
     mapped = _WORK_TYPE_TASK_TYPE_MAP.get(work_type, "feature")
     try:
         return TaskType(mapped)
@@ -391,7 +394,6 @@ class EventLoop:
                 return
             decision = data.get("decision")
             if decision and self.session is not None:
-                from general_ludd.db.models import TaskDecisionModel
                 dm = TaskDecisionModel(
                     return_id=tr.return_id,
                     project_id=getattr(tr, "project_id", None),
@@ -413,10 +415,6 @@ class EventLoop:
             return
         try:
             import psutil
-
-            from general_ludd.controllers.load_scrape import LoadSnapshot
-            from general_ludd.controllers.pid import LoadController
-            from general_ludd.schemas.queue import Queue
 
             load_1, load_5, load_10 = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
             cpu_count = psutil.cpu_count(logical=True) or 1
@@ -443,16 +441,13 @@ class EventLoop:
             logger.debug("PID evaluation skipped: %s", exc)
 
     async def _phase_evaluate_rules(self) -> None:
-        from general_ludd.rules.engine import Rule
-        from general_ludd.rules.engine import evaluate_rules as _evaluate_rules
-
         raw_rules = self.config.get("rules", [])
         rules = [r if isinstance(r, Rule) else Rule(**r) for r in raw_rules]
         todos_ctx = self.config.get("todos", [])
         all_results: list[dict[str, Any]] = []
         for todo_ctx in todos_ctx:
             context = {"todo": todo_ctx}
-            actions = _evaluate_rules(rules, context)
+            actions = evaluate_rules(rules, context)
             if actions:
                 all_results.append({
                     "todo_id": todo_ctx.get("todo_id", ""),
@@ -500,8 +495,6 @@ class EventLoop:
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
         """Return model/prompt overrides from rule evaluation results for this todo."""
-        from general_ludd.rules.engine import apply_rule_actions
-
         results = self._tick_state.get("rule_evaluation_results", [])
         for result in results:
             if not isinstance(result, dict):

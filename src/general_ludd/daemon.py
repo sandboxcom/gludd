@@ -21,39 +21,69 @@ from general_ludd.agents.dispatcher import AgentDispatcher  # noqa: F401
 from general_ludd.agents.token_window import TokenWindowManager  # noqa: F401
 from general_ludd.agents.tool_adapter import AgentToolAdapter  # noqa: F401
 from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.ansible.templating import AnsibleTemplater  # noqa: F401
 from general_ludd.code_intelligence.git_intel import GitIntelligence  # noqa: F401
 from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
+from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard  # noqa: F401
 from general_ludd.controllers.pid import BudgetController  # noqa: F401
 from general_ludd.db.models import AuditEventType  # noqa: F401
-from general_ludd.db.repository import ProjectRepository, QueueRepository  # noqa: F401
+from general_ludd.db.repository import BenchmarkRepository, ProjectRepository, QueueRepository  # noqa: F401
+from general_ludd.db.session import (
+    create_async_session_factory,
+    ensure_tables,
+    init_engine_from_config,
+    seed_initial_queues,
+)
 from general_ludd.dependency.manager import DependencyManager  # noqa: F401
 from general_ludd.dogfood.runner import DogfoodRunner  # noqa: F401
 from general_ludd.dogfood.validator import DogfoodValidator  # noqa: F401
+from general_ludd.event_loop.loop import EventLoop
+from general_ludd.events.bus import EventBus
+from general_ludd.events.hooks import HookSystem
 from general_ludd.events.types import (  # noqa: F401
     HookTriggeredEvent,
     PlaybookRemovedEvent,
     WorkerPingEvent,
     WorkerPongEvent,
 )
+from general_ludd.filestore.bootstrap import BinaryBootstrapper
+from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.git_automation.repo import GitAutomation  # noqa: F401
 from general_ludd.infra.deployment import DeploymentManager  # noqa: F401
+from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.logging.project_log import ProjectLogAdapter, ProjectLogFilter  # noqa: F401
+from general_ludd.mcp.loader import load_mcp_config
+from general_ludd.metrics.collector import MetricsCollector
+from general_ludd.models.gateway import ModelProfile
 from general_ludd.models.langgraph_gateway import LangGraphGateway  # noqa: F401
+from general_ludd.models.model_registry import ModelRegistry
 from general_ludd.observability.recorder import AutoBenchmarkRecorder  # noqa: F401
+from general_ludd.projects.manager import seed_from_config
+from general_ludd.projects.workspace import ProjectWorkspace
+from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.gate import QualityGateChecker  # noqa: F401
+from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.self_improve import SelfImprovementWorkflow  # noqa: F401
+from general_ludd.reload.worker_broadcast import WorkerBroadcaster
 from general_ludd.review.evidence_checker import EvidenceChecker  # noqa: F401
 from general_ludd.review.reviewer import ReturnReviewer  # noqa: F401
 from general_ludd.runtime.container import ContainerBuilder  # noqa: F401
 from general_ludd.runtime.pip_bundle import PipBundleBuilder  # noqa: F401
 from general_ludd.runtime.release import ReleaseArtifactValidator  # noqa: F401
 from general_ludd.scoring.engine import PromptScoringEngine  # noqa: F401
+from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.secrets.config import OpenBaoConfig
+from general_ludd.secrets.env import EnvSecretsManager
+from general_ludd.secrets.manager import SecretsManager
+from general_ludd.secrets.migration import migrate_profile_secrets
+from general_ludd.secrets.project_secrets import ProjectSecretsManager
+from general_ludd.skills.loader import discover_skills
+from general_ludd.skills.registry import SkillRegistry
 
 logger = logging.getLogger(__name__)
 
@@ -119,12 +149,10 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
 
     mcp_path = cdir / "mcp_servers" / "example.yml"
     if mcp_path.exists():
-        from general_ludd.mcp.loader import load_mcp_config
         cfg["mcp_servers"] = load_mcp_config(str(mcp_path))
 
     tasks_dir = cdir / "tasks"
     if tasks_dir.is_dir():
-        from general_ludd.config.task_loader import discover_task_definitions
         cfg["task_definitions"] = discover_task_definitions(str(tasks_dir))
 
     profiles_dir = cdir / "model_profiles"
@@ -139,13 +167,9 @@ def build_secrets_resolver(
     env_overrides: dict[str, str] | None = None,
     projects_active: bool = False,
 ) -> Any:
-    from general_ludd.secrets.env import EnvSecretsManager
-
     base: Any
     if openbao_config is not None and openbao_config.mode not in ("disabled", None):
         try:
-            from general_ludd.secrets.manager import SecretsManager
-
             mgr = SecretsManager(config=openbao_config)
             if openbao_config.mode == "external" and openbao_config.external_url:
                 mgr.connect()
@@ -161,7 +185,6 @@ def build_secrets_resolver(
         base = EnvSecretsManager(overrides=env_overrides)
 
     if projects_active:
-        from general_ludd.secrets.project_secrets import ProjectSecretsManager
 
         class _LazyProjectSecrets:
             def __init__(self, base: Any):
@@ -175,8 +198,6 @@ def build_secrets_resolver(
 
 
 def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
-    from general_ludd.projects.workspace import ProjectWorkspace
-
     workspaces: dict[str, Any] = {}
     if project_manager is not None:
         try:
@@ -190,8 +211,6 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
 
 
 def load_model_profiles(profiles_dir: str | None = None) -> list[Any]:
-    from general_ludd.models.gateway import ModelProfile
-
     if profiles_dir is None:
         return []
     pdir = Path(profiles_dir)
@@ -275,15 +294,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     engine = None
 
     try:
-        from general_ludd.ansible.runner import AnsibleRunnerAdapter
-        from general_ludd.db.session import (
-            create_async_session_factory,
-            ensure_tables,
-            init_engine_from_config,
-            seed_initial_queues,
-        )
-        from general_ludd.event_loop.loop import EventLoop
-
         startup_config = getattr(app.state, "_startup_config", {}) or {}
         db_config: dict[str, Any] = {}
         uc = startup_config.get("user_config")
@@ -310,8 +320,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         model_profiles = startup_config.get("model_profiles", [])
         if model_profiles and hasattr(secrets_resolver, "write_secret"):
             try:
-                from general_ludd.secrets.migration import migrate_profile_secrets
-
                 profile_dicts = [
                     p.model_dump() if hasattr(p, "model_dump") else p
                     for p in model_profiles
@@ -324,8 +332,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
             except Exception as exc:
                 logger.warning("Secret migration failed: %s", exc)
-
-        from general_ludd.prompts.registry import PromptRegistry
 
         templates_dir = app.state._templates_dir
         prompt_registry = PromptRegistry(
@@ -366,16 +372,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
-        from general_ludd.filestore.bootstrap import BinaryBootstrapper
-        from general_ludd.filestore.store import FileStore as _FS
         bootloader = BinaryBootstrapper(store=_FS())
         synced = bootloader.sync_bundled_to_filestore()
         if synced:
             logger.info("Synced bundled binaries to filestore: %s", ", ".join(synced))
 
         async def _init_preflight() -> None:
-            from general_ludd.quality.preflight import run_preflight
-
             loop = asyncio.get_running_loop()
             result: dict[str, Any] = await loop.run_in_executor(None, run_preflight)
             _daemon_state["quality_gate"] = result
@@ -403,10 +405,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
 
 def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
-    from general_ludd.events.bus import EventBus
-    from general_ludd.events.hooks import HookSystem
-    from general_ludd.reload.worker_broadcast import WorkerBroadcaster
-
     if not hasattr(app.state, "_event_bus") or app.state._event_bus is None:
         app.state._event_bus = EventBus(history_size=100)
     if not hasattr(app.state, "_hook_system") or app.state._hook_system is None:
@@ -424,17 +422,9 @@ def _get_or_create_extended_subsystems(
     app: FastAPI,
     session_factory: Any | None = None,
 ) -> dict[str, Any]:
-    from general_ludd.infra.utilization import UtilizationTracker
-    from general_ludd.metrics.collector import MetricsCollector
-    from general_ludd.models.model_registry import ModelRegistry
-    from general_ludd.skills.loader import discover_skills
-    from general_ludd.skills.registry import SkillRegistry
-
     if not hasattr(app.state, "_metrics_collector") or app.state._metrics_collector is None:
         app.state._metrics_collector = MetricsCollector()
     if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
-        from general_ludd.projects.manager import seed_from_config
-
         startup_cfg = app.state._startup_config if hasattr(app.state, "_startup_config") else {}
         app.state._project_manager = seed_from_config(startup_cfg)
     if not hasattr(app.state, "_utilization_tracker") or app.state._utilization_tracker is None:
@@ -452,9 +442,6 @@ def _get_or_create_extended_subsystems(
 
     adaptive_router = None
     if session_factory is not None and not hasattr(app.state, "_adaptive_router"):
-        from general_ludd.db.repository import BenchmarkRepository
-        from general_ludd.scoring.router import AdaptiveRouter
-
         benchmark_repo = BenchmarkRepository(session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
@@ -558,6 +545,7 @@ def create_daemon_app(
             "uptime_s": round(uptime, 2),
         }
 
+    # Lazy to avoid circular import: routers/*.py import from daemon at module level
     from general_ludd.routers import (
         ansible,
         benchmark,
