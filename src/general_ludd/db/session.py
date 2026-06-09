@@ -56,9 +56,28 @@ def run_wal_pragmas(engine: AsyncEngine) -> None:
         cursor.close()
 
 
+def _compose_db_url(cfg: dict[str, Any]) -> str | None:
+    url = cfg.get("url")
+    if url:
+        return url
+    env_url = os.environ.get("DATABASE_URL")
+    if env_url:
+        return env_url
+    host = cfg.get("host")
+    if not host:
+        return None
+    port = cfg.get("port", 5432)
+    name = cfg.get("name", "gludd")
+    user = cfg.get("user", "gludd")
+    password = cfg.get("password")
+    if password:
+        return f"postgresql+psycopg://{user}:{password}@{host}:{port}/{name}"
+    return f"postgresql+psycopg://{user}@{host}:{port}/{name}"
+
+
 def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine:
     cfg = config or {}
-    url = cfg.get("url")
+    url = _compose_db_url(cfg)
     if not url:
         url = get_default_db_url()
     engine = create_async_engine(url)

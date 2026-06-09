@@ -62,10 +62,15 @@ model_routing:
 # PostgreSQL connection. If not set, the daemon falls back to SQLite
 # (not recommended for production).
 #
-# Override with DATABASE_URL environment variable.
+# Three ways to configure (in priority order):
+#   1. url:           Full connection string (takes precedence over all)
+#   2. DATABASE_URL:  Environment variable override
+#   3. host/port/name/user/password: Individual fields composed into a URL
+#
+# If none are set, falls back to SQLite at ~/.local/share/general-ludd/general-ludd.db
 #
 database:
-  # url: postgresql://gludd:password@localhost:5432/gludd
+  # url: postgresql+psycopg://gludd:password@localhost:5432/gludd
   host: localhost
   port: 5432
   name: gludd

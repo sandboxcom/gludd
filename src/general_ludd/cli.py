@@ -608,6 +608,7 @@ def main() -> None:
 
 
 def _cmd_daemon(args: argparse.Namespace) -> None:
+    import secrets
     import subprocess
 
     log_level = args.log_level.upper()
@@ -619,7 +620,18 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     create_daemon_app(tick_interval=args.tick_interval, log_level=args.log_level, config_dir=config_dir)
 
-    cmd = _build_daemon_start_cmd(host=args.host, port=args.port, workers=args.workers)
+    bind_host = args.host
+    psk = ""
+    if bind_host not in ("127.0.0.1", "localhost", "::1"):
+        psk = secrets.token_urlsafe(32)
+        print(f"\n  Daemon binding to external interface: {bind_host}:{args.port}")
+        print(f"  Pre-shared key (PSK): {psk}")
+        print(f"  Clients must send: Authorization: Bearer {psk}\n")
+
+    cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=args.workers)
+    env = os.environ.copy()
+    if psk:
+        env["GLUDD_PSK"] = psk
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -627,6 +639,7 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         stderr=subprocess.DEVNULL,
         start_new_session=True,
         close_fds=True,
+        env=env,
     )
     proc.wait()
     sys.exit(proc.returncode)

@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import contextlib
 import logging
+import os
 import time
 import uuid
 from collections.abc import AsyncIterator
@@ -501,9 +502,24 @@ def create_daemon_app(
     app.state._stats_requests = 0
     app.state._stats_responses = 0
 
+    _psk = os.environ.get("GLUDD_PSK", "")
+    app.state._psk = _psk
+
+    _PUBLIC_PATHS = {"/healthz", "/docs", "/openapi.json", "/redoc"}
+
     @app.middleware("http")
-    async def stats_middleware(request: Any, call_next: Any) -> Any:
+    async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
         app.state._stats_requests += 1
+        if _psk:
+            path = request.url.path
+            if path not in _PUBLIC_PATHS and not path.startswith("/docs"):
+                auth = request.headers.get("Authorization", "")
+                token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
+                if not token or token != _psk:
+                    from fastapi.responses import JSONResponse
+
+                    app.state._stats_responses += 1
+                    return JSONResponse(status_code=401, content={"error": "unauthorized"})
         response = await call_next(request)
         app.state._stats_responses += 1
         return response
