@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from typing import Any
+from typing import Any, ClassVar
 
 import httpx
 
@@ -33,7 +33,7 @@ _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
 
 
 def _handle_text_input(state: dict[str, Any], ch: str) -> bool:
-    if ch == "\x1b":
+    if ch in ("\x1b", "\x1b[D"):
         state["input_mode"] = None
         state["input_buffer"] = ""
         state["status_msg"] = "Cancelled"
@@ -50,6 +50,37 @@ def _submit_text_input(state: dict[str, Any]) -> None:
 
 
 class TUIKeyHandler:
+    MAIN_MENU_ITEMS: ClassVar[list[tuple[str, str, str]]] = [
+        ("s", "Start daemon", "daemon_start"),
+        ("k", "Kill daemon", "daemon_stop"),
+        ("r", "Refresh", "refresh"),
+        ("i", "Integrity scan", "integrity"),
+        ("v", "Config files", "config"),
+        ("c", "Config editor", "edit"),
+        ("m", "Models", "models"),
+        ("a", "Ansible", "ansible"),
+        ("w", "Worktrees", "worktrees"),
+        ("p", "Projects", "projects"),
+        ("t", "Todos", "todos"),
+        ("h", "Hooks", "hooks"),
+        ("o", "Workers", "workers"),
+        ("x", "Metrics", "metrics"),
+        ("g", "Agents", "agents"),
+        ("d", "Dispatch", "dispatch"),
+        ("u", "MCP", "mcp"),
+        ("j", "Skills", "skills"),
+        ("e", "Compute", "compute"),
+        ("b", "Scores", "scores"),
+        ("l", "Templates", "templates"),
+        ("n", "Quantize", "quantization"),
+        ("f", "Filestore", "filestore"),
+        ("z", "Deploys", "deployments"),
+        ("R", "Reload", "reload"),
+    ]
+
+    def get_main_menu_items(self) -> list[tuple[str, str, str]]:
+        return list(self.MAIN_MENU_ITEMS)
+
     def __init__(self, state: dict[str, Any]) -> None:
         self._state = state
 
@@ -63,6 +94,19 @@ class TUIKeyHandler:
             return True
         if ch == "\x1b[A":
             self.handle_key_up()
+            return True
+
+        if ch == "\x1b[D":
+            if input_mode is not None:
+                state["input_mode"] = None
+                state["input_buffer"] = ""
+                state["status_msg"] = "Cancelled"
+                return True
+            if view != "main":
+                state["current_view"] = "main"
+                state["status_msg"] = ""
+                pop_breadcrumb(state)
+                return True
             return True
 
         if ch == "\x1b" and input_mode is None and view != "main":
@@ -140,11 +184,17 @@ class TUIKeyHandler:
             return True
 
         if ch == " " and input_mode is None:
-            self._activate_selected(view)
+            if view == "main":
+                self._activate_main_menu_item()
+            else:
+                self._activate_selected(view)
             return True
 
         if ch == "\r" and input_mode is None:
-            self._activate_selected(view)
+            if view == "main":
+                self._activate_main_menu_item()
+            else:
+                self._activate_selected(view)
             return True
 
         if view == "todos" and ch == "a":
@@ -295,13 +345,20 @@ class TUIKeyHandler:
     def handle_key_down(self) -> None:
         state = self._state
         view = state["current_view"]
+        if view == "main":
+            menu_len = len(self.MAIN_MENU_ITEMS)
+            idx: int = state.get("selected_main_idx", 0)
+            state["selected_main_idx"] = (idx + 1) % menu_len
+            new_idx = state["selected_main_idx"]
+            state["status_msg"] = f"Selected: {self.MAIN_MENU_ITEMS[new_idx][0]} — {self.MAIN_MENU_ITEMS[new_idx][1]}"
+            return
         idx_key, data_key = self._get_selection_keys(view)
         if not idx_key:
             return
         items: list[dict[str, Any]] = state.get(data_key, [])
         if not items:
             return
-        idx: int = state.get(idx_key, 0)
+        idx = state.get(idx_key, 0)
         state[idx_key] = (idx + 1) % len(items)
         new_idx = state[idx_key]
         if new_idx < len(items):
@@ -311,13 +368,20 @@ class TUIKeyHandler:
     def handle_key_up(self) -> None:
         state = self._state
         view = state["current_view"]
+        if view == "main":
+            menu_len = len(self.MAIN_MENU_ITEMS)
+            idx: int = state.get("selected_main_idx", 0)
+            state["selected_main_idx"] = (idx - 1) % menu_len
+            new_idx = state["selected_main_idx"]
+            state["status_msg"] = f"Selected: {self.MAIN_MENU_ITEMS[new_idx][0]} — {self.MAIN_MENU_ITEMS[new_idx][1]}"
+            return
         idx_key, data_key = self._get_selection_keys(view)
         if not idx_key:
             return
         items: list[dict[str, Any]] = state.get(data_key, [])
         if not items:
             return
-        idx: int = state.get(idx_key, 0)
+        idx = state.get(idx_key, 0)
         state[idx_key] = (idx - 1) % len(items)
         new_idx = state[idx_key]
         if new_idx < len(items):
@@ -336,6 +400,45 @@ class TUIKeyHandler:
             "agents": ("selected_agent_idx", "agents_data"),
         }
         return mapping.get(view, ("", ""))
+
+    def _activate_main_menu_item(self) -> None:
+        state = self._state
+        idx: int = state.get("selected_main_idx", 0)
+        items = self.MAIN_MENU_ITEMS
+        if idx >= len(items):
+            return
+        _key, _label, target = items[idx]
+        if target in ("daemon_start",):
+            self._start_daemon()
+        elif target in ("daemon_stop",):
+            self._stop_daemon()
+        elif target == "refresh":
+            state["status_msg"] = "Refreshed"
+        elif target == "integrity":
+            state["current_view"] = "integrity"
+            state["status_msg"] = "Integrity — [i] exit  [q] quit"
+            push_breadcrumb(state, "integrity")
+        elif target == "config":
+            state["current_view"] = "config"
+            push_breadcrumb(state, "config")
+        elif target == "edit":
+            state["current_view"] = "edit"
+            push_breadcrumb(state, "edit")
+        elif target == "dispatch":
+            self._cycle_dispatch_mode()
+        elif target == "ansible":
+            state["current_view"] = "ansible"
+            state["status_msg"] = "Ansible Galaxy — [s]earch  [a] exit  [q] quit"
+            push_breadcrumb(state, "ansible")
+        elif target == "reload":
+            self._reload_daemon()
+        else:
+            for _key, (view_name, msg) in _TOGGLE_VIEWS.items():
+                if view_name == target:
+                    state["current_view"] = view_name
+                    state["status_msg"] = msg
+                    push_breadcrumb(state, view_name)
+                    break
 
     def _activate_selected(self, view: str) -> None:
         state = self._state

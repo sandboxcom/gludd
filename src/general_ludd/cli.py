@@ -1560,39 +1560,51 @@ def _compute_footer_rows(term_height: int) -> int:
     return min(18, max(6, term_height - 20))
 
 
-def _build_controls_table(daemon_running: bool, status_msg: str, *, term_width: int = 80) -> Table:
+def _build_controls_table(
+    daemon_running: bool, status_msg: str,
+    *, term_width: int = 80, selected_idx: int = -1,
+) -> Table:
     from rich.table import Table
 
     t = Table(title="Controls", show_header=False)
     t.add_column("Key", style="yellow", width=3, no_wrap=True)
     t.add_column("Action", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
     t.add_column("Status", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.22, 6))
-    t.add_row("s", "Start daemon", "running" if daemon_running else "stopped")
-    t.add_row("k", "Kill daemon", "")
-    t.add_row("r", "Refresh", "")
-    t.add_row("i", "Integrity scan", "")
-    t.add_row("v", "Config files", "")
-    t.add_row("c", "Config editor", "")
-    t.add_row("m", "Models", "")
-    t.add_row("a", "Ansible", "")
-    t.add_row("w", "Worktrees", "")
-    t.add_row("p", "Projects", "")
-    t.add_row("t", "Todos", "")
-    t.add_row("h", "Hooks", "")
-    t.add_row("o", "Workers", "")
-    t.add_row("x", "Metrics", "")
-    t.add_row("g", "Agents", "")
-    t.add_row("d", "Dispatch", "")
-    t.add_row("u", "MCP", "")
-    t.add_row("j", "Skills", "")
-    t.add_row("e", "Compute", "")
-    t.add_row("b", "Scores", "")
-    t.add_row("l", "Templates", "")
-    t.add_row("n", "Quantize", "")
-    t.add_row("f", "Filestore", "")
-    t.add_row("z", "Deploys", "")
-    t.add_row("R", "Reload", "")
-    t.add_row("q", "Quit", "")
+    rows = [
+        ("s", "Start daemon", "running" if daemon_running else "stopped"),
+        ("k", "Kill daemon", ""),
+        ("r", "Refresh", ""),
+        ("i", "Integrity scan", ""),
+        ("v", "Config files", ""),
+        ("c", "Config editor", ""),
+        ("m", "Models", ""),
+        ("a", "Ansible", ""),
+        ("w", "Worktrees", ""),
+        ("p", "Projects", ""),
+        ("t", "Todos", ""),
+        ("h", "Hooks", ""),
+        ("o", "Workers", ""),
+        ("x", "Metrics", ""),
+        ("g", "Agents", ""),
+        ("d", "Dispatch", ""),
+        ("u", "MCP", ""),
+        ("j", "Skills", ""),
+        ("e", "Compute", ""),
+        ("b", "Scores", ""),
+        ("l", "Templates", ""),
+        ("n", "Quantize", ""),
+        ("f", "Filestore", ""),
+        ("z", "Deploys", ""),
+        ("R", "Reload", ""),
+        ("q", "Quit", ""),
+    ]
+    for i, (key, action, status) in enumerate(rows):
+        if i == selected_idx:
+            prefix = "▶ "
+            style = "bold reverse"
+            t.add_row(f"{prefix}{key}", f"[{style}]{action}[/{style}]", status)
+        else:
+            t.add_row(key, action, status)
     if status_msg:
         t.add_row("", f"[bold yellow]{status_msg[:50]}[/]", "")
     return t
@@ -2490,7 +2502,10 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = "No daemon to stop"
 
     def build_controls_table() -> Table:
-        return _build_controls_table(daemon_running, status_msg)
+        import shutil as _shutil2
+        _tw, _ = _shutil2.get_terminal_size((80, 24))
+        sel_idx = tui_state.get("selected_main_idx", -1) if current_view == "main" else -1
+        return _build_controls_table(daemon_running, status_msg, term_width=_tw, selected_idx=sel_idx)
 
     def build_daemon_table() -> Table:
         return _build_daemon_table(daemon_running, args.daemon_url, current_view)
