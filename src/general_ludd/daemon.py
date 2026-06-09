@@ -1808,18 +1808,6 @@ def create_daemon_app(
             "errors": errors,
         }
 
-    @app.post("/admin/gap-analysis")
-    async def admin_gap_analysis() -> dict[str, Any]:
-        from general_ludd.validation.gap_analyzer import GapAnalyzer
-        _ = GapAnalyzer()
-        return {"status": "ok", "result": "GapAnalyzer wired"}
-
-    @app.post("/admin/log-audit")
-    async def admin_log_audit() -> dict[str, Any]:
-        from general_ludd.validation.log_auditor import LogAuditor
-        _ = LogAuditor()
-        return {"status": "ok", "result": "LogAuditor wired"}
-
     _tui_log_entries: list[dict[str, Any]] = []
 
     @app.post("/admin/tui-log")
@@ -1834,18 +1822,6 @@ def create_daemon_app(
     async def admin_tui_log_get() -> dict[str, Any]:
         return {"entries": list(_tui_log_entries[-200:])}
 
-    @app.post("/admin/evidence-check")
-    async def admin_evidence_check(req: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "ok", "claim": req.get("text", "")}
-
-    @app.post("/admin/qualitygate/check")
-    async def admin_qualitygate_check() -> dict[str, Any]:
-        return {"status": "ok", "result": "QualityGateChecker wired"}
-
-    @app.post("/admin/dispatch-agent")
-    async def admin_dispatch_agent(req: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "ok", "result": "AgentDispatcher wired"}  # imported at top
-
     @app.put("/admin/dispatch/mode")
     async def admin_dispatch_mode(req: dict[str, Any]) -> Any:
         mode = req.get("mode", "active")
@@ -1857,30 +1833,6 @@ def create_daemon_app(
             cfg["dispatch_mode"] = mode
         return {"dispatch_mode": mode}
 
-    @app.post("/admin/dogfood/run")
-    async def admin_dogfood_run(req: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "ok", "result": "DogfoodRunner wired"}  # imported at top
-
-    @app.post("/admin/review/return")
-    async def admin_review_return() -> dict[str, Any]:
-        return {"status": "ok", "result": "ReturnReviewer wired"}
-
-    @app.post("/admin/container/build")
-    async def admin_container_build() -> dict[str, Any]:
-        return {"status": "ok", "result": "ContainerBuilder wired"}
-
-    @app.post("/admin/dependency/check")
-    async def admin_dependency_check() -> dict[str, Any]:
-        return {"status": "ok", "result": "DependencyManager wired"}
-
-    @app.post("/admin/git/automate")
-    async def admin_git_automate(req: dict[str, Any]) -> dict[str, Any]:
-        return {"status": "ok", "result": "GitAutomation wired"}
-
-    @app.post("/admin/deployment/apply")
-    async def admin_deployment_apply() -> dict[str, Any]:
-        return {"status": "ok", "result": "DeploymentManager wired"}
-
     @app.post("/admin/self-improve")
     async def admin_self_improve() -> dict[str, Any]:
         from general_ludd.self_improve.harness import SelfImprovementHarness
@@ -1890,14 +1842,6 @@ def create_daemon_app(
         return {"status": "ok", "findings_count": result["findings_count"],
                 "todos_generated": result["todos_generated"],
                 "todos_enqueued": result["todos_enqueued"]}
-
-    @app.post("/admin/scoring/run")
-    async def admin_scoring_run() -> dict[str, Any]:
-        return {"status": "ok", "result": "PromptScoringEngine wired"}
-
-    @app.post("/admin/observability/record")
-    async def admin_observability_record() -> dict[str, Any]:
-        return {"status": "ok", "result": "AutoBenchmarkRecorder wired"}
 
     _integrity_changes: list[dict[str, Any]] = []
     _integrity_log: list[dict[str, Any]] = []
@@ -1959,14 +1903,6 @@ def create_daemon_app(
     async def admin_integrity_log() -> dict[str, Any]:
         return {"entries": _integrity_log}
 
-    @app.post("/admin/projects/playbooks")
-    async def admin_project_playbooks() -> dict[str, Any]:
-        return {"status": "ok", "result": "per-project playbook resolution wired"}
-
-    @app.post("/admin/projects/secrets")
-    async def admin_project_secrets() -> dict[str, Any]:
-        return {"status": "ok", "result": "per-project secrets isolation wired"}
-
     @app.post("/admin/projects/skills")
     async def admin_project_skills(req: dict[str, Any]) -> dict[str, Any]:
         project_id = req.get("project_id", "")
@@ -1999,13 +1935,6 @@ def create_daemon_app(
             registry.register(skill, project_id=project_id)
         return {"status": "ok", "project_id": project_id, "skill": skill_name}
 
-    @app.post("/admin/projects/mcp")
-    async def admin_project_mcp() -> dict[str, Any]:
-        return {"status": "ok", "result": "per-project MCP config wired"}
-
-    @app.post("/admin/projects/logging")
-    async def admin_project_logging() -> dict[str, Any]:
-        return {"status": "ok", "result": "ProjectLogAdapter wired into daemon"}
 
     @app.get("/admin/ansible/search")
     async def admin_ansible_search(query: str = "", type: str = "role") -> dict[str, Any]:
