@@ -3,15 +3,62 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-09 (session 18)
+- 2026-06-09 (session 19)
 
 ## Current Status
-- **Phase**: Skills architecture audit + wiring
-- **Test Suite**: 3926+ passed, 15 failed (pre-existing), 2 skipped
+- **Phase**: Architecture refactoring (mp-improve-architecture)
+- **Test Suite**: 4717 passed, 18 failed (pre-existing), 27 skipped, 3 errors (pre-existing)
 - **Branch**: master
-- **Latest commit**: 98f0883 — remove dead _cache/refresh from SkillCatalog, cache catalog singleton on app.state
+- **Latest commit**: e83354c — add _make_table factory in tui/tables.py
 - **Mypy**: 1 error (pre-existing, db/session.py)
 - **Lint**: 24 errors (pre-existing line-length in catalog.py descriptions, test files)
+
+## Session 19: Architecture Refactoring (4 commits: 105135f, 543479d, e83354c)
+
+### Candidate 1: Split daemon.py into FastAPI routers (commit 105135f)
+- Created `src/general_ludd/routers/` with 14 router modules + `__init__.py`
+- Each router has `register(app, _daemon_state)` factory pattern
+- daemon.py truncated from 2065 → 595 lines (removed 1470 lines of dead code after `return app`)
+- Fixed mypy errors in routers: `app: Any` → `app: FastAPI`, added missing FastAPI imports
+- Removed unused imports from daemon.py: `uuid`, `cast`, `HTTPException`, `Request`, `JSONResponse`
+- Router files: todos, models, benchmark, mcp, skills, compute, filestore, integrity, signing, projects, quantization, reload, worktree, ansible
+
+### Candidate 4: Remove 16 stub endpoints (commit 26f15e2 — previous session)
+- Already done in session 18
+
+### Candidate 5: Fix security re-export pattern (commit 543479d)
+- Moved `sanitize_path()` and `sanitize_job_id()` implementation from `security/__init__.py` to `security/sanitize.py`
+- `__init__.py` now re-exports from `sanitize.py`
+- 25 security tests pass
+
+### Candidate 6: Move worktree __init__.py implementation (commit 543479d)
+- Moved 393-line worktree implementation from `worktree/__init__.py` to `worktree/core.py`
+- `__init__.py` now re-exports all public symbols
+- 73 worktree tests pass
+
+### Candidate 3: Table builder consolidation (commit e83354c)
+- Created `_make_table()` factory in `tui/tables.py`
+- Supports: column specs (name, style, ratio, min_width), rows, data+formatter, selected_idx, empty_msg, show_header
+- 15 tests in `tests/unit/test_make_table_factory.py`
+- 10 of 26 table builders identified as directly replaceable, 7 more with formatter callback
+- Wiring of existing builders to factory deferred (high-risk TUI change)
+
+### Architecture Candidates Status
+| # | Candidate | Status |
+|---|-----------|--------|
+| 1 | Split daemon.py into routers | DONE (14 routers, 595-line daemon.py) |
+| 2 | Extract _cmd_tui from cli.py | Pending (862 lines, needs tui/ submodules) |
+| 3 | Consolidate table builders | Factory created, wiring deferred |
+| 4 | Remove 16 stub endpoints | DONE (session 18) |
+| 5 | Fix security re-export | DONE (sanitize.py → __init__.py re-export) |
+| 6 | Move worktree __init__.py | DONE (core.py → __init__.py re-export) |
+
+### Pre-existing Failures (unchanged)
+- `test_guardrails.py::test_make_lint_passes` (24 pre-existing lint errors)
+- `test_tui_extracted_builders.py::test_long_url_truncated`
+- `test_tui_new_views.py` — 10 max_width assertion failures
+- `test_tui_view_actions.py::test_projects_add_error`
+- `test_tui_daemon_start.py` — 3 port 8000 errors
 
 ## Session 18: Skills Architecture Audit + Wiring (commits 4d8d3d9, 4648f6d, 98f0883)
 
