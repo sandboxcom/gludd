@@ -116,6 +116,226 @@ def _build_skill_md(entry: CatalogSkillEntry) -> str:
 
 
 _CURATED_SKILLS: dict[str, CatalogSkillEntry] = {
+    "mp-diagnose": CatalogSkillEntry(
+        name="mp-diagnose",
+        description="Disciplined diagnosis loop for hard bugs: reproduce, minimise, hypothesise, instrument, fix, regression-test. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/diagnose",
+        category="engineering",
+        tags=["mattpocock", "debugging", "diagnosis", "engineering"],
+        body_preview=(
+            "# Diagnose\n\n"
+            "A 6-phase discipline for hard bugs:\n\n"
+            "1. **Build a feedback loop** — Spend disproportionate effort here. "
+            "Use failing tests, curl scripts, CLI invocations, headless browsers, "
+            "throwaway harnesses. Iterate to make the loop faster and more deterministic.\n"
+            "2. **Reproduce** — Run the loop. Confirm the failure matches the user's description.\n"
+            "3. **Hypothesise** — Generate 3-5 ranked, falsifiable hypotheses. Show to user before testing.\n"
+            "4. **Instrument** — One probe per hypothesis, one variable at a time. "
+            "Prefer debugger/REPL over targeted logs. Tag debug logs with unique prefix.\n"
+            "5. **Fix + regression test** — Write regression test before fix. "
+            "If no test seam exists, that itself is the finding.\n"
+            "6. **Cleanup + post-mortem** — Verify repro gone, regression test passes, "
+            "all instrumentation removed. Ask 'what would have prevented this bug?'\n"
+        ),
+    ),
+    "mp-tdd": CatalogSkillEntry(
+        name="mp-tdd",
+        description="Test-driven development with red-green-refactor loop. Vertical slices, not horizontal. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/tdd",
+        category="engineering",
+        tags=["mattpocock", "testing", "tdd", "engineering"],
+        body_preview=(
+            "# TDD\n\n"
+            "Test-driven development with a red-green-refactor loop.\n\n"
+            "**Anti-pattern: Horizontal Slices** — Don't write all tests first then all implementation. "
+            "Use vertical slices (tracer bullets): one test, one implementation, repeat.\n\n"
+            "**Workflow**:\n"
+            "1. Planning — confirm interface changes, behaviors to test, design for testability\n"
+            "2. Tracer Bullet — one test, confirm the path works\n"
+            "3. Incremental Loop — RED then GREEN for each behavior, one at a time, minimal code only\n"
+            "4. Refactor — after all tests pass, extract duplication, deepen modules. Never refactor while RED\n\n"
+            "Tests verify behavior through public interfaces, not implementation details. "
+            "Good tests are integration-style (read like specs). Bad tests are coupled to implementation.\n"
+        ),
+    ),
+    "mp-grill-me": CatalogSkillEntry(
+        name="mp-grill-me",
+        description="Relentlessly interview the user about a plan or design until every branch of the decision tree is resolved. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/grill-me",
+        category="productivity",
+        tags=["mattpocock", "planning", "interview", "productivity"],
+        body_preview=(
+            "# Grill Me\n\n"
+            "Interview me relentlessly about every aspect of this plan until we reach a shared understanding. "
+            "Walk down each branch of the design tree, resolving dependencies between decisions one-by-one. "
+            "For each question, provide your recommended answer. Ask questions one at a time. "
+            "If a question can be answered by exploring the codebase, explore the codebase instead.\n"
+        ),
+    ),
+    "mp-grill-with-docs": CatalogSkillEntry(
+        name="mp-grill-with-docs",
+        description="Grilling session that challenges your plan against the existing domain model, sharpens terminology, updates CONTEXT.md and ADRs inline. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/grill-with-docs",
+        category="engineering",
+        tags=["mattpocock", "planning", "documentation", "engineering"],
+        body_preview=(
+            "# Grill With Docs\n\n"
+            "Grilling session that challenges your plan against the existing domain model.\n\n"
+            "- Interview the user relentlessly, one question at a time\n"
+            "- If a question can be answered by exploring the codebase, explore instead\n"
+            "- Challenge against CONTEXT.md glossary, sharpen fuzzy language\n"
+            "- Discuss concrete scenarios, cross-reference with code\n"
+            "- Update CONTEXT.md inline (glossary only, no implementation details)\n"
+            "- Offer ADRs sparingly (only when hard to reverse + surprising without context + real trade-off)\n"
+        ),
+    ),
+    "mp-caveman": CatalogSkillEntry(
+        name="mp-caveman",
+        description="Ultra-compressed communication mode. Cuts token usage by dropping filler while keeping full technical accuracy. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/caveman",
+        category="productivity",
+        tags=["mattpocock", "communication", "tokens", "productivity"],
+        body_preview=(
+            "# Caveman Mode\n\n"
+            "Ultra-compressed communication. Active every response once triggered.\n\n"
+            "Rules:\n"
+            "- Drop articles, filler, pleasantries, hedging\n"
+            "- Fragments OK. Short synonyms. Abbreviate common terms\n"
+            "- Use arrows for causality. Technical terms stay exact\n"
+            "- Pattern: [thing] [action] [reason]. [next step].\n"
+            "- Code blocks unchanged\n"
+            "- Auto-clarity: temporarily drop caveman for security warnings, "
+            "irreversible actions, multi-step sequences\n"
+        ),
+    ),
+    "mp-handoff": CatalogSkillEntry(
+        name="mp-handoff",
+        description="Compact the current conversation into a handoff document so another agent can continue the work. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/handoff",
+        category="productivity",
+        tags=["mattpocock", "handoff", "session", "productivity"],
+        body_preview=(
+            "# Handoff\n\n"
+            "Write a handoff document summarizing the conversation for a fresh agent.\n\n"
+            "- Save to OS temp directory (not workspace)\n"
+            "- Include suggested skills section\n"
+            "- Don't duplicate content in other artifacts (PRDs, plans, ADRs, issues, commits) — reference by path/URL\n"
+            "- Redact sensitive info\n"
+            "- Tailor to what the next session will focus on\n"
+        ),
+    ),
+    "mp-to-prd": CatalogSkillEntry(
+        name="mp-to-prd",
+        description="Turn the current conversation context into a PRD and publish to the issue tracker. No interview — synthesizes what you already know. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/to-prd",
+        category="engineering",
+        tags=["mattpocock", "prd", "planning", "engineering"],
+        body_preview=(
+            "# To PRD\n\n"
+            "Turn the current conversation context into a PRD.\n\n"
+            "Do NOT interview the user — synthesize what you already know.\n\n"
+            "Process:\n"
+            "1. Explore repo\n"
+            "2. Sketch test seams, check with user\n"
+            "3. Write PRD using template, publish to issue tracker with ready-for-agent label\n\n"
+            "PRD sections: Problem Statement, Solution, User Stories (As a actor, I want feature, so that benefit), "
+            "Implementation Decisions, Testing Decisions, Out of Scope, Further Notes\n"
+        ),
+    ),
+    "mp-to-issues": CatalogSkillEntry(
+        name="mp-to-issues",
+        description="Break a plan, spec, or PRD into independently-grabbable issues using tracer-bullet vertical slices. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/to-issues",
+        category="engineering",
+        tags=["mattpocock", "issues", "planning", "engineering"],
+        body_preview=(
+            "# To Issues\n\n"
+            "Break a plan into independently-grabbable issues using vertical slices.\n\n"
+            "Process:\n"
+            "1. Gather context from conversation\n"
+            "2. Explore codebase optionally\n"
+            "3. Draft vertical slices (tracer bullets through ALL integration layers end-to-end)\n"
+            "4. Quiz user on granularity, dependencies, HITL/AFK assignments\n"
+            "5. Publish issues in dependency order\n\n"
+            "Vertical slice rules: Each delivers a narrow but COMPLETE path through every layer. "
+            "A completed slice is demoable on its own. Prefer many thin over few thick.\n"
+        ),
+    ),
+    "mp-zoom-out": CatalogSkillEntry(
+        name="mp-zoom-out",
+        description="Zoom out and give broader context or a higher-level perspective on unfamiliar code. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/zoom-out",
+        category="engineering",
+        tags=["mattpocock", "context", "exploration", "engineering"],
+        body_preview=(
+            "# Zoom Out\n\n"
+            "Go up a layer of abstraction. Give a map of all the relevant modules and callers, "
+            "using the project's domain glossary vocabulary. Useful when you're unfamiliar with "
+            "a section of code or need to understand how it fits into the bigger picture.\n"
+        ),
+    ),
+    "mp-improve-architecture": CatalogSkillEntry(
+        name="mp-improve-architecture",
+        description="Find deepening opportunities in a codebase, informed by domain language and ADRs. Consolidate tightly-coupled modules. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/engineering/improve-codebase-architecture",
+        category="engineering",
+        tags=["mattpocock", "architecture", "refactoring", "engineering"],
+        body_preview=(
+            "# Improve Codebase Architecture\n\n"
+            "Find deepening opportunities in a codebase.\n\n"
+            "Process:\n"
+            "1. Explore — read glossary/ADRs, walk codebase noting friction "
+            "(shallow modules, leaked coupling, no locality, untested areas). Apply deletion test.\n"
+            "2. Present candidates with before/after diagrams, recommendation strength. "
+            "Do NOT propose interfaces yet — ask user which to explore.\n"
+            "3. Grilling loop — walk design tree, update CONTEXT.md inline, offer ADRs sparingly.\n\n"
+            "Key principles: deletion test, interface is the test surface, "
+            "one adapter = hypothetical seam, two adapters = real seam.\n"
+        ),
+    ),
+    "mp-teach": CatalogSkillEntry(
+        name="mp-teach",
+        description="Teach the user a new skill or concept using a stateful teaching workspace with lessons, learning records, and reference docs. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/teach",
+        category="productivity",
+        tags=["mattpocock", "teaching", "learning", "productivity"],
+        body_preview=(
+            "# Teach\n\n"
+            "Teach a new skill or concept using a stateful workspace.\n\n"
+            "Workspace files: MISSION.md, reference/*.html (cheat sheets), RESOURCES.md, "
+            "learning-records/*.md (key insights), lessons/*.html (self-contained lessons), NOTES.md.\n\n"
+            "Philosophy: Knowledge (from high-trust resources) + Skills (interactive lessons) + "
+            "Wisdom (community interaction). Always challenge 'just enough' (zone of proximal development).\n"
+        ),
+    ),
+    "mp-write-a-skill": CatalogSkillEntry(
+        name="mp-write-a-skill",
+        description="Create new agent skills with proper structure, progressive disclosure, and bundled resources. Adapted from mattpocock/skills.",
+        source="mattpocock",
+        source_url="https://github.com/mattpocock/skills/tree/main/skills/productivity/write-a-skill",
+        category="productivity",
+        tags=["mattpocock", "skills", "authoring", "productivity"],
+        body_preview=(
+            "# Write a Skill\n\n"
+            "Create new agent skills with proper structure.\n\n"
+            "Structure: skill-name/SKILL.md (required), REFERENCE.md, EXAMPLES.md, scripts/ (optional).\n\n"
+            "Description requirements: Max 1024 chars, third person, first sentence = what it does, "
+            "second sentence = 'Use when [triggers]'. The description is the ONLY thing the agent sees "
+            "when deciding which skill to load.\n\n"
+            "Split files when SKILL.md exceeds 100 lines. Add scripts for deterministic operations.\n"
+        ),
+    ),
     "tdd-discipline": CatalogSkillEntry(
         name="tdd-discipline",
         description="Enforce test-driven development: write failing tests before implementation code",

@@ -11,7 +11,7 @@ UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 
- .PHONY: search-google search-json \
+  .PHONY: search-google search-json \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai test-tui-daemon diag-gunicorn \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -25,7 +25,8 @@ TESTS_DIR := tests
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
-        audit-messages qa validate
+        audit-messages qa validate \
+        skill-install skill-list bootstrap-skills
 
 search-google:
 	@$(PYTHON) $(SEARCH_SCRIPT) "$(SEARCH)" -n $(MAX_RESULTS) -f $(FORMAT)
@@ -405,6 +406,18 @@ analyze-models:
 
 extract-models:
 	@$(PYTHON) /Users/shawnwilson/tmp/opencode/extract_models.py
+
+NAME ?= mp-diagnose
+
+skill-list:
+	@$(UV) run $(PYTHON) -c "from general_ludd.skills.catalog import SkillCatalog; cat = SkillCatalog(); [print(f'  {s.name:30s} {s.category:15s} {s.description[:60]}') for s in cat.search(limit=100)]"
+
+skill-install:
+	@$(UV) run $(PYTHON) -c "from general_ludd.skills.catalog import SkillCatalog; cat = SkillCatalog(); path = cat.install_skill('$(NAME)', '.opencode/skills'); print(f'Installed: {path}') if path else print(f'Skill not found: $(NAME)')"
+
+bootstrap-skills:
+	@echo "Installing default mattpocock skills..."
+	@$(UV) run $(PYTHON) scripts/bootstrap_skills.py
 
 
 

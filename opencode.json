@@ -6,5 +6,8 @@
       "make *": "allow"
     }
   },
-  "plugin": ["./.opencode/plugin/enforce-make.ts"]
+  "plugin": ["./.opencode/plugin/enforce-make.ts"],
+  "skills": {
+    "paths": [".opencode/skills"]
+  }
 }
