@@ -125,6 +125,90 @@ class TestTablesFillPanelWidthInLayout:
     """Tables inside Layout cells must expand to fill their panel — no whitespace margin."""
 
     @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_daemon_table_in_layout_no_cell_padding(self, term_w: int):
+        from general_ludd.cli import _build_daemon_table, _compute_panel_widths
+
+        left_w, right_w = _compute_panel_widths(term_w, {})
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=MagicMock(
+                    return_value={
+                        "pid": 12345,
+                        "requests_total": 100,
+                        "responses_total": 99,
+                        "memory_mb": 50.5,
+                        "uptime_s": 3600.0,
+                    }
+                ),
+            )
+            t = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+
+        layout = Layout()
+        layout.split_row(
+            Layout(name="left", size=left_w),
+            Layout(name="right", size=right_w),
+        )
+        layout["left"].update(t)
+        layout["right"].update(Table())
+
+        lines = _render_layout(layout, term_w)
+        data_lines = [
+            (i, ln[:left_w])
+            for i, ln in enumerate(lines)
+            if ln.lstrip().startswith("\u2502")
+        ]
+        assert len(data_lines) > 0, f"No data rows at tw={term_w}"
+        for i, left_region in data_lines:
+            trail = len(left_region) - len(left_region.rstrip(" "))
+            assert trail <= 2, (
+                f"Daemon table in layout: {trail} trailing spaces in left panel "
+                f"at tw={term_w} left_w={left_w} line {i}"
+            )
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_info_table_in_layout_no_cell_padding(self, term_w: int):
+        from general_ludd.cli import _build_info_table, _compute_panel_widths
+
+        left_w, right_w = _compute_panel_widths(term_w, {})
+        info = {
+            "version": "0.1.0",
+            "python_version": "3.14.0",
+            "platform": "darwin",
+            "cwd": "/home/user/projects/myapp",
+            "config_dir": "/home/user/.config/gludd",
+            "config_files": [],
+            "filestore_root": "/home/user/.local/share/gludd",
+            "filestore_size_bytes": 2048000,
+            "db_engine": "sqlite",
+            "db_exists": True,
+            "db_size_bytes": 512000,
+        }
+        t = _build_info_table(info, term_width=right_w)
+
+        layout = Layout()
+        layout.split_row(
+            Layout(name="left", size=left_w),
+            Layout(name="right", size=right_w),
+        )
+        layout["left"].update(Table())
+        layout["right"].update(t)
+
+        lines = _render_layout(layout, term_w)
+        data_lines = [
+            (i, ln[left_w:])
+            for i, ln in enumerate(lines)
+            if ln.lstrip().startswith("\u2502")
+        ]
+        assert len(data_lines) > 0, f"No data rows at tw={term_w}"
+        for i, right_region in data_lines:
+            trail = len(right_region) - len(right_region.rstrip(" "))
+            assert trail <= 2, (
+                f"Info table in layout: {trail} trailing spaces in right panel "
+                f"at tw={term_w} right_w={right_w} line {i}"
+            )
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
     def test_daemon_table_fills_left_panel(self, term_w: int):
         from general_ludd.cli import _build_daemon_table, _compute_panel_widths
 

@@ -1590,10 +1590,10 @@ def _build_controls_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Controls", show_header=False)
+    t = Table(title="Controls", show_header=False, expand=True)
     t.add_column("Key", style="yellow", width=3, no_wrap=True)
-    t.add_column("Action", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
-    t.add_column("Status", style="green", no_wrap=True, width=_scale_col(term_width, 0.22, 6))
+    t.add_column("Action", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Status", style="green", no_wrap=True, ratio=1, min_width=6)
     rows = [
         ("s", "Start daemon", "running" if daemon_running else "stopped"),
         ("k", "Kill daemon", ""),
@@ -1637,11 +1637,10 @@ def _build_controls_table(
 def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str, *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Daemon", show_header=False)
-    _avail = term_width - _table_overhead(2)
-    t.add_column("Key", style="cyan", no_wrap=True, max_width=_scale_col(_avail, 0.25, 6))
-    val_w = _scale_col(_avail, 0.75, 10)
-    t.add_column("Value", style="green", no_wrap=True, width=val_w)
+    t = Table(title="Daemon", show_header=False, expand=True)
+    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6)
+    val_w = max(10, term_width - _table_overhead(2) - 6)
+    t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10)
     t.add_row("Status", "running" if daemon_running else "stopped")
     url_display = daemon_url
     if len(url_display) > val_w - 2:
@@ -1670,12 +1669,10 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
 def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="System Info", show_header=False)
-    _avail = term_width - _table_overhead(2)
-    key_w = _scale_col(_avail, 0.30, 6)
-    val_w = _scale_col(_avail, 0.70, 10)
-    t.add_column("Key", style="cyan", no_wrap=True, width=key_w)
-    t.add_column("Value", style="green", no_wrap=True, width=val_w)
+    t = Table(title="System Info", show_header=False, expand=True)
+    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6)
+    val_w = max(10, term_width - _table_overhead(2) - 6)
+    t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10)
     rows = [
         ("Version", str(info.get("version", "?"))),
         ("Python", str(info.get("python_version", "?"))),
@@ -1698,14 +1695,10 @@ def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Binaries", show_header=True)
-    _avail = term_width - _table_overhead(3)
-    name_w = _scale_col(_avail, 0.50, 6)
-    found_w = _scale_col(_avail, 0.20, 3)
-    ver_w = _scale_col(_avail, 0.30, 4)
-    t.add_column("Binary", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Found", style="green", no_wrap=True, max_width=found_w)
-    t.add_column("Version", style="yellow", no_wrap=True, width=ver_w)
+    t = Table(title="Binaries", show_header=True, expand=True)
+    t.add_column("Binary", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Found", style="green", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Version", style="yellow", no_wrap=True, ratio=2, min_width=4)
     versions: dict[str, str] = info.get("binary_versions", {})
     for name, path in info.get("binary_paths", {}).items():
         ver = versions.get(name, versions.get(name.replace("-", ""), ""))
@@ -1721,10 +1714,9 @@ def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Config Files", show_header=True)
-    _avail = term_width - _table_overhead(2)
-    t.add_column("File", style="cyan", no_wrap=True, max_width=_scale_col(_avail, 0.70, 8))
-    t.add_column("Size", style="green", no_wrap=True, width=_scale_col(_avail, 0.30, 4))
+    t = Table(title="Config Files", show_header=True, expand=True)
+    t.add_column("File", style="cyan", no_wrap=True, ratio=3, min_width=8)
+    t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4)
     for cf in info.get("config_files", []):
         t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
     return t
@@ -1733,16 +1725,11 @@ def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
     from rich.table import Table
 
-    t = Table(title="Todos", show_header=True)
-    _avail = term_width - _table_overhead(4)
-    id_w = _scale_col(_avail, 0.15, 4)
-    title_w = _scale_col(_avail, 0.45, 6)
-    status_w = _scale_col(_avail, 0.25, 4)
-    pri_w = _scale_col(_avail, 0.15, 3)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
-    t.add_column("Title", style="green", no_wrap=True, max_width=title_w)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
-    t.add_column("Pri", style="bold", no_wrap=True, width=pri_w)
+    t = Table(title="Todos", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Title", style="green", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=2, min_width=4)
+    t.add_column("Pri", style="bold", no_wrap=True, ratio=1, min_width=3)
     for i, todo in enumerate(todos):
         status = todo.get("status", "?")
         status_color = {
@@ -1754,10 +1741,10 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, sel
         sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
         style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            sel_marker + str(todo.get("todo_id", "?"))[:id_w],
-            str(todo.get("title", ""))[:title_w],
+            sel_marker + str(todo.get("todo_id", "?")),
+            str(todo.get("title", "")),
             f"[{status_color}]{status}[/]",
-            str(todo.get("priority", ""))[:pri_w],
+            str(todo.get("priority", "")),
             style=style,
         )
     return t
@@ -1766,17 +1753,17 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, sel
 def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
     from rich.table import Table
 
-    t = Table(title="Hooks", show_header=True)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
-    t.add_column("Event", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.25, 6))
-    t.add_column("Type", style="yellow", no_wrap=True, max_width=_scale_col(term_width, 0.12, 4))
+    t = Table(title="Hooks", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Event", style="green", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
     for i, h in enumerate(hooks):
         sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
         style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            sel_marker + str(h.get("hook_id", "?"))[:_scale_col(term_width, 0.25, 6)],
-            str(h.get("event_name", h.get("event_type", "?")))[:_scale_col(term_width, 0.25, 6)],
-            str(h.get("hook_type", "?"))[:_scale_col(term_width, 0.12, 4)],
+            sel_marker + str(h.get("hook_id", "?")),
+            str(h.get("event_name", h.get("event_type", "?"))),
+            str(h.get("hook_type", "?")),
             style=style,
         )
     return t
@@ -1790,17 +1777,15 @@ def _build_workers_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Workers", show_header=True)
-    id_w = _scale_col(term_width, 0.2, 6)
-    addr_w = _scale_col(term_width, 0.3, 8)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
-    t.add_column("Address", style="green", no_wrap=True, max_width=addr_w)
+    t = Table(title="Workers", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Address", style="green", no_wrap=True, ratio=3, min_width=8)
     for i, w in enumerate(workers):
         sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
         style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            sel_marker + str(w.get("worker_id", "?"))[:id_w],
-            str(w.get("address", "?"))[:addr_w],
+            sel_marker + str(w.get("worker_id", "?")),
+            str(w.get("address", "?")),
             style=style,
         )
     return t
@@ -1809,9 +1794,9 @@ def _build_workers_table(
 def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Metrics", show_header=False)
-    t.add_column("Metric", style="cyan", no_wrap=True, max_width=_scale_col(term_width, 0.22, 6))
-    t.add_column("Value", style="green", no_wrap=True, max_width=_scale_col(term_width, 0.2, 6))
+    t = Table(title="Metrics", show_header=False, expand=True)
+    t.add_column("Metric", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=6)
     labels = [
         ("Total Cost", "total_cost_usd", "${:.2f}"),
         ("Subscription", "subscription_name", "{}"),
@@ -1837,17 +1822,12 @@ def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> 
 def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Agents", show_header=True)
-    id_w = _scale_col(term_width, 0.12, 4)
-    name_w = _scale_col(term_width, 0.18, 5)
-    status_w = _scale_col(term_width, 0.1, 4)
-    proj_w = _scale_col(term_width, 0.15, 5)
-    up_w = _scale_col(term_width, 0.1, 4)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
-    t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=status_w)
-    t.add_column("Project", style="bold", no_wrap=True, max_width=proj_w)
-    t.add_column("Up", style="dim", no_wrap=True, max_width=up_w)
+    t = Table(title="Agents", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Name", style="green", no_wrap=True, ratio=2, min_width=5)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Project", style="bold", no_wrap=True, ratio=1, min_width=5)
+    t.add_column("Up", style="dim", no_wrap=True, ratio=1, min_width=4)
     for a in agents:
         status = a.get("status", "?")
         status_color = "green" if status == "running" else "yellow" if status == "idle" else "red"
@@ -1855,10 +1835,10 @@ def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 80) -
         uptime_h = uptime_s // 3600
         uptime_m = (uptime_s % 3600) // 60
         t.add_row(
-            str(a.get("agent_id", "?"))[:id_w],
-            str(a.get("agent_name", a.get("name", "?")))[:name_w],
+            str(a.get("agent_id", "?")),
+            str(a.get("agent_name", a.get("name", "?"))),
             f"[{status_color}]{status}[/]",
-            str(a.get("project", ""))[:proj_w],
+            str(a.get("project", "")),
             f"{uptime_h}h{uptime_m}m",
         )
     return t
@@ -1873,15 +1853,11 @@ def _build_model_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Models", show_header=True)
-    id_w = _scale_col(term_width, 0.17, 5)
-    eng_w = _scale_col(term_width, 0.1, 4)
-    model_w = _scale_col(term_width, 0.25, 6)
-    stat_w = _scale_col(term_width, 0.12, 4)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
-    t.add_column("Engine", style="green", no_wrap=True, max_width=eng_w)
-    t.add_column("Model", style="yellow", no_wrap=True, max_width=model_w)
-    t.add_column("Status", style="bold", no_wrap=True, max_width=stat_w)
+    t = Table(title="Models", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=5)
+    t.add_column("Engine", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Model", style="yellow", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Status", style="bold", no_wrap=True, ratio=1, min_width=4)
 
     row_idx = 0
     for s in servers:
@@ -1894,9 +1870,9 @@ def _build_model_table(
             status_text = str(s.get("status", "stopped"))
             status_color = "green" if status_text == "running" else "red"
             t.add_row(
-                sel_marker + f"[s]{sid}"[:id_w],
-                engine[:eng_w],
-                model_name[:model_w],
+                sel_marker + f"[s]{sid}",
+                engine,
+                model_name,
                 f"[{status_color}]{status_text}[/]",
                 style=style,
             )
@@ -1904,9 +1880,9 @@ def _build_model_table(
             status_color = "green" if getattr(s, "is_running", False) else "red"
             status_text = getattr(s, "status", "stopped")
             t.add_row(
-                sel_marker + f"[s]{s.server_id}"[:id_w],
-                s.config.engine[:eng_w],
-                (s.config.model_name or s.config.model_path or "?")[:model_w],
+                sel_marker + f"[s]{s.server_id}",
+                s.config.engine,
+                (s.config.model_name or s.config.model_path or "?"),
                 f"[{status_color}]{status_text}[/]",
                 style=style,
             )
@@ -1920,8 +1896,8 @@ def _build_model_table(
             mid = str(dm.get("model_id", "?"))
             t.add_row(
                 sel_marker + f"[d]{mid[:12]}",
-                str(dm.get("engine", "?"))[:eng_w],
-                mid[:model_w],
+                str(dm.get("engine", "?")),
+                mid,
                 f"[dim]{size_str}[/]",
                 style=style,
             )
@@ -1929,8 +1905,8 @@ def _build_model_table(
             size_str = _fmt_size(dm.size_bytes) if dm.size_bytes else "?"
             t.add_row(
                 sel_marker + f"[d]{dm.model_id[:12]}",
-                dm.engine[:eng_w],
-                dm.model_id[:model_w],
+                dm.engine,
+                dm.model_id,
                 f"[dim]{size_str}[/]",
                 style=style,
             )
@@ -1947,24 +1923,21 @@ def _build_config_editor_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Config Editor", show_header=True)
-    opt_w = _scale_col(term_width, 0.3, 6)
-    val_w = _scale_col(term_width, 0.3, 6)
-    help_w = _scale_col(term_width, 0.3, 6)
-    t.add_column("Option", style="cyan", no_wrap=True, max_width=opt_w)
-    t.add_column("Value", style="green", no_wrap=True, max_width=val_w)
-    t.add_column("Help", style="dim", no_wrap=True, max_width=help_w)
+    t = Table(title="Config Editor", show_header=True, expand=True)
+    t.add_column("Option", style="cyan", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Help", style="dim", no_wrap=True, ratio=3, min_width=6)
     if depth == 0:
         for i, item in enumerate(items):
             prefix = "\u25b6" if i == selected else " "
-            label = str(item.get("label", ""))[:opt_w]
+            label = str(item.get("label", ""))
             t.add_row(f"{prefix} [bold]{label}[/]", "", "")
     else:
         for i, item in enumerate(items):
             prefix = "\u25b6" if i == selected else " "
-            label = str(item.get("label", ""))[:opt_w]
-            value = str(item.get("value", ""))[:val_w]
-            help_text = str(item.get("help_text", ""))[:help_w]
+            label = str(item.get("label", ""))
+            value = str(item.get("value", ""))
+            help_text = str(item.get("help_text", ""))
             t.add_row(f"{prefix} {label}", value, help_text)
     return t
 
@@ -1972,15 +1945,13 @@ def _build_config_editor_table(
 def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Projects & Worktrees", show_header=True)
-    name_w = _scale_col(term_width, 0.35, 6)
-    status_w = _scale_col(term_width, 0.25, 6)
-    t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
-    t.add_column("Status", style="bold", no_wrap=True, max_width=status_w)
+    t = Table(title="Projects & Worktrees", show_header=True, expand=True)
+    t.add_column("Name", style="green", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Status", style="bold", no_wrap=True, ratio=2, min_width=6)
     for name, status in entries:
         is_wt = "AGENTS.md" in status
         color = "green" if is_wt else "dim"
-        t.add_row(name[:name_w], f"[{color}]{status[:status_w]}[/]")
+        t.add_row(name, f"[{color}]{status}[/]")
     return t
 
 
@@ -1992,23 +1963,19 @@ def _build_projects_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Projects", show_header=True)
-    id_w = _scale_col(term_width, 0.15, 5)
-    name_w = _scale_col(term_width, 0.2, 6)
-    wt_w = _scale_col(term_width, 0.06, 3)
-    mode_w = _scale_col(term_width, 0.1, 4)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
-    t.add_column("Name", style="green", no_wrap=True, max_width=name_w)
-    t.add_column("Wt", style="yellow", no_wrap=True, max_width=wt_w)
-    t.add_column("Mode", style="bold", no_wrap=True, max_width=mode_w)
+    t = Table(title="Projects", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=5)
+    t.add_column("Name", style="green", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Wt", style="yellow", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Mode", style="bold", no_wrap=True, ratio=1, min_width=4)
     for i, p in enumerate(projects):
         mode = str(p.get("dispatch_mode", "active"))
         mode_color = "green" if mode == "active" else "yellow"
         sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
         style = "bold reverse" if selected_idx is not None and i == selected_idx else None
         t.add_row(
-            sel_marker + str(p.get("project_id", "?"))[:id_w],
-            str(p.get("name", "?"))[:name_w],
+            sel_marker + str(p.get("project_id", "?")),
+            str(p.get("name", "?")),
             f"{p.get('weight', 0)}%",
             f"[{mode_color}]{mode}[/]",
             style=style,
@@ -2019,13 +1986,10 @@ def _build_projects_table(
 def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Integrity", show_header=True)
-    file_w = _scale_col(term_width, 0.4, 6)
-    type_w = _scale_col(term_width, 0.15, 4)
-    stat_w = _scale_col(term_width, 0.15, 4)
-    t.add_column("File", style="cyan", no_wrap=True, max_width=file_w)
-    t.add_column("Type", style="yellow", no_wrap=True, max_width=type_w)
-    t.add_column("Status", style="bold", no_wrap=True, max_width=stat_w)
+    t = Table(title="Integrity", show_header=True, expand=True)
+    t.add_column("File", style="cyan", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Status", style="bold", no_wrap=True, ratio=1, min_width=4)
     if not changes:
         t.add_row("No changes", "", "")
     else:
@@ -2033,9 +1997,9 @@ def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 8
             icon = {"new": "+", "modified": "~", "removed": "-"}.get(ch.get("type", ""), "?")
             approved = "approved" if ch.get("approved") else "pending"
             t.add_row(
-                str(ch.get("file", "?"))[:file_w],
-                f"{icon} {ch.get('type', '?')}"[:type_w],
-                approved[:stat_w],
+                str(ch.get("file", "?")),
+                f"{icon} {ch.get('type', '?')}",
+                approved,
             )
     return t
 
@@ -2043,18 +2007,16 @@ def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 8
 def _build_ansible_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Ansible Galaxy", show_header=True)
-    name_w = _scale_col(term_width, 0.35, 6)
-    desc_w = _scale_col(term_width, 0.45, 8)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Description", style="green", no_wrap=True, max_width=desc_w)
+    t = Table(title="Ansible Galaxy", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Description", style="green", no_wrap=True, ratio=3, min_width=8)
     if not results:
         t.add_row("Press [s] to search", "")
     else:
         for r in results:
             t.add_row(
-                str(r.get("name", "?"))[:name_w],
-                str(r.get("description", ""))[:desc_w],
+                str(r.get("name", "?")),
+                str(r.get("description", "")),
             )
     return t
 
@@ -2073,13 +2035,10 @@ def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
 def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="MCP Servers", show_header=True)
-    name_w = _scale_col(term_width, 0.25, 6)
-    trans_w = _scale_col(term_width, 0.15, 4)
-    stat_w = _scale_col(term_width, 0.12, 4)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Transport", style="green", no_wrap=True, max_width=trans_w)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    t = Table(title="MCP Servers", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Transport", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
     if not servers:
         t.add_row("No MCP servers", "", "")
     else:
@@ -2087,8 +2046,8 @@ def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> 
             status = str(s.get("status", "?"))
             color = "green" if status == "active" else "red"
             t.add_row(
-                str(s.get("name", "?"))[:name_w],
-                str(s.get("transport", "?"))[:trans_w],
+                str(s.get("name", "?")),
+                str(s.get("transport", "?")),
                 f"[{color}]{status}[/]",
             )
     return t
@@ -2097,13 +2056,10 @@ def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> 
 def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Skills", show_header=True)
-    name_w = _scale_col(term_width, 0.3, 6)
-    cat_w = _scale_col(term_width, 0.15, 4)
-    inst_w = _scale_col(term_width, 0.1, 3)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Category", style="green", no_wrap=True, max_width=cat_w)
-    t.add_column("Installed", style="yellow", no_wrap=True, max_width=inst_w)
+    t = Table(title="Skills", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Category", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Installed", style="yellow", no_wrap=True, ratio=1, min_width=3)
     if not skills:
         t.add_row("No skills", "", "")
     else:
@@ -2111,8 +2067,8 @@ def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -
             installed = "yes" if sk.get("installed") else "no"
             color = "green" if sk.get("installed") else "dim"
             t.add_row(
-                str(sk.get("name", "?"))[:name_w],
-                str(sk.get("category", ""))[:cat_w],
+                str(sk.get("name", "?")),
+                str(sk.get("category", "")),
                 f"[{color}]{installed}[/]",
             )
     return t
@@ -2121,13 +2077,10 @@ def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -
 def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Compute Endpoints", show_header=True)
-    id_w = _scale_col(term_width, 0.2, 6)
-    prov_w = _scale_col(term_width, 0.15, 4)
-    stat_w = _scale_col(term_width, 0.12, 4)
-    t.add_column("ID", style="cyan", no_wrap=True, max_width=id_w)
-    t.add_column("Provider", style="green", no_wrap=True, max_width=prov_w)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    t = Table(title="Compute Endpoints", show_header=True, expand=True)
+    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
     if not endpoints:
         t.add_row("No endpoints", "", "")
     else:
@@ -2135,8 +2088,8 @@ def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 8
             status = str(ep.get("status", "?"))
             color = "green" if status == "active" else "red"
             t.add_row(
-                str(ep.get("endpoint_id", "?"))[:id_w],
-                str(ep.get("provider", "?"))[:prov_w],
+                str(ep.get("endpoint_id", "?")),
+                str(ep.get("provider", "?")),
                 f"[{color}]{status}[/]",
             )
     return t
@@ -2145,15 +2098,11 @@ def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 8
 def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Benchmark Scores", show_header=True)
-    prompt_w = _scale_col(term_width, 0.2, 6)
-    model_w = _scale_col(term_width, 0.2, 6)
-    task_w = _scale_col(term_width, 0.12, 4)
-    score_w = _scale_col(term_width, 0.1, 3)
-    t.add_column("Prompt", style="cyan", no_wrap=True, max_width=prompt_w)
-    t.add_column("Model", style="green", no_wrap=True, max_width=model_w)
-    t.add_column("Task", style="yellow", no_wrap=True, max_width=task_w)
-    t.add_column("Score", style="bold", no_wrap=True, max_width=score_w)
+    t = Table(title="Benchmark Scores", show_header=True, expand=True)
+    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Task", style="yellow", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Score", style="bold", no_wrap=True, ratio=1, min_width=3)
     if not scores:
         t.add_row("No scores", "", "", "")
     else:
@@ -2161,9 +2110,9 @@ def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -
             score_val = s.get("composite_score", 0)
             color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
             t.add_row(
-                str(s.get("prompt_profile", "?"))[:prompt_w],
-                str(s.get("model_profile", "?"))[:model_w],
-                str(s.get("task_type", "?"))[:task_w],
+                str(s.get("prompt_profile", "?")),
+                str(s.get("model_profile", "?")),
+                str(s.get("task_type", "?")),
                 f"[{color}]{score_val:.2f}[/]",
             )
     return t
@@ -2172,15 +2121,11 @@ def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -
 def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Leaderboard", show_header=True)
-    rank_w = _scale_col(term_width, 0.06, 3)
-    prompt_w = _scale_col(term_width, 0.22, 6)
-    model_w = _scale_col(term_width, 0.22, 6)
-    score_w = _scale_col(term_width, 0.1, 3)
-    t.add_column("#", style="bold", no_wrap=True, max_width=rank_w)
-    t.add_column("Prompt", style="cyan", no_wrap=True, max_width=prompt_w)
-    t.add_column("Model", style="green", no_wrap=True, max_width=model_w)
-    t.add_column("Score", style="yellow", no_wrap=True, max_width=score_w)
+    t = Table(title="Leaderboard", show_header=True, expand=True)
+    t.add_column("#", style="bold", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Score", style="yellow", no_wrap=True, ratio=1, min_width=3)
     if not entries:
         t.add_row("", "No entries", "", "")
     else:
@@ -2188,9 +2133,9 @@ def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int =
             score_val = e.get("score", 0)
             color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
             t.add_row(
-                str(e.get("rank", ""))[:rank_w],
-                str(e.get("prompt", "?"))[:prompt_w],
-                str(e.get("model", "?"))[:model_w],
+                str(e.get("rank", "")),
+                str(e.get("prompt", "?")),
+                str(e.get("model", "?")),
                 f"[{color}]{score_val:.2f}[/]",
             )
     return t
@@ -2199,13 +2144,10 @@ def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int =
 def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Templates", show_header=True)
-    name_w = _scale_col(term_width, 0.25, 6)
-    types_w = _scale_col(term_width, 0.3, 6)
-    src_w = _scale_col(term_width, 0.15, 4)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Task Types", style="green", no_wrap=True, max_width=types_w)
-    t.add_column("Source", style="yellow", no_wrap=True, max_width=src_w)
+    t = Table(title="Templates", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Task Types", style="green", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Source", style="yellow", no_wrap=True, ratio=1, min_width=4)
     if not templates:
         t.add_row("No templates", "", "")
     else:
@@ -2213,9 +2155,9 @@ def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int =
             task_types = tp.get("task_types", [])
             types_str = ", ".join(str(t) for t in task_types) if isinstance(task_types, list) else str(task_types)
             t.add_row(
-                str(tp.get("name", "?"))[:name_w],
-                types_str[:types_w],
-                str(tp.get("source", ""))[:src_w],
+                str(tp.get("name", "?")),
+                types_str,
+                str(tp.get("source", "")),
             )
     return t
 
@@ -2223,13 +2165,10 @@ def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int =
 def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Playbooks", show_header=True)
-    name_w = _scale_col(term_width, 0.3, 6)
-    tasks_w = _scale_col(term_width, 0.1, 3)
-    stat_w = _scale_col(term_width, 0.12, 4)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Tasks", style="green", no_wrap=True, max_width=tasks_w)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    t = Table(title="Playbooks", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Tasks", style="green", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
     if not playbooks:
         t.add_row("No playbooks", "", "")
     else:
@@ -2237,8 +2176,8 @@ def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int =
             status = str(pb.get("status", "?"))
             color = "green" if status == "ready" else "yellow"
             t.add_row(
-                str(pb.get("name", "?"))[:name_w],
-                str(pb.get("tasks", 0))[:tasks_w],
+                str(pb.get("name", "?")),
+                str(pb.get("tasks", 0)),
                 f"[{color}]{status}[/]",
             )
     return t
@@ -2247,15 +2186,11 @@ def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int =
 def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Quantization", show_header=True)
-    model_w = _scale_col(term_width, 0.25, 6)
-    prec_w = _scale_col(term_width, 0.1, 4)
-    conf_w = _scale_col(term_width, 0.1, 3)
-    src_w = _scale_col(term_width, 0.15, 4)
-    t.add_column("Model", style="cyan", no_wrap=True, max_width=model_w)
-    t.add_column("Precision", style="green", no_wrap=True, max_width=prec_w)
-    t.add_column("Conf", style="yellow", no_wrap=True, max_width=conf_w)
-    t.add_column("Source", style="dim", no_wrap=True, max_width=src_w)
+    t = Table(title="Quantization", show_header=True, expand=True)
+    t.add_column("Model", style="cyan", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Precision", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Conf", style="yellow", no_wrap=True, ratio=1, min_width=3)
+    t.add_column("Source", style="dim", no_wrap=True, ratio=1, min_width=4)
     if not entries:
         t.add_row("No data", "", "", "")
     else:
@@ -2263,10 +2198,10 @@ def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int 
             conf = e.get("confidence", 0)
             color = "green" if conf >= 0.8 else "yellow" if conf >= 0.5 else "red"
             t.add_row(
-                str(e.get("model_id", "?"))[:model_w],
-                str(e.get("precision", "?"))[:prec_w],
+                str(e.get("model_id", "?")),
+                str(e.get("precision", "?")),
                 f"[{color}]{conf:.2f}[/]",
-                str(e.get("source", ""))[:src_w],
+                str(e.get("source", "")),
             )
     return t
 
@@ -2274,22 +2209,19 @@ def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int 
 def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Filestore", show_header=True)
-    name_w = _scale_col(term_width, 0.35, 6)
-    size_w = _scale_col(term_width, 0.12, 4)
-    type_w = _scale_col(term_width, 0.12, 4)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Size", style="green", no_wrap=True, max_width=size_w)
-    t.add_column("Type", style="yellow", no_wrap=True, max_width=type_w)
+    t = Table(title="Filestore", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6)
+    t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
     if not files:
         t.add_row("No files", "", "")
     else:
         for f in files:
             size_bytes = f.get("size_bytes", 0)
             t.add_row(
-                str(f.get("name", "?"))[:name_w],
-                _fmt_size(size_bytes)[:size_w],
-                str(f.get("type", ""))[:type_w],
+                str(f.get("name", "?")),
+                _fmt_size(size_bytes),
+                str(f.get("type", "")),
             )
     return t
 
@@ -2297,13 +2229,10 @@ def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80)
 def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Deployments", show_header=True)
-    name_w = _scale_col(term_width, 0.3, 6)
-    prov_w = _scale_col(term_width, 0.15, 4)
-    stat_w = _scale_col(term_width, 0.12, 4)
-    t.add_column("Name", style="cyan", no_wrap=True, max_width=name_w)
-    t.add_column("Provider", style="green", no_wrap=True, max_width=prov_w)
-    t.add_column("Status", style="yellow", no_wrap=True, max_width=stat_w)
+    t = Table(title="Deployments", show_header=True, expand=True)
+    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
+    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4)
+    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
     if not deployments:
         t.add_row("No deployments", "", "")
     else:
@@ -2311,8 +2240,8 @@ def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: i
             status = str(d.get("status", "?"))
             color = "green" if status == "running" else "red" if status == "stopped" else "yellow"
             t.add_row(
-                str(d.get("name", "?"))[:name_w],
-                str(d.get("provider", "?"))[:prov_w],
+                str(d.get("name", "?")),
+                str(d.get("provider", "?")),
                 f"[{color}]{status}[/]",
             )
     return t
