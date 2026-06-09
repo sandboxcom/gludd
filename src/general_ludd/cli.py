@@ -1580,6 +1580,12 @@ def _table_overhead(ncols: int) -> int:
     return 2 + (ncols - 1) + ncols * 2
 
 
+def _wrap_table(renderable: Any) -> Any:
+    from rich.panel import Panel
+
+    return Panel(renderable, padding=0, expand=True)
+
+
 def _compute_footer_rows(term_height: int) -> int:
     return min(18, max(6, term_height - 20))
 
@@ -1590,7 +1596,7 @@ def _build_controls_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Controls", show_header=False, expand=True)
+    t = Table(title="Controls", show_header=False, expand=True, title_justify="left")
     t.add_column("Key", style="yellow", width=3, no_wrap=True)
     t.add_column("Action", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Status", style="green", no_wrap=True, ratio=1, min_width=6)
@@ -1637,7 +1643,7 @@ def _build_controls_table(
 def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str, *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Daemon", show_header=False, expand=True)
+    t = Table(title="Daemon", show_header=False, expand=True, title_justify="left")
     t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6)
     val_w = max(10, term_width - _table_overhead(2) - 6)
     t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10)
@@ -1669,7 +1675,7 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
 def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="System Info", show_header=False, expand=True)
+    t = Table(title="System Info", show_header=False, expand=True, title_justify="left")
     t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6)
     val_w = max(10, term_width - _table_overhead(2) - 6)
     t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10)
@@ -1695,7 +1701,7 @@ def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Binaries", show_header=True, expand=True)
+    t = Table(title="Binaries", show_header=True, expand=True, title_justify="left")
     t.add_column("Binary", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Found", style="green", no_wrap=True, ratio=1, min_width=3)
     t.add_column("Version", style="yellow", no_wrap=True, ratio=2, min_width=4)
@@ -1714,7 +1720,7 @@ def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Config Files", show_header=True, expand=True)
+    t = Table(title="Config Files", show_header=True, expand=True, title_justify="left")
     t.add_column("File", style="cyan", no_wrap=True, ratio=3, min_width=8)
     t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4)
     for cf in info.get("config_files", []):
@@ -1725,7 +1731,7 @@ def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
     from rich.table import Table
 
-    t = Table(title="Todos", show_header=True, expand=True)
+    t = Table(title="Todos", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Title", style="green", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=2, min_width=4)
@@ -1753,7 +1759,7 @@ def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, sel
 def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
     from rich.table import Table
 
-    t = Table(title="Hooks", show_header=True, expand=True)
+    t = Table(title="Hooks", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Event", style="green", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -1777,7 +1783,7 @@ def _build_workers_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Workers", show_header=True, expand=True)
+    t = Table(title="Workers", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Address", style="green", no_wrap=True, ratio=3, min_width=8)
     for i, w in enumerate(workers):
@@ -1794,7 +1800,7 @@ def _build_workers_table(
 def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Metrics", show_header=False, expand=True)
+    t = Table(title="Metrics", show_header=False, expand=True, title_justify="left")
     t.add_column("Metric", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=6)
     labels = [
@@ -1822,7 +1828,7 @@ def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> 
 def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Agents", show_header=True, expand=True)
+    t = Table(title="Agents", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Name", style="green", no_wrap=True, ratio=2, min_width=5)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -1853,7 +1859,7 @@ def _build_model_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Models", show_header=True, expand=True)
+    t = Table(title="Models", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=5)
     t.add_column("Engine", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Model", style="yellow", no_wrap=True, ratio=3, min_width=6)
@@ -1923,7 +1929,7 @@ def _build_config_editor_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Config Editor", show_header=True, expand=True)
+    t = Table(title="Config Editor", show_header=True, expand=True, title_justify="left")
     t.add_column("Option", style="cyan", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Help", style="dim", no_wrap=True, ratio=3, min_width=6)
@@ -1945,7 +1951,7 @@ def _build_config_editor_table(
 def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Projects & Worktrees", show_header=True, expand=True)
+    t = Table(title="Projects & Worktrees", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="green", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Status", style="bold", no_wrap=True, ratio=2, min_width=6)
     for name, status in entries:
@@ -1963,7 +1969,7 @@ def _build_projects_table(
 ) -> Table:
     from rich.table import Table
 
-    t = Table(title="Projects", show_header=True, expand=True)
+    t = Table(title="Projects", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=5)
     t.add_column("Name", style="green", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Wt", style="yellow", no_wrap=True, ratio=1, min_width=3)
@@ -1986,7 +1992,7 @@ def _build_projects_table(
 def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Integrity", show_header=True, expand=True)
+    t = Table(title="Integrity", show_header=True, expand=True, title_justify="left")
     t.add_column("File", style="cyan", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Status", style="bold", no_wrap=True, ratio=1, min_width=4)
@@ -2007,7 +2013,7 @@ def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 8
 def _build_ansible_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Ansible Galaxy", show_header=True, expand=True)
+    t = Table(title="Ansible Galaxy", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Description", style="green", no_wrap=True, ratio=3, min_width=8)
     if not results:
@@ -2035,7 +2041,7 @@ def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
 def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="MCP Servers", show_header=True, expand=True)
+    t = Table(title="MCP Servers", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Transport", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2056,7 +2062,7 @@ def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> 
 def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Skills", show_header=True, expand=True)
+    t = Table(title="Skills", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Category", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Installed", style="yellow", no_wrap=True, ratio=1, min_width=3)
@@ -2077,7 +2083,7 @@ def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -
 def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Compute Endpoints", show_header=True, expand=True)
+    t = Table(title="Compute Endpoints", show_header=True, expand=True, title_justify="left")
     t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2098,7 +2104,7 @@ def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 8
 def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Benchmark Scores", show_header=True, expand=True)
+    t = Table(title="Benchmark Scores", show_header=True, expand=True, title_justify="left")
     t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Task", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2121,7 +2127,7 @@ def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -
 def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Leaderboard", show_header=True, expand=True)
+    t = Table(title="Leaderboard", show_header=True, expand=True, title_justify="left")
     t.add_column("#", style="bold", no_wrap=True, ratio=1, min_width=3)
     t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6)
@@ -2144,7 +2150,7 @@ def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int =
 def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Templates", show_header=True, expand=True)
+    t = Table(title="Templates", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Task Types", style="green", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Source", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2165,7 +2171,7 @@ def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int =
 def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Playbooks", show_header=True, expand=True)
+    t = Table(title="Playbooks", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Tasks", style="green", no_wrap=True, ratio=1, min_width=3)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2186,7 +2192,7 @@ def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int =
 def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Quantization", show_header=True, expand=True)
+    t = Table(title="Quantization", show_header=True, expand=True, title_justify="left")
     t.add_column("Model", style="cyan", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Precision", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Conf", style="yellow", no_wrap=True, ratio=1, min_width=3)
@@ -2209,7 +2215,7 @@ def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int 
 def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Filestore", show_header=True, expand=True)
+    t = Table(title="Filestore", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6)
     t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2229,7 +2235,7 @@ def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80)
 def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: int = 80) -> Table:
     from rich.table import Table
 
-    t = Table(title="Deployments", show_header=True, expand=True)
+    t = Table(title="Deployments", show_header=True, expand=True, title_justify="left")
     t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
     t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4)
     t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
@@ -2513,19 +2519,19 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     dict_items.append({"label": item.label, "value": str(item.value), "help_text": item.help_text})
             _editor_table = _build_config_editor_table(dict_items, sel, depth, term_width=right_width)
             body["left"].split(
-                Layout(build_daemon_table(term_width=left_width), name="daemon"),
+                Layout(_wrap_table(build_daemon_table(term_width=left_width)), name="daemon"),
             )
             body["right"].split(
-                Layout(_editor_table, name="editor"),
+                Layout(_wrap_table(_editor_table), name="editor"),
             )
         else:
             body["left"].split(
-                Layout(build_daemon_table(term_width=left_width), name="daemon"),
-                Layout(build_binary_table(info, term_width=left_width), name="binaries"),
+                Layout(_wrap_table(build_daemon_table(term_width=left_width)), name="daemon"),
+                Layout(_wrap_table(build_binary_table(info, term_width=left_width)), name="binaries"),
             )
             if current_view == "config":
                 body["right"].split(
-                    Layout(build_config_table(info, term_width=right_width), name="config"),
+                    Layout(_wrap_table(build_config_table(info, term_width=right_width)), name="config"),
                 )
             elif current_view == "models":
                 servers = model_mgr.list_servers()
@@ -2535,7 +2541,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     term_width=right_width,
                 )
                 body["right"].split(
-                    Layout(_model_table, name="models"),
+                    Layout(_wrap_table(_model_table), name="models"),
                 )
             elif current_view == "worktrees":
                 import os as _os
@@ -2553,7 +2559,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     wt_entries.append((d, status))
                 _wt_table = _build_worktrees_table(wt_entries, term_width=right_width)
                 body["right"].split(
-                    Layout(_wt_table, name="worktrees"),
+                    Layout(_wrap_table(_wt_table), name="worktrees"),
                 )
             elif current_view == "projects":
                 _proj_data: list[dict[str, Any]] = []
@@ -2574,7 +2580,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 _proj_sel = tui_state.get("selected_project_idx", 0)
                 _proj_table = _build_projects_table(_proj_data, selected_idx=_proj_sel, term_width=right_width)
                 body["right"].split(
-                    Layout(_proj_table, name="projects"),
+                    Layout(_wrap_table(_proj_table), name="projects"),
                 )
             elif current_view == "todos":
                 _todos_data: list[dict[str, Any]] = []
@@ -2587,7 +2593,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 tui_state["todos_data"] = _todos_data
                 _todos_sel = tui_state.get("selected_todo_idx", 0)
                 body["right"].split(
-                    Layout(_build_todos_table(_todos_data, selected_idx=_todos_sel), name="todos"),
+                    Layout(_wrap_table(_build_todos_table(_todos_data, selected_idx=_todos_sel)), name="todos"),
                 )
             elif current_view == "hooks":
                 _hooks_data: list[dict[str, Any]] = []
@@ -2600,7 +2606,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 tui_state["hooks_data"] = _hooks_data
                 _hooks_sel = tui_state.get("selected_hook_idx", 0)
                 body["right"].split(
-                    Layout(_build_hooks_table(_hooks_data, selected_idx=_hooks_sel), name="hooks"),
+                    Layout(_wrap_table(_build_hooks_table(_hooks_data, selected_idx=_hooks_sel)), name="hooks"),
                 )
             elif current_view == "workers":
                 _workers_data: list[dict[str, Any]] = []
@@ -2613,7 +2619,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 tui_state["workers_data"] = _workers_data
                 _workers_sel = tui_state.get("selected_worker_idx", 0)
                 body["right"].split(
-                    Layout(_build_workers_table(_workers_data, selected_idx=_workers_sel), name="workers"),
+                    Layout(_wrap_table(_build_workers_table(_workers_data, selected_idx=_workers_sel)), name="workers"),
                 )
             elif current_view == "metrics":
                 _cost_data: dict[str, Any] = {}
@@ -2624,7 +2630,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_metrics_table(_cost_data), name="metrics"),
+                    Layout(_wrap_table(_build_metrics_table(_cost_data)), name="metrics"),
                 )
             elif current_view == "agents":
                 _agents_data: list[dict[str, Any]] = []
@@ -2635,7 +2641,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_agents_table(_agents_data), name="agents"),
+                    Layout(_wrap_table(_build_agents_table(_agents_data)), name="agents"),
                 )
             elif current_view == "integrity":
                 _int_changes: list[dict[str, Any]] = []
@@ -2650,13 +2656,13 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     _int_changes = [{"file": "Scan failed", "type": "error", "approved": False}]
                 _int_table = _build_integrity_table(_int_changes, term_width=right_width)
                 body["right"].split(
-                    Layout(_int_table, name="integrity"),
+                    Layout(_wrap_table(_int_table), name="integrity"),
                 )
             elif current_view == "ansible":
                 _ans_results = tui_state.get("ansible_search_results", [])
                 _ans_table = _build_ansible_table(_ans_results, term_width=right_width)
                 body["right"].split(
-                    Layout(_ans_table, name="ansible"),
+                    Layout(_wrap_table(_ans_table), name="ansible"),
                 )
             elif current_view == "mcp":
                 _mcp_data: list[dict[str, Any]] = []
@@ -2667,7 +2673,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_mcp_table(_mcp_data, term_width=right_width), name="mcp"),
+                    Layout(_wrap_table(_build_mcp_table(_mcp_data, term_width=right_width)), name="mcp"),
                 )
             elif current_view == "skills":
                 _skills_data: list[dict[str, Any]] = []
@@ -2678,7 +2684,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_skills_table(_skills_data, term_width=right_width), name="skills"),
+                    Layout(_wrap_table(_build_skills_table(_skills_data, term_width=right_width)), name="skills"),
                 )
             elif current_view == "compute":
                 _compute_data: list[dict[str, Any]] = []
@@ -2689,7 +2695,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_compute_table(_compute_data, term_width=right_width), name="compute"),
+                    Layout(_wrap_table(_build_compute_table(_compute_data, term_width=right_width)), name="compute"),
                 )
             elif current_view == "scores":
                 _scores_data: list[dict[str, Any]] = []
@@ -2700,7 +2706,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_scores_table(_scores_data, term_width=right_width), name="scores"),
+                    Layout(_wrap_table(_build_scores_table(_scores_data, term_width=right_width)), name="scores"),
                 )
             elif current_view == "templates":
                 _templates_data: list[dict[str, Any]] = []
@@ -2711,7 +2717,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_templates_table(_templates_data, term_width=right_width), name="templates"),
+                    Layout(_wrap_table(_build_templates_table(_templates_data, term_width=right_width)), name="templates"),
                 )
             elif current_view == "quantization":
                 _quant_data: list[dict[str, Any]] = []
@@ -2722,7 +2728,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_quantization_table(_quant_data, term_width=right_width), name="quantization"),
+                    Layout(_wrap_table(_build_quantization_table(_quant_data, term_width=right_width)), name="quantization"),
                 )
             elif current_view == "filestore":
                 _fs_data: list[dict[str, Any]] = []
@@ -2733,7 +2739,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_filestore_table(_fs_data, term_width=right_width), name="filestore"),
+                    Layout(_wrap_table(_build_filestore_table(_fs_data, term_width=right_width)), name="filestore"),
                 )
             elif current_view == "deployments":
                 _deploy_data: list[dict[str, Any]] = []
@@ -2744,7 +2750,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_deployments_table(_deploy_data, term_width=right_width), name="deployments"),
+                    Layout(_wrap_table(_build_deployments_table(_deploy_data, term_width=right_width)), name="deployments"),
                 )
             elif current_view == "leaderboard":
                 _lb_data: list[dict[str, Any]] = []
@@ -2755,7 +2761,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_leaderboard_table(_lb_data, term_width=right_width), name="leaderboard"),
+                    Layout(_wrap_table(_build_leaderboard_table(_lb_data, term_width=right_width)), name="leaderboard"),
                 )
             elif current_view == "playbooks":
                 _pb_data: list[dict[str, Any]] = []
@@ -2766,11 +2772,11 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                 except Exception:
                     pass
                 body["right"].split(
-                    Layout(_build_playbooks_table(_pb_data, term_width=right_width), name="playbooks"),
+                    Layout(_wrap_table(_build_playbooks_table(_pb_data, term_width=right_width)), name="playbooks"),
                 )
             else:
                 body["right"].split(
-                    Layout(build_info_table(info, term_width=right_width), name="info"),
+                    Layout(_wrap_table(build_info_table(info, term_width=right_width)), name="info"),
                 )
         if current_view == "edit":
             header_text = "Config Editor — [c] exit  [q] quit"

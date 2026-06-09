@@ -539,3 +539,178 @@ class TestLayoutStructure:
         right_size = body["right"].size
         assert left_size == left_w, f"Left size {left_size} != expected {left_w} at tw={term_w}"
         assert right_size == right_w, f"Right size {right_size} != expected {right_w} at tw={term_w}"
+
+
+class TestFullTuiRenderNoWhitespaceBetweenPanels:
+    """Render the FULL TUI layout with actual tables and verify no whitespace gap between panels."""
+
+    @pytest.mark.parametrize("term_w", [80, 120])
+    def test_renders_correctly_and_dumps_output(self, term_w: int):
+        from general_ludd.cli import (
+            _build_binary_table,
+            _build_controls_table,
+            _build_daemon_table,
+            _build_info_table,
+            _compute_footer_rows,
+            _compute_panel_widths,
+            _wrap_table,
+        )
+        from rich.panel import Panel
+
+        left_w, right_w = _compute_panel_widths(term_w, {})
+        footer_rows = _compute_footer_rows(24)
+        body_rows = 24 - 1 - footer_rows
+
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=MagicMock(return_value={"pid": 12345, "requests_total": 100, "responses_total": 99, "memory_mb": 50.5, "uptime_s": 3600.0}),
+            )
+            daemon_table = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+
+        binary_table = _build_binary_table({"binary_paths": {"python": "/usr/bin/python3"}, "binary_versions": {"python": "3.14.0"}}, term_width=left_w)
+        info_table = _build_info_table({"version": "0.1.0", "python_version": "3.14.0", "platform": "darwin", "cwd": "/home/user/proj", "config_dir": "/home/user/.cfg", "config_files": [], "filestore_root": "/home/user/.local/share/gludd", "filestore_size_bytes": 2048000, "db_engine": "sqlite", "db_exists": True, "db_size_bytes": 512000}, term_width=right_w)
+        controls_table = _build_controls_table(True, "ok", term_width=term_w)
+
+        layout = Layout()
+        layout.split(
+            Layout(name="header", size=1),
+            Layout(name="body", size=body_rows),
+            Layout(name="footer", size=footer_rows),
+        )
+        layout["body"].split_row(
+            Layout(name="left", size=left_w),
+            Layout(name="right", size=right_w),
+        )
+        layout["header"].update(Panel("TUI", style="bold white on blue"))
+        layout["body"]["left"].split(
+            Layout(_wrap_table(daemon_table), name="daemon"),
+            Layout(_wrap_table(binary_table), name="binaries"),
+        )
+        layout["body"]["right"].split(
+            Layout(_wrap_table(info_table), name="info"),
+        )
+        layout["footer"].update(_wrap_table(controls_table))
+
+        lines = _render_layout(layout, term_w)
+        content_lines = [ln for ln in lines if len(ln) > 0]
+        assert len(content_lines) > 0, f"No output at tw={term_w}"
+
+        for i, line in enumerate(content_lines):
+            assert len(line) == term_w, f"Line {i} len={len(line)} != {term_w}: |{line}|"
+
+        prev_had_content = False
+        for i, line in enumerate(lines):
+            has_content = line.strip() != ""
+            if not has_content and prev_had_content:
+                remaining = [lines[j].strip() for j in range(i + 1, len(lines))]
+                if any(remaining):
+                    assert False, (
+                        f"Blank line {i} between content at tw={term_w}\n"
+                        f"  prev: |{lines[i-1]}|\n"
+                        f"  this: |{line}|\n"
+                        f"  next: |{lines[min(i+1, len(lines)-1)]}|"
+                    )
+            prev_had_content = has_content
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_no_visible_gap_between_left_and_right_panels(self, term_w: int):
+        from general_ludd.cli import (
+            _build_binary_table,
+            _build_controls_table,
+            _build_daemon_table,
+            _build_info_table,
+            _compute_footer_rows,
+            _compute_panel_widths,
+            _wrap_table,
+        )
+        from rich.panel import Panel
+
+        tui_state: dict = {}
+        left_w, right_w = _compute_panel_widths(term_w, tui_state)
+        footer_rows = _compute_footer_rows(24)
+
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=MagicMock(return_value={"pid": 12345, "requests_total": 100, "responses_total": 99, "memory_mb": 50.5, "uptime_s": 3600.0}),
+            )
+            daemon_table = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+
+        binary_table = _build_binary_table({"binary_paths": {"python": "/usr/bin/python3"}, "binary_versions": {"python": "3.14.0"}}, term_width=left_w)
+        info_table = _build_info_table({"version": "0.1.0", "python_version": "3.14.0", "platform": "darwin", "cwd": "/home/user/proj", "config_dir": "/home/user/.config/gludd", "config_files": [], "filestore_root": "/home/user/.local/share/gludd", "filestore_size_bytes": 2048000, "db_engine": "sqlite", "db_exists": True, "db_size_bytes": 512000}, term_width=right_w)
+        controls_table = _build_controls_table(True, "ok", term_width=term_w)
+
+        layout = Layout()
+        layout.split(
+            Layout(name="header", size=1),
+            Layout(name="body"),
+            Layout(name="footer", size=footer_rows),
+        )
+        layout["body"].split_row(
+            Layout(name="left", size=left_w),
+            Layout(name="right", size=right_w),
+        )
+        layout["header"].update(Panel("TUI", style="bold white on blue"))
+        layout["body"]["left"].split(
+            Layout(_wrap_table(daemon_table), name="daemon"),
+            Layout(_wrap_table(binary_table), name="binaries"),
+        )
+        layout["body"]["right"].split(
+            Layout(_wrap_table(info_table), name="info"),
+        )
+        layout["footer"].update(_wrap_table(controls_table))
+
+        lines = _render_layout(layout, term_w)
+        assert len(lines) > 0, f"No output at tw={term_w}"
+
+        for i, line in enumerate(lines):
+            if len(line) == 0:
+                continue
+            assert len(line) == term_w, (
+                f"Line {i} at tw={term_w}: len={len(line)} != {term_w}\n"
+                f"  |{line}|"
+            )
+
+    @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
+    def test_left_panel_table_fills_to_boundary(self, term_w: int):
+        from general_ludd.cli import (
+            _build_daemon_table,
+            _compute_panel_widths,
+            _wrap_table,
+        )
+
+        left_w, right_w = _compute_panel_widths(term_w, {})
+
+        with patch("httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(
+                status_code=200,
+                json=MagicMock(return_value={"pid": 12345, "requests_total": 100, "responses_total": 99, "memory_mb": 50.5, "uptime_s": 3600.0}),
+            )
+            daemon_table = _build_daemon_table(True, "http://127.0.0.1:8000", "main", term_width=left_w)
+
+        layout = Layout()
+        layout.split_row(
+            Layout(name="left", size=left_w),
+            Layout(name="right", size=right_w),
+        )
+        layout["left"].update(_wrap_table(daemon_table))
+
+        dummy_right = Table(title="Right", expand=True, title_justify="left")
+        dummy_right.add_column("Col", ratio=1)
+        dummy_right.add_row("data")
+        layout["right"].update(_wrap_table(dummy_right))
+
+        lines = _render_layout(layout, term_w)
+        data_lines = [(i, ln) for i, ln in enumerate(lines) if "│" in ln or "┃" in ln]
+        assert len(data_lines) > 0, f"No table borders found at tw={term_w}"
+
+        for i, line in data_lines:
+            left_region = line[:left_w]
+            right_region = line[left_w:]
+            left_trailing = len(left_region) - len(left_region.rstrip(" "))
+            assert left_trailing == 0, (
+                f"Left panel has {left_trailing} trailing spaces at boundary "
+                f"line {i} tw={term_w} left_w={left_w}\n"
+                f"  |{left_region[-15:]}|{right_region[:15]}|"
+            )
