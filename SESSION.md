@@ -3,17 +3,42 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-09 (session 19)
+- 2026-06-09 (session 20)
 
 ## Current Status
-- **Phase**: Architecture refactoring COMPLETE
-- **Test Suite**: 4733 passed, 17 failed (pre-existing), 27 skipped, 3 errors (pre-existing)
+- **Phase**: Architecture refactoring COMPLETE + Medium skills ingestion COMPLETE
+- **Test Suite**: 4840 passed, 17 failed (pre-existing), 27 skipped, 3 errors (pre-existing)
 - **Branch**: master
-- **Latest commit**: 55202eb — extract _cmd_tui from cli.py into tui/runner.py
+- **Latest commit**: 2940652 — add 10 medium-2026 skills from unicodeveloper article
 - **Mypy**: 1 error (pre-existing, db/session.py)
-- **Lint**: 0 errors (all 24 pre-existing lint errors fixed this session)
+- **Lint**: 0 errors
 
-## Session 19: Architecture Refactoring (4 commits: 105135f, 543479d, e83354c)
+## Session 20: Medium Skills Ingestion (commit 2940652)
+
+### 10 Skills from unicodeveloper Medium Article
+Fetched and parsed https://medium.com/@unicodeveloper/10-must-have-skills-for-claude-and-any-coding-agent-in-2026-b5451b013051
+
+Created **10 opencode skill files** in `.opencode/skills/skills/`:
+- `medium-frontend-design.md` — Production-grade UI escaping AI's visual signature
+- `medium-browser-use.md` — Headless browser automation for QA and research
+- `medium-code-reviewer.md` — Automated code quality review and simplification
+- `medium-remotion.md` — React-based programmatic video creation
+- `medium-google-workspace.md` — 50+ Google API automation via unified CLI
+- `medium-valyu.md` — 36+ specialized data sources with citations
+- `medium-antigravity-skills.md` — 1,234+ curated skill library
+- `medium-planetscale.md` — Schema branching and index-aware queries
+- `medium-shannon.md` — Autonomous AI pentesting (96.15% exploit success)
+- `medium-excalidraw.md` — Self-validating architecture diagram generation
+
+Added **10 catalog entries** to `src/general_ludd/skills/catalog.py`:
+- All with source="unicodeveloper", medium.com source_url, "medium-2026" tag
+- Categories: frontend, automation, quality, media, data, meta, database, security, documentation
+
+**107 tests** in `tests/unit/test_medium_skills_catalog.py`:
+- Existence (11), metadata (70), categories (10), search (6), download (20)
+- All parametrized across 10 skills, all passing
+
+### Pre-existing Failures (unchanged)
 
 ### Candidate 1: Split daemon.py into FastAPI routers (commit 105135f)
 - Created `src/general_ludd/routers/` with 14 router modules + `__init__.py`
