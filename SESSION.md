@@ -3,17 +3,33 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 16)
+- 2026-06-08 (session 17)
 
 ## Current Status
-- **Phase**: PSK auth and DB URL composition complete
-- **Test Suite**: 3620+ passed, 2 failed (pre-existing), 2 skipped
+- **Phase**: Panel layout overhaul complete
+- **Test Suite**: 3791+ passed, 3 failed (pre-existing), 2 skipped
 - **Branch**: master
-- **Latest commit**: 5e51acd — PSK auth for external daemon binding
-- **Mypy**: 0 errors
+- **Latest commit**: 3da19da — fix panel layout - explicit panel widths, overhead-aware columns
+- **Mypy**: 1 error (pre-existing, db/session.py)
 - **Lint**: 0 errors
 
-## Session 16: PSK Auth, DB URL Composition (commit 5e51acd)
+## Session 17: Panel Layout Overhaul (commit 3da19da)
+
+### Changes
+- `_compute_panel_widths(term_w, tui_state)` — new function computing left/right panel widths with clamping [20, term_w-20]
+- `_table_overhead(ncols)` — computes Rich table border/separator/padding overhead (2 + (ncols-1) + ncols*2)
+- `make_layout()` now uses `_compute_panel_widths` and sets explicit `size=` on BOTH left and right panels (no gaps)
+- All table builders (`_build_daemon_table`, `_build_info_table`, `_build_binary_table`, `_build_config_table`, `_build_todos_table`) use overhead-aware column widths
+- Closure functions `build_daemon_table`, `build_info_table`, etc. now accept `term_width` kwarg
+- Right panel tables receive `right_width` (not full terminal width); left panel tables receive `left_width`
+- 16 tests in `tests/unit/test_tui_panel_layout.py`: no gaps, panels fill terminal, no content-driven resize, compute_panel_widths clamping, footer height fixed
+
+### Pre-existing Failures (unchanged)
+- `test_audit_gap_fixes.py::test_add_todo_rejects_invalid_queue`
+- `test_guardrails.py::test_make_test_passes`
+- `test_tui_view_actions.py::test_projects_add_error`
+
+## Session 16: PSK Auth, DB URL Composition, TUI Completeness, Guardrails (commit dbc57cb)
 
 ### PSK Auth for External Daemon Binding
 - `GLUDD_PSK` env var enables Bearer token auth on all non-public daemon endpoints
@@ -27,6 +43,19 @@
 - `_compose_db_url()` in `db/session.py` resolves URL from: url field > DATABASE_URL env var > host/port/name/user fields > SQLite default
 - `init_engine_from_config()` now calls `_compose_db_url()`
 - 8 tests in `tests/unit/test_db_url_composition.py`
+
+### TUI Completeness Fixes (commit 1613be9)
+- Escape pops breadcrumb + cancels input_mode in outer loop
+- Tab toggles panel_focus left/right
+- `V` intercepted before lowercasing for verbose toggle
+- Lowercase `s`/`k` on main view start/stop daemon
+- `v` on main enters config view
+- 13 tests in `test_tui_completeness_gate.py`
+
+### Comprehensive Guardrail Tests (commit dbc57cb)
+- GuardrailConfig validates at construction via `model_post_init`
+- 79 tests in `test_user_requested_guardrails.py` covering arrow navigation, Tab, Escape, Space, daemon keys, V/v, schema adversarial validation, TDD gate, panel focus
+- `enforce-make.ts` updated with TUI completeness hard gate and user-requested guardrail section
 
 ## This Session: TDD Enforcement + Real TUI Functionality (Session 15)
 
@@ -598,7 +627,7 @@ EventLoop auto-creates from session (when available):
 
 ## Next Steps
 - Wire PSK into CLI client commands (add `--token` flag or read from config)
-- Push cli.py coverage higher (92% — TUI body render paths, 198 uncovered lines)
+- Apply overhead-aware column sizing to remaining table builders (68 instances still use raw `term_width`)
 - Wire TUI timeout/health views (model health table, retry stats)
 - Model auto-population from provider APIs
 - events/bus.py async coroutine paths (88%)
