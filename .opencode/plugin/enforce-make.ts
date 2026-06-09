@@ -381,6 +381,34 @@ export default (async ({ }) => {
 
       if (input.tool === "edit") {
         const filePath: string = output?.args?.filePath ?? ""
+
+        const isPluginFile = filePath.includes("enforce-make.ts") || filePath.includes("enforce-make.js")
+        if (isPluginFile) {
+          const oldContent: string = output?.args?.oldString ?? ""
+          const newContent: string = output?.args?.newString ?? ""
+          const guardrailPatterns = [
+            "throw new Error",
+            "TDD VIOLATION",
+            "BLOCKED",
+            "FORBIDDEN",
+            "STOP-PATTERN",
+          ]
+          for (const pattern of guardrailPatterns) {
+            if (oldContent.includes(pattern) && !newContent.includes(pattern) && newContent.length > 0) {
+              throw new Error([
+                "GUARDRAIL INTEGRITY VIOLATION: You are removing enforcement from a guardrail.",
+                "",
+                "The edit removes '" + pattern + "' from the plugin.",
+                "",
+                "When a guardrail causes noise or errors, the fix is to make it",
+                "SMARTER (narrow conditions, add exceptions) — never to remove it.",
+                "",
+                "See AGENTS.md: Guardrail Integrity Policy.",
+              ].join("\n"))
+            }
+          }
+        }
+
         const isTest = filePath.includes("/tests/") || filePath.includes("\\tests\\")
         const isProduction = filePath.includes("/src/") || filePath.includes("\\src\\")
 

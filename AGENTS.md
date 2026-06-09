@@ -155,6 +155,41 @@ Every guardrail must have all three. If you catch yourself adding only one or
 two, stop and add the missing layers before continuing. See the
 `guardrail-pattern` skill for the full pattern and checklist.
 
+## CRITICAL: Guardrail Integrity Policy
+
+**You MUST NEVER remove, disable, or weaken a guardrail to fix a symptom.**
+When a guardrail causes noise, errors, or inconvenience, the fix is ALWAYS to
+make the guardrail smarter — never to delete it.
+
+### Forbidden Responses to Guardrail Friction
+
+- Guardrail throws errors on every edit → WRONG: remove the guardrail
+- Guardrail message leaks to user UI → WRONG: delete the message
+- Guardrail blocks legitimate work → WRONG: empty the block body
+- Test for guardrail fails → WRONG: weaken the test assertion
+
+### Correct Response to Guardrail Friction
+
+1. **Identify the root cause.** Why is the guardrail firing on legitimate work?
+2. **Narrow the check.** Add conditions so it only fires on actual violations.
+3. **Keep the enforcement.** The block/throw/error must still exist for real violations.
+4. **Verify the fix.** Run the guardrail tests. Confirm they still pass.
+
+### Principle
+
+Guardrails exist because past sessions demonstrated a specific failure mode.
+Every guardrail was added in response to a real bug. Removing a guardrail
+without addressing the failure mode it prevents is a regression.
+
+If you find yourself reaching for `throw new Error(...)` → `{}` or deleting
+a constant because "it's dead code" — STOP. Ask: "What was this guarding
+against?" Then fix the guardrail to be precise, not absent.
+
+This is enforced by:
+- This `AGENTS.md` section — proactive instruction
+- `.opencode/plugin/enforce-make.ts` — `tool.execute.before` checks
+- `tests/unit/test_guardrails.py` — guardrail existence and behavior tests
+
 ## CRITICAL: Bash Command Policy
 
 **You MUST only run `make <target>` commands in bash. Never run any other command directly.**

@@ -190,6 +190,23 @@ class TestTDDGuardrail:
         assert "permission" in content_config
 
 
+class TestGuardrailIntegrity:
+    def test_plugin_protects_against_guardrail_removal(self):
+        content = PLUGIN_FILE.read_text()
+        assert "GUARDRAIL INTEGRITY VIOLATION" in content, "Plugin must detect guardrail removal"
+
+    def test_agents_md_has_guardrail_integrity_policy(self):
+        content = AGENTS_MD.read_text()
+        assert "Guardrail Integrity Policy" in content
+        assert "NEVER remove" in content or "MUST NEVER remove" in content
+        assert "make the guardrail smarter" in content
+
+    def test_plugin_enforcement_patterns_exist(self):
+        content = PLUGIN_FILE.read_text()
+        for pattern in ["throw new Error", "TDD VIOLATION", "BLOCKED", "FORBIDDEN"]:
+            assert pattern in content, f"Guardrail enforcement pattern '{pattern}' missing from plugin"
+
+
 class TestCommitAfterGreenGuardrail:
     def test_makefile_test_and_commit_runs_tests_first(self):
         content = MAKEFILE.read_text()
