@@ -1953,8 +1953,37 @@ def create_daemon_app(
         return {"status": "ok", "result": "per-project secrets isolation wired"}
 
     @app.post("/admin/projects/skills")
-    async def admin_project_skills() -> dict[str, Any]:
-        return {"status": "ok", "result": "per-project skill registry wired"}
+    async def admin_project_skills(req: dict[str, Any]) -> dict[str, Any]:
+        project_id = req.get("project_id", "")
+        skill_name = req.get("skill_name", "")
+        if not project_id or not skill_name:
+            raise HTTPException(status_code=422, detail="project_id and skill_name required")
+        from general_ludd.skills.catalog import SkillCatalog
+        from general_ludd.skills.registry import SkillRegistry
+
+        registry = getattr(app.state, "_skill_registry", None)
+        if registry is None:
+            registry = SkillRegistry()
+            app.state._skill_registry = registry
+        skill = registry.get(skill_name)
+        if skill is None:
+            catalog = SkillCatalog()
+            entry = catalog.get_skill(skill_name)
+            if entry is None:
+                raise HTTPException(status_code=404, detail=f"Skill {skill_name} not found")
+            config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
+            path = catalog.install_skill(skill_name, config_dir)
+            if path is None:
+                raise HTTPException(status_code=404, detail=f"Failed to install skill {skill_name}")
+            from general_ludd.skills.loader import discover_skills
+
+            discovered = discover_skills(os.path.join(config_dir, "skills"))
+            for s in discovered:
+                registry.register(s)
+            skill = registry.get(skill_name)
+        if skill is not None:
+            registry.register(skill, project_id=project_id)
+        return {"status": "ok", "project_id": project_id, "skill": skill_name}
 
     @app.post("/admin/projects/mcp")
     async def admin_project_mcp() -> dict[str, Any]:

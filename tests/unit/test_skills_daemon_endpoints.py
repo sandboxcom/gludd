@@ -90,3 +90,33 @@ class TestSkillsFetchGithubEndpoint:
         client = TestClient(_make_test_app())
         resp = client.post("/admin/skills/fetch-github", json={"repo": "mattpocock/skills"})
         assert resp.status_code == 422
+
+
+class TestProjectSkillsEndpoint:
+    def test_project_skills_missing_params_returns_422(self):
+        client = TestClient(_make_test_app())
+        resp = client.post("/admin/projects/skills", json={"project_id": "proj1"})
+        assert resp.status_code == 422
+
+    def test_project_skills_registers_skill(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = TestClient(_make_test_app(config_dir=tmpdir))
+            install_resp = client.post("/admin/skills/catalog/install", json={"name": "mp-tdd"})
+            assert install_resp.status_code == 200
+            resp = client.post(
+                "/admin/projects/skills",
+                json={"project_id": "proj1", "skill_name": "mp-tdd"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["skill"] == "mp-tdd"
+            assert resp.json()["project_id"] == "proj1"
+
+    def test_project_skills_unknown_skill_installs_from_catalog(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            client = TestClient(_make_test_app(config_dir=tmpdir))
+            resp = client.post(
+                "/admin/projects/skills",
+                json={"project_id": "proj2", "skill_name": "mp-diagnose"},
+            )
+            assert resp.status_code == 200
+            assert resp.json()["skill"] == "mp-diagnose"
