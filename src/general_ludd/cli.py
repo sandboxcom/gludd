@@ -2974,6 +2974,16 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             status_msg = tui_state["status_msg"]
             daemon_running = tui_state.get("daemon_running", daemon_running)
             return True
+        if ch == "V":
+            tui_state["current_view"] = current_view
+            tui_state["status_msg"] = status_msg
+            tui_handler.handle_key(ch)
+            status_msg = tui_state["status_msg"]
+            return True
+        if ch == "\t":
+            tui_state["current_view"] = current_view
+            tui_handler.handle_key(ch)
+            return True
         if len(ch) == 1:
             ch = ch.lower()
         if ch == "p":
@@ -3203,10 +3213,15 @@ def _cmd_tui(args: argparse.Namespace) -> None:
                     if ch == "\x03":
                         break
                     if ch == "\x1b":
-                        if current_view != "main":
+                        if tui_state.get("input_mode") is not None:
+                            tui_state["input_mode"] = None
+                            tui_state["input_buffer"] = ""
+                            status_msg = "Cancelled"
+                        elif current_view != "main":
                             old_view = current_view
                             current_view = "main"
                             status_msg = ""
+                            pop_breadcrumb(tui_state)
                             info = _gather_offline_status()
                             live.update(make_layout(info))
                             tui_logger.log_view_change(old_view, "main")

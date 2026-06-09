@@ -684,6 +684,46 @@ export default (async ({ }) => {
         ].join("\n")
         output += testQualityReminder
 
+        const tuiCompletenessCheck = [
+          "",
+          "## CRITICAL: TUI Feature Completeness — HARD GATE",
+          "",
+          "The user has REPEATEDLY requested these TUI features across 6+ sessions.",
+          "Past agents claimed they were done but tests only verified function returns,",
+          "not actual observable behavior. Before declaring TUI work complete, EVERY",
+          "item below MUST have a passing test that verifies OBSERVABLE behavior.",
+          "",
+          "TUI FEATURES REQUIRED (none are optional):",
+          "",
+          "  1. SPACE BAR on main view activates selected menu item",
+          "     TEST: handle_key(' ') on main view → state['current_view'] changes",
+          "     or _activate_main_menu_item is called",
+          "",
+          "  2. ESCAPE pops breadcrumb AND cancels input_mode",
+          "     TEST: handle_key('\\x1b') when input_mode set → input_mode becomes None",
+          "     TEST: handle_key('\\x1b') on sub-view → breadcrumb popped, view='main'",
+          "",
+          "  3. V key toggles verbose logging (NOT v key which enters config view)",
+          "     TEST: handle_key('V') → state['verbose_logging'] flips",
+          "     TEST: handle_key('v') → enters config view (NOT verbose toggle)",
+          "",
+          "  4. TAB key switches panel focus between left and right panels",
+          "     TEST: handle_key('\\t') → state['panel_focus'] or similar toggles",
+          "",
+          "  5. Lowercase s/k on main menu work (or labels show uppercase S/K)",
+          "     TEST: If only uppercase works, menu MUST show uppercase shortcuts",
+          "",
+          "  6. Mouse drag (not just click) resizes panels",
+          "     TEST: Mouse press + drag events update left_panel_width continuously",
+          "",
+          "  7. Left arrow cancels input or goes back in ALL views (including config)",
+          "",
+          "If ANY of these lack a passing test, the TUI work is NOT complete.",
+          "Do NOT mark TUI tasks as completed until ALL have green tests.",
+          "",
+        ].join("\n")
+        output += tuiCompletenessCheck
+
         if (_pendingCommitReminder) {
           output += "\n\n" + COMMIT_REMINDER
           _pendingCommitReminder = false

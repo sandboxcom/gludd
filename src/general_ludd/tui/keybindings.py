@@ -109,10 +109,22 @@ class TUIKeyHandler:
                 return True
             return True
 
-        if ch == "\x1b" and input_mode is None and view != "main":
-            state["current_view"] = "main"
-            state["status_msg"] = ""
-            pop_breadcrumb(state)
+        if ch == "\x1b":
+            if input_mode is not None:
+                state["input_mode"] = None
+                state["input_buffer"] = ""
+                state["status_msg"] = "Cancelled"
+                return True
+            if view != "main":
+                state["current_view"] = "main"
+                state["status_msg"] = ""
+                pop_breadcrumb(state)
+                return True
+            return True
+
+        if ch == "\t":
+            current = state.get("panel_focus", "left")
+            state["panel_focus"] = "right" if current == "left" else "left"
             return True
 
         if input_mode == "models_add":
@@ -305,6 +317,19 @@ class TUIKeyHandler:
 
         if ch == "K":
             self._stop_daemon()
+            return True
+
+        if view == "main" and ch == "s":
+            self._start_daemon()
+            return True
+
+        if view == "main" and ch == "k":
+            self._stop_daemon()
+            return True
+
+        if view == "main" and ch == "v":
+            state["current_view"] = "config"
+            push_breadcrumb(state, "config")
             return True
 
         if ch == "a" and view == "main":
