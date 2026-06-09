@@ -2,13 +2,17 @@
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from pathlib import Path
+from typing import TYPE_CHECKING
 
 import httpx
 
 from general_ludd.skills.loader import parse_skill_md
 from general_ludd.skills.skill import Skill
+
+if TYPE_CHECKING:
+    from general_ludd.skills.catalog import CatalogSkillEntry
 
 logger = logging.getLogger(__name__)
 

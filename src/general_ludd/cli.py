@@ -2678,7 +2678,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
             elif current_view == "skills":
                 _skills_data: list[dict[str, Any]] = []
                 try:
-                    resp = httpx.get(f"{args.daemon_url}/admin/skills/list", timeout=3.0)
+                    resp = httpx.get(f"{args.daemon_url}/admin/skills/catalog", timeout=3.0)
                     if resp.status_code == 200:
                         _skills_data = resp.json().get("skills", resp.json().get("results", []))
                 except Exception:

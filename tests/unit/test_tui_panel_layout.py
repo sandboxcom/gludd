@@ -546,6 +546,8 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
 
     @pytest.mark.parametrize("term_w", [80, 120])
     def test_renders_correctly_and_dumps_output(self, term_w: int):
+        from rich.panel import Panel
+
         from general_ludd.cli import (
             _build_binary_table,
             _build_controls_table,
@@ -555,7 +557,6 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
             _compute_panel_widths,
             _wrap_table,
         )
-        from rich.panel import Panel
 
         left_w, right_w = _compute_panel_widths(term_w, {})
         footer_rows = _compute_footer_rows(24)
@@ -605,16 +606,13 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
             if not has_content and prev_had_content:
                 remaining = [lines[j].strip() for j in range(i + 1, len(lines))]
                 if any(remaining):
-                    assert False, (
-                        f"Blank line {i} between content at tw={term_w}\n"
-                        f"  prev: |{lines[i-1]}|\n"
-                        f"  this: |{line}|\n"
-                        f"  next: |{lines[min(i+1, len(lines)-1)]}|"
-                    )
+                    raise AssertionError(f"Blank line {i} between content at tw={term_w}\n" f"  prev: |{lines[i - 1]}|\n" f"  this: |{line}|\n" f"  next: |{lines[min(i + 1, len(lines) - 1)]}|")
             prev_had_content = has_content
 
     @pytest.mark.parametrize("term_w", [80, 120, 160, 200])
     def test_no_visible_gap_between_left_and_right_panels(self, term_w: int):
+        from rich.panel import Panel
+
         from general_ludd.cli import (
             _build_binary_table,
             _build_controls_table,
@@ -624,7 +622,6 @@ class TestFullTuiRenderNoWhitespaceBetweenPanels:
             _compute_panel_widths,
             _wrap_table,
         )
-        from rich.panel import Panel
 
         tui_state: dict = {}
         left_w, right_w = _compute_panel_widths(term_w, tui_state)

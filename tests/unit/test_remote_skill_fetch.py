@@ -1,14 +1,9 @@
 """Tests for remote skill fetching from GitHub and other URLs."""
 from __future__ import annotations
 
-import json
 import tempfile
-from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-import pytest
-
-from general_ludd.skills.catalog import CatalogSkillEntry
 from general_ludd.skills.fetcher import (
     GitHubSkillSource,
     RemoteSkillFetcher,

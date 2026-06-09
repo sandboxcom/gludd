@@ -1300,6 +1300,44 @@ def create_daemon_app(
             raise HTTPException(status_code=404, detail=f"Skill {name} not found")
         return {"installed": str(path), "name": name}
 
+    @app.post("/admin/skills/fetch")
+    async def admin_skills_fetch(req: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.skills.fetcher import RemoteSkillFetcher
+
+        url = req.get("url", "")
+        if not url:
+            raise HTTPException(status_code=422, detail="url required")
+        config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
+        target = os.path.join(config_dir, "skills")
+        fetcher = RemoteSkillFetcher()
+        path = fetcher.install(url, target)
+        if path is None:
+            raise HTTPException(status_code=404, detail=f"Failed to fetch skill from {url}")
+        return {"installed": str(path), "url": url}
+
+    @app.post("/admin/skills/fetch-github")
+    async def admin_skills_fetch_github(req: dict[str, Any]) -> dict[str, Any]:
+        from general_ludd.skills.fetcher import GitHubSkillSource
+
+        repo = req.get("repo", "")
+        skill_path = req.get("path", "")
+        branch = req.get("branch", "main")
+        if not repo or not skill_path:
+            raise HTTPException(status_code=422, detail="repo and path required")
+        src = GitHubSkillSource.from_url(f"https://github.com/{repo}")
+        src.branch = branch
+        skill = src.download_skill(skill_path)
+        if skill is None:
+            raise HTTPException(status_code=404, detail=f"Failed to fetch skill from {repo}/{skill_path}")
+        config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
+        target = os.path.join(config_dir, "skills")
+        os.makedirs(target, exist_ok=True)
+        skill_file = os.path.join(target, f"{skill.name}.md")
+        content = f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n\n{skill.body}\n"
+        with open(skill_file, "w") as f:
+            f.write(content)
+        return {"installed": skill_file, "name": skill.name, "source": f"github:{repo}"}
+
     @app.post("/admin/compute/endpoints")
     async def admin_register_compute_endpoint(req: dict[str, Any]) -> dict[str, Any]:
         ext = _get_or_create_extended_subsystems(app)
