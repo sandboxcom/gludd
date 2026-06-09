@@ -3,15 +3,51 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-08 (session 17)
+- 2026-06-09 (session 18)
 
 ## Current Status
-- **Phase**: Panel layout overhaul complete
-- **Test Suite**: 3791+ passed, 3 failed (pre-existing), 2 skipped
+- **Phase**: Skills architecture audit + wiring
+- **Test Suite**: 3926+ passed, 15 failed (pre-existing), 2 skipped
 - **Branch**: master
-- **Latest commit**: 3da19da — fix panel layout - explicit panel widths, overhead-aware columns
+- **Latest commit**: 98f0883 — remove dead _cache/refresh from SkillCatalog, cache catalog singleton on app.state
 - **Mypy**: 1 error (pre-existing, db/session.py)
-- **Lint**: 0 errors
+- **Lint**: 24 errors (pre-existing line-length in catalog.py descriptions, test files)
+
+## Session 18: Skills Architecture Audit + Wiring (commits 4d8d3d9, 4648f6d, 98f0883)
+
+### Architecture Audit Findings (9 issues found, 7 fixed)
+
+| # | Severity | Issue | Fix |
+|---|----------|-------|-----|
+| 1 | Critical | `fetcher.py` was dead code — zero production imports | Added `POST /admin/skills/fetch` and `POST /admin/skills/fetch-github` daemon endpoints |
+| 2 | Critical | TUI skills view hit nonexistent `GET /admin/skills/list` | Fixed to `GET /admin/skills/catalog` |
+| 3 | High | `POST /admin/projects/skills` was stub returning hardcoded response | Wired to SkillRegistry with catalog fallback |
+| 4 | High | No daemon endpoint for remote fetching | New endpoints wired to `RemoteSkillFetcher` and `GitHubSkillSource` |
+| 5 | Medium | `SkillCatalog._cache` and `_cache_dir` initialized but never used | Removed dead code |
+| 6 | Medium | `SkillCatalog.refresh()` was a no-op clearing empty list | Removed dead method |
+| 7 | Medium | Daemon created new `SkillCatalog()` per request | Added `_get_catalog()` helper caching singleton on `app.state` |
+| 8 | Low | `event_loop/loop.py` typed `skill_registry` as `Any` | Not yet fixed (low priority) |
+| 9 | Low | No integration tests wiring registry + loader + catalog | Not yet fixed (low priority) |
+
+### New Tests
+- `tests/unit/test_skills_daemon_endpoints.py` — 11 tests:
+  - `TestSkillsCatalogEndpoint` (3): catalog list, search, install
+  - `TestSkillsFetchEndpoint` (3): fetch from URL, missing URL 422, failed download 404
+  - `TestSkillsFetchGithubEndpoint` (2): fetch from GitHub, missing params 422
+  - `TestProjectSkillsEndpoint` (3): missing params 422, register installed skill, install-and-register from catalog
+
+### Other Fixes
+- Removed unused imports: `json`, `Path`, `pytest`, `CatalogSkillEntry` from `test_remote_skill_fetch.py`
+- Removed unused imports: `pytest`, `Skill` from `test_skills_daemon_endpoints.py`
+- Fixed `fetcher.py`: removed unused `field` import, used `TYPE_CHECKING` for `CatalogSkillEntry` type hint
+- Removed dead `TestSkillCatalogRefresh` test (tested removed `_cache`/`refresh()`)
+
+### Pre-existing Failures (unchanged)
+- `test_audit_gap_fixes.py::test_add_todo_rejects_invalid_queue`
+- `test_guardrails.py::test_make_test_passes`
+- `test_tui_view_actions.py::test_projects_add_error`
+- `test_tui_new_views.py` — 10 max_width assertion failures (pre-existing, not from this session)
+- `test_tui_extracted_builders.py::test_long_url_truncated` — pre-existing
 
 ## Session 17: Panel Layout Overhaul (commit 3da19da)
 
@@ -626,9 +662,9 @@ EventLoop auto-creates from session (when available):
 - Fix: added "update session" to STOP_SIGNAL_WORDS, BUGS.md incident #5 logged
 
 ## Next Steps
-- Wire PSK into CLI client commands (add `--token` flag or read from config)
-- Apply overhead-aware column sizing to remaining table builders (68 instances still use raw `term_width`)
-- Wire TUI timeout/health views (model health table, retry stats)
+- Fix remaining low-priority audit items: type `skill_registry` properly in loop.py, add integration tests for registry+loader+catalog
+- Push cli.py coverage higher (92% — TUI body render paths, 198 uncovered lines)
+- Wire remaining TUI CLI parity (28+ commands not yet in TUI)
 - Model auto-population from provider APIs
 - events/bus.py async coroutine paths (88%)
-- Wire remaining TUI CLI parity (28+ commands not yet in TUI)
+- Fix pre-existing lint: line-length in catalog.py mattpocock descriptions, test_tui_panel_layout.py
