@@ -408,6 +408,46 @@ export default (async ({ }) => {
         }
 
         if (isProduction && !isTest) {
+          const fs = await import("node:fs")
+          const path = await import("node:path")
+          const srcMatch = filePath.match(/[\/\\]src[\/\\](.+)\.py$/)
+          if (srcMatch) {
+            const modulePath = srcMatch[1]
+            const candidates = [
+              modulePath.replace(/[\/\\]/g, "_"),
+              modulePath.split(/[\/\\]/).pop() || "",
+            ]
+            let testExists = false
+            for (const candidate of candidates) {
+              const testDir = path.resolve(filePath.split(/[\/\\]src[\/\\]/)[0], "tests", "unit")
+              for (const prefix of ["test_", "test_"]) {
+                for (const suffix of [".py"]) {
+                  try {
+                    fs.accessSync(path.join(testDir, prefix + candidate + suffix))
+                    testExists = true
+                    break
+                  } catch {}
+                }
+                if (testExists) break
+              }
+              if (testExists) break
+            }
+            if (!testExists) {
+              throw new Error([
+                "TDD VIOLATION: No corresponding test file found for " + filePath,
+                "",
+                "Before editing production code, you MUST:",
+                "  1. Write a failing test under tests/unit/ that covers the behavior.",
+                "  2. Run the test to confirm it fails.",
+                "  3. Then edit the production code to make it pass.",
+                "",
+                "Looked for: test_" + candidates[0] + ".py or test_" + candidates[candidates.length - 1] + ".py",
+                "in tests/unit/",
+                "",
+                "Skipping TDD is a policy violation. See AGENTS.md.",
+              ].join("\n"))
+            }
+          }
         }
       }
     },

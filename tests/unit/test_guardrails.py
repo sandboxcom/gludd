@@ -166,8 +166,9 @@ class TestTDDGuardrail:
 
     def test_plugin_emits_tdd_reminder_on_src_edit(self):
         content = PLUGIN_FILE.read_text()
-        assert "assert" in content and "test" in content.lower(), "Plugin must enforce test quality on test edits"
+        assert "TDD VIOLATION" in content, "Plugin must block production edits when no test file exists"
         assert "production" in content.lower() or "src/" in content
+        assert "testExists" in content or "test_" in content, "Plugin must check for test file existence"
 
     def test_agents_md_has_tdd_policy_section(self):
         content = AGENTS_MD.read_text()
