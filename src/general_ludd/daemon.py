@@ -1245,11 +1245,18 @@ def create_daemon_app(
             }
         }
 
-    @app.post("/admin/skills/catalog/search")
-    async def admin_skills_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
+    def _get_catalog() -> SkillCatalog:
         from general_ludd.skills.catalog import SkillCatalog
 
-        catalog = SkillCatalog()
+        catalog = getattr(app.state, "_skill_catalog", None)
+        if catalog is None:
+            catalog = SkillCatalog()
+            app.state._skill_catalog = catalog
+        return catalog
+
+    @app.post("/admin/skills/catalog/search")
+    async def admin_skills_catalog_search(req: dict[str, Any]) -> dict[str, Any]:
+        catalog = _get_catalog()
         results = catalog.search(
             query=req.get("query", ""),
             tags=req.get("tags"),
@@ -1271,9 +1278,7 @@ def create_daemon_app(
 
     @app.get("/admin/skills/catalog")
     async def admin_skills_catalog() -> dict[str, Any]:
-        from general_ludd.skills.catalog import SkillCatalog
-
-        catalog = SkillCatalog()
+        catalog = _get_catalog()
         results = catalog.search(limit=100)
         return {
             "skills": [
@@ -1290,9 +1295,7 @@ def create_daemon_app(
 
     @app.post("/admin/skills/catalog/install")
     async def admin_skills_catalog_install(req: dict[str, Any]) -> dict[str, Any]:
-        from general_ludd.skills.catalog import SkillCatalog
-
-        catalog = SkillCatalog()
+        catalog = _get_catalog()
         name = req.get("name", "")
         config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
         path = catalog.install_skill(name, config_dir)
@@ -1958,7 +1961,6 @@ def create_daemon_app(
         skill_name = req.get("skill_name", "")
         if not project_id or not skill_name:
             raise HTTPException(status_code=422, detail="project_id and skill_name required")
-        from general_ludd.skills.catalog import SkillCatalog
         from general_ludd.skills.registry import SkillRegistry
 
         registry = getattr(app.state, "_skill_registry", None)
@@ -1967,7 +1969,7 @@ def create_daemon_app(
             app.state._skill_registry = registry
         skill = registry.get(skill_name)
         if skill is None:
-            catalog = SkillCatalog()
+            catalog = _get_catalog()
             entry = catalog.get_skill(skill_name)
             if entry is None:
                 raise HTTPException(status_code=404, detail=f"Skill {skill_name} not found")

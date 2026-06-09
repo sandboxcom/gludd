@@ -28,11 +28,8 @@ class CatalogSkillEntry(BaseModel):
 class SkillCatalog:
     """Search and discover curated skills from community sources."""
 
-    def __init__(self, cache_dir: str | None = None) -> None:
-        self._cache_dir = Path(cache_dir) if cache_dir else Path(
-            "~/.cache/general-ludd/skills"
-        ).expanduser()
-        self._cache: list[CatalogSkillEntry] = []
+    def __init__(self) -> None:
+        pass
 
     def search(
         self,
@@ -88,9 +85,6 @@ class SkillCatalog:
     def install_skill(self, name: str, config_dir: str) -> Path | None:
         skills_dir = Path(config_dir) / "skills"
         return self.download_skill(name, str(skills_dir))
-
-    def refresh(self) -> None:
-        self._cache.clear()
 
 
 def _build_skill_md(entry: CatalogSkillEntry) -> str:

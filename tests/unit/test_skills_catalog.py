@@ -124,15 +124,6 @@ class TestSkillCatalogMetadata:
         assert "git" in tags
 
 
-class TestSkillCatalogRefresh:
-    def test_refresh_clears_cache(self):
-        catalog = SkillCatalog()
-        catalog._cache.append(CatalogSkillEntry(name="temp"))
-        assert len(catalog._cache) == 1
-        catalog.refresh()
-        assert len(catalog._cache) == 0
-
-
 class TestSkillCatalogBuildMd:
     def test_build_skill_md_with_body_preview(self, tmp_path):
         catalog = SkillCatalog()
