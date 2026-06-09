@@ -1674,29 +1674,30 @@ def _build_daemon_table(daemon_running: bool, daemon_url: str, current_view: str
 
 
 def _build_info_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="System Info", show_header=False, expand=True, title_justify="left")
-    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6)
     val_w = max(10, term_width - _table_overhead(2) - 6)
-    t.add_column("Value", style="green", no_wrap=True, ratio=3, min_width=10)
     rows = [
         ("Version", str(info.get("version", "?"))),
         ("Python", str(info.get("python_version", "?"))),
         ("Platform", str(info.get("platform", "?"))),
-        ("CWD", str(info.get("cwd", "?"))[: val_w]),
-        ("Config Dir", str(info.get("config_dir", "?"))[: val_w]),
+        ("CWD", str(info.get("cwd", "?"))[:val_w]),
+        ("Config Dir", str(info.get("config_dir", "?"))[:val_w]),
         ("Config Files", str(len(info.get("config_files", [])))),
-        ("Filestore", str(info.get("filestore_root", "?"))[: val_w]),
+        ("Filestore", str(info.get("filestore_root", "?"))[:val_w]),
         ("Filestore Size", _fmt_size(info.get("filestore_size_bytes", 0))),
         ("DB Engine", str(info.get("db_engine", "?"))),
         ("DB Exists", "yes" if info.get("db_exists") else "no"),
     ]
     if info.get("db_exists"):
         rows.append(("DB Size", _fmt_size(info.get("db_size_bytes", 0))))
-    for k, v in rows:
-        t.add_row(k, v)
-    return t
+    return _make_table(
+        title="System Info",
+        columns=[("Key", "cyan", 1, 6), ("Value", "green", 3, 10)],
+        rows=rows,
+        show_header=False,
+        term_width=term_width,
+    )
 
 
 def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
@@ -1719,61 +1720,57 @@ def _build_binary_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
 
 
 def _build_config_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Config Files", show_header=True, expand=True, title_justify="left")
-    t.add_column("File", style="cyan", no_wrap=True, ratio=3, min_width=8)
-    t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4)
-    for cf in info.get("config_files", []):
-        t.add_row(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0)))
-    return t
+    rows = [(cf.get("name", "?"), _fmt_size(cf.get("size_bytes", 0))) for cf in info.get("config_files", [])]
+    return _make_table(
+        title="Config Files",
+        columns=[("File", "cyan", 3, 8), ("Size", "green", 1, 4)],
+        rows=rows,
+        term_width=term_width,
+    )
 
 
 def _build_todos_table(todos: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Todos", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Title", style="green", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=2, min_width=4)
-    t.add_column("Pri", style="bold", no_wrap=True, ratio=1, min_width=3)
-    for i, todo in enumerate(todos):
-        status = todo.get("status", "?")
-        status_color = {
-            "pending": "yellow",
-            "in_progress": "cyan",
-            "completed": "green",
-            "cancelled": "dim",
-        }.get(status, "white")
-        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
-        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
-        t.add_row(
-            sel_marker + str(todo.get("todo_id", "?")),
+    _status_colors = {"pending": "yellow", "in_progress": "cyan", "completed": "green", "cancelled": "dim"}
+    rows = [
+        (
+            str(todo.get("todo_id", "?")),
             str(todo.get("title", "")),
-            f"[{status_color}]{status}[/]",
+            f"[{_status_colors.get(todo.get('status', '?'), 'white')}]{todo.get('status', '?')}[/]",
             str(todo.get("priority", "")),
-            style=style,
         )
-    return t
+        for todo in todos
+    ]
+    return _make_table(
+        title="Todos",
+        columns=[("ID", "cyan", 1, 4), ("Title", "green", 3, 6), ("Status", "yellow", 2, 4), ("Pri", "bold", 1, 3)],
+        rows=rows,
+        selected_idx=selected_idx,
+        term_width=term_width,
+    )
 
 
 def _build_hooks_table(hooks: list[dict[str, Any]], *, term_width: int = 80, selected_idx: int | None = None) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Hooks", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Event", style="green", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
-    for i, h in enumerate(hooks):
-        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
-        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
-        t.add_row(
-            sel_marker + str(h.get("hook_id", "?")),
+    rows = [
+        (
+            str(h.get("hook_id", "?")),
             str(h.get("event_name", h.get("event_type", "?"))),
             str(h.get("hook_type", "?")),
-            style=style,
         )
-    return t
+        for h in hooks
+    ]
+    return _make_table(
+        title="Hooks",
+        columns=[("ID", "cyan", 2, 6), ("Event", "green", 2, 6), ("Type", "yellow", 1, 4)],
+        rows=rows,
+        selected_idx=selected_idx,
+        term_width=term_width,
+    )
 
 
 def _build_workers_table(
@@ -1782,28 +1779,24 @@ def _build_workers_table(
     term_width: int = 80,
     selected_idx: int | None = None,
 ) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Workers", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Address", style="green", no_wrap=True, ratio=3, min_width=8)
-    for i, w in enumerate(workers):
-        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
-        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
-        t.add_row(
-            sel_marker + str(w.get("worker_id", "?")),
-            str(w.get("address", "?")),
-            style=style,
-        )
-    return t
+    rows = [
+        (str(w.get("worker_id", "?")), str(w.get("address", "?")))
+        for w in workers
+    ]
+    return _make_table(
+        title="Workers",
+        columns=[("ID", "cyan", 2, 6), ("Address", "green", 3, 8)],
+        rows=rows,
+        selected_idx=selected_idx,
+        term_width=term_width,
+    )
 
 
 def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Metrics", show_header=False, expand=True, title_justify="left")
-    t.add_column("Metric", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=6)
     labels = [
         ("Total Cost", "total_cost_usd", "${:.2f}"),
         ("Subscription", "subscription_name", "{}"),
@@ -1813,42 +1806,53 @@ def _build_metrics_table(cost_data: dict[str, Any], *, term_width: int = 80) -> 
         ("Cost % Sub", "cost_as_pct_of_subscription", "{:.1f}%"),
         ("Tokens % Wk", "tokens_as_pct_of_weekly", "{:.1f}%"),
     ]
+    rows = []
     for label, key, fmt in labels:
         val = cost_data.get(key)
         if val is not None:
             if isinstance(val, (int, float)):
                 try:
-                    t.add_row(label, fmt.format(val))
+                    rows.append((label, fmt.format(val)))
                 except (ValueError, TypeError):
-                    t.add_row(label, str(val))
+                    rows.append((label, str(val)))
             else:
-                t.add_row(label, str(val))
-    return t
+                rows.append((label, str(val)))
+    return _make_table(
+        title="Metrics",
+        columns=[("Metric", "cyan", 2, 6), ("Value", "green", 2, 6)],
+        rows=rows,
+        show_header=False,
+        term_width=term_width,
+    )
 
 
 def _build_agents_table(agents: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Agents", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Name", style="green", no_wrap=True, ratio=2, min_width=5)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Project", style="bold", no_wrap=True, ratio=1, min_width=5)
-    t.add_column("Up", style="dim", no_wrap=True, ratio=1, min_width=4)
+    rows = []
     for a in agents:
         status = a.get("status", "?")
         status_color = "green" if status == "running" else "yellow" if status == "idle" else "red"
         uptime_s = a.get("uptime_seconds", 0)
         uptime_h = uptime_s // 3600
         uptime_m = (uptime_s % 3600) // 60
-        t.add_row(
+        rows.append((
             str(a.get("agent_id", "?")),
             str(a.get("agent_name", a.get("name", "?"))),
             f"[{status_color}]{status}[/]",
             str(a.get("project", "")),
             f"{uptime_h}h{uptime_m}m",
-        )
-    return t
+        ))
+    return _make_table(
+        title="Agents",
+        columns=[
+            ("ID", "cyan", 1, 4), ("Name", "green", 2, 5),
+            ("Status", "yellow", 1, 4), ("Project", "bold", 1, 5),
+            ("Up", "dim", 1, 4),
+        ],
+        rows=rows,
+        term_width=term_width,
+    )
 
 
 def _build_model_table(
@@ -1950,16 +1954,18 @@ def _build_config_editor_table(
 
 
 def _build_worktrees_table(entries: list[tuple[str, str]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Projects & Worktrees", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="green", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Status", style="bold", no_wrap=True, ratio=2, min_width=6)
-    for name, status in entries:
-        is_wt = "AGENTS.md" in status
-        color = "green" if is_wt else "dim"
-        t.add_row(name, f"[{color}]{status}[/]")
-    return t
+    rows = [
+        (name, f"[{'green' if 'AGENTS.md' in status else 'dim'}]{status}[/]")
+        for name, status in entries
+    ]
+    return _make_table(
+        title="Projects & Worktrees",
+        columns=[("Name", "green", 3, 6), ("Status", "bold", 2, 6)],
+        rows=rows,
+        term_width=term_width,
+    )
 
 
 def _build_projects_table(
@@ -1968,64 +1974,63 @@ def _build_projects_table(
     term_width: int = 80,
     selected_idx: int | None = None,
 ) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Projects", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=1, min_width=5)
-    t.add_column("Name", style="green", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Wt", style="yellow", no_wrap=True, ratio=1, min_width=3)
-    t.add_column("Mode", style="bold", no_wrap=True, ratio=1, min_width=4)
-    for i, p in enumerate(projects):
-        mode = str(p.get("dispatch_mode", "active"))
-        mode_color = "green" if mode == "active" else "yellow"
-        sel_marker = "▶ " if selected_idx is not None and i == selected_idx else "  "
-        style = "bold reverse" if selected_idx is not None and i == selected_idx else None
-        t.add_row(
-            sel_marker + str(p.get("project_id", "?")),
+    rows = [
+        (
+            str(p.get("project_id", "?")),
             str(p.get("name", "?")),
             f"{p.get('weight', 0)}%",
-            f"[{mode_color}]{mode}[/]",
-            style=style,
+            f"[{'green' if str(p.get('dispatch_mode', 'active')) == 'active' else 'yellow'}]"
+            f"{p.get('dispatch_mode', 'active')}[/]",
         )
-    return t
+        for p in projects
+    ]
+    return _make_table(
+        title="Projects",
+        columns=[("ID", "cyan", 1, 5), ("Name", "green", 2, 6), ("Wt", "yellow", 1, 3), ("Mode", "bold", 1, 4)],
+        rows=rows,
+        selected_idx=selected_idx,
+        term_width=term_width,
+    )
 
 
 def _build_integrity_table(changes: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Integrity", show_header=True, expand=True, title_justify="left")
-    t.add_column("File", style="cyan", no_wrap=True, ratio=3, min_width=6)
-    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4)
-    t.add_column("Status", style="bold", no_wrap=True, ratio=1, min_width=4)
+    _icons = {"new": "+", "modified": "~", "removed": "-"}
     if not changes:
-        t.add_row("No changes", "", "")
+        rows = [("No changes", "", "")]
     else:
-        for ch in changes:
-            icon = {"new": "+", "modified": "~", "removed": "-"}.get(ch.get("type", ""), "?")
-            approved = "approved" if ch.get("approved") else "pending"
-            t.add_row(
+        rows = [
+            (
                 str(ch.get("file", "?")),
-                f"{icon} {ch.get('type', '?')}",
-                approved,
+                f"{_icons.get(ch.get('type', ''), '?')} {ch.get('type', '?')}",
+                "approved" if ch.get("approved") else "pending",
             )
-    return t
+            for ch in changes
+        ]
+    return _make_table(
+        title="Integrity",
+        columns=[("File", "cyan", 3, 6), ("Type", "yellow", 1, 4), ("Status", "bold", 1, 4)],
+        rows=rows,
+        term_width=term_width,
+    )
 
 
 def _build_ansible_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    from general_ludd.tui.tables import _make_table
 
-    t = Table(title="Ansible Galaxy", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6)
-    t.add_column("Description", style="green", no_wrap=True, ratio=3, min_width=8)
     if not results:
-        t.add_row("Press [s] to search", "")
+        rows = [("Press [s] to search", "")]
     else:
-        for r in results:
-            t.add_row(
-                str(r.get("name", "?")),
-                str(r.get("description", "")),
-            )
-    return t
+        rows = [(str(r.get("name", "?")), str(r.get("description", ""))) for r in results]
+    return _make_table(
+        title="Ansible Galaxy",
+        columns=[("Name", "cyan", 2, 6), ("Description", "green", 3, 8)],
+        rows=rows,
+        term_width=term_width,
+    )
 
 
 def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
