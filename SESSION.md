@@ -6,12 +6,12 @@
 - 2026-06-09 (session 19)
 
 ## Current Status
-- **Phase**: Architecture refactoring (mp-improve-architecture)
-- **Test Suite**: 4717 passed, 18 failed (pre-existing), 27 skipped, 3 errors (pre-existing)
+- **Phase**: Architecture refactoring COMPLETE
+- **Test Suite**: 4733 passed, 17 failed (pre-existing), 27 skipped, 3 errors (pre-existing)
 - **Branch**: master
-- **Latest commit**: e83354c — add _make_table factory in tui/tables.py
+- **Latest commit**: 55202eb — extract _cmd_tui from cli.py into tui/runner.py
 - **Mypy**: 1 error (pre-existing, db/session.py)
-- **Lint**: 24 errors (pre-existing line-length in catalog.py descriptions, test files)
+- **Lint**: 0 errors (all 24 pre-existing lint errors fixed this session)
 
 ## Session 19: Architecture Refactoring (4 commits: 105135f, 543479d, e83354c)
 
@@ -47,14 +47,25 @@
 | # | Candidate | Status |
 |---|-----------|--------|
 | 1 | Split daemon.py into routers | DONE (14 routers, 595-line daemon.py) |
-| 2 | Extract _cmd_tui from cli.py | Pending (862 lines, needs tui/ submodules) |
-| 3 | Consolidate table builders | Factory created, wiring deferred |
+| 2 | Extract _cmd_tui from cli.py | DONE (tui/runner.py, cli.py shrinks 830 lines) |
+| 3 | Consolidate table builders | Factory created (tui/tables.py, 15 tests), wiring deferred |
 | 4 | Remove 16 stub endpoints | DONE (session 18) |
 | 5 | Fix security re-export | DONE (sanitize.py → __init__.py re-export) |
 | 6 | Move worktree __init__.py | DONE (core.py → __init__.py re-export) |
 
+### Lint Fix (commit 45aa15e)
+- Fixed 14 catalog.py description line-length errors (string concatenation)
+- Fixed 3 cli.py TUI layout line-length errors (multi-line Layout calls)
+- Fixed 7 test_tui_panel_layout.py line-length errors (dict formatting)
+- **Lint now passes with 0 errors** — `test_make_lint_passes` no longer fails
+
+### TUI Extraction (commit 55202eb)
+- Moved `_cmd_tui` (862 lines) from cli.py to `tui/runner.py` as `run_tui(args, helpers)`
+- cli.py `_cmd_tui` now creates a SimpleNamespace of helper references and calls `run_tui()`
+- cli.py shrinks from 3692 to ~2862 lines
+- Zero test regressions
+
 ### Pre-existing Failures (unchanged)
-- `test_guardrails.py::test_make_lint_passes` (24 pre-existing lint errors)
 - `test_tui_extracted_builders.py::test_long_url_truncated`
 - `test_tui_new_views.py` — 10 max_width assertion failures
 - `test_tui_view_actions.py::test_projects_add_error`
