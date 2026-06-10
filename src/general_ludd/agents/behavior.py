@@ -39,12 +39,20 @@ class AgentBehavior(BaseModel):
     allowed_command_patterns: list[str] = ["make *"]
     stop_conditions: list[str] = ["missing_credentials", "environment_change"]
     max_retries: int = 3
+    self_improve_interval: int = 0
 
     @field_validator("max_retries")
     @classmethod
     def _non_negative(cls, v: int) -> int:
         if v < 0:
             raise ValueError("max_retries must be non-negative")
+        return v
+
+    @field_validator("self_improve_interval")
+    @classmethod
+    def _non_negative_interval(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("self_improve_interval must be non-negative")
         return v
 
     @property
@@ -172,6 +180,17 @@ class BehaviorRenderer:
             sections.append("Stop work immediately if:")
             for cond in behavior.stop_conditions:
                 sections.append(f"- {cond}")
+            sections.append("")
+
+        if behavior.self_improve_interval > 0:
+            sections.append("## Self-Improvement Cycle")
+            sections.append(
+                f"Every {behavior.self_improve_interval} ticks, run self-improvement analysis "
+                "to discover gaps and create fix todos autonomously."
+            )
+            sections.append(
+                "Gaps found are enqueued as high-priority self_improve todos."
+            )
             sections.append("")
 
         return "\n".join(sections)

@@ -557,6 +557,7 @@ def create_daemon_app(
         projects,
         quantization,
         reload,
+        self_improve,
         signing,
         skills,
         slurm,
@@ -579,5 +580,6 @@ def create_daemon_app(
     worktree.register(app, _daemon_state)
     ansible.register(app, _daemon_state)
     slurm.register(app, _daemon_state)
+    self_improve.register(app, _daemon_state)
 
     return app

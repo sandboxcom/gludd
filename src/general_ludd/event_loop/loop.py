@@ -43,6 +43,7 @@ PHASE_ORDER = [
     "claim_runnable_todos",
     "dispatch_execute_jobs",
     "reconcile_completed_decisions",
+    "self_improve",
     "emit_tick_metrics",
 ]
 
@@ -166,12 +167,14 @@ class EventLoop:
         daemon_state: dict[str, Any] | None = None,
         project_secrets_manager: Any | None = None,
         project_workspace: Any | None = None,
+        self_improve_interval: int = 0,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
         self._daemon_state = daemon_state
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
+        self._self_improve_interval = self_improve_interval
         if isinstance(session, async_sessionmaker):
             self._session_factory: async_sessionmaker[AsyncSession] | None = session
             self.session: AsyncSession | None = None
@@ -735,6 +738,40 @@ class EventLoop:
             "manual_hold": TodoStatus.MANUAL_HOLD,
         }
         return mapping.get(decision)
+
+    async def _phase_self_improve(self) -> None:
+        interval = self._self_improve_interval
+        if interval <= 0:
+            return
+        if self._total_ticks % interval != 0:
+            return
+        try:
+            from general_ludd.self_improve.harness import SelfImprovementHarness
+
+            harness = SelfImprovementHarness()
+            findings = harness.run_gap_analysis()
+            if not findings:
+                self._tick_metrics["self_improve_gaps"] = 0
+                return
+            todos = harness.generate_fix_todos(findings)
+            for todo in todos:
+                todo["priority"] = "high"
+                todo["work_type"] = "self_improve"
+            harness.enqueue_todos(todos)
+            if self._daemon_state is not None:
+                self._daemon_state["self_improve_last_analysis"] = {
+                    "findings": findings,
+                    "findings_count": len(findings),
+                    "todos_enqueued": len(todos),
+                }
+            self._tick_metrics["self_improve_gaps"] = len(findings)
+            logger.info(
+                "Self-improve cycle: %d gaps found, %d todos enqueued",
+                len(findings), len(todos),
+            )
+        except Exception as exc:
+            logger.warning("Self-improve phase failed: %s", exc)
+            self._tick_metrics["self_improve_gaps"] = 0
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)
