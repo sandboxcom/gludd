@@ -5,6 +5,7 @@ from typing import Any
 from fastapi import FastAPI, Request
 
 from general_ludd.code_intelligence.callgraph import CallGraph
+from general_ludd.code_intelligence.complexity_scorer import CodeComplexityScorer
 from general_ludd.code_intelligence.extractor import ASTBlockExtractor
 from general_ludd.code_intelligence.search import CodeSearch
 from general_ludd.daemon import (
@@ -28,6 +29,7 @@ from general_ludd.models.response_cache import ModelResponseCache
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
+from general_ludd.scoring.router import AdaptiveRouter
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -253,4 +255,64 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "model": config.model_path or config.model_name,
             "endpoint_url": server.endpoint_url,
             "status": server.status,
+        }
+
+    @app.post("/admin/code/complexity")
+    async def admin_code_complexity(request: Request) -> dict[str, Any]:
+        import json
+
+        body = await request.json() if hasattr(request, "json") else {}
+        if isinstance(body, str):
+            body = json.loads(body)
+        path = body.get("path", "")
+        scorer = CodeComplexityScorer()
+        score = scorer.score_file(path)
+        task_type = scorer.suggest_task_type(score)
+        return {
+            "score": score.model_dump(),
+            "suggested_task_type": task_type.value,
+        }
+
+    @app.post("/admin/code/suggest-model")
+    async def admin_code_suggest_model(request: Request) -> dict[str, Any]:
+        import json
+
+        body = await request.json() if hasattr(request, "json") else {}
+        if isinstance(body, str):
+            body = json.loads(body)
+        path = body.get("path", "")
+        scorer = CodeComplexityScorer()
+        score = scorer.score_file(path)
+        task_type = scorer.suggest_task_type(score)
+
+        recommendation: dict[str, Any] = {
+            "selected_prompt_profile_id": None,
+            "selected_model_profile_id": "default",
+            "composite_score": 0.0,
+            "estimated_cost_usd": 0.0,
+            "sample_count": 0,
+            "fallback": True,
+            "reason": "insufficient_historical_data",
+        }
+
+        try:
+            router = AdaptiveRouter()
+            decision = await router.route(task_type)
+            recommendation = {
+                "selected_prompt_profile_id": decision.selected_prompt_profile_id,
+                "selected_model_profile_id": decision.selected_model_profile_id,
+                "composite_score": decision.composite_score,
+                "estimated_cost_usd": decision.estimated_cost_usd,
+                "sample_count": max(decision.sample_count, 1) if not decision.fallback else 0,
+                "fallback": decision.fallback,
+                "reason": decision.reason,
+            }
+        except Exception:
+            pass
+
+        return {
+            "path": path,
+            "complexity": score.model_dump(),
+            "suggested_task_type": task_type.value,
+            "model_recommendation": recommendation,
         }
