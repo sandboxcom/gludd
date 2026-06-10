@@ -213,7 +213,7 @@ class TestDaemonLifespan:
     async def test_lifespan_creates_event_loop_and_task(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()
-        with patch("general_ludd.event_loop.loop.EventLoop", return_value=mock_loop):
+        with patch("general_ludd.daemon.EventLoop", return_value=mock_loop):
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
@@ -228,7 +228,7 @@ class TestDaemonLifespan:
     async def test_lifespan_stops_event_loop_on_shutdown(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()
-        with patch("general_ludd.event_loop.loop.EventLoop", return_value=mock_loop):
+        with patch("general_ludd.daemon.EventLoop", return_value=mock_loop):
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
@@ -241,7 +241,7 @@ class TestDaemonLifespan:
 
     @pytest.mark.asyncio
     async def test_lifespan_handles_event_loop_failure(self):
-        with patch("general_ludd.event_loop.loop.EventLoop", side_effect=RuntimeError("boom")):
+        with patch("general_ludd.daemon.EventLoop", side_effect=RuntimeError("boom")):
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan

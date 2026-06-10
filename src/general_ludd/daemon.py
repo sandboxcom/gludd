@@ -314,6 +314,17 @@ class ModelSearchRequest(BaseModel):
     limit: int = 20
 
 
+def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
+    if task.cancelled():
+        logger.info("EventLoop task cancelled")
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("EventLoop task terminated with exception: %s", exc)
+    else:
+        logger.error("EventLoop task exited unexpectedly without exception")
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -361,7 +372,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:
                 logger.warning("Secret migration failed: %s", exc)
 
-        templates_dir = app.state._templates_dir
+        templates_dir = getattr(app.state, "_templates_dir", None)
         prompt_registry = PromptRegistry(
             template_dir=templates_dir,
             event_bus=subsys["bus"],
@@ -398,6 +409,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._db_engine = engine
         app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
+        task.add_done_callback(_on_event_loop_done)
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())

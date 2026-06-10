@@ -183,6 +183,7 @@ class EventLoop:
             self.session = session
         self._http_client = http_client
         self._runner = runner
+        self._active_session: AsyncSession | None = self.session
         live_session = self.session
         self._todo_repo = todo_repo or (
             TodoRepository(live_session) if live_session else None
@@ -252,7 +253,7 @@ class EventLoop:
         return None
 
     async def _load_shared_vars(self, project_id: str | None) -> dict[str, str] | None:
-        if self._variable_repo is None or self.session is None:
+        if self._variable_repo is None or self._active_session is None:
             return None
         return await self._variable_repo.load_vars_for_project(project_id)
 
@@ -275,23 +276,63 @@ class EventLoop:
             "leases_reclaimed": 0,
         }
         start = time.monotonic()
-        for phase_name in PHASE_ORDER:
-            phase_fn = getattr(self, f"_phase_{phase_name}")
-            logger.info("Phase started: %s", phase_name)
-            await phase_fn()
-            logger.info("Phase completed: %s", phase_name)
-            self._tick_metrics["phases_completed"] += 1
+
+        needs_own_session = self.session is None and self._session_factory is not None
+        if needs_own_session:
+            async with self._session_factory() as session:
+                self._active_session = session
+                self._todo_repo = TodoRepository(session)
+                self._task_return_repo = TaskReturnRepository(session)
+                self._audit_repo = AuditEventRepository(session)
+                self._variable_repo = VariableNamespaceRepository(session)
+                await self._run_phases()
+                try:
+                    await session.commit()
+                except Exception as exc:
+                    logger.warning("Failed to commit tick session: %s", exc)
+                self._active_session = None
+                self._todo_repo = None
+                self._task_return_repo = None
+                self._audit_repo = None
+                self._variable_repo = None
+        else:
+            if self.session is not None:
+                self._active_session = self.session
+                self._todo_repo = self._todo_repo or TodoRepository(self.session)
+                self._task_return_repo = self._task_return_repo or TaskReturnRepository(self.session)
+                self._audit_repo = self._audit_repo or AuditEventRepository(self.session)
+                self._variable_repo = self._variable_repo or VariableNamespaceRepository(self.session)
+            await self._run_phases()
+            self._active_session = None
+
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
             self._daemon_state["tick_metrics"] = dict(self._tick_metrics)
         return self._tick_metrics
 
+    async def _run_phases(self) -> None:
+        for phase_name in PHASE_ORDER:
+            phase_fn = getattr(self, f"_phase_{phase_name}")
+            try:
+                logger.info("Phase started: %s", phase_name)
+                await phase_fn()
+                logger.info("Phase completed: %s", phase_name)
+                self._tick_metrics["phases_completed"] += 1
+            except Exception as exc:
+                logger.error("Phase %s raised %s: %s", phase_name, type(exc).__name__, exc)
+
     async def run_forever(self, interval: float = 1.0) -> None:
         self._running = True
-        while self._running:
-            await self.tick()
-            await asyncio.sleep(interval)
+        try:
+            while self._running:
+                await self.tick()
+                await asyncio.sleep(interval)
+        except Exception as exc:
+            logger.error("EventLoop run_forever exited with error: %s", exc)
+            raise
+        finally:
+            logger.error("EventLoop run_forever stopped; no further ticks will occur")
 
     def stop(self) -> None:
         self._running = False
@@ -305,7 +346,7 @@ class EventLoop:
         import copy
 
         self._config_snapshot = copy.deepcopy(self.config)
-        if self._variable_repo is not None and self.session is not None:
+        if self._variable_repo is not None and self._active_session is not None:
             shared_vars = await self._variable_repo.load_vars_for_project(None)
             if shared_vars:
                 self._config_snapshot["shared_vars"] = shared_vars
@@ -396,7 +437,7 @@ class EventLoop:
             if not isinstance(data, dict):
                 return
             decision = data.get("decision")
-            if decision and self.session is not None:
+            if decision and self._active_session is not None:
                 dm = TaskDecisionModel(
                     return_id=tr.return_id,
                     project_id=getattr(tr, "project_id", None),
@@ -406,8 +447,8 @@ class EventLoop:
                     evidence_refs=json.dumps(data.get("evidence_refs", [])),
                     audit_notes=json.dumps(data.get("audit_notes", [])),
                 )
-                self.session.add(dm)
-                await self.session.flush()
+                self._active_session.add(dm)
+                await self._active_session.flush()
                 logger.info("Persisted decision for return %s: %s", tr.return_id, decision)
         except Exception as exc:
             logger.warning("Failed to persist review response for %s: %s", getattr(tr, "return_id", "?"), exc)
@@ -462,8 +503,8 @@ class EventLoop:
         self._tick_state["rule_evaluation_results"] = all_results
 
     async def _phase_refill_task_buckets(self) -> None:
-        if self.session is not None:
-            reclaimed = await reclaim_expired_leases(self.session)
+        if self._active_session is not None:
+            reclaimed = await reclaim_expired_leases(self._active_session)
             self._tick_metrics["leases_reclaimed"] = reclaimed
 
     async def _phase_claim_runnable_todos(self) -> None:
@@ -497,7 +538,6 @@ class EventLoop:
         self._tick_metrics["todos_dispatched"] = len(claimed)
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
-        """Return model/prompt overrides from rule evaluation results for this todo."""
         results = self._tick_state.get("rule_evaluation_results", [])
         for result in results:
             if not isinstance(result, dict):
@@ -681,14 +721,14 @@ class EventLoop:
                 "result_summary": data.get("result_summary", ""),
                 "project_id": job.project_id,
             })
-            if self.session is not None:
-                await self.session.flush()
+            if self._active_session is not None:
+                await self._active_session.flush()
             logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
         except Exception as exc:
             logger.warning("Failed to persist task return for %s: %s", todo.todo_id, exc)
 
     async def _phase_reconcile_completed_decisions(self) -> None:
-        if self.session is None or self._todo_repo is None:
+        if self._active_session is None or self._todo_repo is None:
             return
         stmt = (
             select(TaskDecisionModel)
@@ -699,7 +739,7 @@ class EventLoop:
             project = self._project_manager.select_project()
             if project is not None:
                 stmt = stmt.where(TaskDecisionModel.project_id == project.project_id)
-        result = await self.session.execute(stmt)
+        result = await self._active_session.execute(stmt)
         decisions = list(result.scalars().all())
         reconciled = 0
         for d in decisions:
