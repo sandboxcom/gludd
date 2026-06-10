@@ -206,7 +206,7 @@ def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
     sys.exit(1)
 
 
-def main() -> None:
+def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(
         prog="gludd",
         description="General Ludd Agent — the black swan agentic coding system",
@@ -407,6 +407,19 @@ def main() -> None:
     compute_unregister.add_argument("endpoint_id", help="Endpoint ID to remove")
     compute_unregister.add_argument("--daemon-url", default="http://localhost:8000")
     compute_unregister.set_defaults(func=_cmd_compute_unregister)
+
+    compute_launch = compute_sub.add_parser("launch", help="Launch a GPU compute instance")
+    compute_launch.add_argument("--provider", required=True, help="Cloud provider (aws, azure, gcp, runpod, etc.)")
+    compute_launch.add_argument("--gpu", required=True, help="GPU type (t4, a100_80, h100, etc.)")
+    compute_launch.add_argument("--model", required=True, help="Model name to serve")
+    compute_launch.add_argument("--region", default=None, help="Cloud region")
+    compute_launch.add_argument("--deploy-type", default="vm", help="Deploy type (vm or containerapp)")
+    compute_launch.add_argument("--gpu-count", type=int, default=1, help="Number of GPUs")
+    compute_launch.add_argument("--max-cost", type=float, default=10.0, help="Max cost in USD")
+    compute_launch.add_argument("--no-spot", action="store_true", help="Disable spot instances")
+    compute_launch.add_argument("--engine", default="vllm", help="Inference engine (vllm or llamacpp)")
+    compute_launch.add_argument("--daemon-url", default="http://localhost:8000")
+    compute_launch.set_defaults(func=_cmd_compute_launch)
 
     scores_parser = sub.add_parser("scores", help="View benchmark scores")
     scores_parser.add_argument("--task-type", default=None, help="Filter by task type")
@@ -622,26 +635,32 @@ def main() -> None:
     slurm_list.add_argument("--daemon-url", default="http://localhost:8000")
     slurm_list.set_defaults(func=_cmd_slurm_list)
 
+    subcommand_map = {
+        "models": models_parser,
+        "mcp": mcp_parser,
+        "skills": skills_parser,
+        "compute": compute_parser,
+        "worktree": worktree_parser,
+        "filestore": filestore_parser,
+        "project": project_parser,
+        "hooks": hooks_parser,
+        "workers": workers_parser,
+        "agents": agents_parser,
+        "metrics": metrics_parser,
+        "templates": templates_parser,
+        "playbooks": playbooks_parser,
+        "code": codeintel_parser,
+        "quantization": quant_parser,
+        "slurm": slurm_parser,
+    }
+
+    return parser, subcommand_map
+
+
+def main() -> None:
+    parser, subcommand_map = build_parser()
     args = parser.parse_args()
     if args.func is None:
-        subcommand_map = {
-            "models": models_parser,
-            "mcp": mcp_parser,
-            "skills": skills_parser,
-            "compute": compute_parser,
-            "worktree": worktree_parser,
-            "filestore": filestore_parser,
-            "project": project_parser,
-            "hooks": hooks_parser,
-            "workers": workers_parser,
-            "agents": agents_parser,
-            "metrics": metrics_parser,
-            "templates": templates_parser,
-            "playbooks": playbooks_parser,
-            "code": codeintel_parser,
-            "quantization": quant_parser,
-            "slurm": slurm_parser,
-        }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
             sys.exit(0)
@@ -1429,6 +1448,34 @@ def _cmd_compute_unregister(args: argparse.Namespace) -> None:
                 print(f"Endpoint {args.endpoint_id} removed.")
             else:
                 print(json.dumps(resp.json(), indent=2))
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_compute_launch(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {
+        "provider": args.provider,
+        "gpu_type": args.gpu,
+        "model_name": args.model,
+        "deploy_type": args.deploy_type,
+        "gpu_count": args.gpu_count,
+        "max_cost_usd": args.max_cost,
+        "spot": not args.no_spot,
+        "engine": args.engine,
+    }
+    if args.region:
+        payload["region"] = args.region
+    try:
+        resp = httpx.post(
+            f"{args.daemon_url}/admin/compute/deploy",
+            json=payload,
+            timeout=300.0,
+        )
+        if resp.status_code in (200, 201):
+            print(json.dumps(resp.json(), indent=2))
         else:
             print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
             sys.exit(1)

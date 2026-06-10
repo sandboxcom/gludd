@@ -35,14 +35,16 @@ class DeploymentManager:
 
     def _inject_auth_env(self, config: ComputeConfig) -> dict[str, str | None]:
         original: dict[str, str | None] = {}
-        if not config.provider_auth_aliases or not self._secrets_resolver:
+        if not config.provider_auth_aliases:
             return original
         for env_var, alias in config.provider_auth_aliases.items():
             original[env_var] = os.environ.get(env_var)
-            value = self._secrets_resolver.resolve(alias)
-            if value is not None:
-                os.environ[env_var] = value
-            elif alias in os.environ:
+            if self._secrets_resolver:
+                value = self._secrets_resolver.resolve(alias)
+                if value is not None:
+                    os.environ[env_var] = value
+                    continue
+            if alias in os.environ:
                 os.environ[env_var] = os.environ[alias]
             else:
                 logger.warning("Could not resolve auth alias %s for env var %s", alias, env_var)

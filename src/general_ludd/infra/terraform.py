@@ -416,10 +416,20 @@ class TerraformGenerator:
         image = _container_image(config)
         gpu_sku_map: dict[str, str] = {
             "t4": "Standard_NC4as_T4_v3",
-            "a100_80": "Standard_ND96asr_v4",
+            "a10g": "Standard_NC24ads_A100_v4",
             "l4": "Standard_NC24ads_A100_v4",
+            "a10": "Standard_NC24ads_A100_v4",
+            "rtx_4090": "Standard_NC24ads_A100_v4",
+            "rtx_6000_ada": "Standard_NC24ads_A100_v4",
+            "a40": "Standard_ND96asr_v4",
+            "l40s": "Standard_NC24ads_A100_v4",
+            "a100_40": "Standard_ND96asr_v4",
+            "a100_80": "Standard_ND96asr_v4",
+            "h100": "Standard_ND96isr_v5",
+            "h200": "Standard_ND96isr_v5",
         }
         sku = gpu_sku_map.get(config.gpu_type.value, "Standard_NC4as_T4_v3")
+        acr_suffix = config.gpu_type.value.replace("_", "").replace("-", "")[:8]
 
         return textwrap.dedent(f"""\
             terraform {{
@@ -442,7 +452,7 @@ class TerraformGenerator:
             }}
 
             resource "azurerm_container_registry" "gpu_acr" {{
-              name                = "gpuacr{config.gpu_type.value}"
+              name                = "gpuacr{acr_suffix}"
               resource_group_name = azurerm_resource_group.ca_rg.name
               location            = azurerm_resource_group.ca_rg.location
               sku                 = "Standard"
@@ -499,6 +509,11 @@ class TerraformGenerator:
                   name  = "PORT"
                   value = "8000"
                 }}
+
+                env {{
+                  name  = "NVIDIA_VISIBLE_DEVICES"
+                  value = "all"
+                }}
               }}
 
               ingress {{
@@ -525,6 +540,8 @@ class TerraformGenerator:
                 gpu_type     = "{config.gpu_type.value}"
                 compute_type = "containerapp"
                 vm_sku       = "{sku}"
+                gpu_required = "true"
+                nvidia_gpu   = "{config.gpu_type.value}"
               }}
             }}
 

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -8,7 +9,10 @@ from general_ludd.infra.slurm import SlurmAdapter, SlurmNotInstalledError
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
-    adapter = SlurmAdapter()
+    adapter = SlurmAdapter(
+        api_url=os.environ.get("SLURM_API_URL") or None,
+        auth_token=os.environ.get("SLURM_AUTH_TOKEN") or None,
+    )
 
     @app.get("/admin/slurm/status")
     async def admin_slurm_status() -> dict[str, Any]:
@@ -61,4 +65,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/slurm/jobs")
     async def admin_slurm_jobs_list() -> dict[str, Any]:
-        return {"jobs": [], "message": "Use sacct for full job listing"}
+        try:
+            jobs = adapter.list_jobs()
+            return {
+                "jobs": [
+                    {"job_id": j.job_id, "state": j.state.value}
+                    for j in jobs
+                ],
+            }
+        except Exception:
+            return {"jobs": [], "message": "Could not list jobs"}

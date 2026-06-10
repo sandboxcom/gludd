@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import asyncio
+import logging
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+
+from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType, InferenceEngine
+from general_ludd.infra.deployment import DeploymentManager
+
+logger = logging.getLogger(__name__)
 
 
 def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
@@ -12,6 +19,14 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+    _deployments: dict[str, ComputeInstance] = {}
+    _deployment_manager: DeploymentManager | None = None
+
+    def _get_deployment_manager() -> DeploymentManager:
+        nonlocal _deployment_manager
+        if _deployment_manager is None:
+            _deployment_manager = DeploymentManager()
+        return _deployment_manager
 
     @app.get("/admin/compute/utilization")
     async def admin_compute_utilization() -> dict[str, Any]:
@@ -62,3 +77,78 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ext = _get_or_create_extended_subsystems(app)
         ext["utilization"].unregister_endpoint(endpoint_id)
         return {"removed": endpoint_id}
+
+    @app.post("/admin/compute/deploy")
+    async def admin_compute_deploy(req: dict[str, Any]) -> dict[str, Any]:
+        provider_str = req.get("provider", "")
+        gpu_str = req.get("gpu_type", "")
+        model_name = req.get("model_name", "")
+        if not provider_str or not gpu_str or not model_name:
+            raise HTTPException(
+                status_code=422,
+                detail="provider, gpu_type, and model_name are required",
+            )
+        try:
+            provider = ComputeProvider(provider_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown provider: {provider_str}. Valid: {[p.value for p in ComputeProvider]}",
+            ) from None
+        try:
+            gpu_type = GPUType(gpu_str)
+        except ValueError:
+            raise HTTPException(
+                status_code=422,
+                detail=f"Unknown GPU type: {gpu_str}. Valid: {[g.value for g in GPUType]}",
+            ) from None
+
+        try:
+            engine = InferenceEngine(req.get("engine", "vllm"))
+        except ValueError:
+            engine = InferenceEngine.VLLM
+
+        config = ComputeConfig(
+            provider=provider,
+            gpu_type=gpu_type,
+            model_name=model_name,
+            engine=engine,
+            region=req.get("region"),
+            spot=req.get("spot", True),
+            max_cost_usd=req.get("max_cost_usd", 10.0),
+            timeout_minutes=req.get("timeout_minutes", 60.0),
+            disk_size_gb=req.get("disk_size_gb", 100),
+            gpu_count=req.get("gpu_count", 1),
+            deploy_type=req.get("deploy_type", "vm"),
+            container_image=req.get("container_image"),
+            provider_auth_aliases=req.get("provider_auth_aliases"),
+        )
+
+        mgr = _get_deployment_manager()
+        try:
+            instance = await mgr.deploy(config)
+        except Exception as exc:
+            logger.exception("Deploy failed")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+        _deployments[instance.instance_id] = instance
+        return {
+            "instance_id": instance.instance_id,
+            "provider": instance.provider.value,
+            "status": instance.status,
+            "ip_address": instance.ip_address,
+            "port": instance.port,
+            "gpu_type": instance.gpu_type.value,
+            "endpoint_url": instance.endpoint_url,
+        }
+
+    @app.delete("/admin/compute/destroy/{instance_id}")
+    async def admin_compute_destroy(instance_id: str) -> dict[str, Any]:
+        mgr = _get_deployment_manager()
+        try:
+            await mgr.destroy(instance_id)
+        except Exception as exc:
+            logger.exception("Destroy failed")
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+        _deployments.pop(instance_id, None)
+        return {"destroyed": instance_id}
