@@ -105,7 +105,7 @@ class TestTodosPersistence:
 
     @pytest.mark.asyncio
     async def test_get_todo_not_found_returns_404(self):
-        app, factory = await _create_test_app()
+        app, _factory = await _create_test_app()
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/todos/NONEXISTENT")
@@ -125,7 +125,7 @@ class TestTodosPersistence:
             )
             assert resp.status_code == 201
 
-        loop = EventLoop(session=factory, daemon_state={})
+        EventLoop(session=factory, daemon_state={})
         async with factory() as session:
             repo = TodoRepository(session)
             claimed = await repo.claim_runnable()

@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import pytest
-from datetime import UTC, datetime, timedelta
 from unittest.mock import AsyncMock
 
 from general_ludd.event_loop.loop import PHASE_ORDER, EventLoop

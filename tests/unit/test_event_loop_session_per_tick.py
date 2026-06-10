@@ -1,11 +1,11 @@
 from __future__ import annotations
 
-import asyncio
+import contextlib
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.event_loop.loop import EventLoop
 
@@ -15,14 +15,6 @@ def sqlite_session_factory():
     engine = create_async_engine("sqlite+aiosqlite://", echo=False)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     return factory
-
-
-@pytest.fixture
-def sqlite_session(sqlite_session_factory):
-    async def _get():
-        return sqlite_session_factory()
-
-    return _get
 
 
 class TestEventLoopSessionPerTick:
@@ -48,7 +40,7 @@ class TestEventLoopSessionPerTick:
         with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log:
             result = await loop.tick()
 
-        assert result["phases_completed"] == len(loop._PHASE_ORDER) if hasattr(loop, "_PHASE_ORDER") else 11
+        assert result["phases_completed"] == 11
         mock_log.assert_called()
 
     async def test_tick_returns_metrics(self):
@@ -75,10 +67,8 @@ class TestDaemonLoopDeathLogged:
         loop._running = True
         loop.tick = AsyncMock(side_effect=RuntimeError("fatal"))
 
-        with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log:
-            try:
-                await loop.run_forever(interval=0.01)
-            except RuntimeError:
-                pass
+        with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log, \
+                contextlib.suppress(RuntimeError):
+            await loop.run_forever(interval=0.01)
 
         mock_log.assert_called()

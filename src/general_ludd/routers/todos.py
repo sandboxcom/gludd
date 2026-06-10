@@ -14,7 +14,6 @@ from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
 from general_ludd.quality.preflight import run_preflight
 
-
 logger = logging.getLogger(__name__)
 
 
@@ -33,20 +32,6 @@ class LogLevelRequest(BaseModel):
 
 def _get_session_factory(app: FastAPI) -> Any:
     return getattr(app.state, "_session_factory", None)
-
-
-async def _list_todos_from_db(app: FastAPI, queue: str | None = None, status: str | None = None, project_id: str | None = None) -> list[dict[str, Any]]:
-    factory = _get_session_factory(app)
-    if factory is None:
-        return None
-    async with factory() as session:
-        repo = TodoRepository(session)
-        todos = await repo.list_all(
-            queue=queue,
-            status=status,
-            project_id=project_id,
-        )
-        return [_todo_to_dict(t) for t in todos]
 
 
 def _todo_to_dict(todo: Any) -> dict[str, Any]:

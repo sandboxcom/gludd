@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import contextlib
-import json
 from datetime import UTC, datetime
 from typing import Any
 
@@ -12,11 +11,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from general_ludd.db.models import (
     AuditEventModel,
     BenchmarkResultModel,
-    BucketLeaseModel,
-    PromptProfileModel,
     ProjectModel,
+    PromptProfileModel,
     QueueModel,
-    TaskDecisionModel,
     TaskReturnModel,
     TodoEventModel,
     TodoModel,
@@ -26,8 +23,15 @@ from general_ludd.schemas.todo import TodoStatus
 
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
-    TodoStatus.ACTIVE: {TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.REVIEWING_RETURN, TodoStatus.MANUAL_HOLD, TodoStatus.NEEDS_MORE_WORK, TodoStatus.QUEUED},
-    TodoStatus.REVIEWING_RETURN: {TodoStatus.COMPLETE, TodoStatus.NEEDS_MORE_WORK, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.MANUAL_HOLD},
+    TodoStatus.ACTIVE: {
+        TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED,
+        TodoStatus.REVIEWING_RETURN, TodoStatus.MANUAL_HOLD,
+        TodoStatus.NEEDS_MORE_WORK, TodoStatus.QUEUED,
+    },
+    TodoStatus.REVIEWING_RETURN: {
+        TodoStatus.COMPLETE, TodoStatus.NEEDS_MORE_WORK,
+        TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.MANUAL_HOLD,
+    },
     TodoStatus.NEEDS_MORE_WORK: {TodoStatus.QUEUED, TodoStatus.ACTIVE},
     TodoStatus.MANUAL_HOLD: {TodoStatus.QUEUED, TodoStatus.ACTIVE},
     TodoStatus.BLOCKED: {TodoStatus.QUEUED},
@@ -66,9 +70,7 @@ class TodoRepository:
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
         if todo.version != expected_version:
-            raise ConcurrencyError(
-                f"Version mismatch: expected {expected_version}, actual {todo.version}"
-            )
+            raise ConcurrencyError(f"Version mismatch: expected {expected_version}, actual {todo.version}")
         for key, value in updates.items():
             setattr(todo, key, value)
         todo.version = expected_version + 1
@@ -101,13 +103,8 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def claim_runnable(
-        self, limit: int = 10, project_id: str | None = None
-    ) -> list[TodoModel]:
-        stmt = (
-            select(TodoModel)
-            .where(TodoModel.status == TodoStatus.QUEUED.value)
-        )
+    async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
+        stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
         if project_id is not None:
             stmt = stmt.where(TodoModel.project_id == project_id)
         stmt = stmt.limit(limit)
@@ -138,15 +135,11 @@ class TodoRepository:
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
         if todo.version != expected_version:
-            raise ConcurrencyError(
-                f"Version mismatch: expected {expected_version}, actual {todo.version}"
-            )
+            raise ConcurrencyError(f"Version mismatch: expected {expected_version}, actual {todo.version}")
         current = TodoStatus(todo.status)
         allowed = VALID_TRANSITIONS.get(current, set())
         if new_status not in allowed:
-            raise InvalidTransitionError(
-                f"Invalid transition: {current.value} -> {new_status.value}"
-            )
+            raise InvalidTransitionError(f"Invalid transition: {current.value} -> {new_status.value}")
         todo.status = new_status.value
         todo.version = expected_version + 1
         todo.updated_at = datetime.now(UTC)
@@ -165,7 +158,7 @@ class TaskReturnRepository:
         return row
 
     async def claim_unreviewed(self, project_id: str | None = None) -> list[TaskReturnModel]:
-        stmt = select(TaskReturnModel).where(TaskReturnModel.reviewed == False)
+        stmt = select(TaskReturnModel).where(TaskReturnModel.reviewed.is_(False))
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
         stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(10)
@@ -204,8 +197,7 @@ class AuditEventRepository:
     async def list_by_entity(self, entity_type: str, entity_id: str, limit: int = 50) -> list[AuditEventModel]:
         stmt = (
             select(AuditEventModel)
-            .where(AuditEventModel.entity_type == entity_type)
-            .where(AuditEventModel.entity_id == entity_id)
+            .where(AuditEventModel.entity_type == entity_type, AuditEventModel.entity_id == entity_id)
             .order_by(AuditEventModel.created_at.desc())
             .limit(limit)
         )
@@ -232,7 +224,7 @@ class VariableNamespaceRepository:
         if project_id is not None:
             stmt = stmt.where(
                 (VariableNamespaceModel.project_id == project_id)
-                | (VariableNamespaceModel.project_id == None)
+                | (VariableNamespaceModel.project_id.is_(None))
             )
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
@@ -255,7 +247,9 @@ class VariableNamespaceRepository:
         await self._session.flush()
         return row
 
-    async def set_var(self, namespace: str, key: str, value: str, project_id: str | None = None) -> VariableNamespaceModel:
+    async def set_var(
+        self, namespace: str, key: str, value: str, project_id: str | None = None
+    ) -> VariableNamespaceModel:
         row = VariableNamespaceModel(
             namespace=namespace,
             var_key=key,
@@ -302,16 +296,16 @@ class BenchmarkRepository:
         rows = result.all()
         return [
             {
-                "prompt_profile_id": row.prompt_profile_id,
-                "model_profile_id": row.model_profile_id,
-                "task_type": row.task_type,
-                "avg_completion": row.avg_completion,
-                "avg_quality": row.avg_quality,
-                "avg_instruction": row.avg_instruction,
-                "avg_efficiency": row.avg_efficiency,
-                "sample_count": row.sample_count,
+                "prompt_profile_id": r.prompt_profile_id,
+                "model_profile_id": r.model_profile_id,
+                "task_type": r.task_type,
+                "avg_completion": r.avg_completion,
+                "avg_quality": r.avg_quality,
+                "avg_instruction": r.avg_instruction,
+                "avg_efficiency": r.avg_efficiency,
+                "sample_count": r.sample_count,
             }
-            for row in rows
+            for r in rows
         ]
 
     async def get_best_for_task(self, task_type: str, min_samples: int = 3) -> list[dict[str, Any]]:
