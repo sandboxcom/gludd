@@ -62,6 +62,7 @@ from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.gateway import ModelProfile
 from general_ludd.models.langgraph_gateway import LangGraphGateway  # noqa: F401
 from general_ludd.models.model_registry import ModelRegistry
+from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder  # noqa: F401
 from general_ludd.projects.manager import seed_from_config
 from general_ludd.projects.workspace import ProjectWorkspace
@@ -389,6 +390,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         app.state._preflight_task = asyncio.create_task(_init_preflight())
+
+        otel_bridge: OTelBridge | None = None
+        if uc is not None and hasattr(uc, "observability"):
+            obs_cfg = uc.observability
+            if obs_cfg.otel_endpoint:
+                otel_bridge = OTelBridge(
+                    endpoint=obs_cfg.otel_endpoint,
+                    service_name=obs_cfg.service_name,
+                )
+                app.state._otel_bridge = otel_bridge
+                if otel_bridge.is_available():
+                    logger.info("OTel bridge active: %s", obs_cfg.otel_endpoint)
     except Exception as exc:
         logger.warning("Could not start event loop: %s", exc)
 
@@ -402,6 +415,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await task
     if engine is not None:
         await engine.dispose()
+    otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
+    if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
+        otel_bridge_ref.shutdown()
 
 
 def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:

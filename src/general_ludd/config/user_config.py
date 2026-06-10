@@ -7,6 +7,11 @@ from pydantic import BaseModel
 from general_ludd.config.model_routing import ModelRoutingConfig
 
 
+class ObservabilityConfig(BaseModel):
+    otel_endpoint: str | None = None
+    service_name: str = "general-ludd"
+
+
 class UserConfig(BaseModel):
     model_routing: ModelRoutingConfig | None = None
     model_profiles: dict[str, Any] = {}
@@ -14,6 +19,7 @@ class UserConfig(BaseModel):
     process_isolation: dict[str, Any] = {}
     budget: dict[str, Any] = {}
     database: dict[str, Any] = {}
+    observability: ObservabilityConfig = ObservabilityConfig()
 
 
 class AgentConfig(BaseModel):

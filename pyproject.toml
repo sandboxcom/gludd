@@ -63,6 +63,11 @@ local-inference = [
     "llama-cpp-python>=0.3.0",
     "vllm>=0.6.0",
 ]
+observability = [
+    "opentelemetry-api>=1.20.0",
+    "opentelemetry-sdk>=1.20.0",
+    "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
+]
 
 [project.scripts]
 gludd = "general_ludd.cli:main"
