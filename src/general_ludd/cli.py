@@ -222,6 +222,8 @@ def build_parser() -> argparse.ArgumentParser:
     daemon_parser.add_argument("--workers", type=int, default=1)
     daemon_parser.add_argument("--project", default=None, help="Default project for daemon operations")
     daemon_parser.add_argument("--config-dir", default=None, help="Path to config directory")
+    daemon_parser.add_argument("--templates-dir", default=None, help="Path to prompt templates directory")
+    daemon_parser.add_argument("--playbooks-dir", default=None, help="Path to Ansible playbooks directory")
     daemon_parser.set_defaults(func=_cmd_daemon)
 
     add_parser = sub.add_parser("add", help="Add a todo to the queue")
@@ -678,8 +680,16 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(name)s %(message)s")
 
     config_dir = getattr(args, "config_dir", None)
+    templates_dir = getattr(args, "templates_dir", None)
+    playbooks_dir = getattr(args, "playbooks_dir", None)
 
-    create_daemon_app(tick_interval=args.tick_interval, log_level=args.log_level, config_dir=config_dir)
+    create_daemon_app(
+        tick_interval=args.tick_interval,
+        log_level=args.log_level,
+        config_dir=config_dir,
+        templates_dir=templates_dir,
+        playbooks_dir=playbooks_dir,
+    )
 
     bind_host = args.host
     psk = ""
@@ -690,9 +700,16 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         print(f"  Clients must send: Authorization: Bearer {psk}\n")
 
     cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=args.workers)
+    cmd_env = _build_daemon_env(
+        config_dir=config_dir,
+        templates_dir=templates_dir,
+        playbooks_dir=playbooks_dir,
+        tick_interval=args.tick_interval,
+        log_level=args.log_level,
+        psk=psk,
+    )
     env = os.environ.copy()
-    if psk:
-        env["GLUDD_PSK"] = psk
+    env.update(cmd_env)
     proc = subprocess.Popen(
         cmd,
         stdin=subprocess.DEVNULL,
@@ -2533,6 +2550,30 @@ def _stop_daemon_via_pid_file(pid_file: str) -> bool:
     with contextlib.suppress(OSError):
         os.unlink(pid_file)
     return True
+
+
+def _build_daemon_env(
+    config_dir: str | None = None,
+    templates_dir: str | None = None,
+    playbooks_dir: str | None = None,
+    tick_interval: float = 1.0,
+    log_level: str = "info",
+    psk: str = "",
+) -> dict[str, str]:
+    env: dict[str, str] = {}
+    if config_dir:
+        env["GLUDD_CONFIG_DIR"] = config_dir
+    if templates_dir:
+        env["GLUDD_TEMPLATES_DIR"] = templates_dir
+    if playbooks_dir:
+        env["GLUDD_PLAYBOOKS_DIR"] = playbooks_dir
+    if tick_interval != 1.0:
+        env["GLUDD_TICK_INTERVAL"] = str(tick_interval)
+    if log_level != "info":
+        env["GLUDD_LOG_LEVEL"] = log_level
+    if psk:
+        env["GLUDD_PSK"] = psk
+    return env
 
 
 def _build_daemon_start_cmd(
