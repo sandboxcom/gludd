@@ -116,7 +116,7 @@ class TestMainMenuArrowNavigation:
         assert state["selected_main_idx"] > 0
 
     def test_arrow_down_wraps_to_top(self):
-        state = _make_state(view="main", selected_main_idx=99)
+        state = _make_state(view="main", selected_main_idx=len(TUIKeyHandler.MAIN_MENU_ITEMS) - 1)
         handler = TUIKeyHandler(state)
         handler.handle_key("\x1b[B")
         assert state["selected_main_idx"] == 0

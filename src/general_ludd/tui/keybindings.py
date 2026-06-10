@@ -30,6 +30,12 @@ _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
     "g": ("agents", "Agents — [g] exit  [q] quit"),
     "w": ("worktrees", "Worktrees — [w] exit  [q] quit"),
     "L": ("slurm", "Slurm — [L] exit  [q] quit"),
+    "H": ("health", "Health — [H] exit  [q] quit"),
+    "T": ("selftest", "Selftest — [r]un  [T] exit  [q] quit"),
+    "0": ("version", "Version — [0] exit  [q] quit"),
+    "1": ("log-level", "Log Level — [c]ycle  [1] exit  [q] quit"),
+    "D": ("discovered", "Discovered Models — [r]efresh  [D] exit  [q] quit"),
+    "C": ("code", "Code Intel — [s]earch  [g]raph  [C] exit  [q] quit"),
 }
 
 
@@ -77,6 +83,12 @@ class TUIKeyHandler:
         ("f", "Filestore", "filestore"),
         ("z", "Deploys", "deployments"),
         ("R", "Reload", "reload"),
+        ("H", "Health", "health"),
+        ("T", "Selftest", "selftest"),
+        ("0", "Version", "version"),
+        ("1", "LogLevel", "log-level"),
+        ("D", "Discovered", "discovered"),
+        ("C", "Code", "code"),
     ]
 
     def get_main_menu_items(self) -> list[tuple[str, str, str]]:
@@ -152,6 +164,10 @@ class TUIKeyHandler:
             return self._handle_ansible_install_input(ch)
         if input_mode == "skills_install":
             return self._handle_skills_install_input(ch)
+        if input_mode == "code_search":
+            return self._handle_text_search_input(ch, "code_search", "/admin/code/search", "code_search_results")
+        if input_mode == "code_graph":
+            return self._handle_code_graph_input(ch)
 
         if view == "hooks" and ch == "r":
             state["input_mode"] = "hooks_register"
@@ -302,6 +318,58 @@ class TUIKeyHandler:
 
         if view == "quantization" and ch == "d":
             self._detect_quantization()
+            return True
+
+        if view == "models" and ch == "d":
+            self._models_discover()
+            return True
+
+        if view == "worktrees" and ch == "s":
+            self._worktree_scan()
+            return True
+
+        if view == "integrity" and ch == "p":
+            self._integrity_report()
+            return True
+
+        if view == "ansible" and ch == "b":
+            self._ansible_builtins()
+            return True
+
+        if view == "filestore" and ch == "b":
+            self._filestore_binaries()
+            return True
+
+        if view == "filestore" and ch == "B":
+            self._filestore_bootstrap()
+            return True
+
+        if view == "health" and ch == "r":
+            self._health_refresh()
+            return True
+
+        if view == "selftest" and ch == "r":
+            self._selftest_run()
+            return True
+
+        if view == "log-level" and ch == "c":
+            self._loglevel_cycle()
+            return True
+
+        if view == "discovered" and ch == "r":
+            self._discovered_refresh()
+            return True
+
+        if view == "code" and ch == "s":
+            state["input_mode"] = "code_search"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Search code — enter query"
+            return True
+
+        if view == "code" and ch == "g":
+            state["input_mode"] = "code_graph"
+            state["input_buffer"] = ""
+            state["status_msg"] = "Graph source — enter file path"
             return True
 
         if ch == "V":
@@ -1177,3 +1245,214 @@ class TUIKeyHandler:
         current = state.get("verbose_logging", False)
         state["verbose_logging"] = not current
         state["status_msg"] = f"Verbose logging: {'ON' if not current else 'OFF'}"
+
+    def _health_refresh(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.get(f"{state['daemon_url']}/healthz", timeout=5.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                state["health_data"] = data
+                status = data.get("status", "unknown")
+                state["status_msg"] = f"Health: {status}"
+            else:
+                state["status_msg"] = f"Health check failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Health error: {exc}"
+
+    def _selftest_run(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(f"{state['daemon_url']}/admin/selftest", timeout=120.0)
+            if resp.status_code == 200:
+                data = resp.json()
+                state["selftest_data"] = data
+                passed = data.get("scenarios_passed", 0)
+                total = data.get("scenarios_run", 0)
+                state["status_msg"] = f"Selftest: {passed}/{total} passed"
+            else:
+                state["status_msg"] = f"Selftest failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Selftest error: {exc}"
+
+    def _loglevel_cycle(self) -> None:
+        state = self._state
+        levels = ["debug", "info", "warning", "error"]
+        current = state.get("current_log_level", "info")
+        try:
+            idx = levels.index(current)
+            next_level = levels[(idx + 1) % len(levels)]
+        except ValueError:
+            next_level = levels[0]
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/log-level",
+                json={"level": next_level},
+                timeout=5.0,
+            )
+            if resp.status_code == 200:
+                state["current_log_level"] = next_level
+                state["status_msg"] = f"Log level: {next_level}"
+            else:
+                state["status_msg"] = f"Log level change failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Log level error: {exc}"
+        state["last_loglevel"] = True
+
+    def _models_discover(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/models/discover",
+                params={"provider": "openrouter"},
+                timeout=60.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                count = data.get("discovered_count", 0)
+                state["status_msg"] = f"Discovered: {count} models"
+                state["last_discover"] = True
+            else:
+                state["status_msg"] = f"Discovery failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Discovery error: {exc}"
+            state["last_discover"] = True
+
+    def _worktree_scan(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/worktree/scan",
+                timeout=30.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                tracked = data.get("tracked_count", 0)
+                abandoned = len(data.get("todos", []))
+                state["status_msg"] = f"Scan: {tracked} tracked, {abandoned} abandoned"
+                state["last_scan"] = True
+            else:
+                state["status_msg"] = f"Scan failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Scan error: {exc}"
+            state["last_scan"] = True
+
+    def _integrity_report(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.get(
+                f"{state['daemon_url']}/admin/integrity/report",
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                state["integrity_report"] = data
+                state["status_msg"] = "Report loaded"
+                state["last_report"] = True
+            else:
+                state["status_msg"] = f"Report failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Report error: {exc}"
+            state["last_report"] = True
+
+    def _ansible_builtins(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.get(
+                f"{state['daemon_url']}/admin/ansible/builtins",
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                modules = data.get("modules", [])
+                state["ansible_builtins"] = modules
+                state["status_msg"] = f"Builtins: {len(modules)} modules"
+            else:
+                state["status_msg"] = f"Builtins failed: {resp.status_code}"
+        except Exception:
+            try:
+                from general_ludd.ansible.galaxy import get_builtin_modules
+
+                modules = get_builtin_modules()
+                state["ansible_builtins"] = modules
+                state["status_msg"] = f"Builtins: {len(modules)} modules"
+            except Exception as exc2:
+                state["status_msg"] = f"Builtins error: {exc2}"
+
+    def _filestore_binaries(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.get(
+                f"{state['daemon_url']}/admin/filestore/binaries",
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                binaries = data.get("binaries", [])
+                state["filestore_binaries"] = binaries
+                state["status_msg"] = f"Binaries: {data.get('count', len(binaries))}"
+            else:
+                state["status_msg"] = f"Binaries failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Binaries error: {exc}"
+
+    def _filestore_bootstrap(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.post(
+                f"{state['daemon_url']}/admin/filestore/bootstrap",
+                params={"binary": "openbao"},
+                timeout=300.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                state["status_msg"] = f"Bootstrapped: {data.get('binary', 'ok')}"
+                state["last_bootstrap"] = True
+            else:
+                state["status_msg"] = f"Bootstrap failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Bootstrap error: {exc}"
+            state["last_bootstrap"] = True
+
+    def _discovered_refresh(self) -> None:
+        state = self._state
+        try:
+            resp = httpx.get(
+                f"{state['daemon_url']}/admin/models/discovered",
+                timeout=10.0,
+            )
+            if resp.status_code == 200:
+                data = resp.json()
+                profiles = data.get("profiles", [])
+                state["discovered_data"] = profiles
+                state["status_msg"] = f"Refreshed: {len(profiles)} profiles"
+            else:
+                state["status_msg"] = f"Refresh failed: {resp.status_code}"
+        except Exception as exc:
+            state["status_msg"] = f"Refresh error: {exc}"
+
+    def _handle_code_graph_input(self, ch: str) -> bool:
+        state = self._state
+        if _handle_text_input(state, ch):
+            return True
+        if ch == "\r":
+            source = state["input_buffer"]
+            try:
+                resp = httpx.get(
+                    f"{state['daemon_url']}/admin/code/graph",
+                    params={"source": source, "language": "python"},
+                    timeout=30.0,
+                )
+                if resp.status_code == 200:
+                    data = resp.json()
+                    nodes = data.get("nodes", [])
+                    state["code_graph_data"] = data
+                    state["status_msg"] = f"Graph: {len(nodes)} nodes for {source}"
+                else:
+                    state["status_msg"] = f"Graph failed: {resp.status_code}"
+            except Exception as exc:
+                state["status_msg"] = f"Graph error: {exc}"
+            _submit_text_input(state)
+            return True
+        state["input_buffer"] += ch
+        return True

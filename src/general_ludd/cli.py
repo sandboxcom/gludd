@@ -1662,6 +1662,12 @@ def _build_controls_table(
         ("f", "Filestore", ""),
         ("z", "Deploys", ""),
         ("R", "Reload", ""),
+        ("H", "Health", ""),
+        ("T", "Selftest", ""),
+        ("0", "Version", ""),
+        ("1", "LogLevel", ""),
+        ("D", "Discovered", ""),
+        ("C", "Code", ""),
         ("q", "Quit", ""),
     ]
     for i, (key, action, status) in enumerate(rows):
@@ -2311,6 +2317,117 @@ def _build_slurm_table(jobs: list[dict[str, Any]], *, term_width: int = 80) -> T
     return t
 
 
+def _build_health_table(data: dict[str, Any], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Health", show_header=False, expand=True, title_justify="left")
+    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
+    t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=10, max_width=50)
+    if not data:
+        t.add_row("Status", "no data — press [r] to refresh")
+    else:
+        for key, val in data.items():
+            val_str = str(val)
+            if len(val_str) > 48:
+                val_str = val_str[:45] + "..."
+            t.add_row(str(key), val_str)
+    return t
+
+
+def _build_selftest_table(data: dict[str, Any], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Selftest", show_header=True, expand=True, title_justify="left")
+    t.add_column("Scenario", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=40)
+    t.add_column("Result", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    if not data:
+        t.add_row("Press [r] to run", "")
+        return t
+    results = data.get("results", [])
+    if not results:
+        run = data.get("scenarios_run", 0)
+        passed = data.get("scenarios_passed", 0)
+        t.add_row(f"Summary: {passed}/{run} passed", "OK" if passed == run else "FAIL")
+    else:
+        for r in results:
+            status = "PASS" if r.get("passed") else "FAIL"
+            color = "green" if r.get("passed") else "red"
+            t.add_row(
+                str(r.get("scenario", "unknown")),
+                f"[{color}]{status}[/]",
+            )
+    return t
+
+
+def _build_version_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Version", show_header=False, expand=True, title_justify="left")
+    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
+    t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=10, max_width=50)
+    rows = [
+        ("Version", str(info.get("version", "?"))),
+        ("Python", str(info.get("python_version", "?"))),
+        ("Platform", str(info.get("platform", "?"))),
+    ]
+    for key, val in rows:
+        t.add_row(key, val)
+    return t
+
+
+def _build_loglevel_table(current_level: str, *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Log Level", show_header=True, expand=True, title_justify="left")
+    t.add_column("Level", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
+    t.add_column("Active", style="green", no_wrap=True, ratio=1, min_width=4, max_width=10)
+    for level in ("debug", "info", "warning", "error"):
+        marker = "[bold green]◄[/]" if level == current_level else ""
+        t.add_row(level, marker)
+    return t
+
+
+def _build_discovered_table(profiles: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Discovered Models", show_header=True, expand=True, title_justify="left")
+    t.add_column("Profile ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
+    t.add_column("Display Name", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("Enabled", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=10)
+    if not profiles:
+        t.add_row("No profiles", "", "")
+    else:
+        for p in profiles:
+            enabled = p.get("enabled", True)
+            color = "green" if enabled else "red"
+            t.add_row(
+                str(p.get("model_profile_id", "?")),
+                str(p.get("display_name", "?")),
+                f"[{color}]{'yes' if enabled else 'no'}[/]",
+            )
+    return t
+
+
+def _build_code_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Code Intel", show_header=True, expand=True, title_justify="left")
+    t.add_column("File", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
+    t.add_column("Line", style="green", no_wrap=True, ratio=1, min_width=3, max_width=8)
+    t.add_column("Text", style="yellow", no_wrap=True, ratio=3, min_width=6, max_width=40)
+    if not results:
+        t.add_row("Press [s] to search", "", "")
+    else:
+        for r in results:
+            text = str(r.get("text", ""))[:38]
+            t.add_row(
+                str(r.get("file", "?")),
+                str(r.get("line", "")),
+                text,
+            )
+    return t
+
+
 _DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
 _DAEMON_PID_FILE = os.path.join(_DAEMON_PID_DIR, "daemon.pid")
 
@@ -2426,6 +2543,12 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         _build_filestore_table=_build_filestore_table,
         _build_deployments_table=_build_deployments_table,
         _build_slurm_table=_build_slurm_table,
+        _build_health_table=_build_health_table,
+        _build_selftest_table=_build_selftest_table,
+        _build_version_table=_build_version_table,
+        _build_loglevel_table=_build_loglevel_table,
+        _build_discovered_table=_build_discovered_table,
+        _build_code_table=_build_code_table,
         _wrap_table=_wrap_table,
         _compute_panel_widths=_compute_panel_widths,
         _compute_footer_rows=_compute_footer_rows,

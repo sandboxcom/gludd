@@ -509,6 +509,71 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 body["right"].split(
                     Layout(h._wrap_table(h._build_slurm_table(_slurm_data, term_width=right_width)), name="slurm"),
                 )
+            elif current_view == "health":
+                _health_data: dict[str, Any] = {}
+                try:
+                    import httpx
+                    resp = httpx.get(f"{args.daemon_url}/healthz", timeout=3.0)
+                    if resp.status_code == 200:
+                        _health_data = resp.json()
+                except Exception:
+                    pass
+                tui_state["health_data"] = _health_data
+                body["right"].split(
+                    Layout(h._wrap_table(h._build_health_table(_health_data, term_width=right_width)), name="health"),
+                )
+            elif current_view == "selftest":
+                _selftest_data: dict[str, Any] = tui_state.get("selftest_data", {})
+                body["right"].split(
+                    Layout(
+                        h._wrap_table(
+                            h._build_selftest_table(_selftest_data, term_width=right_width)
+                        ),
+                        name="selftest",
+                    ),
+                )
+            elif current_view == "version":
+                _ver_data = {
+                    "version": info.get("version", "?"),
+                    "python_version": info.get("python_version", "?"),
+                    "platform": info.get("platform", "?"),
+                }
+                body["right"].split(
+                    Layout(h._wrap_table(h._build_version_table(_ver_data, term_width=right_width)), name="version"),
+                )
+            elif current_view == "log-level":
+                _current_level = tui_state.get("current_log_level", "info")
+                body["right"].split(
+                    Layout(
+                        h._wrap_table(
+                            h._build_loglevel_table(_current_level, term_width=right_width)
+                        ),
+                        name="log-level",
+                    ),
+                )
+            elif current_view == "discovered":
+                _disc_data: list[dict[str, Any]] = []
+                try:
+                    import httpx
+                    resp = httpx.get(f"{args.daemon_url}/admin/models/discovered", timeout=3.0)
+                    if resp.status_code == 200:
+                        _disc_data = resp.json().get("profiles", [])
+                except Exception:
+                    pass
+                tui_state["discovered_data"] = _disc_data
+                body["right"].split(
+                    Layout(
+                        h._wrap_table(
+                            h._build_discovered_table(_disc_data, term_width=right_width)
+                        ),
+                        name="discovered",
+                    ),
+                )
+            elif current_view == "code":
+                _code_data: list[dict[str, Any]] = tui_state.get("code_search_results", [])
+                body["right"].split(
+                    Layout(h._wrap_table(h._build_code_table(_code_data, term_width=right_width)), name="code"),
+                )
             else:
                 body["right"].split(
                     Layout(h._wrap_table(build_info_table(info, term_width=right_width)), name="info"),
@@ -579,6 +644,23 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             header_text = "Playbooks \u2014 [r]efresh  [P] exit  [q] quit"
         elif current_view == "slurm":
             header_text = "Slurm \u2014 [L] exit  [q] quit"
+        elif current_view == "health":
+            header_text = "Health \u2014 [r]efresh  [H] exit  [q] quit"
+        elif current_view == "selftest":
+            header_text = "Selftest \u2014 [r]un  [T] exit  [q] quit"
+        elif current_view == "version":
+            header_text = "Version \u2014 [0] exit  [q] quit"
+        elif current_view == "log-level":
+            header_text = "Log Level \u2014 [c]ycle  [1] exit  [q] quit"
+        elif current_view == "discovered":
+            header_text = "Discovered Models \u2014 [r]efresh  [D] exit  [q] quit"
+        elif current_view == "code":
+            if tui_state.get("input_mode") == "code_search":
+                header_text = f"Search code: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] search [Esc] cancel"
+            elif tui_state.get("input_mode") == "code_graph":
+                header_text = f"Graph source: {tui_state.get('input_buffer', '')}_ \u2014 [Enter] graph [Esc] cancel"
+            else:
+                header_text = "Code Intel \u2014 [s]earch  [g]raph  [C] exit  [q] quit"
         elif current_view == "config":
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
@@ -595,7 +677,7 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             "models_add", "models_search", "ansible_search",
             "projects_add", "projects_set_weight",
             "mcp_search", "skills_search", "compute_register",
-            "todos_add",
+            "todos_add", "code_search", "code_graph",
         ):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg
@@ -834,9 +916,13 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
-        elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "y", "P", "R", "L") or current_view in (
+        elif ch in (
+            "u", "j", "e", "b", "l", "n", "f", "z", "y", "P",
+            "R", "L", "H", "T", "0", "1", "D", "C",
+        ) or current_view in (
             "todos", "workers", "models", "mcp", "skills", "compute",
             "projects", "hooks", "integrity", "agents", "slurm",
+            "health", "selftest", "version", "log-level", "discovered", "code",
         ) or ch in ("\x1b[B", "\x1b[A", "\r"):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg
