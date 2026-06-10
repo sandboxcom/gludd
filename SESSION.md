@@ -3,15 +3,46 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-10 (session 20 — ALL GAPS CLOSED)
+- 2026-06-10 (session 21 — GLM Implementation Guide Phase 0-1 begun)
 
 ## Current Status
-- **Phase**: ALL user-requested features COMPLETE (12 gaps closed this session)
-- **Test Suite**: ~5300+ passed, 0 new failures, pre-existing reduced from 17 to 3 skipped
+- **Phase**: GLM_IMPLEMENTATION_GUIDE.md work — G0, G1, G2 complete; G3-G7 pending
+- **Test Suite**: 5497 collected, ~5440 passed, ~35+ failures (pre-existing + PHASE_ORDER fixes)
 - **Branch**: master
-- **Latest commit**: fd8e3c9 — OpenTelemetry bridge for Arize Phoenix
-- **Mypy**: 1 error (pre-existing, db/session.py)
+- **Latest commit**: merge of feature/g0-daemon-configured — G0/G1/G2 fixes
+- **Mypy**: 25 errors (5 pre-existing files)
 - **Lint**: 0 errors
+
+## Session 21: GLM Implementation Guide — Critical Spine (G0-G2)
+
+### G0 — Daemon starts configured
+- `_build_daemon_env()` propagates config via env vars to gunicorn subprocess
+- `create_daemon_app()` falls back to `GLUDD_CONFIG_DIR` etc. env vars
+- `load_startup_config()` searches `~/.config/general-ludd` then `/etc/general-ludd`
+- `--templates-dir` and `--playbooks-dir` flags added to daemon subparser
+- MCP config loads all `*.yml` files from `mcp_servers/` (not just `example.yml`)
+- 19 new tests in `tests/unit/test_daemon_launch_config.py`
+
+### G1 — EventLoop session per tick + commit
+- `tick()` opens `session_factory()` for the tick duration, commits on success
+- `_run_phases()` wraps each phase in try/except — phases can't kill the tick
+- `run_forever()` logs ERROR on death; `_on_event_loop_done` callback on the task
+- All `self.session` references updated to `self._active_session`
+- `_templates_dir` in lifespan uses `getattr` for safety
+- 6 new tests in `tests/unit/test_event_loop_session_per_tick.py`
+- Fixed 3 pre-existing daemon test failures (patch path)
+
+### G2 — Todo API persists to DB
+- `POST /api/todos` creates via `TodoRepository` → commits → returns persisted todo
+- `GET /api/todos`, `GET /api/todos/{id}`, `GET /api/status` read from DB
+- Falls back to in-memory `_daemon_state` when no session_factory
+- Added `TodoRepository.list_all()` with queue/status/project_id filters
+- Added `InvalidTransitionError` to repository exports
+- 7 E2E tests in `tests/e2e/test_todos_persistence.py`
+
+### Phase order fixes (G1 side effect)
+- PHASE_ORDER now has 11 phases (includes `self_improve`)
+- Updated 3 test files expecting the old 10-phase order
 
 ## Session 20: Medium Skills Ingestion (commit 2940652)
 
@@ -763,10 +794,23 @@ EventLoop auto-creates from session (when available):
 - Root cause: housekeeping treated as terminal action
 - Fix: added "update session" to STOP_SIGNAL_WORDS, BUGS.md incident #5 logged
 
-## Next Steps
-- Fix remaining low-priority audit items: type `skill_registry` properly in loop.py, add integration tests for registry+loader+catalog
-- Push cli.py coverage higher (92% — TUI body render paths, 198 uncovered lines)
-- Wire remaining TUI CLI parity (28+ commands not yet in TUI)
-- Model auto-population from provider APIs
-- events/bus.py async coroutine paths (88%)
-- Fix pre-existing lint: line-length in catalog.py mattpocock descriptions, test_tui_panel_layout.py
+## Next Steps (from GLM_IMPLEMENTATION_GUIDE.md)
+
+### Critical spine — remaining (G3-G7):
+- **G3**: Playbook resolution — construct runner with real playbooks dir, pass extravars, structured failure results
+- **G4**: ExecutionEngine — real in-process model-driven code generation (the biggest missing piece)
+- **G5**: Return review calls real model — wire ReturnReviewer into dispatch, fix silent-failure mode
+- **G6**: Git delivery — commit/branch on completed work via GitAutomation
+- **G7**: End-to-end proof — single test driving a todo from API → reconciled status + git commit
+
+### Phase 2 (S1-S20):
+- DB sessions for routers (S1), benchmark feedback loop (S2), self-improve persistence (S3)
+- Worker endpoint honesty (S4), stuck-task reaper (S5), budget guard (S6), metrics (S7)
+- Projects: persist, clone, workspace (S8), skills firing (S9), prompts production-ready (S10)
+- MCP end-to-end (S11), secrets honesty (S12), CLI/API contract fixes (S13)
+- DB/migrations (S14), compute lifecycle (S15), honest degradation (S16)
+- Worktree/hooks/reload (S17), quality gate honesty (S18), startup failure surfacing (S19)
+- Small honesty fixes (S20)
+
+### Phase 3 (F1-F7):
+- PR delivery, MCP tools in model calls, GitHub issues→todos, run history, cost ceilings, failover, TUI dashboard
