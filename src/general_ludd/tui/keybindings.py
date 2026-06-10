@@ -29,6 +29,7 @@ _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
     "x": ("metrics", "Metrics — [x] exit  [q] quit"),
     "g": ("agents", "Agents — [g] exit  [q] quit"),
     "w": ("worktrees", "Worktrees — [w] exit  [q] quit"),
+    "L": ("slurm", "Slurm — [L] exit  [q] quit"),
 }
 
 

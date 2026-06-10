@@ -497,6 +497,18 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
                 body["right"].split(
                     Layout(h._wrap_table(h._build_playbooks_table(_pb_data, term_width=right_width)), name="playbooks"),
                 )
+            elif current_view == "slurm":
+                _slurm_data: list[dict[str, Any]] = []
+                try:
+                    import httpx
+                    resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs", timeout=3.0)
+                    if resp.status_code == 200:
+                        _slurm_data = resp.json().get("jobs", [])
+                except Exception:
+                    pass
+                body["right"].split(
+                    Layout(h._wrap_table(h._build_slurm_table(_slurm_data, term_width=right_width)), name="slurm"),
+                )
             else:
                 body["right"].split(
                     Layout(h._wrap_table(build_info_table(info, term_width=right_width)), name="info"),
@@ -565,6 +577,8 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             header_text = "Leaderboard \u2014 [y] exit  [q] quit"
         elif current_view == "playbooks":
             header_text = "Playbooks \u2014 [r]efresh  [P] exit  [q] quit"
+        elif current_view == "slurm":
+            header_text = "Slurm \u2014 [L] exit  [q] quit"
         elif current_view == "config":
             header_text = "TUI | s:k:p:i:r:q | v:main c:edit"
         else:
@@ -820,9 +834,9 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
         elif ch == "r":
             daemon_running = detect_daemon()
             status_msg = "Refreshed"
-        elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "y", "P", "R") or current_view in (
+        elif ch in ("u", "j", "e", "b", "l", "n", "f", "z", "y", "P", "R", "L") or current_view in (
             "todos", "workers", "models", "mcp", "skills", "compute",
-            "projects", "hooks", "integrity", "agents",
+            "projects", "hooks", "integrity", "agents", "slurm",
         ) or ch in ("\x1b[B", "\x1b[A", "\r"):
             tui_state["current_view"] = current_view
             tui_state["status_msg"] = status_msg

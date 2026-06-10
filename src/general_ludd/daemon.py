@@ -559,6 +559,7 @@ def create_daemon_app(
         reload,
         signing,
         skills,
+        slurm,
         todos,
         worktree,
     )
@@ -577,5 +578,6 @@ def create_daemon_app(
     reload.register(app, _daemon_state)
     worktree.register(app, _daemon_state)
     ansible.register(app, _daemon_state)
+    slurm.register(app, _daemon_state)
 
     return app

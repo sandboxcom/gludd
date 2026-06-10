@@ -589,6 +589,39 @@ def main() -> None:
     quant_drift.add_argument("--daemon-url", default="http://localhost:8000")
     quant_drift.set_defaults(func=_cmd_quantization_drift_check)
 
+    slurm_parser = sub.add_parser("slurm", help="Slurm job management")
+    slurm_parser.set_defaults(func=None)
+    slurm_sub = slurm_parser.add_subparsers(dest="slurm_command")
+
+    slurm_status = slurm_sub.add_parser("status", help="Check if Slurm is available")
+    slurm_status.add_argument("--daemon-url", default="http://localhost:8000")
+    slurm_status.set_defaults(func=_cmd_slurm_status)
+
+    slurm_submit = slurm_sub.add_parser("submit", help="Submit a Slurm job")
+    slurm_submit.add_argument("--command", required=True, help="Job invocation string")
+    slurm_submit.add_argument("--job-name", default=None, help="Job name")
+    slurm_submit.add_argument("--partition", default=None, help="Partition")
+    slurm_submit.add_argument("--cpus-per-task", type=int, default=None, help="CPUs per task")
+    slurm_submit.add_argument("--gpus", default=None, help="GPU count or type")
+    slurm_submit.add_argument("--memory", default=None, help="Memory e.g. 16G")
+    slurm_submit.add_argument("--time-limit", default=None, help="Time limit e.g. 02:00:00")
+    slurm_submit.add_argument("--daemon-url", default="http://localhost:8000")
+    slurm_submit.set_defaults(func=_cmd_slurm_submit)
+
+    slurm_job = slurm_sub.add_parser("job", help="Check Slurm job status")
+    slurm_job.add_argument("job_id", help="Job ID")
+    slurm_job.add_argument("--daemon-url", default="http://localhost:8000")
+    slurm_job.set_defaults(func=_cmd_slurm_job)
+
+    slurm_cancel = slurm_sub.add_parser("cancel", help="Cancel a Slurm job")
+    slurm_cancel.add_argument("job_id", help="Job ID to cancel")
+    slurm_cancel.add_argument("--daemon-url", default="http://localhost:8000")
+    slurm_cancel.set_defaults(func=_cmd_slurm_cancel)
+
+    slurm_list = slurm_sub.add_parser("list", help="List Slurm jobs")
+    slurm_list.add_argument("--daemon-url", default="http://localhost:8000")
+    slurm_list.set_defaults(func=_cmd_slurm_list)
+
     args = parser.parse_args()
     if args.func is None:
         subcommand_map = {
@@ -607,6 +640,7 @@ def main() -> None:
             "playbooks": playbooks_parser,
             "code": codeintel_parser,
             "quantization": quant_parser,
+            "slurm": slurm_parser,
         }
         if args.command in subcommand_map:
             subcommand_map[args.command].print_help()
@@ -2250,6 +2284,33 @@ def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: i
     return t
 
 
+def _build_slurm_table(jobs: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    from rich.table import Table
+
+    t = Table(title="Slurm Jobs", show_header=True, expand=True, title_justify="left")
+    t.add_column("Job ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
+    t.add_column("State", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
+    t.add_column("Exit Code", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=15)
+    if not jobs:
+        t.add_row("No jobs", "", "")
+    else:
+        for j in jobs:
+            state = str(j.get("state", "?"))
+            state_colors = {
+                "COMPLETED": "green",
+                "RUNNING": "cyan",
+                "PENDING": "yellow",
+            }
+            color = state_colors.get(state, "red")
+            exit_code = str(j.get("exit_code", "")) if j.get("exit_code") is not None else ""
+            t.add_row(
+                str(j.get("job_id", "?")),
+                f"[{color}]{state}[/]",
+                exit_code,
+            )
+    return t
+
+
 _DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
 _DAEMON_PID_FILE = os.path.join(_DAEMON_PID_DIR, "daemon.pid")
 
@@ -2364,6 +2425,7 @@ def _cmd_tui(args: argparse.Namespace) -> None:
         _build_quantization_table=_build_quantization_table,
         _build_filestore_table=_build_filestore_table,
         _build_deployments_table=_build_deployments_table,
+        _build_slurm_table=_build_slurm_table,
         _wrap_table=_wrap_table,
         _compute_panel_widths=_compute_panel_widths,
         _compute_footer_rows=_compute_footer_rows,
@@ -2866,6 +2928,93 @@ def _cmd_ansible_builtins(args: argparse.Namespace) -> None:
         from general_ludd.ansible.galaxy import get_builtin_modules
         for m in get_builtin_modules():
             print(f"  {m}")
+
+
+def _cmd_slurm_status(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/slurm/status", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            available = data.get("available", False)
+            print(f"Slurm available: {available}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_slurm_submit(args: argparse.Namespace) -> None:
+    payload: dict[str, Any] = {"command": args.command}
+    if args.job_name:
+        payload["job_name"] = args.job_name
+    if args.partition:
+        payload["partition"] = args.partition
+    if args.cpus_per_task:
+        payload["cpus_per_task"] = args.cpus_per_task
+    if args.gpus:
+        payload["gpus"] = args.gpus
+    if args.memory:
+        payload["memory"] = args.memory
+    if args.time_limit:
+        payload["time_limit"] = args.time_limit
+    try:
+        resp = httpx.post(f"{args.daemon_url}/admin/slurm/submit", json=payload, timeout=30.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Submitted job: {data['job_id']}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_slurm_job(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs/{args.job_id}", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            print(f"Job ID:    {data['job_id']}")
+            print(f"State:     {data['state']}")
+            exit_code = data.get("exit_code")
+            if exit_code is not None:
+                print(f"Exit code: {exit_code}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_slurm_cancel(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.delete(f"{args.daemon_url}/admin/slurm/jobs/{args.job_id}", timeout=10.0)
+        if resp.status_code == 200:
+            print(f"Cancelled job: {args.job_id}")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
+
+
+def _cmd_slurm_list(args: argparse.Namespace) -> None:
+    try:
+        resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs", timeout=10.0)
+        if resp.status_code == 200:
+            data = resp.json()
+            jobs = data.get("jobs", [])
+            if jobs:
+                for j in jobs:
+                    print(f"  {j.get('job_id', '?'):<12} {j.get('state', '?'):<15} {j.get('exit_code', '')}")
+            else:
+                print("No Slurm jobs found.")
+        else:
+            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+            sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, args.daemon_url)
 
 
 if __name__ == "__main__":
