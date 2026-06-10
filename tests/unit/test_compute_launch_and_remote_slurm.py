@@ -125,6 +125,135 @@ class TestComputeLaunchDaemonEndpoint:
         assert "/admin/compute/destroy/{instance_id}" in routes
 
 
+class TestComputeDeployUsesSecretsResolver:
+    def test_deploy_resolves_aws_creds_from_secrets_resolver(self):
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+        from general_ludd.routers.compute import register
+
+        app = FastAPI()
+        register(app, {})
+        mock_resolver = MagicMock()
+        mock_resolver.resolve.side_effect = lambda alias: {
+            "aws_access_key": "AKIA_FROM_OPENBAO",
+            "aws_secret_key": "secret_from_openbao",
+        }.get(alias)
+        app.state._secrets_resolver = mock_resolver
+
+        client = TestClient(app)
+        with patch("general_ludd.routers.compute.DeploymentManager") as MockDM:
+            mock_instance = MagicMock()
+            mock_instance.instance_id = "i-12345"
+            mock_instance.provider = ComputeProvider.AWS
+            mock_instance.status = "running"
+            mock_instance.ip_address = "1.2.3.4"
+            mock_instance.port = 8000
+            mock_instance.gpu_type = GPUType.T4
+            mock_instance.endpoint_url = "http://1.2.3.4:8000/v1"
+            mock_dm = MagicMock()
+            mock_dm.deploy = AsyncMock(return_value=mock_instance)
+            MockDM.return_value = mock_dm
+
+            resp = client.post("/admin/compute/deploy", json={
+                "provider": "aws",
+                "gpu_type": "t4",
+                "model_name": "test-model",
+                "provider_auth_aliases": {
+                    "AWS_ACCESS_KEY_ID": "aws_access_key",
+                    "AWS_SECRET_ACCESS_KEY": "aws_secret_key",
+                },
+            })
+            assert resp.status_code == 200
+            MockDM.assert_called_once()
+            call_kwargs = MockDM.call_args
+            assert call_kwargs[1]["secrets_resolver"] is mock_resolver
+
+    def test_deploy_passes_none_resolver_when_not_on_app_state(self):
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+        from general_ludd.routers.compute import register
+
+        app = FastAPI()
+        register(app, {})
+
+        client = TestClient(app)
+        with patch("general_ludd.routers.compute.DeploymentManager") as MockDM:
+            mock_instance = MagicMock()
+            mock_instance.instance_id = "i-12345"
+            mock_instance.provider = ComputeProvider.AWS
+            mock_instance.status = "running"
+            mock_instance.ip_address = "1.2.3.4"
+            mock_instance.port = 8000
+            mock_instance.gpu_type = GPUType.T4
+            mock_instance.endpoint_url = "http://1.2.3.4:8000/v1"
+            mock_dm = MagicMock()
+            mock_dm.deploy = AsyncMock(return_value=mock_instance)
+            MockDM.return_value = mock_dm
+
+            resp = client.post("/admin/compute/deploy", json={
+                "provider": "aws",
+                "gpu_type": "t4",
+                "model_name": "test-model",
+            })
+            assert resp.status_code == 200
+            call_kwargs = MockDM.call_args
+            assert call_kwargs[1]["secrets_resolver"] is None
+
+
+class TestSlurmUsesSecretsResolver:
+    def test_slurm_resolves_creds_from_secrets_resolver(self):
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+        from general_ludd.routers.slurm import register
+
+        app = FastAPI()
+        mock_resolver = MagicMock()
+        mock_resolver.resolve.side_effect = lambda alias: {
+            "slurm_api_url": "https://slurm.vault.example.com:6820",
+            "slurm_auth_token": "vault-jwt-token",
+        }.get(alias)
+        register(app, {})
+        app.state._secrets_resolver = mock_resolver
+
+        client = TestClient(app)
+        with patch("general_ludd.infra.slurm.httpx.get") as mock_get:
+            mock_get.return_value = MagicMock(status_code=200)
+            resp = client.get("/admin/slurm/status")
+            assert resp.status_code == 200
+            mock_resolver.resolve.assert_called()
+
+    def test_slurm_falls_back_to_env_when_no_resolver(self):
+        from fastapi import FastAPI
+        from general_ludd.routers.slurm import register
+
+        app = FastAPI()
+        with patch.dict(os.environ, {"SLURM_API_URL": "https://env-slurm:6820", "SLURM_AUTH_TOKEN": "env-token"}):
+            register(app, {})
+            routes = [r.path for r in app.routes]
+            assert "/admin/slurm/status" in routes
+
+    def test_slurm_resolver_takes_priority_over_env(self):
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+        from general_ludd.routers.slurm import register
+        from general_ludd.infra.slurm import SlurmAdapter
+
+        app = FastAPI()
+        mock_resolver = MagicMock()
+        mock_resolver.resolve.side_effect = lambda alias: {
+            "slurm_api_url": "https://bao-slurm:6820",
+            "slurm_auth_token": "bao-token",
+        }.get(alias)
+        register(app, {})
+        app.state._secrets_resolver = mock_resolver
+
+        client = TestClient(app)
+        with patch.object(SlurmAdapter, "available", return_value=True) as mock_avail:
+            resp = client.get("/admin/slurm/status")
+            assert resp.status_code == 200
+            assert resp.json() == {"available": True}
+
+
 class TestRemoteSlurmRESTClient:
     def test_slurm_adapter_accepts_api_url_and_token(self):
         adapter = SlurmAdapter(api_url="https://slurm.example.com:6820", auth_token="test-jwt")

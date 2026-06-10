@@ -20,13 +20,10 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     _deployments: dict[str, ComputeInstance] = {}
-    _deployment_manager: DeploymentManager | None = None
 
     def _get_deployment_manager() -> DeploymentManager:
-        nonlocal _deployment_manager
-        if _deployment_manager is None:
-            _deployment_manager = DeploymentManager()
-        return _deployment_manager
+        secrets_resolver = getattr(app.state, "_secrets_resolver", None)
+        return DeploymentManager(secrets_resolver=secrets_resolver)
 
     @app.get("/admin/compute/utilization")
     async def admin_compute_utilization() -> dict[str, Any]:
