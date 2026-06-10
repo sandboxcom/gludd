@@ -106,10 +106,25 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "task_definitions": [],
         "model_profiles": [],
     }
+
     if config_dir is None:
-        return cfg
+        home = os.environ.get("HOME", os.path.expanduser("~"))
+        candidates = [
+            Path(home) / ".config" / "general-ludd",
+            Path("/etc/general-ludd"),
+        ]
+        for candidate in candidates:
+            if candidate.is_dir():
+                config_dir = str(candidate)
+                logger.info("Discovered config dir: %s", config_dir)
+                break
+        else:
+            logger.info("No config directory found; daemon running unconfigured")
+            return cfg
+
     cdir = Path(config_dir)
     if not cdir.is_dir():
+        logger.info("Config directory %s does not exist; daemon running unconfigured", config_dir)
         return cfg
 
     mr_path = cdir / "model_routing.yml"
@@ -148,9 +163,21 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         pi_data = data.get("process_isolation", {})
         cfg["process_isolation"] = ProcessIsolationConfig(**pi_data) if pi_data else None
 
-    mcp_path = cdir / "mcp_servers" / "example.yml"
-    if mcp_path.exists():
-        cfg["mcp_servers"] = load_mcp_config(str(mcp_path))
+    mcp_dir = cdir / "mcp_servers"
+    if mcp_dir.is_dir():
+        all_mcp: dict[str, Any] = {}
+        for mcp_file in sorted(mcp_dir.glob("*.yml")):
+            try:
+                loaded = load_mcp_config(str(mcp_file))
+                if isinstance(loaded, dict):
+                    all_mcp.update(loaded)
+                elif isinstance(loaded, list):
+                    for entry in loaded:
+                        if isinstance(entry, dict) and "name" in entry:
+                            all_mcp[entry["name"]] = entry
+            except Exception as exc:
+                logger.warning("Failed to load MCP config %s: %s", mcp_file, exc)
+        cfg["mcp_servers"] = all_mcp
 
     tasks_dir = cdir / "tasks"
     if tasks_dir.is_dir():
@@ -287,6 +314,17 @@ class ModelSearchRequest(BaseModel):
     limit: int = 20
 
 
+def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
+    if task.cancelled():
+        logger.info("EventLoop task cancelled")
+        return
+    exc = task.exception()
+    if exc is not None:
+        logger.error("EventLoop task terminated with exception: %s", exc)
+    else:
+        logger.error("EventLoop task exited unexpectedly without exception")
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -334,7 +372,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:
                 logger.warning("Secret migration failed: %s", exc)
 
-        templates_dir = app.state._templates_dir
+        templates_dir = getattr(app.state, "_templates_dir", None)
         prompt_registry = PromptRegistry(
             template_dir=templates_dir,
             event_bus=subsys["bus"],
@@ -371,6 +409,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._db_engine = engine
         app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
+        task.add_done_callback(_on_event_loop_done)
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
@@ -487,12 +526,25 @@ def _get_or_create_extended_subsystems(
 
 
 def create_daemon_app(
-    tick_interval: float = 1.0,
+    tick_interval: float | None = None,
     log_level: str = "info",
     config_dir: str | None = None,
     templates_dir: str | None = None,
     playbooks_dir: str | None = None,
 ) -> FastAPI:
+    if tick_interval is None:
+        env_tick = os.environ.get("GLUDD_TICK_INTERVAL")
+        tick_interval = float(env_tick) if env_tick else 1.0
+    env_log_level = os.environ.get("GLUDD_LOG_LEVEL")
+    if env_log_level and log_level == "info":
+        log_level = env_log_level
+    if config_dir is None:
+        config_dir = os.environ.get("GLUDD_CONFIG_DIR")
+    if templates_dir is None:
+        templates_dir = os.environ.get("GLUDD_TEMPLATES_DIR")
+    if playbooks_dir is None:
+        playbooks_dir = os.environ.get("GLUDD_PLAYBOOKS_DIR")
+
     app = FastAPI(title="General Ludd Agent", version="0.1.0", lifespan=_lifespan)
     app.state.tick_interval = tick_interval
     app.state.event_loop = None

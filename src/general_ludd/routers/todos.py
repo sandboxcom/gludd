@@ -9,9 +9,12 @@ from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from general_ludd import __version__
+from general_ludd.db.repository import TodoRepository
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
 from general_ludd.quality.preflight import run_preflight
+
+logger = logging.getLogger(__name__)
 
 
 class AddTodoRequest(BaseModel):
@@ -27,6 +30,25 @@ class LogLevelRequest(BaseModel):
     level: str
 
 
+def _get_session_factory(app: FastAPI) -> Any:
+    return getattr(app.state, "_session_factory", None)
+
+
+def _todo_to_dict(todo: Any) -> dict[str, Any]:
+    return {
+        "todo_id": todo.todo_id,
+        "title": todo.title,
+        "description": todo.description,
+        "queue": todo.queue,
+        "priority": todo.priority,
+        "work_type": todo.work_type,
+        "status": todo.status,
+        "project_id": todo.project_id,
+        "version": todo.version,
+        "created_at": str(todo.created_at) if todo.created_at else None,
+    }
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, Any]:
@@ -36,6 +58,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/api/todos", status_code=201)
     async def api_add_todo(req: AddTodoRequest) -> dict[str, Any]:
+        factory = _get_session_factory(app)
         todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
         todo: dict[str, Any] = {
             "todo_id": todo_id,
@@ -47,6 +70,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "status": "queued",
             "project_id": req.project_id,
         }
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                result = await repo.create(todo_data=todo)
+                await session.commit()
+                return _todo_to_dict(result)
         _daemon_state["todos"].append(todo)
         return todo
 
@@ -56,6 +85,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         status: str | None = None,
         project_id: str | None = None,
     ) -> list[dict[str, Any]]:
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                todos = await repo.list_all(
+                    queue=queue, status=status, project_id=project_id,
+                )
+                return [_todo_to_dict(t) for t in todos]
         results = list(_daemon_state["todos"])
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
@@ -67,6 +104,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/api/todos/{todo_id}")
     async def api_get_todo(todo_id: str) -> dict[str, Any]:
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                todo = await repo.get_by_id(todo_id)
+                if todo is not None:
+                    return _todo_to_dict(todo)
+                raise HTTPException(status_code=404, detail="Todo not found")
         for todo in _daemon_state["todos"]:
             if str(todo.get("todo_id", "")) == todo_id:
                 return dict(todo)
@@ -77,6 +122,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         status: str | None = None,
         project_id: str | None = None,
     ) -> dict[str, Any]:
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                todos = await repo.list_all(status=status, project_id=project_id)
+                results = [_todo_to_dict(t) for t in todos]
+                return {"todos": results, "count": len(results)}
         results = list(_daemon_state["todos"])
         if status is not None:
             results = [t for t in results if t.get("status") == status]
@@ -86,13 +138,22 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/api/status")
     async def api_status() -> dict[str, Any]:
+        factory = _get_session_factory(app)
         queue_depths: dict[str, int] = {}
         todo_count = 0
-        for todo in _daemon_state["todos"]:
-            q = todo.get("queue", "unknown")
-            queue_depths[q] = queue_depths.get(q, 0) + 1
-            todo_count += 1
-
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                todos = await repo.list_all()
+                for t in todos:
+                    q = t.queue or "unknown"
+                    queue_depths[q] = queue_depths.get(q, 0) + 1
+                    todo_count += 1
+        else:
+            for todo in _daemon_state["todos"]:
+                q = todo.get("queue", "unknown")
+                queue_depths[q] = queue_depths.get(q, 0) + 1
+                todo_count += 1
 
         config_dir = getattr(app.state, "_config_dir", None)
         config_paths: list[str] = []
