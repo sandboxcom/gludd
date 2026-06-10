@@ -3,7 +3,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class PlanArtifact(BaseModel):
@@ -18,6 +18,15 @@ class PlanArtifact(BaseModel):
     notes: str = ""
     content: str = ""
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("todo_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("todo_id must not be empty")
+        return v
 
     def to_markdown(self) -> str:
         lines: list[str] = []

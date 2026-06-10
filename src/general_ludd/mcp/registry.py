@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class MCPTool(BaseModel):
@@ -10,6 +10,15 @@ class MCPTool(BaseModel):
     description: str = ""
     input_schema: dict[str, Any] = Field(default_factory=dict)
     server_id: str = ""
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("name must not be empty")
+        return v
 
 
 class MCPToolRegistry:

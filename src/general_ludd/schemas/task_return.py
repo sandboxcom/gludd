@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TaskReturnStatus(enum.StrEnum):
@@ -36,3 +36,12 @@ class TaskReturn(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     producer_worker_id: str | None = None
     schema_version: int = 1
+
+    @field_validator("return_id", "job_id", "playbook", "queue", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v

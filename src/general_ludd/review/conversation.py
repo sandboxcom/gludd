@@ -5,7 +5,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import uuid4
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 
 class ConversationMessage(BaseModel):
@@ -16,6 +16,22 @@ class ConversationMessage(BaseModel):
     token_count: int = 0
     timestamp: float = Field(default_factory=time.monotonic)
     metadata: dict[str, Any] = {}
+
+    @field_validator("role", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("role must not be empty")
+        return v
+
+    @field_validator("content", mode="before")
+    @classmethod
+    def _require_content(cls, v: str) -> str:
+        if isinstance(v, str) and not v.strip():
+            raise ValueError("content must not be empty")
+        return v
 
 
 class Conversation(BaseModel):

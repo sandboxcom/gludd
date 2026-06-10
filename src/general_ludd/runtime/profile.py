@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class DataSourceMount(BaseModel):
@@ -21,6 +21,22 @@ class DataSourceMount(BaseModel):
     secret_safe: bool = False
     model_visible: bool = False
 
+    @field_validator("mount_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("mount_id must not be empty")
+        return v
+
+    @field_validator("container_path")
+    @classmethod
+    def _absolute_path(cls, v: str) -> str:
+        if not v.startswith("/"):
+            raise ValueError("container_path must be absolute")
+        return v
+
 
 class RuntimeProfile(BaseModel):
     runtime_profile_id: str
@@ -33,6 +49,15 @@ class RuntimeProfile(BaseModel):
     healthcheck_url: str = "http://localhost:8000/healthz"
     required_services: list[str] = Field(default_factory=lambda: ["postgres"])
     mounts: list[DataSourceMount] = Field(default_factory=list)
+
+    @field_validator("runtime_profile_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("runtime_profile_id must not be empty")
+        return v
 
 
 class RuntimeValidator:

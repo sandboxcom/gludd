@@ -7,7 +7,7 @@ import time
 from dataclasses import dataclass
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from general_ludd.dogfood.sprint_parser import parse_sprint_markdown
 
@@ -18,6 +18,15 @@ class DogfoodConfig(BaseModel):
     runtime_profile: str
     model_profile: str
     auto_commit: bool = True
+
+    @field_validator("repo_root", "target_repo", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v
 
 
 @dataclass

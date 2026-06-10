@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class OpenBaoConfig(BaseModel):
@@ -19,3 +19,12 @@ class OpenBaoConfig(BaseModel):
     approle_role_name: str = "agentic-harness"
     weekly_image_update_scan: bool = True
     weekly_image_update_creates_manual_hold: bool = True
+
+    @field_validator("kv_mount", "auth_method", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v

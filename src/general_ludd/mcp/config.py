@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class MCPServerConfig(BaseModel):
@@ -13,6 +13,22 @@ class MCPServerConfig(BaseModel):
     timeout_seconds: float = 30.0
     enabled: bool = True
     project_id: str | None = None
+
+    @field_validator("server_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("server_id must not be empty")
+        return v
+
+    @field_validator("timeout_seconds")
+    @classmethod
+    def _timeout_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("timeout_seconds must be positive")
+        return v
 
     @model_validator(mode="after")
     def _validate_transport(self) -> MCPServerConfig:

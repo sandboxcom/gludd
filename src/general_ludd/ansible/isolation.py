@@ -5,7 +5,7 @@ from __future__ import annotations
 import shutil
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 _TOOL_PATH_MAP: dict[str, list[str]] = {
     "bash": ["/usr/bin/bash", "/bin/sh", "/bin/bash"],
@@ -46,6 +46,15 @@ class ProcessIsolationConfig(BaseModel):
     show_paths: list[str] = Field(default_factory=list)
     ro_paths: list[str] = Field(default_factory=list)
     block_local_tools: list[str] = Field(default_factory=list)
+
+    @field_validator("executable", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("executable must not be empty")
+        return v
 
     def to_runner_kwargs(self) -> dict[str, Any]:
         resolved_hide: list[str] = list(self.hide_paths)

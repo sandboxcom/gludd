@@ -6,7 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
 from general_ludd.models.provider_registry import ProviderRegistry
@@ -45,6 +45,29 @@ class ModelProfile(BaseModel):
     quality_class: str | None = None
     fallback_profiles: list[str] = Field(default_factory=list)
     probe_enabled: bool = False
+
+    @field_validator("model_profile_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("model_profile_id must not be empty")
+        return v
+
+    @field_validator("context_window", "max_input_tokens", "max_output_tokens")
+    @classmethod
+    def _positive_int(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("must be at least 1")
+        return v
+
+    @field_validator("cost_per_input_token", "cost_per_output_token", "run_budget_usd")
+    @classmethod
+    def _non_negative_float(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("must be non-negative")
+        return v
 
 
 @dataclass

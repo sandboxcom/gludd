@@ -6,7 +6,7 @@ import enum
 from datetime import UTC, datetime
 from uuid import uuid4
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
 
 class TodoStatus(enum.StrEnum):
@@ -131,6 +131,42 @@ class Todo(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+
+    @field_validator("title", "queue", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v
+
+    @field_validator("confidence")
+    @classmethod
+    def _confidence_range(cls, v: float | None) -> float | None:
+        if v is not None and not (0.0 <= v <= 1.0):
+            raise ValueError("confidence must be between 0.0 and 1.0")
+        return v
+
+    @field_validator("priority")
+    @classmethod
+    def _priority_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("priority must be non-negative")
+        return v
+
+    @field_validator("version")
+    @classmethod
+    def _version_minimum(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("version must be at least 1")
+        return v
+
+    @model_validator(mode="after")
+    def _check_completed_at(self) -> Todo:
+        if self.completed_at is not None and self.status != TodoStatus.COMPLETE:
+            raise ValueError("completed_at can only be set when status is COMPLETE")
+        return self
 
     def transition_to(self, target: TodoStatus) -> None:
         if not validate_transition(self.status, target):

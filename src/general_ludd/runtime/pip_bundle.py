@@ -9,7 +9,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class BundleManifest(BaseModel):
@@ -18,6 +18,15 @@ class BundleManifest(BaseModel):
     timestamp: str
     files: list[str]
     checksums: dict[str, str]
+
+    @field_validator("version", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("version must not be empty")
+        return v
 
 
 @dataclass

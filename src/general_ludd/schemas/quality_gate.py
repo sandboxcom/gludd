@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class PythonQualityGate(BaseModel):
@@ -15,6 +15,13 @@ class PythonQualityGate(BaseModel):
         "--cov-report=term-missing",
         "--cov-report=xml",
     ])
+
+    @field_validator("line_coverage_min_percent", "branch_coverage_min_percent")
+    @classmethod
+    def _percent_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 100.0):
+            raise ValueError("coverage percent must be between 0.0 and 100.0")
+        return v
 
 
 class MoleculeQualityGate(BaseModel):
@@ -29,6 +36,20 @@ class MoleculeQualityGate(BaseModel):
     allow_configured_exemptions: bool = True
     exemption_max_age_days: int = 14
     idempotence_required_by_default: bool = True
+
+    @field_validator("coverage_min_percent")
+    @classmethod
+    def _percent_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 100.0):
+            raise ValueError("coverage percent must be between 0.0 and 100.0")
+        return v
+
+    @field_validator("exemption_max_age_days")
+    @classmethod
+    def _positive_int(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("exemption_max_age_days must be at least 1")
+        return v
 
 
 class AnsibleTestGate(BaseModel):

@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class JobSpec(BaseModel):
@@ -25,3 +25,12 @@ class JobSpec(BaseModel):
     artifact_summaries: list[str] = Field(default_factory=list)
     plan_artifact: str | None = None
     prompt_text: str | None = None
+
+    @field_validator("job_id", "playbook", "queue", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 
 class GuardrailConfig(BaseModel):
@@ -39,6 +39,13 @@ class AgentBehavior(BaseModel):
     allowed_command_patterns: list[str] = ["make *"]
     stop_conditions: list[str] = ["missing_credentials", "environment_change"]
     max_retries: int = 3
+
+    @field_validator("max_retries")
+    @classmethod
+    def _non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("max_retries must be non-negative")
+        return v
 
     @property
     def guardrail_layers(self) -> int:

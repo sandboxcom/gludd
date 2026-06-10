@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from typing import Any
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from general_ludd.schemas.todo import (
     ResourceProfile,
@@ -28,6 +28,15 @@ class TaskDefinition(BaseModel):
     resource_profile: str = "low_resource"
     risk_level: str = "low"
     vars: dict[str, Any] = {}
+
+    @field_validator("name", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("name must not be empty")
+        return v
 
     def to_todo(self) -> Todo:
         return Todo(

@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Any
 
 import tree_sitter_python as tspython
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator, model_validator
 from tree_sitter import Language, Parser
 
 PY_LANGUAGE = Language(tspython.language())
@@ -25,6 +25,33 @@ class CodeSymbol(BaseModel):
     line_start: int
     line_end: int
     parent: str | None = None
+
+    @field_validator("name", "file_path", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v
+
+    @field_validator("line_start")
+    @classmethod
+    def _line_start_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("line_start must be non-negative")
+        return v
+
+    @field_validator("line_end")
+    @classmethod
+    def _line_end_check(cls, v: int, info) -> int:
+        return v
+
+    @model_validator(mode="after")
+    def _lines_consistent(self) -> CodeSymbol:
+        if self.line_end < self.line_start:
+            raise ValueError("line_end must be >= line_start")
+        return self
 
 
 class RepoMap(BaseModel):

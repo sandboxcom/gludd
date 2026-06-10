@@ -5,7 +5,7 @@ from __future__ import annotations
 from enum import StrEnum
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ActionType(StrEnum):
@@ -27,12 +27,30 @@ class Rule(BaseModel):
     actions: list[dict[str, Any]] = Field(default_factory=list)
     audit_message: str = ""
 
+    @field_validator("rule_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("rule_id must not be empty")
+        return v
+
 
 class RuleAction(BaseModel):
     rule_id: str
     action_type: str
     params: dict[str, Any] = Field(default_factory=dict)
     audit_message: str = ""
+
+    @field_validator("rule_id", "action_type", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("field must not be empty")
+        return v
 
 
 def apply_rule_actions(

@@ -5,7 +5,7 @@ from __future__ import annotations
 import enum
 from datetime import UTC, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class ComputeProvider(enum.StrEnum):
@@ -57,6 +57,34 @@ class ComputeConfig(BaseModel):
     deploy_type: str = "vm"
     provider_auth_aliases: dict[str, str] | None = None
 
+    @field_validator("gpu_count")
+    @classmethod
+    def _gpu_count_min(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("gpu_count must be at least 1")
+        return v
+
+    @field_validator("max_cost_usd")
+    @classmethod
+    def _cost_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("max_cost_usd must be positive")
+        return v
+
+    @field_validator("timeout_minutes")
+    @classmethod
+    def _timeout_positive(cls, v: float) -> float:
+        if v <= 0:
+            raise ValueError("timeout_minutes must be positive")
+        return v
+
+    @field_validator("disk_size_gb")
+    @classmethod
+    def _disk_min(cls, v: int) -> int:
+        if v < 1:
+            raise ValueError("disk_size_gb must be at least 1")
+        return v
+
 
 class ComputeInstance(BaseModel):
     instance_id: str
@@ -68,3 +96,26 @@ class ComputeInstance(BaseModel):
     endpoint_url: str | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     cost_incurred: float = 0.0
+
+    @field_validator("instance_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("instance_id must not be empty")
+        return v
+
+    @field_validator("port")
+    @classmethod
+    def _port_range(cls, v: int) -> int:
+        if not (1 <= v <= 65535):
+            raise ValueError("port must be between 1 and 65535")
+        return v
+
+    @field_validator("cost_incurred")
+    @classmethod
+    def _cost_non_negative(cls, v: float) -> float:
+        if v < 0:
+            raise ValueError("cost_incurred must be non-negative")
+        return v

@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +23,15 @@ class MCPCatalogEntry(BaseModel):
     env_aliases_needed: list[str] = Field(default_factory=list)
     tags: list[str] = Field(default_factory=list)
     downloads: int = 0
+
+    @field_validator("server_name", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("server_name must not be empty")
+        return v
 
 
 class MCPCatalog:

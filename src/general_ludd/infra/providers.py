@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from general_ludd.infra.compute import ComputeProvider, GPUType
 
@@ -16,6 +16,15 @@ class ProviderInfo(BaseModel):
     min_gpu: GPUType
     max_gpu: GPUType
     pricing: dict[str, float] = {}
+
+    @field_validator("display_name", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("display_name must not be empty")
+        return v
 
 
 _BUILTIN_PROVIDERS: list[dict[str, object]] = [

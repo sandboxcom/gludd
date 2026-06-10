@@ -5,7 +5,7 @@ from __future__ import annotations
 from datetime import UTC, datetime
 from typing import Any
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
 
 class TaskDecision(BaseModel):
@@ -21,6 +21,22 @@ class TaskDecision(BaseModel):
     audit_notes: list[str] = Field(default_factory=list)
     policy_flags: list[str] = Field(default_factory=list)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+    @field_validator("return_id", mode="before")
+    @classmethod
+    def _strip_and_require(cls, v: str) -> str:
+        if isinstance(v, str):
+            v = v.strip()
+        if not v:
+            raise ValueError("return_id must not be empty")
+        return v
+
+    @field_validator("confidence")
+    @classmethod
+    def _confidence_range(cls, v: float) -> float:
+        if not (0.0 <= v <= 1.0):
+            raise ValueError("confidence must be between 0.0 and 1.0")
+        return v
 
     @classmethod
     def valid_decisions(cls) -> set[str]:
