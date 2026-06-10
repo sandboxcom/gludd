@@ -592,6 +592,8 @@ class EventLoop:
             runner_env: dict[str, str] = {}
             if ws is not None and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir():
                 runner_env["ANSIBLE_ROLES_PATH"] = str(ws.roles_dir)
+            if ws is not None and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir():
+                runner_env["GLUDD_TEMPLATES_DIR"] = str(ws.templates_dir)
             self._runner.run_playbook(
                 playbook_name=playbook,
                 private_data_dir=pdd,
@@ -615,6 +617,16 @@ class EventLoop:
             project_id=project_id_val,
             artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
+            ansible_roles_path=(
+                str(ws.roles_dir)
+                if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir()
+                else None
+            ),
+            templates_dir=(
+                str(ws.templates_dir)
+                if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir()
+                else None
+            ),
         )
         resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
