@@ -1,7 +1,3 @@
-SEARCH ?= hello world
-MAX_RESULTS ?= 10
-FORMAT ?= text
-SEARCH_SCRIPT := scripts/search.py
 MSG ?=
 FILES ?=
 TESTFILE ?=
@@ -11,7 +7,7 @@ UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 
-    .PHONY: search-google search-json \
+    .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai test-tui-daemon diag-gunicorn \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -108,12 +104,6 @@ help:
 	@echo "  smoke                 Quick daemon boot health check"
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
-
-search-google:
-	@$(PYTHON) $(SEARCH_SCRIPT) "$(SEARCH)" -n $(MAX_RESULTS) -f $(FORMAT)
-
-search-json:
-	@$(PYTHON) $(SEARCH_SCRIPT) "$(SEARCH)" -n $(MAX_RESULTS) -f json
 
 skeleton:
 	@$(PYTHON) scripts/skeleton.py
