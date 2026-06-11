@@ -29,8 +29,8 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 
 ## Phase R2 — Missed work
 
-- [x] R2.1 — M1 ansible events real | evidence: make lint 0, make typecheck 21, 7 new tests pass (test_m1_ansible_events.py) | commit-pending
-- [ ] R2.2 — M6 refresh targets the loop's runner | evidence:
+- [x] R2.1 — M1 ansible events real | evidence: make lint 0, make typecheck 21, 7 new tests pass (test_m1_ansible_events.py) | db4b2f9
+- [x] R2.2 — M6 refresh targets the loop's runner | evidence: make lint 0, make typecheck 21, 4 new tests pass (test_m6_refresh_loop_runner.py) | commit-pending
 - [ ] R2.3 — M13 config sections consumed or deleted | evidence:
 - [ ] R2.4 — M12 real active_jobs + claim cap | evidence:
 - [ ] R2.5 — M10 approvals persisted + change events | evidence:

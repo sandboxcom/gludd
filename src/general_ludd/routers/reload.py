@@ -77,6 +77,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 event_bus=subsys["bus"],
             )
         result = app.state._runner.refresh_playbooks()
+        if hasattr(app.state, "event_loop") and hasattr(app.state.event_loop, "_runner"):
+            loop_runner = app.state.event_loop._runner
+            if loop_runner is not None and loop_runner is not app.state._runner:
+                loop_runner.refresh_playbooks()
         return {"success": True, "playbooks": result.get("playbooks", [])}
 
     @app.get("/admin/playbooks")
