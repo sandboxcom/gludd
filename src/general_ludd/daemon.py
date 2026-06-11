@@ -38,6 +38,7 @@ from general_ludd.events.hooks import HookSystem
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.infra.utilization import UtilizationTracker
+from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.gateway import ModelGateway, ModelProfile
@@ -59,7 +60,7 @@ from general_ludd.secrets.project_secrets import ProjectSecretsManager
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
 
-logger = logging.getLogger(__name__)
+logger = ProjectLogAdapter(logging.getLogger(__name__))
 
 _daemon_state: dict[str, Any] = {
     "todos": [],

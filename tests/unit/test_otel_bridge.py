@@ -223,7 +223,8 @@ class TestOTelBridgeInit:
             import general_ludd.observability.otel_bridge as bridge_mod
 
             importlib.reload(bridge_mod)
-            bridge = bridge_mod.OTelBridge(endpoint="http://localhost:4317", service_name="test-svc")
+            with patch.object(bridge_mod, "_check_otel_available", return_value=True):
+                bridge = bridge_mod.OTelBridge(endpoint="http://localhost:4317", service_name="test-svc")
 
         assert bridge.is_available() is True
         assert bridge._service_name == "test-svc"

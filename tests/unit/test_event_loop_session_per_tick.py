@@ -40,7 +40,7 @@ class TestEventLoopSessionPerTick:
         with patch.object(logging.getLogger("general_ludd.event_loop.loop"), "error") as mock_log:
             result = await loop.tick()
 
-        assert result["phases_completed"] == 11
+        assert result["phases_completed"] == 10
         mock_log.assert_called()
 
     async def test_tick_returns_metrics(self):

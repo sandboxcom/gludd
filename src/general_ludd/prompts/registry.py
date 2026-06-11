@@ -84,6 +84,7 @@ _WORK_TYPE_TEMPLATE_MAP: dict[str, str] = {
     "feature": "implementation.md.j2",
     "docs": "documentation.md.j2",
     "security": "security.md.j2",
+    "self_improvement": "self_improvement.md.j2",
 }
 
 

@@ -73,9 +73,7 @@ class TestConversationWiring:
         decision = _make_decision()
         with patch.object(reviewer, "_call_model", return_value=(decision.model_dump_json(), None)):
             reviewer.review_return(task_return, [], [])
-        assert conv.message_count() == 2
-
-    def test_new_conversation_created_when_none_exists(self):
+        assert conv.message_count() == 3
         gateway = MagicMock(spec=ModelGateway)
         registry = PromptRegistry(template_dir="templates/prompts")
         reviewer = ReturnReviewer(

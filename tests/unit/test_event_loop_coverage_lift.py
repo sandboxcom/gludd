@@ -1,4 +1,4 @@
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -169,18 +169,9 @@ class TestPIDPhaseException:
         queues = [Queue(queue_name="core").model_dump()]
         loop, _ = _make_loop(config={"tick_interval": 1.0, "queues": queues})
         loop._config_snapshot = {"queues": queues}
-        import general_ludd.controllers.load_scrape as ls_mod
 
-        original = ls_mod.LoadSnapshot
-
-        def bad_snapshot(*a, **kw):
-            raise RuntimeError("forced error")
-
-        ls_mod.LoadSnapshot = bad_snapshot
-        try:
+        with patch("general_ludd.event_loop.loop.LoadSnapshot", side_effect=RuntimeError("forced error")):
             await loop._phase_evaluate_pid_controllers()
-        finally:
-            ls_mod.LoadSnapshot = original
         assert "pid_outputs" not in loop._tick_state
 
 

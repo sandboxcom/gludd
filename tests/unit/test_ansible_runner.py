@@ -106,8 +106,9 @@ class TestRunnerRunPlaybook:
     def test_run_playbook_rejects_unregistered(self):
         with tempfile.TemporaryDirectory() as tmp:
             adapter = AnsibleRunnerAdapter(private_data_dir=tmp)
-            with pytest.raises(ValueError, match="not registered"):
-                adapter.run_playbook(playbook_name="evil.yml")
+            result = adapter.run_playbook(playbook_name="evil.yml")
+        assert result["status"] == "failed"
+        assert "not registered" in result["error"]
 
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")
     def test_run_playbook_captures_events(self, mock_core_cls: MagicMock) -> None:
