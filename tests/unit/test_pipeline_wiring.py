@@ -242,7 +242,7 @@ class TestReturnReviewerLLMCall:
             status=TaskReturnStatus.CREATED,
         )
         decision = reviewer.review_return(tr, [], [])
-        assert decision.decision == "ignore_duplicate"
+        assert decision.decision == "failed"
         assert decision.confidence == 0.0
 
 
