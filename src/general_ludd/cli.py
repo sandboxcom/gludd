@@ -2657,7 +2657,7 @@ def _cmd_hooks_list(args: argparse.Namespace) -> None:
             hooks = data.get("hooks", [])
             if hooks:
                 for h in hooks:
-                    print(f"  {h.get('hook_id', '?'):<20} {h.get('event', '?'):<20} {h.get('handler', '?')}")
+                    print(f"  {h.get('hook_id', '?'):<20} {h.get('event_name', '?'):<20} {h.get('url', '?')}")
             else:
                 print("No hooks registered.")
         else:
@@ -2704,7 +2704,7 @@ def _cmd_workers_list(args: argparse.Namespace) -> None:
             workers = data.get("workers", [])
             if workers:
                 for w in workers:
-                    print(f"  {w.get('worker_id', '?'):<20} {w.get('status', '?'):<12} {w.get('url', '?')}")
+                    print(f"  {w.get('worker_id', '?'):<20} {w.get('address', '?'):<30} {w.get('last_seen', '?')}")
             else:
                 print("No workers registered.")
         else:
@@ -2809,7 +2809,8 @@ def _cmd_templates_refresh(args: argparse.Namespace) -> None:
         resp = httpx.post(f"{args.daemon_url}/admin/templates/refresh", timeout=30.0)
         if resp.status_code == 200:
             data = resp.json()
-            print(f"Refreshed: {data.get('count', 0)} templates")
+            tmpls = data.get("templates", [])
+            print(f"Refreshed: {len(tmpls)} templates")
         else:
             print(f"Error: {resp.status_code}", file=sys.stderr)
             sys.exit(1)
@@ -2840,7 +2841,8 @@ def _cmd_playbooks_refresh(args: argparse.Namespace) -> None:
         resp = httpx.post(f"{args.daemon_url}/admin/playbooks/refresh", timeout=30.0)
         if resp.status_code == 200:
             data = resp.json()
-            print(f"Refreshed: {data.get('count', 0)} playbooks")
+            pbs = data.get("playbooks", [])
+            print(f"Refreshed: {len(pbs)} playbooks")
         else:
             print(f"Error: {resp.status_code}", file=sys.stderr)
             sys.exit(1)
