@@ -473,6 +473,17 @@ export default (async ({ }) => {
                     testExists = true
                     break
                   } catch {}
+                  // Broad match: check if any test file exists that references the module
+                  try {
+                    const files = fs.readdirSync(testDir)
+                    const shortName = candidate.split("_").pop() || candidate
+                    for (const f of files) {
+                      if (f.startsWith("test_") && f.includes(shortName) && f.endsWith(".py")) {
+                        testExists = true
+                        break
+                      }
+                    }
+                  } catch {}
                 }
                 if (testExists) break
               }
