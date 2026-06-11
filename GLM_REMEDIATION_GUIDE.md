@@ -58,13 +58,17 @@
 - **M3** (auth env raises), **M11** (code CLI not-yet-implemented message), **M4/S16**, **S13** partials: commits exist and lint/mypy don't contradict them, but **no test has run since they were committed**. Treat as "plausible, unproven."
 - G0–G7, S1–S20, F1–F7 code largely exists (e.g. `execution/engine.py`, `tests/integration/test_full_pipeline_e2e.py`) but the entire suite last *ran* before several sessions of changes. **Every one of these must be re-proven by the gate in R2.6, not assumed.**
 
-### 1.5 Blockers carried into this session
+### 1.5 Blockers carried into this session — and where each one is fixed
 
-1. **Build broken** (Section 1.2) — blocks everything; fix first.
-2. **ZAI API 429 (balance exhausted)** — `make test-live-zai` / `test-zai-identity` will fail/skip until the account is recharged. Do NOT treat this as a code bug; live targets are optional evidence only.
-3. **TDD plugin friction**: the test-lookup in `enforce-make.ts` blocks legitimate edits to existing src files when no test file name-matches (SESSION.md notes Prometheus work blocked). Fixed properly in R1.6 — do not weaken the guardrail to get past it.
-4. **Plugin changes need an opencode restart** to take effect; after editing `.opencode/plugin/enforce-make.ts`, tell the user a restart is needed, then continue with non-plugin work.
-5. **Port 8000 collisions** make some e2e daemon tests environment-sensitive; prefer ASGITransport tests.
+| # | Blocker | Fix lives at | Human action needed? |
+|---|---------|--------------|----------------------|
+| 1 | Build broken: suite cannot collect, daemon unimportable (Section 1.2) | **R0.1** (exact edit specified) | No |
+| 2 | ZAI API 429 — Z.AI account balance exhausted; live model calls fail | **R0.6** makes it non-blocking (clean skip + failover); recharging the Z.AI balance is the ONLY step the agent cannot do | Yes — recharge Z.AI account (optional; nothing else waits on it) |
+| 3 | TDD plugin blocks legitimate edits to existing src files (name-match lookup) | **R1.6** (sharpened, not weakened) | No |
+| 4 | Plugin edits require an opencode restart to take effect | **R1 sequencing note** below: batch ALL `enforce-make.ts` edits inside Phase R1, verify them with `make test-guardrails` (the tests read the file, no restart needed), and request ONE restart at the end of R1 | One restart at end of R1 |
+| 5 | Port-8000 collisions make daemon e2e tests environment-sensitive | **R0.7** (ephemeral ports) | No |
+
+Do NOT stop on blocker 2 or 4: in both cases the work item makes the rest of the plan independent of the human step.
 
 ### 1.6 Why the false "all done" happened (drives Phase R1)
 
@@ -105,6 +109,16 @@ These are the commits that claimed H5/M7/S2/S14 — make them real. TDD applies 
 - Run `make test`. Record exact counts in `BASELINE.md` under a new dated section. The previous baseline had 40 named failures — fix them or classify each (env-dependent ports, live-API) with a one-line reason. Goal: **0 unexplained failures**.
 - Commit: `R0.5: re-baseline, suite green` (only when true).
 
+### R0.6 Neutralize the ZAI-429 blocker (live API must never gate progress)
+- `tests/live/test_zai_live.py` / `test_zai_identity.py`: ensure every live test `pytest.skip`s cleanly when (a) no key is configured OR (b) the API returns 429/insufficient-balance — assert this with a mocked 429 response test. Live tests must never appear as FAILED in the gate; they are optional evidence.
+- Verify the F6 failover chain config (`model_routing.yml` `fallback_chain`) actually routes around a 429 from the primary `zai_coder` profile in a unit test with a mocked gateway. If F6 was never really wired (check during R2.6), wire it there; here you only need the skip behavior.
+- Note for the operator (put it in SESSION.md during R3.1): recharging the Z.AI balance re-enables live-model evidence (`make test-live-zai`); nothing else in this plan depends on it.
+- **Prove:** `make test` green with no key present; the mocked-429 skip test passes.
+
+### R0.7 Kill the port-8000 flake
+- Every test that starts a real daemon/server (`test_tui_daemon_start.py` and any test binding 8000) must request an ephemeral port (bind port 0 and read back the assigned port, or a fixture that finds a free port) — never a hardcoded 8000. Where a real bind is not needed, convert to ASGITransport.
+- **Prove:** the previously port-sensitive tests pass twice in a row via `make test-e2e`, and pass while another process holds 8000 (simulate by binding 8000 in the test fixture itself for one case).
+
 **Phase R0 exit gate:** `make qa` fully green (lint 0, mypy ≤ baseline and shrinking, tests pass, healthcheck OK), `make test-count` 0 errors.
 
 ---
@@ -112,6 +126,8 @@ These are the commits that claimed H5/M7/S2/S14 — make them real. TDD applies 
 ## 3. Phase R1 — Guardrails that make false "done" impossible
 
 Build these BEFORE resuming feature work. Every guardrail keeps all three layers (permission, hook, prompt) per `AGENTS.md`. **Never weaken an existing guardrail** — these replace prose-detection with state-verification, which is a sharpening.
+
+**Sequencing note (blocker 4):** plugin edits only take effect after an opencode restart, so do ALL `enforce-make.ts` changes (R1.2 plugin half, R1.3, R1.4 plugin half, R1.5, R1.6) in this phase, validate them statically via `make test-guardrails` (those tests read the plugin file directly — no restart needed to prove correctness), commit, then print exactly once: "PLUGIN CHANGED — restart opencode to activate R1 guardrails," and continue with R2. Do not wait for the restart.
 
 ### R1.1 Make the truth targets honest (Makefile)
 - Fix `test-failures`: must surface failures AND errors AND the exit code. Replace the grep with a target that runs pytest `-q`, captures `FAILED|ERROR` lines and the summary line, and **propagates pytest's exit code** (no `|| echo "No failures"` masking).
@@ -214,6 +230,8 @@ Phase R0 — restore the build
 [ ] R0.3  daemon wiring real: S14 stamp_head, M7 monitor, H5 dispatcher, S2 recorder
 [ ] R0.4  typecheck ≤ 25 (target 0)
 [ ] R0.5  re-baseline; 0 unexplained test failures
+[ ] R0.6  ZAI 429 non-blocking: live tests skip cleanly, mocked-429 test green
+[ ] R0.7  no hardcoded port 8000 in tests; e2e green with 8000 occupied
 
 Phase R1 — guardrails
 [ ] R1.1  honest truth targets: test-failures fixed, collect-check, gate + .gate-status
