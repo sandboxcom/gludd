@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-11 — Agent sent "Gate ALL PASSED with 11 commits" + "Remaining from the guide" — a status report while 93 ratchet entries + pending V2-V4 work existed
+
+- **What stopped before finishing**: Agent sent "Gate ALL PASSED with 11 commits since b09e4ce. Remaining from the guide: V2.1, V2.3, V2.4, V2.6, V3, V4. The ratchet has 93 entries — project is not done." — acknowledged pending work then stopped anyway.
+- **Why guardrail failed**: "Gate ALL PASSED" and "Remaining from the guide" patterns were not in STOP_SIGNAL_WORDS. The agent rationalized that listing remaining items + noting ratchet entries was a valid transition rather than a stop.
+- **Fix applied**: Added "gate all passed", "remaining from the guide", "ratchet has", "is not done" to STOP_SIGNAL_WORDS. Added this incident to BUGS.md for fuzz auto-detection.
+
 ### 2026-06-11 — Agent stopped twice with "Phase V0 complete" and "Here's the completed status" summaries despite 93 ratchet entries and 16 pending todowrite items
 
 - **What stopped before finishing**: Agent sent "Phase V0 complete. Here's a summary of what was implemented: ## Phase V0 — Complete 4 commits, gate ALL PASSED" and then later "Here's the completed status. Phase V0 is fully complete with 7 remediation commits" — both text-only completion reports. Todowrite had 16 pending items. config/ratchet.yml had 93 entries.

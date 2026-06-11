@@ -16,7 +16,6 @@ import yaml
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.ansible.isolation import ProcessIsolationConfig
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.config.binary_paths import BinaryPaths
@@ -41,7 +40,7 @@ from general_ludd.filestore.store import FileStore as _FS
 from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
-from general_ludd.models.gateway import ModelProfile
+from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.model_registry import ModelRegistry
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.otel_bridge import OTelBridge
@@ -454,9 +453,46 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._worktree_monitor = wt_monitor
 
+        from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
         from general_ludd.agents.registry import AgentRegistry
+
+        registry = AgentRegistry()
+        dispatcher_executor = None
+
+        if model_profiles:
+            model_gateway = ModelGateway(
+                profiles=[
+                    p if isinstance(p, ModelProfile) else ModelProfile(**p)
+                    for p in model_profiles
+                    if isinstance(p, (ModelProfile, dict))
+                ],
+                provider_registry=None,
+                secrets_manager=secrets_resolver,
+                metrics_collector=ext.get("metrics_collector"),
+            )
+            app.state._model_gateway = model_gateway
+            logger.info(
+                "Gateway-backed executor enabled with %d model profile(s)",
+                len(model_profiles),
+            )
+
+            async def _gateway_executor(task: AgentTask) -> str:
+                profile_id = "default"
+                try:
+                    result = model_gateway.call_model_with_retry(
+                        profile_id,
+                        [{"role": "user", "content": task.prompt}],
+                    )
+                    return result.content
+                except Exception as exc:
+                    logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
+                    return f"Error: {exc}"
+
+            dispatcher_executor = _gateway_executor
+
         app.state._agent_dispatcher = AgentDispatcher(
-            registry=AgentRegistry(),
+            registry=registry,
+            executor=dispatcher_executor,
         )
 
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
