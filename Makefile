@@ -11,7 +11,7 @@ UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 
-   .PHONY: search-google search-json \
+    .PHONY: search-google search-json \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai test-tui-daemon diag-gunicorn \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -26,7 +26,87 @@ TESTS_DIR := tests
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
-        skill-install skill-list bootstrap-skills
+        skill-install skill-list bootstrap-skills \
+        scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
+        git-remote-sandboxcom git-push-sandboxcom git-add-all help
+
+help:
+	@echo "Usage: make [target]"
+	@echo ""
+	@echo "  --- Setup ---"
+	@echo "  init                  Set up project (dirs + deps)"
+	@echo "  sync                  Sync uv dependencies"
+	@echo "  bootstrap             init + lint + test + healthcheck"
+	@echo "  install-hooks         Install pre-commit hooks (secrets, lint, collect)"
+	@echo ""
+	@echo "  --- Quality ---"
+	@echo "  lint                  Run ruff linter"
+	@echo "  lint-fix              Run ruff with auto-fix"
+	@echo "  typecheck             Run mypy"
+	@echo "  healthcheck           Verify imports work"
+	@echo "  qa                    Run lint + typecheck + test + healthcheck"
+	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
+	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  collect-check         Fast collection-error gate"
+	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
+	@echo "  sast                  Run bandit SAST"
+	@echo "  sbom                  Generate CycloneDX SBOM"
+	@echo "  pip-audit             Audit dependencies for vulnerabilities"
+	@echo "  security              Full security: sast + sbom + pip-audit"
+	@echo ""
+	@echo "  --- Testing ---"
+	@echo "  test                  Full test suite with coverage"
+	@echo "  test-unit             Unit tests only"
+	@echo "  test-integration      Integration tests"
+	@echo "  test-e2e              End-to-end tests"
+	@echo "  test-specific         Single test (TESTFILE='path::TestClass::test_name')"
+	@echo "  test-count            Count collected tests"
+	@echo "  test-failures         Show test failures"
+	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
+	@echo "  test-live-zai         Live GLM model test (requires API key)"
+	@echo "  test-guardrails       Test guardrail infrastructure"
+	@echo ""
+	@echo "  --- Git ---"
+	@echo "  git-status            Show git status"
+	@echo "  git-diff              Show diff stats"
+	@echo "  git-staged            Show staged changes"
+	@echo "  git-log               Show recent commits"
+	@echo "  git-add FILES='...'   Stage specific files"
+	@echo "  git-add-all           Stage all changes"
+	@echo "  git-commit MSG='...'  Commit staged changes"
+	@echo "  git-reset FILES='...' Reset to ref (soft by default)"
+	@echo "  git-branch MSG='...'  Create branch"
+	@echo "  git-checkout MSG='...' Switch branch"
+	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
+	@echo "  feature-start MSG='...' Create and switch to feature branch"
+	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
+	@echo ""
+	@echo "  --- Secrets + Security ---"
+	@echo "  scan-secrets          Run detect-secrets scan against baseline"
+	@echo "  scan-secrets-baseline Create/update detect-secrets baseline"
+	@echo "  clean-untracked       Remove reinvention-of-wheel files"
+	@echo "  clean-hooks           Remove legacy hook scripts"
+	@echo ""
+	@echo "  --- Build + Deploy ---"
+	@echo "  dist                  Build distribution tarball"
+	@echo "  build-executable      Build standalone executable (pyinstaller)"
+	@echo "  container-build       Build container image"
+	@echo "  container-run         Run container locally"
+	@echo "  container-push        Push container image"
+	@echo ""
+	@echo "  --- Ansible ---"
+	@echo "  ansible-syntax        Validate playbook syntax"
+	@echo "  playbook-list         List registered playbooks"
+	@echo "  molecule-test         Run molecule tests"
+	@echo ""
+	@echo "  --- Git Remote ---"
+	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
+	@echo "  git-push-sandboxcom   Push to sandboxcom/gludd mirror"
+	@echo ""
+	@echo "  --- Other ---"
+	@echo "  smoke                 Quick daemon boot health check"
+	@echo "  clean                 Remove build artifacts"
+	@echo "  dist-clean            Remove distribution artifacts"
 
 search-google:
 	@$(PYTHON) $(SEARCH_SCRIPT) "$(SEARCH)" -n $(MAX_RESULTS) -f $(FORMAT)
