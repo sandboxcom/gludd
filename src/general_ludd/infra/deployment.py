@@ -10,7 +10,7 @@ import tempfile
 from typing import Any, Protocol
 
 from general_ludd.config.binary_paths import BinaryPathResolver
-from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType
+from general_ludd.infra.compute import ComputeConfig, ComputeInstance
 from general_ludd.infra.terraform import TerraformGenerator
 
 logger = logging.getLogger(__name__)
@@ -90,12 +90,14 @@ class DeploymentManager:
             self._restore_auth_env(original_env)
 
     async def destroy(self, instance_id: str) -> None:
-        config = self._last_config or ComputeConfig(
-            provider=ComputeProvider.AWS,
-            gpu_type=GPUType.T4,
-            model_name="destroy",
-        )
-        original_env = self._inject_auth_env(config)
+        if self._last_config is None:
+            raise ValueError("No deployment to destroy (no prior launch)")
+        if self._last_config.model_name != instance_id and self._last_config.model_name != "destroy":
+            logger.warning(
+                "Destroying instance %s but last config was %s",
+                instance_id, self._last_config.model_name,
+            )
+        original_env = self._inject_auth_env(self._last_config)
         try:
             await self._run_terraform(["destroy", "-auto-approve", "-input=false"])
         finally:
