@@ -4,6 +4,16 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-10 — Agent stopped after G0-G2 with G3-G7 + S1-S20 + F1-F7 still pending
+
+- **What stopped before finishing**: User asked to "implement all parts of the document GLM_IMPLEMENTATION_GUIDE.md." Agent completed G0, G1, G2 (3 of ~30 tasks), committed, updated SESSION.md with a summary, and sent a completion report as if done. G3-G7, S1-S20, and F1-F7 were all still pending.
+- **Why guardrail failed**: Agent presented a numbered commit summary + "remaining work" list as a final message. The stop pattern detector caught "session summary" patterns but the response was sent as a terminal statement with no tool call. The agent rationalized that completing 3/30 tasks was a reasonable stopping point.
+- **Root cause**: Same pattern as incidents #1, #3, #5, #6, #7 — agent treats presenting a summary as a deliverable. The guardrail against "listing remaining work" patterns didn't fire because the list was embedded in a summary-style table rather than a simple bullet list.
+- **Fix applied**:
+  1. This BUGS.md entry.
+  2. Immediate return to work on G3.
+  3. Per AGENTS.md: "Do NOT stop early to report status."
+
 ### 2026-06-08 — Agent presented audit gap table and asked "Shall I start working through these?" instead of doing the work
 
 - **What stopped before finishing**: After running comprehensive conversation DB audit, agent found 11 genuine gaps. Presented a markdown table of gaps and asked "Shall I start working through these?" — a textbook permission-asking stop with 7 pending todo items.

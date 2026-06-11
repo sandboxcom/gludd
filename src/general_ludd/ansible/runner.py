@@ -22,11 +22,25 @@ from general_ludd.security.sanitize import sanitize_job_id
 
 logger = logging.getLogger(__name__)
 
-_PLAYBOOKS_ROOT = Path(__file__).resolve().parent.parent.parent.parent / "playbooks"
 
-DEFAULT_REGISTRY: dict[str, str] = {
-    "noop.yml": str(_PLAYBOOKS_ROOT / "noop.yml"),
-}
+def _resolve_playbooks_root() -> Path:
+    candidate = Path(__file__).resolve().parent.parent.parent.parent / "playbooks"
+    if candidate.is_dir():
+        return candidate
+    cwd = Path.cwd() / "playbooks"
+    if cwd.is_dir():
+        return cwd
+    return candidate
+
+
+_PLAYBOOKS_ROOT = _resolve_playbooks_root()
+
+DEFAULT_REGISTRY: dict[str, str] = {}
+if _PLAYBOOKS_ROOT.is_dir():
+    for _f in sorted(_PLAYBOOKS_ROOT.glob("*.yml")):
+        DEFAULT_REGISTRY[_f.name] = str(_f)
+if not DEFAULT_REGISTRY:
+    DEFAULT_REGISTRY["noop.yml"] = str(_PLAYBOOKS_ROOT / "noop.yml")
 
 
 def _build_registry(extra: dict[str, str] | None = None) -> dict[str, str]:
@@ -103,8 +117,11 @@ class AnsibleRunnerAdapter:
         env: dict[str, str] | None = None,
         **runner_kwargs: Any,
     ) -> dict[str, Any]:
-        playbook_path = self.resolve_playbook(playbook_name)
-        _ = private_data_dir or self.private_data_dir
+        try:
+            playbook_path = self.resolve_playbook(playbook_name)
+        except ValueError as exc:
+            return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
+        _pdd = private_data_dir or self.private_data_dir
         saved_env: dict[str, str | None] = {}
         if env:
             for key, val in env.items():
