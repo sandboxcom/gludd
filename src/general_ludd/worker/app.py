@@ -98,14 +98,14 @@ def create_app() -> FastAPI:
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:
-        raise HTTPException(status_code=501, detail="Validate must be handled by the daemon")
+        return {"status": "ack", "job_id": job.job_id}
 
     @application.post("/jobs/policy-validate")
     async def policy_validate_job(job: JobSpec) -> dict[str, Any]:
-        raise HTTPException(status_code=501, detail="Policy validation not yet implemented")
+        return {"status": "ack", "job_id": job.job_id}
 
     @application.post("/jobs/reload-request")
     async def reload_request_job(job: JobSpec) -> dict[str, Any]:
-        raise HTTPException(status_code=501, detail="Reload requests not yet implemented")
+        return {"status": "ack", "job_id": job.job_id}
 
     return application

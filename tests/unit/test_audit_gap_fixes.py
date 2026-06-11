@@ -35,11 +35,12 @@ class TestAddTodoRequestValidation:
             main()
 
     def test_add_todo_rejects_invalid_queue(self):
-        with patch("httpx.post") as mock_post:
+        with patch("httpx.post") as mock_post, \
+             patch("sys.argv", ["gludd", "add", "Test", "--queue", "nonexistent_queue_12345"]):
             mock_post.return_value = MagicMock(status_code=400, text="Invalid queue")
-        with patch("sys.argv", ["gludd", "add", "Test", "--queue", "nonexistent_queue_12345"]), \
-             pytest.raises(SystemExit):
-            main()
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code != 0
 
 
 class TestPathSanitization:

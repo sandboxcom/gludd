@@ -41,7 +41,7 @@ class TestBinaryBootstrapperInit:
     def test_default_store_created(self):
         from general_ludd.filestore.bootstrap import BinaryBootstrapper
 
-        with patch("general_ludd.filestore.store.FileStore") as MockFS:
+        with patch("general_ludd.filestore.bootstrap.FileStore") as MockFS:
             mock_fs = MagicMock()
             MockFS.return_value = mock_fs
             boot = BinaryBootstrapper()

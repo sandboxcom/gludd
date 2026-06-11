@@ -467,8 +467,7 @@ class TestCmdDaemonExecution:
         mock_proc = MagicMock()
         mock_proc.wait.return_value = None
         mock_proc.returncode = 0
-        with patch("general_ludd.daemon.create_daemon_app") as mock_create, \
-             patch("subprocess.Popen", return_value=mock_proc) as mock_popen, \
+        with patch("subprocess.Popen", return_value=mock_proc) as mock_popen, \
              patch("logging.basicConfig"):
             with pytest.raises(SystemExit) as exc_info:
                 _cmd_daemon(_ns(
@@ -476,8 +475,9 @@ class TestCmdDaemonExecution:
                     tick_interval=1.0, workers=1, config_dir=None,
                 ))
             assert exc_info.value.code == 0
-            mock_create.assert_called_once()
             mock_popen.assert_called_once()
+            cmd = mock_popen.call_args[0][0]
+            assert "create_daemon_app" in " ".join(cmd)
 
     def test_daemon_nonzero_exit(self):
         from general_ludd.cli import _cmd_daemon
