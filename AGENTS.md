@@ -3,7 +3,7 @@
 ## Mechanical Contract (READ FIRST — numbered priority)
 
 1. **Only `make <target>`.** Never bare commands, no metacharacters (`|`, `;`, `&&`, `$()`).
-2. **Pending todos ⇒ tool call.** If any item is `pending` or `in_progress`, your next output MUST be a tool call. Text-only responses with unfinished work are a hard violation.
+2. **Pending todos ⇒ tool call.** If any item is `pending` or `in_progress`, your next output MUST be a tool call. Text-only responses with unfinished work are a hard violation. **BEFORE every text response: check `config/ratchet.yml` — if it has ANY entries, the project has known-unfixed work. Any response that is not a tool call while ratchet has entries is a premature stop.**
 3. **"Done" requires: `make gate` green + `TASKS.md` evidence.** Nothing else counts. No self-assessment, no assertion from memory. Every item ticked must have a gate output pasted.
 4. **TDD:** write a failing test FIRST, run it, THEN write code. `make test-count` must show 0 collection errors before every commit.
 5. **When you find a gap:** fix it now, do not list it and ask. You own it. Fix it, test it, commit it, continue.

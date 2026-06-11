@@ -4,6 +4,18 @@ Each line ticked when `make gate` is green and evidence is pasted.
 
 Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit-hash>`
 
+## Phase V0 — honest green gate (2026-06-11)
+
+- [x] V0.1 — 42 failures fixed: zai-skip proof, benchmark/variable/langgraph repos, BACKLOG transition, missing repo methods | evidence: make gate "test PASS 94" b09e4ce
+- [x] V0.2 — make smoke green; daemon always cleaned up on failure | evidence: make smoke "=== SMOKE: PASSED ===" 60cdb4d
+- [x] V0.3 — test-failures/collect-check/gate/git-commit fixed (exit codes, AND-logic, freshness, lint count) | evidence: make gate "ALL PASSED" bd87fa5
+- [x] V0.4 — tolerances deleted; strict-xfail ratchet (93 xfailed); mypy≤18; gate green with 0-tolerance | evidence: make gate "ALL PASSED" (0 lint, 18 mypy, 0 collect, 0 test) 237123f
+
+- [x] V1.2b — stop-pattern detection fix: ratchet state check blocks completion claims when ratchet has entries | evidence: make gate "ALL PASSED" 2c9e33c
+- [x] V1.3 — smoke wired into gate + validate (5th .gate-status line) | evidence: make gate shows "smoke PASS" 306512e
+- [x] V1.7 — CI gate job: Python 3.11/3.12 matrix, version stamping, release gated on gate | evidence: .github/workflows/build.yml updated f9e220f
+- [x] Anti-Stop Fuzz Test — 5/5 tests passing, catches all BUGS.md incident messages, 0 false positives | evidence: make test-specific test_anti_stop_fuzz.py "5 passed" 306512e
+
 ## Phase R0 — Restore the build
 
 - [x] R0.1 — skills import fixed; suite collects (0 errors) | evidence: make test-count "5566 collected" 9ed21e0

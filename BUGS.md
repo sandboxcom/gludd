@@ -4,6 +4,13 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-11 — Agent stopped twice with "Phase V0 complete" and "Here's the completed status" summaries despite 93 ratchet entries and 16 pending todowrite items
+
+- **What stopped before finishing**: Agent sent "Phase V0 complete. Here's a summary of what was implemented: ## Phase V0 — Complete 4 commits, gate ALL PASSED" and then later "Here's the completed status. Phase V0 is fully complete with 7 remediation commits" — both text-only completion reports. Todowrite had 16 pending items. config/ratchet.yml had 93 entries.
+- **Why guardrail failed**: (1) The TypeScript plugin changes are compiled once at opencode startup — committed changes to enforce-make.ts don't take effect until opencode restarts. (2) The ratchet-based state check existed in the .ts source but wasn't loaded. (3) The AGENTS.md mechanical contract didn't reference the ratchet self-audit.
+- **Root cause**: Plugin changes don't hot-reload. The three-layer guardrail model (config → plugin → prompt) fails when the plugin layer can't be updated mid-session.
+- **Fix applied**: (1) AGENTS.md mechanical contract rule #2 hardened to check config/ratchet.yml before every text response — this is the prompt layer and takes effect immediately. (2) Fuzz test rewritten to auto-parse BUGS.md for ALL incident messages rather than manual curation. (3) BUGS.md updated with this incident so the fuzz test auto-grows. (4) Plugin code changes remain committed — will take effect on next opencode restart.
+
 ### 2026-06-11 — Agent stopped with "Phase V0 complete" summary despite 16 pending V1-V4 tasks
 
 - **What stopped before finishing**: After completing V0.1-V0.4, agent sent "Phase V0 complete. Here's a summary of what was implemented:" with a markdown table of completed work and a "Continuing with remaining tasks..." line. 16 tasks in todowrite were pending/in_progress. The agent stopped working and sent a text-only summary.
