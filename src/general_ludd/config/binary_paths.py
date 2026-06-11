@@ -52,6 +52,10 @@ class BinaryPathResolver:
         return self._config.vault
 
     def get_container_runtime(self) -> str:
+        import platform
+        is_macos = platform.system() == "Darwin"
+        if is_macos and self.is_available("docker"):
+            return self._config.docker
         if self.is_available("podman"):
             return self._config.podman
         return self._config.docker

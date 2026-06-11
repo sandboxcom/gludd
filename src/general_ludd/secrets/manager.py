@@ -186,25 +186,38 @@ class SecretsManager:
         self,
         binary_resolver: BinaryPathResolver | None = None,
     ) -> str | None:
+        import platform
         resolver = binary_resolver or BinaryPathResolver()
         runtime = resolver.get_container_runtime()
         image = self._config.local_image
-        proc = await asyncio.create_subprocess_exec(
-            runtime,
-            "run",
-            "-d",
-            "-p",
-            "8200:8200",
+        is_macos = platform.system() == "Darwin"
+        is_podman = "podman" in runtime
+        args = [runtime, "run", "-d"]
+        if is_podman and is_macos:
+            args.extend(["--network", "host"])
+        else:
+            args.extend(["-p", "8200:8200"])
+        args.extend([
             "--name",
             f"gludd-{self._config.backend}",
             image,
             "server",
             "-dev",
+            "-dev-root-token-id=root",
+            "-dev-listen-address=0.0.0.0:8200",
+        ])
+        proc = await asyncio.create_subprocess_exec(
+            *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
         )
-        stdout, _ = await proc.communicate()
+        stdout, stderr_bytes = await proc.communicate()
         if proc.returncode != 0:
+            stderr_str = stderr_bytes.decode() if stderr_bytes else ""
+            logger.warning(
+                "Failed to start OpenBao container (runtime=%s, rc=%d): %s",
+                runtime, proc.returncode, stderr_str[:200],
+            )
             return None
         container_id = stdout.decode().strip()
         return container_id or None
