@@ -1,20 +1,23 @@
 from __future__ import annotations
 
-import asyncio
 import logging
+import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
-from general_ludd.infra.compute import ComputeConfig, ComputeInstance, ComputeProvider, GPUType, InferenceEngine
+from general_ludd.infra.compute import (
+    ComputeConfig, ComputeInstance, ComputeProvider, GPUType, InferenceEngine,
+)
 from general_ludd.infra.deployment import DeploymentManager
 
 logger = logging.getLogger(__name__)
 
 
 def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
-    from general_ludd.daemon import _get_or_create_extended_subsystems as _daemon_ext
-
+    from general_ludd.daemon import (
+        _get_or_create_extended_subsystems as _daemon_ext,
+    )
     return _daemon_ext(app)
 
 
@@ -22,13 +25,25 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     _deployments: dict[str, ComputeInstance] = {}
 
     def _get_deployment_manager() -> DeploymentManager:
+        cached = getattr(app.state, "_deployment_manager", None)
+        if cached is not None:
+            return cached
         secrets_resolver = getattr(app.state, "_secrets_resolver", None)
-        return DeploymentManager(secrets_resolver=secrets_resolver)
+        pdd = os.path.join(
+            os.path.expanduser("~/.local/share/general-ludd"),
+            "deployments",
+        )
+        os.makedirs(pdd, exist_ok=True)
+        mgr = DeploymentManager(
+            secrets_resolver=secrets_resolver,
+        )
+        mgr.private_data_dir = pdd
+        app.state._deployment_manager = mgr
+        return mgr
 
     @app.get("/admin/compute/utilization")
     async def admin_compute_utilization() -> dict[str, Any]:
         from typing import cast
-
         ext = _get_or_create_extended_subsystems(app)
         return cast(dict[str, Any], ext["utilization"].get_utilization_report())
 
@@ -88,18 +103,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         try:
             provider = ComputeProvider(provider_str)
         except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unknown provider: {provider_str}. Valid: {[p.value for p in ComputeProvider]}",
-            ) from None
+            raise HTTPException(status_code=422, detail=f"Unknown provider: {provider_str}") from None
         try:
             gpu_type = GPUType(gpu_str)
         except ValueError:
-            raise HTTPException(
-                status_code=422,
-                detail=f"Unknown GPU type: {gpu_str}. Valid: {[g.value for g in GPUType]}",
-            ) from None
-
+            raise HTTPException(status_code=422, detail=f"Unknown GPU type: {gpu_str}") from None
         try:
             engine = InferenceEngine(req.get("engine", "vllm"))
         except ValueError:
