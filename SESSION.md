@@ -3,39 +3,28 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-11 (session 21 — GLM Implementation Guide: critical spine COMPLETE)
+- 2026-06-11 (session 21 — 21 GLM fixes completed, critical spine DONE)
 
 ## Current Status
-- **Phase**: G0-G7 critical spine DONE, S1-S6 secondary gaps DONE, S7-S20 + F1-F7 pending
-- **Test Suite**: ~5440+ passed (e2e proof test verifies full pipeline)
+- **Phase**: G0-G7 critical spine DONE, 14 secondary gaps DONE, S11/S12/S14/S15/S17/S20 + F1-F7 pending
+- **Test Suite**: ~5440+ passed, e2e proof test verifies full pipeline
 - **Branch**: master
-- **Latest commit**: baaedcd — S6 budget guard wired from user config to EventLoop
+- **Latest commit**: 2283555 — S18 quality gate honesty
 - **Mypy**: 25 errors (pre-existing)
-- **Lint**: 0 errors
+- **Lint**: 2 errors (line length, cosmetic)
 
-## Completed: Critical Spine (G0-G7)
+## Completed: 21 of 37 GLM items
 
-| # | What | Evidence |
-|---|------|----------|
-| G0 | Daemon starts configured via env vars + config search | 19 tests |
-| G1 | EventLoop session per tick with commit + phase isolation | 6 tests |
-| G2 | Todo API persists to DB via session factory | 7 e2e tests |
-| G3 | Playbook resolution structured failures + auto-discovery | 7 tests |
-| G4 | ExecutionEngine: model-driven code gen + parsing + test running | 6 tests |
-| G5 | ReturnReviewer: explicit failed on model/parse failure | 6 tests |
-| G6 | Git delivery: branch creation + commit on code changes | 4 tests |
-| G7 | End-to-end proof: API → claim → dispatch → review → reconcile → commit | 1 integration test |
+| Block | Items Complete |
+|-------|---------------|
+| G0-G7 | All 8 critical spine items |
+| S1-S10 | 10 secondary gaps |
+| S13, S16, S18, S19 | 4 additional secondaries |
+| **Total** | **22 items** (G0-G7 + S1-S10 + S13 + S16 + S18 + S19) |
 
-## Completed: Secondary Gaps (S1-S6)
-
-| # | What |
-|---|------|
-| S1 | Benchmark endpoints use session factory (commit + close per call) |
-| S2 | (AdaptiveRouter already wired) |
-| S3 | Self-improve persists todos to DB via TodoRepository |
-| S4 | Worker stub endpoints return 501, PLAYBOOK_REGISTRY uses discovered playbooks |
-| S5 | Stuck-task reaper: stale ACTIVE todos revert to QUEUED after timeout |
-| S6 | Budget guard wired from UserConfig.budget to EventLoop |
+## Remaining (15 items)
+S11 (MCP initialized), S12 (secrets honesty), S14 (DB/migrations), S15 (compute lifecycle),
+S17 (worktree/hooks/reload), S20 (small honesty fixes), F1-F7 (recommended features)
 
 ## Session 20: Medium Skills Ingestion (commit 2940652)
 
@@ -787,23 +776,13 @@ EventLoop auto-creates from session (when available):
 - Root cause: housekeeping treated as terminal action
 - Fix: added "update session" to STOP_SIGNAL_WORDS, BUGS.md incident #5 logged
 
-## Next Steps (from GLM_IMPLEMENTATION_GUIDE.md)
+## Next Steps
 
-### Critical spine — remaining (G3-G7):
-- **G3**: Playbook resolution — construct runner with real playbooks dir, pass extravars, structured failure results
-- **G4**: ExecutionEngine — real in-process model-driven code generation (the biggest missing piece)
-- **G5**: Return review calls real model — wire ReturnReviewer into dispatch, fix silent-failure mode
-- **G6**: Git delivery — commit/branch on completed work via GitAutomation
-- **G7**: End-to-end proof — single test driving a todo from API → reconciled status + git commit
-
-### Phase 2 (S1-S20):
-- DB sessions for routers (S1), benchmark feedback loop (S2), self-improve persistence (S3)
-- Worker endpoint honesty (S4), stuck-task reaper (S5), budget guard (S6), metrics (S7)
-- Projects: persist, clone, workspace (S8), skills firing (S9), prompts production-ready (S10)
-- MCP end-to-end (S11), secrets honesty (S12), CLI/API contract fixes (S13)
-- DB/migrations (S14), compute lifecycle (S15), honest degradation (S16)
-- Worktree/hooks/reload (S17), quality gate honesty (S18), startup failure surfacing (S19)
-- Small honesty fixes (S20)
-
-### Phase 3 (F1-F7):
-- PR delivery, MCP tools in model calls, GitHub issues→todos, run history, cost ceilings, failover, TUI dashboard
+### Remaining GLM items (priority order):
+- **S11**: MCP send notifications/initialized after initialize, match responses by id
+- **S12**: Secrets honesty — implement mode:auto honestly, vault round-trip
+- **S14**: DB/migrations production-ready — alembic in lifespan, fix migration 002
+- **S15**: Compute lifecycle — persistent state dir per deployment, reaper phase
+- **S17**: Worktree + hooks + reload de-theatered
+- **S20**: Small honesty fixes (M1 ansible callback, M10 integrity key, etc.)
+- **F1-F7**: Recommended features (PR delivery, MCP tools, etc.)
