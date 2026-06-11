@@ -3,46 +3,39 @@
 > This file is maintained automatically. Update it at session start to restore context.
 
 ## Last Updated
-- 2026-06-10 (session 21 — GLM Implementation Guide Phase 0-1 begun)
+- 2026-06-11 (session 21 — GLM Implementation Guide: critical spine COMPLETE)
 
 ## Current Status
-- **Phase**: GLM_IMPLEMENTATION_GUIDE.md work — G0, G1, G2 complete; G3-G7 pending
-- **Test Suite**: 5497 collected, ~5440 passed, ~35+ failures (pre-existing + PHASE_ORDER fixes)
+- **Phase**: G0-G7 critical spine DONE, S1-S6 secondary gaps DONE, S7-S20 + F1-F7 pending
+- **Test Suite**: ~5440+ passed (e2e proof test verifies full pipeline)
 - **Branch**: master
-- **Latest commit**: merge of feature/g0-daemon-configured — G0/G1/G2 fixes
-- **Mypy**: 25 errors (5 pre-existing files)
+- **Latest commit**: baaedcd — S6 budget guard wired from user config to EventLoop
+- **Mypy**: 25 errors (pre-existing)
 - **Lint**: 0 errors
 
-## Session 21: GLM Implementation Guide — Critical Spine (G0-G2)
+## Completed: Critical Spine (G0-G7)
 
-### G0 — Daemon starts configured
-- `_build_daemon_env()` propagates config via env vars to gunicorn subprocess
-- `create_daemon_app()` falls back to `GLUDD_CONFIG_DIR` etc. env vars
-- `load_startup_config()` searches `~/.config/general-ludd` then `/etc/general-ludd`
-- `--templates-dir` and `--playbooks-dir` flags added to daemon subparser
-- MCP config loads all `*.yml` files from `mcp_servers/` (not just `example.yml`)
-- 19 new tests in `tests/unit/test_daemon_launch_config.py`
+| # | What | Evidence |
+|---|------|----------|
+| G0 | Daemon starts configured via env vars + config search | 19 tests |
+| G1 | EventLoop session per tick with commit + phase isolation | 6 tests |
+| G2 | Todo API persists to DB via session factory | 7 e2e tests |
+| G3 | Playbook resolution structured failures + auto-discovery | 7 tests |
+| G4 | ExecutionEngine: model-driven code gen + parsing + test running | 6 tests |
+| G5 | ReturnReviewer: explicit failed on model/parse failure | 6 tests |
+| G6 | Git delivery: branch creation + commit on code changes | 4 tests |
+| G7 | End-to-end proof: API → claim → dispatch → review → reconcile → commit | 1 integration test |
 
-### G1 — EventLoop session per tick + commit
-- `tick()` opens `session_factory()` for the tick duration, commits on success
-- `_run_phases()` wraps each phase in try/except — phases can't kill the tick
-- `run_forever()` logs ERROR on death; `_on_event_loop_done` callback on the task
-- All `self.session` references updated to `self._active_session`
-- `_templates_dir` in lifespan uses `getattr` for safety
-- 6 new tests in `tests/unit/test_event_loop_session_per_tick.py`
-- Fixed 3 pre-existing daemon test failures (patch path)
+## Completed: Secondary Gaps (S1-S6)
 
-### G2 — Todo API persists to DB
-- `POST /api/todos` creates via `TodoRepository` → commits → returns persisted todo
-- `GET /api/todos`, `GET /api/todos/{id}`, `GET /api/status` read from DB
-- Falls back to in-memory `_daemon_state` when no session_factory
-- Added `TodoRepository.list_all()` with queue/status/project_id filters
-- Added `InvalidTransitionError` to repository exports
-- 7 E2E tests in `tests/e2e/test_todos_persistence.py`
-
-### Phase order fixes (G1 side effect)
-- PHASE_ORDER now has 11 phases (includes `self_improve`)
-- Updated 3 test files expecting the old 10-phase order
+| # | What |
+|---|------|
+| S1 | Benchmark endpoints use session factory (commit + close per call) |
+| S2 | (AdaptiveRouter already wired) |
+| S3 | Self-improve persists todos to DB via TodoRepository |
+| S4 | Worker stub endpoints return 501, PLAYBOOK_REGISTRY uses discovered playbooks |
+| S5 | Stuck-task reaper: stale ACTIVE todos revert to QUEUED after timeout |
+| S6 | Budget guard wired from UserConfig.budget to EventLoop |
 
 ## Session 20: Medium Skills Ingestion (commit 2940652)
 
