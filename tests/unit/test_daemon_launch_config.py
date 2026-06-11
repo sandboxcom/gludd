@@ -28,12 +28,13 @@ class TestBuildDaemonEnv:
 
     def test_build_env_empty_when_no_flags(self):
         env = _build_daemon_env()
-        assert env == {}
+        assert env == {"GLUDD_PSK": ""}
 
     def test_build_env_default_values_excluded(self):
         env = _build_daemon_env(tick_interval=1.0, log_level="info")
         assert "GLUDD_TICK_INTERVAL" not in env
         assert "GLUDD_LOG_LEVEL" not in env
+        assert env["GLUDD_PSK"] == ""
 
     def test_build_env_includes_psk(self):
         env = _build_daemon_env(psk="abc123")
@@ -41,7 +42,7 @@ class TestBuildDaemonEnv:
 
     def test_build_env_no_psk_when_empty(self):
         env = _build_daemon_env()
-        assert "GLUDD_PSK" not in env
+        assert env["GLUDD_PSK"] == ""
 
 
 class TestBuildDaemonStartCmd:

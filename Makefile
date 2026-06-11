@@ -197,16 +197,28 @@ test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
 test-failures:
-	@$(UV) run python -m pytest tests/ -q 2>&1 | grep -E "^(FAILED|ERROR)" || true
-	@$(UV) run python -m pytest tests/ -q 2>&1 | tail -1
+	@$(UV) run python -m pytest tests/ -q 2>&1 | tee /tmp/gludd-test-output.txt; EXIT=$$?; \
+	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt; \
+	exit $$EXIT
 
 collect-check:
-	@$(UV) run python -m pytest tests/ --co -q 2>&1 | grep -q "errors during collection" && echo "COLLECTION ERRORS DETECTED" && exit 1 || echo "Collection OK"
+	@$(UV) run python -m pytest tests/ --co -q > /tmp/gludd-collect-output.txt 2>&1; EXIT=$$?; \
+	if [ $$EXIT -ne 0 ]; then \
+		echo "COLLECTION ERRORS DETECTED"; \
+		grep -E "ERROR|error" /tmp/gludd-collect-output.txt | head -5; \
+		exit 1; \
+	fi; \
+	echo "Collection OK"
 
 gate:
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
+	@echo "epoch $(shell date +%s)" >> .gate-status
 	@printf "lint " >> .gate-status
-	@$(UV) run ruff check src tests > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL $$($(UV) run ruff check src tests 2>&1 | tail -1 | wc -l | tr -d ' ')" >> .gate-status && touch .gate-failed)
+	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
+		echo "PASS 0" >> .gate-status; \
+	else \
+		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
+	fi
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
 	if [ $$TC_ERRS -le 25 ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
@@ -381,7 +393,18 @@ git-commit:
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Collection OK. Checking gate status..."
 	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
-	@if ! grep -q "^lint PASS\|^typecheck PASS\|^collect PASS\|^test PASS" .gate-status; then echo "ERROR: Gate not green. Run 'make gate' and fix issues first."; exit 1; fi
+	@for check in lint typecheck collect test; do \
+		if ! grep -q "^$${check} PASS" .gate-status; then \
+			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
+		fi; \
+	done
+	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+	NOW=$$(date +%s); \
+	AGE=$$((NOW - EPOCH)); \
+	if [ $$AGE -gt 1800 ]; then \
+		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
+	fi
+	@echo "Gate fresh and green. Committing..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 repo-commit:
