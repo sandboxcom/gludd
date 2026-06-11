@@ -380,6 +380,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         prompt_registry.refresh()
         app.state._prompt_registry = prompt_registry
 
+        # Build budget guard from config
+        budget_guard = None
+        if uc is not None:
+            budget_data = getattr(uc, "budget", None) or {}
+            if budget_data and any(budget_data.values()):
+                from general_ludd.controllers.budget import RunBudgetGuard
+                budget_guard = RunBudgetGuard(
+                    run_budget_usd=float(budget_data.get("daily_limit", float("inf"))),
+                    run_timeout_seconds=float(budget_data.get("timeout_seconds", float("inf"))),
+                    per_call_budget_usd=float(budget_data.get("per_task_limit", float("inf"))),
+                )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -387,7 +399,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             http_client=None,
             todo_repo=None,
             task_return_repo=None,
-            budget_guard=None,
+            budget_guard=budget_guard,
             mcp_client=None,
             mcp_tool_registry=None,
             event_bus=subsys["bus"],
