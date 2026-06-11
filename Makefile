@@ -116,6 +116,9 @@ test-specific:
 test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
+test-failures:
+	@$(UV) run python -m pytest tests/ -q 2>&1 | grep -E "^FAILED" || echo "No failures"
+
 test-integration:
 	@$(UV) run python -m pytest tests/integration/ -v
 

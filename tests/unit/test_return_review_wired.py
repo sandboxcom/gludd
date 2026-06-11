@@ -1,8 +1,6 @@
 from __future__ import annotations
 
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from general_ludd.review.reviewer import ReturnReviewer
 from general_ludd.schemas.task_decision import TaskDecision

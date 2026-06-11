@@ -41,7 +41,7 @@ class MetricsExporter:
         self._gauges[key] = value
 
     def histogram_observe(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
-        key = self._key(name, labels)
+        self._key(name, labels)
         if name not in self._histograms:
             self._histograms[name] = []
         self._histograms[name].append(value)
@@ -99,8 +99,8 @@ class MetricsExporter:
                 lines.append(f"# TYPE {name}_count histogram")
                 lines.append(f'{name}_count{{}} {summary["count"]}')
                 lines.append(f'{name}_sum{{}} {summary["sum"]}')
-        lines.append(f"# HELP gludd_uptime_seconds Uptime")
-        lines.append(f"# TYPE gludd_uptime_seconds gauge")
+        lines.append("# HELP gludd_uptime_seconds Uptime")
+        lines.append("# TYPE gludd_uptime_seconds gauge")
         lines.append(f"gludd_uptime_seconds {time.monotonic() - self._started_at}")
         return "\n".join(lines) + "\n"
 

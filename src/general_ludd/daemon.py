@@ -37,6 +37,7 @@ from general_ludd.db.session import (
     create_async_session_factory,
     ensure_tables,
     init_engine_from_config,
+    is_sqlite_url,
     seed_initial_queues,
 )
 from general_ludd.dependency.manager import DependencyManager  # noqa: F401
@@ -363,7 +364,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         if is_sqlite_url(str(engine.url)):
             try:
-                from general_ludd.db.migrations import get_alembic_config, run_upgrade, stamp_head
+                from general_ludd.db.migrations import get_alembic_config, stamp_head
                 alembic_cfg = get_alembic_config(str(engine.url))
                 stamp_head(alembic_cfg)
                 logger.info("Alembic stamped head on SQLite database")
@@ -450,9 +451,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task.add_done_callback(_on_event_loop_done)
 
         from general_ludd.controllers.budget_manager import BudgetManager
-        from general_ludd.observability.run_history import RunHistoryRecorder
         from general_ludd.observability.dashboard_data import DashboardDataProvider
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
+        from general_ludd.observability.run_history import RunHistoryRecorder
 
         budget_cfg = getattr(uc, "budget", {}) if uc else {}
         app.state._budget_manager = BudgetManager(
@@ -669,6 +670,7 @@ def create_daemon_app(
     @app.get("/metrics")
     async def metrics_prometheus() -> Any:
         from fastapi.responses import PlainTextResponse
+
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
         return PlainTextResponse(content=get_metrics_exporter().render_prometheus())
 

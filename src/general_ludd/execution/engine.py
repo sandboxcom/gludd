@@ -12,7 +12,6 @@ import os
 import re
 import subprocess
 import uuid
-from pathlib import Path
 from typing import Any
 
 from general_ludd.schemas.job import JobSpec

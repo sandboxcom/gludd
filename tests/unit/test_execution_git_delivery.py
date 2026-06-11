@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import os
 import subprocess
 import tempfile
 from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
@@ -132,7 +129,7 @@ class TestExecutionGitDelivery:
                 playbook="code", queue="core", work_type="code",
                 prompt_text="Create app.py",
             )
-            result = engine.execute(job)
+            engine.execute(job)
 
             subject = _last_commit_subject(ws)
             assert "TODO-G4" in subject

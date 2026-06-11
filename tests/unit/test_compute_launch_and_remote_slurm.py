@@ -5,27 +5,21 @@ TDD: These tests define the expected behavior before implementation.
 
 from __future__ import annotations
 
-import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
-
 from general_ludd.infra.compute import (
     ComputeConfig,
-    ComputeInstance,
     ComputeProvider,
     GPUType,
-    InferenceEngine,
 )
 from general_ludd.infra.deployment import DeploymentManager
-from general_ludd.infra.slurm import SlurmAdapter, SlurmJobState, SlurmJobInfo
+from general_ludd.infra.slurm import SlurmAdapter, SlurmJobState
 from general_ludd.infra.terraform import TerraformGenerator
 
 
 class TestComputeLaunchCLI:
     def test_launch_subcommand_exists_in_argparse(self):
-        import argparse
         from general_ludd.cli import build_parser
         parser, _ = build_parser()
         args = parser.parse_args(["compute", "launch", "--provider", "aws", "--gpu", "t4", "--model", "llama3"])
@@ -102,6 +96,7 @@ class TestComputeLaunchCLI:
 class TestComputeLaunchDaemonEndpoint:
     def test_deploy_endpoint_exists(self):
         from fastapi import FastAPI
+
         from general_ludd.routers.compute import register
         app = FastAPI()
         register(app, {})
@@ -110,6 +105,7 @@ class TestComputeLaunchDaemonEndpoint:
 
     def test_deploy_endpoint_method_is_post(self):
         from fastapi import FastAPI
+
         from general_ludd.routers.compute import register
         app = FastAPI()
         register(app, {})
@@ -118,6 +114,7 @@ class TestComputeLaunchDaemonEndpoint:
 
     def test_destroy_endpoint_exists(self):
         from fastapi import FastAPI
+
         from general_ludd.routers.compute import register
         app = FastAPI()
         register(app, {})
@@ -129,6 +126,7 @@ class TestComputeDeployUsesSecretsResolver:
     def test_deploy_resolves_aws_creds_from_secrets_resolver(self):
         from fastapi import FastAPI
         from starlette.testclient import TestClient
+
         from general_ludd.routers.compute import register
 
         app = FastAPI()
@@ -171,6 +169,7 @@ class TestComputeDeployUsesSecretsResolver:
     def test_deploy_passes_none_resolver_when_not_on_app_state(self):
         from fastapi import FastAPI
         from starlette.testclient import TestClient
+
         from general_ludd.routers.compute import register
 
         app = FastAPI()
@@ -204,6 +203,7 @@ class TestSlurmUsesSecretsResolver:
     def test_slurm_resolves_creds_from_secrets_resolver(self):
         from fastapi import FastAPI
         from starlette.testclient import TestClient
+
         from general_ludd.routers.slurm import register
 
         app = FastAPI()
@@ -224,6 +224,7 @@ class TestSlurmUsesSecretsResolver:
 
     def test_slurm_falls_back_to_env_when_no_resolver(self):
         from fastapi import FastAPI
+
         from general_ludd.routers.slurm import register
 
         app = FastAPI()
@@ -235,8 +236,9 @@ class TestSlurmUsesSecretsResolver:
     def test_slurm_resolver_takes_priority_over_env(self):
         from fastapi import FastAPI
         from starlette.testclient import TestClient
-        from general_ludd.routers.slurm import register
+
         from general_ludd.infra.slurm import SlurmAdapter
+        from general_ludd.routers.slurm import register
 
         app = FastAPI()
         mock_resolver = MagicMock()
@@ -248,7 +250,7 @@ class TestSlurmUsesSecretsResolver:
         app.state._secrets_resolver = mock_resolver
 
         client = TestClient(app)
-        with patch.object(SlurmAdapter, "available", return_value=True) as mock_avail:
+        with patch.object(SlurmAdapter, "available", return_value=True):
             resp = client.get("/admin/slurm/status")
             assert resp.status_code == 200
             assert resp.json() == {"available": True}
@@ -322,6 +324,7 @@ class TestRemoteSlurmRESTClient:
 
     def test_slurm_router_passes_env_vars_to_adapter(self):
         from fastapi import FastAPI
+
         from general_ludd.routers.slurm import register
         app = FastAPI()
         with patch.dict(os.environ, {

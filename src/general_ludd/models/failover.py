@@ -27,7 +27,7 @@ class ModelFailoverChain:
         self._failover_events: list[dict[str, Any]] = []
 
     def get_chain(self) -> list[str]:
-        return [self._primary] + self._fallbacks
+        return [self._primary, *self._fallbacks]
 
     def record_failover(self, from_profile: str, to_profile: str, error: str) -> None:
         self._failover_events.append({

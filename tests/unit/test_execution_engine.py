@@ -1,11 +1,7 @@
 from __future__ import annotations
 
-import os
 import tempfile
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
-import pytest
+from unittest.mock import MagicMock
 
 from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
@@ -118,7 +114,7 @@ class TestExecutionEngine:
             skill_body="Use TDD patterns",
         )
 
-        result = engine.execute(job)
+        engine.execute(job)
         mock_gateway.call_model.assert_called_once()
         call_kwargs = mock_gateway.call_model.call_args
         prompt_arg = str(call_kwargs)

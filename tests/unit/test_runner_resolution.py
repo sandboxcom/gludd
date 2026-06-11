@@ -1,12 +1,9 @@
 from __future__ import annotations
 
-import os
 import tempfile
 from pathlib import Path
-from unittest.mock import patch
 
 import pytest
-import yaml
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 

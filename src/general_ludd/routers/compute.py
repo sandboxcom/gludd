@@ -7,7 +7,11 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.infra.compute import (
-    ComputeConfig, ComputeInstance, ComputeProvider, GPUType, InferenceEngine,
+    ComputeConfig,
+    ComputeInstance,
+    ComputeProvider,
+    GPUType,
+    InferenceEngine,
 )
 from general_ludd.infra.deployment import DeploymentManager
 

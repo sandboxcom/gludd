@@ -6,14 +6,13 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
-from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import (
     AuditEventModel,
     BenchmarkResultModel,
-    PromptProfileModel,
     ProjectModel,
+    PromptProfileModel,
     QueueModel,
     TaskReturnModel,
     TodoEventModel,

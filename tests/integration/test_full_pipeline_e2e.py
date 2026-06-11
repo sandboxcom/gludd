@@ -16,9 +16,7 @@ from general_ludd.db.repository import TodoRepository
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.review.reviewer import ReturnReviewer
 from general_ludd.schemas.job import JobSpec
-from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn
-from general_ludd.schemas.todo import TodoStatus
 
 
 def _init_git_repo(path: str) -> None:
@@ -42,8 +40,8 @@ async def _create_test_infra():
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    from general_ludd.routers.todos import register as reg_todos
     from general_ludd.daemon import _daemon_state
+    from general_ludd.routers.todos import register as reg_todos
     _daemon_state["todos"] = []
 
     app = FastAPI()
@@ -65,7 +63,7 @@ async def _create_test_infra():
 class TestFullPipelineE2E:
     @pytest.mark.asyncio
     async def test_todo_from_api_to_reconciled_status(self):
-        engine, factory, client, app = await _create_test_infra()
+        engine, factory, client, _app = await _create_test_infra()
 
         resp = await client.post(
             "/api/todos",
@@ -123,7 +121,7 @@ class TestFullPipelineE2E:
                 )
                 result = engine_exec.execute(job)
                 if loop._task_return_repo is not None:
-                    tr = await loop._task_return_repo.create(data={
+                    await loop._task_return_repo.create(data={
                         "return_id": result.return_id,
                         "todo_id": result.todo_id,
                         "job_id": result.job_id,

@@ -11,7 +11,6 @@ import logging
 from typing import Any
 
 from general_ludd.schemas.job import JobSpec
-from general_ludd.schemas.task_return import TaskReturn
 
 logger = logging.getLogger(__name__)
 
