@@ -29,7 +29,9 @@ class ReturnReviewer:
         self._registry = prompt_registry
         self._model_profile_id = model_profile_id
         self._router = router
-        self._conversations: dict[str, Conversation] = conversations if conversations is not None else {}
+        self._conversations: dict[str, Conversation] = (
+            conversations if conversations is not None else {}
+        )
 
     def get_conversations(self) -> dict[str, Conversation]:
         return dict(self._conversations)
@@ -50,7 +52,9 @@ class ReturnReviewer:
             prior_context = "\n\n".join(
                 f"[{m.role}]: {m.content}" for m in conv.get_context()
             )
-        review_prompt_text = f"Review return {task_return.return_id} for todo {todo_id}"
+        review_prompt_text = (
+            f"Review return {task_return.return_id} for todo {todo_id}"
+        )
         conv.add_message("user", review_prompt_text)
         prompt = self._registry.render(
             "return_review.md.j2",
@@ -59,25 +63,47 @@ class ReturnReviewer:
             artifacts=artifacts,
             conversation_context=prior_context,
         )
-        raw_output = self._call_model(prompt)
-        decision = self._parse_model_output(raw_output)
+        raw_output, error_msg = self._call_model(prompt)
+        if raw_output is None:
+            audit = ["Model call failed"]
+            if error_msg:
+                audit.append(f"Error: {error_msg}")
+            decision = TaskDecision(
+                return_id=task_return.return_id,
+                matched_todo_id=task_return.todo_id,
+                decision="failed",
+                confidence=0.0,
+                audit_notes=audit,
+            )
+            conv.add_message(
+                "assistant", json.dumps(decision.model_dump(mode="json"))
+            )
+            return decision
+        decision = self._parse_model_output(raw_output, task_return)
         if decision is not None:
-            conv.add_message("assistant", json.dumps(decision.model_dump(mode="json")))
+            conv.add_message(
+                "assistant", json.dumps(decision.model_dump(mode="json"))
+            )
             return decision
         logger.warning(
-            "Invalid model output for return %s, falling back", task_return.return_id
+            "Invalid model output for return %s, falling back to failed",
+            task_return.return_id,
         )
         fallback = TaskDecision(
             return_id=task_return.return_id,
             matched_todo_id=task_return.todo_id,
-            decision="ignore_duplicate",
+            decision="failed",
             confidence=0.0,
-            audit_notes=["Model output was not valid JSON or did not match TaskDecision schema"],
+            audit_notes=[
+                "Model output was not valid JSON or did not match TaskDecision schema"
+            ],
         )
-        conv.add_message("assistant", json.dumps(fallback.model_dump(mode="json")))
+        conv.add_message(
+            "assistant", json.dumps(fallback.model_dump(mode="json"))
+        )
         return fallback
 
-    def _call_model(self, prompt: str) -> str:
+    def _call_model(self, prompt: str) -> tuple[str | None, str | None]:
         if self._router is not None:
             profile_id = self._router.resolve_role("return_review")
             if profile_id is not None:
@@ -87,12 +113,18 @@ class ReturnReviewer:
                 self._model_profile_id,
                 messages=[{"role": "user", "content": prompt}],
             )
-            return response.content
+            return response.content, None
         except Exception as exc:
-            logger.warning("Model call failed for profile %s: %s", self._model_profile_id, exc)
-            return str(prompt)
+            logger.warning(
+                "Model call failed for profile %s: %s",
+                self._model_profile_id,
+                exc,
+            )
+            return None, str(exc)
 
-    def _parse_model_output(self, raw: Any) -> TaskDecision | None:
+    def _parse_model_output(
+        self, raw: Any, task_return: TaskReturn
+    ) -> TaskDecision | None:
         if isinstance(raw, TaskDecision):
             return raw
         if not isinstance(raw, str):
@@ -101,6 +133,10 @@ class ReturnReviewer:
             data = json.loads(raw)
         except (json.JSONDecodeError, TypeError):
             return None
+        if not isinstance(data, dict):
+            return None
+        data.setdefault("return_id", task_return.return_id)
+        data.setdefault("matched_todo_id", task_return.todo_id)
         try:
             return TaskDecision(**data)
         except (ValueError, TypeError):
