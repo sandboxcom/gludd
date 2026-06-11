@@ -5,12 +5,35 @@ from __future__ import annotations
 import hashlib
 import hmac
 import json
+import logging
 import os
 import re
+import secrets
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+logger = logging.getLogger(__name__)
+
+_INTEGRITY_KEY: str | None = None
+
+
+def _get_integrity_key() -> str:
+    global _INTEGRITY_KEY
+    if _INTEGRITY_KEY is not None:
+        return _INTEGRITY_KEY
+    key = os.environ.get("GL_INTEGRITY_KEY")
+    if key:
+        _INTEGRITY_KEY = key
+        return key
+    _INTEGRITY_KEY = secrets.token_hex(32)
+    logger.warning(
+        "GL_INTEGRITY_KEY not set — using random per-process key. "
+        "Signatures will not survive restarts. Set GL_INTEGRITY_KEY for "
+        "persistent integrity verification."
+    )
+    return _INTEGRITY_KEY
 
 
 @dataclass
@@ -46,7 +69,7 @@ class FileIntegrityScanner:
     def _load_hashes(self) -> dict[str, str]:
         if self._store.exists():
             try:
-                return json.loads(self._store.read_text())  # type: ignore[no-any-return]
+                return json.loads(self._store.read_text())
             except Exception:
                 pass
         return {}
@@ -98,7 +121,6 @@ class FileIntegrityScanner:
                 "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                 "approved": False,
             })
-
         for fp in scanned & previously:
             if old_hashes[fp] != new_hashes.get(fp, ""):
                 changes.append({
@@ -109,7 +131,6 @@ class FileIntegrityScanner:
                     "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
                     "approved": False,
                 })
-
         for fp in previously - scanned:
             changes.append({
                 "type": "removed",
@@ -127,7 +148,7 @@ class FileIntegrityScanner:
 def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, Any]:
     parts = [change.file_path, change.change_type, str(change.old_hash), str(change.new_hash), change.detected_at]
     payload = "|".join(parts)
-    key = os.environ.get("GL_INTEGRITY_KEY", "general-ludd-integrity-key")
+    key = _get_integrity_key()
     sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     result = asdict(change)
     result["approved"] = True
@@ -146,7 +167,7 @@ def verify_signature(signed: dict[str, Any]) -> bool:
         signed.get("detected_at", ""),
     ]
     payload = "|".join(str(p) for p in parts)
-    key = os.environ.get("GL_INTEGRITY_KEY", "general-ludd-integrity-key")
+    key = _get_integrity_key()
     expected = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return signed.get("signature") == expected
 
@@ -155,7 +176,7 @@ def sign_change_openbao(
     path: str, signer: str, reason: str, secrets_resolver: Any | None = None
 ) -> dict[str, Any]:
     payload = f"{path}|{signer}|{reason}|{time.time()}"
-    key = os.environ.get("GL_INTEGRITY_KEY", "general-ludd-integrity-key")
+    key = _get_integrity_key()
     sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     result: dict[str, Any] = {
         "path": path,
