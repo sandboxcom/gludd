@@ -23,7 +23,8 @@ class TestSelftest:
     def test_container_runtime_prefers_podman(self):
         from general_ludd.config.binary_paths import BinaryPathResolver
 
-        with patch("shutil.which", side_effect=lambda x: "/usr/bin/podman" if x == "podman" else "/usr/bin/docker"):
+        with patch("shutil.which", side_effect=lambda x: "/usr/bin/podman" if x == "podman" else "/usr/bin/docker"), \
+             patch("platform.system", return_value="Linux"):
             resolver = BinaryPathResolver()
             assert resolver.get_container_runtime() == "podman"
 

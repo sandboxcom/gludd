@@ -20,6 +20,9 @@ tests/e2e/test_obj15_runtime_packaging.py::TestRuntimeValidatorImport::test_vali
 tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_event_loop_runs_tick: "daemon lifespan event loop — pre-existing"
 tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_add_todo_and_list: "daemon lifespan todo CRUD — pre-existing"
 tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST tool — pre-existing"
+tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
+tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_uses_correct_binary: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
+tests/e2e/test_new_features_e2e.py::TestDeploymentLifecycle::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
 tests/unit/test_adaptive_routing.py::TestAdaptiveRouterWiring::test_adaptive_router_fallback_uses_todo_defaults: "adaptive router fallback — pre-existing"
 tests/unit/test_adaptive_routing.py::TestAdaptiveRouterWiring::test_resolve_adaptive_prompt_unknown_work_type_defaults_feature: "adaptive router unknown type — pre-existing"
 tests/unit/test_ansible_runner.py::TestRunnerRunPlaybook::test_run_playbook_rejects_unregistered: "ansible runner unregistered playbook — pre-existing"
@@ -27,10 +30,7 @@ tests/unit/test_audit_gap_fixes.py::TestAddTodoRequestValidation::test_add_todo_
 tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_validate_endpoint_returns_ack: "dead worker validate — pre-existing"
 tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_policy_validate_endpoint_returns_ack: "dead worker policy validate — pre-existing"
 tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_reload_request_endpoint_returns_ack: "dead worker reload — pre-existing"
-tests/unit/test_binary_paths.py::TestBinaryPathResolver::test_get_container_runtime_prefers_podman: "podman preference — pre-existing"
-tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
-tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_uses_correct_binary: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
-tests/e2e/test_new_features_e2e.py::TestDeploymentLifecycle::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
+tests/unit/test_binary_paths.py::TestBinaryPathResolver::test_get_binary_path_unknown: "binary paths unknown — pre-existing"
 tests/unit/test_bootstrap_coverage.py::TestBinaryBootstrapperInit::test_default_store_created: "binary bootstrapper init — pre-existing"
 tests/unit/test_cli_execution_coverage.py::TestCmdDaemonExecution::test_daemon_calls_create_app_and_popen: "CLI daemon execution — pre-existing"
 tests/unit/test_cli_execution_coverage.py::TestCodeSearchEdgeCases::test_code_search_empty_results: "CLI code search edge — pre-existing"
@@ -87,7 +87,6 @@ tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_loca
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_success: "secrets manager container start — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret
-tests/unit/test_selftest.py::TestSelftest::test_container_runtime_prefers_podman: "selftest podman — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"

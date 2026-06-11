@@ -110,7 +110,8 @@ class TestBinaryPathResolver:
     def test_get_container_runtime_prefers_podman(self):
         bp = BinaryPaths()
         resolver = BinaryPathResolver(config=bp)
-        with patch("general_ludd.config.binary_paths.shutil.which", return_value="/usr/bin/podman"):
+        with patch("general_ludd.config.binary_paths.shutil.which", return_value="/usr/bin/podman"), \
+             patch("platform.system", return_value="Linux"):
             assert resolver.get_container_runtime() == "podman"
 
     def test_get_container_runtime_falls_back_to_docker(self):
