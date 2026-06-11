@@ -1,38 +1,49 @@
 from __future__ import annotations
 
+import re
 from pathlib import Path
 
-import yaml
-
-from general_ludd.skills.skill import Skill
+from general_ludd.skills.models import Skill
 
 
-def parse_skill_md(content: str, source_path: str | None = None) -> Skill:
-    text = content.strip()
-    if text.startswith("---"):
-        parts = text.split("---", 2)
-        if len(parts) >= 3:
-            frontmatter_str = parts[1].strip()
-            body = parts[2].strip()
-            data = yaml.safe_load(frontmatter_str) or {}
-            name = data.get("name", "")
-            if not name and source_path:
-                name = Path(source_path).stem
-            return Skill(
-                name=name,
-                description=data.get("description", ""),
-                model_profile=data.get("model_profile"),
-                tools=data.get("tools", []),
-                trigger_patterns=data.get("trigger_patterns", []),
-                tags=data.get("tags", []),
-                body=body,
-                source_path=source_path,
-            )
+FRONTMATTER_RE = re.compile(r"^---\s*\n(.*?)\n---\s*\n", re.DOTALL)
 
-    fallback_name = Path(source_path).stem if source_path else "unknown"
+
+def parse_skill_md(raw: str, source_path: str = "") -> Skill:
+    name = Path(source_path).stem
+    body = raw
+    description = ""
+    trigger_patterns: list[str] = []
+    tags: list[str] = []
+    category = ""
+    model_profile = ""
+    if "---" in raw[:10]:
+        match = FRONTMATTER_RE.match(raw)
+        if match:
+            import yaml
+            try:
+                frontmatter = yaml.safe_load(match.group(1)) or {}
+            except yaml.YAMLError:
+                frontmatter = {}
+            name = frontmatter.get("name", name)
+            description = frontmatter.get("description", "")
+            trigger_patterns = frontmatter.get("trigger_patterns", [])
+            if isinstance(trigger_patterns, str):
+                trigger_patterns = [trigger_patterns]
+            tags = frontmatter.get("tags", [])
+            if isinstance(tags, str):
+                tags = [tags]
+            category = frontmatter.get("category", "")
+            model_profile = frontmatter.get("model_profile", "")
+            body = raw[match.end():]
     return Skill(
-        name=fallback_name,
-        body=content,
+        name=name,
+        description=description,
+        body=body,
+        trigger_patterns=trigger_patterns,
+        tags=tags,
+        category=category,
+        model_profile=model_profile,
         source_path=source_path,
     )
 
@@ -43,7 +54,7 @@ def discover_skills(*search_paths: str) -> list[Skill]:
         directory = Path(search_path)
         if not directory.is_dir():
             continue
-        for md_file in sorted(directory.glob("*.md")):
+        for md_file in sorted(directory.glob("**/*.md")):
             raw = md_file.read_text()
             skill = parse_skill_md(raw, source_path=str(md_file))
             merged[skill.name] = skill
