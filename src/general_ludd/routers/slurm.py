@@ -96,5 +96,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                     for j in jobs
                 ],
             }
-        except Exception:
-            return {"jobs": [], "message": "Could not list jobs"}
+        except SlurmNotInstalledError:
+            raise HTTPException(status_code=503, detail="Slurm is not installed") from None
+        except Exception as exc:
+            raise HTTPException(status_code=500, detail=f"Could not list jobs: {exc}") from exc
