@@ -272,6 +272,24 @@ scan-secrets-baseline:
 	@$(UV) run detect-secrets scan --all-files --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' 2>/dev/null > .secrets.baseline || true
 	@echo "Secrets baseline created in .secrets.baseline"
 
+clean-hooks:
+	@rm -f .git/hooks/pre-commit.legacy .git/hooks/pre-push.legacy scripts/githooks/pre-commit scripts/githooks/pre-push
+	@-rmdir scripts/githooks 2>/dev/null || true
+	@echo "Legacy hooks removed"
+
+clean-untracked:
+	@rm -f scripts/scan-secrets.py
+	@echo "Cleaned up reinvention-of-wheel files"
+
+git-remote-sandboxcom:
+	@chmod 600 sandboxcom_github_rsa
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git remote add sandboxcom git@github.com:sandboxcom/gludd.git 2>/dev/null || true
+	@echo "Remote sandboxcom configured"
+
+git-push-sandboxcom:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+	@echo "Pushed to sandboxcom/gludd"
+
 scan-secrets:
 	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
 

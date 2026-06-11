@@ -17,3 +17,9 @@ build/
 *.egg-info/
 .gate-status
 .gate-failed
+.secrets.baseline
+
+sandboxcom_github_rsa
+sandboxcom_github_rsa.pub
+
+scripts/scan-secrets.py
