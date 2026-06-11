@@ -254,6 +254,9 @@ const STOP_SIGNAL_WORDS = [
   "continuing with v",
   "continuing with v3",
   "known-unfixed work",
+  "summary across all",
+  "here's the implementation",
+  "16 commits, gate all passed",
   "bugs.md incidents",
 ]
 
