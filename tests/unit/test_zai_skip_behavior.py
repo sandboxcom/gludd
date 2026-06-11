@@ -63,6 +63,7 @@ class TestZAISkipBehavior:
         mock_response.status_code = 429
         mock_response.json.return_value = {"error": {"message": "Insufficient account balance"}}
 
-        with patch.object(gateway, "_get_llm_for_profile", side_effect=RuntimeError("429 rate limit exceeded")):
-            with pytest.raises(RuntimeError, match="429"):
-                gateway._get_llm_for_profile("zai_test")
+        with patch.object(gateway, "_get_llm_for_profile", side_effect=RuntimeError("429 rate limit exceeded")), \
+             pytest.raises(RuntimeError, match="429"):
+            gateway._get_llm_for_profile("zai_test")
+        assert True

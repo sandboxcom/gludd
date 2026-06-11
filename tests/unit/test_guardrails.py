@@ -358,3 +358,52 @@ class TestEvidencePolicyGuardrail:
 class TestMakeTargetSmokeTests:
     def test_make_qa_passes(self):
         pytest.skip("make qa runs full test suite including this test (recursive timeout)")
+
+
+class TestGateStatusEnforcement:
+    def test_plugin_reads_gate_status_in_response_transform(self):
+        content = PLUGIN_FILE.read_text()
+        assert ".gate-status" in content, (
+            "chat.response.transform must read .gate-status to verify completion claims"
+        )
+
+    def test_plugin_response_transform_has_state_based_block(self):
+        content = PLUGIN_FILE.read_text()
+        assert "chat.response.transform" in content
+        assert "readFileSync" in content or "gate-status" in content, (
+            "completion claims must be verified against .gate-status, not just vocabulary"
+        )
+
+    def test_plugin_replaces_response_when_gate_red(self):
+        content = PLUGIN_FILE.read_text()
+        has_gate_check = ".gate-status" in content
+        has_replace = "output =" in content or "return {" in content
+        assert has_gate_check and has_replace, (
+            "response must be replaced when gate is red/stale/missing"
+        )
+
+
+class TestSystemPromptDiet:
+    def test_system_prompt_is_compact(self):
+        content = PLUGIN_FILE.read_text()
+        transform_start = content.index('"experimental.chat.system.transform"')
+        next_hook = content.index('"experimental.chat.response.transform"')
+        transform_block = content[transform_start:next_hook]
+        lines = transform_block.split("\n")
+        assert len(lines) < 120, (
+            f"system transform must be ≤120 lines for small-model comprehension, got {len(lines)}"
+        )
+
+
+class TestTDDGateSharpened:
+    def test_tdd_gate_has_test_file_reference_check(self):
+        content = PLUGIN_FILE.read_text()
+        has_tdd = "TDD VIOLATION" in content
+        has_throw = "throw new Error" in content
+        assert has_tdd and has_throw, "TDD gate must still throw for untested edits"
+
+    def test_tdd_gate_searches_for_existing_tests(self):
+        content = PLUGIN_FILE.read_text()
+        assert "readdirSync" in content or "testExists" in content, (
+            "TDD gate must search for existing test files before rejecting edits"
+        )

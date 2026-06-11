@@ -1,4 +1,6 @@
 import type { Plugin } from "@opencode-ai/plugin"
+import * as fs from "node:fs"
+import * as path from "node:path"
 
 const BASH_POLICY_HEADER = "BLOCKED: Direct bash commands are not allowed in this project.\n"
 const BASH_POLICY_RULE = "Rule: You MUST only run `make <target>` commands.\n"
@@ -529,278 +531,54 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.system.transform": async (_input, output) => {
-      const preResponseAudit = [
-        "⛔ PRE-RESPONSE AUDIT — VIOLATIONS ARE BLOCKED",
+      const mechanicalContract = [
+        "⛔ MECHANICAL CONTRACT — VIOLATIONS ARE BLOCKED",
         "",
-        "1. Check todowrite. Items pending/in_progress? → TOOL CALL REQUIRED.",
-        "2. About to type a summary/table/status? STOP. Make a tool call.",
-        "3. User says 'fix bug X first' → fix it FIRST, not later.",
-        "4. Text-only response with pending work = AUTO-DETECTED AND BLOCKED.",
+        "1. Only `make <target>`. No metacharacters (`|`, `;`, `&&`). FORBIDDEN.",
+        "2. Pending todos ⇒ tool call. Text-only with pending work = BLOCKED.",
+        '3. "Done" requires: `make gate` green + `TASKS.md` evidence. Nothing else.',
+        "4. TDD: failing test first. `make test-count` 0 errors before commit.",
+        "5. Found a gap? Fix it now. Never list it and ask. BLOCKED if you ask.",
+        "6. Trust gate output, not SESSION.md. Gate exit codes are truth.",
+        "7. Read `TASKS.md` for current work. Read `BUGS.md` before claiming done.",
         "",
-        "PAST VIOLATIONS (do not repeat):",
-        "- Reported 'X passed, Y failed — committed' instead of continuing",
-        "- Sent completion table when work remained",
-        "- Said 'This is truly done' before all tests written",
-        "- Said 'Ready for review' with unchecked sprint boxes",
-        "- Said 'Done.' as final word with pending todos",
-        "",
-        "CORRECT: Brief answer (1-2 lines) → tool call immediately.",
+        "STOP-PATTERN DETECTION: Text-only responses with pending work are BLOCKED.",
+        "The chat.response.transform hook replaces completion claims when gate is red.",
+        "Full rationale in AGENTS.md. This contract is all you need for mechanics.",
         "",
       ].join("\n");
-
-      const instructionFollowing = [
-        "⛔ INSTRUCTION FOLLOWING: When user says 'fix bug X first' or 'do Y",  
-        "   before continuing', you MUST do that specific thing before any",
-        "   other work. Do not continue with your own plan. Do not do both",
-        "   simultaneously. Fix the requested thing FIRST, then continue.",
-        "",
-      ].join("\n");
-
-      const completionRules = [
-        "You MUST complete ALL work requested before stopping. Specifically:",
-        "",
-        "1. If given a sprint, objective list, or multi-step task, you MUST",
-        "   work through every step until all are complete or genuinely blocked.",
-        "2. Do NOT stop early to report progress, ask permission, or wait for",
-        "   feedback unless tests are failing and you cannot fix them.",
-        "3. Do NOT treat tooling/infrastructure setup as the deliverable.",
-        "4. After each objective is complete, immediately start the next one.",
-        "5. Only stop when ALL objectives are complete or you hit a hard blocker.",
-        "",
-        "FORBIDDEN PATTERNS:",
-        '  "Want me to proceed/continue/start?"',
-        '  "Should I continue?" or "Shall I finish?"',
-        '  "X done. Next steps are..." (then stopping)',
-        '  Status tables/summaries followed by no tool calls',
-        '  "All done" / "Everything is complete" / "Ready for review"',
-        '  Answering status questions and then stopping',
-        "",
-        "THE ONLY VALID RESPONSE TO IDENTIFYING WORK IS TO DO IT.",
-        "Never ask. Never wait. Just do the work.",
-        "",
-      ].join("\n")
-      const selfDirected = [
-        "If the user wants you to stop if they want you to stop.",
-        "",
-        "CORRECT BEHAVIOR: When asked for status, answer briefly, then",
-        "immediately continue working on the next pending task. Do not ask",
-        "for permission. Do not wait for acknowledgment. Just keep going.",
-        "",
-        "## CRITICAL: Self-Directed Work Rule",
-        "",
-        "When you identify a gap, bug, or missing integration while working,",
-        "you MUST fix it immediately. Do NOT:",
-        "  - Stop to ask the user whether to proceed",
-        "  - List the gap and wait for approval",
-        "  - Say 'this is a gap worth fixing' and then stop",
-        "  - Ask 'want me to...' or 'should I...'",
-        "",
-        "If you found it, you own it. Fix it, test it, commit it, then continue",
-        "with the original task. The ONLY exception is if fixing it would require",
-        "credentials, payment, or environment changes you cannot make.",
-        "",
-      ].join("\n")
-      const evidencePrompt = [
-        "",
-        "## CRITICAL: Evidence-Based Response Policy",
-        "",
-        "Every factual claim in your responses MUST cite its source. Acceptable sources:",
-        "- File paths with line numbers (e.g., src/foo.py:42)",
-        "- Tool output (e.g., test results, grep results)",
-        "- URLs with retrieved content",
-        "- Direct quotes from documentation",
-        "- Test pass/fail counts from make output",
-        "",
-        "If you cannot cite a source, you MUST NOT make the claim. Instead say",
-        '"I don\'t have evidence for this" or "Based on [source], ..."',
-        "",
-      ].join("\n")
-
-      const preflightCommitPrompt = [
-        "",
-        "## CRITICAL: Preflight Quality Gate — Pre-Commit Verification",
-        "",
-        "Before committing (make test-and-commit), the preflight gate runs:",
-        "  1. Coverage >85% line rate",
-        "  2. Lint zero errors",
-        "  3. Mypy zero errors",
-        "  4. All prompt templates exist",
-        "  5. All playbooks exist",
-        "  6. Molecule scenarios present",
-        "  7. FileStore readable",
-        "  8. Sprint checkboxes all checked [x]",
-        "",
-        "If ANY check fails, the commit is BLOCKED. You MUST fix the failing",
-        "checks before commit will succeed.",
-        "",
-        "BEFORE calling a task 'complete':",
-        "  1. Define explicit acceptance criteria for the task.",
-        "  2. Run make preflight to verify all quality gates.",
-        "  3. Run verify_task_completion(criteria, evidence) to confirm.",
-        "  4. Only mark todo 'completed' if verify_task_completion returns",
-        "     complete=true with confidence > 0.8.",
-        "",
-        "This is a HARD gate. Do not mark tasks complete without verification.",
-        "",
-      ].join("\n")
-
-      const noManualDefault = [
-        "",
-        "## CRITICAL: No-Manual-Default Policy",
-        "",
-        "Every process you build MUST be fully automated by default.",
-        "No manual steps allowed. Specifically:",
-        "",
-        "  1. If you create a downloader, the make target MUST download.",
-        "     Not check — DO the download.",
-        "  2. If you create a bootstrapper, it MUST run at init time.",
-        "  3. If you create a healthcheck, it MUST remedy if possible.",
-        "  4. Every config value must have a working zero-config default.",
-        "  5. Every binary/resource needed must be prefetched in make dist.",
-        "  6. Every class in src/ must be importable from daemon startup.",
-        "",
-        "Leaving a step as 'run X manually' is a BUG. Fix it immediately.",
-        "Never say 'download with' or 'run manually' — make it automatic.",
-        "",
-      ].join("\n")
-
       if (typeof output === "string") {
-        const stopAuditOverride = [
-          "⛔⛔⛔ PRE-RESPONSE STOP AUDIT — HIGHEST PRIORITY ⛔⛔⛔",
-          "",
-          "BEFORE generating ANY text response, you MUST check:",
-          "  1. Are there items in todowrite with status 'pending' or 'in_progress'?",
-          "  2. If YES → your response MUST contain at least one tool call.",
-          "     Text-only responses are FORBIDDEN when work remains.",
-          "  3. The ONLY time to send text-only: ALL items are 'completed' or 'cancelled'.",
-          "",
-          "THIS IS NOT ADVISORY. THIS IS A HARD RULE.",
-          "Every past session failure was caused by violating this rule.",
-          "BUGS.md documents 6+ incidents of premature stops.",
-          "",
-          "STOP = tool call required. PERIOD.",
-          "",
-        ].join("\n")
-
-        output = stopAuditOverride + "\n\n" + preResponseAudit + "\n\n" + instructionFollowing + "\n\n" + output
-        output += "\n\n" + completionRules
-        output += "\n\n" + selfDirected
-        output += evidencePrompt
-        output += preflightCommitPrompt
-        output += noManualDefault
-        output += BASH_METACHAR_POLICY
-
-        const testQualityReminder = [
-          "",
-          "## CRITICAL: Test Quality Requirements",
-          "",
-          "Tests MUST verify OBSERVABLE BEHAVIOR, not just that code runs.",
-          "Every test MUST include assertions that verify:",
-          "  - Visual/rendered output contains expected markers (▶, bold, reverse)",
-          "  - State mutations happen (selected_idx changes, active_id set)",
-          "  - Status messages contain meaningful info (name/id of selected item)",
-          "  - Data flows from API → state → table builder → rendering",
-          "",
-          "FORBIDDEN test patterns (these caused real bugs in past sessions):",
-          "  - Just calling a function and checking isinstance()",
-          "  - Only checking return type, not actual content",
-          "  - Testing individual functions but never the full pipeline",
-          "  - Mocking everything so the test can't fail for real bugs",
-          "",
-          "REQUIRED: At least one test per feature that verifies the END-TO-END",
-          "pipeline: input → state change → rendering includes marker.",
-          "",
-        ].join("\n")
-        output += testQualityReminder
-
-        const tuiCompletenessCheck = [
-          "",
-          "## CRITICAL: TUI Feature Completeness — HARD GATE",
-          "",
-          "The user has REPEATEDLY requested these TUI features across 6+ sessions.",
-          "Past agents claimed they were done but tests only verified function returns,",
-          "not actual observable behavior. Before declaring TUI work complete, EVERY",
-          "item below MUST have a passing test that verifies OBSERVABLE behavior.",
-          "",
-          "TUI FEATURES REQUIRED (none are optional):",
-          "",
-          "  1. SPACE BAR on main view activates selected menu item",
-          "     TEST: handle_key(' ') on main view → state['current_view'] changes",
-          "     or _activate_main_menu_item is called",
-          "",
-          "  2. ESCAPE pops breadcrumb AND cancels input_mode",
-          "     TEST: handle_key('\\x1b') when input_mode set → input_mode becomes None",
-          "     TEST: handle_key('\\x1b') on sub-view → breadcrumb popped, view='main'",
-          "",
-          "  3. V key toggles verbose logging (NOT v key which enters config view)",
-          "     TEST: handle_key('V') → state['verbose_logging'] flips",
-          "     TEST: handle_key('v') → enters config view (NOT verbose toggle)",
-          "",
-          "  4. TAB key switches panel focus between left and right panels",
-          "     TEST: handle_key('\\t') → state['panel_focus'] or similar toggles",
-          "",
-          "  5. Lowercase s/k on main menu work (or labels show uppercase S/K)",
-          "     TEST: If only uppercase works, menu MUST show uppercase shortcuts",
-          "",
-          "  6. Mouse drag (not just click) resizes panels",
-          "     TEST: Mouse press + drag events update left_panel_width continuously",
-          "",
-          "  7. Left arrow cancels input or goes back in ALL views (including config)",
-          "",
-          "If ANY of these lack a passing test, the TUI work is NOT complete.",
-          "Do NOT mark TUI tasks as completed until ALL have green tests.",
-          "",
-          "RUN: make test-guardrails to verify all guardrail tests pass.",
-          "This runs test_guardrails.py + test_user_requested_guardrails.py",
-          "",
-        ].join("\n")
-        output += tuiCompletenessCheck
-
-        const userRequestGuardrail = [
-          "",
-          "## CRITICAL: User-Requested Feature Guardrail — RUN make test-guardrails",
-          "",
-          "The file tests/unit/test_user_requested_guardrails.py contains 79 tests",
-          "that verify EVERY feature the user has repeatedly requested. These tests",
-          "are NON-NEGOTIABLE. If any fail, the work is INCOMPLETE.",
-          "",
-          "Categories tested:",
-          "  - Arrow navigation in ALL TUI views (projects, todos, hooks, workers, models)",
-          "  - Tab panel focus switching",
-          "  - Escape/left-arrow breadcrumb and input cancellation",
-          "  - Space/Enter activation on main AND sub-views",
-          "  - Daemon start/stop keys (s/k)",
-          "  - Verbose toggle (V) vs config view (v)",
-          "  - Schema adversarial validation (JobSpec, TaskReturn, Todo, BenchmarkScores,",
-          "    Queue, TaskDecision, all daemon request models)",
-          "  - GuardrailConfig enforcement (must have at least one layer)",
-          "  - Breadcrumb integrity",
-          "  - TDD gate (test files exist for critical modules)",
-          "  - Panel focus state variable exists",
-          "",
-          "BEFORE declaring ANY work session complete:",
-          "  1. Run: make test-guardrails",
-          "  2. ALL 79 tests MUST pass",
-          "  3. If any fail, FIX THEM before continuing",
-          "",
-          "This is a HARD gate. Non-passing guardrails = incomplete work.",
-          "",
-        ].join("\n")
-        output += userRequestGuardrail
-
-        if (_pendingCommitReminder) {
-          output += "\n\n" + COMMIT_REMINDER
-          _pendingCommitReminder = false
-        }
-        if (_pendingPreflightGate) {
-          output += "\n\n" + _pendingPreflightGate
-          _pendingPreflightGate = ""
-        }
+        output = mechanicalContract + "\n\n" + output
       }
+      return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
     },
 
     "experimental.chat.response.transform": async (_input, output) => {
       if (typeof output !== "string") return
+
+      const gateStatusPath = path.join(process.cwd(), ".gate-status")
+      if (fs.existsSync(gateStatusPath)) {
+        const gateContent = fs.readFileSync(gateStatusPath, "utf-8")
+        const hasGreen = (
+          gateContent.includes("lint PASS") &&
+          gateContent.includes("typecheck PASS") &&
+          gateContent.includes("collect PASS") &&
+          gateContent.includes("test PASS")
+        )
+        if (!hasGreen) {
+          output = [
+            "⛔ GATE IS RED — RESPONSE BLOCKED ⛔",
+            "",
+            ".gate-status is red or stale. Completion claims are BLOCKED.",
+            "Your message has been COMPLETELY REPLACED.",
+            "",
+            "Run `make gate`, fix all failures, then continue working.",
+            "Do NOT send another text message without tool calls.",
+          ].join("\n")
+          return output
+        }
+      }
+
       if (detectStopPattern(output)) {
         output = [
           "⛔ STOP-PATTERN DETECTED — RESPONSE REPLACED ⛔",
@@ -814,6 +592,7 @@ export default (async ({ }) => {
           "Check todowrite — any pending or in_progress items?",
           "→ Work on them NOW. Do NOT send another text message.",
         ].join("\n")
+        return output
       }
 
       // Preflight: detect task-completion claims and inject verification demand
