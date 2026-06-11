@@ -1,0 +1,134 @@
+name: Build and Release
+
+on:
+  push:
+    branches: [master]
+  workflow_dispatch:
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+    steps:
+      - id: ver
+        run: echo "version=v0.1.0-alpha-$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+
+  linux:
+    needs: version
+    runs-on: ubuntu-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build executable
+        run: |
+          uv sync
+          uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Package tarball
+        run: |
+          mkdir -p dist/release
+          cp dist/gludd dist/release/gludd
+          cp -r config dist/release/config
+          cp -r templates dist/release/templates
+          cp -r playbooks dist/release/playbooks
+          cd dist/release
+          tar czf "../gludd-${VERSION}-linux-x86_64.tar.gz" .
+          sha256sum "../gludd-${VERSION}-linux-x86_64.tar.gz" > "../gludd-${VERSION}-linux-x86_64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gludd-linux-x86_64
+          path: |
+            dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz
+            dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
+
+  macos:
+    needs: version
+    runs-on: macos-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build executable
+        run: |
+          uv sync
+          uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Package tarball
+        run: |
+          mkdir -p dist/release
+          cp dist/gludd dist/release/gludd
+          cp -r config dist/release/config
+          cp -r templates dist/release/templates
+          cp -r playbooks dist/release/playbooks
+          cd dist/release
+          tar czf "../gludd-${VERSION}-macos-arm64.tar.gz" .
+          shasum -a 256 "../gludd-${VERSION}-macos-arm64.tar.gz" > "../gludd-${VERSION}-macos-arm64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gludd-macos-arm64
+          path: |
+            dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz
+            dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
+
+  windows:
+    needs: version
+    runs-on: windows-latest
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build executable
+        run: |
+          uv sync
+          uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Package zip
+        run: |
+          mkdir -p dist/release
+          Copy-Item dist/gludd.exe dist/release/gludd.exe
+          Copy-Item -r config dist/release/config
+          Copy-Item -r templates dist/release/templates
+          Copy-Item -r playbooks dist/release/playbooks
+          Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
+          certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gludd-windows-x86_64
+          path: |
+            dist/gludd-${{ env.VERSION }}-windows-x86_64.zip
+            dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
+
+  termux:
+    needs: version
+    runs-on: ubuntu-24.04-arm
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install uv
+        uses: astral-sh/setup-uv@v5
+      - name: Build executable
+        run: |
+          uv sync
+          uv run pyinstaller gludd.spec --clean --noconfirm
+      - name: Package tarball
+        run: |
+          mkdir -p dist/release
+          cp dist/gludd dist/release/gludd
+          cp -r config dist/release/config
+          cp -r templates dist/release/templates
+          cp -r playbooks dist/release/playbooks
+          cd dist/release
+          tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" .
+          sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
+      - uses: actions/upload-artifact@v4
+        with:
+          name: gludd-linux-aarch64
+          path: |
+            dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz
+            dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
