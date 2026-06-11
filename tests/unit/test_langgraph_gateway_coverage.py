@@ -11,18 +11,15 @@ from general_ludd.models.langgraph_gateway import GraphState, LangGraphGateway
 
 class TestInit:
     def test_with_langgraph_installed(self):
-        with patch.dict("sys.modules", {"langgraph.graph": MagicMock()}):
+        import importlib.machinery
+        mock_spec = importlib.machinery.ModuleSpec("langgraph.graph", None)
+        mock_module = MagicMock(__spec__=mock_spec)
+        with patch.dict("sys.modules", {"langgraph.graph": mock_module}):
             gw = LangGraphGateway(enable_graph=True)
             assert gw._has_langgraph is True
 
     def test_without_langgraph_installed(self):
-        import builtins
-        real_import = builtins.__import__
-        def fake_import(name, *args, **kwargs):
-            if name == "langgraph.graph":
-                raise ImportError
-            return real_import(name, *args, **kwargs)
-        with patch("builtins.__import__", side_effect=fake_import):
+        with patch("importlib.util.find_spec", return_value=None):
             gw = LangGraphGateway(enable_graph=True)
             assert gw._has_langgraph is False
 

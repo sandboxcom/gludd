@@ -28,39 +28,36 @@ class TestVariableNamespaceRepository:
     @pytest.mark.asyncio
     async def test_create_namespace(self, session: AsyncSession):
         repo = VariableNamespaceRepository(session)
-        ns = await repo.create_namespace("shared", description="shared vars")
+        ns = await repo.create_namespace("shared")
         assert ns.id is not None
         assert ns.namespace == "shared"
 
     @pytest.mark.asyncio
     async def test_set_var_creates_new(self, session: AsyncSession):
         repo = VariableNamespaceRepository(session)
-        ns = await repo.create_namespace("build")
-        var = await repo.set_var(ns.id, "max_retries", "3")
+        var = await repo.set_var("build", "max_retries", "3")
         assert var.key == "max_retries"
         assert var.value == "3"
 
     @pytest.mark.asyncio
     async def test_set_var_updates_existing(self, session: AsyncSession):
         repo = VariableNamespaceRepository(session)
-        ns = await repo.create_namespace("build")
-        await repo.set_var(ns.id, "timeout", "30")
-        updated = await repo.set_var(ns.id, "timeout", "60")
+        await repo.set_var("build", "timeout", "30")
+        updated = await repo.set_var("build", "timeout", "60")
         assert updated.value == "60"
 
     @pytest.mark.asyncio
     async def test_load_vars_empty(self, session: AsyncSession):
         repo = VariableNamespaceRepository(session)
-        merged = await repo.load_vars_for_project()
+        merged = await repo.load_vars_for_project(None)
         assert merged == {}
 
     @pytest.mark.asyncio
     async def test_load_vars_returns_all_keys(self, session: AsyncSession):
         repo = VariableNamespaceRepository(session)
-        ns = await repo.create_namespace("env")
-        await repo.set_var(ns.id, "PYTHON_VERSION", "3.14")
-        await repo.set_var(ns.id, "UV_CACHE_DIR", "/tmp/uv")
-        merged = await repo.load_vars_for_project()
+        await repo.set_var("env", "PYTHON_VERSION", "3.14")
+        await repo.set_var("env", "UV_CACHE_DIR", "/tmp/uv")
+        merged = await repo.load_vars_for_project(None)
         assert merged["PYTHON_VERSION"] == "3.14"
         assert merged["UV_CACHE_DIR"] == "/tmp/uv"
 
@@ -73,12 +70,10 @@ class TestVariableNamespaceRepository:
         await session.flush()
 
         repo = VariableNamespaceRepository(session)
-        ns_global = await repo.create_namespace("global")
-        await repo.set_var(ns_global.id, "KEY", "global_val")
-        ns_proj = await repo.create_namespace("build", project_id="proj-v")
-        await repo.set_var(ns_proj.id, "KEY", "proj_val")
+        await repo.set_var("global", "KEY", "global_val")
+        await repo.set_var("build", "KEY", "proj_val", project_id="proj-v")
 
-        global_vars = await repo.load_vars_for_project()
+        global_vars = await repo.load_vars_for_project(None)
         assert global_vars["KEY"] == "global_val"
         proj_vars = await repo.load_vars_for_project("proj-v")
         assert proj_vars["KEY"] == "proj_val"

@@ -24,6 +24,7 @@ from general_ludd.db.models import (
 from general_ludd.schemas.todo import TodoStatus
 
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
+    TodoStatus.BACKLOG: {TodoStatus.QUEUED},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
     TodoStatus.ACTIVE: {
         TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED,
@@ -167,11 +168,16 @@ class TaskReturnRepository:
         await self._session.flush()
         return row
 
-    async def claim_unreviewed(self, project_id: str | None = None) -> list[TaskReturnModel]:
+    async def get_by_id(self, return_id: str) -> TaskReturnModel | None:
+        stmt = select(TaskReturnModel).where(TaskReturnModel.return_id == return_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def claim_unreviewed(self, project_id: str | None = None, limit: int = 10) -> list[TaskReturnModel]:
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(10)
+        stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(limit)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         for row in rows:
@@ -237,6 +243,9 @@ class VariableNamespaceRepository:
                 (VariableNamespaceModel.project_id == project_id)
                 | (VariableNamespaceModel.project_id.is_(None))
             )
+            .order_by(
+                VariableNamespaceModel.project_id.is_(None).desc()
+            )
         )
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
@@ -264,8 +273,19 @@ class VariableNamespaceRepository:
             ns = VariableNamespaceModel(namespace=namespace, project_id=project_id)
             self._session.add(ns)
             await self._session.flush()
-        row = VariableValueModel(namespace_id=ns.id, key=key, value=value)
-        self._session.add(row)
+        existing = await self._session.execute(
+            select(VariableValueModel).where(
+                VariableValueModel.namespace_id == ns.id,
+                VariableValueModel.key == key,
+            )
+        )
+        row = existing.scalar_one_or_none()
+        if row is not None:
+            row.value = value
+            row.updated_at = datetime.now(UTC)
+        else:
+            row = VariableValueModel(namespace_id=ns.id, key=key, value=value)
+            self._session.add(row)
         await self._session.flush()
         return row
 
@@ -281,8 +301,11 @@ class BenchmarkRepository:
 
     async def _execute_with_session(self, fn: Callable[[AsyncSession], Any]) -> Any:
         if self._session_factory is not None:
-            async with self._session_factory() as session:
-                return await fn(session)
+            async with self._session_factory() as session, session.begin():
+                    result = await fn(session)
+                    if hasattr(result, "_sa_instance_state"):
+                        session.expunge(result)
+                    return result
         if self._session is not None:
             return await fn(self._session)
         raise RuntimeError("BenchmarkRepository: no session or session_factory")
@@ -308,7 +331,14 @@ class BenchmarkRepository:
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
                     func.avg(BenchmarkResultModel.token_efficiency_score).label("avg_efficiency"),
                     func.count().label("sample_count"),
+                    func.avg(
+                        BenchmarkResultModel.completion_score * 0.4
+                        + BenchmarkResultModel.code_quality_score * 0.3
+                        + BenchmarkResultModel.instruction_adherence_score * 0.2
+                        + BenchmarkResultModel.token_efficiency_score * 0.1
+                    ).label("composite_score"),
                 )
+                .where(BenchmarkResultModel.success.is_(True))
                 .group_by(
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
@@ -329,6 +359,7 @@ class BenchmarkRepository:
                     "avg_instruction": r.avg_instruction,
                     "avg_efficiency": r.avg_efficiency,
                     "sample_count": r.sample_count,
+                    "composite_score": getattr(r, "composite_score", None),
                 }
                 for r in rows
             ]
@@ -336,7 +367,9 @@ class BenchmarkRepository:
 
     async def get_best_for_task(self, task_type: str, min_samples: int = 3) -> list[dict[str, Any]]:
         scores = await self.get_aggregate_scores(task_type=task_type)
-        return [s for s in scores if s["sample_count"] >= min_samples]
+        filtered = [s for s in scores if s["sample_count"] >= min_samples]
+        filtered.sort(key=lambda s: s.get("composite_score", 0) or 0, reverse=True)
+        return filtered
 
     async def get_model_scores(self, model_profile_id: str) -> list[BenchmarkResultModel]:
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
@@ -399,8 +432,12 @@ class PromptProfileRepository:
         return list(result.scalars().all())
 
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
+        from sqlalchemy import or_
         stmt = select(PromptProfileModel).where(
-            PromptProfileModel.task_types.contains(task_type)
+            or_(
+                PromptProfileModel.task_types.contains(task_type),
+                PromptProfileModel.task_types == "[]",
+            )
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
@@ -416,8 +453,18 @@ class QueueRepository:
         await self._session.flush()
         return row
 
+    async def get_by_name(self, name: str) -> QueueModel | None:
+        stmt = select(QueueModel).where(QueueModel.queue_name == name)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
     async def list_all(self) -> list[QueueModel]:
         result = await self._session.execute(select(QueueModel))
+        return list(result.scalars().all())
+
+    async def list_enabled(self) -> list[QueueModel]:
+        stmt = select(QueueModel).where(QueueModel.queue_enabled.is_(True))
+        result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
 

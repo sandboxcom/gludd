@@ -57,7 +57,7 @@ class LangGraphGateway:
         try:
             import importlib.util
             self._has_langgraph = importlib.util.find_spec("langgraph.graph") is not None
-        except ImportError:
+        except (ImportError, ValueError, ModuleNotFoundError):
             self._has_langgraph = False
 
     async def call(

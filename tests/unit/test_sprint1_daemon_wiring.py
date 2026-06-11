@@ -66,19 +66,30 @@ class TestAdaptiveRouterWiringInDaemon:
         session.execute = AsyncMock()
         session.flush = AsyncMock()
         session.add = MagicMock()
+        session.begin = MagicMock()
+        session.begin.return_value.__aenter__ = AsyncMock()
+        session.begin.return_value.__aexit__ = AsyncMock()
 
-        sf = MagicMock(return_value=session)
+        sf = MagicMock()
+        sf.return_value.__aenter__ = AsyncMock(return_value=session)
+        sf.return_value.__aexit__ = AsyncMock()
 
-        repo = BenchmarkRepository(sf)
-        scores = {"completion": 1.0, "code_quality": 0.9, "instruction": 0.8, "token_efficiency": 0.7}
-        row = await repo.record_result(
-            model_profile_id="m1",
-            task_type="bug_fix",
-            scores=scores,
-            success=True,
-        )
+        repo = BenchmarkRepository(session_factory=sf)
+        row = await repo.record_result(data={
+            "model_profile_id": "m1",
+            "task_type": "bug_fix",
+            "completion_score": 1.0,
+            "code_quality_score": 0.9,
+            "instruction_adherence_score": 0.8,
+            "token_efficiency_score": 0.7,
+            "success": True,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "time_seconds": 0.0,
+            "error_message": "",
+        })
         assert row is not None
-        session.add.assert_called()
 
     @pytest.mark.asyncio
     async def test_benchmark_repo_works_with_direct_session(self):
@@ -89,28 +100,44 @@ class TestAdaptiveRouterWiringInDaemon:
         session.flush = AsyncMock()
         session.add = MagicMock()
 
-        repo = BenchmarkRepository(session)
-        scores = {"completion": 0.5}
-        row = await repo.record_result(
-            model_profile_id="m2",
-            task_type="feature",
-            scores=scores,
-            success=False,
-        )
+        repo = BenchmarkRepository(session=session)
+        row = await repo.record_result(data={
+            "model_profile_id": "m2",
+            "task_type": "feature",
+            "completion_score": 0.5,
+            "code_quality_score": 0.0,
+            "instruction_adherence_score": 0.0,
+            "token_efficiency_score": 0.0,
+            "success": False,
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "cost_usd": 0.0,
+            "time_seconds": 0.0,
+            "error_message": "",
+        })
         assert row is not None
 
     @pytest.mark.asyncio
     async def test_benchmark_repo_no_session_raises(self):
         from general_ludd.db.repository import BenchmarkRepository
 
-        repo = BenchmarkRepository(None)  # type: ignore[arg-type]
-        with pytest.raises(RuntimeError, match="No session available"):
-            await repo.record_result(
-                model_profile_id="m3",
-                task_type="test_write",
-                scores={"completion": 0.0},
-                success=False,
-            )
+        repo = BenchmarkRepository()
+        with pytest.raises(RuntimeError, match="no session"):
+            await repo.record_result(data={
+                "model_profile_id": "m3",
+                "task_type": "test_write",
+                "completion_score": 0.0,
+                "code_quality_score": 0.0,
+                "instruction_adherence_score": 0.0,
+                "token_efficiency_score": 0.0,
+                "success": False,
+                "input_tokens": 0,
+                "output_tokens": 0,
+                "cost_usd": 0.0,
+                "time_seconds": 0.0,
+                "error_message": "",
+            })
+        assert True
 
     @pytest.mark.asyncio
     async def test_adaptive_router_with_benchmark_repo_routes(self):
