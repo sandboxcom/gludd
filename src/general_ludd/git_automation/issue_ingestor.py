@@ -26,13 +26,10 @@ class GitHubIssueIngestor:
         return bool(self._owner and self._repo)
 
     async def poll_issues(self) -> list[dict[str, Any]]:
-        """Poll GitHub for labeled issues and return new ones as todo dicts."""
         if not self.is_configured():
             return []
-
         issues = await self._fetch_labeled_issues()
         new_todos: list[dict[str, Any]] = []
-
         for issue in issues:
             issue_id = issue.get("id", 0)
             if issue_id in self._seen_ids:
@@ -42,8 +39,8 @@ class GitHubIssueIngestor:
             body = issue.get("body", "")
             labels_raw = issue.get("labels", [])
             label_names = [
-                l.get("name", "") if isinstance(l, dict) else str(l)
-                for l in labels_raw
+                lbl.get("name", "") if isinstance(lbl, dict) else str(lbl)
+                for lbl in labels_raw
             ]
             work_type = "code"
             for ln in label_names:
@@ -53,16 +50,17 @@ class GitHubIssueIngestor:
                     work_type = "docs"
                 elif ln in ("test", "testing"):
                     work_type = "test"
-
             new_todos.append({
                 "title": title,
                 "description": body or "",
                 "queue": "core",
                 "priority": "medium",
                 "work_type": work_type,
-                "source": f"github:{self._owner}/{self._repo}#{issue.get('number', '')}",
+                "source": (
+                    f"github:{self._owner}/{self._repo}"
+                    f"#{issue.get('number', '')}"
+                ),
             })
-
         return new_todos
 
     async def _fetch_labeled_issues(self) -> list[dict[str, Any]]:

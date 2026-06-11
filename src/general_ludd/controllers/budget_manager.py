@@ -35,7 +35,11 @@ class BudgetManager:
         if current + estimated_cost > self._per_todo_limit:
             return {
                 "allowed": False,
-                "reason": f"Per-todo budget would exceed limit: ${current + estimated_cost:.4f} > ${self._per_todo_limit:.4f}",
+                "reason": (
+                    f"Per-todo budget exceeded: "
+                    f"${current + estimated_cost:.4f} > "
+                    f"${self._per_todo_limit:.4f}"
+                ),
             }
         return {"allowed": True, "reason": "ok"}
 
@@ -47,9 +51,16 @@ class BudgetManager:
             self._paused = True
             return {
                 "allowed": False,
-                "reason": f"Daily budget would be exceeded: ${self._daily_spend + estimated_cost:.4f} > ${self._daily_limit:.4f}",
+                "reason": (
+                    f"Daily budget exceeded: "
+                    f"${self._daily_spend + estimated_cost:.4f} > "
+                    f"${self._daily_limit:.4f}"
+                ),
             }
-        pct = (self._daily_spend / self._daily_limit) * 100 if self._daily_limit > 0 else 0
+        pct = (
+            (self._daily_spend / self._daily_limit) * 100
+            if self._daily_limit > 0 else 0
+        )
         if pct >= self._alert_pct:
             logger.warning("Budget at %.1f%% of daily limit", pct)
         return {"allowed": True, "reason": "ok"}
@@ -60,7 +71,10 @@ class BudgetManager:
 
     def get_status(self) -> dict[str, Any]:
         self._reset_daily_if_needed()
-        pct = (self._daily_spend / self._daily_limit) * 100 if self._daily_limit > 0 else 0
+        pct = (
+            (self._daily_spend / self._daily_limit) * 100
+            if self._daily_limit > 0 else 0
+        )
         return {
             "daily_spend": self._daily_spend,
             "daily_limit": self._daily_limit,

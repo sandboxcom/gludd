@@ -14,12 +14,10 @@ from __future__ import annotations
 
 import logging
 import time
+import uuid as _uuid
 from typing import Any
 
 logger = logging.getLogger(__name__)
-
-# In-memory metrics store (no prometheus_client dependency required)
-# Each metric is a dict keyed by labels
 
 
 class MetricsExporter:
@@ -116,7 +114,6 @@ class MetricsExporter:
         }
 
 
-# Singleton
 _metrics_exporter: MetricsExporter | None = None
 
 
@@ -126,9 +123,6 @@ def get_metrics_exporter() -> MetricsExporter:
         _metrics_exporter = MetricsExporter()
     return _metrics_exporter
 
-
-# Log correlation helpers
-import uuid as _uuid
 
 _current_trace_id: dict[int, str] = {}
 

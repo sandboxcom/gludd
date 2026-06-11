@@ -21,9 +21,13 @@ class TestExecutionEngine:
 
     def test_execute_parses_file_write_blocks(self):
         mock_gateway = MagicMock()
-        mock_gateway.call_model = MagicMock(return_value=MagicMock(
-            content="```\n--- a/src/main.py\n+++ b/src/main.py\n@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n```"
-        ))
+        diff_output = (
+            "```\n--- a/src/main.py\n+++ b/src/main.py\n"
+            "@@ -1 +1 @@\n-print('hello')\n+print('hello world')\n```"
+        )
+        mock_gateway.call_model = MagicMock(
+            return_value=MagicMock(content=diff_output)
+        )
         engine = self._make_engine(mock_gateway)
 
         job = JobSpec(
@@ -76,7 +80,6 @@ class TestExecutionEngine:
             prompt_text="Create hello.py",
         )
 
-        # This should write files even if output parsing doesn't match perfectly
         result = engine.execute(job)
         assert result.job_id == "JOB-003"
 
