@@ -1,4 +1,8 @@
 """Unit tests for runtime profiles."""
+from __future__ import annotations
+
+import pytest
+from pydantic import ValidationError
 
 from general_ludd.runtime.profile import (
     DataSourceMount,
@@ -46,22 +50,15 @@ class TestRuntimeProfile:
         assert result["valid"] is False
 
     def test_relative_container_path_rejected(self):
-        profile = RuntimeProfile(
-            runtime_profile_id="container-test",
-            mode="container",
-            mounts=[
-                DataSourceMount(
-                    mount_id="data",
-                    source_type="bind",
-                    host_path="/data",
-                    container_path="relative/path",
-                    required=True,
-                ),
-            ],
-        )
-        validator = RuntimeValidator()
-        result = validator.validate_profile(profile)
-        assert result["valid"] is False
+        with pytest.raises(ValidationError, match="container_path must be absolute"):
+            DataSourceMount(
+                mount_id="data",
+                source_type="bind",
+                host_path="/data",
+                container_path="relative/path",
+                required=True,
+            )
+        assert True
 
     def test_valid_container_profile(self):
         profile = RuntimeProfile(

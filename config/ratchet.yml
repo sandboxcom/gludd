@@ -75,7 +75,6 @@ tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_valid
 tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_handles_invalid_model_output: "return review invalid output — pre-existing"
 tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_uses_routed_profile: "router wiring profile — pre-existing"
 tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_without_router_uses_default_profile: "router wiring default — pre-existing"
-tests/unit/test_runtime.py::TestRuntimeProfile::test_relative_container_path_rejected: "runtime relative path — pre-existing"
 tests/unit/test_runtime_packaging.py::TestRuntimeValidatorContainer::test_runtime_validator_container_relative_path: "runtime validator container — pre-existing"
 tests/unit/test_runtime_packaging.py::TestDataSourceMountAudit::test_data_source_mount_relative_container_path: "data source mount — pre-existing"
 tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_no_repo_falls_back: "scoring no repo — pre-existing"
