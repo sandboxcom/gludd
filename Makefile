@@ -11,7 +11,7 @@ UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 
-  .PHONY: search-google search-json \
+   .PHONY: search-google search-json \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai test-tui-daemon diag-gunicorn \
         typecheck setup-dirs setup-venv clean healthcheck \
@@ -25,7 +25,7 @@ TESTS_DIR := tests
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
-        audit-messages qa validate \
+        audit-messages qa validate collect-check gate \
         skill-install skill-list bootstrap-skills
 
 search-google:
@@ -117,7 +117,31 @@ test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
 test-failures:
-	@$(UV) run python -m pytest tests/ -q 2>&1 | grep -E "^FAILED" || echo "No failures"
+	@$(UV) run python -m pytest tests/ -q 2>&1 | grep -E "^(FAILED|ERROR)" || true
+	@$(UV) run python -m pytest tests/ -q 2>&1 | tail -1
+
+collect-check:
+	@$(UV) run python -m pytest tests/ --co -q 2>&1 | grep -q "errors during collection" && echo "COLLECTION ERRORS DETECTED" && exit 1 || echo "Collection OK"
+
+gate:
+	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
+	@echo -n "lint " >> .gate-status
+	@$(UV) run ruff check src tests > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL $$($(UV) run ruff check src tests 2>&1 | tail -1 | wc -l | tr -d ' ')" >> .gate-status && touch .gate-failed)
+	@echo -n "typecheck " >> .gate-status
+	@$(UV) run mypy src > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL $$($(UV) run mypy src 2>&1 | grep -c 'error:')" >> .gate-status && touch .gate-failed)
+	@echo -n "collect " >> .gate-status
+	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
+	@echo -n "test " >> .gate-status
+	@$(UV) run python -m pytest tests/ -q 2>&1; EXIT=$$?; \
+	if [ $$EXIT -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
+		FAILS=$$($(UV) run python -m pytest tests/ -q 2>&1 | grep -c "^FAILED" || echo 0); \
+		echo "FAIL $$FAILS" >> .gate-status; \
+		touch .gate-failed; \
+	fi
+	@echo "---" >> .gate-status
+	@cat .gate-status
+	@if [ -f .gate-failed ]; then rm -f .gate-failed; exit 1; fi
+	@echo "Gate: ALL PASSED"
 
 test-integration:
 	@$(UV) run python -m pytest tests/integration/ -v
@@ -213,8 +237,17 @@ git-add-all:
 repo-add-all:
 	@git add -A
 
+git-commit-bootstrap:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-bootstrap MSG='message'"; exit 1; fi
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+
 git-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
+	@echo "Running pre-commit collection check..."
+	@$(MAKE) --no-print-directory collect-check
+	@echo "Collection OK. Checking gate status..."
+	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
+	@if ! grep -q "^lint PASS\|^typecheck PASS\|^collect PASS\|^test PASS" .gate-status; then echo "ERROR: Gate not green. Run 'make gate' and fix issues first."; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 repo-commit:

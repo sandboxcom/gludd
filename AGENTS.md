@@ -1,5 +1,30 @@
 # Agentic Harness - Agent Rules
 
+## Mechanical Contract (READ FIRST — numbered priority)
+
+1. **Only `make <target>`.** Never bare commands, no metacharacters (`|`, `;`, `&&`, `$()`).
+2. **Pending todos ⇒ tool call.** If any item is `pending` or `in_progress`, your next output MUST be a tool call. Text-only responses with unfinished work are a hard violation.
+3. **"Done" requires: `make gate` green + `TASKS.md` evidence.** Nothing else counts. No self-assessment, no assertion from memory. Every item ticked must have a gate output pasted.
+4. **TDD:** write a failing test FIRST, run it, THEN write code. `make test-count` must show 0 collection errors before every commit.
+5. **When you find a gap:** fix it now, do not list it and ask. You own it. Fix it, test it, commit it, continue.
+6. **Trust gate output, not SESSION.md.** SESSION.md claims have been false. Gate exit codes are the single source of truth.
+7. **Read `TASKS.md` for current work.** Read `BUGS.md` before claiming anything is finished. Update both as you go.
+
+## Completion = Green Gate + TASKS.md Evidence
+
+A task may be called complete ONLY when:
+- `make gate` is fully green (lint 0, typecheck ≤ baseline, collect 0 errors, tests pass)
+- `TASKS.md` has the item ticked with evidence (gate target + summary + commit hash)
+- `make test-count` shows 0 collection errors
+
+NOTE: `make test-failures` previously masked collection ERRORs by grepping only `^FAILED`. If any gate target output disagrees with `make test`, the FULL `make test` output is the truth, and fixing the gate target is your first task.
+
+---
+
+## Rationale and history
+
+The sections below are the full policy. The 7-rule contract above is the prioritized summary.
+
 ## CRITICAL: Pre-Response Stop Audit (READ BEFORE EVERY RESPONSE)
 
 **Before sending ANY text response to the user, you MUST run this checklist:**
@@ -308,6 +333,8 @@ This is the general-ludd-agent project: an autonomous coding system with Ansible
 - `make lint-fix` - Run ruff with auto-fix
 - `make typecheck` - Run mypy
 - `make healthcheck` - Verify imports work
+- `make collect-check` - Fast collection-error gate (use before every commit)
+- `make gate` - Full gate: lint + typecheck + collect-check + test; writes `.gate-status`
 - `make qa` - Run lint + typecheck + test + healthcheck
 - `make validate` - Full validation including ansible syntax
 

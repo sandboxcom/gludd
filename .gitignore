@@ -15,3 +15,5 @@ dist/sbom-test.json
 dist/*.json
 build/
 *.egg-info/
+.gate-status
+.gate-failed
