@@ -243,6 +243,58 @@ make feature-start MSG='feature/my-feature'   # create branch
 make feature-done MSG='feature/my-feature'    # test + merge to master
 ```
 
+## Contributing
+
+Pull requests are welcome. Please follow these guidelines:
+
+### PR Requirements
+
+1. **Branch from master** — create a feature branch for your work.
+   ```bash
+   git checkout -b feature/my-change master
+   ```
+
+2. **Keep your commits** — do not squash or flatten your PR branch. Each commit
+   should represent one logical change. The merge to master will use `--no-ff` to
+   preserve the branch topology.
+
+3. **Include your prompts** — every PR description must include the full prompt(s)
+   used to generate or guide the code change. If you used an AI coding agent
+   (General Ludd itself, opencode, Copilot, etc.), paste the exact prompts you
+   gave it in the PR body under a `## Prompts Used` heading. This provides
+   critical context for reviewers to understand how the change was produced.
+
+   ```markdown
+   ## Prompts Used
+
+   - "Write a unit test for the login endpoint that covers invalid credentials"
+   - "Refactor the event loop dispatch phase to use the new PID controller outputs"
+   - "Fix the race condition in claim_runnable by adding SELECT ... FOR UPDATE SKIP LOCKED"
+   ```
+
+4. **Gate must be green** — run `make gate` before opening the PR. All four checks
+   (lint, typecheck, collect, test) must pass or be within baseline. The
+   `.gate-status` file is the single source of truth.
+
+5. **TDD** — new behavior must have a failing test committed before the
+   implementation. The test file and the implementation should be separate
+   commits on the branch.
+
+### Commit Style
+
+- One logical change per commit (one test file, one feature, one fix)
+- Messages are imperative: `Add`, `Fix`, `Remove`, `Update`
+- Reference issue numbers when applicable
+
+### Before Opening a PR
+
+```bash
+make gate           # must be green
+make validate       # full validation including ansible syntax
+make lint           # 0 errors
+make test-count     # 0 collection errors
+```
+
 ## Configuration Reference
 
 | File | Purpose |
