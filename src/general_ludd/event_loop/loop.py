@@ -697,6 +697,9 @@ class EventLoop:
             if new_status is not None:
                 await self._todo_repo.transition(todo.todo_id, new_status, todo.version)
                 reconciled += 1
+                if new_status == TodoStatus.COMPLETE and d.decision == "complete":
+                    with contextlib.suppress(Exception):
+                        await self._try_commit_completed_work(todo)
                 if self._audit_repo is not None:
                     with contextlib.suppress(Exception):
                         await self._audit_repo.create(
@@ -718,6 +721,20 @@ class EventLoop:
             "manual_hold": TodoStatus.MANUAL_HOLD,
         }
         return mapping.get(decision)
+
+    async def _try_commit_completed_work(self, todo: Any) -> None:
+        """H6: commit/branch/push completed work via git automation."""
+        branch_name = getattr(todo, "branch_name", None) or f"gludd-{todo.todo_id.lower()}"
+        worktree = getattr(todo, "worktree", None)
+        if worktree:
+            try:
+                from general_ludd.git_automation.repo import GitAutomation
+                repo = GitAutomation(worktree)
+                repo.commit(f"[{todo.todo_id}] {todo.title}")
+                repo.push(branch=branch_name)
+                logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
+            except Exception as exc:
+                logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
 
     async def _phase_self_improve(self) -> None:
         interval = self._self_improve_interval
