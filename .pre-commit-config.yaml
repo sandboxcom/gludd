@@ -11,7 +11,6 @@ repos:
       - id: check-added-large-files
         args: [--maxkb=500]
       - id: detect-private-key
-        exclude: 'tests/.*'
       - id: no-commit-to-branch
         args: [--branch, main]
 
