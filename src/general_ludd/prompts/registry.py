@@ -1,4 +1,4 @@
-"""Prompt management module."""
+"""Prompt registry for loading and rendering prompt templates."""
 
 from __future__ import annotations
 
@@ -25,7 +25,7 @@ class PromptRegistry:
         self._loader: BaseLoader = (
             FileSystemLoader(template_dir) if template_dir else BaseLoader()
         )
-        self._env = Environment(loader=self._loader, autoescape=True)
+        self._env = Environment(loader=self._loader, autoescape=False)
         self._event_bus = event_bus
 
     def register(self, name: str, template_text: str) -> None:
@@ -60,7 +60,7 @@ class PromptRegistry:
         for name in to_remove:
             del self._templates[name]
         self._loader = FileSystemLoader(self._template_dir) if self._template_dir else BaseLoader()
-        self._env = Environment(loader=self._loader, autoescape=True)
+        self._env = Environment(loader=self._loader, autoescape=False)
         if self._event_bus:
             self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))
         return {"templates": discovered, "refreshed": True}
@@ -68,22 +68,21 @@ class PromptRegistry:
 
 _WORK_TYPE_TEMPLATE_MAP: dict[str, str] = {
     "code": "implementation.md.j2",
-    "test": "test_creation.md.j2",
-    "review": "code_review.md.j2",
-    "refactor": "implementation.md.j2",
-    "docs": "documentation.md.j2",
-    "infra": "implementation.md.j2",
-    "prompt": "prompt_eval.md.j2",
+    "test": "test.md.j2",
     "analysis": "gap_analysis.md.j2",
-    "audit": "log_audit.md.j2",
-    "release": "implementation.md.j2",
-    "dependency": "dependency_update.md.j2",
-    "security": "implementation.md.j2",
-    "model": "implementation.md.j2",
-    "self_improvement": "self_improvement.md.j2",
-    "unknown": "implementation.md.j2",
+    "audit": "audit.md.j2",
+    "prompt": "prompt_eval.md.j2",
+    "review": "return_review.md.j2",
+    "dependency": "dependency.md.j2",
+    "bug_fix": "implementation.md.j2",
+    "refactor": "implementation.md.j2",
+    "feature": "implementation.md.j2",
+    "docs": "documentation.md.j2",
+    "security": "security.md.j2",
 }
 
 
-def get_template_name_for_work_type(work_type: str) -> str | None:
-    return _WORK_TYPE_TEMPLATE_MAP.get(work_type)
+def get_template_name_for_work_type(work_type: str) -> str:
+    if work_type in _WORK_TYPE_TEMPLATE_MAP:
+        return _WORK_TYPE_TEMPLATE_MAP[work_type]
+    return _WORK_TYPE_TEMPLATE_MAP.get(work_type, "implementation.md.j2")
