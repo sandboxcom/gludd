@@ -26,7 +26,8 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
-    _deployments: dict[str, ComputeInstance] = {}
+    if not hasattr(app.state, "_compute_deployments"):
+        app.state._compute_deployments: dict[str, ComputeInstance] = {}
 
     def _get_deployment_manager() -> DeploymentManager:
         cached = getattr(app.state, "_deployment_manager", None)
@@ -38,9 +39,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "deployments",
         )
         os.makedirs(pdd, exist_ok=True)
-        mgr = DeploymentManager(
-            secrets_resolver=secrets_resolver,
-        )
+        mgr = DeploymentManager(secrets_resolver=secrets_resolver)
         mgr.private_data_dir = pdd
         app.state._deployment_manager = mgr
         return mgr
@@ -79,10 +78,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if not endpoint_id or not url:
             raise HTTPException(status_code=422, detail="endpoint_id and url required")
         ep = ext["utilization"].register_endpoint(
-            endpoint_id=endpoint_id,
-            url=url,
-            model=req.get("model", ""),
-            gpu_type=req.get("gpu_type", ""),
+            endpoint_id=endpoint_id, url=url,
+            model=req.get("model", ""), gpu_type=req.get("gpu_type", ""),
             gpu_count=req.get("gpu_count", 1),
             max_concurrent=req.get("max_concurrent", 4),
         )
@@ -118,12 +115,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             engine = InferenceEngine.VLLM
 
         config = ComputeConfig(
-            provider=provider,
-            gpu_type=gpu_type,
-            model_name=model_name,
-            engine=engine,
-            region=req.get("region"),
-            spot=req.get("spot", True),
+            provider=provider, gpu_type=gpu_type, model_name=model_name,
+            engine=engine, region=req.get("region"), spot=req.get("spot", True),
             max_cost_usd=req.get("max_cost_usd", 10.0),
             timeout_minutes=req.get("timeout_minutes", 60.0),
             disk_size_gb=req.get("disk_size_gb", 100),
@@ -140,7 +133,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             logger.exception("Deploy failed")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
 
-        _deployments[instance.instance_id] = instance
+        app.state._compute_deployments[instance.instance_id] = instance
         return {
             "instance_id": instance.instance_id,
             "provider": instance.provider.value,
@@ -159,5 +152,5 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         except Exception as exc:
             logger.exception("Destroy failed")
             raise HTTPException(status_code=500, detail=str(exc)) from exc
-        _deployments.pop(instance_id, None)
+        app.state._compute_deployments.pop(instance_id, None)
         return {"destroyed": instance_id}

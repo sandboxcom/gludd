@@ -192,14 +192,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/api/deployments")
     async def api_deployments() -> list[dict[str, Any]]:
-        dm = getattr(app.state, "_deployment_manager", None)
-        if dm is not None:
-            instances = getattr(dm, "_deployments", {}) if hasattr(dm, "_deployments") else {}
-            return [
-                {"instance_id": i.instance_id, "status": i.status}
-                for i in instances.values()
-            ]
-        return []
+        instances = getattr(app.state, "_compute_deployments", None) or {}
+        return [
+            {"instance_id": i.instance_id, "status": i.status}
+            for i in instances.values()
+        ]
 
     @app.post("/admin/log-level")
     async def admin_log_level(req: LogLevelRequest) -> dict[str, str]:
