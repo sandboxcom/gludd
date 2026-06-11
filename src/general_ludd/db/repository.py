@@ -6,18 +6,20 @@ from datetime import UTC, datetime
 from typing import Any
 
 from sqlalchemy import select
+from sqlalchemy.orm import joinedload
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.models import (
     AuditEventModel,
     BenchmarkResultModel,
-    ProjectModel,
     PromptProfileModel,
+    ProjectModel,
     QueueModel,
     TaskReturnModel,
     TodoEventModel,
     TodoModel,
     VariableNamespaceModel,
+    VariableValueModel,
 )
 from general_ludd.schemas.todo import TodoStatus
 
@@ -158,14 +160,14 @@ class TaskReturnRepository:
         return row
 
     async def claim_unreviewed(self, project_id: str | None = None) -> list[TaskReturnModel]:
-        stmt = select(TaskReturnModel).where(TaskReturnModel.reviewed.is_(False))
+        stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
         stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(10)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         for row in rows:
-            row.reviewed = True
+            row.status = "claimed_for_review"
             row.updated_at = datetime.now(UTC)
         await self._session.flush()
         return rows
@@ -220,25 +222,19 @@ class VariableNamespaceRepository:
         self._session = session
 
     async def load_vars_for_project(self, project_id: str | None) -> dict[str, str]:
-        stmt = select(VariableNamespaceModel)
-        if project_id is not None:
-            stmt = stmt.where(
+        stmt = (
+            select(VariableValueModel)
+            .join(VariableNamespaceModel)
+            .where(
                 (VariableNamespaceModel.project_id == project_id)
                 | (VariableNamespaceModel.project_id.is_(None))
             )
+        )
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
         result_dict: dict[str, str] = {}
-        global_vars: dict[str, str] = {}
-        project_vars: dict[str, str] = {}
         for row in rows:
-            entry = {row.var_key: row.var_value}
-            if row.project_id is None:
-                global_vars.update(entry)
-            elif row.project_id == project_id:
-                project_vars.update(entry)
-        result_dict.update(global_vars)
-        result_dict.update(project_vars)
+            result_dict[row.key] = row.value
         return result_dict
 
     async def create_namespace(self, namespace: str, project_id: str | None = None) -> VariableNamespaceModel:
@@ -249,13 +245,18 @@ class VariableNamespaceRepository:
 
     async def set_var(
         self, namespace: str, key: str, value: str, project_id: str | None = None
-    ) -> VariableNamespaceModel:
-        row = VariableNamespaceModel(
-            namespace=namespace,
-            var_key=key,
-            var_value=value,
-            project_id=project_id,
+    ) -> VariableValueModel:
+        stmt = select(VariableNamespaceModel).where(
+            VariableNamespaceModel.namespace == namespace,
+            VariableNamespaceModel.project_id == project_id,
         )
+        result = await self._session.execute(stmt)
+        ns = result.scalar_one_or_none()
+        if ns is None:
+            ns = VariableNamespaceModel(namespace=namespace, project_id=project_id)
+            self._session.add(ns)
+            await self._session.flush()
+        row = VariableValueModel(namespace_id=ns.id, key=key, value=value)
         self._session.add(row)
         await self._session.flush()
         return row
