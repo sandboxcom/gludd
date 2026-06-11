@@ -4,7 +4,12 @@ from typing import Any
 
 from fastapi import FastAPI
 
+from general_ludd.db.repository import TodoRepository
 from general_ludd.self_improve.harness import SelfImprovementHarness
+
+
+def _get_session_factory(app: FastAPI) -> Any:
+    return getattr(app.state, "_session_factory", None)
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -28,7 +33,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "findings_count": result["findings_count"],
             "todos_enqueued": result["todos_enqueued"],
         }
-        _daemon_state["todos"].extend(result["todos"])
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                persisted_ids: list[str] = []
+                for todo_data in result["todos"]:
+                    created = await repo.create(todo_data=todo_data)
+                    persisted_ids.append(created.todo_id)
+                await session.commit()
+                result["persisted_todo_ids"] = persisted_ids
+        else:
+            _daemon_state["todos"].extend(result["todos"])
         return result
 
     @app.get("/admin/self-improve/status")

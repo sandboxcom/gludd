@@ -9,11 +9,8 @@ from fastapi import FastAPI, HTTPException
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.schemas.job import JobSpec
-from general_ludd.schemas.task_return import TaskReturn
 
 logger = logging.getLogger(__name__)
-
-PLAYBOOK_REGISTRY: set[str] = {"noop.yml"}
 
 _runner: AnsibleRunnerAdapter | None = None
 
@@ -23,6 +20,10 @@ def get_runner() -> AnsibleRunnerAdapter:
     if _runner is None:
         _runner = AnsibleRunnerAdapter()
     return _runner
+
+
+def get_playbook_registry() -> set[str]:
+    return set(get_runner().list_playbooks())
 
 
 def _redact_secrets(message: str, refs: list[str]) -> str:
@@ -43,7 +44,8 @@ def create_app() -> FastAPI:
 
     @application.post("/jobs/execute")
     async def execute_job(job: JobSpec) -> dict[str, Any]:
-        if job.playbook not in PLAYBOOK_REGISTRY:
+        registry = get_playbook_registry()
+        if job.playbook not in registry:
             raise HTTPException(
                 status_code=400,
                 detail=f"Unknown playbook: {job.playbook}",
@@ -70,6 +72,9 @@ def create_app() -> FastAPI:
                 "queue": job.queue,
                 "work_type": job.work_type,
                 "project_id": getattr(job, "project_id", None),
+                "model_profile": job.model_profile,
+                "prompt_text": job.prompt_text,
+                "skill_body": job.skill_body,
                 **job.budget_context,
             },
             shared_vars=None,
@@ -78,50 +83,29 @@ def create_app() -> FastAPI:
             playbook_name=job.playbook,
             private_data_dir=dirs["root"],
         )
-        exit_code = runner_result.get("rc", 1)
-        events = runner_result.get("events", [])
-        task_return = TaskReturn(
-            return_id=f"RET-{job.job_id}",
-            todo_id=job.todo_id,
-            job_id=job.job_id,
-            playbook=job.playbook,
-            queue=job.queue,
-            work_type=job.work_type,
-            resource_profile=job.resource_profile,
-            exit_code=exit_code,
-            result_summary=f"Playbook {job.playbook} finished with rc={exit_code}",
-            artifacts=[dirs["artifacts"]],
-            logs_ref=dirs["root"],
-        )
-        response = task_return.model_dump(mode="json")
-        response["events"] = events
-        response["job_id"] = job.job_id
-        response["todo_id"] = job.todo_id
-        return response
+        return {
+            "return_id": f"RET-{job.job_id}",
+            "todo_id": job.todo_id,
+            "job_id": job.job_id,
+            "exit_code": runner_result.get("rc", runner_result.get("exit_code", 0)),
+            "result_summary": runner_result.get("output", runner_result.get("result_summary", "")),
+            "artifacts": runner_result.get("artifacts", []),
+        }
 
     @application.post("/jobs/return-review")
-    async def return_review(job: JobSpec) -> dict[str, Any]:
-        if job.playbook != "return_review.yml" and job.playbook not in PLAYBOOK_REGISTRY:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Unknown playbook: {job.playbook}",
-            )
-        logger.info("Return review job_id=%s todo_id=%s", job.job_id, job.todo_id)
-        return {"status": "review_dispatched", "job_id": job.job_id, "todo_id": job.todo_id}
+    async def return_review_job(job: JobSpec) -> dict[str, Any]:
+        raise HTTPException(status_code=501, detail="Return review must be handled by the daemon reviewer")
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:
-        logger.info("Validation job_id=%s todo_id=%s", job.job_id, job.todo_id)
-        return {"status": "validation_dispatched", "job_id": job.job_id, "todo_id": job.todo_id}
+        raise HTTPException(status_code=501, detail="Validate must be handled by the daemon")
 
     @application.post("/jobs/policy-validate")
-    async def policy_validate(job: JobSpec) -> dict[str, Any]:
-        logger.info("Policy validation job_id=%s todo_id=%s", job.job_id, job.todo_id)
-        return {"status": "policy_validation_dispatched", "job_id": job.job_id, "todo_id": job.todo_id}
+    async def policy_validate_job(job: JobSpec) -> dict[str, Any]:
+        raise HTTPException(status_code=501, detail="Policy validation not yet implemented")
 
     @application.post("/jobs/reload-request")
-    async def reload_request(job: JobSpec) -> dict[str, Any]:
-        logger.info("Reload request job_id=%s todo_id=%s", job.job_id, job.todo_id)
-        return {"status": "reload_dispatched", "job_id": job.job_id, "todo_id": job.todo_id}
+    async def reload_request_job(job: JobSpec) -> dict[str, Any]:
+        raise HTTPException(status_code=501, detail="Reload requests not yet implemented")
 
     return application
