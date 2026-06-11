@@ -561,6 +561,7 @@ def _get_or_create_extended_subsystems(
         "adaptive_router": adaptive_router,
         "auto_configurator": getattr(app.state, "_auto_configurator", None),
         "scraper": getattr(app.state, "_scraper", None),
+        "worktree_monitor": getattr(app.state, "_worktree_monitor", None),
     }
 
 
