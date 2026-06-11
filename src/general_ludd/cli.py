@@ -2851,41 +2851,13 @@ def _cmd_playbooks_refresh(args: argparse.Namespace) -> None:
 
 
 def _cmd_code_graph(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/code/graph",
-            params={"source": args.source, "language": args.language},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    print("Code intelligence not yet implemented. Use external tools for now.")
+    sys.exit(1)
 
 
 def _cmd_code_search(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/code/search",
-            params={"query": args.query, "language": args.language},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get("results", [])
-            if results:
-                for r in results:
-                    print(f"  {r.get('file', '?')}:{r.get('line', '?')} {r.get('text', '')[:80]}")
-            else:
-                print(f"No results for '{args.query}'")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    print("Code intelligence not yet implemented. Use external tools for now.")
+    sys.exit(1)
 
 
 def _cmd_quantization_list(args: argparse.Namespace) -> None:
