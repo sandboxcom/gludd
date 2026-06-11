@@ -478,6 +478,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._worktree_monitor = wt_monitor
 
+        from general_ludd.agents.dispatcher import AgentDispatcher
+        app.state._agent_dispatcher = AgentDispatcher(
+            model_gateway=None,
+            session_factory=session_factory,
+        )
+
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
