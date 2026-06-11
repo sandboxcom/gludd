@@ -8,6 +8,7 @@ class Skill(BaseModel):
 
     name: str
     description: str = ""
+    category: str = ""
     model_profile: str | None = None
     tools: list[str] = []
     trigger_patterns: list[str] = []

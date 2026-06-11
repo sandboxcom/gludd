@@ -30,7 +30,6 @@ from general_ludd.config.model_routing import ModelRoutingConfig, load_model_rou
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard  # noqa: F401
-from general_ludd.controllers.pid import BudgetController  # noqa: F401
 from general_ludd.db.models import AuditEventType  # noqa: F401
 from general_ludd.db.repository import BenchmarkRepository, ProjectRepository, QueueRepository  # noqa: F401
 from general_ludd.db.session import (
@@ -63,6 +62,7 @@ from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.gateway import ModelProfile
 from general_ludd.models.langgraph_gateway import LangGraphGateway  # noqa: F401
 from general_ludd.models.model_registry import ModelRegistry
+from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder  # noqa: F401
 from general_ludd.projects.manager import seed_from_config
@@ -451,7 +451,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task.add_done_callback(_on_event_loop_done)
 
         from general_ludd.controllers.budget_manager import BudgetManager
-        from general_ludd.observability.dashboard_data import DashboardDataProvider
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
         from general_ludd.observability.run_history import RunHistoryRecorder
 
@@ -707,7 +706,9 @@ def create_daemon_app(
 
     @app.get("/admin/dashboard/overview")
     async def admin_dashboard_overview() -> dict[str, Any]:
-        provider = getattr(app.state, "_dashboard_data", None)
+        provider: DashboardDataProvider | None = getattr(
+            app.state, "_dashboard_data", None
+        )
         if provider is not None:
             return await provider.get_overview()
         return {"error": "Dashboard data provider not initialized"}

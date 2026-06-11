@@ -2,13 +2,13 @@
 
 from __future__ import annotations
 
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from fastapi import FastAPI
 
 
-def register_all(app: FastAPI, daemon_state: dict) -> None:
+def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     # Lazy to avoid circular import: routers/*.py import from daemon at module level
     from general_ludd.routers.ansible import register as register_ansible
     from general_ludd.routers.benchmark import register as register_benchmark

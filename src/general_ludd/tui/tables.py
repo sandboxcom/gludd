@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from collections.abc import Callable
+from collections.abc import Callable, Sequence
 from typing import Any
 
 from rich.table import Table
@@ -11,7 +11,7 @@ from rich.table import Table
 def _make_table(
     title: str,
     columns: list[tuple[str, str, int, int]],
-    rows: list[tuple[str, ...]] | None = None,
+    rows: Sequence[tuple[str, ...]] | None = None,
     *,
     empty_msg: str = "",
     show_header: bool = True,

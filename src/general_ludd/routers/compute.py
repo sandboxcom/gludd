@@ -8,7 +8,6 @@ from fastapi import FastAPI, HTTPException
 
 from general_ludd.infra.compute import (
     ComputeConfig,
-    ComputeInstance,
     ComputeProvider,
     GPUType,
     InferenceEngine,
@@ -27,20 +26,22 @@ def _get_or_create_extended_subsystems(app: FastAPI) -> dict[str, Any]:
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     if not hasattr(app.state, "_compute_deployments"):
-        app.state._compute_deployments: dict[str, ComputeInstance] = {}
+        app.state._compute_deployments = {}
 
     def _get_deployment_manager() -> DeploymentManager:
         cached = getattr(app.state, "_deployment_manager", None)
         if cached is not None:
-            return cached
+            return cached  # type: ignore[no-any-return]
         secrets_resolver = getattr(app.state, "_secrets_resolver", None)
         pdd = os.path.join(
             os.path.expanduser("~/.local/share/general-ludd"),
             "deployments",
         )
         os.makedirs(pdd, exist_ok=True)
-        mgr = DeploymentManager(secrets_resolver=secrets_resolver)
-        mgr.private_data_dir = pdd
+        mgr = DeploymentManager(
+            secrets_resolver=secrets_resolver,
+            working_dir=pdd,
+        )
         app.state._deployment_manager = mgr
         return mgr
 

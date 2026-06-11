@@ -164,6 +164,7 @@ class TaskReturnModel(Base):
     producer_worker_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
     schema_version: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class TaskDecisionModel(Base):
@@ -307,6 +308,7 @@ class PromptProfileModel(Base):
     collected_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
+    updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
 class BenchmarkResultModel(Base):

@@ -270,6 +270,7 @@ class EventLoop:
         start = time.monotonic()
         needs_own_session = self.session is None and self._session_factory is not None
         if needs_own_session:
+            assert self._session_factory is not None
             async with self._session_factory() as session:
                 self._active_session = session
                 self._todo_repo = TodoRepository(session)

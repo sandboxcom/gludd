@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import contextlib
+from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any
 
@@ -270,9 +271,9 @@ class BenchmarkRepository:
         self._session = session
         self._session_factory = session_factory
 
-    async def _execute_with_session(self, fn) -> Any:
+    async def _execute_with_session(self, fn: Callable[[AsyncSession], Any]) -> Any:
         if self._session_factory is not None:
-            async with self._session_factory() as session:  # type: ignore[call-arg]
+            async with self._session_factory() as session:  # type: ignore[operator]
                 return await fn(session)
         if self._session is not None:
             return await fn(self._session)
@@ -284,7 +285,7 @@ class BenchmarkRepository:
             session.add(row)
             await session.flush()
             return row
-        return await self._execute_with_session(_do)
+        return await self._execute_with_session(_do)  # type: ignore[no-any-return]
 
     async def get_aggregate_scores(self, task_type: str | None = None) -> list[dict[str, Any]]:
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
@@ -323,7 +324,7 @@ class BenchmarkRepository:
                 }
                 for r in rows
             ]
-        return await self._execute_with_session(_do)
+        return await self._execute_with_session(_do)  # type: ignore[no-any-return]
 
     async def get_best_for_task(self, task_type: str, min_samples: int = 3) -> list[dict[str, Any]]:
         scores = await self.get_aggregate_scores(task_type=task_type)
@@ -338,7 +339,7 @@ class BenchmarkRepository:
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
-        return await self._execute_with_session(_do)
+        return await self._execute_with_session(_do)  # type: ignore[no-any-return]
 
     async def list_recent(self, limit: int = 50) -> list[BenchmarkResultModel]:
         async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
@@ -349,7 +350,7 @@ class BenchmarkRepository:
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
-        return await self._execute_with_session(_do)
+        return await self._execute_with_session(_do)  # type: ignore[no-any-return]
 
 
 class PromptProfileRepository:
