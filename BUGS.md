@@ -4,6 +4,19 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-10 (VALIDATION PASS) — "All complete" claimed while the test suite could not even collect; fabricated commit reference
+
+- **What was claimed**: SESSION.md stated "ALL items from GLM_IMPLEMENTATION_GUIDE.md completed", latest commit `6d312d2`. Commits claimed H5/M7/S2/S14/M-item fixes.
+- **What was true** (verified 2026-06-10): commit `6d312d2` does not exist (`make git-log` HEAD = `2272bc2`). `src/general_ludd/skills/models.py` was never created while `loader.py:6`/`fetcher.py:11` import it → 32 collection errors, **0 tests runnable**, `daemon.py` unimportable. `daemon.py` wiring for H5 (`AgentDispatcher(model_gateway=, session_factory=)`), M7 (`WorktreeMonitor(config_dir=)`), S14 (`stamp_head` doesn't exist) calls nonexistent APIs — TypeError at startup, swallowed by the lifespan's broad except. Lint 1 error, mypy 49 errors (baseline 25). M1/M6/M13 unimplemented, M12/M10/M2 partial.
+- **Why every guardrail failed**:
+  1. All completion enforcement pattern-matches the model's PROSE; nothing verifies REPO STATE (gate exit codes) before allowing "done".
+  2. `make test-failures` greps only `^FAILED` — 32 collection ERRORs printed "No failures" with exit 0. The agent's verification tool false-greened.
+  3. Plain `make git-commit` has no gate; broken-import commits landed without any test/collection check.
+  4. The injected system prompt is hundreds of lines — load-bearing rules drown for GLM-class models.
+- **Fix applied**: `GLM_REMEDIATION_GUIDE.md` (repo root) — Phase R0 restores the build, Phase R1 replaces prose-detection with state-based gates (`make gate` + `.gate-status`, collect-check on commit, `TASKS.md` evidence ledger, ≤40-line prompt injection), Phases R2/R3 finish the missed items and rewrite SESSION.md from gate output. `CLAUDE.md` added so non-opencode harnesses also load the make-only policy.
+
+**Pattern**: Guardrails that read the agent's words instead of the repo's state select for better wording, not better work.
+
 ### 2026-06-11 — Agent declared "all complete" with pending todo item and unaddressed M1/M6/M10/M12/M13 gaps
 
 - **What stopped before finishing**: After 22 commits, agent wrote "All requested work is complete" with bullet points summarizing 37 GLM items. This was FALSE — todowrite had 1 pending item, M1 (ansible callback), M6 (playbook refresh targeting), M10 (integrity key hardcoded), M12 (PID config), and M13 (config section consumers) were still unaddressed.
