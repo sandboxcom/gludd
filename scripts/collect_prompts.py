@@ -230,6 +230,16 @@ def collect_source(
             out_path = output_dir / f"{profile_name}.yml"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with open(out_path, "w") as f:
+                license_info = source.get("license", "Apache-2.0")
+                repo_url = f"https://github.com/{source['repo']}"
+                f.write(
+                    f"# Source: {repo_url}\n"
+                    f"# License: {license_info}\n"
+                    f"# Retrieved: {__import__('datetime').datetime.utcnow().isoformat()}Z\n"
+                    f"# Attribution: upstream prompt collected by General Ludd\n"
+                    f"# — see {repo_url}/blob/main/LICENSE for full license text\n"
+                    f"#\n"
+                )
                 yaml.dump(profile_data, f, default_flow_style=False, allow_unicode=True)
             collected.append(out_path)
             print(f"    Wrote {out_path.name} ({len(prompt_text)} chars)")
