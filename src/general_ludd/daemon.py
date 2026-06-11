@@ -197,17 +197,32 @@ def build_secrets_resolver(
 ) -> Any:
     base: Any
     if openbao_config is not None and openbao_config.mode not in ("disabled", None):
-        try:
-            mgr = SecretsManager(config=openbao_config)
-            if openbao_config.mode == "external" and openbao_config.external_url:
+        mode = openbao_config.mode
+        has_url = bool(openbao_config.external_url)
+        if mode == "external" and has_url:
+            try:
+                mgr = SecretsManager(config=openbao_config)
                 mgr.connect()
-                logger.info("OpenBao secrets backend connected: %s", openbao_config.external_url)
+                logger.info("OpenBao secrets backend configured: %s", openbao_config.external_url)
                 base = mgr
-            else:
-                logger.warning("OpenBao not reachable, falling back to env var secrets")
+            except Exception as exc:
+                logger.warning("OpenBao external init failed (%s), using env fallback", exc)
                 base = EnvSecretsManager(overrides=env_overrides)
-        except Exception as exc:
-            logger.warning("OpenBao init failed (%s), falling back to env var secrets", exc)
+        elif mode == "auto":
+            if has_url:
+                try:
+                    mgr = SecretsManager(config=openbao_config)
+                    mgr.connect()
+                    logger.info("OpenBao auto-mode: connected to %s", openbao_config.external_url)
+                    base = mgr
+                except Exception as exc:
+                    logger.warning("OpenBao auto-mode: connection failed (%s), using env fallback", exc)
+                    base = EnvSecretsManager(overrides=env_overrides)
+            else:
+                logger.info("OpenBao auto-mode: no external URL configured, using env fallback")
+                base = EnvSecretsManager(overrides=env_overrides)
+        else:
+            logger.info("OpenBao mode=%s: using env fallback", mode)
             base = EnvSecretsManager(overrides=env_overrides)
     else:
         base = EnvSecretsManager(overrides=env_overrides)
