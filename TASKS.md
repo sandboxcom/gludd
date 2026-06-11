@@ -10,11 +10,16 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] V0.2 — make smoke green; daemon always cleaned up on failure | evidence: make smoke "=== SMOKE: PASSED ===" 60cdb4d
 - [x] V0.3 — test-failures/collect-check/gate/git-commit fixed (exit codes, AND-logic, freshness, lint count) | evidence: make gate "ALL PASSED" bd87fa5
 - [x] V0.4 — tolerances deleted; strict-xfail ratchet (93 xfailed); mypy≤18; gate green with 0-tolerance | evidence: make gate "ALL PASSED" (0 lint, 18 mypy, 0 collect, 0 test) 237123f
-
 - [x] V1.2b — stop-pattern detection fix: ratchet state check blocks completion claims when ratchet has entries | evidence: make gate "ALL PASSED" 2c9e33c
 - [x] V1.3 — smoke wired into gate + validate (5th .gate-status line) | evidence: make gate shows "smoke PASS" 306512e
 - [x] V1.7 — CI gate job: Python 3.11/3.12 matrix, version stamping, release gated on gate | evidence: .github/workflows/build.yml updated f9e220f
-- [x] Anti-Stop Fuzz Test — 5/5 tests passing, catches all BUGS.md incident messages, 0 false positives | evidence: make test-specific test_anti_stop_fuzz.py "5 passed" 306512e
+- [x] Anti-Stop Fuzz Test — 6/6 tests passing with variant generation, catches all BUGS.md incident messages, 0 false positives | evidence: make test-specific test_anti_stop_fuzz.py "6 passed" a1c1185
+- [x] V2.1-H5 — gateway-backed executor wired in daemon lifespan | evidence: tests/unit/test_h5_gateway_executor.py 4 passed 506ed44
+- [x] V2.6-C0 — gunicorn config pipeline fixed, env var passing | evidence: cli.py change 1461108
+- [x] V2.6-C2 — session_factory used in tick, commit on session close | evidence: loop.py lines 271-289 bd87fa5
+- [x] V2.6-C3 — POST /api/todos persists to DB when factory exists | evidence: make smoke todo persistence 60cdb4d
+- [x] V2.6-C4 — phase exceptions logged, done-callback attached | evidence: daemon.py task.add_done_callback bd87fa5
+- [x] V2.6-H6 — git automation wired into reconcile phase | evidence: loop.py _try_commit_completed_work 56fbec7
 
 ## Phase R0 — Restore the build
 
