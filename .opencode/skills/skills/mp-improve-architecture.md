@@ -22,4 +22,3 @@ Process:
 3. Grilling loop — walk design tree, update CONTEXT.md inline, offer ADRs sparingly.
 
 Key principles: deletion test, interface is the test surface, one adapter = hypothetical seam, two adapters = real seam.
-

@@ -21,4 +21,3 @@ Structure: skill-name/SKILL.md (required), REFERENCE.md, EXAMPLES.md, scripts/ (
 Description requirements: Max 1024 chars, third person, first sentence = what it does, second sentence = 'Use when [triggers]'. The description is the ONLY thing the agent sees when deciding which skill to load.
 
 Split files when SKILL.md exceeds 100 lines. Add scripts for deterministic operations.
-

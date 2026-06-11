@@ -21,4 +21,3 @@ Write a handoff document summarizing the conversation for a fresh agent.
 - Don't duplicate content in other artifacts (PRDs, plans, ADRs, issues, commits) — reference by path/URL
 - Redact sensitive info
 - Tailor to what the next session will focus on
-

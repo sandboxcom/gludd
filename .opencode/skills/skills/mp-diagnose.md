@@ -22,4 +22,3 @@ A 6-phase discipline for hard bugs:
 4. **Instrument** — One probe per hypothesis, one variable at a time. Prefer debugger/REPL over targeted logs. Tag debug logs with unique prefix.
 5. **Fix + regression test** — Write regression test before fix. If no test seam exists, that itself is the finding.
 6. **Cleanup + post-mortem** — Verify repro gone, regression test passes, all instrumentation removed. Ask 'what would have prevented this bug?'
-

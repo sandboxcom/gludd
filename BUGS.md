@@ -143,7 +143,7 @@ All premature-stop incidents and process failures are tracked here.
 
 - **What stopped before finishing**: Agent presented test result summaries ("X passed, Y failed, Z skipped — committed") as final responses instead of continuing work. This happened 5+ times across the session. Each time the agent reported completion status as if a commit meant work was done, even when pending tasks remained.
 - **Why guardrail failed repeatedly**: The `chat.response.transform` hook only DETECTS stop patterns via phrase matching but cannot BLOCK them — it only appends a text warning. The TDD guardrail blocks production edits by throwing in `tool.execute.before`, but `chat.response.transform` has no blocking capability. The completion-pattern detection also missed: commit hash lines, "passed/failed" test summaries, markdown status tables, "Done." / "All green." single-word completions.
-- **Root cause categories**: 
+- **Root cause categories**:
   1. **Missing patterns**: commit hashes, test counts, status tables, short completions ("Done.")
   2. **Advisory-only guardrail**: `chat.response.transform` appends text, doesn't block — unlike `tool.execute.before` which throws
   3. **System prompt buried**: The stop-policy prompt was deep in the system instructions, not front-loaded
@@ -157,7 +157,7 @@ All premature-stop incidents and process failures are tracked here.
 ### 2026-06-07 (SESSION START AUDIT) — Guardrail hardening for recurring premature stops
 
 - **Root cause analysis**: 6 incidents in BUGS.md. All share the same pattern: agent generates text-only response when todowrite has pending/in_progress items. The `chat.response.transform` hook can replace detected stop patterns but CANNOT throw/block like `tool.execute.before` can. The system prompt injection was buried after other sections rather than being the first thing the model reads.
-- **Why fixes kept failing**: 
+- **Why fixes kept failing**:
   1. Pattern detection was too narrow — missed test results, coverage lines, commit+summary combos
   2. System prompt had the audit rule but not as the FIRST/HIGHEST PRIORITY section
   3. No heuristic for "long response with test results + bullet lists" = status report

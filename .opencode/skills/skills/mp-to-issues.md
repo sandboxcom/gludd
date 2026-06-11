@@ -24,4 +24,3 @@ Process:
 5. Publish issues in dependency order
 
 Vertical slice rules: Each delivers a narrow but COMPLETE path through every layer. A completed slice is demoable on its own. Prefer many thin over few thick.
-

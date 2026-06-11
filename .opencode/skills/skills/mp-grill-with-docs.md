@@ -22,4 +22,3 @@ Grilling session that challenges your plan against the existing domain model.
 - Discuss concrete scenarios, cross-reference with code
 - Update CONTEXT.md inline (glossary only, no implementation details)
 - Offer ADRs sparingly (only when hard to reverse + surprising without context + real trade-off)
-

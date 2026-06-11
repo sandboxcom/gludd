@@ -249,4 +249,3 @@ def _compute_benchmark_scores(task_return: dict) -> dict[str, float]:
         "instruction": instruction_score,
         "token_efficiency": token_score,
     }
-

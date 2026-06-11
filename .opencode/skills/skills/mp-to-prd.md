@@ -24,4 +24,3 @@ Process:
 3. Write PRD using template, publish to issue tracker with ready-for-agent label
 
 PRD sections: Problem Statement, Solution, User Stories (As a actor, I want feature, so that benefit), Implementation Decisions, Testing Decisions, Out of Scope, Further Notes
-

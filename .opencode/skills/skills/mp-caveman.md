@@ -23,4 +23,3 @@ Rules:
 - Pattern: [thing] [action] [reason]. [next step].
 - Code blocks unchanged
 - Auto-clarity: temporarily drop caveman for security warnings, irreversible actions, multi-step sequences
-

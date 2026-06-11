@@ -25,4 +25,3 @@ Test-driven development with a red-green-refactor loop.
 4. Refactor — after all tests pass, extract duplication, deepen modules. Never refactor while RED
 
 Tests verify behavior through public interfaces, not implementation details. Good tests are integration-style (read like specs). Bad tests are coupled to implementation.
-

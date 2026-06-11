@@ -95,7 +95,7 @@ guardrail layers:
 ## Examples of Ported Directives
 
 | AGENTS.md Directive | AgentBehavior Field | BehaviorRenderer Section |
-|---------------------|--------------------|-------------------------| 
+|---------------------|--------------------|-------------------------|
 | Task Completion Policy | `completion_policy: str` | "## Task Completion" |
 | Self-Directed Work | `self_directed_work: bool` | "## Self-Directed Work" |
 | TDD Policy | `tdd_enforced: bool` | "## TDD Policy" |

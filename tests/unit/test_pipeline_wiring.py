@@ -476,4 +476,3 @@ class TestConfigSnapshotDeepCopy:
         loop._variable_repo = None
         await loop._phase_load_config_snapshot()
         assert "shared_vars" not in loop._config_snapshot
-

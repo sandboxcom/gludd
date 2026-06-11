@@ -134,4 +134,3 @@ class TestDaemonPidFile:
         assert child.poll() is None
         child.kill()
         child.wait(timeout=3)
-
