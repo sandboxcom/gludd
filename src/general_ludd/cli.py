@@ -15,7 +15,6 @@ from typing import TYPE_CHECKING, Any
 import httpx
 
 from general_ludd.config.binary_paths import BinaryPathResolver
-from general_ludd.daemon import create_daemon_app
 from general_ludd.db.session import get_default_db_url, is_sqlite_url
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
@@ -682,14 +681,6 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
     config_dir = getattr(args, "config_dir", None)
     templates_dir = getattr(args, "templates_dir", None)
     playbooks_dir = getattr(args, "playbooks_dir", None)
-
-    create_daemon_app(
-        tick_interval=args.tick_interval,
-        log_level=args.log_level,
-        config_dir=config_dir,
-        templates_dir=templates_dir,
-        playbooks_dir=playbooks_dir,
-    )
 
     bind_host = args.host
     psk = ""

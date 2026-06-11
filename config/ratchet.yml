@@ -30,7 +30,6 @@ tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_policy_validat
 tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_reload_request_endpoint_returns_ack: "dead worker reload — pre-existing"
 tests/unit/test_binary_paths.py::TestBinaryPathResolver::test_get_container_runtime_prefers_podman: "podman preference — pre-existing"
 tests/unit/test_bootstrap_coverage.py::TestBinaryBootstrapperInit::test_default_store_created: "binary bootstrapper init — pre-existing"
-tests/unit/test_cli.py::TestHotLoading::test_cli_module_has_no_top_level_daemon_imports: "CLI hot loading daemon import — pre-existing"
 tests/unit/test_cli_execution_coverage.py::TestCmdDaemonExecution::test_daemon_calls_create_app_and_popen: "CLI daemon execution — pre-existing"
 tests/unit/test_cli_execution_coverage.py::TestCodeSearchEdgeCases::test_code_search_empty_results: "CLI code search edge — pre-existing"
 tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_templates_refresh_success: "TUI templates refresh — pre-existing"
