@@ -589,6 +589,10 @@ def create_daemon_app(
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
         app.state._stats_requests += 1
+        from general_ludd.observability.metrics_exporter import get_metrics_exporter
+        metrics = get_metrics_exporter()
+        metrics.counter_inc("gludd_http_requests_total", {"method": request.method})
+        start = time.monotonic()
         if _psk:
             path = request.url.path
             if path not in _PUBLIC_PATHS and not path.startswith("/docs"):
@@ -601,6 +605,10 @@ def create_daemon_app(
                     return JSONResponse(status_code=401, content={"error": "unauthorized"})
         response = await call_next(request)
         app.state._stats_responses += 1
+        elapsed = time.monotonic() - start
+        status = str(response.status_code)
+        metrics.histogram_observe("gludd_http_request_duration_seconds", elapsed, {"status": status})
+        metrics.counter_inc("gludd_http_responses_total", {"status": status})
         return response
 
     if log_level == "debug":
@@ -613,6 +621,22 @@ def create_daemon_app(
         if degraded:
             return {"status": "degraded", "reason": str(degraded)[:200]}
         return {"status": "healthy"}
+
+    @app.get("/metrics")
+    async def metrics_prometheus() -> Any:
+        from fastapi.responses import PlainTextResponse
+        from general_ludd.observability.metrics_exporter import get_metrics_exporter
+        return PlainTextResponse(content=get_metrics_exporter().render_prometheus())
+
+    @app.get("/admin/metrics/export")
+    async def admin_metrics_export() -> dict[str, Any]:
+        from general_ludd.observability.metrics_exporter import get_metrics_exporter
+        m = get_metrics_exporter()
+        return {
+            "counters": m.get_counters(),
+            "gauges": m.get_gauges(),
+            "uptime_seconds": time.monotonic() - m._started_at,
+        }
 
     @app.get("/admin/daemon/stats")
     async def admin_daemon_stats() -> dict[str, Any]:
