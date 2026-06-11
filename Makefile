@@ -221,16 +221,13 @@ gate:
 	fi
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
-	if [ $$TC_ERRS -le 25 ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
+	if [ $$TC_ERRS -le 18 ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@printf "test " >> .gate-status
 	@$(UV) run python -m pytest tests/ -q 2>&1 > /tmp/gludd-test-gate.txt; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
-		FAILS=$$(grep -c "^FAILED" /tmp/gludd-test-gate.txt || echo 0); \
-		if [ $$FAILS -le 116 ]; then echo "PASS $$FAILS" >> .gate-status; else \
-			echo "FAIL $$FAILS" >> .gate-status && touch .gate-failed; \
-		fi; \
+		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
 	fi
 	@echo "---" >> .gate-status
 	@cat .gate-status

@@ -1,0 +1,101 @@
+# Ratchet config — known test failures tracked with strict xfail.
+# pytest exits 0 only if ALL marked tests still fail.
+# Any test that starts passing MUST have its entry removed here,
+# making the suite RED until the marker is lifted.
+#
+# Format: node_id: reason
+# Used by: tests/conftest.py ratchet hook
+
+tests/e2e/test_new_features_e2e.py::TestBinaryPathConfig::test_resolver_integrates_with_secrets_manager_container_runtime: "container runtime detection — pre-existing binary path resolution"  # pragma: allowlist secret
+tests/e2e/test_new_features_e2e.py::TestSecretsWiring::test_start_local_container_uses_binary_resolver: "container launch wiring — pre-existing"
+tests/e2e/test_obj01_skeleton.py::TestRepositorySkeleton::test_package_version_importable: "version string 0.1.0-alpha expectation — pre-existing"
+tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_execute_noop_playbook_full_pipeline: "worker full pipeline — pre-existing"
+tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_return_review_endpoint: "worker return review — pre-existing"
+tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_validate_endpoint: "worker validate — pre-existing"
+tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease: "event loop lease reclaim — pre-existing"
+tests/e2e/test_obj09_secrets.py::TestOpenBaoE2E::test_weekly_image_scan_detects_update: "openbao image scan — pre-existing"  # pragma: allowlist secret
+tests/e2e/test_obj13_validation_audit.py::TestLogAuditorImportAndFindingDetection::test_audit_detects_secret_like_value: "log auditor detection — pre-existing"  # pragma: allowlist secret
+tests/e2e/test_obj13_validation_audit.py::TestLogAuditorImportAndFindingDetection::test_audit_detects_ghp_token: "log auditor GHP token — pre-existing"  # pragma: allowlist secret
+tests/e2e/test_obj15_runtime_packaging.py::TestRuntimeValidatorImport::test_validate_profile_relative_container_path: "runtime validator relative path — pre-existing"
+tests/e2e/test_skills_integration.py::TestSkillLoading::test_load_example_skill: "skill loading — pre-existing"
+tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_event_loop_runs_tick: "daemon lifespan event loop — pre-existing"
+tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_add_todo_and_list: "daemon lifespan todo CRUD — pre-existing"
+tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST tool — pre-existing"
+tests/unit/test_adaptive_routing.py::TestAdaptiveRouterWiring::test_adaptive_router_fallback_uses_todo_defaults: "adaptive router fallback — pre-existing"
+tests/unit/test_adaptive_routing.py::TestAdaptiveRouterWiring::test_resolve_adaptive_prompt_unknown_work_type_defaults_feature: "adaptive router unknown type — pre-existing"
+tests/unit/test_ansible_runner.py::TestRunnerRunPlaybook::test_run_playbook_rejects_unregistered: "ansible runner unregistered playbook — pre-existing"
+tests/unit/test_audit_gap_fixes.py::TestAddTodoRequestValidation::test_add_todo_rejects_invalid_queue: "todo request validation — pre-existing"
+tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_validate_endpoint_returns_ack: "dead worker validate — pre-existing"
+tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_policy_validate_endpoint_returns_ack: "dead worker policy validate — pre-existing"
+tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_reload_request_endpoint_returns_ack: "dead worker reload — pre-existing"
+tests/unit/test_binary_paths.py::TestBinaryPathResolver::test_get_container_runtime_prefers_podman: "podman preference — pre-existing"
+tests/unit/test_bootstrap_coverage.py::TestBinaryBootstrapperInit::test_default_store_created: "binary bootstrapper init — pre-existing"
+tests/unit/test_cli.py::TestHotLoading::test_cli_module_has_no_top_level_daemon_imports: "CLI hot loading daemon import — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestCmdDaemonExecution::test_daemon_calls_create_app_and_popen: "CLI daemon execution — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestCodeSearchEdgeCases::test_code_search_empty_results: "CLI code search edge — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_templates_refresh_success: "TUI templates refresh — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_playbooks_refresh_success: "TUI playbooks refresh — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_graph_success: "TUI code graph — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_search_with_results: "TUI code search — pre-existing"
+tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_search_no_results: "TUI code search no results — pre-existing"
+tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_resolves_aws_creds_from_secrets_resolver: "compute deploy secrets — pre-existing"  # pragma: allowlist secret
+tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_passes_none_resolver_when_not_on_app_state: "compute deploy none resolver — pre-existing"
+tests/unit/test_conversation_wiring.py::TestConversationWiring::test_reviewer_adds_messages_to_conversation: "conversation wiring messages — pre-existing"
+tests/unit/test_conversation_wiring.py::TestConversationWiring::test_reviewer_includes_conversation_context_in_prompt: "conversation wiring context — pre-existing"
+tests/unit/test_conversation_wiring.py::TestConversationWiring::test_new_conversation_created_when_none_exists: "conversation wiring new — pre-existing"
+tests/unit/test_daemon_coverage_lift.py::TestBuildSecretsResolver::test_build_secrets_resolver_openbao_external: "daemon secrets resolver — pre-existing"  # pragma: allowlist secret
+tests/unit/test_daemon_coverage_lift.py::TestBenchmarkRecordWithSession::test_benchmark_record_with_session: "daemon benchmark record — pre-existing"
+tests/unit/test_daemon_coverage_lift.py::TestWorktreeStatusWithMonitor::test_worktree_status_with_monitor: "daemon worktree monitor — pre-existing"
+tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_search: "daemon ansible search — pre-existing"
+tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_builtins: "daemon ansible builtins — pre-existing"
+tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_search_empty_query: "daemon ansible search empty — pre-existing"
+tests/unit/test_daemon_uncovered_endpoints.py::TestLocalInferenceStart::test_local_inference_start: "local inference start — pre-existing"
+tests/unit/test_event_loop_coverage_lift.py::TestPIDPhaseException::test_pid_phase_handles_exception_gracefully: "event loop PID exception — pre-existing"
+tests/unit/test_event_loop_session_per_tick.py::TestEventLoopSessionPerTick::test_phase_exception_does_not_kill_tick: "event loop session per tick — pre-existing"
+tests/unit/test_gap_fixes.py::TestPromptRegistryPerType::test_registry_get_for_work_type: "prompt registry work type — pre-existing"
+tests/unit/test_gap_fixes.py::TestPromptRegistryPerType::test_registry_get_for_unknown_type: "prompt registry unknown type — pre-existing"
+tests/unit/test_mcp_transport.py::TestMCPStdioClient::test_stdio_client_sends_initialize: "MCP transport initialize — pre-existing protocol bug"
+tests/unit/test_model_health_wiring.py::TestRouterHealthAwareRouting::test_all_unhealthy_returns_fallback: "model health routing — pre-existing"
+tests/unit/test_new_cli_commands.py::TestTemplatesCliParsing::test_templates_refresh: "CLI templates refresh — pre-existing"
+tests/unit/test_new_cli_commands.py::TestPlaybooksCliParsing::test_playbooks_refresh: "CLI playbooks refresh — pre-existing"
+tests/unit/test_new_cli_commands.py::TestCodeIntelCliParsing::test_code_graph: "CLI code graph — pre-existing"
+tests/unit/test_new_cli_commands.py::TestCodeIntelCliParsing::test_code_search: "CLI code search — pre-existing"
+tests/unit/test_otel_bridge.py::TestOTelBridgeInit::test_init_sets_up_bridge: "otel bridge — pre-existing"
+tests/unit/test_pipeline_wiring.py::TestReturnReviewerLLMCall::test_call_model_falls_back_on_parse_error: "pipeline wiring parse error — pre-existing"
+tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_creation: "preflight filestore creation — pre-existing"
+tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_exception: "preflight filestore exception — pre-existing"
+tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "preflight verify task — pre-existing"
+tests/unit/test_project_isolation_wiring.py::TestProjectLogWired::test_daemon_uses_project_log_adapter: "project isolation log — pre-existing"
+tests/unit/test_prompt_system_wiring.py::TestSelfImprovementTemplateMap::test_self_improvement_mapped: "prompt system self improvement — pre-existing"
+tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_renders_prompt_with_context: "return review render — pre-existing"
+tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_calls_model_gateway: "return review model call — pre-existing"
+tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_validates_task_decision_schema: "return review schema — pre-existing"
+tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_handles_invalid_model_output: "return review invalid output — pre-existing"
+tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_uses_routed_profile: "router wiring profile — pre-existing"
+tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_without_router_uses_default_profile: "router wiring default — pre-existing"
+tests/unit/test_runtime.py::TestRuntimeProfile::test_relative_container_path_rejected: "runtime relative path — pre-existing"
+tests/unit/test_runtime_packaging.py::TestRuntimeValidatorContainer::test_runtime_validator_container_relative_path: "runtime validator container — pre-existing"
+tests/unit/test_runtime_packaging.py::TestDataSourceMountAudit::test_data_source_mount_relative_container_path: "data source mount — pre-existing"
+tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_no_repo_falls_back: "scoring no repo — pre-existing"
+tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_insufficient_data_falls_back: "scoring insufficient data — pre-existing"
+tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_min_samples_filters: "scoring min samples — pre-existing"
+tests/unit/test_secret_migration_wiring.py::TestSecretMigrationInDaemonStartup::test_migrate_called_when_openbao_configured: "secret migration wiring — pre-existing"  # pragma: allowlist secret
+tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "openbao connect — pre-existing"  # pragma: allowlist secret
+tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_local_bootstrap_result: "secrets manager connect — pre-existing"  # pragma: allowlist secret
+tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_success: "secrets manager container start — pre-existing"  # pragma: allowlist secret
+tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
+tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret
+tests/unit/test_selftest.py::TestSelftest::test_container_runtime_prefers_podman: "selftest podman — pre-existing"
+tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_with_frontmatter: "skills parse frontmatter — pre-existing"
+tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_without_frontmatter: "skills parse no frontmatter — pre-existing"
+tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_with_only_name: "skills parse name only — pre-existing"
+tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
+tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
+tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"
+tests/unit/test_validation.py::TestLogAuditorDetectsSecretLikeValues::test_log_auditor_detects_secret_like_values: "validation log auditor — pre-existing"  # pragma: allowlist secret
+tests/unit/test_worker.py::TestWorkerApp::test_worker_execute_noop_playbook: "worker execute noop — pre-existing"
+tests/unit/test_worker.py::TestWorkerApp::test_worker_writes_task_return_with_artifacts: "worker task return — pre-existing"
+tests/unit/test_worker.py::TestWorkerApp::test_worker_captures_runner_events: "worker runner events — pre-existing"
+tests/unit/test_worker.py::TestWorkerApp::test_worker_vars_files_created_correctly: "worker vars files — pre-existing"
+tests/unit/test_worker.py::TestWorkerApp::test_worker_return_review_endpoint: "worker return review — pre-existing"
+tests/unit/test_worker.py::TestWorkerApp::test_worker_validate_endpoint: "worker validate — pre-existing"
