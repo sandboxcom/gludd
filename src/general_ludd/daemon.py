@@ -434,6 +434,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "default_playbook": "noop.yml",
                 "model_profiles": startup_config.get("model_profiles", []),
                 "rules": startup_config.get("rules", []),
+                "queues": getattr(uc, "queues", []) if uc else [],
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=_daemon_state,
@@ -442,6 +443,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
+        app.state._runner = runner
         app.state._db_engine = engine
         app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
