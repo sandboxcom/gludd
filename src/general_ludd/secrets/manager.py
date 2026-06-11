@@ -216,4 +216,7 @@ class SecretsManager:
             return False
 
     def _fetch_remote_digest(self, image_ref: str) -> str:
-        return f"sha256:{uuid.uuid4().hex[:24]}"
+        raise NotImplementedError(
+            f"Remote digest fetch for {image_ref} is not implemented. "
+            "Configure a container registry with digest API support."
+        )
