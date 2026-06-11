@@ -187,13 +187,11 @@ class ExecutionEngine:
         system_prompt = _build_system_prompt(job)
         user_prompt = _build_user_prompt(job)
 
-        model_success = False
         try:
             response = self._model_gateway.call_model(
                 system_prompt=system_prompt, user_prompt=user_prompt,
             )
             model_output = getattr(response, "content", "") or str(response)
-            model_success = True
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:
             self._record_metrics(job, success=False)
@@ -284,8 +282,9 @@ class ExecutionEngine:
 
         if self._benchmark_recorder is not None:
             try:
-                from general_ludd.event_loop.benchmark import record_job_benchmark
                 import asyncio
+
+                from general_ludd.event_loop.benchmark import record_job_benchmark
                 asyncio.create_task(
                     record_job_benchmark(
                         self._benchmark_recorder,
