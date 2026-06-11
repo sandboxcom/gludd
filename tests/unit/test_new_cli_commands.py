@@ -277,7 +277,7 @@ class TestTemplatesCliParsing:
     def test_templates_refresh(self, capsys):
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(
-                status_code=200, json=lambda: {"count": 5},
+                status_code=200, json=lambda: {"templates": ["t1", "t2", "t3", "t4", "t5"]},
             )
             _parse(["templates", "refresh"])
             out = capsys.readouterr().out
@@ -297,7 +297,7 @@ class TestPlaybooksCliParsing:
     def test_playbooks_refresh(self, capsys):
         with patch("httpx.post") as mock_post:
             mock_post.return_value = MagicMock(
-                status_code=200, json=lambda: {"count": 3},
+                status_code=200, json=lambda: {"playbooks": ["p1", "p2", "p3"]},
             )
             _parse(["playbooks", "refresh"])
             out = capsys.readouterr().out

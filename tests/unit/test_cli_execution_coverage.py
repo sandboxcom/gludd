@@ -1093,7 +1093,7 @@ class TestPostTUICommands:
     def test_templates_refresh_success(self, capsys) -> None:
         from general_ludd.cli import _cmd_templates_refresh
 
-        resp = self._mock_resp(200, {"count": 5})
+        resp = self._mock_resp(200, {"templates": ["t1", "t2", "t3", "t4", "t5"]})
         with patch("httpx.post", return_value=resp):
             _cmd_templates_refresh(_ns())
         assert "5" in capsys.readouterr().out
@@ -1143,7 +1143,7 @@ class TestPostTUICommands:
     def test_playbooks_refresh_success(self, capsys) -> None:
         from general_ludd.cli import _cmd_playbooks_refresh
 
-        resp = self._mock_resp(200, {"count": 3})
+        resp = self._mock_resp(200, {"playbooks": ["p1", "p2", "p3"]})
         with patch("httpx.post", return_value=resp):
             _cmd_playbooks_refresh(_ns())
         assert "3" in capsys.readouterr().out
