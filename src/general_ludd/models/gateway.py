@@ -6,6 +6,7 @@ import logging
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
+import tenacity
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
@@ -441,6 +442,35 @@ class ModelGateway:
             except Exception as exc:
                 logger.warning("Worker broadcast failed for model add: %s", exc)
         return profile
+
+    def call_with_tenacity(
+        self,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        *,
+        max_retries: int = 3,
+        **kwargs: Any,
+    ) -> ModelResponse:
+        """V3.1: tenacity-based retry — proves OSS retry can replace hand-rolled loop."""
+        import httpx
+
+        profile = self._profiles.get(profile_id)
+        if profile is None:
+            raise ValueError(f"Profile '{profile_id}' not found")
+
+        @tenacity.retry(
+            stop=tenacity.stop_after_attempt(max_retries + 1),
+            wait=tenacity.wait_exponential(multiplier=1, min=1, max=30),
+            retry=tenacity.retry_if_exception_type((
+                httpx.HTTPStatusError, httpx.TimeoutException,
+                httpx.ConnectError, TimeoutError,
+            )),
+            reraise=True,
+        )
+        def _call() -> ModelResponse:
+            return self.call_model(profile_id, messages, **kwargs)
+
+        return _call()
 
     def remove_profile(self, model_id: str) -> None:
         self._profiles.pop(model_id, None)

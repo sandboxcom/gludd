@@ -272,6 +272,10 @@ const STOP_SIGNAL_WORDS = [
   "here's the implementation",
   "16 commits, gate all passed",
   "bugs.md incidents",
+  "34 commits",
+  "all phases",
+  "fully implemented",
+  "96 ratchet",
 ]
 
 const RESUME_COMMAND = [
