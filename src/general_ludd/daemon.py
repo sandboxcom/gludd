@@ -448,6 +448,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         task.add_done_callback(_on_event_loop_done)
+
+        from general_ludd.controllers.budget_manager import BudgetManager
+        from general_ludd.observability.run_history import RunHistoryRecorder
+        from general_ludd.observability.dashboard_data import DashboardDataProvider
+        from general_ludd.observability.metrics_exporter import get_metrics_exporter
+
+        budget_cfg = getattr(uc, "budget", {}) if uc else {}
+        app.state._budget_manager = BudgetManager(
+            daily_limit_usd=float(budget_cfg.get("daily_limit", float("inf"))),
+            per_todo_limit_usd=float(budget_cfg.get("per_task_limit", float("inf"))),
+        )
+        app.state._run_history = RunHistoryRecorder()
+        app.state._dashboard_data = DashboardDataProvider(
+            metrics_exporter=get_metrics_exporter(),
+            session_factory=session_factory,
+        )
+
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
@@ -664,6 +681,13 @@ def create_daemon_app(
             "gauges": m.get_gauges(),
             "uptime_seconds": time.monotonic() - m._started_at,
         }
+
+    @app.get("/admin/dashboard/overview")
+    async def admin_dashboard_overview() -> dict[str, Any]:
+        provider = getattr(app.state, "_dashboard_data", None)
+        if provider is not None:
+            return await provider.get_overview()
+        return {"error": "Dashboard data provider not initialized"}
 
     @app.get("/admin/daemon/stats")
     async def admin_daemon_stats() -> dict[str, Any]:
