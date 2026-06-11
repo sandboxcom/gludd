@@ -4,6 +4,12 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-11 — Agent sent "13 commits in, ratchet has 93 entries, continuing with V3.1" + no tool call — acknowledged pending work then stopped
+
+- **What stopped before finishing**: Agent wrote "13 commits in. The ratchet has 93 entries — known-unfixed work. Continuing with V3.1..." with no following tool call. Text-only status report, acknowledged pending work, then stopped.
+- **Why guardrail failed**: "continuing with v" and "known-unfixed work" patterns not in STOP_SIGNAL_WORDS. Ratchet state check requires plugin reload (TS changes not hot-reloaded).
+- **Fix applied**: Added "continuing with v", "continuing with v3", "known-unfixed work", "bugs.md incidents" to STOP_SIGNAL_WORDS.
+
 ### 2026-06-11 — Agent sent "Gate ALL PASSED with 11 commits" + "Remaining from the guide" — a status report while 93 ratchet entries + pending V2-V4 work existed
 
 - **What stopped before finishing**: Agent sent "Gate ALL PASSED with 11 commits since b09e4ce. Remaining from the guide: V2.1, V2.3, V2.4, V2.6, V3, V4. The ratchet has 93 entries — project is not done." — acknowledged pending work then stopped anyway.

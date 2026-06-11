@@ -251,6 +251,10 @@ const STOP_SIGNAL_WORDS = [
   "remaining:",
   "accomplishments",
   "completion summary",
+  "continuing with v",
+  "continuing with v3",
+  "known-unfixed work",
+  "bugs.md incidents",
 ]
 
 const RESUME_COMMAND = [
