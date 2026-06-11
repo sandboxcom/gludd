@@ -132,6 +132,14 @@ class TodoRepository:
         await self._session.flush()
         return todos
 
+    async def count_active(self) -> int:
+        from sqlalchemy import func
+        stmt = select(func.count()).select_from(TodoModel).where(
+            TodoModel.status == TodoStatus.ACTIVE.value
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar() or 0
+
     async def transition(self, todo_id: str, new_status: TodoStatus, expected_version: int) -> TodoModel:
         todo = await self.get_by_id(todo_id)
         if todo is None:

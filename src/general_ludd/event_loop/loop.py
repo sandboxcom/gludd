@@ -442,11 +442,15 @@ class EventLoop:
             disk_free_pct = 100 - (disk.used / disk.total * 100) if disk.total > 0 else 100.0
             controller = LoadController(cpu_count=cpu_count)
             queues = [Queue(**q) if isinstance(q, dict) else q for q in queues_data]
+            active_jobs = 0
+            if self._todo_repo is not None and self._active_session is not None:
+                with contextlib.suppress(Exception):
+                    active_jobs = await self._todo_repo.count_active()
             snapshot = LoadSnapshot(
                 loadavg_1m=load_1, loadavg_5m=load_5, loadavg_10m=load_10,
                 logical_cpu_count=cpu_count, cpu_percent=cpu_pct,
                 memory_available_percent=mem.percent, disk_free_percent=disk_free_pct,
-                active_jobs=0,
+                active_jobs=active_jobs,
             )
             outputs = controller.evaluate_snapshot(snapshot, queues)
             self._tick_state["pid_outputs"] = outputs
@@ -493,15 +497,24 @@ class EventLoop:
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
+        pid_outputs = self._tick_state.get("pid_outputs")
+        cap = None
+        if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
+            cap = pid_outputs.desired_total_active_buckets
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits()
             if not check["allowed"]:
                 logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
                 self._tick_metrics["todos_dispatched"] = 0
                 return
+        dispatch_count = 0
         for todo in claimed:
+            if cap is not None and dispatch_count >= cap:
+                logger.info("PID cap reached: dispatching %d of %d claimed (cap=%d)", dispatch_count, len(claimed), cap)
+                break
             await self._dispatch_execute_job(todo)
-        self._tick_metrics["todos_dispatched"] = len(claimed)
+            dispatch_count += 1
+        self._tick_metrics["todos_dispatched"] = dispatch_count
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
         results = self._tick_state.get("rule_evaluation_results", [])

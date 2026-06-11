@@ -32,7 +32,7 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] R2.1 — M1 ansible events real | evidence: make lint 0, make typecheck 21, 7 new tests pass (test_m1_ansible_events.py) | db4b2f9
 - [x] R2.2 — M6 refresh targets the loop's runner | evidence: make lint 0, make typecheck 21, 4 new tests pass (test_m6_refresh_loop_runner.py) | commit-pending
 - [x] R2.3 — M13 config sections consumed or deleted | evidence: make lint 0, make typecheck 21, 3 new tests pass (test_m13_config_sections.py), 11 dead sections removed from general-ludd.yml | commit-pending
-- [ ] R2.4 — M12 real active_jobs + claim cap | evidence:
+- [x] R2.4 — M12 real active_jobs + claim cap | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_m12_pid_active_jobs.py), queues field on UserConfig, count_active on TodoRepository, pid_outputs cap dispatch | commit-pending
 - [ ] R2.5 — M10 approvals persisted + change events | evidence:
 - [ ] R2.5a — Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6 real) | evidence:
 - [ ] R2.6 — every claimed G/S/F/M item re-proven by named test; failures fixed | evidence:

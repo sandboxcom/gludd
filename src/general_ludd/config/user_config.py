@@ -20,6 +20,7 @@ class UserConfig(BaseModel):
     budget: dict[str, Any] = {}
     database: dict[str, Any] = {}
     observability: ObservabilityConfig = ObservabilityConfig()
+    queues: list[dict[str, Any]] = []
 
 
 class AgentConfig(BaseModel):
