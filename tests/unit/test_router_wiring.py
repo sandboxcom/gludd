@@ -244,8 +244,9 @@ class TestReviewerUsesRouter:
         )
 
         task_return = _make_task_return()
-        with patch.object(reviewer, "_call_model", return_value="reviewed"):
-            reviewer.review_return(task_return, [], [])
+        with patch.object(reviewer, "_call_model", return_value=("reviewed", None)):
+            result = reviewer.review_return(task_return, [], [])
+        assert result is not None
 
     def test_reviewer_without_router_uses_default_profile(self):
         gateway = MagicMock(spec=ModelGateway)
@@ -265,7 +266,7 @@ class TestReviewerUsesRouter:
             decision="complete",
             confidence=0.9,
         )
-        with patch.object(reviewer, "_call_model", return_value=expected):
+        with patch.object(reviewer, "_call_model", return_value=(expected, None)):
             result = reviewer.review_return(task_return, [], [])
 
         assert result.decision == "complete"

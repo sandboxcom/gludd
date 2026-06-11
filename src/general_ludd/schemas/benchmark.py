@@ -157,7 +157,7 @@ class RoutingDecision(BaseModel):
 
     @field_validator("sample_count")
     @classmethod
-    def _count_positive(cls, v: int) -> int:
-        if v < 1:
-            raise ValueError("sample_count must be at least 1")
+    def _count_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("sample_count must be non-negative")
         return v

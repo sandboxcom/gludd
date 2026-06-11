@@ -77,7 +77,7 @@ _WORK_TYPE_TEMPLATE_MAP: dict[str, str] = {
     "analysis": "gap_analysis.md.j2",
     "audit": "audit.md.j2",
     "prompt": "prompt_eval.md.j2",
-    "review": "return_review.md.j2",
+    "review": "code_review.md.j2",
     "dependency": "dependency.md.j2",
     "bug_fix": "implementation.md.j2",
     "refactor": "implementation.md.j2",

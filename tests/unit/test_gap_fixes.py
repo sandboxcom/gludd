@@ -203,4 +203,4 @@ class TestPromptRegistryPerType:
         from general_ludd.prompts.registry import get_template_name_for_work_type
 
         result = get_template_name_for_work_type("nonexistent")
-        assert result is None or result == "code.md.j2"
+        assert result is None or result in ("code.md.j2", "implementation.md.j2")

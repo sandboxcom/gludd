@@ -286,15 +286,25 @@ class TestRoutingDecisionValidators:
                 sample_count=10,
             )
 
-    def test_sample_count_positive(self):
+    def test_sample_count_negative(self):
         with pytest.raises(ValidationError):
             RoutingDecision(
                 selected_prompt_profile_id="p1",
                 selected_model_profile_id="m1",
                 composite_score=0.9,
                 estimated_cost_usd=0.05,
-                sample_count=0,
+                sample_count=-1,
             )
+
+    def test_sample_count_zero_allowed(self):
+        d = RoutingDecision(
+            selected_prompt_profile_id="p1",
+            selected_model_profile_id="m1",
+            composite_score=0.9,
+            estimated_cost_usd=0.05,
+            sample_count=0,
+        )
+        assert d.sample_count == 0
 
 
 class TestQueueValidators:

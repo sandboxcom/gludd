@@ -23,8 +23,6 @@ tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST 
 tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
 tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_uses_correct_binary: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
 tests/e2e/test_new_features_e2e.py::TestDeploymentLifecycle::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
-tests/unit/test_adaptive_routing.py::TestAdaptiveRouterWiring::test_adaptive_router_fallback_uses_todo_defaults: "adaptive router fallback — pre-existing"
-tests/unit/test_adaptive_routing.py::TestAdaptiveRouterWiring::test_resolve_adaptive_prompt_unknown_work_type_defaults_feature: "adaptive router unknown type — pre-existing"
 tests/unit/test_ansible_runner.py::TestRunnerRunPlaybook::test_run_playbook_rejects_unregistered: "ansible runner unregistered playbook — pre-existing"
 tests/unit/test_audit_gap_fixes.py::TestAddTodoRequestValidation::test_add_todo_rejects_invalid_queue: "todo request validation — pre-existing"
 tests/unit/test_audit_gap_fixes.py::TestDeadWorkerEndpoints::test_validate_endpoint_returns_ack: "dead worker validate — pre-existing"
@@ -51,10 +49,7 @@ tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ans
 tests/unit/test_daemon_uncovered_endpoints.py::TestLocalInferenceStart::test_local_inference_start: "local inference start — pre-existing"
 tests/unit/test_event_loop_coverage_lift.py::TestPIDPhaseException::test_pid_phase_handles_exception_gracefully: "event loop PID exception — pre-existing"
 tests/unit/test_event_loop_session_per_tick.py::TestEventLoopSessionPerTick::test_phase_exception_does_not_kill_tick: "event loop session per tick — pre-existing"
-tests/unit/test_gap_fixes.py::TestPromptRegistryPerType::test_registry_get_for_work_type: "prompt registry work type — pre-existing"
-tests/unit/test_gap_fixes.py::TestPromptRegistryPerType::test_registry_get_for_unknown_type: "prompt registry unknown type — pre-existing"
 tests/unit/test_mcp_transport.py::TestMCPStdioClient::test_stdio_client_sends_initialize: "MCP transport initialize — pre-existing protocol bug"
-tests/unit/test_model_health_wiring.py::TestRouterHealthAwareRouting::test_all_unhealthy_returns_fallback: "model health routing — pre-existing"
 tests/unit/test_new_cli_commands.py::TestTemplatesCliParsing::test_templates_refresh: "CLI templates refresh — pre-existing"
 tests/unit/test_new_cli_commands.py::TestPlaybooksCliParsing::test_playbooks_refresh: "CLI playbooks refresh — pre-existing"
 tests/unit/test_new_cli_commands.py::TestCodeIntelCliParsing::test_code_graph: "CLI code graph — pre-existing"
@@ -66,13 +61,8 @@ tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_except
 tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "preflight verify task — pre-existing"
 tests/unit/test_project_isolation_wiring.py::TestProjectLogWired::test_daemon_uses_project_log_adapter: "project isolation log — pre-existing"
 tests/unit/test_prompt_system_wiring.py::TestSelfImprovementTemplateMap::test_self_improvement_mapped: "prompt system self improvement — pre-existing"
-tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_uses_routed_profile: "router wiring profile — pre-existing"
-tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_without_router_uses_default_profile: "router wiring default — pre-existing"
 tests/unit/test_runtime_packaging.py::TestRuntimeValidatorContainer::test_runtime_validator_container_relative_path: "runtime validator container — pre-existing"
 tests/unit/test_runtime_packaging.py::TestDataSourceMountAudit::test_data_source_mount_relative_container_path: "data source mount — pre-existing"
-tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_no_repo_falls_back: "scoring no repo — pre-existing"
-tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_insufficient_data_falls_back: "scoring insufficient data — pre-existing"
-tests/unit/test_scoring.py::TestAdaptiveRouter::test_route_min_samples_filters: "scoring min samples — pre-existing"
 tests/unit/test_secret_migration_wiring.py::TestSecretMigrationInDaemonStartup::test_migrate_called_when_openbao_configured: "secret migration wiring — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "openbao connect — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_local_bootstrap_result: "secrets manager connect — pre-existing"  # pragma: allowlist secret

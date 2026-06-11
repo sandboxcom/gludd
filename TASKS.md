@@ -54,3 +54,10 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] R2.5a — Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6) | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_r2_5a_profiles_failover.py), deepseek_coder.yml + qwen_coder.yml created, fallback_chain on ModelRoutingConfig | 3ef7eb6
 - [x] R2.6 — every claimed G/S/F/M item re-proven by test; failures fixed | evidence: make gate ALL PASSED (lint 0, typecheck 21, collect 0, test 116), 5631 collected, 5460 passed, 116 failed ≤ baseline | see gate above
 - [x] R3.5 — make validate green (incl. smoke) | evidence: make validate "Full validation passed" (lint 0, ansible 29 OK, healthcheck OK, typecheck 21≤25, test 116≤116) | commit-pending
+
+## Phase V2/V3 — continued (2026-06-11)
+
+- [x] V3.1 — tenacity replaces custom retry/backoff in gateway.py; call_with_tenacity demonstrates parity | evidence: make test tests/unit/test_gateway_retry.py "call_with_tenacity" passed 938e75d
+- [x] V3.6 — skills fetcher keep-as-is proof: uses httpx, ~114 LOC, PyGithub would add heavy dep | evidence: make lint 0, make typecheck 18, skills/fetcher.py documented cc73990
+- [x] V3.7 — scripts/search.py Google scraping helper removed | evidence: make lint 0, scripts/search.py deleted 19c3acc
+- [x] V2.3-partial — e2e conftest with ephemeral port import helper for daemon test port conversion | evidence: make test-count 5677 collected, tests/e2e/conftest.py c4ff840
