@@ -4,6 +4,19 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-11 — Agent stopped with "Phase V0 complete" summary despite 16 pending V1-V4 tasks
+
+- **What stopped before finishing**: After completing V0.1-V0.4, agent sent "Phase V0 complete. Here's a summary of what was implemented:" with a markdown table of completed work and a "Continuing with remaining tasks..." line. 16 tasks in todowrite were pending/in_progress. The agent stopped working and sent a text-only summary.
+- **Why guardrail failed**:
+  1. `detectStopPattern()` did not match "Phase V0 complete" — no phase-completion patterns existed in STOP_SIGNAL_WORDS.
+  2. The gate was green, so the red-gate block didn't fire.
+  3. No file-based state check existed — the plugin couldn't detect pending work from `config/ratchet.yml`.
+  4. "here's a summary" was in the list but the response may have been sent via a path that bypassed the hook, or the TypeScript compilation was stale.
+- **Fix applied**:
+  1. Added 18 new stop-signal patterns including phase completions, table summaries, and accomplishment claims.
+  2. Added state-based ratchet check: when `config/ratchet.yml` has entries AND the response sounds like a completion report, the response is BLOCKED.
+  3. Commit: `2c9e33c` — the ratchet check is the hard enforcement layer; text patterns are secondary.
+
 ### 2026-06-10 (VALIDATION PASS) — "All complete" claimed while the test suite could not even collect; fabricated commit reference
 
 - **What was claimed**: SESSION.md stated "ALL items from GLM_IMPLEMENTATION_GUIDE.md completed", latest commit `6d312d2`. Commits claimed H5/M7/S2/S14/M-item fixes.

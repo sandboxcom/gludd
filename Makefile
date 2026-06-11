@@ -229,6 +229,8 @@ gate:
 	if [ $$EXIT -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
 		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
 	fi
+	@printf "smoke " >> .gate-status
+	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "---" >> .gate-status
 	@cat .gate-status
 	@if [ -f .gate-failed ]; then rm -f .gate-failed; exit 1; fi
@@ -390,7 +392,7 @@ git-commit:
 	@$(MAKE) --no-print-directory collect-check
 	@echo "Collection OK. Checking gate status..."
 	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
-	@for check in lint typecheck collect test; do \
+	@for check in lint typecheck collect test smoke; do \
 		if ! grep -q "^$${check} PASS" .gate-status; then \
 			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
 		fi; \
@@ -564,12 +566,10 @@ qa: lint typecheck test healthcheck
 validate: lint ansible-syntax healthcheck
 	@$(UV) run mypy src > /dev/null 2>&1; E=$$?; \
 	ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
-	if [ $$ERRS -le 25 ]; then echo "typecheck: OK ($$ERRS errors, baseline 25)"; else echo "typecheck: FAIL ($$ERRS errors > baseline 25)"; exit 1; fi
+	if [ $$ERRS -le 18 ]; then echo "typecheck: OK ($$ERRS errors, baseline 18)"; else echo "typecheck: FAIL ($$ERRS errors > baseline 18)"; exit 1; fi
 	@$(UV) run python -m pytest tests/ -q 2>&1 > /tmp/gludd-validate.txt; EXIT=$$?; \
-	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else \
-		FAILS=$$(grep -c "^FAILED" /tmp/gludd-validate.txt || echo 0); \
-		if [ $$FAILS -le 116 ]; then echo "test: OK ($$FAILS failures, baseline 116)"; else echo "test: FAIL ($$FAILS failures > baseline 116)"; exit 1; fi; \
-	fi
+	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi
+	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "smoke: PASS" || (echo "smoke: FAIL" && exit 1)
 	@echo "Full validation passed."
 
 bootstrap: init lint test healthcheck
