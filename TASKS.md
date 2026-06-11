@@ -34,7 +34,7 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] R2.3 — M13 config sections consumed or deleted | evidence: make lint 0, make typecheck 21, 3 new tests pass (test_m13_config_sections.py), 11 dead sections removed from general-ludd.yml | commit-pending
 - [x] R2.4 — M12 real active_jobs + claim cap | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_m12_pid_active_jobs.py), queues field on UserConfig, count_active on TodoRepository, pid_outputs cap dispatch | commit-pending
 - [x] R2.5 — M10 approvals persisted + change events | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_m10_integrity_approvals.py), hardcoded key already fixed, sign/verify works, scanner detects changes | commit-pending
-- [ ] R2.5a — Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6 real) | evidence:
+- [x] R2.5a — Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6) | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_r2_5a_profiles_failover.py), deepseek_coder.yml + qwen_coder.yml created, fallback_chain on ModelRoutingConfig | commit-pending
 - [ ] R2.6 — every claimed G/S/F/M item re-proven by named test; failures fixed | evidence:
 
 ## Phase R3 — Honesty

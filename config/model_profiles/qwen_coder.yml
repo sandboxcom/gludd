@@ -1,0 +1,25 @@
+model_profile_id: qwen_coder
+role_names:
+  - coder
+  - reviewer
+provider: openai
+provider_package: langchain_openai
+provider_class_hint: ChatOpenAI
+model_name: qwen3-coder
+credential_alias: QWEN_API_KEY
+api_base_alias: QWEN_BASE_URL
+context_window: 32768
+max_input_tokens: 30000
+max_output_tokens: 4096
+cost_per_input_token: 0.0005
+cost_per_output_token: 0.0015
+api_metered: true
+run_budget_usd: 1.0
+enabled: false
+resource_profile: ai_heavy
+roles:
+  - coder
+latency_class: fast
+quality_class: medium
+fallback_profiles: []
+probe_enabled: false

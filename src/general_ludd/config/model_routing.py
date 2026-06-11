@@ -15,6 +15,7 @@ class ModelRoutingConfig(BaseModel):
     quality_routing: dict[str, str] = {}
     latency_routing: dict[str, str] = {}
     pattern_routing: dict[str, str] = {}
+    fallback_chain: list[str] = []
 
 
 def load_model_routing(path: str | Path) -> ModelRoutingConfig:

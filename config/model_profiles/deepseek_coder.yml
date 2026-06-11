@@ -1,0 +1,26 @@
+model_profile_id: deepseek_coder
+role_names:
+  - coder
+  - reviewer
+provider: deepseek
+provider_package: langchain-openai
+provider_class_hint: ChatOpenAI
+model_name: deepseek-chat
+credential_alias: deepseek_api_key
+api_base_alias: deepseek_api_base
+context_window: 65536
+max_input_tokens: 60000
+max_output_tokens: 8192
+cost_per_input_token: 0.00027
+cost_per_output_token: 0.0011
+api_metered: true
+run_budget_usd: 1.0
+enabled: false
+resource_profile: ai_heavy
+roles:
+  - coder
+latency_class: fast
+quality_class: high
+fallback_profiles:
+  - qwen_coder
+probe_enabled: false

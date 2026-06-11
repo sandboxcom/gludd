@@ -1,6 +1,10 @@
 default_profile: zai_coder
 weak_model_profile: zai_coder
 
+fallback_chain:
+  - deepseek_coder
+  - qwen_coder
+
 role_routing:
   coder: zai_coder
   planner: zai_coder
