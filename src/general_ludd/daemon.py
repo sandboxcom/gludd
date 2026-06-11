@@ -472,6 +472,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         event_loop._benchmark_recorder = benchmark_recorder
 
+        from general_ludd.worktree.core import WorktreeMonitor
+        wt_monitor = WorktreeMonitor(
+            config_dir=getattr(app.state, "_config_dir", None),
+        )
+        app.state._worktree_monitor = wt_monitor
+
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())

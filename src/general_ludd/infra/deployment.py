@@ -47,7 +47,10 @@ class DeploymentManager:
             if alias in os.environ:
                 os.environ[env_var] = os.environ[alias]
             else:
-                logger.warning("Could not resolve auth alias %s for env var %s", alias, env_var)
+                raise RuntimeError(
+                    f"Could not resolve auth alias {alias} for env var {env_var}. "
+                    "Set the credential in OpenBao or as an environment variable."
+                )
         return original
 
     def _restore_auth_env(self, original: dict[str, str | None]) -> None:
