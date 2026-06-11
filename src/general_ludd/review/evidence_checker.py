@@ -1,4 +1,9 @@
-"""Evidence-based response checker for guarding against unsupported factual claims."""
+"""Evidence-based response checker for guarding against unsupported factual claims.
+
+KEEP LIST (V3.8): Domain-specific regex patterns for detecting unsupported claims
+in agent responses. Not replaceable by any OSS library — the regexes encode
+project-specific evidence rules (commit hashes, test paths, make targets).
+"""
 
 from __future__ import annotations
 

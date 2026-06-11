@@ -1,4 +1,10 @@
-"""Auto-benchmark recorder — automatically records benchmark results from execution traces."""
+"""Auto-benchmark recorder — automatically records benchmark results from execution traces.
+
+KEEP LIST (V3.8): 15 LOC of domain-specific logic for recording benchmark results
+from execution traces. Not replaceable — the project already adopted prometheus-client
+for general metrics; this module handles the application-specific benchmark recording
+pipeline (task completion → benchmark write).
+"""
 
 from __future__ import annotations
 

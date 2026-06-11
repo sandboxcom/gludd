@@ -1,4 +1,11 @@
-"""PID controller for load and budget management."""
+"""Load throttling and budget management controller.
+
+KEEP LIST (V3.8): Misnamed as 'pid' but is a fit-for-purpose threshold-based
+load throttle and budget controller. Previous audit rounds considered replacing
+it with a PID controller library, but the current logic is domain-specific
+(resource-profile-aware queue bucketing) that no OSS PID library replicates.
+Replacement would increase complexity without benefit.
+"""
 
 from __future__ import annotations
 

@@ -1,4 +1,9 @@
-"""Prompt registry for loading and rendering prompt templates."""
+"""Prompt registry for loading and rendering prompt templates.
+
+KEEP LIST (V3.8): Thin, correct use of jinja2 for template rendering.
+Not replaceable — the registry wraps jinja2 with project-specific template
+discovery and profile-to-template mapping logic (15 LOC of domain code).
+"""
 
 from __future__ import annotations
 
