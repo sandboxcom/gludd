@@ -1109,7 +1109,7 @@ def _cmd_models_downloaded(args: argparse.Namespace) -> None:
         resp = httpx.get(f"{args.daemon_url}/admin/models/downloaded", timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
-            models = data.get("models", [])
+            models = data.get("profiles", data.get("models", []))
             if not models:
                 print("No models downloaded.")
                 return
@@ -1139,7 +1139,7 @@ def _cmd_models_discover(args: argparse.Namespace) -> None:
                 if data.get("configured"):
                     print(f"Configured providers: {', '.join(data['configured'])}")
                 sys.exit(1)
-            models = data.get("models", [])
+            models = data.get("profiles", data.get("models", []))
             print(f"Provider: {data['provider']}")
             print(f"Discovered: {data['discovered_count']} models")
             print(f"Generated: {data['generated_profiles']} profiles")
@@ -1187,7 +1187,7 @@ def _cmd_models_list(args: argparse.Namespace) -> None:
         resp = httpx.get(f"{args.daemon_url}/admin/models", timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
-            models = data.get("models", [])
+            models = data.get("profiles", data.get("models", []))
             if models:
                 for m in models:
                     print(f"  {m.get('model_id', '?'):<30} {m.get('provider', '?'):<12} {m.get('model', '?')}")
@@ -2671,7 +2671,7 @@ def _cmd_hooks_register(args: argparse.Namespace) -> None:
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/hooks",
-            json={"event": args.event, "handler": args.handler},
+            json={"event_name": args.event, "url": args.handler},
             timeout=10.0,
         )
         if resp.status_code in (200, 201):
@@ -2891,7 +2891,7 @@ def _cmd_quantization_list(args: argparse.Namespace) -> None:
         resp = httpx.get(f"{args.daemon_url}/admin/quantization", timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
-            models = data.get("models", [])
+            models = data.get("profiles", data.get("models", []))
             if models:
                 for m in models:
                     prec = m.get("precision", "unknown")

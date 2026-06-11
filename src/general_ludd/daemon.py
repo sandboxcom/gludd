@@ -454,10 +454,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 if otel_bridge.is_available():
                     logger.info("OTel bridge active: %s", obs_cfg.otel_endpoint)
     except Exception as exc:
-        logger.warning("Could not start event loop: %s", exc)
+        logger.error("Daemon startup failed: %s", exc)
+        app.state._degraded = str(exc)
 
     yield
 
+    if getattr(app.state, "_degraded", None):
+        logger.warning("Daemon is running in degraded mode: %s", app.state._degraded)
     if event_loop is not None:
         event_loop.stop()
     if task is not None:
@@ -606,6 +609,9 @@ def create_daemon_app(
 
     @app.get("/healthz")
     async def healthz() -> dict[str, str]:
+        degraded = getattr(app.state, "_degraded", None)
+        if degraded:
+            return {"status": "degraded", "reason": str(degraded)[:200]}
         return {"status": "healthy"}
 
     @app.get("/admin/daemon/stats")
