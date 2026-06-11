@@ -20,9 +20,10 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      # actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      # astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Build executable
         run: |
           uv sync
@@ -37,7 +38,8 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-x86_64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-x86_64.tar.gz" > "../gludd-${VERSION}-linux-x86_64.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact@v4.4.3
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-linux-x86_64
           path: |
@@ -50,9 +52,10 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      # actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      # astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Build executable
         run: |
           uv sync
@@ -67,7 +70,8 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-macos-arm64.tar.gz" .
           shasum -a 256 "../gludd-${VERSION}-macos-arm64.tar.gz" > "../gludd-${VERSION}-macos-arm64.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact@v4.4.3
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-macos-arm64
           path: |
@@ -80,14 +84,16 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      # actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      # astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Build executable
         run: |
           uv sync
           uv run pyinstaller gludd.spec --clean --noconfirm
       - name: Package zip
+        shell: pwsh
         run: |
           mkdir -p dist/release
           Copy-Item dist/gludd.exe dist/release/gludd.exe
@@ -96,7 +102,8 @@ jobs:
           Copy-Item -r playbooks dist/release/playbooks
           Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
           certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact@v4.4.3
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-windows-x86_64
           path: |
@@ -109,9 +116,10 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@v4
-      - name: Install uv
-        uses: astral-sh/setup-uv@v5
+      # actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      # astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Build executable
         run: |
           uv sync
@@ -126,7 +134,8 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
-      - uses: actions/upload-artifact@v4
+      # actions/upload-artifact@v4.4.3
+      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-linux-aarch64
           path: |
