@@ -17,7 +17,6 @@ tests/e2e/test_obj09_secrets.py::TestOpenBaoE2E::test_weekly_image_scan_detects_
 tests/e2e/test_obj13_validation_audit.py::TestLogAuditorImportAndFindingDetection::test_audit_detects_secret_like_value: "log auditor detection — pre-existing"  # pragma: allowlist secret
 tests/e2e/test_obj13_validation_audit.py::TestLogAuditorImportAndFindingDetection::test_audit_detects_ghp_token: "log auditor GHP token — pre-existing"  # pragma: allowlist secret
 tests/e2e/test_obj15_runtime_packaging.py::TestRuntimeValidatorImport::test_validate_profile_relative_container_path: "runtime validator relative path — pre-existing"
-tests/e2e/test_skills_integration.py::TestSkillLoading::test_load_example_skill: "skill loading — pre-existing"
 tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_event_loop_runs_tick: "daemon lifespan event loop — pre-existing"
 tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_add_todo_and_list: "daemon lifespan todo CRUD — pre-existing"
 tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST tool — pre-existing"
@@ -89,7 +88,6 @@ tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret
 tests/unit/test_selftest.py::TestSelftest::test_container_runtime_prefers_podman: "selftest podman — pre-existing"
-tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_with_frontmatter: "skills parse frontmatter — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"

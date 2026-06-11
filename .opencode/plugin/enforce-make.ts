@@ -272,6 +272,8 @@ const STOP_SIGNAL_WORDS = [
   "here's the implementation",
   "16 commits, gate all passed",
   "bugs.md incidents",
+  "38 commits",
+  "was 136",
   "34 commits",
   "all phases",
   "fully implemented",
