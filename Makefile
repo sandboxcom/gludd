@@ -333,6 +333,10 @@ audit-evidence:
 	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) -q 2>&1 || echo "Some evidence tests failed — see above."
 	@echo "=== Evidence Audit Complete ==="
 
+untrack:
+	@[ -n "$(FILES)" ] || { echo "Usage: make untrack FILES='file1 file2'"; exit 1; }
+	@git rm --cached $(FILES)
+
 git-log:
 	@git log --oneline -10 || echo "No git history"
 
