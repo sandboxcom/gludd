@@ -1,13 +1,14 @@
 from __future__ import annotations
 
 import os
-from typing import Any, cast
+import uuid
+from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel
 
-from general_ludd.daemon import _get_or_create_extended_subsystems
+from general_ludd.db.repository import ProjectRepository
 from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.skills.catalog import SkillCatalog
 from general_ludd.skills.loader import discover_skills
@@ -34,11 +35,36 @@ class RebalanceRequest(BaseModel):
 _tui_log_entries: list[dict[str, Any]] = []
 
 
+def _get_session_factory(app: FastAPI) -> Any:
+    return getattr(app.state, "_session_factory", None)
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/projects")
     async def admin_add_project(req: AddProjectRequest) -> dict[str, Any]:
+        from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
+        project_id = req.name.lower().replace(" ", "-") + "-" + uuid.uuid4().hex[:6]
+        project_data = {
+            "project_id": project_id,
+            "name": req.name,
+            "weight": req.weight,
+            "description": req.description,
+            "repo_url": req.repo_url,
+            "workspace_path": req.workspace_path,
+            "dispatch_mode": req.dispatch_mode,
+            "active": True,
+        }
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = ProjectRepository(session)
+                try:
+                    await repo.create(data=project_data)
+                    await session.commit()
+                except Exception:
+                    pass
         try:
             project = ext["projects"].add_project(
                 name=req.name, weight=req.weight, description=req.description,
@@ -47,8 +73,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             )
             return {
                 "project_id": project.project_id,
-                "name": project.name,
-                "weight": project.weight,
+                "name": project.name, "weight": project.weight,
                 "description": project.description,
                 "repo_url": project.repo_url,
                 "workspace_path": project.workspace_path,
@@ -60,12 +85,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.delete("/admin/projects/{project_id}")
     async def admin_delete_project(project_id: str) -> dict[str, Any]:
+        from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = ProjectRepository(session)
+                await repo.deactivate(project_id)
+                await session.commit()
         ext["projects"].remove_project(project_id)
         return {"removed": project_id}
 
     @app.put("/admin/projects/{project_id}/weight")
     async def admin_set_project_weight(project_id: str, req: SetWeightRequest) -> dict[str, Any]:
+        from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
         try:
             ext["projects"].set_weight(project_id, req.weight)
@@ -76,6 +109,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/projects/rebalance")
     async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, Any]:
+        from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
         try:
             ext["projects"].rebalance(req.weights)
@@ -85,8 +119,25 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/admin/projects")
     async def admin_list_projects() -> dict[str, Any]:
+        from general_ludd.daemon import _get_or_create_extended_subsystems
         ext = _get_or_create_extended_subsystems(app)
-        return cast(dict[str, Any], ext["projects"].get_summary())
+        factory = _get_session_factory(app)
+        db_projects: list[dict[str, Any]] = []
+        if factory is not None:
+            async with factory() as session:
+                repo = ProjectRepository(session)
+                active = await repo.list_active()
+                db_projects = [
+                    {
+                        "project_id": p.project_id, "name": p.name,
+                        "active": p.active,
+                    }
+                    for p in active
+                ]
+        summary = ext["projects"].get_summary()
+        if isinstance(summary, dict):
+            summary["db_projects"] = db_projects
+        return summary
 
     @app.post("/admin/projects/skills")
     async def admin_project_skills(req: dict[str, Any]) -> dict[str, Any]:
@@ -94,7 +145,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         skill_name = req.get("skill_name", "")
         if not project_id or not skill_name:
             raise HTTPException(status_code=422, detail="project_id and skill_name required")
-
         registry = getattr(app.state, "_skill_registry", None)
         if registry is None:
             registry = SkillRegistry()
@@ -112,7 +162,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             path = catalog.install_skill(skill_name, config_dir)
             if path is None:
                 raise HTTPException(status_code=404, detail=f"Failed to install skill {skill_name}")
-
             discovered = discover_skills(os.path.join(config_dir, "skills"))
             for s in discovered:
                 registry.register(s)
