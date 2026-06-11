@@ -13,7 +13,21 @@ All premature-stop incidents and process failures are tracked here.
   2. `make test-failures` greps only `^FAILED` — 32 collection ERRORs printed "No failures" with exit 0. The agent's verification tool false-greened.
   3. Plain `make git-commit` has no gate; broken-import commits landed without any test/collection check.
   4. The injected system prompt is hundreds of lines — load-bearing rules drown for GLM-class models.
-- **Fix applied**: `GLM_REMEDIATION_GUIDE.md` (repo root) — Phase R0 restores the build, Phase R1 replaces prose-detection with state-based gates (`make gate` + `.gate-status`, collect-check on commit, `TASKS.md` evidence ledger, ≤40-line prompt injection), Phases R2/R3 finish the missed items and rewrite SESSION.md from gate output. `CLAUDE.md` added so non-opencode harnesses also load the make-only policy.
+- **Fix applied (this remediation session)**:
+  1. **R0.1-R0.3**: Fixed skills import (loader.py → skill.py), lint (engine.py RUF006), daemon wiring (S14 stamp_head, M7 WorktreeMonitorConfig, H5 AgentRegistry, S2 BenchmarkRepository session_factory)
+  2. **R0.4**: mypy from 49 → 21 (below baseline 25)
+  3. **R0.5**: BASELINE.md updated: 5,442 pass, 117 fail, 21 mypy errors
+  4. **R1.1**: `make test-failures` now shows FAILED+ERROR, propagates exit code. `make collect-check` added. `make gate` writes `.gate-status` with all four checks.
+  5. **R1.2**: `make git-commit` runs collect-check before committing, requires green `.gate-status`
+  6. **R1.4**: `TASKS.md` evidence ledger created — every "done" claim must have gate output + commit hash
+  7. **R1.7/R1.10**: AGENTS.md front-loaded with 7-rule mechanical contract, completion=gate+evidence section
+  8. **R1.8**: `make smoke` — real daemon boot health check
+  9. **R1.9**: Git hooks (pre-commit: collect-check, pre-push: gate)
+  10. **R3.1**: SESSION.md rewritten from gate output — no unproven claims
+  11. **R3.2**: fail_under raised from 10 → 70
+  12. **R3.4**: Dev-machine-specific Makefile targets removed
+
+**Remaining**: Plugin changes (R1.3/R1.5/R1.6) blocked by guardrail integrity check. Phase R2 (missed work) and full test-failure fix still needed.
 
 **Pattern**: Guardrails that read the agent's words instead of the repo's state select for better wording, not better work.
 

@@ -25,7 +25,7 @@ TESTS_DIR := tests
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
-        audit-messages qa validate collect-check gate \
+        audit-messages qa validate collect-check gate smoke install-hooks \
         skill-install skill-list bootstrap-skills
 
 search-google:
@@ -152,9 +152,6 @@ test-e2e:
 test-tui-daemon:
 	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
 
-diag-gunicorn:
-	@$(UV) run python /Users/shawnwilson/tmp/opencode/diag_gunicorn.py
-
 test-guardrails:
 	@$(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py -v
 
@@ -237,9 +234,46 @@ git-add-all:
 repo-add-all:
 	@git add -A
 
-git-commit-bootstrap:
-	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-bootstrap MSG='message'"; exit 1; fi
+commit-bootstrap:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
+
+smoke:
+	@echo "=== SMOKE TEST: real daemon boot ==="
+	@PORT=$$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()") && \
+	echo "Using port $$PORT" && \
+	PID=$$(GLUDD_PORT=$$PORT $(UV) run python -m general_ludd.cli daemon --port $$PORT --log-level info > /tmp/gludd-smoke.log 2>&1 & echo $$!) && \
+	echo "Daemon PID: $$PID" && \
+	for i in $$(seq 1 30); do \
+		sleep 0.5; \
+		curl -sf http://localhost:$$PORT/healthz > /dev/null 2>&1 && break; \
+	done && \
+	echo "Healthz OK" && \
+	curl -sf http://localhost:$$PORT/api/status | python3 -m json.tool && \
+	curl -sf -X POST http://localhost:$$PORT/api/todos -H "Content-Type: application/json" \
+		-d '{"title":"smoke-test-todo","description":"auto-created by make smoke","queue":"intake","work_type":"code"}' \
+		| python3 -m json.tool && \
+	curl -sf http://localhost:$$PORT/api/todos | python3 -m json.tool > /dev/null && \
+	echo "Todo API OK" && \
+	! grep -i "typeerror\|traceback\|swallowed" /tmp/gludd-smoke.log > /dev/null 2>&1 && \
+	echo "No startup errors in log" && \
+	kill $$PID 2>/dev/null && \
+	echo "Daemon stopped" && \
+	echo "=== SMOKE: PASSED ==="
+
+install-hooks:
+	@mkdir -p scripts/githooks
+	@echo '#!/bin/bash' > scripts/githooks/pre-commit
+	@echo 'set -e' >> scripts/githooks/pre-commit
+	@echo 'make collect-check' >> scripts/githooks/pre-commit
+	@chmod +x scripts/githooks/pre-commit
+	@echo '#!/bin/bash' > scripts/githooks/pre-push
+	@echo 'set -e' >> scripts/githooks/pre-push
+	@echo 'make gate' >> scripts/githooks/pre-push
+	@chmod +x scripts/githooks/pre-push
+	@ln -sf ../../scripts/githooks/pre-commit .git/hooks/pre-commit
+	@ln -sf ../../scripts/githooks/pre-push .git/hooks/pre-push
+	@echo "Git hooks installed: pre-commit (collect-check), pre-push (gate)"
 
 git-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
@@ -433,15 +467,6 @@ collect-prompts:
 	@echo "Collecting system prompts from open-source coding agents..."
 	@$(UV) run python scripts/collect_prompts.py --output-dir config/prompt_profiles/collected
 	@echo "Done. Run 'make collect-prompts SOURCE=aider' for a specific agent."
-
-extract-openrouter-fields:
-	@$(PYTHON) /Users/shawnwilson/tmp/opencode/extract_openrouter_fields.py /Users/shawnwilson/.local/share/opencode/tool-output/tool_ea4b4a35b001WxQ34qm9c8wiD9
-
-analyze-models:
-	@$(PYTHON) /Users/shawnwilson/tmp/opencode/analyze_models.py
-
-extract-models:
-	@$(PYTHON) /Users/shawnwilson/tmp/opencode/extract_models.py
 
 NAME ?= mp-diagnose
 
