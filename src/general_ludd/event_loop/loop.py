@@ -589,6 +589,16 @@ class EventLoop:
             return
         if self._http_client is None:
             return
+        roles_path = (
+            str(ws.roles_dir)
+            if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir()
+            else None
+        )
+        tpl_dir = (
+            str(ws.templates_dir)
+            if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir()
+            else None
+        )
         job = JobSpec(
             job_id=f"EXEC-{todo.todo_id}", todo_id=todo.todo_id, playbook=playbook,
             queue=_safe_str(todo, "queue", "core") or "core",
@@ -600,8 +610,8 @@ class EventLoop:
             project_id=project_id_val,
             artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
-            ansible_roles_path=str(ws.roles_dir) if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir() else None,
-            templates_dir=str(ws.templates_dir) if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir() else None,
+            ansible_roles_path=roles_path,
+            templates_dir=tpl_dir,
         )
         resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
