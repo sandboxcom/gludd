@@ -25,14 +25,18 @@ class MCPStdioClient:
         self._request_id += 1
         return self._request_id
 
-    async def _send_request(self, method: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+    async def _send_request(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> dict[str, Any]:
         if self._process is None or self._process.returncode is not None:
             raise MCPTransportError("Process not running")
         assert self._process.stdin is not None
         assert self._process.stdout is not None
 
         request_id = self._next_id()
-        request: dict[str, Any] = {"jsonrpc": "2.0", "id": request_id, "method": method}
+        request: dict[str, Any] = {
+            "jsonrpc": "2.0", "id": request_id, "method": method,
+        }
         if params is not None:
             request["params"] = params
 
@@ -40,15 +44,33 @@ class MCPStdioClient:
         self._process.stdin.write(line.encode())
         await self._process.stdin.drain()
 
-        response_line = await self._process.stdout.readline()
-        if not response_line:
-            raise MCPTransportError("Connection closed")
+        while True:
+            response_line = await self._process.stdout.readline()
+            if not response_line:
+                raise MCPTransportError("Connection closed")
+            response = json.loads(response_line.decode())
+            if response.get("id") != request_id:
+                continue
+            if "error" in response:
+                raise MCPTransportError(
+                    f"JSON-RPC error: {response['error']}"
+                )
+            return dict[str, Any](response.get("result", {}))
 
-        response = json.loads(response_line.decode())
-        if "error" in response:
-            raise MCPTransportError(f"JSON-RPC error: {response['error']}")
-
-        return dict[str, Any](response.get("result", {}))
+    async def _send_notification(
+        self, method: str, params: dict[str, Any] | None = None
+    ) -> None:
+        if self._process is None or self._process.returncode is not None:
+            return
+        assert self._process.stdin is not None
+        notification: dict[str, Any] = {
+            "jsonrpc": "2.0", "method": method,
+        }
+        if params is not None:
+            notification["params"] = params
+        line = json.dumps(notification) + "\n"
+        self._process.stdin.write(line.encode())
+        await self._process.stdin.drain()
 
     async def start(self) -> None:
         cmd = (self._config.command or []) + self._config.args
@@ -67,9 +89,13 @@ class MCPStdioClient:
             {
                 "protocolVersion": "2024-11-05",
                 "capabilities": {},
-                "clientInfo": {"name": "general-ludd-agent", "version": "0.1.0"},
+                "clientInfo": {
+                    "name": "general-ludd-agent", "version": "0.1.0",
+                },
             },
         )
+
+        await self._send_notification("notifications/initialized", {})
 
     async def list_tools(self) -> list[MCPTool]:
         result = await self._send_request("tools/list")
@@ -84,7 +110,9 @@ class MCPStdioClient:
             )
         return tools
 
-    async def call_tool(self, tool_name: str, arguments: dict[str, Any]) -> dict[str, Any]:
+    async def call_tool(
+        self, tool_name: str, arguments: dict[str, Any]
+    ) -> dict[str, Any]:
         return await self._send_request(
             "tools/call",
             {"name": tool_name, "arguments": arguments},
