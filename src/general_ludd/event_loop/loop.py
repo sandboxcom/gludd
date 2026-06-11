@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import time
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 from sqlalchemy import select
@@ -63,13 +64,11 @@ def _resolve_prompt_text_static(
         return None
     if project_templates_dir is not None:
         from pathlib import Path as _Path
-
         tmpl_path = _Path(str(project_templates_dir)) / prompt_profile
         if tmpl_path.is_file():
             try:
                 from jinja2 import Environment as _Env
                 from jinja2 import FileSystemLoader as _FSL
-
                 env = _Env(loader=_FSL(str(project_templates_dir)), autoescape=True)
                 tmpl = env.get_template(prompt_profile)
                 return tmpl.render(**kwargs)
@@ -85,21 +84,11 @@ def _resolve_prompt_text_static(
 
 
 _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
-    "bug_fix": "bug_fix",
-    "code": "feature",
-    "test": "test_write",
-    "review": "code_review",
-    "refactor": "refactor",
-    "docs": "documentation",
-    "infra": "feature",
-    "prompt": "feature",
-    "analysis": "feature",
-    "audit": "feature",
-    "release": "feature",
-    "dependency": "feature",
-    "security": "security_fix",
-    "model": "feature",
-    "unknown": "feature",
+    "bug_fix": "bug_fix", "code": "feature", "test": "test_write",
+    "review": "code_review", "refactor": "refactor", "docs": "documentation",
+    "infra": "feature", "prompt": "feature", "analysis": "feature",
+    "audit": "feature", "release": "feature", "dependency": "feature",
+    "security": "security_fix", "model": "feature", "unknown": "feature",
 }
 
 
@@ -112,19 +101,12 @@ def _work_type_to_task_type(work_type: str) -> Any:
 
 
 _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
-    "code": "validate_task.yml",
-    "test": "molecule_test.yml",
-    "analysis": "gap_analysis.yml",
-    "audit": "log_audit.yml",
-    "prompt": "prompt_eval.yml",
-    "self_improvement": "self_improve_harness.yml",
-    "dependency": "dependency_update.yml",
-    "review": "return_review.yml",
-    "docs": "noop.yml",
-    "infra": "noop.yml",
-    "security": "noop.yml",
-    "model": "noop.yml",
-    "release": "noop.yml",
+    "code": "validate_task.yml", "test": "molecule_test.yml",
+    "analysis": "gap_analysis.yml", "audit": "log_audit.yml",
+    "prompt": "prompt_eval.yml", "self_improvement": "self_improve_harness.yml",
+    "dependency": "dependency_update.yml", "review": "return_review.yml",
+    "docs": "noop.yml", "infra": "noop.yml", "security": "noop.yml",
+    "model": "noop.yml", "release": "noop.yml",
 }
 
 
@@ -175,6 +157,8 @@ class EventLoop:
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
+        self._stuck_timeout_minutes = 15
+        self._max_retries = 3
         if isinstance(session, async_sessionmaker):
             self._session_factory: async_sessionmaker[AsyncSession] | None = session
             self.session: AsyncSession | None = None
@@ -185,12 +169,8 @@ class EventLoop:
         self._runner = runner
         self._active_session: AsyncSession | None = self.session
         live_session = self.session
-        self._todo_repo = todo_repo or (
-            TodoRepository(live_session) if live_session else None
-        )
-        self._task_return_repo = task_return_repo or (
-            TaskReturnRepository(live_session) if live_session else None
-        )
+        self._todo_repo = todo_repo or (TodoRepository(live_session) if live_session else None)
+        self._task_return_repo = task_return_repo or (TaskReturnRepository(live_session) if live_session else None)
         self._budget_guard = budget_guard
         self._mcp_client = mcp_client
         self._mcp_tool_registry = mcp_tool_registry
@@ -199,21 +179,15 @@ class EventLoop:
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
-        self._observability_enabled: bool = bool(
-            adaptive_router
-        )
+        self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
         self._config_snapshot: dict[str, Any] = {}
         self._event_bus = event_bus
         self._project_manager = project_manager
         self._prompt_registry = prompt_registry
-        self._audit_repo = audit_repo or (
-            AuditEventRepository(live_session) if live_session else None
-        )
+        self._audit_repo = audit_repo or (AuditEventRepository(live_session) if live_session else None)
         self._skill_registry = skill_registry
-        self._variable_repo = variable_repo or (
-            VariableNamespaceRepository(live_session) if live_session else None
-        )
+        self._variable_repo = variable_repo or (VariableNamespaceRepository(live_session) if live_session else None)
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
         self._adaptive_router = adaptive_router
@@ -227,7 +201,6 @@ class EventLoop:
     ) -> tuple[str | None, str | None, Any | None]:
         if self._adaptive_router is None:
             return None, None, None
-
         work_type = _safe_str(todo, "work_type", "feature") or "feature"
         task_type = _work_type_to_task_type(work_type)
         default_prompt = _safe_str(todo, "prompt_profile")
@@ -236,11 +209,7 @@ class EventLoop:
             default_prompt_profile=default_prompt,
             default_model_profile=default_model_profile,
         )
-        return (
-            decision.selected_prompt_profile_id,
-            decision.selected_model_profile_id,
-            decision,
-        )
+        return (decision.selected_prompt_profile_id, decision.selected_model_profile_id, decision)
 
     def _resolve_skill_body(self, todo: Any) -> str | None:
         if self._skill_registry is None:
@@ -263,20 +232,42 @@ class EventLoop:
         logger.info("EventLoop received config reload event, scope=%s", scope)
         self._config_snapshot = dict(self.config)
 
+    async def _reap_stuck_todos(self) -> None:
+        if self._active_session is None or self._todo_repo is None:
+            return
+        try:
+            from general_ludd.db.models import TodoModel
+            cutoff = datetime.now(UTC) - timedelta(minutes=self._stuck_timeout_minutes)
+            stmt = (
+                select(TodoModel)
+                .where(TodoModel.status == TodoStatus.ACTIVE.value)
+                .where(TodoModel.updated_at < cutoff)
+            )
+            result = await self._active_session.execute(stmt)
+            stuck = list(result.scalars().all())
+            for todo in stuck:
+                attempts = getattr(todo, "version", 0)
+                if attempts >= self._max_retries:
+                    todo.status = TodoStatus.FAILED.value
+                else:
+                    todo.status = TodoStatus.QUEUED.value
+                todo.updated_at = datetime.now(UTC)
+            if stuck:
+                await self._active_session.flush()
+                logger.info("Reaped %d stuck ACTIVE todos", len(stuck))
+        except Exception as exc:
+            logger.warning("Stuck-todo reaper failed: %s", exc)
+
     async def tick(self) -> dict[str, Any]:
         self._tick_state = {}
         self._total_ticks += 1
         self._tick_metrics = {
-            "total_ticks": self._total_ticks,
-            "phases_completed": 0,
-            "tick_duration_ms": 0.0,
-            "returns_reviewed": 0,
-            "todos_dispatched": 0,
-            "decisions_applied": 0,
+            "total_ticks": self._total_ticks, "phases_completed": 0,
+            "tick_duration_ms": 0.0, "returns_reviewed": 0,
+            "todos_dispatched": 0, "decisions_applied": 0,
             "leases_reclaimed": 0,
         }
         start = time.monotonic()
-
         needs_own_session = self.session is None and self._session_factory is not None
         if needs_own_session:
             async with self._session_factory() as session:
@@ -304,7 +295,6 @@ class EventLoop:
                 self._variable_repo = self._variable_repo or VariableNamespaceRepository(self.session)
             await self._run_phases()
             self._active_session = None
-
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
@@ -344,7 +334,6 @@ class EventLoop:
 
     async def _phase_load_config_snapshot(self) -> None:
         import copy
-
         self._config_snapshot = copy.deepcopy(self.config)
         if self._variable_repo is not None and self._active_session is not None:
             shared_vars = await self._variable_repo.load_vars_for_project(None)
@@ -367,10 +356,7 @@ class EventLoop:
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits()
             if not check["allowed"]:
-                logger.warning(
-                    "Budget exceeded, skipping return review dispatch: %s",
-                    check["reason"],
-                )
+                logger.warning("Budget exceeded, skipping return review dispatch: %s", check["reason"])
                 self._tick_metrics["returns_reviewed"] = 0
                 return
         for tr in claimed:
@@ -382,33 +368,21 @@ class EventLoop:
         if not isinstance(project_id_val, str):
             project_id_val = None
         job = JobSpec(
-            job_id=f"REVIEW-{tr.return_id}",
-            return_id=tr.return_id,
-            todo_id=tr.todo_id,
-            playbook="return_review.yml",
+            job_id=f"REVIEW-{tr.return_id}", return_id=tr.return_id,
+            todo_id=tr.todo_id, playbook="return_review.yml",
             queue=_safe_str(tr, "queue", "model") or "model",
-            work_type="review",
-            resource_profile="ai_heavy",
+            work_type="review", resource_profile="ai_heavy",
             plan_artifact=_safe_str(tr, "plan_artifact"),
             project_id=project_id_val,
         )
         if self._runner is not None:
             dirs = self._runner.prepare_job_dirs(job.job_id)
-            self._runner.write_vars(
-                job.job_id,
-                job_vars={
-                    "job_id": job.job_id,
-                    "todo_id": job.todo_id,
-                    "return_id": job.return_id,
-                    "queue": job.queue,
-                    "work_type": job.work_type,
-                },
-                shared_vars=None,
-            )
-            self._runner.run_playbook(
-                playbook_name="return_review.yml",
-                private_data_dir=dirs["root"],
-            )
+            self._runner.write_vars(job.job_id, job_vars={
+                "job_id": job.job_id, "todo_id": job.todo_id,
+                "return_id": job.return_id, "queue": job.queue,
+                "work_type": job.work_type,
+            }, shared_vars=None)
+            self._runner.run_playbook(playbook_name="return_review.yml", private_data_dir=dirs["root"])
             return
         if self._http_client is None:
             return
@@ -459,24 +433,18 @@ class EventLoop:
             return
         try:
             import psutil
-
             load_1, load_5, load_10 = psutil.getloadavg() if hasattr(psutil, "getloadavg") else (0.0, 0.0, 0.0)
             cpu_count = psutil.cpu_count(logical=True) or 1
             cpu_pct = psutil.cpu_percent(interval=0)
             mem = psutil.virtual_memory()
             disk = psutil.disk_usage("/")
             disk_free_pct = 100 - (disk.used / disk.total * 100) if disk.total > 0 else 100.0
-
             controller = LoadController(cpu_count=cpu_count)
             queues = [Queue(**q) if isinstance(q, dict) else q for q in queues_data]
             snapshot = LoadSnapshot(
-                loadavg_1m=load_1,
-                loadavg_5m=load_5,
-                loadavg_10m=load_10,
-                logical_cpu_count=cpu_count,
-                cpu_percent=cpu_pct,
-                memory_available_percent=mem.percent,
-                disk_free_percent=disk_free_pct,
+                loadavg_1m=load_1, loadavg_5m=load_5, loadavg_10m=load_10,
+                logical_cpu_count=cpu_count, cpu_percent=cpu_pct,
+                memory_available_percent=mem.percent, disk_free_percent=disk_free_pct,
                 active_jobs=0,
             )
             outputs = controller.evaluate_snapshot(snapshot, queues)
@@ -506,6 +474,8 @@ class EventLoop:
         if self._active_session is not None:
             reclaimed = await reclaim_expired_leases(self._active_session)
             self._tick_metrics["leases_reclaimed"] = reclaimed
+        if self._todo_repo is not None and self._active_session is not None:
+            await self._reap_stuck_todos()
 
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
@@ -513,9 +483,7 @@ class EventLoop:
         if self._project_manager is not None:
             project = self._project_manager.select_project()
             if project is not None:
-                claimed = await self._todo_repo.claim_runnable(
-                    project_id=project.project_id
-                )
+                claimed = await self._todo_repo.claim_runnable(project_id=project.project_id)
             else:
                 claimed = await self._todo_repo.claim_runnable()
         else:
@@ -527,10 +495,7 @@ class EventLoop:
         if self._budget_guard is not None:
             check = self._budget_guard.check_all_limits()
             if not check["allowed"]:
-                logger.warning(
-                    "Budget exceeded, skipping execute dispatch: %s",
-                    check["reason"],
-                )
+                logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
                 self._tick_metrics["todos_dispatched"] = 0
                 return
         for todo in claimed:
@@ -557,9 +522,7 @@ class EventLoop:
         default_playbook = self._config_snapshot.get("default_playbook", "noop.yml")
         work_type = _safe_str(todo, "work_type", "code") or "code"
         project_id_val = (
-            todo.project_id
-            if hasattr(todo, "project_id")
-            and isinstance(todo.project_id, str)
+            todo.project_id if hasattr(todo, "project_id") and isinstance(todo.project_id, str)
             else None
         )
         workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
@@ -567,22 +530,16 @@ class EventLoop:
         playbook = _playbook_for_work_type(
             work_type, default_playbook, project_id=project_id_val, workspaces=workspaces,
         )
-
         rule_overrides = self._get_rule_overrides_for_todo(todo)
-
-        adaptive_prompt_id, adaptive_model_id, routing_decision = (
-            await self._resolve_adaptive_prompt(todo)
-        )
+        adaptive_prompt_id, adaptive_model_id, routing_decision = await self._resolve_adaptive_prompt(todo)
         if routing_decision is not None and not routing_decision.fallback:
             resolved_prompt_profile = adaptive_prompt_id or _safe_str(todo, "prompt_profile")
             resolved_model_profile = adaptive_model_id or _safe_str(todo, "model_profile")
         else:
             resolved_prompt_profile = _safe_str(todo, "prompt_profile")
             resolved_model_profile = _safe_str(todo, "model_profile")
-
         resolved_model_profile = rule_overrides.get("model_profile") or resolved_model_profile
         resolved_prompt_profile = rule_overrides.get("prompt_profile") or resolved_prompt_profile
-
         task_context = {
             "todo_title": _safe_str(todo, "title") or "",
             "todo_description": _safe_str(todo, "description") or "",
@@ -597,8 +554,7 @@ class EventLoop:
         )
         prompt_text = _resolve_prompt_text_static(
             self._prompt_registry, resolved_prompt_profile,
-            project_templates_dir=project_templates_dir,
-            **task_context,
+            project_templates_dir=project_templates_dir, **task_context,
         )
         if prompt_text is None:
             prompt_text = self._resolve_prompt_text(todo)
@@ -610,66 +566,42 @@ class EventLoop:
                 import os as _os
                 job_dir = _os.path.join(str(ws.private_data_dir), job_id)
                 _os.makedirs(job_dir, exist_ok=True)
-                env_dir = _os.path.join(job_dir, "env")
-                _os.makedirs(env_dir, exist_ok=True)
+                _os.makedirs(_os.path.join(job_dir, "env"), exist_ok=True)
                 pdd = str(ws.private_data_dir)
             else:
                 dirs = self._runner.prepare_job_dirs(job_id)
                 pdd = dirs["root"]
-            self._runner.write_vars(
-                job_id,
-                job_vars={
-                    "job_id": job_id,
-                    "todo_id": todo.todo_id,
-                    "queue": _safe_str(todo, "queue", "core"),
-                    "work_type": _safe_str(todo, "work_type", "unknown"),
-                    "model_profile": resolved_model_profile,
-                    "prompt_profile": resolved_prompt_profile,
-                    "prompt_text": prompt_text,
-                    "skill_body": skill_body,
-                    "playbook": playbook,
-                    **budget_context,
-                },
-                shared_vars=shared_vars,
-            )
+            self._runner.write_vars(job_id, job_vars={
+                "job_id": job_id, "todo_id": todo.todo_id,
+                "queue": _safe_str(todo, "queue", "core"),
+                "work_type": _safe_str(todo, "work_type", "unknown"),
+                "model_profile": resolved_model_profile,
+                "prompt_profile": resolved_prompt_profile,
+                "prompt_text": prompt_text, "skill_body": skill_body,
+                "playbook": playbook, **budget_context,
+            }, shared_vars=shared_vars)
             runner_env: dict[str, str] = {}
             if ws is not None and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir():
                 runner_env["ANSIBLE_ROLES_PATH"] = str(ws.roles_dir)
             if ws is not None and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir():
                 runner_env["GLUDD_TEMPLATES_DIR"] = str(ws.templates_dir)
-            self._runner.run_playbook(
-                playbook_name=playbook,
-                private_data_dir=pdd,
-                env=runner_env,
-            )
+            self._runner.run_playbook(playbook_name=playbook, private_data_dir=pdd, env=runner_env)
             return
         if self._http_client is None:
             return
         job = JobSpec(
-            job_id=f"EXEC-{todo.todo_id}",
-            todo_id=todo.todo_id,
-            playbook=playbook,
+            job_id=f"EXEC-{todo.todo_id}", todo_id=todo.todo_id, playbook=playbook,
             queue=_safe_str(todo, "queue", "core") or "core",
             work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
             resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
-            model_profile=resolved_model_profile,
-            prompt_profile=resolved_prompt_profile,
+            model_profile=resolved_model_profile, prompt_profile=resolved_prompt_profile,
             plan_artifact=_safe_str(todo, "plan_artifact"),
-            prompt_text=prompt_text,
-            budget_context=budget_context,
+            prompt_text=prompt_text, budget_context=budget_context,
             project_id=project_id_val,
             artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
-            ansible_roles_path=(
-                str(ws.roles_dir)
-                if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir()
-                else None
-            ),
-            templates_dir=(
-                str(ws.templates_dir)
-                if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir()
-                else None
-            ),
+            ansible_roles_path=str(ws.roles_dir) if ws and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir() else None,
+            templates_dir=str(ws.templates_dir) if ws and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir() else None,
         )
         resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",
@@ -681,8 +613,7 @@ class EventLoop:
         if self._http_client is None:
             return
         job = JobSpec(
-            job_id=f"VALIDATE-{todo.todo_id}",
-            todo_id=todo.todo_id,
+            job_id=f"VALIDATE-{todo.todo_id}", todo_id=todo.todo_id,
             playbook="validate_task.yml",
             queue=_safe_str(todo, "queue", "core") or "core",
             work_type=_safe_str(todo, "work_type", "unknown") or "unknown",
@@ -692,11 +623,7 @@ class EventLoop:
             f"{self.worker_base_url}/jobs/validate",
             json=job.model_dump(mode="json"),
         )
-        logger.info(
-            "Validation dispatch for todo %s: status=%s",
-            todo.todo_id,
-            getattr(resp, "status_code", None),
-        )
+        logger.info("Validation dispatch for todo %s: status=%s", todo.todo_id, getattr(resp, "status_code", None))
 
     async def _persist_task_return(self, todo: Any, job: JobSpec, resp: Any) -> None:
         if self._task_return_repo is None:
@@ -713,10 +640,8 @@ class EventLoop:
                 return
             await self._task_return_repo.create(data={
                 "return_id": data.get("return_id", f"RET-{job.job_id}"),
-                "todo_id": todo.todo_id,
-                "job_id": job.job_id,
-                "playbook": job.playbook,
-                "queue": job.queue,
+                "todo_id": todo.todo_id, "job_id": job.job_id,
+                "playbook": job.playbook, "queue": job.queue,
                 "exit_code": data.get("exit_code", 0),
                 "result_summary": data.get("result_summary", ""),
                 "project_id": job.project_id,
@@ -730,11 +655,7 @@ class EventLoop:
     async def _phase_reconcile_completed_decisions(self) -> None:
         if self._active_session is None or self._todo_repo is None:
             return
-        stmt = (
-            select(TaskDecisionModel)
-            .order_by(TaskDecisionModel.created_at.desc())
-            .limit(50)
-        )
+        stmt = select(TaskDecisionModel).order_by(TaskDecisionModel.created_at.desc()).limit(50)
         if self._project_manager is not None:
             project = self._project_manager.select_project()
             if project is not None:
@@ -750,20 +671,16 @@ class EventLoop:
                 continue
             new_status = self._decision_to_status(d.decision)
             if new_status is not None:
-                await self._todo_repo.transition(
-                    todo.todo_id, new_status, todo.version
-                )
+                await self._todo_repo.transition(todo.todo_id, new_status, todo.version)
                 reconciled += 1
                 if self._audit_repo is not None:
                     with contextlib.suppress(Exception):
                         await self._audit_repo.create(
                             event_type="todo_status_changed",
-                            entity_type="todo",
-                            entity_id=todo.todo_id,
+                            entity_type="todo", entity_id=todo.todo_id,
                             project_id=todo.project_id,
                             details=json.dumps({
-                                "old": todo.status,
-                                "new": new_status.value,
+                                "old": todo.status, "new": new_status.value,
                                 "decision": d.decision,
                             }),
                         )
@@ -773,8 +690,7 @@ class EventLoop:
         mapping: dict[str, TodoStatus] = {
             "complete": TodoStatus.COMPLETE,
             "needs_more_work": TodoStatus.NEEDS_MORE_WORK,
-            "failed": TodoStatus.FAILED,
-            "blocked": TodoStatus.BLOCKED,
+            "failed": TodoStatus.FAILED, "blocked": TodoStatus.BLOCKED,
             "manual_hold": TodoStatus.MANUAL_HOLD,
         }
         return mapping.get(decision)
@@ -787,7 +703,6 @@ class EventLoop:
             return
         try:
             from general_ludd.self_improve.harness import SelfImprovementHarness
-
             harness = SelfImprovementHarness()
             findings = harness.run_gap_analysis()
             if not findings:
@@ -800,15 +715,11 @@ class EventLoop:
             harness.enqueue_todos(todos)
             if self._daemon_state is not None:
                 self._daemon_state["self_improve_last_analysis"] = {
-                    "findings": findings,
-                    "findings_count": len(findings),
+                    "findings": findings, "findings_count": len(findings),
                     "todos_enqueued": len(todos),
                 }
             self._tick_metrics["self_improve_gaps"] = len(findings)
-            logger.info(
-                "Self-improve cycle: %d gaps found, %d todos enqueued",
-                len(findings), len(todos),
-            )
+            logger.info("Self-improve cycle: %d gaps found, %d todos enqueued", len(findings), len(todos))
         except Exception as exc:
             logger.warning("Self-improve phase failed: %s", exc)
             self._tick_metrics["self_improve_gaps"] = 0
@@ -816,33 +727,22 @@ class EventLoop:
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)
 
-    async def dispatch_return_review(
-        self, task_return: TaskReturn
-    ) -> dict[str, Any]:
+    async def dispatch_return_review(self, task_return: TaskReturn) -> dict[str, Any]:
         if task_return.status != TaskReturnStatus.CREATED:
             return {"status": "skipped", "reason": "not_created"}
         job = JobSpec(
-            job_id=f"REVIEW-{task_return.return_id}",
-            return_id=task_return.return_id,
-            todo_id=task_return.todo_id,
-            playbook="return_review.yml",
-            queue="model",
-            work_type="review",
-            resource_profile="ai_heavy",
+            job_id=f"REVIEW-{task_return.return_id}", return_id=task_return.return_id,
+            todo_id=task_return.todo_id, playbook="return_review.yml",
+            queue="model", work_type="review", resource_profile="ai_heavy",
         )
         logger.info("Dispatching return review for %s", task_return.return_id)
         return {"status": "dispatched", "job_id": job.job_id}
 
     async def claim_runnable_todos(self, todos: list[Todo]) -> list[Todo]:
-        runnable = [
-            t for t in todos
-            if t.status == TodoStatus.QUEUED
-        ]
+        runnable = [t for t in todos if t.status == TodoStatus.QUEUED]
         return runnable
 
-    async def reconcile_decision(
-        self, decision: TaskDecision, todo: Todo
-    ) -> Todo:
+    async def reconcile_decision(self, decision: TaskDecision, todo: Todo) -> Todo:
         if decision.decision == "complete":
             todo.transition_to(TodoStatus.COMPLETE)
         elif decision.decision == "needs_more_work":
