@@ -220,6 +220,22 @@ const STOP_SIGNAL_WORDS = [
   "continuing with remaining",
   "all complete",
   "all requested",
+  "phase v0",
+  "phase v1",
+  "phase v2",
+  "phase v3",
+  "phase v4",
+  "phase.*complete",
+  "what was implemented",
+  "key accomplishments",
+  "| what was fixed",
+  "| fix |",
+  "| task |",
+  "--- | ---",
+  "continuing with remaining",
+  "remaining:",
+  "accomplishments",
+  "completion summary",
 ]
 
 const RESUME_COMMAND = [
@@ -593,6 +609,38 @@ export default (async ({ }) => {
           "→ Work on them NOW. Do NOT send another text message.",
         ].join("\n")
         return output
+      }
+
+      // State-based check: if the ratchet has remaining entries,
+      // the project is NOT done. Block any completion-looking response.
+      const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+      if (fs.existsSync(ratchetPath)) {
+        const ratchetContent = fs.readFileSync(ratchetPath, "utf-8")
+        const ratchetLines = ratchetContent.split("\n").filter(
+          l => l.trim() && !l.trim().startsWith("#") && l.includes(": \"")
+        )
+        const hasPendingWork = ratchetLines.length > 0
+        const responseLower = output.toLowerCase()
+        const soundsComplete = (
+          responseLower.includes("all passed") ||
+          responseLower.includes("phase") && responseLower.includes("complete") ||
+          responseLower.includes("key accomplishments") ||
+          responseLower.includes("what was implemented") ||
+          responseLower.includes("task |") ||
+          responseLower.includes("| what was")
+        )
+        if (hasPendingWork && soundsComplete) {
+          output = [
+            "⛔ INCOMPLETE WORK — RESPONSE BLOCKED ⛔",
+            "",
+            `config/ratchet.yml has ${ratchetLines.length} known-failure entries.`,
+            "The project is NOT complete. Your completion claim is BLOCKED.",
+            "",
+            "You MUST continue working. Call your tools NOW.",
+            "",
+          ].join("\n")
+          return output
+        }
       }
 
       // Preflight: detect task-completion claims and inject verification demand
