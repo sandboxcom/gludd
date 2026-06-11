@@ -9,6 +9,8 @@ from fastapi import FastAPI, HTTPException
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.schemas.job import JobSpec
+from general_ludd.schemas.task_decision import TaskDecision
+from general_ludd.schemas.task_return import TaskReturn
 
 logger = logging.getLogger(__name__)
 
@@ -94,7 +96,27 @@ def create_app() -> FastAPI:
 
     @application.post("/jobs/return-review")
     async def return_review_job(job: JobSpec) -> dict[str, Any]:
-        raise HTTPException(status_code=501, detail="Return review must be handled by the daemon reviewer")
+        try:
+            from general_ludd.review.reviewer import ReturnReviewer
+            reviewer = ReturnReviewer()
+            task_return = TaskReturn(
+                return_id=job.job_id,
+                todo_id=job.todo_id or "",
+                job_id=job.job_id,
+                playbook=job.playbook,
+                artifacts=job.artifacts,
+                exit_code=0,
+                stdout=job.task_output or "",
+            )
+            decision = reviewer.review_return(task_return, [], [])
+            return TaskDecision(
+                todo_id=job.todo_id or "",
+                decision=decision.decision,
+                reason=decision.reason,
+            ).model_dump()
+        except Exception as exc:
+            logger.warning("ReturnReviewer failed: %s", exc)
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:
