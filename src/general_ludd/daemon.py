@@ -361,6 +361,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await seed_initial_queues(session)
             await session.commit()
 
+        if is_sqlite_url(str(engine.url)):
+            try:
+                from general_ludd.db.migrations import get_alembic_config, run_upgrade, stamp_head
+                alembic_cfg = get_alembic_config(str(engine.url))
+                stamp_head(alembic_cfg)
+                logger.info("Alembic stamped head on SQLite database")
+            except Exception as exc:
+                logger.debug("Alembic stamp skipped: %s", exc)
+
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
