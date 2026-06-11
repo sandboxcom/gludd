@@ -1,9 +1,4 @@
-"""Execution engine — real in-process model-driven code generation.
-
-Generates code via ModelGateway, parses output for file-write blocks,
-writes changes to workspace, commits to git, runs project tests,
-and produces TaskReturn.
-"""
+"""Execution engine — real in-process model-driven code generation."""
 
 from __future__ import annotations
 
@@ -51,12 +46,9 @@ def _build_system_prompt(job: JobSpec) -> str:
     if job.skill_body:
         lines.append(f"\nGuidelines:\n{job.skill_body}")
     lines.append("\nOutput format:")
-    lines.append("- Use fenced code blocks (```) for code.")
+    lines.append("- Use fenced code blocks for code.")
     lines.append(
         "- Prefix each file with 'FILE: <path>' followed by the content."
-    )
-    lines.append(
-        "- Use unified diff format (```diff) for changes to existing files."
     )
     return "\n".join(lines)
 
@@ -69,18 +61,15 @@ def _run_tests(workspace: str) -> tuple[int, str]:
     try:
         result = subprocess.run(
             ["make", "test"],
-            cwd=workspace,
-            capture_output=True,
-            text=True,
-            timeout=120,
+            cwd=workspace, capture_output=True, text=True, timeout=120,
         )
         output = (
-            result.stdout[-2000:] if len(result.stdout) > 2000 else result.stdout
+            result.stdout[-2000:] if len(result.stdout) > 2000
+            else result.stdout
         )
         if not output and result.stderr:
             output = (
-                result.stderr[-2000:]
-                if len(result.stderr) > 2000
+                result.stderr[-2000:] if len(result.stderr) > 2000
                 else result.stderr
             )
         return result.returncode, output or "(no output)"
@@ -116,9 +105,7 @@ def _git_create_branch(path: str, branch_name: str) -> bool:
 
 def _git_commit(path: str, message: str) -> str | None:
     try:
-        subprocess.run(
-            ["git", "add", "-A"], cwd=path, capture_output=True, check=True,
-        )
+        subprocess.run(["git", "add", "-A"], cwd=path, capture_output=True, check=True)
         result = subprocess.run(
             ["git", "commit", "-m", message],
             cwd=path, capture_output=True, text=True,
@@ -155,92 +142,91 @@ class ExecutionEngine:
         self,
         model_gateway: Any = None,
         workspace_path: str = "/tmp/gludd-workspace",
+        benchmark_recorder: Any = None,
+        metrics_collector: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
+        self._benchmark_recorder = benchmark_recorder
+        self._metrics_collector = metrics_collector
         os.makedirs(workspace_path, exist_ok=True)
+
+    def _record_metrics(self, job: JobSpec, success: bool, tokens: int = 0) -> None:
+        if self._metrics_collector is None:
+            return
+        try:
+            wtype = job.work_type or "code"
+            self._metrics_collector.record_model_call(
+                model_profile=getattr(job, "model_profile", "unknown") or "unknown",
+                work_type=wtype,
+                success=success,
+                input_tokens=tokens,
+                output_tokens=0,
+                cost_usd=0.0,
+            )
+        except Exception:
+            pass
 
     def execute(self, job: JobSpec) -> TaskReturn:
         return_id = f"RET-{job.job_id}-{uuid.uuid4().hex[:6]}"
 
         if self._model_gateway is None:
             return TaskReturn(
-                return_id=return_id,
-                todo_id=job.todo_id,
-                job_id=job.job_id,
-                playbook=job.playbook or "code",
-                queue=job.queue or "core",
-                exit_code=1,
-                result_summary="No model gateway configured",
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary="No model gateway configured",
             )
 
         is_git = _is_git_repo(self.workspace_path)
-        if not is_git:
-            logger.warning(
-                "Workspace is not a git repo: %s", self.workspace_path
-            )
 
         title_slug = _slugify(job.prompt_text or job.todo_id or "untitled")
         branch_name = f"gludd/{job.todo_id}-{title_slug}"
-
         if is_git:
             _git_create_branch(self.workspace_path, branch_name)
 
         system_prompt = _build_system_prompt(job)
         user_prompt = _build_user_prompt(job)
 
+        model_success = False
         try:
             response = self._model_gateway.call_model(
-                system_prompt=system_prompt,
-                user_prompt=user_prompt,
+                system_prompt=system_prompt, user_prompt=user_prompt,
             )
-            model_output = (
-                getattr(response, "content", "") or str(response)
-            )
+            model_output = getattr(response, "content", "") or str(response)
+            model_success = True
+            self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:
+            self._record_metrics(job, success=False)
             return TaskReturn(
-                return_id=return_id,
-                todo_id=job.todo_id,
-                job_id=job.job_id,
-                playbook=job.playbook or "code",
-                queue=job.queue or "core",
-                exit_code=1,
-                result_summary=f"Model call failed: {exc}",
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary=f"Model call failed: {exc}",
             )
 
         if not model_output or not model_output.strip():
             return TaskReturn(
-                return_id=return_id,
-                todo_id=job.todo_id,
-                job_id=job.job_id,
-                playbook=job.playbook or "code",
-                queue=job.queue or "core",
-                exit_code=1,
-                result_summary="Model returned empty output",
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary="Model returned empty output",
             )
 
         changed_files: list[str] = []
         applied_changes = False
-
         blocks = _parse_fenced_blocks(model_output)
         for block in blocks:
             content = block["content"]
             lang = block["language"].lower()
-
             if lang in ("diff", "patch"):
                 changed = self._apply_unified_diff(content)
                 changed_files.extend(changed)
                 if changed:
                     applied_changes = True
             else:
-                file_pairs = _extract_file_paths(content)
-                for file_path, file_content in file_pairs:
+                for file_path, file_content in _extract_file_paths(content):
                     self._write_file(file_path, file_content)
                     changed_files.append(file_path)
                     applied_changes = True
-
-        raw_pairs = _extract_file_paths(model_output)
-        for file_path, file_content in raw_pairs:
+        for file_path, file_content in _extract_file_paths(model_output):
             if file_path not in changed_files:
                 self._write_file(file_path, file_content)
                 changed_files.append(file_path)
@@ -258,25 +244,17 @@ class ExecutionEngine:
 
         if not applied_changes:
             return TaskReturn(
-                return_id=return_id,
-                todo_id=job.todo_id,
-                job_id=job.job_id,
-                playbook=job.playbook or "code",
-                queue=job.queue or "core",
-                exit_code=1,
-                result_summary=(
-                    "No file changes could be parsed from model output"
-                ),
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary="No changes parsed from model output",
                 artifacts=[f"raw_output:{len(model_output)} chars"],
             )
 
         test_exit_code, test_summary = _run_tests(self.workspace_path)
-
         evidence_refs: list[str] = list(changed_files[:20])
         if commit_sha:
             evidence_refs.append(f"commit:{commit_sha}")
-            current_branch = _git_current_branch(self.workspace_path)
-            evidence_refs.append(f"branch:{current_branch}")
+            evidence_refs.append(f"branch:{_git_current_branch(self.workspace_path)}")
 
         summary_parts: list[str] = [
             f"Changed {len(changed_files)} file(s): "
@@ -284,8 +262,7 @@ class ExecutionEngine:
         ]
         if not is_git:
             summary_parts.append(
-                "WARNING: Workspace is not a git repository — "
-                "changes were not committed."
+                "WARNING: Workspace is not a git repository."
             )
         if commit_sha:
             summary_parts.append(f"Committed as {commit_sha}.")
@@ -293,14 +270,10 @@ class ExecutionEngine:
             f"Tests: exit={test_exit_code}. {test_summary[:500]}"
         )
 
-        return TaskReturn(
-            return_id=return_id,
-            todo_id=job.todo_id,
-            job_id=job.job_id,
-            playbook=job.playbook or "code",
-            queue=job.queue or "core",
-            exit_code=test_exit_code,
-            result_summary=" ".join(summary_parts),
+        result = TaskReturn(
+            return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+            playbook=job.playbook or "code", queue=job.queue or "core",
+            exit_code=test_exit_code, result_summary=" ".join(summary_parts),
             artifacts=evidence_refs,
             diff_ref=(
                 f"commit:{commit_sha}" if commit_sha
@@ -308,6 +281,25 @@ class ExecutionEngine:
             ),
             test_results_ref=f"exit_code={test_exit_code}",
         )
+
+        if self._benchmark_recorder is not None:
+            try:
+                from general_ludd.event_loop.benchmark import record_job_benchmark
+                import asyncio
+                asyncio.create_task(
+                    record_job_benchmark(
+                        self._benchmark_recorder,
+                        model_profile=getattr(job, "model_profile", None),
+                        prompt_profile=getattr(job, "prompt_profile", None),
+                        work_type=job.work_type or "code",
+                        success=test_exit_code == 0,
+                        input_tokens=len(model_output) // 4,
+                    )
+                )
+            except Exception:
+                pass
+
+        return result
 
     def _write_file(self, file_path: str, content: str) -> None:
         full_path = os.path.join(self.workspace_path, file_path)
@@ -317,7 +309,6 @@ class ExecutionEngine:
 
     def _apply_unified_diff(self, diff_text: str) -> list[str]:
         import tempfile
-
         changed: list[str] = []
         try:
             with tempfile.NamedTemporaryFile(
@@ -325,15 +316,13 @@ class ExecutionEngine:
             ) as f:
                 f.write(diff_text)
                 diff_path = f.name
-            result = subprocess.run(
+            subprocess.run(
                 [
                     "patch", "-p1", "-d", self.workspace_path, "-i",
                     diff_path, "--force", "--no-backup-if-mismatch",
                 ],
                 capture_output=True, text=True, timeout=30,
             )
-            if result.returncode != 0:
-                logger.warning("patch failed: %s", result.stderr[:200])
             for line in diff_text.split("\n"):
                 if line.startswith("+++ b/"):
                     p = line[6:].strip()
