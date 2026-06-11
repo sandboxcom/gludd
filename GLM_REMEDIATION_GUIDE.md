@@ -57,6 +57,7 @@
 - **M15**: `secrets/manager.py:219` raises `NotImplementedError` — honest, done.
 - **M3** (auth env raises), **M11** (code CLI not-yet-implemented message), **M4/S16**, **S13** partials: commits exist and lint/mypy don't contradict them, but **no test has run since they were committed**. Treat as "plausible, unproven."
 - G0–G7, S1–S20, F1–F7 code largely exists (e.g. `execution/engine.py`, `tests/integration/test_full_pipeline_e2e.py`) but the entire suite last *ran* before several sessions of changes. **Every one of these must be re-proven by the gate in R2.6, not assumed.**
+- Two more confirmed-false claims found on re-check: **F6** — `config/model_routing.yml` contains **no `fallback_chain` key at all** (claimed "Model failover chain DONE"); SESSION.md's "`config/model_profiles/anthropic_example.yml` created" — the directory contains **only `zai_example.yml`**.
 
 ### 1.5 Blockers carried into this session — and where each one is fixed
 
@@ -172,7 +173,18 @@ Build these BEFORE resuming feature work. Every guardrail keeps all three layers
 - Add a short section "Completion = green gate + evidence", replacing prose-pattern descriptions: a task may be called complete only with `make gate` green, `TASKS.md` evidence, `make test-count` 0 errors. Add: "`make test-failures` previously masked collection errors — if a gate target ever disagrees with `make test`, the FULL `make test` output is the truth, and fixing the gate target is your first task."
 - Document the new targets (`gate`, `collect-check`) in the Key Make Targets section.
 
-**Phase R1 exit gate:** all new guardrail tests pass (`make test-guardrails`), `make qa` green, user told an opencode restart is needed for plugin changes. Each R1 item ticked in `TASKS.md` with evidence.
+### R1.8 Daemon real-boot smoke gate (`make smoke`)
+- The failure class found in this validation — lifespan wiring that raises `TypeError` and is swallowed by the broad `except` — is invisible to in-process tests with mocks. Add `make smoke`: start the REAL daemon (subprocess, SQLite, ephemeral port, no model key needed), wait for readiness, then assert: `/healthz` returns healthy and NOT degraded; `/api/status` answers; the startup log contains zero swallowed-exception warnings; POST a todo and read it back. Stop the daemon. Non-zero exit on any assertion.
+- Wire `smoke` into `gate` (R1.1) and `validate`. Test: a deliberately broken subsystem constructor (monkeypatched) makes `smoke` fail.
+
+### R1.9 VCS-layer enforcement (git hooks — harness-independent)
+- `.git/hooks/` currently has only samples: nothing stops a broken commit made outside opencode. Add `make install-hooks` (called from `make init`): installs a `pre-commit` hook running `make collect-check` and a `pre-push` hook running `make gate`. Hook scripts live in `scripts/githooks/` (committed) and are copied/symlinked in.
+- This is the fourth enforcement layer — it holds even if the model, plugin, or harness changes. Test: a commit attempt with a collection-breaking file is rejected (use a temp clone inside the test).
+
+### R1.10 AGENTS.md front-loaded contract
+- `AGENTS.md` is ~440 lines of prose — the same small-model attention problem as the plugin injection (R1.5). Restructure: the FIRST ~30 lines become a numbered mechanical contract (same 7 rules as R1.5); everything else moves below a "## Rationale and history" divider. Do not delete content — reorder it.
+
+**Phase R1 exit gate:** all new guardrail tests pass (`make test-guardrails`), `make qa` + `make smoke` green, user told an opencode restart is needed for plugin changes. Each R1 item ticked in `TASKS.md` with evidence.
 
 ---
 
@@ -185,6 +197,7 @@ Work top to bottom. TDD. One commit per item. Tick `TASKS.md` with evidence each
 - **R2.3 (M13)** Add the missing `UserConfig` fields (`secrets`, `projects`, `compute_endpoints`, `rules`, `quality_gates`, `queues`) wired to their existing consumers (S3/S6/S8/S12 paths), or delete the unconsumed sections from `config/general-ludd.yml`. No documentation fiction. Test: each retained section round-trips from YAML to its consumer.
 - **R2.4 (M12)** With `UserConfig.queues` real (R2.3), feed real `active_jobs` (count of ACTIVE todos this tick) into the PID snapshot; dispatch consults `pid_outputs` to cap claims. Test: high load output caps per-tick claims.
 - **R2.5 (M10 remainder)** Persist integrity approvals (DB or file), emit an event/todo on detected change. Test: approval survives a new scanner instance.
+- **R2.5a (F6 for real) Multi-provider profiles + failover chain.** `config/model_profiles/` ships only `zai_example.yml`; no Qwen profile exists anywhere in the repo and DeepSeek exists only as a preset in `models/provider_presets.py:67-77`. Add `qwen_coder.yml` (e.g. `qwen3-coder` via DashScope-compatible endpoint) and `deepseek_coder.yml` (DeepSeek API, OpenAI-compatible) profiles with `credential_alias` entries (no inline keys), add `fallback_chain: [zai_coder, deepseek_coder, qwen_coder]` to `config/model_routing.yml`, and implement the gateway retry-on-429/5xx walk down the chain (tenacity is already a dependency). Tests: profile YAMLs load into ModelProfile; mocked 429 on profile 1 → profile 2 used; chain exhausted → explicit failure. This is what actually neutralizes the ZAI-balance blocker long-term.
 - **R2.6 Re-verify every previously claimed item** (G0–G7, S1–S20, F1–F7, M2–M15): for each, run its named proof (the test files listed in `GLM_IMPLEMENTATION_GUIDE.md` per item; the spine proof is `tests/integration/test_full_pipeline_e2e.py`) and record pass output in `TASKS.md`. Items whose proof fails get fixed here, ordered C-items → H-items → M-items. **Special attention** (claims contradicted or untested): S15/M2 (`private_data_dir` attr), S13 contract tests, S12 vault round-trip, F1–F7 lifespan integration (SESSION.md itself admits "Integrate new modules (PRDelivery, ToolCallLoop, BudgetManager, etc.) into daemon lifespan" was never done).
 
 ---
@@ -194,7 +207,11 @@ Work top to bottom. TDD. One commit per item. Tick `TASKS.md` with evidence each
 - **R3.1** Rewrite `SESSION.md` from scratch: real gate numbers, real latest commit (from `make git-log`), per-phase status pointing at `TASKS.md` evidence. Delete every unproven "COMPLETE."
 - **R3.2** Raise `fail_under` in `pyproject.toml` from 10 to (observed coverage − 2). Test: `make test` still passes.
 - **R3.3** Log this incident in `BUGS.md` (entry exists from the validation pass — extend it with what you fixed and which guardrail now prevents it).
-- **R3.4** `make validate` green. Final commit.
+- **R3.4** Makefile hygiene: delete the dev-machine-specific targets that reference `/Users/shawnwilson/tmp/...` (`diag-gunicorn`, `extract-openrouter-fields`, `analyze-models`, `extract-models`) — they fail on any other machine and pollute the allowed-command surface. Keep `db-*`/`audit-messages` only if the opencode DB path is made configurable.
+- **R3.5** `make validate` green (now includes `smoke`). Final commit.
+
+### Out of scope until a git remote exists (note for the operator)
+This repo has **no git remote** (`.git/config` has no `[remote]` section) and no CI. Consequences: F1 (PR delivery) and F3 (GitHub-issue ingestion) can only be verified with mocked `gh`/API calls — done in R2.6 — not exercised for real; and there is no server-side gate against a bad push. When a remote is added: mirror `make validate` in CI (e.g. one GitHub Actions workflow), and re-verify F1/F3 live. Until then, R1.9's git hooks are the backstop.
 
 ---
 
@@ -241,6 +258,9 @@ Phase R1 — guardrails
 [ ] R1.5  system-prompt injection ≤ ~40 mechanical lines; TUI rules moved to skill
 [ ] R1.6  TDD gate sharpened (reference-aware + logged-refactor path), still throws
 [ ] R1.7  AGENTS.md: completion=gate+evidence section, new targets documented
+[ ] R1.8  make smoke: real daemon boot, healthz non-degraded, no swallowed errors
+[ ] R1.9  git pre-commit/pre-push hooks installed via make init
+[ ] R1.10 AGENTS.md front-loaded 30-line contract
 
 Phase R2 — missed work
 [ ] R2.1  M1 ansible events real
@@ -248,13 +268,15 @@ Phase R2 — missed work
 [ ] R2.3  M13 config sections consumed or deleted
 [ ] R2.4  M12 real active_jobs + claim cap
 [ ] R2.5  M10 approvals persisted + change events
+[ ] R2.5a Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6 real)
 [ ] R2.6  every claimed G/S/F/M item re-proven by named test; failures fixed
 
 Phase R3 — honesty
 [ ] R3.1  SESSION.md rewritten from gate output
 [ ] R3.2  fail_under raised to observed−2
 [ ] R3.3  BUGS.md incident extended with fixes
-[ ] R3.4  make validate green; final commit
+[ ] R3.4  Makefile hygiene: dev-machine-specific targets removed
+[ ] R3.5  make validate green (incl. smoke); final commit
 ```
 
 Start at R0.1. Prove every step with a `make` target.
