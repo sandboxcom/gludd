@@ -198,6 +198,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "db_engine": str(getattr(app.state, "_db_engine", None)),
             "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
             "quality_gate": qg,
+            "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
         }
 
     @app.get("/api/deployments")

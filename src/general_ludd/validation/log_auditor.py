@@ -6,10 +6,17 @@ This module focuses on domain-specific audit checks.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass, field
 from typing import Any
 
 _MAX_RETRY_ATTEMPTS = 5
+
+_SECRET_PATTERNS = [
+    re.compile(r"sk-[a-zA-Z0-9]{20,}"),
+    re.compile(r"ghp_[a-zA-Z0-9]{30,}"),
+    re.compile(r"AKIA[0-9A-Z]{16}"),
+]
 
 
 @dataclass
@@ -55,5 +62,17 @@ class LogAuditor:
                     description=f"Todo {entry.get('todo_id', 'unknown')} appears stuck after {attempt} attempts",
                     evidence=f"from={from_status} to={to_status} attempt={attempt}",
                 ))
+
+        payload = entry.get("payload", {})
+        for val in payload.values() if isinstance(payload, dict) else []:
+            if isinstance(val, str):
+                for pat in _SECRET_PATTERNS:
+                    if pat.search(val):
+                        findings.append(AuditFinding(
+                            severity="critical",
+                            category="secret_like_value",
+                            description=f"Payload contains secret-like value matching {pat.pattern}",
+                            evidence=str(entry),
+                        ))
 
         return findings

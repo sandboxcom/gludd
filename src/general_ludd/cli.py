@@ -673,6 +673,7 @@ def main() -> None:
 
 def _cmd_daemon(args: argparse.Namespace) -> None:
     import secrets
+    import signal
     import subprocess
 
     log_level = args.log_level.upper()
@@ -690,7 +691,14 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         print(f"  Pre-shared key (PSK): {psk}")
         print(f"  Clients must send: Authorization: Bearer {psk}\n")
 
-    cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=args.workers)
+    cmd = _build_daemon_start_cmd(host=bind_host, port=args.port)
+    workers_default = args.workers is None
+    if workers_default:
+        from general_ludd.hardware.probe import probe_hardware
+        hw = probe_hardware()
+        cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=hw.gunicorn_workers)
+    else:
+        cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=args.workers)
     cmd_env = _build_daemon_env(
         config_dir=config_dir,
         templates_dir=templates_dir,
@@ -710,7 +718,20 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         close_fds=True,
         env=env,
     )
-    proc.wait()
+
+    def _forward_signal(signum: int, frame: Any) -> None:
+        proc.terminate()
+        proc.wait(timeout=5)
+        sys.exit(128 + signum)
+
+    signal.signal(signal.SIGTERM, _forward_signal)
+    signal.signal(signal.SIGINT, _forward_signal)
+
+    try:
+        proc.wait()
+    except (KeyboardInterrupt, SystemExit):
+        proc.terminate()
+        proc.wait(timeout=5)
     sys.exit(proc.returncode)
 
 
@@ -2569,8 +2590,11 @@ def _build_daemon_env(
 def _build_daemon_start_cmd(
     host: str = "0.0.0.0",
     port: int = 8000,
-    workers: int = 1,
+    workers: int | None = None,
 ) -> list[str]:
+    if workers is None:
+        from general_ludd.hardware.probe import probe_hardware
+        workers = probe_hardware().gunicorn_workers
     return [
         "gunicorn",
         "general_ludd.daemon:create_daemon_app()",

@@ -3,9 +3,6 @@
 Reads config/ratchet.yml and applies pytest.mark.xfail(strict=True)
 to every listed test. A test listed here that starts passing will
 make the suite RED (strict xfail) until its entry is removed.
-
-This replaces the numeric tolerance (≤116 failures = PASS) with an
-explicit, pytest-native, self-enforcing ledger.
 """
 from __future__ import annotations
 

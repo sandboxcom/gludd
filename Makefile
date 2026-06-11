@@ -6,6 +6,8 @@ PYTHON := python3
 UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
+_XDIST_WORKERS := $(shell python3 -c "import os; print(max(1, (os.cpu_count() or 1) // 4))")
+_XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
@@ -172,24 +174,24 @@ typecheck:
 	@$(UV) run mypy src
 
 test:
-	@$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml -v
+	@$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
 
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(UV) run python -m pytest $(TESTFILE) -v; \
+		$(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
 	else \
-		$(UV) run python -m pytest tests/unit/ -v; \
+		$(UV) run python -m pytest tests/unit/ $(_XD) -v; \
 	fi
 
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(UV) run python -m pytest $(TESTFILE) -v
+	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v
 
 test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
 test-failures:
-	@$(UV) run python -m pytest tests/ -q 2>&1 | tee /tmp/gludd-test-output.txt; EXIT=$$?; \
+	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt; EXIT=$$?; \
 	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt; \
 	exit $$EXIT
 
@@ -217,7 +219,7 @@ gate:
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@printf "test " >> .gate-status
-	@$(UV) run python -m pytest tests/ -q 2>&1 > /tmp/gludd-test-gate.txt; EXIT=$$?; \
+	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 > /tmp/gludd-test-gate.txt; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
 		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
 	fi
@@ -229,22 +231,22 @@ gate:
 	@echo "Gate: ALL PASSED"
 
 test-integration:
-	@$(UV) run python -m pytest tests/integration/ -v
+	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
 
 test-e2e:
-	@$(UV) run python -m pytest tests/e2e/ -v
+	@$(UV) run python -m pytest tests/e2e/ $(_XD) -v
 
 test-tui-daemon:
 	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
 
 test-guardrails:
-	@$(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py -v
+	@$(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py $(_XD) -v
 
 test-db:
-	@$(UV) run python -m pytest tests/unit/test_db_models.py -v
+	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
 
 test-scripts:
-	@$(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript -v
+	@$(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript $(_XD) -v
 
 healthcheck:
 	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
@@ -320,7 +322,7 @@ audit-evidence:
 		exit 0; \
 	fi
 	@echo "Running evidence tests..."
-	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) -q 2>&1 || echo "Some evidence tests failed — see above."
+	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) $(_XD) -q 2>&1 || echo "Some evidence tests failed — see above."
 	@echo "=== Evidence Audit Complete ==="
 
 untrack:
@@ -363,7 +365,7 @@ smoke:
 	@echo "=== SMOKE TEST: real daemon boot ==="
 	@PORT=$$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()") && \
 	echo "Using port $$PORT" && \
-	trap 'kill $$PID 2>/dev/null; echo "Daemon stopped (cleanup)"' EXIT && \
+	trap 'kill $$PID 2>/dev/null; sleep 0.3; lsof -ti :$$PORT 2>/dev/null | xargs kill 2>/dev/null; echo "Daemon stopped (cleanup)"' EXIT && \
 	PID=$$(GLUDD_PORT=$$PORT $(UV) run python -m general_ludd.cli daemon --port $$PORT --log-level info > /tmp/gludd-smoke.log 2>&1 & echo $$!) && \
 	echo "Daemon PID: $$PID" && \
 	for i in $$(seq 1 30); do \
@@ -379,7 +381,9 @@ smoke:
 	echo "Todo API OK" && \
 	! grep -i "typeerror\|traceback\|swallowed" /tmp/gludd-smoke.log > /dev/null 2>&1 && \
 	echo "No startup errors in log" && \
-	kill $$PID 2>/dev/null && \
+	kill $$PID 2>/dev/null; \
+	sleep 0.3; \
+	lsof -ti :$$PORT 2>/dev/null | xargs kill 2>/dev/null; \
 	echo "Daemon stopped" && \
 	trap - EXIT && \
 	echo "=== SMOKE: PASSED ==="
@@ -469,7 +473,7 @@ feature-start:
 feature-done:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-done MSG='feature/short-name'"; exit 1; fi
 	@echo "Running full test suite before merge..."
-	@$(UV) run python -m pytest tests/ -q
+	@$(UV) run python -m pytest tests/ $(_XD) -q
 	@git checkout -f master
 	@git merge --no-ff "$(MSG)"
 	@echo "Merged $(MSG) into master"
@@ -487,7 +491,7 @@ test-and-commit:
 	@echo "Running preflight checks..."
 	@$(MAKE) preflight
 	@echo "Running tests before commit..."
-	@$(UV) run python -m pytest tests/ --cov=general_ludd -q
+	@$(UV) run python -m pytest tests/ $(_XD) --cov=general_ludd -q
 	@echo "Preflight passed. Tests passed. Committing..."
 	@git add -A
 	@if [ -n "$(MSG)" ]; then \
@@ -595,7 +599,7 @@ validate: lint ansible-syntax healthcheck
 	@$(UV) run mypy src > /dev/null 2>&1; E=$$?; \
 	ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
 	if [ $$ERRS -le 18 ]; then echo "typecheck: OK ($$ERRS errors, baseline 18)"; else echo "typecheck: FAIL ($$ERRS errors > baseline 18)"; exit 1; fi
-	@$(UV) run python -m pytest tests/ -q 2>&1 > /tmp/gludd-validate.txt; EXIT=$$?; \
+	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 > /tmp/gludd-validate.txt; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi
 	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "smoke: PASS" || (echo "smoke: FAIL" && exit 1)
 	@echo "Full validation passed."

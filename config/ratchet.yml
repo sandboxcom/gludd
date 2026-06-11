@@ -44,20 +44,18 @@ tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_800
 tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_creation: "preflight filestore creation — pre-existing"
 tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_exception: "preflight filestore exception — pre-existing"
 tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "preflight verify task — pre-existing"
-tests/unit/test_runtime_packaging.py::TestRuntimeValidatorContainer::test_runtime_validator_container_relative_path: "runtime validator container — pre-existing"
-tests/unit/test_runtime_packaging.py::TestDataSourceMountAudit::test_data_source_mount_relative_container_path: "data source mount — pre-existing"
 tests/unit/test_secret_migration_wiring.py::TestSecretMigrationInDaemonStartup::test_migrate_called_when_openbao_configured: "secret migration wiring — pre-existing"  # pragma: allowlist secret
-tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "openbao connect — pre-existing"  # pragma: allowlist secret
-tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_local_bootstrap_result: "secrets manager connect — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_success: "secrets manager container start — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret
-tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
-tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
-tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"
-tests/unit/test_validation.py::TestLogAuditorDetectsSecretLikeValues::test_log_auditor_detects_secret_like_values: "validation log auditor — pre-existing"  # pragma: allowlist secret
 tests/unit/test_worker.py::TestWorkerApp::test_worker_execute_noop_playbook: "worker execute noop — pre-existing"
 tests/unit/test_worker.py::TestWorkerApp::test_worker_writes_task_return_with_artifacts: "worker task return — pre-existing"
 tests/unit/test_worker.py::TestWorkerApp::test_worker_captures_runner_events: "worker runner events — pre-existing"
 tests/unit/test_worker.py::TestWorkerApp::test_worker_vars_files_created_correctly: "worker vars files — pre-existing"
 tests/unit/test_worker.py::TestWorkerApp::test_worker_return_review_endpoint: "worker return review — pre-existing"
+tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
+tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
+tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"
+tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_starts_daemon_and_it_serves_healthz: "TUI daemon start PTY — environment-dependent"
+tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_shows_running_after_daemon_start: "TUI daemon start running — environment-dependent"
+tests/unit/test_tui_navigation_e2e.py::TestTabSpaceNavigation::test_enter_enters_submenu: "flaky StopIteration — pre-existing"

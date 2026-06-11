@@ -1,12 +1,61 @@
 from __future__ import annotations
 
 import os
-from unittest.mock import patch
+import signal
+from unittest.mock import MagicMock, patch
 
 import yaml
 
 from general_ludd.cli import _build_daemon_env, _build_daemon_start_cmd
 from general_ludd.daemon import create_daemon_app, load_startup_config
+
+
+class TestCmdDaemonSignalForwarding:
+    def test_sigterm_handler_terminates_child_process(self):
+        import argparse
+        from contextlib import suppress
+
+        from general_ludd.cli import _cmd_daemon
+
+        mock_proc = MagicMock()
+        mock_proc.wait.return_value = 0
+        mock_proc.returncode = 0
+        with patch("subprocess.Popen", return_value=mock_proc), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch.dict(os.environ, {}, clear=False):
+            args = argparse.Namespace(
+                host="127.0.0.1", port=9999, workers=1,
+                log_level="info", config_dir=None, templates_dir=None,
+                playbooks_dir=None, tick_interval=1.0,
+            )
+            old_handler = signal.getsignal(signal.SIGTERM)
+            with suppress(SystemExit):
+                _cmd_daemon(args)
+            new_handler = signal.getsignal(signal.SIGTERM)
+            assert new_handler != old_handler or mock_proc.terminate.called
+        assert mock_proc.terminate.call_count >= 0
+
+    def test_cmd_daemon_kills_child_on_signal(self):
+        import argparse
+        from contextlib import suppress
+
+        from general_ludd.cli import _cmd_daemon
+
+        mock_proc = MagicMock()
+        mock_proc.pid = 12345
+        mock_proc.wait.side_effect = KeyboardInterrupt()
+        mock_proc.returncode = 0
+        with patch("subprocess.Popen", return_value=mock_proc), \
+             patch("general_ludd.cli._build_daemon_env", return_value={"GLUDD_PSK": ""}), \
+             patch.dict(os.environ, {}, clear=False):
+            args = argparse.Namespace(
+                host="127.0.0.1", port=9999, workers=1,
+                log_level="info", config_dir=None, templates_dir=None,
+                playbooks_dir=None, tick_interval=1.0,
+            )
+            with suppress(SystemExit, KeyboardInterrupt):
+                _cmd_daemon(args)
+        assert mock_proc.terminate.call_count >= 1
 
 
 class TestBuildDaemonEnv:

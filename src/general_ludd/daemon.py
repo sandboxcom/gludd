@@ -656,6 +656,9 @@ def create_daemon_app(
     app.state._stats_requests = 0
     app.state._stats_responses = 0
 
+    from general_ludd.hardware.probe import probe_hardware
+    app.state._hardware = probe_hardware()
+
     _psk = os.environ.get("GLUDD_PSK", "")
     app.state._psk = _psk
 

@@ -1151,11 +1151,13 @@ class TUIKeyHandler:
         import subprocess
         import time
 
+        from general_ludd.hardware.probe import probe_hardware
+        hw = probe_hardware()
         cmd = [
             "gunicorn",
             "general_ludd.daemon:create_daemon_app()",
             "--worker-class", "uvicorn_worker.UvicornWorker",
-            "--workers", "1",
+            "--workers", str(hw.gunicorn_workers),
             "--bind", "0.0.0.0:8000",
         ]
         try:

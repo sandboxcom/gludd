@@ -239,26 +239,24 @@ class TestRuntimeValidatorContainer:
         assert any("container" in e for e in result.errors)
 
     def test_runtime_validator_container_relative_path(self):
-        from general_ludd.runtime.validator import RuntimeValidator
+        from pydantic import ValidationError
 
-        profile = RuntimeProfile(
-            runtime_profile_id="container-rel",
-            mode="container",
-            config_path="img:latest",
-            mounts=[
-                DataSourceMount(
-                    mount_id="data",
-                    source_type="bind",
-                    host_path="/host/data",
-                    container_path="relative/path",
-                    required=True,
-                ),
-            ],
-        )
-        validator = RuntimeValidator()
-        result = validator.validate_container(profile)
-        assert result.valid is False
-        assert any("absolute" in e.lower() for e in result.errors)
+        with pytest.raises(ValidationError, match="container_path must be absolute") as exc_info:
+            RuntimeProfile(
+                runtime_profile_id="container-rel",
+                mode="container",
+                config_path="img:latest",
+                mounts=[
+                    DataSourceMount(
+                        mount_id="data",
+                        source_type="bind",
+                        host_path="/host/data",
+                        container_path="relative/path",
+                        required=True,
+                    ),
+                ],
+            )
+        assert "container_path" in str(exc_info.value)
 
     def test_validate_profile_invalid_mode(self):
         from general_ludd.runtime.validator import RuntimeValidator
@@ -303,21 +301,17 @@ class TestDataSourceMountAudit:
         assert vol_result.valid is True
 
     def test_data_source_mount_relative_container_path(self):
-        from general_ludd.runtime.validator import RuntimeValidator
+        from pydantic import ValidationError
 
-        mounts = [
+        with pytest.raises(ValidationError, match="container_path must be absolute") as exc_info:
             DataSourceMount(
                 mount_id="rel-path",
                 source_type="bind",
                 host_path="/host/data",
                 container_path="relative/path",
                 required=True,
-            ),
-        ]
-        validator = RuntimeValidator()
-        results = validator.validate_data_source_mounts(mounts)
-        assert results[0].valid is False
-        assert any("absolute" in e.lower() for e in results[0].errors)
+            )
+        assert "container_path" in str(exc_info.value)
 
     def test_data_source_mount_missing_volume_name(self):
         from general_ludd.runtime.validator import RuntimeValidator
