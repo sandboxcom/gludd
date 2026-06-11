@@ -15,7 +15,7 @@ def parse_skill_md(raw: str, source_path: str = "") -> Skill:
     trigger_patterns: list[str] = []
     tags: list[str] = []
     category = ""
-    model_profile = ""
+    model_profile: str | None = None
     if "---" in raw[:10]:
         match = FRONTMATTER_RE.match(raw)
         if match:
@@ -33,7 +33,7 @@ def parse_skill_md(raw: str, source_path: str = "") -> Skill:
             if isinstance(tags, str):
                 tags = [tags]
             category = frontmatter.get("category", "")
-            model_profile = frontmatter.get("model_profile", "")
+            model_profile = frontmatter.get("model_profile") or None
             body = raw[match.end():]
     return Skill(
         name=name,

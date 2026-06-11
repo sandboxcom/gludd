@@ -90,8 +90,6 @@ tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start
 tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret
 tests/unit/test_selftest.py::TestSelftest::test_container_runtime_prefers_podman: "selftest podman — pre-existing"
 tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_with_frontmatter: "skills parse frontmatter — pre-existing"
-tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_without_frontmatter: "skills parse no frontmatter — pre-existing"
-tests/unit/test_skills.py::TestParseSkillMd::test_parse_skill_md_with_only_name: "skills parse name only — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"
