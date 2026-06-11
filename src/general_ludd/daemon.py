@@ -466,6 +466,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             session_factory=session_factory,
         )
 
+        from general_ludd.observability.recorder import AutoBenchmarkRecorder
+        benchmark_recorder = AutoBenchmarkRecorder(
+            benchmark_repo=BenchmarkRepository(session_factory),
+        )
+        event_loop._benchmark_recorder = benchmark_recorder
+
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
