@@ -25,6 +25,7 @@ class JobSpec(BaseModel):
     artifact_summaries: list[str] = Field(default_factory=list)
     plan_artifact: str | None = None
     prompt_text: str | None = None
+    skill_body: str | None = None
     ansible_roles_path: str | None = None
     templates_dir: str | None = None
 
