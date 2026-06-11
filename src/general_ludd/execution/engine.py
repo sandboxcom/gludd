@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 import re
@@ -149,6 +150,7 @@ class ExecutionEngine:
         self.workspace_path = workspace_path
         self._benchmark_recorder = benchmark_recorder
         self._metrics_collector = metrics_collector
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
 
     def _record_metrics(self, job: JobSpec, success: bool, tokens: int = 0) -> None:
@@ -282,10 +284,8 @@ class ExecutionEngine:
 
         if self._benchmark_recorder is not None:
             try:
-                import asyncio
-
                 from general_ludd.event_loop.benchmark import record_job_benchmark
-                asyncio.create_task(
+                task = asyncio.create_task(
                     record_job_benchmark(
                         self._benchmark_recorder,
                         model_profile=getattr(job, "model_profile", None),
@@ -295,6 +295,8 @@ class ExecutionEngine:
                         input_tokens=len(model_output) // 4,
                     )
                 )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
             except Exception:
                 pass
 
