@@ -41,9 +41,7 @@ tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_search
 tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_search_no_results: "TUI code search no results — pre-existing"
 tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_resolves_aws_creds_from_secrets_resolver: "compute deploy secrets — pre-existing"  # pragma: allowlist secret
 tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_passes_none_resolver_when_not_on_app_state: "compute deploy none resolver — pre-existing"
-tests/unit/test_conversation_wiring.py::TestConversationWiring::test_reviewer_adds_messages_to_conversation: "conversation wiring messages — pre-existing"
 tests/unit/test_conversation_wiring.py::TestConversationWiring::test_reviewer_includes_conversation_context_in_prompt: "conversation wiring context — pre-existing"
-tests/unit/test_conversation_wiring.py::TestConversationWiring::test_new_conversation_created_when_none_exists: "conversation wiring new — pre-existing"
 tests/unit/test_daemon_coverage_lift.py::TestBuildSecretsResolver::test_build_secrets_resolver_openbao_external: "daemon secrets resolver — pre-existing"  # pragma: allowlist secret
 tests/unit/test_daemon_coverage_lift.py::TestBenchmarkRecordWithSession::test_benchmark_record_with_session: "daemon benchmark record — pre-existing"
 tests/unit/test_daemon_coverage_lift.py::TestWorktreeStatusWithMonitor::test_worktree_status_with_monitor: "daemon worktree monitor — pre-existing"
@@ -69,10 +67,6 @@ tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_except
 tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "preflight verify task — pre-existing"
 tests/unit/test_project_isolation_wiring.py::TestProjectLogWired::test_daemon_uses_project_log_adapter: "project isolation log — pre-existing"
 tests/unit/test_prompt_system_wiring.py::TestSelfImprovementTemplateMap::test_self_improvement_mapped: "prompt system self improvement — pre-existing"
-tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_renders_prompt_with_context: "return review render — pre-existing"
-tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_calls_model_gateway: "return review model call — pre-existing"
-tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_validates_task_decision_schema: "return review schema — pre-existing"
-tests/unit/test_return_review.py::TestReturnReviewer::test_return_reviewer_handles_invalid_model_output: "return review invalid output — pre-existing"
 tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_uses_routed_profile: "router wiring profile — pre-existing"
 tests/unit/test_router_wiring.py::TestReviewerUsesRouter::test_reviewer_without_router_uses_default_profile: "router wiring default — pre-existing"
 tests/unit/test_runtime_packaging.py::TestRuntimeValidatorContainer::test_runtime_validator_container_relative_path: "runtime validator container — pre-existing"
