@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+from typing import Any
+
 from pydantic import BaseModel, field_validator
 
 from general_ludd.infra.compute import ComputeProvider, GPUType
@@ -27,7 +29,7 @@ class ProviderInfo(BaseModel):
         return v
 
 
-_BUILTIN_PROVIDERS: list[dict[str, object]] = [
+_BUILTIN_PROVIDERS: list[dict[str, Any]] = [
     {
         "provider": ComputeProvider.AWS,
         "display_name": "Amazon Web Services",
@@ -135,7 +137,7 @@ class ProviderRegistry:
     def __init__(self) -> None:
         self._providers: dict[ComputeProvider, ProviderInfo] = {}
         for entry in _BUILTIN_PROVIDERS:
-            info = ProviderInfo(**entry)  # type: ignore[arg-type]
+            info = ProviderInfo(**entry)
             self._providers[info.provider] = info
 
     def get(self, provider: ComputeProvider) -> ProviderInfo:

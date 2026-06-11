@@ -41,7 +41,7 @@ def _get_templar(loader: Any = None, variables: dict[str, Any] | None = None) ->
     return Templar(loader=loader, variables=variables or {})
 
 
-class _EventCollectorCallback(CallbackBase):  # type: ignore[misc]
+class _EventCollectorCallback(CallbackBase):
     CALLBACK_VERSION = 2.0
     CALLBACK_TYPE = "notification"
     CALLBACK_NAME = "gludd_event_collector"

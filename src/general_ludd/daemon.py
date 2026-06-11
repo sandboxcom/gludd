@@ -16,22 +16,16 @@ import yaml
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
-from general_ludd.agents.context import ContextCompactor  # noqa: F401
-from general_ludd.agents.dispatcher import AgentDispatcher  # noqa: F401
-from general_ludd.agents.token_window import TokenWindowManager  # noqa: F401
-from general_ludd.agents.tool_adapter import AgentToolAdapter  # noqa: F401
+from general_ludd.agents.dispatcher import AgentDispatcher
 from general_ludd.ansible.isolation import ProcessIsolationConfig
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
-from general_ludd.ansible.templating import AnsibleTemplater  # noqa: F401
-from general_ludd.code_intelligence.git_intel import GitIntelligence  # noqa: F401
 from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
-from general_ludd.controllers.budget import RunBudgetGuard  # noqa: F401
-from general_ludd.db.models import AuditEventType  # noqa: F401
-from general_ludd.db.repository import BenchmarkRepository, ProjectRepository, QueueRepository  # noqa: F401
+from general_ludd.controllers.budget import RunBudgetGuard
+from general_ludd.db.repository import BenchmarkRepository
 from general_ludd.db.session import (
     create_async_session_factory,
     ensure_tables,
@@ -39,45 +33,24 @@ from general_ludd.db.session import (
     is_sqlite_url,
     seed_initial_queues,
 )
-from general_ludd.dependency.manager import DependencyManager  # noqa: F401
-from general_ludd.dogfood.runner import DogfoodRunner  # noqa: F401
-from general_ludd.dogfood.validator import DogfoodValidator  # noqa: F401
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.events.bus import EventBus
 from general_ludd.events.hooks import HookSystem
-from general_ludd.events.types import (  # noqa: F401
-    HookTriggeredEvent,
-    PlaybookRemovedEvent,
-    WorkerPingEvent,
-    WorkerPongEvent,
-)
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore as _FS
-from general_ludd.git_automation.repo import GitAutomation  # noqa: F401
-from general_ludd.infra.deployment import DeploymentManager  # noqa: F401
 from general_ludd.infra.utilization import UtilizationTracker
-from general_ludd.logging.project_log import ProjectLogAdapter, ProjectLogFilter  # noqa: F401
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.gateway import ModelProfile
-from general_ludd.models.langgraph_gateway import LangGraphGateway  # noqa: F401
 from general_ludd.models.model_registry import ModelRegistry
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.otel_bridge import OTelBridge
-from general_ludd.observability.recorder import AutoBenchmarkRecorder  # noqa: F401
+from general_ludd.observability.recorder import AutoBenchmarkRecorder
 from general_ludd.projects.manager import seed_from_config
 from general_ludd.projects.workspace import ProjectWorkspace
 from general_ludd.prompts.registry import PromptRegistry
-from general_ludd.quality.gate import QualityGateChecker  # noqa: F401
 from general_ludd.quality.preflight import run_preflight
-from general_ludd.reload.self_improve import SelfImprovementWorkflow  # noqa: F401
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
-from general_ludd.review.evidence_checker import EvidenceChecker  # noqa: F401
-from general_ludd.review.reviewer import ReturnReviewer  # noqa: F401
-from general_ludd.runtime.container import ContainerBuilder  # noqa: F401
-from general_ludd.runtime.pip_bundle import PipBundleBuilder  # noqa: F401
-from general_ludd.runtime.release import ReleaseArtifactValidator  # noqa: F401
-from general_ludd.scoring.engine import PromptScoringEngine  # noqa: F401
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.secrets.config import OpenBaoConfig
 from general_ludd.secrets.env import EnvSecretsManager
@@ -234,7 +207,10 @@ def build_secrets_resolver(
             def __init__(self, base: Any):
                 self._base = base
             def resolve(self, alias_name: str) -> str | None:
-                return self._base.resolve(alias_name)  # type: ignore[no-any-return]
+                result = self._base.resolve(alias_name)
+                if isinstance(result, str):
+                    return result
+                return None
             def for_project(self, project_id: str) -> ProjectSecretsManager:
                 return ProjectSecretsManager(base_manager=self._base, project_id=project_id)
         return _LazyProjectSecrets(base)
@@ -410,7 +386,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         if uc is not None:
             budget_data = getattr(uc, "budget", None) or {}
             if budget_data and any(budget_data.values()):
-                from general_ludd.controllers.budget import RunBudgetGuard
                 budget_guard = RunBudgetGuard(
                     run_budget_usd=float(budget_data.get("daily_limit", float("inf"))),
                     run_timeout_seconds=float(budget_data.get("timeout_seconds", float("inf"))),
@@ -465,7 +440,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             session_factory=session_factory,
         )
 
-        from general_ludd.observability.recorder import AutoBenchmarkRecorder
         benchmark_recorder = AutoBenchmarkRecorder(
             benchmark_repo=BenchmarkRepository(session_factory=session_factory),
         )
@@ -480,7 +454,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._worktree_monitor = wt_monitor
 
-        from general_ludd.agents.dispatcher import AgentDispatcher
         from general_ludd.agents.registry import AgentRegistry
         app.state._agent_dispatcher = AgentDispatcher(
             registry=AgentRegistry(),

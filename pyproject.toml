@@ -95,8 +95,12 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*"]
 ignore_missing_imports = true
+
+[[tool.mypy.overrides]]
+module = "general_ludd.ansible.core_runner"
+disable_error_code = ["misc"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -126,6 +130,7 @@ dev = [
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pre-commit>=4.0.0",
+    "detect-secrets>=1.5.0",
     "types-requests>=2.32.0",
     "types-psutil>=6.0.0",
     "aiosqlite>=0.20.0",

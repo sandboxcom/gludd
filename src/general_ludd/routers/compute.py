@@ -30,8 +30,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     def _get_deployment_manager() -> DeploymentManager:
         cached = getattr(app.state, "_deployment_manager", None)
-        if cached is not None:
-            return cached  # type: ignore[no-any-return]
+        if isinstance(cached, DeploymentManager):
+            return cached
         secrets_resolver = getattr(app.state, "_secrets_resolver", None)
         pdd = os.path.join(
             os.path.expanduser("~/.local/share/general-ludd"),

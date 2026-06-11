@@ -10,13 +10,15 @@ logger = logging.getLogger(__name__)
 
 def _check_otel_available() -> bool:
     try:
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter  # noqa: F401
-        from opentelemetry.sdk.resources import Resource  # noqa: F401
-        from opentelemetry.sdk.trace import TracerProvider  # noqa: F401
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor  # noqa: F401
-        from opentelemetry.trace import Status, StatusCode, get_tracer  # noqa: F401
-
-        return True
+        import importlib.util
+        modules = [
+            "opentelemetry.exporter.otlp.proto.grpc.trace_exporter",
+            "opentelemetry.sdk.resources",
+            "opentelemetry.sdk.trace",
+            "opentelemetry.sdk.trace.export",
+            "opentelemetry.trace",
+        ]
+        return all(importlib.util.find_spec(mod) is not None for mod in modules)
     except ImportError:
         return False
 

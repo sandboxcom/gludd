@@ -55,11 +55,10 @@ class LangGraphGateway:
         self._graph = None
         self._has_langgraph = False
         try:
-            import langgraph.graph  # noqa: F401
-
-            self._has_langgraph = True
+            import importlib.util
+            self._has_langgraph = importlib.util.find_spec("langgraph.graph") is not None
         except ImportError:
-            log.debug("langgraph not installed, using single-shot fallback")
+            self._has_langgraph = False
 
     async def call(
         self,

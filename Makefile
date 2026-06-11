@@ -2,9 +2,9 @@ SEARCH ?= hello world
 MAX_RESULTS ?= 10
 FORMAT ?= text
 SEARCH_SCRIPT := scripts/search.py
-MSG ?= 
-FILES ?= 
-TESTFILE ?= 
+MSG ?=
+FILES ?=
+TESTFILE ?=
 
 PYTHON := python3
 UV := uv
@@ -264,18 +264,16 @@ smoke:
 	echo "=== SMOKE: PASSED ==="
 
 install-hooks:
-	@mkdir -p scripts/githooks
-	@echo '#!/bin/bash' > scripts/githooks/pre-commit
-	@echo 'set -e' >> scripts/githooks/pre-commit
-	@echo 'make collect-check' >> scripts/githooks/pre-commit
-	@chmod +x scripts/githooks/pre-commit
-	@echo '#!/bin/bash' > scripts/githooks/pre-push
-	@echo 'set -e' >> scripts/githooks/pre-push
-	@echo 'make gate' >> scripts/githooks/pre-push
-	@chmod +x scripts/githooks/pre-push
-	@ln -sf ../../scripts/githooks/pre-commit .git/hooks/pre-commit
-	@ln -sf ../../scripts/githooks/pre-push .git/hooks/pre-push
-	@echo "Git hooks installed: pre-commit (collect-check), pre-push (gate)"
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --install-hooks
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --hook-type pre-push
+	@echo "pre-commit hooks installed: secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
+
+scan-secrets-baseline:
+	@$(UV) run detect-secrets scan --all-files --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' 2>/dev/null > .secrets.baseline || true
+	@echo "Secrets baseline created in .secrets.baseline"
+
+scan-secrets:
+	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
 
 git-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
@@ -489,6 +487,3 @@ skill-install:
 bootstrap-skills:
 	@echo "Installing default mattpocock skills..."
 	@$(UV) run $(PYTHON) scripts/bootstrap_skills.py
-
-
-

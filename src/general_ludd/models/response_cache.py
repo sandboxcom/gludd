@@ -5,7 +5,8 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
-from typing import Any
+import os
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -28,16 +29,14 @@ def _make_cache_key(
 
 class ModelResponseCache:
     def __init__(self, cache_dir: str | None = None) -> None:
-        import os
-
-        from diskcache import Cache  # type: ignore[import-untyped]
-
-        resolved = os.path.expanduser(cache_dir or DEFAULT_CACHE_DIR)
-        os.makedirs(resolved, exist_ok=True)
-        self._cache = Cache(resolved)
+        from diskcache import Cache
+        self._cache: Any = Cache(os.path.expanduser(cache_dir or DEFAULT_CACHE_DIR))
 
     def get(self, cache_key: str) -> dict[str, Any] | None:
-        return self._cache.get(cache_key)  # type: ignore[no-any-return]
+        result: Any = self._cache.get(cache_key)
+        if isinstance(result, dict):
+            return cast(dict[str, Any], result)
+        return None
 
     def set(self, cache_key: str, response: dict[str, Any]) -> None:
         self._cache.set(cache_key, response)

@@ -96,11 +96,13 @@ class SecretsManager:
         return self._local_bootstrap_result
 
     def connect(self) -> None:
-        url: str
-        token: str
         if self.is_external_configured():
-            url = self._config.external_url  # type: ignore[assignment]
-            token = self._config.external_token  # type: ignore[assignment]
+            ext_url = self._config.external_url
+            ext_token = self._config.external_token
+            if ext_url is None or ext_token is None:
+                raise RuntimeError("OpenBao external URL/token not configured")
+            url = ext_url
+            token = ext_token
         elif self._local_bootstrap_result is not None:
             url = self._local_bootstrap_result.url
             token = self._local_bootstrap_result.token
