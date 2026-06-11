@@ -5,7 +5,10 @@ from __future__ import annotations
 import os
 from unittest.mock import patch
 
-from general_ludd.db.migrations import get_alembic_config
+import pytest
+from alembic.config import Config as AlembicConfig
+
+from general_ludd.db.migrations import get_alembic_config, stamp_head
 
 
 class TestGetAlembicConfig:
@@ -36,3 +39,23 @@ class TestGetAlembicConfig:
         cfg = get_alembic_config()
         script = cfg.get_main_option("script_location")
         assert script.endswith("alembic") or "/alembic" in script
+
+    def test_url_param_overrides_env_and_default(self):
+        cfg = get_alembic_config("sqlite+aiosqlite:///custom.db")
+        url = cfg.get_main_option("sqlalchemy.url")
+        assert url == "sqlite+aiosqlite:///custom.db"
+
+
+class TestStampHead:
+    def test_stamp_head_calls_alembic_command_stamp(self):
+        cfg = AlembicConfig()
+        with patch("general_ludd.db.migrations.command") as mock_cmd:
+            stamp_head(cfg)
+        mock_cmd.stamp.assert_called_once_with(cfg, "head")
+
+    def test_stamp_head_raises_on_failure(self):
+        cfg = AlembicConfig()
+        with patch("general_ludd.db.migrations.command") as mock_cmd:
+            mock_cmd.stamp.side_effect = RuntimeError("can't connect")
+            with pytest.raises(RuntimeError, match="can't connect"):
+                stamp_head(cfg)

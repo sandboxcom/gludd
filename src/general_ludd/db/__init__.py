@@ -36,9 +36,10 @@ __all__ = (
     "json_dumps",
     "run_wal_pragmas",
     "seed_initial_queues",
+    "stamp_head",
 )
 
-from general_ludd.db.migrations import get_alembic_config
+from general_ludd.db.migrations import get_alembic_config, stamp_head
 from general_ludd.db.models import (
     AuditEventModel,
     AuditEventType,

@@ -369,7 +369,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 stamp_head(alembic_cfg)
                 logger.info("Alembic stamped head on SQLite database")
             except Exception as exc:
-                logger.debug("Alembic stamp skipped: %s", exc)
+                logger.warning("Alembic stamp failed: %s", exc)
 
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
