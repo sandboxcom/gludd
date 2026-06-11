@@ -468,20 +468,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         from general_ludd.observability.recorder import AutoBenchmarkRecorder
         benchmark_recorder = AutoBenchmarkRecorder(
-            benchmark_repo=BenchmarkRepository(session_factory),
+            benchmark_repo=BenchmarkRepository(session_factory=session_factory),
         )
         event_loop._benchmark_recorder = benchmark_recorder
 
-        from general_ludd.worktree.core import WorktreeMonitor
+        from general_ludd.worktree.core import WorktreeMonitor, WorktreeMonitorConfig
+        config_dir = getattr(app.state, "_config_dir", None)
         wt_monitor = WorktreeMonitor(
-            config_dir=getattr(app.state, "_config_dir", None),
+            config=WorktreeMonitorConfig(
+                watch_paths=[config_dir] if config_dir else [],
+            ),
         )
         app.state._worktree_monitor = wt_monitor
 
         from general_ludd.agents.dispatcher import AgentDispatcher
+        from general_ludd.agents.registry import AgentRegistry
         app.state._agent_dispatcher = AgentDispatcher(
-            model_gateway=None,
-            session_factory=session_factory,
+            registry=AgentRegistry(),
         )
 
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
@@ -574,7 +577,7 @@ def _get_or_create_extended_subsystems(
 
     adaptive_router = None
     if session_factory is not None and not hasattr(app.state, "_adaptive_router"):
-        benchmark_repo = BenchmarkRepository(session_factory)
+        benchmark_repo = BenchmarkRepository(session_factory=session_factory)
         quantization_map: dict[str, tuple[str, float]] = {}
         tracker = getattr(app.state, "_quantization_tracker", None)
         if tracker is not None:

@@ -262,73 +262,94 @@ class VariableNamespaceRepository:
 
 
 class BenchmarkRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(
+        self,
+        session: AsyncSession | None = None,
+        session_factory: object | None = None,
+    ) -> None:
         self._session = session
+        self._session_factory = session_factory
+
+    async def _execute_with_session(self, fn) -> Any:
+        if self._session_factory is not None:
+            async with self._session_factory() as session:  # type: ignore[call-arg]
+                return await fn(session)
+        if self._session is not None:
+            return await fn(self._session)
+        raise RuntimeError("BenchmarkRepository: no session or session_factory")
 
     async def record_result(self, data: dict[str, Any]) -> BenchmarkResultModel:
-        row = BenchmarkResultModel(**data)
-        self._session.add(row)
-        await self._session.flush()
-        return row
+        async def _do(session: AsyncSession) -> BenchmarkResultModel:
+            row = BenchmarkResultModel(**data)
+            session.add(row)
+            await session.flush()
+            return row
+        return await self._execute_with_session(_do)
 
     async def get_aggregate_scores(self, task_type: str | None = None) -> list[dict[str, Any]]:
-        from sqlalchemy import func
-        stmt = (
-            select(
-                BenchmarkResultModel.prompt_profile_id,
-                BenchmarkResultModel.model_profile_id,
-                BenchmarkResultModel.task_type,
-                func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
-                func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
-                func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
-                func.avg(BenchmarkResultModel.token_efficiency_score).label("avg_efficiency"),
-                func.count().label("sample_count"),
+        async def _do(session: AsyncSession) -> list[dict[str, Any]]:
+            from sqlalchemy import func
+            stmt = (
+                select(
+                    BenchmarkResultModel.prompt_profile_id,
+                    BenchmarkResultModel.model_profile_id,
+                    BenchmarkResultModel.task_type,
+                    func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
+                    func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
+                    func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
+                    func.avg(BenchmarkResultModel.token_efficiency_score).label("avg_efficiency"),
+                    func.count().label("sample_count"),
+                )
+                .group_by(
+                    BenchmarkResultModel.prompt_profile_id,
+                    BenchmarkResultModel.model_profile_id,
+                    BenchmarkResultModel.task_type,
+                )
             )
-            .group_by(
-                BenchmarkResultModel.prompt_profile_id,
-                BenchmarkResultModel.model_profile_id,
-                BenchmarkResultModel.task_type,
-            )
-        )
-        if task_type is not None:
-            stmt = stmt.where(BenchmarkResultModel.task_type == task_type)
-        result = await self._session.execute(stmt)
-        rows = result.all()
-        return [
-            {
-                "prompt_profile_id": r.prompt_profile_id,
-                "model_profile_id": r.model_profile_id,
-                "task_type": r.task_type,
-                "avg_completion": r.avg_completion,
-                "avg_quality": r.avg_quality,
-                "avg_instruction": r.avg_instruction,
-                "avg_efficiency": r.avg_efficiency,
-                "sample_count": r.sample_count,
-            }
-            for r in rows
-        ]
+            if task_type is not None:
+                stmt = stmt.where(BenchmarkResultModel.task_type == task_type)
+            result = await session.execute(stmt)
+            rows = result.all()
+            return [
+                {
+                    "prompt_profile_id": r.prompt_profile_id,
+                    "model_profile_id": r.model_profile_id,
+                    "task_type": r.task_type,
+                    "avg_completion": r.avg_completion,
+                    "avg_quality": r.avg_quality,
+                    "avg_instruction": r.avg_instruction,
+                    "avg_efficiency": r.avg_efficiency,
+                    "sample_count": r.sample_count,
+                }
+                for r in rows
+            ]
+        return await self._execute_with_session(_do)
 
     async def get_best_for_task(self, task_type: str, min_samples: int = 3) -> list[dict[str, Any]]:
         scores = await self.get_aggregate_scores(task_type=task_type)
         return [s for s in scores if s["sample_count"] >= min_samples]
 
     async def get_model_scores(self, model_profile_id: str) -> list[BenchmarkResultModel]:
-        stmt = (
-            select(BenchmarkResultModel)
-            .where(BenchmarkResultModel.model_profile_id == model_profile_id)
-            .order_by(BenchmarkResultModel.created_at.desc())
-        )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
+            stmt = (
+                select(BenchmarkResultModel)
+                .where(BenchmarkResultModel.model_profile_id == model_profile_id)
+                .order_by(BenchmarkResultModel.created_at.desc())
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        return await self._execute_with_session(_do)
 
     async def list_recent(self, limit: int = 50) -> list[BenchmarkResultModel]:
-        stmt = (
-            select(BenchmarkResultModel)
-            .order_by(BenchmarkResultModel.created_at.desc())
-            .limit(limit)
-        )
-        result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        async def _do(session: AsyncSession) -> list[BenchmarkResultModel]:
+            stmt = (
+                select(BenchmarkResultModel)
+                .order_by(BenchmarkResultModel.created_at.desc())
+                .limit(limit)
+            )
+            result = await session.execute(stmt)
+            return list(result.scalars().all())
+        return await self._execute_with_session(_do)
 
 
 class PromptProfileRepository:
