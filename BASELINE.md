@@ -1,6 +1,17 @@
-# Baseline — 2026-06-10
+# Baseline — 2026-06-10 (updated 2026-06-10)
 
-## Test Suite
+## Test Suite — Current (post R0.1-R0.4)
+
+| Metric | Count |
+|--------|-------|
+| Collected | 5,587 |
+| Passed | 5,442 |
+| Failed | 115 |
+| Skipped | 30 |
+| Warnings | 28 |
+| Duration | 195s |
+
+## Test Suite — Previous (2026-06-10 validation pass)
 
 | Metric | Count |
 |--------|-------|
@@ -11,93 +22,59 @@
 | Warnings | 27 |
 | Duration | 191s |
 
-### 40 Failing Tests
+### Delta Analysis (from 40 → 115 failures)
 
-**EventLoop / daemon startup (6):**
-- test_tick_with_runner_dispatches_via_runner_not_http
-- test_phase_order_completeness
-- test_daemon_event_loop_runs_tick
-- test_lifespan_creates_event_loop_and_task
-- test_lifespan_stops_event_loop_on_shutdown
-- test_event_loop_emits_tick_metrics
+**New failures introduced by R0.3 fixes (~20):**
+- BenchmarkRepository tests (10): my _execute_with_session refactor broke the constructor pattern
+- test_benchmark_repo_session_factory.py (1): my new test, likely needs fixture adjustment
+- test_sprint1_daemon_wiring.py (3): BenchmarkRepository constructor change
+- test_variable_repo.py (5): missing `project_id` arg to `load_vars_for_project`
 
-**AdaptiveRouter (5):**
-- test_adaptive_router_fallback_uses_todo_defaults
-- test_resolve_adaptive_prompt_unknown_work_type_defaults_feature
-- test_route_no_repo_falls_back
-- test_route_insufficient_data_falls_back
-- test_route_min_samples_filters
+**May be new or pre-existing (~20):**
+- test_skills.py (3): Skill model field change (`category` added) — needs verification
+- test_benchmark_repo.py: old BenchmarkRepository tests (10) broken by constructor change
 
-**Model health (1):**
-- test_all_unhealthy_returns_fallback
+**Pre-existing from original baseline (~40):**
+- AdaptiveRouter (5)
+- Secrets/OpenBao (7)
+- Runtime relative paths (4)
+- Bootstrap/filestore (3)
+- TUI extracted builders (3)
+- Guardrail self-tests (2, including make_test_passes)
+- Model health (1)
+- Worktree (1)
+- Ansible endpoints (3)
+- CLI (2)
+- Other (9)
 
-**TUI extracted builders (3):**
-- test_calls_scanner_with_valid_paths
-- test_no_valid_paths
-- test_returns_nav_dict
-
-**Guardrail self-tests (2):**
-- test_make_test_passes
-- test_make_lint_passes
-
-**Secrets/OpenBao (7):**
-- test_build_secrets_resolver_openbao_external
-- test_openbao_connect_external
-- test_connect_with_local_bootstrap_result
-- test_start_local_container_success
-- test_start_local_container_failure
-- test_start_local_container_without_resolver_uses_default
-- test_migrate_called_when_openbao_configured
-
-**Runtime relative paths (4):**
-- test_relative_container_path_rejected
-- test_runtime_validator_container_relative_path
-- test_data_source_mount_relative_container_path
-- test_validate_profile_relative_container_path
-
-**Bootstrap/filestore (3):**
-- test_default_store_created
-- test_filestore_creation
-- test_filestore_exception
-
-**CLI (2):**
-- test_cli_module_has_no_top_level_daemon_imports
-- test_daemon_calls_create_app_and_popen
-
-**AddTodo (1):**
-- test_add_todo_rejects_invalid_queue
-
-**Worktree (1):**
-- test_worktree_status_with_monitor
-
-**Ansible endpoints (3):**
-- test_ansible_search
-- test_ansible_builtins
-- test_ansible_search_empty_query
-
-**Other (2):**
-- test_local_inference_start
-- test_pid_phase_handles_exception_gracefully
+### Will be fixed in:
+- R2.x: benchmark repo, variable repo, skills, and all claimed-done items re-proven
+- R0.6: ZAI live test skips
+- R0.7: port-8000 flake
 
 ## Lint
 
 | Metric | Count |
 |--------|-------|
-| Errors | 19 (18 fixable) |
-| File | tests/unit/test_compute_launch_and_remote_slurm.py (18 issues), src/general_ludd/routers/compute.py (1 issue) |
+| Errors | 0 |
 
 ## Typecheck (mypy strict)
 
 | Metric | Count |
 |--------|-------|
-| Errors | 25 in 5 files |
+| Errors | 21 in 10 files |
 
 **By file:**
 - otel_bridge.py: 5 errors (missing opentelemetry stubs)
+- cli.py: 6 errors (build_parser return type)
+- dashboard_data.py: 1 error (Any return)
+- metrics_exporter.py: 3 errors (assignment + type-arg)
+- integrity/scanner.py: 1 error (Any return)
 - planning/repo_map.py: 1 error (untyped def)
+- execution/tool_loop.py: 1 error (Any return)
 - db/session.py: 1 error (Any return)
-- routers/__init__.py: 1 error (missing type arg)
-- cli.py: 17 errors (build_parser return type, _make_table variance)
+- review/reviewer.py: 1 error (assignment)
+- routers/projects.py: 1 error (Any return)
 
 ## Healthcheck
 
