@@ -49,6 +49,9 @@ def _todo_to_dict(todo: Any) -> dict[str, Any]:
     }
 
 
+_PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, Any]:
@@ -65,7 +68,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "title": req.title,
             "description": req.description,
             "queue": req.queue,
-            "priority": req.priority,
+            "priority": _PRIORITY_MAP.get(req.priority, 1),
             "work_type": req.work_type,
             "status": "queued",
             "project_id": req.project_id,
@@ -162,13 +165,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 if f.endswith(".yml") or f.endswith(".yaml"):
                     config_paths.append(os.path.join(config_dir, f))
 
-        store = FileStore()
-        boot = BinaryBootstrapper(store=store)
-        bare_binaries = [
-            {"name": b["binary_name"], "version": b.get("version", "?")}
-            for b in boot.list_binaries_with_versions()
-        ]
-        known_versions = boot.get_known_versions()
+        bare_binaries: list[dict[str, Any]] = []
+        known_versions: dict[str, str] = {}
+        filestore_root = ""
+        try:
+            store = FileStore()
+            filestore_root = store.root_path
+            boot = BinaryBootstrapper(store=store)
+            bare_binaries = [
+                {"name": b["binary_name"], "version": b.get("version", "?")}
+                for b in boot.list_binaries_with_versions()
+            ]
+            known_versions = boot.get_known_versions()
+        except Exception:
+            pass
 
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
@@ -182,7 +192,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "tick_metrics": elapsed,
             "config_dir": config_dir,
             "config_files": config_paths,
-            "filestore_root": store.root_path,
+            "filestore_root": filestore_root,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
             "db_engine": str(getattr(app.state, "_db_engine", None)),

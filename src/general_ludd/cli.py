@@ -2571,8 +2571,7 @@ def _build_daemon_env(
         env["GLUDD_TICK_INTERVAL"] = str(tick_interval)
     if log_level != "info":
         env["GLUDD_LOG_LEVEL"] = log_level
-    if psk:
-        env["GLUDD_PSK"] = psk
+    env["GLUDD_PSK"] = psk
     return env
 
 

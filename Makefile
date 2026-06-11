@@ -324,6 +324,7 @@ smoke:
 	@echo "=== SMOKE TEST: real daemon boot ==="
 	@PORT=$$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()") && \
 	echo "Using port $$PORT" && \
+	trap 'kill $$PID 2>/dev/null; echo "Daemon stopped (cleanup)"' EXIT && \
 	PID=$$(GLUDD_PORT=$$PORT $(UV) run python -m general_ludd.cli daemon --port $$PORT --log-level info > /tmp/gludd-smoke.log 2>&1 & echo $$!) && \
 	echo "Daemon PID: $$PID" && \
 	for i in $$(seq 1 30); do \
@@ -341,6 +342,7 @@ smoke:
 	echo "No startup errors in log" && \
 	kill $$PID 2>/dev/null && \
 	echo "Daemon stopped" && \
+	trap - EXIT && \
 	echo "=== SMOKE: PASSED ==="
 
 install-hooks:

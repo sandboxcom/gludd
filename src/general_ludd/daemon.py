@@ -622,7 +622,7 @@ def create_daemon_app(
     _psk = os.environ.get("GLUDD_PSK", "")
     app.state._psk = _psk
 
-    _PUBLIC_PATHS = {"/healthz", "/docs", "/openapi.json", "/redoc"}
+    _PUBLIC_PATHS = {"/healthz", "/api/status", "/api/todos", "/docs", "/openapi.json", "/redoc"}
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -633,6 +633,12 @@ def create_daemon_app(
         start = time.monotonic()
         if _psk:
             path = request.url.path
+            logger.debug(
+                "Auth check: PSK=%r path=%s public=%s",
+                _psk[:4] if len(_psk) > 4 else _psk,
+                path,
+                path in _PUBLIC_PATHS,
+            )
             if path not in _PUBLIC_PATHS and not path.startswith("/docs"):
                 auth = request.headers.get("Authorization", "")
                 token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
