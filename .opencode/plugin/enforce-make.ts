@@ -213,6 +213,9 @@ const STOP_SIGNAL_WORDS = [
   "session.md update",
   "updating session",
   "session state",
+  "items done",
+  "items complete",
+  "continuing with remaining",
 ]
 
 const RESUME_COMMAND = [
@@ -280,6 +283,9 @@ function detectStopPattern(responseText: string): boolean {
   if (boldSummaryLine && commitDescriptionCount >= 1) return true
   if (boldSummaryLine && coverageLine) return true
   if (boldSummaryLine && bulletListCount >= 2) return true
+  const hasDoneCount = /\d+\s+(items|tasks|things).*(done|complete)/i.test(lower)
+  const hasRemainingCount = /(\d+|several|many).*(remaining|left|pending|still)/i.test(lower)
+  if (hasDoneCount && hasRemainingCount) return true
   return false
 }
 
