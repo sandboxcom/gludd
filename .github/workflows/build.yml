@@ -3,6 +3,8 @@ name: Build and Release
 on:
   push:
     branches: [master]
+  pull_request:
+    branches: [master]
   workflow_dispatch:
 
 permissions:
@@ -17,8 +19,29 @@ jobs:
       - id: ver
         run: echo "version=v0.1.0-alpha-$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
 
-  linux:
+  gate:
     needs: version
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.11", "3.12"]
+    steps:
+      # actions/checkout@v4.1.7
+      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
+      # astral-sh/setup-uv@v5
+      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
+      - name: Gate
+        run: |
+          uv sync --python ${{ matrix.python-version }}
+          make lint typecheck test-count test smoke
+        env:
+          GLUDD_PSK: ""
+
+  linux:
+    needs: [version, gate]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -27,6 +50,8 @@ jobs:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - name: Inject version
+        run: sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
       - name: Build executable
         run: |
           uv sync
@@ -50,7 +75,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
 
   macos:
-    needs: version
+    needs: [version, gate]
     runs-on: macos-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -59,6 +84,8 @@ jobs:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - name: Inject version
+        run: sed -i "" "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
       - name: Build executable
         run: |
           uv sync
@@ -82,7 +109,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
 
   windows:
-    needs: version
+    needs: [version, gate]
     runs-on: windows-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -91,6 +118,10 @@ jobs:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - name: Inject version
+        shell: pwsh
+        run: |
+          (Get-Content src/general_ludd/__init__.py) -replace '__version__ = ".*"', "__version__ = ""$env:VERSION""" | Set-Content src/general_ludd/__init__.py
       - name: Build executable
         run: |
           uv sync
@@ -114,7 +145,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
 
   termux:
-    needs: version
+    needs: [version, gate]
     runs-on: ubuntu-24.04-arm
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -123,6 +154,8 @@ jobs:
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
       # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - name: Inject version
+        run: sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
       - name: Build executable
         run: |
           uv sync
@@ -146,7 +179,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
 
   release:
-    needs: [version, linux, macos, windows, termux]
+    needs: [version, gate, linux, macos, windows, termux]
     runs-on: ubuntu-latest
     env:
       VERSION: ${{ needs.version.outputs.version }}
