@@ -1,13 +1,6 @@
 """Prometheus metrics exporter for General Ludd Agent.
 
-Exports counters, gauges, and histograms for:
-- Jobs dispatched/completed/failed per work_type
-- Model calls, tokens, costs
-- Event loop tick timing
-- HTTP request latencies
-- Todo queue depths
-
-Also provides log correlation with trace/span IDs for distributed tracing.
+Uses the prometheus-client library for all metric types and exposition.
 """
 
 from __future__ import annotations
@@ -17,101 +10,107 @@ import time
 import uuid as _uuid
 from typing import Any
 
+from prometheus_client import CollectorRegistry, Counter, Gauge, Histogram
+from prometheus_client.exposition import generate_latest
+
 logger = logging.getLogger(__name__)
+
+_REGISTRY = CollectorRegistry(auto_describe=False)
 
 
 class MetricsExporter:
-    def __init__(self) -> None:
-        self._counters: dict[str, dict[str, int]] = {}
-        self._gauges: dict[str, float] = {}
-        self._histograms: dict[str, list[float]] = {}
-        self._labels: dict[str, dict[str, str]] = {}
+    def __init__(self, registry: CollectorRegistry | None = None) -> None:
+        self._registry = registry or _REGISTRY
+        self._counters: dict[str, Counter] = {}
+        self._gauges: dict[str, Gauge] = {}
+        self._histograms: dict[str, Histogram] = {}
         self._started_at: float = time.monotonic()
 
+        self._uptime = Gauge(
+            "gludd_uptime_seconds", "Process uptime in seconds",
+            registry=self._registry,
+        )
+
     def counter_inc(self, name: str, labels: dict[str, str] | None = None, value: int = 1) -> None:
-        key = self._key(name, labels)
-        if name not in self._counters:
-            self._counters[name] = {}
-        self._counters[name][key] = self._counters[name].get(key, 0) + value
+        counter = self._counters.get(name)
+        if counter is None:
+            label_keys = sorted(labels.keys()) if labels else []
+            counter = Counter(name, name, labelnames=label_keys, registry=self._registry)
+            self._counters[name] = counter
+        if labels:
+            counter.labels(**labels).inc(value)
+        else:
+            counter.inc(value)
 
     def gauge_set(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
-        key = self._key(name, labels)
-        self._gauges[key] = value
+        gauge = self._gauges.get(name)
+        if gauge is None:
+            label_keys = sorted(labels.keys()) if labels else []
+            gauge = Gauge(name, name, labelnames=label_keys, registry=self._registry)
+            self._gauges[name] = gauge
+        if labels:
+            gauge.labels(**labels).set(value)
+        else:
+            gauge.set(value)
 
     def histogram_observe(self, name: str, value: float, labels: dict[str, str] | None = None) -> None:
-        self._key(name, labels)
-        if name not in self._histograms:
-            self._histograms[name] = []
-        self._histograms[name].append(value)
-        if len(self._histograms[name]) > 10000:
-            self._histograms[name] = self._histograms[name][-5000:]
+        hist = self._histograms.get(name)
+        if hist is None:
+            label_keys = sorted(labels.keys()) if labels else []
+            hist = Histogram(name, name, labelnames=label_keys, registry=self._registry)
+            self._histograms[name] = hist
+        if labels:
+            hist.labels(**labels).observe(value)
+        else:
+            hist.observe(value)
 
-    def _key(self, name: str, labels: dict[str, str] | None) -> str:
-        if not labels:
-            return name
-        parts = [f'{k}="{v}"' for k, v in sorted(labels.items())]
-        return f'{name}{{{",".join(parts)}}}'
+    def render_prometheus(self) -> str:
+        self._uptime.set(time.monotonic() - self._started_at)
+        return generate_latest(self._registry).decode()
+
+    def get_json(self) -> dict[str, Any]:
+        self._uptime.set(time.monotonic() - self._started_at)
+        samples: dict[str, list[dict[str, Any]]] = {}
+        for metric in self._registry.collect():
+            metric_samples: list[dict[str, Any]] = []
+            for s in metric.samples:
+                metric_samples.append({
+                    "name": s.name,
+                    "labels": dict(s.labels),
+                    "value": s.value,
+                })
+            if metric_samples:
+                samples[metric.name] = metric_samples
+        return {
+            "metrics": samples,
+            "uptime_seconds": time.monotonic() - self._started_at,
+        }
 
     def get_counters(self) -> dict[str, int]:
         result: dict[str, int] = {}
-        for counters in self._counters.values():
-            result.update(counters)
+        for name, counter in self._counters.items():
+            for sample in counter.collect():
+                for s in sample.samples:
+                    if s.labels:
+                        label_parts = sorted(s.labels.items())
+                        key = f"{name}_" + "_".join(f"{k}={v}" for k, v in label_parts)
+                    else:
+                        key = name
+                    result[key] = int(s.value)
         return result
 
     def get_gauges(self) -> dict[str, float]:
-        return dict(self._gauges)
-
-    def get_histogram_summary(self, name: str) -> dict[str, float] | None:
-        if name not in self._histograms:
-            return None
-        values = self._histograms[name]
-        if not values:
-            return None
-        sorted_vals = sorted(values)
-        return {
-            "count": len(values),
-            "sum": sum(values),
-            "min": sorted_vals[0],
-            "max": sorted_vals[-1],
-            "p50": sorted_vals[len(values) // 2],
-            "p95": sorted_vals[int(len(values) * 0.95)],
-            "p99": sorted_vals[int(len(values) * 0.99)],
-        }
-
-    def render_prometheus(self) -> str:
-        lines: list[str] = []
-        for name, counters in self._counters.items():
-            lines.append(f"# HELP {name} Counter")
-            lines.append(f"# TYPE {name} counter")
-            for key, val in counters.items():
-                lines.append(f"{key} {val}")
-        for key, val in self._gauges.items():
-            base = key.split("{")[0] if "{" in key else key
-            lines.append(f"# HELP {base} Gauge")
-            lines.append(f"# TYPE {base} gauge")
-            lines.append(f"{key} {val}")
-        for name in self._histograms:
-            summary = self.get_histogram_summary(name)
-            if summary:
-                lines.append(f"# HELP {name}_count Histogram")
-                lines.append(f"# TYPE {name}_count histogram")
-                lines.append(f'{name}_count{{}} {summary["count"]}')
-                lines.append(f'{name}_sum{{}} {summary["sum"]}')
-        lines.append("# HELP gludd_uptime_seconds Uptime")
-        lines.append("# TYPE gludd_uptime_seconds gauge")
-        lines.append(f"gludd_uptime_seconds {time.monotonic() - self._started_at}")
-        return "\n".join(lines) + "\n"
-
-    def get_json(self) -> dict[str, Any]:
-        return {
-            "counters": self.get_counters(),
-            "gauges": self.get_gauges(),
-            "histograms": {
-                name: self.get_histogram_summary(name)
-                for name in self._histograms
-            },
-            "uptime_seconds": time.monotonic() - self._started_at,
-        }
+        result: dict[str, float] = {}
+        for name, gauge in self._gauges.items():
+            for sample in gauge.collect():
+                for s in sample.samples:
+                    if s.labels:
+                        label_parts = sorted(s.labels.items())
+                        key = f"{name}_" + "_".join(f"{k}={v}" for k, v in label_parts)
+                    else:
+                        key = name
+                    result[key] = float(s.value)
+        return result
 
 
 _metrics_exporter: MetricsExporter | None = None

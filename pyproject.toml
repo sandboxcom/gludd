@@ -102,6 +102,10 @@ ignore_missing_imports = true
 module = "general_ludd.ansible.core_runner"
 disable_error_code = ["misc"]
 
+[[tool.mypy.overrides]]
+module = "general_ludd.observability.metrics_exporter"
+disable_error_code = ["type-arg"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["src"]

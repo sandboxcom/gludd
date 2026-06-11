@@ -1,17 +1,13 @@
-"""Log auditor — inspects log entries for anomalies and policy violations."""
+"""Log auditor — inspects log entries for anomalies and policy violations.
+
+Secret detection is handled by detect-secrets in pre-commit/CI.
+This module focuses on domain-specific audit checks.
+"""
 
 from __future__ import annotations
 
-import re
 from dataclasses import dataclass, field
 from typing import Any
-
-_SECRET_PATTERNS = [
-    re.compile(r"(?i)(?:api_key|secret|token|password|private_key)\s*[:=]\s*['\"]?[\w\-]{16,}['\"]?"),
-    re.compile(r"(?i)sk-[a-zA-Z0-9]{20,}"),
-    re.compile(r"(?i)ghp_[a-zA-Z0-9]{20,}"),
-    re.compile(r"(?i)AKIA[0-9A-Z]{16}"),
-]
 
 _MAX_RETRY_ATTEMPTS = 5
 
@@ -47,18 +43,6 @@ class LogAuditor:
                 description=f"Log entry missing correlation_id: {entry.get('event', 'unknown')}",
                 evidence=str(entry),
             ))
-
-        entry_str = str(entry)
-        for pattern in _SECRET_PATTERNS:
-            match = pattern.search(entry_str)
-            if match:
-                findings.append(AuditFinding(
-                    severity="critical",
-                    category="secret_like_value",
-                    description="Potential secret or credential detected in log entry",
-                    evidence=match.group(0)[:20] + "...",
-                ))
-                break
 
         attempt = entry.get("attempt", 0)
         if isinstance(attempt, int) and attempt >= _MAX_RETRY_ATTEMPTS:
