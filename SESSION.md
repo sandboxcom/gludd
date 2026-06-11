@@ -5,45 +5,47 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-11 (R2 remediation session complete)
+- 2026-06-11 (GLM_REMEDIATION_GUIDE_2.md — V0-V2.1 completed)
 
-## Current Gate Status
+## Current Gate Status (2026-06-11)
 - **Lint**: 0 errors
-- **Typecheck**: 21 errors in 10 files (baseline: 25)
-- **Collect**: 0 errors, 5,631 collected
-- **Tests**: 5,460 passed, 116 failed, 30 skipped
-- **Latest commit**: 3ef7eb6 — R2.5a F6 failover groundwork
+- **Typecheck**: 18 errors in 9 files (ratchet baseline: 18)
+- **Collect**: 0 errors, 5,667 collected
+- **Tests**: 5,544 passed, 0 failed, 30 skipped, 93 strict-xfailed
+- **Smoke**: PASS (trap cleanup on failure)
+- **Latest commit**: 506ed44 — V2.1+V1.8 (gateway executor + guardrail de-recurse)
 
-## Phase R0 — Restore Build: COMPLETE
-All R0.x items done (skills import, lint, daemon wiring, typecheck, baseline, ZAI skip, ephemeral port).
+## Phase V0 — Honest Green Gate: COMPLETE
+- V0.1: 42 failures fixed (b09e4ce)
+- V0.2: Smoke green + trap cleanup (60cdb4d)
+- V0.3: Truth targets fixed — AND logic, freshness, epoch (bd87fa5)
+- V0.4: Strict xfail ratchet — 93 xfailed, tolerances deleted (237123f)
 
-## Phase R1 — Guardrails: COMPLETE
-All R1.x items done including R1.3/R1.5/R1.6 (fixed in 6fc53f1). Gate now baseline-aware (typecheck ≤25, test ≤116). `printf` fix for `.gate-status` format.
+## Phase V1 — Guardrails Round 2: COMPLETE
+- V1.2: Stop-pattern sharpening + ratchet state check (2c9e33c)
+- V1.2b: Anti-stop fuzz test — auto-parses BUGS.md, variant generation (a1c1185)
+- V1.3: Smoke wired into gate + validate (306512e)
+- V1.4: make init installs pre-commit hooks (a7e4ac0)
+- V1.5: status-snapshot target (fe66e7f)
+- V1.6: audit-evidence target (fe66e7f)
+- V1.7: CI gate job with Python 3.11/3.12 matrix, version injection (f9e220f)
+- V1.8: De-recurse guardrail self-test (b41684a)
 
-## Phase R2 — Missed Work: COMPLETE
-- **R2.1 (M1)**: Ansible callback plugin registered — _EventCollectorCallback collects real events + run stats from PlaybookExecutor. 7 tests. Commits: db4b2f9.
-- **R2.2 (M6)**: Playbook refresh also refreshes EventLoop's runner. 4 tests. Commit: eecc400.
-- **R2.3 (M13)**: 11 dead config sections removed from shipped general-ludd.yml. 3 tests. Commit: 8fd2e0d.
-- **R2.4 (M12)**: queues on UserConfig, count_active on TodoRepository, pid_outputs cap dispatch. 6 tests. Commit: 97c0f9e.
-- **R2.5 (M10)**: Integrity scanner sign/verify tested — hardcoded key already fixed. 6 tests. Commit: 5b511c0.
-- **R2.5a (F6)**: DeepSeek + Qwen model profiles created, fallback_chain on ModelRoutingConfig. 6 tests. Commit: 3ef7eb6.
-- **R2.6**: All M1/M6/M13/M12/M10/F6 items re-proven by test. `make gate` ALL PASSED.
+## Phase V2 — In Progress
+- V2.1: H5 gateway-backed executor wired in daemon lifespan (506ed44)
+- V2.4: SESSION.md corrections (this update)
+- V2.5: dist/sbom-test.json untracked, make untrack target (b41684a)
+- V2.2, V2.3, V2.6: pending
 
-## Phase R3 — Honesty: COMPLETE
-- **R3.1**: SESSION.md rewritten from gate output. ✓
-- **R3.2**: fail_under raised to 70. ✓
-- **R3.3**: BUGS.md incidents logged. ✓
-- **R3.4**: Makefile hygiene. ✓
-- **R3.5**: `make validate` green (lint 0, ansible 29 OK, healthcheck OK, typecheck 21≤25, test 116≤116). ✓
+## Known Gaps
+- 93 pre-existing test failures tracked in config/ratchet.yml as strict-xfail
+- 18 pre-existing mypy errors tracked in gate ratchet (≤18)
+- 93 ratchet entries = known-unfixed work; gate reports test PASS 0 only because of strict-xfail
+- V2.3: 171+ hardcoded port-8000 references need ephemeral port conversion
+- V2.6: C0-C5/H4/H6 spine unimplemented
+- V3-V4: OSS replacements + shipping readiness
 
-## Known Gaps (not blocking R2/R3 completion)
-- 116 pre-existing test failures (unchanged from baseline)
-- 21 pre-existing mypy errors (unchanged from baseline)
-- Full C0-C5/H4/H6 spine remains unimplemented (Phase 1 of GLM guide)
-- ModelFailoverChain is dead code — not wired to ModelGateway
-- M5 CLI/API shape mismatches exist
-- M7 worktree monitor, M8 multi-worker, M9 blocking runner remain
-
-## Next Steps
-1. Begin Phase 1 of GLM guide: G0 (daemon starts configured)
-2. Address remaining C/H/M items in priority order
+## Corrections
+- **ModelFailoverChain**: NOT dead code — `ModelGateway.call_model_with_retry()` walks `fallback_profiles`. See gateway.py:255-327.
+- **R3.5**: Smoke is now wired into `gate` and `validate` (V1.3).
+- All counts updated from current `make gate` output.
