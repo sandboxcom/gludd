@@ -335,9 +335,19 @@ export default (async ({ }) => {
           "delete-file",
         ]
 
-        if (MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES.includes(targetName) && toScan === "") {
+        if (MAKEFILE_TARGETS_WITH_FORBIDDEN_NAMES.includes(targetName)) {
           // Valid Makefile target that happens to contain a forbidden word in its name
-          // Skip argument scanning since there are no args to scan
+          // Strip VAR=val assignments before checking for metacharacters
+          const argsStripped = restArgs.replace(/[A-Za-z_][A-Za-z0-9_]*=('[^']*'|"[^"]*"|\S*)/g, "")
+          if (SHELL_META_CHARS.test(argsStripped)) {
+            const matched = argsStripped.match(SHELL_META_CHARS)
+            throw new Error(
+              formatBashBlockedMessage(
+                trimmed,
+                `Shell metacharacter(s) forbidden in make args: ${matched?.join(", ")}. `
+              )
+            )
+          }
         } else {
           const invalidPatterns = [
             /\b2>&1\b/,
