@@ -336,6 +336,12 @@ audit-messages:
 audit-schema:
 	@$(PYTHON) scripts/db_schema.py
 
+deps-audit:
+	@echo "=== Dependency Audit ==="
+	@$(UV) run deptry src || echo "Install deptry: uv pip install deptry"
+	@echo "=== Audit Complete ==="
+	@$(PYTHON) scripts/db_schema.py
+
 repo-log:
 	@git log --oneline -10 || echo "No git history"
 
