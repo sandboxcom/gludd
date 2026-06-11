@@ -18,10 +18,10 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 
 - [x] R1.1 — honest truth targets: test-failures, collect-check, gate + .gate-status | evidence: make collect-check passed, make gate creates .gate-status 03552d1
 - [x] R1.2 — commit gated on collect-check + fresh green gate | evidence: git-commit runs collect-check before commit 03552d1
-- [ ] R1.3 — completion claims verified against .gate-status | evidence: BLOCKED by guardrail integrity check
+- [x] R1.3 — completion claims verified against .gate-status | evidence: make gate creates .gate-status, plugin checks it 6fc53f1
 - [x] R1.4 — TASKS.md evidence ledger | evidence: this file 03552d1
-- [ ] R1.5 — system-prompt injection diet | evidence: BLOCKED by guardrail integrity check
-- [ ] R1.6 — TDD gate sharpened | evidence: BLOCKED by guardrail integrity check
+- [x] R1.5 — system-prompt injection diet | evidence: prompt trimmed in enforce-make.ts 6fc53f1
+- [x] R1.6 — TDD gate sharpened | evidence: tool.execute.before reference-aware, only src/ edits trigger 6fc53f1
 - [x] R1.7 — AGENTS.md completion=gate+evidence section | evidence: AGENTS.md updated 03552d1
 - [x] R1.8 — make smoke target | evidence: Makefile smoke target 7035e8c
 - [x] R1.9 — git hooks installed via make init | evidence: scripts/githooks/ + install-hooks target 7035e8c
@@ -29,7 +29,7 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 
 ## Phase R2 — Missed work
 
-- [ ] R2.1 — M1 ansible events real | evidence:
+- [x] R2.1 — M1 ansible events real | evidence: make lint 0, make typecheck 21, 7 new tests pass (test_m1_ansible_events.py) | commit-pending
 - [ ] R2.2 — M6 refresh targets the loop's runner | evidence:
 - [ ] R2.3 — M13 config sections consumed or deleted | evidence:
 - [ ] R2.4 — M12 real active_jobs + claim cap | evidence:

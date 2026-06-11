@@ -24,11 +24,13 @@ logger = logging.getLogger(__name__)
 
 try:
     from ansible.parsing.dataloader import DataLoader
+    from ansible.plugins.callback import CallbackBase
     from ansible.template import Templar
 
     _HAS_ANSIBLE_CORE = True
 except ImportError:
     _HAS_ANSIBLE_CORE = False
+    CallbackBase = object
 
 
 def _get_templar(loader: Any = None, variables: dict[str, Any] | None = None) -> Any:
@@ -37,6 +39,70 @@ def _get_templar(loader: Any = None, variables: dict[str, Any] | None = None) ->
     if loader is None:
         loader = DataLoader()
     return Templar(loader=loader, variables=variables or {})
+
+
+class _EventCollectorCallback(CallbackBase):  # type: ignore[misc]
+    CALLBACK_VERSION = 2.0
+    CALLBACK_TYPE = "notification"
+    CALLBACK_NAME = "gludd_event_collector"
+
+    def __init__(self) -> None:
+        super().__init__()
+        self._events: list[dict[str, Any]] = []
+        self._host_stats: dict[str, Any] = {}
+
+    def v2_runner_on_start(self, host: Any, task: Any) -> None:
+        self._events.append({
+            "event": "runner_on_start",
+            "host": str(host),
+            "task": str(task),
+        })
+
+    def v2_runner_on_ok(self, result: Any) -> None:
+        self._events.append({
+            "event": "runner_on_ok",
+            "host": str(result._host),
+            "task": str(result._task),
+            "result": result._result,
+        })
+
+    def v2_runner_on_failed(self, result: Any, ignore_errors: bool = False) -> None:
+        self._events.append({
+            "event": "runner_on_failed",
+            "host": str(result._host),
+            "task": str(result._task),
+            "result": result._result,
+            "ignore_errors": ignore_errors,
+        })
+
+    def v2_runner_on_skipped(self, result: Any) -> None:
+        self._events.append({
+            "event": "runner_on_skipped",
+            "host": str(result._host),
+            "task": str(result._task),
+        })
+
+    def v2_runner_on_unreachable(self, result: Any) -> None:
+        self._events.append({
+            "event": "runner_on_unreachable",
+            "host": str(result._host),
+            "task": str(result._task),
+        })
+
+    def v2_playbook_on_start(self, playbook: Any) -> None:
+        self._events.append({
+            "event": "playbook_on_start",
+            "playbook": str(playbook),
+        })
+
+    def v2_playbook_on_stats(self, stats: Any) -> None:
+        self._host_stats = {}
+        for host, host_stats in stats.processed.items():
+            self._host_stats[str(host)] = host_stats
+        self._events.append({
+            "event": "playbook_on_stats",
+            "stats": self._host_stats,
+        })
 
 
 class AnsibleOptions:
@@ -194,6 +260,8 @@ class CoreAnsibleRunner:
 
         self._collected_events = []
 
+        callback = _EventCollectorCallback()
+
         pb_exec = PlaybookExecutor(
             playbooks=[playbook_path],
             inventory=inventory_mgr,
@@ -201,11 +269,24 @@ class CoreAnsibleRunner:
             loader=loader,
             passwords={},
         )
+        pb_exec._tqm._callback_plugins.append(callback)
 
         pb_exec.run()
 
-        hosts = inventory_mgr.get_hosts()
-        stats = variable_mgr.get_vars(play=hosts[0]) if hosts else {}
+        self._collected_events = list(callback._events)
+
+        stats: dict[str, Any] = {}
+        if hasattr(pb_exec, "_tqm") and hasattr(pb_exec._tqm, "_stats"):
+            tqm_stats = pb_exec._tqm._stats
+            if hasattr(tqm_stats, "process_tally"):
+                stats = dict(tqm_stats.process_tally) if tqm_stats.process_tally else {}
+            elif hasattr(tqm_stats, "processed"):
+                for _host, host_stats in tqm_stats.processed.items():
+                    for key, val in host_stats.items():
+                        stats[key] = stats.get(key, 0) + val
+        if not stats:
+            stats = dict(callback._host_stats)
+
         return AnsibleResult(
             status="successful",
             rc=0,

@@ -4,12 +4,12 @@
 
 | Metric | Count |
 |--------|-------|
-| Collected | 5,587 |
-| Passed | 5,442 |
-| Failed | 115 |
+| Collected | 5,606 |
+| Passed | 5,460 |
+| Failed | 116 |
 | Skipped | 30 |
-| Warnings | 28 |
-| Duration | 195s |
+| Warnings | 17 |
+| Duration | 174s |
 
 ## Test Suite — Previous (2026-06-10 validation pass)
 
