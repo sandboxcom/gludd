@@ -216,6 +216,8 @@ const STOP_SIGNAL_WORDS = [
   "items done",
   "items complete",
   "continuing with remaining",
+  "all complete",
+  "all requested",
 ]
 
 const RESUME_COMMAND = [
