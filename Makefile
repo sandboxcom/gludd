@@ -26,6 +26,7 @@ TESTS_DIR := tests
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
+        status-snapshot audit-evidence \
         skill-install skill-list bootstrap-skills \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-add-all help
@@ -305,6 +306,32 @@ git-init:
 	@git init
 	@git config user.email "agent@general-ludd.local" || true
 	@git config user.name "General Ludd Agent" || true
+
+status-snapshot:
+	@echo "<!-- gate:begin -->" > /tmp/gludd-status-snippet.md
+	@echo "## Current Gate Status ($(shell date -u +%Y-%m-%d))" >> /tmp/gludd-status-snippet.md
+	@echo "" >> /tmp/gludd-status-snippet.md
+	@if [ -f .gate-status ]; then \
+		sed 's/^/- /' .gate-status >> /tmp/gludd-status-snippet.md; \
+	else \
+		echo "- No .gate-status file. Run 'make gate' first." >> /tmp/gludd-status-snippet.md; \
+	fi
+	@echo "" >> /tmp/gludd-status-snippet.md
+	@echo "<!-- gate:end -->" >> /tmp/gludd-status-snippet.md
+	@echo "Status snapshot written to /tmp/gludd-status-snippet.md"
+	@echo "Replace the gate block in SESSION.md with this content."
+
+audit-evidence:
+	@echo "=== Evidence Audit ==="
+	@if [ ! -f TASKS.md ]; then echo "TASKS.md missing"; exit 1; fi
+	@grep -oP 'tests/[^ :]+::\S+' TASKS.md | sort -u > /tmp/gludd-evidence-tests.txt
+	@if [ ! -s /tmp/gludd-evidence-tests.txt ]; then \
+		echo "No test evidence references found in TASKS.md"; \
+		exit 0; \
+	fi
+	@echo "Running evidence tests..."
+	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) -q 2>&1 || echo "Some evidence tests failed — see above."
+	@echo "=== Evidence Audit Complete ==="
 
 git-log:
 	@git log --oneline -10 || echo "No git history"
