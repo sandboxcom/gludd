@@ -1,0 +1,19 @@
+---
+namespace: general_ludd
+name: agent
+version: 0.1.0
+readme: README.md
+description: >
+  Ansible collection providing modules and roles for the general_ludd agentic
+  SDLC harness. Modules wrap the daemon API and git_automation layer; roles
+  compose them into full agent task runs.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - agentic
+  - sdlc
+  - llm
+  - automation
+dependencies: {}

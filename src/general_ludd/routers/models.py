@@ -316,3 +316,98 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "suggested_task_type": task_type.value,
             "model_recommendation": recommendation,
         }
+
+    @app.post("/admin/models/call")
+    async def admin_models_call(request: Request) -> dict[str, Any]:
+        """W6.2: model generation endpoint for Ansible modules and external callers.
+
+        Request body:
+          prompt: str (required)
+          model_profile: str (optional — explicit profile ID)
+          route_task_type: str (optional — adaptive routing by task type)
+          max_tokens: int (optional, default 2048)
+
+        Auth: same PSK as other admin routes (enforced by middleware).
+        """
+        import json
+
+        body = await request.json() if hasattr(request, "json") else {}
+        if isinstance(body, str):
+            body = json.loads(body)
+
+        prompt: str = body.get("prompt", "")
+        if not prompt:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=422, detail="prompt is required")
+
+        model_profile_id: str | None = body.get("model_profile")
+        route_task_type: str | None = body.get("route_task_type")
+        # max_tokens available for future use when gateway exposes token limits per-call
+        _max_tokens: int = int(body.get("max_tokens", 2048))
+        del _max_tokens  # currently unused — call_model controls this via profile config
+
+        # Resolve the gateway — use app.state if available, else build a minimal one
+        gateway: ModelGateway | None = getattr(app.state, "_model_gateway", None)
+        if gateway is None:
+            subsys = _get_or_create_subsystems(app)
+            if not hasattr(app.state, "_health_tracker"):
+                app.state._health_tracker = ModelHealthTracker()
+            gateway = ModelGateway(
+                provider_registry=ProviderRegistry(),
+                router=ModelRouter(),
+                event_bus=subsys["bus"],
+                hook_system=subsys["hooks"],
+                worker_broadcaster=subsys["broadcaster"],
+                response_cache=ModelResponseCache(),
+                health_tracker=app.state._health_tracker,
+            )
+            app.state._model_gateway = gateway
+
+        # Adaptive routing if requested
+        resolved_profile: str | None = model_profile_id
+        if route_task_type and not resolved_profile:
+            try:
+                from general_ludd.schemas.benchmark import TaskType
+                from general_ludd.scoring.router import AdaptiveRouter
+                try:
+                    task_type = TaskType(route_task_type)
+                except ValueError:
+                    task_type = TaskType.FEATURE
+                _router = AdaptiveRouter()
+                decision = await _router.route(task_type)
+                resolved_profile = decision.selected_model_profile_id
+            except Exception:
+                resolved_profile = None  # fall back to gateway default
+
+        # Determine which profile to use
+        available_profiles = gateway.list_profiles()
+        used_profile_id: str
+        if resolved_profile:
+            used_profile_id = resolved_profile
+        elif available_profiles:
+            used_profile_id = available_profiles[0].model_profile_id
+        else:
+            # No profiles configured — return a clear error
+            from fastapi import HTTPException
+            raise HTTPException(
+                status_code=503,
+                detail="No model profiles configured. Add a profile via POST /admin/models first.",
+            )
+
+        messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+
+        try:
+            import asyncio
+            response = await asyncio.to_thread(
+                gateway.call_model,
+                used_profile_id,
+                messages,
+            )
+            return {
+                "text": response.content,
+                "model_profile_id": used_profile_id,
+                "usage": dict(response.usage_metadata) if response.usage_metadata else {},
+            }
+        except Exception as exc:
+            from fastapi import HTTPException
+            raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
