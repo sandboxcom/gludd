@@ -393,6 +393,38 @@ class TestSystemPromptDiet:
         )
 
 
+RATCHET_MAX = 23
+RATCHET_PATH = ROOT / "config" / "ratchet.yml"
+
+
+class TestRatchetGrowthGuard:
+    def test_ratchet_count_at_or_below_max(self):
+        content = RATCHET_PATH.read_text()
+        entries = [
+            line.strip()
+            for line in content.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        actual = len(entries)
+        assert actual <= RATCHET_MAX, (
+            f"config/ratchet.yml has {actual} entries, exceeding RATCHET_MAX={RATCHET_MAX}. "
+            f"Fix the failing tests or lower RATCHET_MAX in tests/unit/test_guardrails.py."
+        )
+
+    def test_ratchet_max_equals_actual_count(self):
+        content = RATCHET_PATH.read_text()
+        entries = [
+            line.strip()
+            for line in content.splitlines()
+            if line.strip() and not line.strip().startswith("#")
+        ]
+        actual = len(entries)
+        assert actual == RATCHET_MAX, (
+            f"RATCHET_MAX={RATCHET_MAX} but actual entries={actual}. "
+            f"Update RATCHET_MAX to {actual} after burning entries."
+        )
+
+
 class TestTDDGateSharpened:
     def test_tdd_gate_has_test_file_reference_check(self):
         content = PLUGIN_FILE.read_text()
