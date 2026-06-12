@@ -222,3 +222,10 @@ All premature-stop incidents and process failures are tracked here.
   3. Reinforcing in AGENTS.md: SESSION.md updates are done WITH tool calls, never as standalone text responses
 
 **Pattern**: Agent uses housekeeping tasks (SESSION.md, BUGS.md updates) as natural stopping points. Housekeeping must happen alongside continued work, not as a terminal action.
+
+### 2026-06-12 — Agent answered "What did we do so far?" with text-only summary while 5 todowrite items were pending
+
+- **What stopped before finishing**: User asked "What did we do so far?" Agent sent a detailed text-only session summary with progress, commits, and known gaps. Todowrite had 5 pending items (ratchet burn-down, SESSION.md update). The agent then stopped. When user said "push to github", the push failed due to remote divergence. Agent then asked the user for direction instead of adding a make target and fixing it. User explicitly called out the premature stop and told agent to fix bugs and continue.
+- **Why guardrail failed**: Status-only responses when work remains violate AGENTS.md rule #2 ("Pending todos require tool call"). The agent treated a status query as a valid reason to send text without continuing work. Then treated a push failure as a reason to ask permission instead of fixing the tooling gap (missing make target for git pull).
+- **Root cause**: Agent rationalizes that user questions override the pending-work rule. Status questions should be answered briefly WITH a tool call to continue work. Push failures should be fixed, not reported.
+- **Fix applied**: This BUGS.md entry. Adding make targets for git fetch/pull/rebase. Continuing all remaining work without stopping.

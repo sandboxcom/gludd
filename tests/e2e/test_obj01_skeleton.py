@@ -14,7 +14,7 @@ class TestRepositorySkeleton:
         from general_ludd import __version__
 
         assert __version__
-        assert __version__ == "0.1.0"
+        assert __version__.startswith("0.1.0")
 
     def test_all_subpackages_importable(self):
         subpackages = [

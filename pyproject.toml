@@ -1,6 +1,6 @@
 [project]
 name = "general-ludd-agent"
-version = "0.1.0-alpha"
+version = "0.1.0-alpha.202606120000"
 description = "General Ludd Agent — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"

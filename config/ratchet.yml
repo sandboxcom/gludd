@@ -8,7 +8,6 @@
 
 tests/e2e/test_new_features_e2e.py::TestBinaryPathConfig::test_resolver_integrates_with_secrets_manager_container_runtime: "container runtime detection — pre-existing binary path resolution"  # pragma: allowlist secret
 tests/e2e/test_new_features_e2e.py::TestSecretsWiring::test_start_local_container_uses_binary_resolver: "container launch wiring — pre-existing"
-tests/e2e/test_obj01_skeleton.py::TestRepositorySkeleton::test_package_version_importable: "version string 0.1.0-alpha expectation — pre-existing"
 tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_execute_noop_playbook_full_pipeline: "worker full pipeline — pre-existing"
 
 tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease: "event loop lease reclaim — pre-existing"

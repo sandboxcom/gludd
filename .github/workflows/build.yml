@@ -3,6 +3,7 @@ name: Build and Release
 on:
   push:
     branches: [master]
+    tags: ["v*"]
   pull_request:
     branches: [master]
   workflow_dispatch:
@@ -17,7 +18,12 @@ jobs:
       version: ${{ steps.ver.outputs.version }}
     steps:
       - id: ver
-        run: echo "version=v0.1.0-alpha-$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+        run: |
+          if [[ "${{ github.ref }}" == refs/tags/v* ]]; then
+            echo "version=${{ github.ref_name }}" >> "$GITHUB_OUTPUT"
+          else
+            echo "version=v0.1.0-alpha-$(date -u +%Y%m%d%H%M)" >> "$GITHUB_OUTPUT"
+          fi
 
   gate:
     needs: version
@@ -26,13 +32,12 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      # actions/checkout@v4.1.7
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
       - name: Gate
         run: |
           uv sync --python ${{ matrix.python-version }}
@@ -43,15 +48,16 @@ jobs:
   linux:
     needs: [version, gate]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      # actions/checkout@v4.1.7
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Inject version
-        run: sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
         run: |
           uv sync
@@ -66,7 +72,6 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-x86_64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-x86_64.tar.gz" > "../gludd-${VERSION}-linux-x86_64.tar.gz.sha256"
-      # actions/upload-artifact@v4.4.3
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-linux-x86_64
@@ -77,15 +82,16 @@ jobs:
   macos:
     needs: [version, gate]
     runs-on: macos-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      # actions/checkout@v4.1.7
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Inject version
-        run: sed -i "" "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+        run: |
+          sed -i "" "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+          sed -i "" "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
         run: |
           uv sync
@@ -100,7 +106,6 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-macos-arm64.tar.gz" .
           shasum -a 256 "../gludd-${VERSION}-macos-arm64.tar.gz" > "../gludd-${VERSION}-macos-arm64.tar.gz.sha256"
-      # actions/upload-artifact@v4.4.3
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-macos-arm64
@@ -111,17 +116,17 @@ jobs:
   windows:
     needs: [version, gate]
     runs-on: windows-latest
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      # actions/checkout@v4.1.7
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Inject version
         shell: pwsh
         run: |
           (Get-Content src/general_ludd/__init__.py) -replace '__version__ = ".*"', "__version__ = ""$env:VERSION""" | Set-Content src/general_ludd/__init__.py
+          (Get-Content pyproject.toml) -replace '^version = ".*"', "version = ""$env:VERSION""" | Set-Content pyproject.toml
       - name: Build executable
         run: |
           uv sync
@@ -136,7 +141,6 @@ jobs:
           Copy-Item -r playbooks dist/release/playbooks
           Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
           certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
-      # actions/upload-artifact@v4.4.3
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-windows-x86_64
@@ -147,15 +151,16 @@ jobs:
   termux:
     needs: [version, gate]
     runs-on: ubuntu-24.04-arm
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      # actions/checkout@v4.1.7
       - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      # astral-sh/setup-uv@v5
       - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
       - name: Inject version
-        run: sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
       - name: Build executable
         run: |
           uv sync
@@ -170,7 +175,6 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
-      # actions/upload-artifact@v4.4.3
       - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
         with:
           name: gludd-linux-aarch64
@@ -181,10 +185,10 @@ jobs:
   release:
     needs: [version, gate, linux, macos, windows, termux]
     runs-on: ubuntu-latest
+    if: startsWith(github.ref, 'refs/tags/v')
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      # actions/download-artifact@v4.1.8
       - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
         with:
           path: artifacts
@@ -192,7 +196,6 @@ jobs:
           merge-multiple: true
       - name: List artifacts
         run: ls -la artifacts/
-      # softprops/action-gh-release@v2
       - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
         with:
           tag_name: ${{ env.VERSION }}

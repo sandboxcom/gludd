@@ -27,7 +27,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         status-snapshot audit-evidence \
         skill-install skill-list bootstrap-skills \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
-        git-remote-sandboxcom git-push-sandboxcom git-add-all help
+        git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
+        git-add-all help
 
 help:
 	@echo "Usage: make [target]"
@@ -101,6 +102,8 @@ help:
 	@echo "  --- Git Remote ---"
 	@echo "  git-remote-sandboxcom Configure sandboxcom GitHub remote with SSH key"
 	@echo "  git-push-sandboxcom   Push to sandboxcom/gludd mirror"
+	@echo "  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd"
+	@echo "  git-fetch-sandboxcom  Fetch from sandboxcom/gludd"
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
@@ -414,6 +417,14 @@ git-remote-sandboxcom:
 git-push-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
+
+git-pull-sandboxcom:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
+	@echo "Pulled and rebased from sandboxcom/gludd"
+
+git-fetch-sandboxcom:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
+	@echo "Fetched from sandboxcom/gludd"
 
 scan-secrets:
 	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
