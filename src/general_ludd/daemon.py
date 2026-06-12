@@ -164,6 +164,23 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     return cfg
 
 
+def _openbao_reachable(mgr: Any) -> bool:
+    """Bounded reachability/auth check for an OpenBao SecretsManager.
+
+    Returns True only if the backend answers `is_authenticated()` truthfully.
+    Any exception (connection refused, timeout, auth error) is treated as
+    unreachable so the caller falls back to env vars instead of hanging or
+    silently failing every resolution. W2.9 (H17).
+    """
+    client = getattr(mgr, "_client", None)
+    if client is None:
+        return False
+    try:
+        return bool(client.is_authenticated())
+    except Exception:
+        return False
+
+
 def build_secrets_resolver(
     openbao_config: OpenBaoConfig | None = None,
     env_overrides: dict[str, str] | None = None,
@@ -184,11 +201,27 @@ def build_secrets_resolver(
                 base = EnvSecretsManager(overrides=env_overrides)
         elif mode == "auto":
             if has_url:
+                # W2.9 (H17): auto mode TRIES OpenBao but verifies reachability
+                # with a bounded health check before committing to it. A built
+                # hvac client does not prove the backend is up — without this
+                # check, an unreachable OpenBao would silently swallow every
+                # secret resolution. On any failure we fall back to env vars and
+                # log which path won.
                 try:
                     mgr = SecretsManager(config=openbao_config)
                     mgr.connect()
-                    logger.info("OpenBao auto-mode: connected to %s", openbao_config.external_url)
-                    base = mgr
+                    if _openbao_reachable(mgr):
+                        logger.info(
+                            "OpenBao auto-mode: connected and healthy at %s",
+                            openbao_config.external_url,
+                        )
+                        base = mgr
+                    else:
+                        logger.warning(
+                            "OpenBao auto-mode: %s unreachable/unauthenticated, using env fallback",
+                            openbao_config.external_url,
+                        )
+                        base = EnvSecretsManager(overrides=env_overrides)
                 except Exception as exc:
                     logger.warning("OpenBao auto-mode: connection failed (%s), using env fallback", exc)
                     base = EnvSecretsManager(overrides=env_overrides)
