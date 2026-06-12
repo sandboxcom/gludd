@@ -77,6 +77,13 @@ W3.1 (C1) is implemented as a **direct ModelGateway call from the worker** (`src
 - [x] W3.11 — H13: project workspaces materialized from repo_url via GitAutomation.clone (idempotent, fail-closed) + persisted through ProjectRepository (repo_url/weight/dispatch_mode in config JSON) so restart keeps them; router add-project and daemon startup clone + persist | evidence: tests/unit/test_project_workspace_clone.py 6 passed a4c04a9
 - [x] W2.3 — C5/M2: deploy-before-destroy registry — DeploymentManager records instance_id -> (per-instance working_dir, state) persisted to deployments.json; destroy refuses unknown instance_id and runs in that dir; GET /api/deployments + 404 on unknown destroy; 3 ratchet entries burned, RATCHET_MAX 19 to 16 | evidence: tests/unit/test_deployment_registry.py 7 passed eb84b0c
 - [x] W2.8 — compute deploy secrets resolver wired from app.state, None when absent; root cause of the 2 ratcheted tests was isinstance against a patched DeploymentManager mock raising TypeError — fixed with identity check; 2 ratchet entries burned, RATCHET_MAX 16 to 14 | evidence: tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver 2 passed 26cf62b
+- [x] W2.9 — H17: secrets mode=auto tries OpenBao with a bounded health check (_openbao_reachable via is_authenticated) and falls back to env on failure, logging which path won; read-back test migrates a secret, deletes the env var, resolution still returns it from vault | evidence: tests/unit/test_secrets_auto_mode.py 4 passed 1bbe4b8
+
+### W3.5 decision (M8/H18, recorded per guide §5)
+
+W3.5: **SQLite only.** `create_all`, alembic `stamp_head`, and `alembic.ini` are SQLite-specific, so Postgres does not work. Decision: `init_engine_from_config` refuses any non-SQLite URL with a clear error (no half-claimed Postgres); the daemon runs a single gunicorn worker (`_clamp_workers_for_sqlite` defaults to 1 and clamps N>1, because there is no cross-process claim coordination over one SQLite file). Documented in README "Database & concurrency (SQLite only)". Honest multi-worker would require Postgres, which is not pursued.
+
+- [x] W3.5 — M8/H18: SQLite-only enforced (non-SQLite URL refused with clear error) + single-worker clamp (default 1, N>1 clamped with warning); README documents the decision; postgres-engine tests rewritten to expect refusal | evidence: tests/unit/test_single_worker_sqlite.py 7 passed 312e403
 
 ## Phase W6 — Ansible layer (GLM_REMEDIATION_GUIDE_3.md §5 W6.1-W6.9)
 
