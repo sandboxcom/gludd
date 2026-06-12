@@ -453,6 +453,7 @@ class TestBenchmarkRecordWithSession:
     @pytest.mark.asyncio
     async def test_benchmark_record_with_session(self, app, transport):
         mock_session = MagicMock()
+        mock_session.commit = AsyncMock()
         mock_sf = MagicMock()
         mock_sf.return_value.__aenter__ = AsyncMock(return_value=mock_session)
         mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
