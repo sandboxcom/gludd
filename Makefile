@@ -1,6 +1,8 @@
 MSG ?=
 FILES ?=
 TESTFILE ?=
+MYPY_MAX := 18
+OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
 PYTHON := python3
 UV := uv
@@ -11,7 +13,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
-        test-guardrails test-scripts test-db test-live-zai test-tui-daemon diag-gunicorn \
+        test-guardrails test-scripts test-db test-live-zai test-tui-daemon \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks playbook-list \
@@ -218,11 +220,11 @@ gate:
 	fi
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
-	if [ $$TC_ERRS -le 18 ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
+	if [ $$TC_ERRS -le $(MYPY_MAX) ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@printf "test " >> .gate-status
-	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 > /tmp/gludd-test-gate.txt; EXIT=$$?; \
+	@$(UV) run python -m pytest tests/ $(_XD) -q > /tmp/gludd-test-gate.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
 		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
 	fi
@@ -314,7 +316,7 @@ audit-evidence:
 		exit 0; \
 	fi
 	@echo "Running evidence tests..."
-	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) $(_XD) -q 2>&1 || echo "Some evidence tests failed — see above."
+	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) $(_XD) -q > /dev/null 2>&1
 	@echo "=== Evidence Audit Complete ==="
 
 untrack:
@@ -621,30 +623,31 @@ qa: lint typecheck test healthcheck
 validate: lint ansible-syntax healthcheck
 	@$(UV) run mypy src > /dev/null 2>&1; E=$$?; \
 	ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
-	if [ $$ERRS -le 18 ]; then echo "typecheck: OK ($$ERRS errors, baseline 18)"; else echo "typecheck: FAIL ($$ERRS errors > baseline 18)"; exit 1; fi
-	@$(UV) run python -m pytest tests/ $(_XD) -q 2>&1 > /tmp/gludd-validate.txt; EXIT=$$?; \
+	if [ $$ERRS -le $(MYPY_MAX) ]; then echo "typecheck: OK ($$ERRS errors, baseline $(MYPY_MAX))"; else echo "typecheck: FAIL ($$ERRS errors > baseline $(MYPY_MAX))"; exit 1; fi
+	@$(UV) run python -m pytest tests/ $(_XD) -q > /tmp/gludd-validate.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi
 	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "smoke: PASS" || (echo "smoke: FAIL" && exit 1)
+	@$(MAKE) --no-print-directory audit-evidence > /dev/null 2>&1 && echo "audit-evidence: PASS" || (echo "audit-evidence: FAIL" && exit 1)
 	@echo "Full validation passed."
 
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."
 
 db-sample-message:
-	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT substr(m.data, 1, 500) FROM message m LIMIT 3;" 2>/dev/null
+	@sqlite3 $(OPENCODE_DB) "SELECT substr(m.data, 1, 500) FROM message m LIMIT 3;" 2>/dev/null
 
 db-sample-part:
-	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT substr(p.data, 1, 500) FROM part p LIMIT 3;" 2>/dev/null
-	@sqlite3 ~/.local/share/opencode/opencode.db ".schema" 2>/dev/null
+	@sqlite3 $(OPENCODE_DB) "SELECT substr(p.data, 1, 500) FROM part p LIMIT 3;" 2>/dev/null
+	@sqlite3 $(OPENCODE_DB) ".schema" 2>/dev/null
 
 db-tables:
-	@sqlite3 ~/.local/share/opencode/opencode.db ".tables" 2>/dev/null
+	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
 
 db-count:
-	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT COUNT(*) FROM message;" 2>/dev/null
+	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM message;" 2>/dev/null
 
 search-opencode:
-	@sqlite3 ~/.local/share/opencode/opencode.db "SELECT json_extract(m.data, '$$.role'), json_extract(p.data, '$$.text') FROM message m JOIN part p ON m.id = p.message_id WHERE json_extract(m.data, '$$.role')='user' AND json_extract(p.data, '$$.text') LIKE '%$(SEARCH)%' LIMIT $(MAX_RESULTS);" 2>/dev/null
+	@sqlite3 $(OPENCODE_DB) "SELECT json_extract(m.data, '$$.role'), json_extract(p.data, '$$.text') FROM message m JOIN part p ON m.id = p.message_id WHERE json_extract(m.data, '$$.role')='user' AND json_extract(p.data, '$$.text') LIKE '%$(SEARCH)%' LIMIT $(MAX_RESULTS);" 2>/dev/null
 
 collect-prompts:
 	@echo "Collecting system prompts from open-source coding agents..."

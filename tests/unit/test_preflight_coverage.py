@@ -375,12 +375,12 @@ class TestVerifyTaskCompletion:
         result = verify_task_completion(["test count is positive"], {"test_pass_count": 0})
         assert result["complete"] is False
 
-    def test_unknown_criterion_assumed_met(self):
+    def test_unknown_criterion_fails_closed(self):
         from general_ludd.quality.preflight import verify_task_completion
 
         result = verify_task_completion(["something custom"], {})
-        assert result["complete"] is True
-        assert result["criteria_results"][0]["reason"] == "assumed_met"
+        assert result["complete"] is False
+        assert result["criteria_results"][0]["reason"] == "unknown_criterion"
 
     def test_empty_criteria(self):
         from general_ludd.quality.preflight import verify_task_completion

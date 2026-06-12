@@ -254,8 +254,8 @@ def verify_task_completion(
             met = evidence.get("test_pass_count", 0) > 0
             reason = f"test_pass_count={evidence.get('test_pass_count', '?')}"
         else:
-            met = True
-            reason = "assumed_met"
+            met = False
+            reason = "unknown_criterion"
 
         if met:
             passed += 1
