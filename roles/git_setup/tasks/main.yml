@@ -1,0 +1,28 @@
+---
+# git_setup role — initialize and configure a git repo
+
+- name: Ensure repo directory exists
+  ansible.builtin.file:
+    path: "{{ repo_path }}"
+    state: directory
+    mode: "0755"
+
+- name: Initialize git repository if requested and missing
+  ansible.builtin.command:
+    cmd: git init
+    chdir: "{{ repo_path }}"
+    creates: "{{ repo_path }}/.git"
+  when: init_if_missing | bool
+  changed_when: true
+
+- name: Configure git user email
+  ansible.builtin.command:
+    cmd: "git config user.email {{ user_email | quote }}"
+    chdir: "{{ repo_path }}"
+  changed_when: false
+
+- name: Configure git user name
+  ansible.builtin.command:
+    cmd: "git config user.name {{ user_name | quote }}"
+    chdir: "{{ repo_path }}"
+  changed_when: false

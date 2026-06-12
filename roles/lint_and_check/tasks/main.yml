@@ -1,0 +1,30 @@
+---
+# lint_and_check role — run lint and typecheck
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run lint command
+  ansible.builtin.command:
+    cmd: "{{ lint_cmd }}"
+    chdir: "{{ project_dir }}"
+  register: lint_result
+  failed_when: "fail_on_lint and lint_result.rc != 0"
+  changed_when: false
+
+- name: Run typecheck command
+  ansible.builtin.command:
+    cmd: "{{ typecheck_cmd }}"
+    chdir: "{{ project_dir }}"
+  register: typecheck_result
+  failed_when: "fail_on_typecheck and typecheck_result.rc != 0"
+  changed_when: false
+
+- name: Write quality check artifact
+  ansible.builtin.copy:
+    content: "{{ {'lint_rc': lint_result.rc, 'typecheck_rc': typecheck_result.rc, 'status': ('passed' if (lint_result.rc == 0 and typecheck_result.rc == 0) else 'failed')} | to_nice_json }}"
+    dest: "{{ artifact_dir }}/quality_result.json"
+    mode: "0644"

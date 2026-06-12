@@ -1,0 +1,47 @@
+---
+# commit_and_pr role
+#
+# Security note: push and PR creation require explicit enable flags.
+# The defaults disable both — this role will NEVER push without explicit opt-in.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Commit changes via gludd_git
+  general_ludd.agent.gludd_git:
+    path: "{{ repo_path }}"
+    op: commit
+    message: "{{ commit_message }}"
+  register: commit_result
+
+- name: Push branch to remote (DISABLED BY DEFAULT)
+  ansible.builtin.debug:
+    msg: >
+      Push skipped — enable_push is false (default).
+      Set enable_push=true explicitly to push to {{ remote }}.
+  when: not enable_push | bool
+
+# Push only when EXPLICITLY enabled by operator
+- name: Push branch to remote (only when enable_push=true)
+  ansible.builtin.command:
+    cmd: "git push {{ remote | quote }} HEAD --set-upstream"
+    chdir: "{{ repo_path }}"
+  when: enable_push | bool
+  changed_when: true
+  register: push_result
+
+- name: Note PR creation is disabled by default
+  ansible.builtin.debug:
+    msg: >
+      PR creation skipped — enable_pr is false (default).
+      Set enable_pr=true to create a pull request.
+  when: not enable_pr | bool
+
+- name: Write commit artifact
+  ansible.builtin.copy:
+    content: "{{ {'commit_sha': commit_result.sha, 'pushed': enable_push | bool, 'pr_created': false, 'status': 'success'} | to_nice_json }}"
+    dest: "{{ artifact_dir }}/commit_result.json"
+    mode: "0644"

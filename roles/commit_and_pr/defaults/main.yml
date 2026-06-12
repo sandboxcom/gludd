@@ -1,0 +1,12 @@
+---
+# commit_and_pr role defaults
+#
+# SECURITY: push and PR creation are DISABLED by default.
+# Set enable_push=true and enable_pr=true ONLY with explicit operator approval.
+repo_path: "."
+commit_message: "auto: agent commit"
+enable_push: false   # MUST be false unless operator explicitly enables
+enable_pr: false     # MUST be false unless operator explicitly enables
+remote: "origin"
+branch: ""           # defaults to current branch
+artifact_dir: "/tmp/gludd-commit-pr"

@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: lint_and_check
+  author: Agentic Harness Agent
+  description: Run lint and type checks; write artifact with results.
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: git_setup
+  author: Agentic Harness Agent
+  description: Initialize and configure a git repository for agent use.
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

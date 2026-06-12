@@ -1,0 +1,8 @@
+---
+# lint_and_check role defaults
+project_dir: "."
+lint_cmd: "make lint"
+typecheck_cmd: "make typecheck"
+artifact_dir: "/tmp/gludd-lint-check"
+fail_on_lint: true
+fail_on_typecheck: false

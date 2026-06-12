@@ -1,0 +1,6 @@
+---
+# run_tests role defaults
+test_dir: "."
+test_cmd: "make test-count"
+artifact_dir: "/tmp/gludd-run-tests"
+allow_failure: false

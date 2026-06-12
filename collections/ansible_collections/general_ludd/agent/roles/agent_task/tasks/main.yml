@@ -1,0 +1,144 @@
+---
+# agent_task role — full task lifecycle
+#
+# Flow:
+#   1. Validate required vars
+#   2. Fetch todo from daemon API
+#   3. Create git worktree (block begin)
+#   4. Render skill (if skill_name set)
+#   5. Run agent (gludd_agent_run)
+#   6. Quality gate
+#   7. Commit changes
+#   8. Mark todo done
+#   9. Write result artifact
+#   rescue: mark todo failed, always remove worktree
+
+- name: Validate required role variables
+  ansible.builtin.assert:
+    that:
+      - repo_path | length > 0
+      - todo_id | length > 0
+    fail_msg: "agent_task requires repo_path and todo_id to be set"
+
+- name: Set derived worktree variables
+  ansible.builtin.set_fact:
+    _at_branch: "{{ worktree_branch | default('auto/' + todo_id, true) }}"
+    _at_path: "{{ worktree_path | default(worktree_base + '/' + todo_id, true) }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main lifecycle block ----
+- name: Agent task lifecycle
+  block:
+
+    - name: Fetch todo from daemon
+      general_ludd.agent.gludd_db:
+        op: todo_get
+        todo_id: "{{ todo_id }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: todo_fetch
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Create git worktree
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _at_branch }}"
+        worktree_path: "{{ _at_path }}"
+        state: present
+
+    - name: Render skill body (if skill_name is set)
+      general_ludd.agent.gludd_skill:
+        name: "{{ skill_name }}"
+        variables: "{{ skill_vars | default({}) }}"
+      register: skill_render
+      when: skill_name | length > 0
+
+    - name: Build full agent prompt
+      ansible.builtin.set_fact:
+        _at_prompt: >-
+          {% if skill_name | length > 0 and skill_render is defined and not skill_render.failed %}
+          {{ skill_render.rendered_body }}
+
+          {% endif %}
+          Task ID: {{ todo_id }}
+          Work type: {{ work_type }}
+          Todo title: {{ todo_fetch.todo.title | default('(no title)') }}
+          Todo description: {{ todo_fetch.todo.description | default('') }}
+
+    - name: Run agent model loop
+      general_ludd.agent.gludd_agent_run:
+        prompt: "{{ _at_prompt | trim }}"
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: 10
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Run quality gate
+      ansible.builtin.command:
+        cmd: "{{ quality_gate_cmd }}"
+        chdir: "{{ _at_path }}"
+      changed_when: false
+      register: gate_result
+      failed_when: gate_result.rc != 0
+
+    - name: Commit changes in worktree
+      general_ludd.agent.gludd_git:
+        path: "{{ _at_path }}"
+        op: commit
+        message: "{{ commit_prefix }}: {{ todo_id }} — {{ work_type }} [agent_task]"
+      register: git_commit
+
+    - name: Mark todo done
+      general_ludd.agent.gludd_db:
+        op: todo_update_status
+        todo_id: "{{ todo_id }}"
+        status: "done"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Write success result artifact
+      ansible.builtin.copy:
+        content: "{{ {'todo_id': todo_id, 'status': 'success', 'commit_sha': git_commit.sha, 'answer_excerpt': (agent_run.answer | default(''))[:200], 'work_type': work_type} | to_nice_json }}"
+        dest: "{{ artifact_dir }}/agent_task_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Mark todo failed on error
+      general_ludd.agent.gludd_db:
+        op: todo_update_status
+        todo_id: "{{ todo_id }}"
+        status: "failed"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      failed_when: false
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: "{{ {'todo_id': todo_id, 'status': 'failed', 'work_type': work_type} | to_nice_json }}"
+        dest: "{{ artifact_dir }}/agent_task_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "agent_task failed for todo {{ todo_id }} — worktree will be cleaned up in always block"
+
+  always:
+
+    - name: Remove worktree (always — even on failure)
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _at_branch }}"
+        worktree_path: "{{ _at_path }}"
+        state: absent
+      failed_when: false

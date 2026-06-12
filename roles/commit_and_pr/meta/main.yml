@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  role_name: commit_and_pr
+  author: Agentic Harness Agent
+  description: >
+    Commit staged changes and optionally push/create PR.
+    Push and PR are DISABLED by default — requires explicit operator opt-in.
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

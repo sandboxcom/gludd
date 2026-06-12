@@ -1,0 +1,37 @@
+---
+# agent_task role defaults
+# All variables can be overridden in playbook vars or extra-vars.
+
+# Required — set these per invocation
+repo_path: ""        # absolute path to the git repository root
+work_type: "code"    # maps to _WORK_TYPE_PLAYBOOK_MAP in loop.py
+todo_id: ""          # todo identifier (string)
+
+# Model routing (mutually exclusive)
+model_profile: ""          # explicit model profile ID
+route_by_complexity: false # if true, use adaptive routing instead
+
+# Skill selection
+skill_name: ""   # skill name to render; empty = no skill prefix
+skill_vars: {}   # Jinja2 variables for skill rendering
+
+# Quality gate command — run after model call, before commit
+quality_gate_cmd: "make test-count"
+
+# Worktree settings (auto-derived from todo_id if empty)
+worktree_base: "/tmp/gludd-worktrees"
+worktree_branch: ""  # defaults to "auto/{{ todo_id }}"
+worktree_path: ""    # defaults to "{{ worktree_base }}/{{ todo_id }}"
+
+# Artifact output
+artifact_dir: "/tmp/gludd-agent-task"
+
+# Commit message prefix
+commit_prefix: "auto"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""   # no_log in tasks; prefer GLUDD_PSK env var
+
+# Destructive ops guard — must NOT push anywhere by default
+enable_git_push: false

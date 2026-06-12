@@ -1,0 +1,8 @@
+---
+galaxy_info:
+  role_name: run_tests
+  author: Agentic Harness Agent
+  description: Run project tests and record results as an artifact.
+  license: MIT
+  min_ansible_version: "2.14"
+dependencies: []

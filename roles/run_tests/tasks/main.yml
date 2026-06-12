@@ -1,0 +1,22 @@
+---
+# run_tests role — run project tests and write artifact
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run test command
+  ansible.builtin.command:
+    cmd: "{{ test_cmd }}"
+    chdir: "{{ test_dir }}"
+  register: test_result
+  failed_when: "not allow_failure and test_result.rc != 0"
+  changed_when: false
+
+- name: Write test result artifact
+  ansible.builtin.copy:
+    content: "{{ {'test_cmd': test_cmd, 'rc': test_result.rc, 'stdout_tail': (test_result.stdout | default(''))[-500:], 'status': ('passed' if test_result.rc == 0 else 'failed')} | to_nice_json }}"
+    dest: "{{ artifact_dir }}/test_result.json"
+    mode: "0644"

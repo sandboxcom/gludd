@@ -1,0 +1,22 @@
+---
+# audit_code role — run SAST/code audit
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Run audit command
+  ansible.builtin.command:
+    cmd: "{{ audit_cmd }}"
+    chdir: "{{ project_dir }}"
+  register: audit_result
+  failed_when: "fail_on_findings and audit_result.rc != 0"
+  changed_when: false
+
+- name: Write audit result artifact
+  ansible.builtin.copy:
+    content: "{{ {'audit_cmd': audit_cmd, 'rc': audit_result.rc, 'stdout_tail': (audit_result.stdout | default(''))[-1000:], 'status': ('passed' if audit_result.rc == 0 else 'findings')} | to_nice_json }}"
+    dest: "{{ artifact_dir }}/audit_result.json"
+    mode: "0644"

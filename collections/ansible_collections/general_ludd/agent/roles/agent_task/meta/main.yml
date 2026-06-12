@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: agent_task
+  author: Agentic Harness Agent
+  description: >
+    Full agent task: db-read → worktree → skill-render → agent-run →
+    quality-gate → git-commit → db-write. Cleans up worktree on failure.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

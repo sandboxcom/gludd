@@ -1,0 +1,6 @@
+---
+# git_setup role defaults
+repo_path: "."
+user_email: "agent@harness.local"
+user_name: "Agentic Harness Agent"
+init_if_missing: true

@@ -1,0 +1,6 @@
+---
+# audit_code role defaults
+project_dir: "."
+audit_cmd: "make sast"
+artifact_dir: "/tmp/gludd-audit-code"
+fail_on_findings: false
