@@ -39,13 +39,26 @@ def _extract_file_paths(text: str) -> list[tuple[str, str]]:
     return results
 
 
+def _render_skill_body(raw: str, variables: dict[str, object] | None = None) -> str:
+    """Render skill body via the shared renderer (W6.5: one renderer, two consumers)."""
+    try:
+        from general_ludd.skills.renderer import SkillRenderError, render_skill
+        return render_skill(raw, variables)
+    except SkillRenderError:
+        raise
+    except Exception:
+        # Jinja2 not available or no vars needed — return raw body unchanged
+        return raw
+
+
 def _build_system_prompt(job: JobSpec) -> str:
     lines: list[str] = []
     lines.append(
         "You are a coding agent. Generate code changes for the following task."
     )
     if job.skill_body:
-        lines.append(f"\nGuidelines:\n{job.skill_body}")
+        rendered = _render_skill_body(job.skill_body)
+        lines.append(f"\nGuidelines:\n{rendered}")
     lines.append("\nOutput format:")
     lines.append("- Use fenced code blocks for code.")
     lines.append(
