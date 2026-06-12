@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
 
@@ -29,9 +29,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         app.state._compute_deployments = {}
 
     def _get_deployment_manager() -> DeploymentManager:
+        # W2.8: reuse a cached manager when present. Use an identity check, not
+        # isinstance against DeploymentManager — tests patch that symbol with a
+        # MagicMock, and isinstance(x, <MagicMock>) raises TypeError.
         cached = getattr(app.state, "_deployment_manager", None)
-        if isinstance(cached, DeploymentManager):
-            return cached
+        if cached is not None:
+            return cast("DeploymentManager", cached)
         secrets_resolver = getattr(app.state, "_secrets_resolver", None)
         pdd = os.path.join(
             os.path.expanduser("~/.local/share/general-ludd"),

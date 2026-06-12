@@ -12,8 +12,6 @@ tests/e2e/test_obj09_secrets.py::TestOpenBaoE2E::test_weekly_image_scan_detects_
 tests/e2e/test_obj15_runtime_packaging.py::TestRuntimeValidatorImport::test_validate_profile_relative_container_path: "runtime validator relative path — pre-existing"
 tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST tool — pre-existing"
 
-tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_resolves_aws_creds_from_secrets_resolver: "compute deploy secrets — pre-existing"  # pragma: allowlist secret
-tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_passes_none_resolver_when_not_on_app_state: "compute deploy none resolver — pre-existing"
 tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_8000_occupied: "8000-occupied e2e proof — requires ephemeral port conversion of daemon tests"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "flaky TUI integrity scan — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "flaky TUI integrity scan no paths — pre-existing"
