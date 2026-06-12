@@ -22,11 +22,7 @@ tests/e2e/test_new_features_e2e.py::TestDeploymentLifecycle::test_destroy_runs_t
 
 tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_resolves_aws_creds_from_secrets_resolver: "compute deploy secrets — pre-existing"  # pragma: allowlist secret
 tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_passes_none_resolver_when_not_on_app_state: "compute deploy none resolver — pre-existing"
-tests/unit/test_daemon_coverage_lift.py::TestBuildSecretsResolver::test_build_secrets_resolver_openbao_external: "daemon secrets resolver — pre-existing"  # pragma: allowlist secret
 tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_8000_occupied: "8000-occupied e2e proof — requires ephemeral port conversion of daemon tests"
-tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_creation: "flaky preflight filestore creation — pre-existing"
-tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_exception: "flaky preflight filestore exception — pre-existing"
-tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "flaky preflight verify task — pre-existing"
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_success: "secrets manager container start — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret

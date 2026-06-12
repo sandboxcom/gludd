@@ -82,7 +82,7 @@ class TestBuildSecretsResolver:
         from general_ludd.secrets.config import OpenBaoConfig
 
         cfg = OpenBaoConfig(mode="external", external_url="http://localhost:8200")
-        with patch("general_ludd.secrets.manager.SecretsManager") as MockMgr:
+        with patch("general_ludd.daemon.SecretsManager") as MockMgr:
             instance = MockMgr.return_value
             instance.connect = MagicMock()
             build_secrets_resolver(openbao_config=cfg)

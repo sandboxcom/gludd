@@ -204,7 +204,7 @@ class TestCheckMoleculeScenarios:
 
 
 class TestCheckFilestore:
-    @patch("general_ludd.filestore.store.FileStore")
+    @patch("general_ludd.quality.preflight.FileStore")
     def test_filestore_creation(self, MockFS):
         from general_ludd.quality.preflight import check_filestore
 
@@ -215,7 +215,7 @@ class TestCheckFilestore:
         assert result["passed"] is True
         assert result["root_path"] == "/fake/path"
 
-    @patch("general_ludd.filestore.store.FileStore", side_effect=Exception("no fs"))
+    @patch("general_ludd.quality.preflight.FileStore", side_effect=Exception("no fs"))
     def test_filestore_exception(self, MockFS):
         from general_ludd.quality.preflight import check_filestore
 

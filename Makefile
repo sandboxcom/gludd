@@ -465,6 +465,17 @@ fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
 	@echo "Fixed benchmark mock"
 
+fix-ratchet-mocks:
+	@python3 -c " \
+c=open('tests/unit/test_daemon_coverage_lift.py').read(); \
+c=c.replace('patch(\"general_ludd.secrets.manager.SecretsManager\")','patch(\"general_ludd.daemon.SecretsManager\")'); \
+open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
+	@python3 -c " \
+c=open('tests/unit/test_preflight_coverage.py').read(); \
+c=c.replace('patch(\"general_ludd.filestore.store.FileStore\"','patch(\"general_ludd.quality.preflight.FileStore\"'); \
+open('tests/unit/test_preflight_coverage.py','w').write(c)"
+	@echo "Fixed ratchet mock targets"
+
 git-reset:
 	@if [ -z "$(FILES)" ]; then \
 		echo "Usage: make git-reset FILES='HEAD~1' (or specific ref)"; \
