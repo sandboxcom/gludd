@@ -67,3 +67,6 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 ### W6.9 spine decision (recorded per guide §7b W6.9)
 
 W3.1 (C1) is implemented as a **direct ModelGateway call from the worker** (`src/general_ludd/worker/app.py` `execute_job` → `_invoke_gateway_for_job`). The W6 ansible `agent_task` role, when built, wraps this worker path — it does not introduce a second model-call architecture. Decision: **direct call now; the future ansible role wraps the worker, not the reverse.**
+
+- [x] W3.1 — C1: worker invokes ModelGateway for generation jobs; response lands in extravars + result | evidence: tests/e2e/test_obj03_worker.py::TestWorkerModelGatewayCall 3 passed b4de809
+- [x] W2.4 — worker full-pipeline ratchet burned (test_execute_noop_playbook_full_pipeline genuinely passes; RATCHET_MAX 21 to 20) | evidence: tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_execute_noop_playbook_full_pipeline b4de809

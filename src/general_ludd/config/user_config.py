@@ -21,6 +21,7 @@ class UserConfig(BaseModel):
     database: dict[str, Any] = {}
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
+    self_improve: dict[str, Any] = {}
 
 
 class AgentConfig(BaseModel):

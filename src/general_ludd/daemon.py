@@ -392,6 +392,47 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     per_call_budget_usd=float(budget_data.get("per_task_limit", float("inf"))),
                 )
 
+        # Build the model gateway once (H4/H12): both the in-process reviewer and
+        # the agent dispatcher reuse the SAME gateway instance.
+        model_gateway = None
+        if model_profiles:
+            model_gateway = ModelGateway(
+                profiles=[
+                    p if isinstance(p, ModelProfile) else ModelProfile(**p)
+                    for p in model_profiles
+                    if isinstance(p, (ModelProfile, dict))
+                ],
+                provider_registry=None,
+                secrets_manager=secrets_resolver,
+                metrics_collector=ext.get("metrics_collector"),
+            )
+            app.state._model_gateway = model_gateway
+
+        # H4 (W3.2): wire a real ReturnReviewer into the review phase when a
+        # gateway exists. Review failure escalates the todo; it is never a
+        # silent pass.
+        return_reviewer = None
+        if model_gateway is not None:
+            from general_ludd.review.reviewer import ReturnReviewer
+
+            return_reviewer = ReturnReviewer(
+                gateway=model_gateway,
+                prompt_registry=prompt_registry,
+                router=ext.get("adaptive_router"),
+            )
+
+        # H2 (W3.7): self-improvement interval comes from config; 0 disables it.
+        self_improve_interval = 0
+        if uc is not None:
+            si_cfg = getattr(uc, "self_improve", None) or {}
+            with contextlib.suppress(Exception):
+                self_improve_interval = int(si_cfg.get("interval", 0))
+        if not self_improve_interval:
+            with contextlib.suppress(Exception):
+                self_improve_interval = int(
+                    startup_config.get("self_improve_interval", 0)
+                )
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -416,6 +457,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             daemon_state=_daemon_state,
             project_workspace=_init_project_workspaces(ext["projects"]),
             project_secrets_manager=secrets_resolver,
+            reviewer=return_reviewer,
+            self_improve_interval=self_improve_interval,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -460,18 +503,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = AgentRegistry()
         dispatcher_executor = None
 
-        if model_profiles:
-            model_gateway = ModelGateway(
-                profiles=[
-                    p if isinstance(p, ModelProfile) else ModelProfile(**p)
-                    for p in model_profiles
-                    if isinstance(p, (ModelProfile, dict))
-                ],
-                provider_registry=None,
-                secrets_manager=secrets_resolver,
-                metrics_collector=ext.get("metrics_collector"),
-            )
-            app.state._model_gateway = model_gateway
+        if model_gateway is not None:
             logger.info(
                 "Gateway-backed executor enabled with %d model profile(s)",
                 len(model_profiles),

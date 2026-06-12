@@ -173,25 +173,41 @@ class TestEventLoopSelfImprovePhase:
             assert loop._tick_metrics["self_improve_gaps"] == 1
 
     @pytest.mark.asyncio
-    async def test_phase_sets_high_priority_and_self_improve_type(self):
-        loop = EventLoop(self_improve_interval=1, daemon_state={})
-        loop._total_ticks = 1
+    async def test_phase_persists_self_improve_todos_via_repository(self):
+        # W3.7 (H2): the phase must PERSIST generated todos through the repo
+        # (work_type=self_improve, high priority), not discard them into the
+        # in-memory harness. Proven against a real in-memory session.
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from general_ludd.db.repository import TodoRepository
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+        from general_ludd.schemas.todo import TodoStatus
         from general_ludd.self_improve.harness import SelfImprovementHarness
-        captured_todos: list = []
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        await ensure_tables(engine)
+        factory = create_async_session_factory(engine)
+
+        loop = EventLoop(session=factory, self_improve_interval=1, daemon_state={})
         with patch.object(SelfImprovementHarness, "run_gap_analysis", return_value=[
             {"type": "missing_tests", "file": "a.py", "severity": "high",
              "message": "no tests"},
         ]), patch.object(SelfImprovementHarness, "generate_fix_todos", return_value=[
             {"title": "Add tests", "work_type": "test", "priority": "high"},
         ]):
-            def capture_enqueue(todos):
-                captured_todos.extend(todos)
-                return len(todos)
-            with patch.object(SelfImprovementHarness, "enqueue_todos", side_effect=capture_enqueue):
-                await loop._phase_self_improve()
-                assert len(captured_todos) == 1
-                assert captured_todos[0]["priority"] == "high"
-                assert captured_todos[0]["work_type"] == "self_improve"
+            await loop.tick()
+
+        async with factory() as session:
+            rows = await TodoRepository(session).list_all()
+            persisted = [r for r in rows if r.title == "Add tests"]
+            assert len(persisted) == 1
+            assert persisted[0].work_type == "self_improve"
+            assert persisted[0].status == TodoStatus.BACKLOG.value
+            # "high" maps to a high integer priority.
+            assert persisted[0].priority >= 10
 
     @pytest.mark.asyncio
     async def test_phase_no_findings_no_crash(self):

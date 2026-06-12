@@ -8,7 +8,7 @@ import json
 import logging
 import time
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import Any, ClassVar
 
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
@@ -150,6 +150,7 @@ class EventLoop:
         project_secrets_manager: Any | None = None,
         project_workspace: Any | None = None,
         self_improve_interval: int = 0,
+        reviewer: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -157,6 +158,7 @@ class EventLoop:
         self._project_secrets_manager = project_secrets_manager
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
+        self._reviewer = reviewer
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -341,14 +343,28 @@ class EventLoop:
             if shared_vars:
                 self._config_snapshot["shared_vars"] = shared_vars
 
+    def _select_tick_project(self) -> Any | None:
+        """M14 (W3.14): select ONE project per tick and reuse it everywhere.
+
+        The claim, review, and reconcile phases must all operate on the same
+        project; previously each called select_project() independently.
+        """
+        if self._project_manager is None:
+            return None
+        if "selected_project" in self._tick_state:
+            return self._tick_state["selected_project"]
+        project = self._project_manager.select_project()
+        self._tick_state["selected_project"] = project
+        return project
+
+    def _tick_project_id(self) -> str | None:
+        project = self._select_tick_project()
+        return project.project_id if project is not None else None
+
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:
             return
-        project_id: str | None = None
-        if self._project_manager is not None:
-            project = self._project_manager.select_project()
-            if project is not None:
-                project_id = project.project_id
+        project_id = self._tick_project_id()
         claimed = await self._task_return_repo.claim_unreviewed(project_id=project_id)
         self._tick_state["claimed_returns"] = claimed
 
@@ -365,6 +381,16 @@ class EventLoop:
         self._tick_metrics["returns_reviewed"] = len(claimed)
 
     async def _dispatch_review_job(self, tr: Any) -> None:
+        # H4 (W3.2): when a gateway-backed reviewer is wired, review in-process
+        # and route the decision through apply_decision. Failure escalates the
+        # todo — it is never silently marked complete / passed through.
+        if (
+            self._reviewer is not None
+            and self._active_session is not None
+            and self._todo_repo is not None
+        ):
+            await self._review_in_process(tr)
+            return
         project_id_val = getattr(tr, "project_id", None)
         if not isinstance(project_id_val, str):
             project_id_val = None
@@ -392,6 +418,68 @@ class EventLoop:
             json=job.model_dump(mode="json"),
         )
         await self._persist_review_response(tr, resp)
+
+    async def _review_in_process(self, tr: Any) -> None:
+        from general_ludd.review.decision_applier import apply_decision
+
+        assert self._reviewer is not None
+        return_id = getattr(tr, "return_id", "")
+        todo_id = getattr(tr, "todo_id", None)
+        task_return = TaskReturn(
+            return_id=return_id,
+            todo_id=todo_id,
+            job_id=getattr(tr, "job_id", None) or f"JOB-{return_id}",
+            playbook=getattr(tr, "playbook", None) or "noop.yml",
+            queue=_safe_str(tr, "queue", "model") or "model",
+            work_type=_safe_str(tr, "work_type", "review") or "review",
+            exit_code=int(getattr(tr, "exit_code", 0) or 0),
+            result_summary=_safe_str(tr, "result_summary", "") or "",
+        )
+        try:
+            decision = self._reviewer.review_return(
+                task_return, candidate_todos=[], artifacts=[]
+            )
+        except Exception as exc:
+            # Reviewer itself failed — escalate, never silent pass/complete.
+            logger.error("Reviewer raised for return %s: %s", return_id, exc)
+            decision = TaskDecision(
+                return_id=return_id,
+                matched_todo_id=todo_id,
+                decision="manual_hold",
+                confidence=0.0,
+                audit_notes=[f"Reviewer error: {exc}"],
+            )
+        assert self._todo_repo is not None
+        assert self._active_session is not None
+        try:
+            await apply_decision(decision, self._todo_repo, self._active_session)
+            await self._active_session.flush()
+        except Exception as exc:
+            logger.error(
+                "apply_decision failed for return %s (decision=%s): %s",
+                return_id,
+                getattr(decision, "decision", "?"),
+                exc,
+            )
+            return
+        if self._audit_repo is not None:
+            with contextlib.suppress(Exception):
+                await self._audit_repo.create(
+                    event_type="return_reviewed",
+                    entity_type="task_return",
+                    entity_id=return_id,
+                    project_id=getattr(tr, "project_id", None),
+                    details=json.dumps(
+                        {
+                            "decision": decision.decision,
+                            "confidence": decision.confidence,
+                            "matched_todo_id": decision.matched_todo_id,
+                        }
+                    ),
+                )
+        logger.info(
+            "In-process review for return %s -> %s", return_id, decision.decision
+        )
 
     async def _persist_review_response(self, tr: Any, resp: Any) -> None:
         if self._task_return_repo is None:
@@ -485,15 +573,26 @@ class EventLoop:
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
-        if self._project_manager is not None:
-            project = self._project_manager.select_project()
-            if project is not None:
-                claimed = await self._todo_repo.claim_runnable(project_id=project.project_id)
-            else:
-                claimed = await self._todo_repo.claim_runnable()
+        project_id = self._tick_project_id()
+        if project_id is not None:
+            claimed = await self._todo_repo.claim_runnable(project_id=project_id)
         else:
             claimed = await self._todo_repo.claim_runnable()
         self._tick_state["claimed_todos"] = claimed
+        # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
+        # work can be reclaimed once the lease expires.
+        if claimed and self._active_session is not None:
+            from general_ludd.event_loop.lease import acquire_lease
+            holder = f"tick-{self._total_ticks}"
+            for todo in claimed:
+                bucket_key = _safe_str(todo, "queue", "core") or "core"
+                with contextlib.suppress(Exception):
+                    await acquire_lease(
+                        self._active_session,
+                        bucket_key=f"{bucket_key}:{_safe_str(todo, 'todo_id', '')}",
+                        holder_id=holder,
+                        project_id=project_id,
+                    )
 
     async def _phase_dispatch_execute_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_todos", [])
@@ -680,10 +779,9 @@ class EventLoop:
         if self._active_session is None or self._todo_repo is None:
             return
         stmt = select(TaskDecisionModel).order_by(TaskDecisionModel.created_at.desc()).limit(50)
-        if self._project_manager is not None:
-            project = self._project_manager.select_project()
-            if project is not None:
-                stmt = stmt.where(TaskDecisionModel.project_id == project.project_id)
+        project_id = self._tick_project_id()
+        if project_id is not None:
+            stmt = stmt.where(TaskDecisionModel.project_id == project_id)
         result = await self._active_session.execute(stmt)
         decisions = list(result.scalars().all())
         reconciled = 0
@@ -750,20 +848,53 @@ class EventLoop:
                 self._tick_metrics["self_improve_gaps"] = 0
                 return
             todos = harness.generate_fix_todos(findings)
-            for todo in todos:
-                todo["priority"] = "high"
-                todo["work_type"] = "self_improve"
-            harness.enqueue_todos(todos)
+            # H2 (W3.7): persist through TodoRepository so the generated work
+            # survives the tick (the in-memory harness.enqueue_todos discarded
+            # them). Fall back to nothing if no repo/session is available.
+            enqueued = await self._persist_self_improve_todos(todos)
             if self._daemon_state is not None:
                 self._daemon_state["self_improve_last_analysis"] = {
                     "findings": findings, "findings_count": len(findings),
-                    "todos_enqueued": len(todos),
+                    "todos_enqueued": enqueued,
                 }
             self._tick_metrics["self_improve_gaps"] = len(findings)
-            logger.info("Self-improve cycle: %d gaps found, %d todos enqueued", len(findings), len(todos))
+            self._tick_metrics["self_improve_todos_persisted"] = enqueued
+            logger.info("Self-improve cycle: %d gaps found, %d todos persisted", len(findings), enqueued)
         except Exception as exc:
             logger.warning("Self-improve phase failed: %s", exc)
             self._tick_metrics["self_improve_gaps"] = 0
+
+    _PRIORITY_MAP: ClassVar[dict[str, int]] = {
+        "low": 0, "medium": 5, "high": 10, "critical": 20,
+    }
+
+    async def _persist_self_improve_todos(self, todos: list[dict[str, Any]]) -> int:
+        if self._todo_repo is None or self._active_session is None:
+            return 0
+        persisted = 0
+        for todo in todos:
+            priority_raw = todo.get("priority", "high")
+            if isinstance(priority_raw, int):
+                priority = priority_raw
+            else:
+                priority = self._PRIORITY_MAP.get(str(priority_raw).lower(), 10)
+            payload: dict[str, Any] = {
+                "title": str(todo.get("title", "Self-improvement task"))[:512],
+                "description": str(todo.get("description", "")),
+                "status": TodoStatus.BACKLOG.value,
+                "work_type": "self_improve",
+                "priority": priority,
+                "created_by": "self_improve_harness",
+            }
+            try:
+                await self._todo_repo.create(payload)
+                persisted += 1
+            except Exception as exc:
+                logger.warning("Failed to persist self-improve todo: %s", exc)
+        if persisted:
+            with contextlib.suppress(Exception):
+                await self._active_session.flush()
+        return persisted
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)

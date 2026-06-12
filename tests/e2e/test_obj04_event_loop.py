@@ -59,10 +59,47 @@ class TestEventLoopE2E:
         mock_http.post.assert_called()
 
     async def test_reclaims_expired_lease(self):
-        from general_ludd.event_loop.lease import reclaim_expired_leases
-        mock_session = AsyncMock()
-        result = await reclaim_expired_leases(mock_session)
-        assert isinstance(result, int)
+        """H15 (W2.5): expired bucket leases are purged; fresh ones survive."""
+        from datetime import UTC, datetime, timedelta
+
+        from sqlalchemy import select
+        from sqlalchemy.ext.asyncio import create_async_engine
+
+        from general_ludd.db.models import BucketLeaseModel
+        from general_ludd.db.session import (
+            create_async_session_factory,
+            ensure_tables,
+        )
+        from general_ludd.event_loop.lease import (
+            acquire_lease,
+            reclaim_expired_leases,
+        )
+
+        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        await ensure_tables(engine)
+        factory = create_async_session_factory(engine)
+
+        async with factory() as session:
+            # One already-expired lease, one still valid.
+            session.add(
+                BucketLeaseModel(
+                    bucket_key="core",
+                    holder_id="worker-old",
+                    expires_at=datetime.now(UTC) - timedelta(seconds=10),
+                )
+            )
+            await acquire_lease(session, "core", "worker-new", ttl_seconds=300)
+            await session.commit()
+
+            reclaimed = await reclaim_expired_leases(session)
+            assert isinstance(reclaimed, int)
+            assert reclaimed == 1
+
+            remaining = (
+                (await session.execute(select(BucketLeaseModel))).scalars().all()
+            )
+            holders = {r.holder_id for r in remaining}
+            assert holders == {"worker-new"}
 
     async def test_run_forever_stops_cleanly(self):
         loop = EventLoop(
