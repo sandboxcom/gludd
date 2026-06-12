@@ -153,7 +153,7 @@ class TestRealDaemonEndpoints:
         assert "entries" in data
         assert len(data["entries"]) >= 1
 
-    @patch("general_ludd.ansible.galaxy.search_galaxy")
+    @patch("general_ludd.routers.ansible.search_galaxy")
     def test_ansible_search(self, mock_search, client):
         mock_search.return_value = [{"name": "nginx", "description": "web server"}]
         resp = client.get("/admin/ansible/search", params={"query": "nginx", "type": "role"})
@@ -162,7 +162,7 @@ class TestRealDaemonEndpoints:
         assert "results" in data
         assert len(data["results"]) == 1
 
-    @patch("general_ludd.ansible.galaxy.install_galaxy")
+    @patch("general_ludd.routers.ansible.install_galaxy")
     def test_ansible_install(self, mock_install, client):
         mock_install.return_value = {"success": True, "output": "installed nginx"}
         resp = client.post("/admin/ansible/install", json={"name": "nginx", "type": "role"})
@@ -170,7 +170,7 @@ class TestRealDaemonEndpoints:
         data = resp.json()
         assert data["success"] is True
 
-    @patch("general_ludd.ansible.galaxy.get_builtin_modules")
+    @patch("general_ludd.routers.ansible.get_builtin_modules")
     def test_ansible_builtins(self, mock_builtins, client):
         mock_builtins.return_value = ["copy", "file", "shell"]
         resp = client.get("/admin/ansible/builtins")
@@ -189,7 +189,7 @@ class TestRealDaemonEndpoints:
         assert "scenarios_run" in data
         assert data["podman_available"] is False
 
-    @patch("general_ludd.ansible.galaxy.search_galaxy")
+    @patch("general_ludd.routers.ansible.search_galaxy")
     def test_ansible_search_empty_query(self, mock_search, client):
         mock_search.return_value = []
         resp = client.get("/admin/ansible/search", params={"query": "", "type": "role"})

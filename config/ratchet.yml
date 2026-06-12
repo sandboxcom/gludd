@@ -25,9 +25,6 @@ tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecrets
 tests/unit/test_daemon_coverage_lift.py::TestBuildSecretsResolver::test_build_secrets_resolver_openbao_external: "daemon secrets resolver — pre-existing"  # pragma: allowlist secret
 tests/unit/test_daemon_coverage_lift.py::TestBenchmarkRecordWithSession::test_benchmark_record_with_session: "daemon benchmark record — pre-existing"
 tests/unit/test_daemon_coverage_lift.py::TestWorktreeStatusWithMonitor::test_worktree_status_with_monitor: "daemon worktree monitor — pre-existing"
-tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_search: "daemon ansible search — pre-existing"
-tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_builtins: "daemon ansible builtins — pre-existing"
-tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_search_empty_query: "daemon ansible search empty — pre-existing"
 tests/unit/test_daemon_uncovered_endpoints.py::TestLocalInferenceStart::test_local_inference_start: "local inference start — pre-existing"
 tests/unit/test_mcp_transport.py::TestMCPStdioClient::test_stdio_client_sends_initialize: "MCP transport initialize — pre-existing protocol bug"
 tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_8000_occupied: "8000-occupied e2e proof — requires ephemeral port conversion of daemon tests"
