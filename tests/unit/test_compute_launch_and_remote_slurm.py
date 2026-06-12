@@ -121,6 +121,53 @@ class TestComputeLaunchDaemonEndpoint:
         routes = [r.path for r in app.routes]
         assert "/admin/compute/destroy/{instance_id}" in routes
 
+    def test_deployments_listing_endpoint_exists(self):
+        """W2.3 (M2): GET /api/deployments exposes the persisted registry."""
+        from fastapi import FastAPI
+
+        from general_ludd.routers.compute import register
+        app = FastAPI()
+        register(app, {})
+        routes = [r.path for r in app.routes]
+        assert "/api/deployments" in routes
+
+    def test_destroy_unknown_instance_returns_404(self, tmp_path):
+        """W2.3 (C5): destroying an instance with no record is refused (404), not run."""
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+
+        from general_ludd.infra.deployment import DeploymentManager
+        from general_ludd.routers.compute import register
+
+        app = FastAPI()
+        register(app, {})
+        app.state._deployment_manager = DeploymentManager(working_dir=str(tmp_path))
+        client = TestClient(app)
+        resp = client.delete("/admin/compute/destroy/i-never-deployed")
+        assert resp.status_code == 404
+
+    def test_deployments_listing_returns_registry(self, tmp_path):
+        from fastapi import FastAPI
+        from starlette.testclient import TestClient
+
+        from general_ludd.infra.deployment import DeploymentManager
+        from general_ludd.routers.compute import register
+        from general_ludd.schemas.deployment import DeploymentRecord
+
+        app = FastAPI()
+        register(app, {})
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        mgr._registry["i-abc"] = DeploymentRecord(
+            instance_id="i-abc", working_dir=str(tmp_path), provider="aws", state="running"
+        )
+        app.state._deployment_manager = mgr
+        client = TestClient(app)
+        resp = client.get("/api/deployments")
+        assert resp.status_code == 200
+        body = resp.json()
+        assert body["count"] == 1
+        assert body["deployments"][0]["instance_id"] == "i-abc"
+
 
 class TestComputeDeployUsesSecretsResolver:
     def test_deploy_resolves_aws_creds_from_secrets_resolver(self):

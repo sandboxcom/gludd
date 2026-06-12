@@ -199,26 +199,30 @@ class TestDeploymentManagerAuthInjection:
         assert os.environ.get("ARM_CLIENT_SECRET") == original_arm_secret
 
     @pytest.mark.asyncio
-    async def test_destroy_resolves_auth_aliases(self):
+    async def test_destroy_resolves_auth_aliases(self, tmp_path):
         env_resolver = EnvSecretsManager(overrides={
             "AZURE_SUB_ID": "sub-123",
         })
         resolver = BinaryPathResolver(config=BinaryPaths())
         mgr = DeploymentManager(
             binary_paths=resolver,
-            working_dir="/tmp/test-destroy-auth",
+            working_dir=str(tmp_path),
             secrets_resolver=env_resolver,
         )
 
         cfg = _make_config(
             provider_auth_aliases={"ARM_SUBSCRIPTION_ID": "AZURE_SUB_ID"},
         )
-        mgr._last_config = cfg
 
         original_sub = os.environ.get("ARM_SUBSCRIPTION_ID")
+        # C5: must deploy (registering the instance) before destroy can run.
         with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_tf:
-            mock_tf.return_value = {"stdout": "destroyed", "stderr": "", "returncode": 0}
-            await mgr.destroy("test-instance")
+            mock_tf.return_value = {
+                "stdout": json.dumps({"instance_ip": {"value": "1.2.3.4"}}),
+                "stderr": "", "returncode": 0,
+            }
+            instance = await mgr.deploy(cfg)
+            await mgr.destroy(instance.instance_id)
 
         assert os.environ.get("ARM_SUBSCRIPTION_ID") == original_sub
 

@@ -148,6 +148,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.delete("/admin/compute/destroy/{instance_id}")
     async def admin_compute_destroy(instance_id: str) -> dict[str, Any]:
         mgr = _get_deployment_manager()
+        # W2.3 (C5): destroy refuses an instance_id with no deployment record.
+        # Surface that as a 404 (unknown), terraform errors as 500.
+        if mgr.get_deployment(instance_id) is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"Unknown instance_id {instance_id}: no deployment record",
+            )
         try:
             await mgr.destroy(instance_id)
         except Exception as exc:
@@ -155,3 +162,25 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=500, detail=str(exc)) from exc
         app.state._compute_deployments.pop(instance_id, None)
         return {"destroyed": instance_id}
+
+    @app.get("/api/deployments")
+    async def list_deployments() -> dict[str, Any]:
+        # W2.3 (M2): expose the persisted deployment registry.
+        mgr = _get_deployment_manager()
+        records = mgr.list_deployments()
+        return {
+            "deployments": [
+                {
+                    "instance_id": r.instance_id,
+                    "provider": r.provider,
+                    "model_name": r.model_name,
+                    "state": r.state,
+                    "ip_address": r.ip_address,
+                    "endpoint_url": r.endpoint_url,
+                    "working_dir": r.working_dir,
+                    "created_at": r.created_at.isoformat(),
+                }
+                for r in records
+            ],
+            "count": len(records),
+        }

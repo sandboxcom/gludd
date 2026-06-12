@@ -141,20 +141,40 @@ class TestDeploymentLifecycle:
 
     @pytest.mark.asyncio
     @patch("general_ludd.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
-    async def test_destroy_runs_terraform_destroy(self, mock_binary: MagicMock) -> None:
-        dm = DeploymentManager()
+    async def test_destroy_runs_terraform_destroy(self, mock_binary: MagicMock, tmp_path) -> None:
+        """C5: deploy-before-destroy. Destroy runs terraform destroy against the
+        recorded deployment, not blindly on an instance_id it never deployed."""
+        dm = DeploymentManager(working_dir=str(tmp_path))
 
         async def fake_exec(bin: str, *args: str, **kwargs: str) -> asyncio.subprocess.Process:
             proc = MagicMock(spec=asyncio.subprocess.Process)
             proc.returncode = 0
-            proc.communicate = AsyncMock(return_value=(b"", b""))
+            proc.communicate = AsyncMock(
+                return_value=(b'{"instance_ip": {"value": "1.2.3.4"}}', b"")
+            )
             return proc
 
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            engine=InferenceEngine.VLLM,
+            model_name="test-model",
+            region="us-east-1",
+        )
         with patch("asyncio.create_subprocess_exec", side_effect=fake_exec) as mock_exec:
-            await dm.destroy("test-instance")
+            instance = await dm.deploy(config)
+            mock_exec.reset_mock()
+            await dm.destroy(instance.instance_id)
             assert mock_exec.call_count == 1
             call_args = mock_exec.call_args_list[0]
             assert "destroy" in call_args[0]
+
+    @pytest.mark.asyncio
+    @patch("general_ludd.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")
+    async def test_destroy_refuses_unknown_instance(self, mock_binary: MagicMock, tmp_path) -> None:
+        dm = DeploymentManager(working_dir=str(tmp_path))
+        with pytest.raises(ValueError, match=r"unknown|no deployment"):
+            await dm.destroy("never-deployed")
 
     @patch("shutil.which", side_effect=lambda name: "/usr/bin/tofu" if name == "tofu" else "/usr/bin/terraform")
     def test_deployment_uses_tofu_when_available(self, mock_which: MagicMock) -> None:

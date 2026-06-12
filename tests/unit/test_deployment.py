@@ -133,33 +133,52 @@ class TestDeploymentManagerDeploy:
 
 class TestDeploymentManagerDestroy:
     @pytest.mark.asyncio
-    async def test_destroy_runs_terraform_destroy(self):
+    async def test_destroy_runs_terraform_destroy(self, tmp_path):
+        """C5 fix: must DEPLOY before destroy; destroy then runs terraform destroy
+        against the recorded deployment (no blind destroy)."""
         resolver = BinaryPathResolver(config=BinaryPaths())
-        mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test-deploy")
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
 
         with patch.object(mgr, "_run_terraform", new_callable=AsyncMock) as mock_run:
-            mock_run.return_value = {}
-            await mgr.destroy("i-12345")
+            mock_run.return_value = {
+                "stdout": json.dumps({"instance_ip": {"value": "1.2.3.4"}})
+            }
+            instance = await mgr.deploy(_make_config())
+            mock_run.reset_mock()
+            await mgr.destroy(instance.instance_id)
 
             mock_run.assert_called_once()
             assert "destroy" in mock_run.call_args[0][0]
 
     @pytest.mark.asyncio
-    async def test_destroy_uses_correct_binary(self):
+    async def test_destroy_uses_correct_binary(self, tmp_path):
         resolver = BinaryPathResolver(config=BinaryPaths())
-        mgr = DeploymentManager(binary_paths=resolver, working_dir="/tmp/test-deploy")
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
 
         with patch.object(resolver, "get_infra_binary", return_value="tofu"), \
              patch("general_ludd.infra.deployment.asyncio.create_subprocess_exec") as mock_exec:
-            mock_proc = _mock_subprocess(
-                stdout="Resources: 0 destroyed.",
+            mock_exec.side_effect = lambda *a, **k: _mock_subprocess(
+                stdout=json.dumps({"instance_ip": {"value": "1.2.3.4"}}),
                 returncode=0,
             )
-            mock_exec.return_value = mock_proc
-            await mgr.destroy("i-12345")
+            instance = await mgr.deploy(_make_config())
+            mock_exec.reset_mock()
+            mock_exec.side_effect = None
+            mock_exec.return_value = _mock_subprocess(
+                stdout="Resources: 0 destroyed.", returncode=0,
+            )
+            await mgr.destroy(instance.instance_id)
 
             call_args = mock_exec.call_args[0]
             assert call_args[0] == "tofu"
+
+    @pytest.mark.asyncio
+    async def test_destroy_unknown_instance_refused(self, tmp_path):
+        """C5: destroying an instance never deployed must raise, not silently run."""
+        resolver = BinaryPathResolver(config=BinaryPaths())
+        mgr = DeploymentManager(binary_paths=resolver, working_dir=str(tmp_path))
+        with pytest.raises(ValueError, match=r"unknown|no deployment"):
+            await mgr.destroy("i-never-deployed")
 
 
 class TestDeploymentManagerRunTerraform:

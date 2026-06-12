@@ -95,13 +95,15 @@ class GitAutomation:
         result = self._run_git("rev-parse", "HEAD")
         return result.stdout.strip()
 
-    def clone(self, url: str, target_dir: str) -> CloneResult:
+    def clone(self, url: str, target_dir: str, timeout: float = 120.0) -> CloneResult:
         """Clone ``url`` into ``target_dir``.
 
         Idempotent: if ``target_dir`` already contains a git checkout, this is a
         no-op success (we never re-clone over existing work). Failures (bad URL,
-        unreachable remote) return ``success=False`` rather than raising, so
-        callers can fail closed without try/except noise.
+        unreachable remote, timeout) return ``success=False`` rather than raising,
+        so callers can fail closed without try/except noise. A bounded ``timeout``
+        and a non-interactive environment guarantee this never blocks the daemon
+        (e.g. on a credential prompt for a private/unreachable remote).
         """
         target = os.path.abspath(target_dir)
         if os.path.isdir(os.path.join(target, ".git")):
@@ -111,11 +113,20 @@ class GitAutomation:
             )
         parent = os.path.dirname(target) or "."
         os.makedirs(parent, exist_ok=True)
-        result = subprocess.run(
-            ["git", "clone", url, target],
-            capture_output=True,
-            text=True,
-        )
+        env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
+        try:
+            result = subprocess.run(
+                ["git", "clone", url, target],
+                capture_output=True,
+                text=True,
+                timeout=timeout,
+                env=env,
+            )
+        except subprocess.TimeoutExpired:
+            return CloneResult(
+                path=target, url=url, success=False,
+                message=f"clone timed out after {timeout}s",
+            )
         if result.returncode != 0:
             return CloneResult(
                 path=target, url=url, success=False,
