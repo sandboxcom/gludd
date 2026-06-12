@@ -2,7 +2,7 @@
 
 > **Audience:** the coding agent (GLM 5.1) running under opencode in this repo.
 > **Author:** independent validation pass, 2026-06-12 (HEAD = `65fc28b`). Supersedes the *status claims* in `SESSION.md` and `TASKS.md` for every item adjudicated in Section 1. Continues `GLM_REMEDIATION_GUIDE_2.md`.
-> **Single-prompt usage:** if this file is your only instruction, execute it top to bottom: W0, W1, W2, W3, W4, W5. Do not skip, reorder, or stop until the Section 8 checklist is fully ticked.
+> **Single-prompt usage:** if this file is your only instruction, execute it top to bottom: W0, W1, W2, W3, W4, W5, W6. (Exception: W6 may be interleaved with W3 — see W6.9's spine note.) Do not skip, reorder, or stop until the Section 9 checklist is fully ticked.
 
 ---
 
@@ -115,7 +115,8 @@ The H/M defects from `GLM_IMPLEMENTATION_GUIDE.md` §1 that no later guide re-ch
 | H17 secrets `auto` mode never tries OpenBao; no read-back of migrated secrets | `daemon.py:185-197` falls straight to env | W2.9 |
 | H18 Postgres cannot work | `db/session.py:114-118` create_all SQLite-only; `alembic.ini:3` hardcodes `sqlite:///./test.db`; stamp_head SQLite-only (`daemon.py:~341`) | W3.5 (document) |
 | M2 no deployments listing; fresh `DeploymentManager` per request | `routers/compute.py:31-46`; no `/api/deployments` endpoint exists | W2.3 (same registry fix) |
-| M11 CLI `code search`/`code graph` call endpoints that DON'T EXIST | no code router in `routers/`; the CLI commands added in session 3 (`cli.py` httpx calls) 404 against every daemon — a cross-interface parity failure, the exact BUGS.md 2026-06-07 incident pattern | W3.13 |
+| M11 — **CORRECTED 2026-06-12 (second look)**: the `/admin/code/*` endpoints DO exist (`routers/models.py:150-182` blocks/graph/search, `:260-318` complexity/suggest-model); the earlier "phantom endpoints" verdict in commit `4262064`'s message was wrong (they live in models.py, not a dedicated router). Remaining gap is unproven parity: no test exercises CLI→endpoint shapes end-to-end | `routers/models.py:150-182,260-318`; `cli.py` `_cmd_code_*` | W3.13 (re-scoped) |
+| H1-residual — `/admin/observability/comparison` reads `app.state._session`, which the lifespan never sets → permanently returns "No DB session available" (the H1 bug pattern survives in this one endpoint; benchmark.py was fixed, this wasn't) | `routers/models.py:143-148` | W3.10 |
 | M14 phases pick different random projects in one tick | `event_loop/loop.py:349,489` independent `select_project()` calls | W3.14 |
 | AUTH worker endpoints are unauthenticated | `worker/app.py:45-112` no PSK/auth check; the daemon HAS auth (`daemon.py:674-689`) | W5.6 |
 | COV the local gate never enforces coverage | pytest `addopts` has no `--cov` (`pyproject.toml:~113`) and the `gate` test step runs without `--cov` — `fail_under=70` only binds in `make test`/CI | W1.6 item 5 |
@@ -247,10 +248,11 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 - `daemon.py:140-154` loads `mcp_servers` config, then `daemon.py:403` passes `mcp_client=None` — config consumed by nothing, and `ModelGateway.call_model` has no tools parameter, so tools could not reach a model even if wired. This is a DESIGN task: either (a) wire `MCPClient` construction from config + add a tools pass-through to the gateway call path (large), or (b) mark MCP experimental: refuse `mcp_servers` config with a warning, document the gap. Decide once, in writing, in TASKS.md.
 - Commit: `W3.9: H8 — MCP wired (a) or honestly fenced (b)`
 
-### W3.10 (H12) Router-built gateway records metrics
+### W3.10 (H12 + H1-residual) Router construction hygiene
 - `routers/models.py` constructs `ModelGateway` without `metrics_collector` while `daemon.py:472` passes it — model calls made through the API are invisible to cost/metrics. Build the router's gateway from the same factory/app.state the daemon uses.
-- TDD: API model call → collector saw it.
-- Commit: `W3.10: H12 — one gateway construction path, metrics always attached`
+- Same file, same pattern: `/admin/observability/comparison` (`routers/models.py:143-148`) reads `app.state._session` which the lifespan never sets — switch it to the `_session_factory` pattern benchmark.py already uses.
+- TDD: API model call → collector saw it; comparison endpoint returns rankings with a factory-backed test app.
+- Commit: `W3.10: H12/H1-residual — one gateway construction path; comparison uses session factory`
 
 ### W3.11 (H13) Projects must actually have code — spine-critical
 - `projects/manager.py:19-39` stores `repo_url`; **nothing in src/ ever clones it.** A dispatched job has no repository to edit — this nullifies the whole spine for remote projects. Implement workspace materialization: on project add/startup, clone (or verify) `repo_url` into `workspace_path` via the existing `git_automation/repo.py` (it already has real worktree/branch support — use it, don't shell out anew). Persist projects through `ProjectRepository` so restarts keep them.
@@ -261,10 +263,10 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 - `reload/hot_reloader.py:103-109` returns `models_reloaded: True` after a bare existence check; `ReloadManager.execute_reload` reports success while doing nothing. Implement the model-routing reload for real (parse + swap the routing config the gateway reads) and make every other fake reload path return `{"reloaded": false, "reason": "not implemented"}`. No success reports for no-ops.
 - Commit: `W3.12: H14 — reload reports only what actually reloaded`
 
-### W3.13 (M11) CLI `code search`/`code graph` call endpoints that don't exist
-- The CLI commands (added 2026-06-11, `cli.py` httpx calls to `/admin/code/*`) 404 against every daemon — no code-intelligence router exists. The five `code_intelligence/` utilities are real with zero callers. Add the router exposing search + graph over them, OR remove the CLI commands. This is the BUGS.md 2026-06-07 cross-interface-parity incident pattern, recommitted.
-- TDD: daemon test client → `/admin/code/search?q=...` returns results from a fixture tree; CLI command test against the test app.
-- Commit: `W3.13: M11 — code-intelligence router; CLI commands now have a server side`
+### W3.13 (M11, re-scoped after correction) Prove CLI ↔ code-endpoint parity
+- The `/admin/code/*` endpoints exist (`routers/models.py:150-182,260-318`) — the gap is that nothing proves the CLI's request/response shapes match them (the M5 failure class). Note the endpoints take `source` as a query/body param (raw code text), while a CLI user passes file paths — verify `_cmd_code_search`/`_cmd_code_graph` read files and send `source` correctly.
+- TDD: test app + CLI functions end-to-end: `code search` over a fixture file returns results; `code graph` returns nodes/edges. Fix whichever side lies.
+- Commit: `W3.13: M11 — CLI/code-endpoint parity proven by test`
 
 ### W3.14 (M14) One project per tick
 - `event_loop/loop.py:349,489`: claim/review phases each call `select_project()` independently — one tick can claim from project A and review project B. Select once per tick, pass it to the phases.
@@ -328,6 +330,77 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 
 ---
 
+## 7b. Phase W6 — Agent-as-Playbook: the `general_ludd.agent` Ansible collection
+
+**Goal:** a deployed agent IS an Ansible playbook. One role invocation performs a full task: git worktree → skill selection (with templated variables) → model call (routed) → tool/MCP use → quality gate → git commit → result artifact. Today none of this is callable from Ansible.
+
+**Verified starting state (2026-06-12):**
+- `roles/` and `collections/` are empty; **zero custom Ansible modules/action plugins/module_utils exist anywhere** (the repo drives ansible-core from Python via `ansible/core_runner.py`, never the reverse).
+- `langchain>=0.3.0`, `langchain-openai>=0.3.0`, `langgraph>=0.2.0` are all declared (`pyproject.toml:28-29,34`) but **langgraph is imported nowhere in src/** — the actual tool-calling loop is hand-rolled (`execution/tool_loop.py:21-116`, `ToolCallLoop`, MAX_TOOL_ITERATIONS=10, gateway + MCP aware).
+- Skill bodies flow raw: `event_loop/loop.py:575,594` resolves `skill_body` into playbook extravars; `execution/engine.py:48` injects it into the system prompt. **No Jinja2 templating of skill bodies exists** (`skills/loader.py` parses frontmatter only).
+- Extravars reach plays via `core_runner.py:228,259` (CLIARGS + VariableManager); per-run env via `ansible/runner.py:117-129`.
+- `_WORK_TYPE_PLAYBOOK_MAP` (`loop.py:103-127`) maps work types to playbooks; several targets are stubs writing canned JSON (`self_improve_harness.yml:18-29`), some are real (`validate_task.yml`, `git_automate_change.yml`).
+- **No HTTP endpoint exists for model generation** — `routers/models.py` is admin-only (add/list/discover/health); an Ansible task has no way to ask for a completion today.
+
+**Architecture rules for this phase:**
+- Collection lives at `collections/ansible_collections/general_ludd/agent/` (galaxy.yml, `plugins/modules/`, `plugins/module_utils/`, `roles/`). `core_runner` sets the collections path so plays resolve `general_ludd.agent.*`.
+- Modules run on `hosts: localhost` and import `general_ludd` directly through one `module_utils/gludd.py` shim (same venv — verified the runner executes in-process). Every module ALSO accepts `daemon_url` to operate over HTTP instead, so a play can run on a remote worker. One shim, two transports; never per-module ad-hoc imports.
+- Modules return JSON facts (`register:`-able); they never print, never exit nonzero for domain-level "no result" (only for errors). Result artifact contract stays the existing `{"status": ...}` JSON the reconcile phase reads.
+
+### W6.1 Collection skeleton + ping
+- Create the collection skeleton; teach `core_runner.py` the collections path; add `general_ludd.agent.gludd_ping` (returns `{"pong": true, "daemon_reachable": <bool>}`).
+- TDD: unit test runs a fixture playbook through `AnsibleRunnerAdapter` and asserts the module's fact. Add `make ansible-collection-test`.
+- Commit: `W6.1: general_ludd.agent collection skeleton + ping module`
+
+### W6.2 `gludd_model_call` module + generation endpoint
+- New daemon endpoint `POST /admin/models/call` (prompt, model_profile OR task_type for adaptive routing, max_tokens) → gateway call (the W4.1 tenacity path) → `{text, model_profile_id, usage}`. This endpoint is required because none exists (verified). Auth: same PSK as other admin routes.
+- Module params: `prompt`, `model_profile`, `route_task_type` (mutually exclusive with model_profile; uses AdaptiveRouter / `/admin/code/suggest-model` logic), `max_tokens`, `daemon_url`. Local transport calls the gateway directly via the shim.
+- TDD: module test with mocked gateway → text returned; routed variant picks the recommended profile.
+- Commit: `W6.2: gludd_model_call module + /admin/models/call endpoint`
+
+### W6.3 `gludd_worktree` + `gludd_git` modules
+- Thin wrappers over `git_automation/repo.py` (it already does worktree/branch/commit/push — verified real, the H6 wiring uses it). `gludd_worktree`: state=present/absent, repo_path, branch → returns `worktree_path`. `gludd_git`: op=commit/push/branch, path, message → returns sha. Modules are idempotent (`changed` only when something happened).
+- TDD: fixture repo → worktree created, file edited, committed; second run reports `changed: false`.
+- Commit: `W6.3: gludd_worktree + gludd_git modules over git_automation`
+
+### W6.4 `gludd_db` module — todo/resource state from plays
+- Ops: `todo_get`, `todo_update_status`, `resource_preference` (model/queue preference reads). HTTP transport ONLY (daemon API: `/api/todos` etc.) — plays must never open the SQLite file (single-writer rule, see W3.5). Add the missing read endpoints if a listed op has none, in the same commit.
+- TDD: against the test app: play reads a seeded todo, flips status, reads it back.
+- Commit: `W6.4: gludd_db module over daemon API`
+
+### W6.5 `gludd_skill` module — selection + **templated variables**
+- This is where "skills with templated variables become obvious." Add `render_skill(body, variables)` to `skills/` (Jinja2 `StrictUndefined` — an unknown variable is an error, not silent text). The module: `name` OR `trigger` (match via SkillCatalog), `variables` (dict) → returns `{skill_name, rendered_body, required_vars}`. Frontmatter may declare `required_vars`; missing ones fail the task with a clear message.
+- Wire the SAME `render_skill` into `execution/engine.py:48` so prompt-injection and playbook paths render identically — one renderer, two consumers.
+- TDD: skill fixture with `{{ project_name }}` renders; missing var → module fails with the var named; engine path renders identically.
+- Commit: `W6.5: skill rendering with templated variables; gludd_skill module`
+
+### W6.6 `gludd_mcp_tool` module
+- `server`, `tool`, `arguments` → result. Blocked on the W3.9 decision: if W3.9 chose (a) wiring, the module calls through the daemon's MCP client; if (b) fenced, the module exists but fails with `not_implemented` and the W3.9 rationale — an honest placeholder, not a silent ack.
+- Commit: `W6.6: gludd_mcp_tool module (per W3.9 decision)`
+
+### W6.7 The `agent_task` role — full task from one playbook
+- Role `general_ludd.agent.agent_task` with defaults: `repo_path`, `work_type`, `todo_id`, `model_profile`/`route_by_complexity`, `skill_name`, `skill_vars`, `quality_gate_cmd` (default `make test-count`). Task flow: `gludd_db todo_get` → `gludd_worktree present` → `gludd_skill` render → `gludd_agent_run` (W6.8) → quality gate `command` → `gludd_git commit` → `gludd_db todo_update_status` → write the standard JSON result artifact. `block/rescue/always` so the worktree is removed and the todo released on ANY failure.
+- Convert one stub playbook end-to-end as proof: `self_improve_harness.yml` (today canned JSON, `:18-29`) becomes a 5-line invocation of the role. Then migrate the rest of `_WORK_TYPE_PLAYBOOK_MAP` targets one per commit.
+- TDD: role run against a fixture repo + mocked gateway produces a real commit; failure inside the model step still cleans up the worktree.
+- Commit: `W6.7: agent_task role; self_improve_harness is a role invocation`
+
+### W6.8 `gludd_agent_run` — the agent loop, and the langgraph/langchain decision
+- The role's brain: prompt (with rendered skill) + tools → iterate model/tool calls → final answer/diff. Two honest options, pick ONE:
+  - **(a) langgraph (recommended — the deps are already declared and the user intent is langgraph/langchain-native roles):** build the loop on `langgraph.prebuilt.create_react_agent` with langchain tool wrappers around the gludd tools (git, db, mcp, code-intelligence endpoints); the existing `ToolCallLoop` (`execution/tool_loop.py:21-116`) is then DELETED in the same commit (one implementation lives — the V3.1 lesson).
+  - **(b) keep `ToolCallLoop`:** then remove `langgraph` (and `langchain`/`langchain-openai` if `make deps-audit` (W4.5) confirms they are unused) from pyproject — declared-unused deps are the rule-8 failure mode.
+- Either way the module's interface is identical: `prompt`, `tools` (list), `max_iterations`, returns `{answer, tool_calls, usage}`.
+- TDD: mocked gateway scripted to request one tool call then answer — loop executes the tool and returns the final text.
+- Commit: `W6.8: gludd_agent_run on langgraph (ToolCallLoop deleted)` or `W6.8: ToolCallLoop kept; langgraph/langchain removed per deps-audit`
+
+### W6.9 Molecule proof + spine tie-in
+- Molecule scenario `agent_task`: converge runs the role against a fixture repo with the gateway endpoint stubbed (local HTTP fixture); verify asserts the commit exists and the result artifact parses. Register in `make molecule-test SCENARIO=agent_task`.
+- Spine note: **W6 is an implementation strategy for W3.1 (C1)** — the worker's "call the model" path can be exactly "run a playbook that uses these modules." If you reach W3.1 first, implement it minimally (direct gateway call) and migrate to the role here; do not build two parallel architectures silently — record the choice in TASKS.md.
+- Commit: `W6.9: molecule agent_task scenario green`
+
+**Phase W6 exit gate:** `make gate` green; molecule `agent_task` green; at least `self_improve_harness.yml` and one code-work playbook are role invocations; a todo dispatched through the event loop produces a model-driven commit using only Ansible-visible steps.
+
+---
+
 ## 8. Definition of Done (every task)
 
 1. Failing test first, now passing — named in the evidence line.
@@ -375,10 +448,10 @@ Phase W3 — product spine
 [ ] W3.7  H2: self-improvement todos persisted via TodoRepository
 [ ] W3.8  H3: worker stub endpoints real or explicit 501
 [ ] W3.9  H8: MCP wired or honestly fenced (decision in TASKS.md)
-[ ] W3.10 H12: router gateway gets metrics_collector (one construction path)
+[ ] W3.10 H12/H1-residual: router gateway gets metrics_collector; comparison endpoint uses session factory
 [ ] W3.11 H13: project workspaces cloned from repo_url + persisted (spine-critical)
 [ ] W3.12 H14: hot-reload reports only real reloads
-[ ] W3.13 M11: code-intelligence router added (or CLI commands removed)
+[ ] W3.13 M11 re-scoped: CLI ↔ /admin/code/* parity proven by test (endpoints exist — corrected)
 [ ] W3.14 M14: one select_project() per tick
 
 Phase W4 — OSS replacements finished honestly
@@ -396,6 +469,17 @@ Phase W5 — ship
 [ ] W5.4  mypy 18 → 0, MYPY_MAX lowered stepwise
 [ ] W5.5  README claims measured (preflight) or removed
 [ ] W5.6  worker job endpoints require PSK auth
+
+Phase W6 — agent-as-playbook (general_ludd.agent collection)
+[ ] W6.1  collection skeleton + gludd_ping + collections path in core_runner
+[ ] W6.2  gludd_model_call module + POST /admin/models/call endpoint
+[ ] W6.3  gludd_worktree + gludd_git modules over git_automation
+[ ] W6.4  gludd_db module over daemon API (never raw sqlite)
+[ ] W6.5  skill rendering with templated variables (StrictUndefined); gludd_skill module; engine uses same renderer
+[ ] W6.6  gludd_mcp_tool module (honest not_implemented if W3.9 fenced)
+[ ] W6.7  agent_task role; self_improve_harness.yml converted; map targets migrated
+[ ] W6.8  gludd_agent_run: langgraph ReAct agent (ToolCallLoop deleted) OR ToolCallLoop kept + langgraph/langchain removed
+[ ] W6.9  molecule agent_task scenario green; W3.1 strategy recorded in TASKS.md
 ```
 
 Start at W1.1. Prove every step with a `make` target you ran this session.
