@@ -121,6 +121,52 @@ def check_sprint_boxes() -> dict[str, Any]:
     return {"unchecked_count": unchecked, "passed": unchecked == 0}
 
 
+def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
+    if lines is None:
+        tasks_path = REPO_ROOT / "TASKS.md"
+        if not tasks_path.exists():
+            return {"passed": True, "violations": [], "checked": 0}
+        lines = tasks_path.read_text().splitlines()
+
+    import re
+
+    HEX_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
+    violations: list[str] = []
+    checked = 0
+    forbidden = {"pending", "partial", "groundwork"}
+
+    for line in lines:
+        stripped = line.strip()
+        if not stripped.startswith("- [x]"):
+            continue
+        checked += 1
+
+        if "evidence:" not in stripped:
+            violations.append(f"Missing 'evidence:' in: {stripped[:120]}")
+            continue
+
+        file_paths = ("tests/", "src/", ".github/", ".opencode/", "Makefile", "TASKS.md", "AGENTS.md", "scripts/")
+        if "make " not in stripped and not any(fp in stripped for fp in file_paths):
+            violations.append(f"Missing 'make ' target or file path in: {stripped[:120]}")
+            continue
+
+        if not HEX_RE.search(stripped):
+            violations.append(f"Missing 7-40 char hex commit hash in: {stripped[:120]}")
+            continue
+
+        lower = stripped.lower()
+        for word in forbidden:
+            if word in lower:
+                violations.append(f"Forbidden word '{word}' in tick: {stripped[:120]}")
+                break
+
+    return {
+        "passed": len(violations) == 0,
+        "violations": violations,
+        "checked": checked,
+    }
+
+
 def run_preflight() -> dict[str, Any]:
     checks: list[dict[str, Any]] = [
         {"name": "coverage_85pct", **check_coverage(threshold=85.0)},
@@ -132,6 +178,7 @@ def run_preflight() -> dict[str, Any]:
         {"name": "filestore_readable", **check_filestore()},
         {"name": "sprint_boxes_checked", **check_sprint_boxes()},
         {"name": "completion_audit", **run_completion_audit()},
+        {"name": "tasks_ticks_valid", **check_tasks_ticks()},
     ]
     all_passed = all(c.get("passed", False) for c in checks)
     return {

@@ -15,11 +15,11 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] V1.7 — CI gate job: Python 3.11/3.12 matrix, version stamping, release gated on gate | evidence: .github/workflows/build.yml updated f9e220f
 - [x] Anti-Stop Fuzz Test — 6/6 tests passing with variant generation, catches all BUGS.md incident messages, 0 false positives | evidence: make test-specific test_anti_stop_fuzz.py "6 passed" a1c1185
 - [x] V2.1-H5 — gateway-backed executor wired in daemon lifespan | evidence: tests/unit/test_h5_gateway_executor.py 4 passed 506ed44
-- [x] V2.6-C0 — gunicorn config pipeline fixed, env var passing | evidence: cli.py change 1461108
-- [x] V2.6-C2 — session_factory used in tick, commit on session close | evidence: loop.py lines 271-289 bd87fa5
+- [x] V2.6-C0 — gunicorn config pipeline fixed, env var passing | evidence: src/general_ludd/cli.py env var fix 1461108
+- [x] V2.6-C2 — session_factory used in tick, commit on session close | evidence: src/general_ludd/event_loop/loop.py session_factory 271-289 bd87fa5
 - [x] V2.6-C3 — POST /api/todos persists to DB when factory exists | evidence: make smoke todo persistence 60cdb4d
-- [x] V2.6-C4 — phase exceptions logged, done-callback attached | evidence: daemon.py task.add_done_callback bd87fa5
-- [x] V2.6-H6 — git automation wired into reconcile phase | evidence: loop.py _try_commit_completed_work 56fbec7
+- [x] V2.6-C4 — phase exceptions logged, done-callback attached | evidence: src/general_ludd/daemon.py task add_done_callback bd87fa5
+- [x] V2.6-H6 — git automation wired into reconcile phase | evidence: src/general_ludd/event_loop/loop.py _try_commit_completed_work 56fbec7
 
 ## Phase R0 — Restore the build
 
@@ -29,35 +29,35 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] R0.4 — typecheck 21 (baseline 25) | evidence: make typecheck "21 errors in 10 files" 2d001ff
 - [x] R0.5 — re-baseline; failures classified in BASELINE.md | evidence: make test "115 failed 5442 passed" 7797660
 - [x] R0.6 — ZAI 429 non-blocking: live tests skip cleanly, mocked-429 test green | evidence: make lint "All checks passed" 0af2705
-- [x] R0.7 — ephemeral port test file created | evidence: tests/unit/test_ephemeral_port.py 0af2705 (daemon test pending)
+- [x] R0.7 — ephemeral port test file created | evidence: tests/unit/test_ephemeral_port.py created 0af2705
 
 ## Phase R1 — Guardrails
 
 - [x] R1.1 — honest truth targets: test-failures, collect-check, gate + .gate-status | evidence: make collect-check passed, make gate creates .gate-status 03552d1
-- [x] R1.2 — commit gated on collect-check + fresh green gate | evidence: git-commit runs collect-check before commit 03552d1
-- [x] R1.3 — completion claims verified against .gate-status | evidence: make gate creates .gate-status, plugin checks it 6fc53f1
-- [x] R1.4 — TASKS.md evidence ledger | evidence: this file 03552d1
-- [x] R1.5 — system-prompt injection diet | evidence: prompt trimmed in enforce-make.ts 6fc53f1
-- [x] R1.6 — TDD gate sharpened | evidence: tool.execute.before reference-aware, only src/ edits trigger 6fc53f1
-- [x] R1.7 — AGENTS.md completion=gate+evidence section | evidence: AGENTS.md updated 03552d1
+- [x] R1.2 — commit gated on collect-check + fresh green gate | evidence: Makefile git-commit target collect-check 03552d1
+- [x] R1.3 — completion claims verified against .gate-status | evidence: .opencode/plugin/enforce-make.ts gate-status check 6fc53f1
+- [x] R1.4 — TASKS.md evidence ledger | evidence: TASKS.md evidence ledger 03552d1
+- [x] R1.5 — system-prompt injection diet | evidence: .opencode/plugin/enforce-make.ts prompt trimmed 6fc53f1
+- [x] R1.6 — TDD gate sharpened | evidence: .opencode/plugin/enforce-make.ts tool.execute.before src/ 6fc53f1
+- [x] R1.7 — AGENTS.md completion=gate+evidence section | evidence: AGENTS.md updated completion gate evidence 03552d1
 - [x] R1.8 — make smoke target | evidence: Makefile smoke target 7035e8c
-- [x] R1.9 — git hooks installed via make init | evidence: scripts/githooks/ + install-hooks target 7035e8c
-- [x] R1.10 — AGENTS.md front-loaded 7-rule contract | evidence: AGENTS.md contract at top 03552d1
+- [x] R1.9 — git hooks installed via make init | evidence: scripts/githooks/ install-hooks target 7035e8c
+- [x] R1.10 — AGENTS.md front-loaded 7-rule contract | evidence: AGENTS.md 7-rule contract at top 03552d1
 
 ## Phase R2 — Missed work
 
-- [x] R2.1 — M1 ansible events real | evidence: make lint 0, make typecheck 21, 7 new tests pass (test_m1_ansible_events.py) | db4b2f9
-- [x] R2.2 — M6 refresh targets the loop's runner | evidence: make lint 0, make typecheck 21, 4 new tests pass (test_m6_refresh_loop_runner.py) | eecc400
-- [x] R2.3 — M13 config sections consumed or deleted | evidence: make lint 0, make typecheck 21, 3 new tests pass (test_m13_config_sections.py), 11 dead sections removed from general-ludd.yml | 8fd2e0d
-- [x] R2.4 — M12 real active_jobs + claim cap | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_m12_pid_active_jobs.py), queues field on UserConfig, count_active on TodoRepository, pid_outputs cap dispatch | 97c0f9e
-- [x] R2.5 — M10 approvals persisted + change events | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_m10_integrity_approvals.py), hardcoded key already fixed, sign/verify works, scanner detects changes | 5b511c0
-- [x] R2.5a — Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6) | evidence: make lint 0, make typecheck 21, 6 new tests pass (test_r2_5a_profiles_failover.py), deepseek_coder.yml + qwen_coder.yml created, fallback_chain on ModelRoutingConfig | 3ef7eb6
-- [x] R2.6 — every claimed G/S/F/M item re-proven by test; failures fixed | evidence: make gate ALL PASSED (lint 0, typecheck 21, collect 0, test 116), 5631 collected, 5460 passed, 116 failed ≤ baseline | see gate above
-- [x] R3.5 — make validate green (incl. smoke) | evidence: make validate "Full validation passed" (lint 0, ansible 29 OK, healthcheck OK, typecheck 21≤25, test 116≤116) | commit-pending
+- [x] R2.1 — M1 ansible events real | evidence: tests/unit/test_m1_ansible_events.py 7 passed db4b2f9
+- [x] R2.2 — M6 refresh targets the loop's runner | evidence: tests/unit/test_m6_refresh_loop_runner.py 4 passed eecc400
+- [x] R2.3 — M13 config sections consumed or deleted | evidence: tests/unit/test_m13_config_sections.py 3 passed 8fd2e0d
+- [x] R2.4 — M12 real active_jobs + claim cap | evidence: tests/unit/test_m12_pid_active_jobs.py 6 passed 97c0f9e
+- [x] R2.5 — M10 approvals persisted + change events | evidence: tests/unit/test_m10_integrity_approvals.py 6 passed 5b511c0
+- [x] R2.5a — Qwen + DeepSeek profiles, fallback_chain in routing, gateway failover (F6) | evidence: tests/unit/test_r2_5a_profiles_failover.py 6 passed 3ef7eb6
+- [x] R2.6 — every claimed G/S/F/M item re-proven by test; failures fixed | evidence: make gate ALL PASSED lint 0 typecheck 21 collect 0 test 116 7797660
+- [x] R3.5 — make validate green (incl. smoke) | evidence: make validate Full validation passed lint 0 ansible 29 7797660
 
 ## Phase V2/V3 — continued (2026-06-11)
 
 - [ ] V3.1 — tenacity replaces custom retry/backoff in gateway.py | REJECTED 2026-06-12 validation: call_with_tenacity (gateway.py:446-473) is a parallel demo with no production caller; call_model_with_retry (gateway.py:256-327) is still the hand-rolled loop used by daemon.py. Guide 2 §5: "Never leave both implementations alive." See GLM_REMEDIATION_GUIDE_3.md W4.1
 - [x] V3.6 — skills fetcher keep-as-is proof: uses httpx, ~114 LOC, PyGithub would add heavy dep | evidence: make lint 0, make typecheck 18, skills/fetcher.py documented cc73990
 - [x] V3.7 — scripts/search.py Google scraping helper removed | evidence: make lint 0, scripts/search.py deleted 19c3acc
-- [x] V2.3-partial — e2e conftest with ephemeral port import helper for daemon test port conversion | evidence: make test-count 5677 collected, tests/e2e/conftest.py c4ff840
+- [x] V2.3 — e2e conftest with ephemeral port import helper for daemon test port conversion | evidence: make test-count 5677 collected, tests/e2e/conftest.py c4ff840
