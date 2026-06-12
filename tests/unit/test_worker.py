@@ -35,6 +35,33 @@ def _make_runner_result(
     return r
 
 
+def _make_adapter(
+    tmp: str,
+    job_id: str,
+    events: list[dict[str, Any]] | None = None,
+    artifacts: list[Any] | None = None,
+) -> MagicMock:
+    adapter = MagicMock()
+    adapter.list_playbooks.return_value = ["noop.yml"]
+    adapter.prepare_job_dirs.return_value = {
+        "root": os.path.join(tmp, job_id),
+        "env": os.path.join(tmp, job_id, "env"),
+        "project": os.path.join(tmp, job_id, "project"),
+        "inventory": os.path.join(tmp, job_id, "inventory"),
+        "artifacts": os.path.join(tmp, job_id, "artifacts"),
+    }
+    adapter.write_vars.return_value = os.path.join(tmp, job_id, "env", "extravars")
+    result: dict[str, Any] = {
+        "status": "successful",
+        "rc": 0,
+        "events": events or [{"event": "playbook_on_start"}],
+    }
+    if artifacts is not None:
+        result["artifacts"] = artifacts
+    adapter.run_playbook.return_value = result
+    return adapter
+
+
 class TestWorkerApp:
     @pytest.mark.asyncio
     async def test_healthz(self, transport):
@@ -58,20 +85,7 @@ class TestWorkerApp:
     @patch("general_ludd.worker.app.get_runner")
     async def test_worker_execute_noop_playbook(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
-        adapter = MagicMock()
-        adapter.prepare_job_dirs.return_value = {
-            "root": os.path.join(tmp, "JOB-EXE"),
-            "env": os.path.join(tmp, "JOB-EXE", "env"),
-            "project": os.path.join(tmp, "JOB-EXE", "project"),
-            "inventory": os.path.join(tmp, "JOB-EXE", "inventory"),
-            "artifacts": os.path.join(tmp, "JOB-EXE", "artifacts"),
-        }
-        adapter.write_vars.return_value = os.path.join(tmp, "JOB-EXE", "env", "extravars")
-        adapter.run_playbook.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [{"event": "playbook_on_start"}],
-        }
+        adapter = _make_adapter(tmp, "JOB-EXE")
         mock_get_runner.return_value = adapter
 
         transport = ASGITransport(app=app)
@@ -92,20 +106,11 @@ class TestWorkerApp:
     @patch("general_ludd.worker.app.get_runner")
     async def test_worker_writes_task_return_with_artifacts(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
-        adapter = MagicMock()
-        adapter.prepare_job_dirs.return_value = {
-            "root": os.path.join(tmp, "JOB-ART"),
-            "env": os.path.join(tmp, "JOB-ART", "env"),
-            "project": os.path.join(tmp, "JOB-ART", "project"),
-            "inventory": os.path.join(tmp, "JOB-ART", "inventory"),
-            "artifacts": os.path.join(tmp, "JOB-ART", "artifacts"),
-        }
-        adapter.write_vars.return_value = os.path.join(tmp, "JOB-ART", "env", "extravars")
-        adapter.run_playbook.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [{"event": "runner_on_ok"}],
-        }
+        adapter = _make_adapter(
+            tmp, "JOB-ART",
+            events=[{"event": "runner_on_ok"}],
+            artifacts=["artifact1.log"],
+        )
         mock_get_runner.return_value = adapter
 
         transport = ASGITransport(app=app)
@@ -124,24 +129,11 @@ class TestWorkerApp:
     @patch("general_ludd.worker.app.get_runner")
     async def test_worker_captures_runner_events(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
-        adapter = MagicMock()
-        adapter.prepare_job_dirs.return_value = {
-            "root": os.path.join(tmp, "JOB-EVT"),
-            "env": os.path.join(tmp, "JOB-EVT", "env"),
-            "project": os.path.join(tmp, "JOB-EVT", "project"),
-            "inventory": os.path.join(tmp, "JOB-EVT", "inventory"),
-            "artifacts": os.path.join(tmp, "JOB-EVT", "artifacts"),
-        }
-        adapter.write_vars.return_value = os.path.join(tmp, "JOB-EVT", "env", "extravars")
         events = [
             {"event": "playbook_on_start"},
             {"event": "runner_on_ok", "event_data": {"task": "debug"}},
         ]
-        adapter.run_playbook.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": events,
-        }
+        adapter = _make_adapter(tmp, "JOB-EVT", events=events)
         mock_get_runner.return_value = adapter
 
         transport = ASGITransport(app=app)
@@ -158,20 +150,7 @@ class TestWorkerApp:
     @patch("general_ludd.worker.app.get_runner")
     async def test_worker_vars_files_created_correctly(self, mock_get_runner: MagicMock, app: Any) -> None:
         tmp = tempfile.mkdtemp()
-        adapter = MagicMock()
-        adapter.prepare_job_dirs.return_value = {
-            "root": os.path.join(tmp, "JOB-VAR"),
-            "env": os.path.join(tmp, "JOB-VAR", "env"),
-            "project": os.path.join(tmp, "JOB-VAR", "project"),
-            "inventory": os.path.join(tmp, "JOB-VAR", "inventory"),
-            "artifacts": os.path.join(tmp, "JOB-VAR", "artifacts"),
-        }
-        adapter.write_vars.return_value = os.path.join(tmp, "JOB-VAR", "env", "extravars")
-        adapter.run_playbook.return_value = {
-            "status": "successful",
-            "rc": 0,
-            "events": [],
-        }
+        adapter = _make_adapter(tmp, "JOB-VAR", events=[])
         mock_get_runner.return_value = adapter
 
         transport = ASGITransport(app=app)

@@ -10,7 +10,6 @@ tests/e2e/test_new_features_e2e.py::TestBinaryPathConfig::test_resolver_integrat
 tests/e2e/test_new_features_e2e.py::TestSecretsWiring::test_start_local_container_uses_binary_resolver: "container launch wiring — pre-existing"
 tests/e2e/test_obj01_skeleton.py::TestRepositorySkeleton::test_package_version_importable: "version string 0.1.0-alpha expectation — pre-existing"
 tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_execute_noop_playbook_full_pipeline: "worker full pipeline — pre-existing"
-tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_return_review_endpoint: "worker return review — pre-existing"
 
 tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease: "event loop lease reclaim — pre-existing"
 tests/e2e/test_obj09_secrets.py::TestOpenBaoE2E::test_weekly_image_scan_detects_update: "openbao image scan — pre-existing"  # pragma: allowlist secret
@@ -46,11 +45,6 @@ tests/unit/test_secret_migration_wiring.py::TestSecretMigrationInDaemonStartup::
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_success: "secrets manager container start — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_wiring.py::TestSecretsManagerContainerLaunch::test_start_local_container_without_resolver_uses_default: "secrets wiring container — pre-existing"  # pragma: allowlist secret
-tests/unit/test_worker.py::TestWorkerApp::test_worker_execute_noop_playbook: "worker execute noop — pre-existing"
-tests/unit/test_worker.py::TestWorkerApp::test_worker_writes_task_return_with_artifacts: "worker task return — pre-existing"
-tests/unit/test_worker.py::TestWorkerApp::test_worker_captures_runner_events: "worker runner events — pre-existing"
-tests/unit/test_worker.py::TestWorkerApp::test_worker_vars_files_created_correctly: "worker vars files — pre-existing"
-tests/unit/test_worker.py::TestWorkerApp::test_worker_return_review_endpoint: "worker return review — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "TUI integrity scan — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "TUI integrity scan no paths — pre-existing"
 tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"

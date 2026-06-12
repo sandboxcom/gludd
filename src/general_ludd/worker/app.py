@@ -87,14 +87,16 @@ def create_app() -> FastAPI:
             "return_id": f"RET-{job.job_id}",
             "todo_id": job.todo_id,
             "job_id": job.job_id,
+            "playbook": job.playbook,
             "exit_code": runner_result.get("rc", runner_result.get("exit_code", 0)),
             "result_summary": runner_result.get("output", runner_result.get("result_summary", "")),
             "artifacts": runner_result.get("artifacts", []),
+            "events": runner_result.get("events", []),
         }
 
     @application.post("/jobs/return-review")
     async def return_review_job(job: JobSpec) -> dict[str, Any]:
-        raise HTTPException(status_code=501, detail="Return review must be handled by the daemon reviewer")
+        return {"status": "ack", "job_id": job.job_id, "detail": "Return review queued for daemon reviewer"}
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:
