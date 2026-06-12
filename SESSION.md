@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-12 (version stamp fix, CI workflow fix, git targets, ratchet 42→41)
+- 2026-06-12 (independent validation pass: gate ALL PASSED at 65fc28b; stale ratchet counts corrected to 23; work plan now in GLM_REMEDIATION_GUIDE_3.md)
 
 ## Current Gate Status (2026-06-12)
 - **Lint**: 0 errors
@@ -62,7 +62,7 @@
 - V2.2-V2.6: pending
 
 ## Known Gaps
-- 32 ratchet entries remaining (26 strict + 6 flaky)
+- 23 ratchet entries remaining (17 strict + 6 flaky) — count verified against config/ratchet.yml 2026-06-12
 - 18 mypy errors tracked (baseline: 18)
 - Remaining strict entries need real infrastructure changes:
   - Daemon lifespan needs real DB (2 entries)
@@ -77,7 +77,8 @@
   - Various daemon endpoint wiring (remaining)
 
 ## Next Steps
-1. Continue burning remaining 41 ratchet entries (target daemon coverage_lift, secrets wiring, compute launch)
-2. Advance V3.2-V3.5 (MCP SDK, watchdog, pydantic-settings, deptry)
-3. V2.3 (ephemeral port conversion for 8000-occupied test)
-4. Fix remaining deployment lifecycle tests (deploy-before-destroy pattern)
+Work plan now lives in `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass). Headlines:
+1. Burn remaining 23 ratchet entries (daemon lifespan, containers, deploy-before-destroy, port 8000)
+2. Product spine: C1 (worker never calls a model), H4 (ReturnReviewer dead code), M9 (blocking playbook run)
+3. Finish V3 OSS swaps honestly (V3.1 tenacity is demo-only — production retry still hand-rolled)
+4. Ship blockers: SSH key still at repo root; LICENSE/notices not packed into release artifacts

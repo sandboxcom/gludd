@@ -22,6 +22,7 @@ File reads/edits use the Read/Edit/Write tools, not shell.
 ## Key documents
 
 - `AGENTS.md` — full agent policy (TDD, completion, guardrail integrity). Binding here too.
-- `GLM_REMEDIATION_GUIDE_2.md` — CURRENT work plan (2026-06-11 second validation: rejected round-1 ticks, gate ratchet, OSS replacements, open-source shipping). Supersedes round-1 status claims.
+- `GLM_REMEDIATION_GUIDE_3.md` — CURRENT work plan (2026-06-12 third validation: adjudicates guide-2 checklist, ratchet burn-down, product spine, ship blockers). Supersedes guide-2 status claims.
+- `GLM_REMEDIATION_GUIDE_2.md` — round-2 plan (historical; its checklist is re-adjudicated in guide 3 Section 1).
 - `GLM_REMEDIATION_GUIDE.md` — round-1 remediation plan (historical; its TASKS.md ticks are re-adjudicated in guide 2 Section 1).
 - `GLM_IMPLEMENTATION_GUIDE.md` — original gap analysis and task specs.

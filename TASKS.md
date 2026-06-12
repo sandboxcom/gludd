@@ -57,7 +57,7 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 
 ## Phase V2/V3 — continued (2026-06-11)
 
-- [x] V3.1 — tenacity replaces custom retry/backoff in gateway.py; call_with_tenacity demonstrates parity | evidence: make test tests/unit/test_gateway_retry.py "call_with_tenacity" passed 938e75d
+- [ ] V3.1 — tenacity replaces custom retry/backoff in gateway.py | REJECTED 2026-06-12 validation: call_with_tenacity (gateway.py:446-473) is a parallel demo with no production caller; call_model_with_retry (gateway.py:256-327) is still the hand-rolled loop used by daemon.py. Guide 2 §5: "Never leave both implementations alive." See GLM_REMEDIATION_GUIDE_3.md W4.1
 - [x] V3.6 — skills fetcher keep-as-is proof: uses httpx, ~114 LOC, PyGithub would add heavy dep | evidence: make lint 0, make typecheck 18, skills/fetcher.py documented cc73990
 - [x] V3.7 — scripts/search.py Google scraping helper removed | evidence: make lint 0, scripts/search.py deleted 19c3acc
 - [x] V2.3-partial — e2e conftest with ephemeral port import helper for daemon test port conversion | evidence: make test-count 5677 collected, tests/e2e/conftest.py c4ff840
