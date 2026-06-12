@@ -75,6 +75,7 @@ W3.1 (C1) is implemented as a **direct ModelGateway call from the worker** (`src
 - [x] W3.14 — M14: one select_project() per tick, shared by claim/review/reconcile phases | evidence: tests/integration/test_w3_14_single_project_per_tick.py 2 passed a7a97c6
 - [x] W2.5 — H15: bucket lease acquire on claim + reclaim of expired leases; lease-reclaim ratchet burned (RATCHET_MAX 20 to 19) | evidence: tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease a7a97c6
 - [x] W3.11 — H13: project workspaces materialized from repo_url via GitAutomation.clone (idempotent, fail-closed) + persisted through ProjectRepository (repo_url/weight/dispatch_mode in config JSON) so restart keeps them; router add-project and daemon startup clone + persist | evidence: tests/unit/test_project_workspace_clone.py 6 passed a4c04a9
+- [x] W2.3 — C5/M2: deploy-before-destroy registry — DeploymentManager records instance_id -> (per-instance working_dir, state) persisted to deployments.json; destroy refuses unknown instance_id and runs in that dir; GET /api/deployments + 404 on unknown destroy; 3 ratchet entries burned, RATCHET_MAX 19 to 16 | evidence: tests/unit/test_deployment_registry.py 7 passed eb84b0c
 
 ## Phase W6 — Ansible layer (GLM_REMEDIATION_GUIDE_3.md §5 W6.1-W6.9)
 
