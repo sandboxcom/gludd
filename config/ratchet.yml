@@ -32,9 +32,9 @@ tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ans
 tests/unit/test_daemon_uncovered_endpoints.py::TestLocalInferenceStart::test_local_inference_start: "local inference start — pre-existing"
 tests/unit/test_mcp_transport.py::TestMCPStdioClient::test_stdio_client_sends_initialize: "MCP transport initialize — pre-existing protocol bug"
 tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_8000_occupied: "8000-occupied e2e proof — requires ephemeral port conversion of daemon tests"
-tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_creation: "preflight filestore creation — pre-existing"
-tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_exception: "preflight filestore exception — pre-existing"
-tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "preflight verify task — pre-existing"
+tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_creation: "flaky preflight filestore creation — pre-existing"
+tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_exception: "flaky preflight filestore exception — pre-existing"
+tests/unit/test_preflight_coverage.py::TestVerifyTaskCompletion::test_unknown_criterion_assumed_met: "flaky preflight verify task — pre-existing"
 tests/unit/test_secret_migration_wiring.py::TestSecretMigrationInDaemonStartup::test_migrate_called_when_openbao_configured: "secret migration wiring — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_success: "secrets manager container start — pre-existing"  # pragma: allowlist secret
 tests/unit/test_secrets_manager_coverage.py::TestStartLocalContainer::test_start_local_container_failure: "secrets manager container fail — pre-existing"  # pragma: allowlist secret
