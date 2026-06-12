@@ -61,3 +61,9 @@ Format: `- [x] <ID> — <title> | evidence: <make-target> <summary-line> <commit
 - [x] V3.6 — skills fetcher keep-as-is proof: uses httpx, ~114 LOC, PyGithub would add heavy dep | evidence: make lint 0, make typecheck 18, skills/fetcher.py documented cc73990
 - [x] V3.7 — scripts/search.py Google scraping helper removed | evidence: make lint 0, scripts/search.py deleted 19c3acc
 - [x] V2.3 — e2e conftest with ephemeral port import helper for daemon test port conversion | evidence: make test-count 5677 collected, tests/e2e/conftest.py c4ff840
+
+## Phase W3 — product spine (GLM_REMEDIATION_GUIDE_3.md §5)
+
+### W6.9 spine decision (recorded per guide §7b W6.9)
+
+W3.1 (C1) is implemented as a **direct ModelGateway call from the worker** (`src/general_ludd/worker/app.py` `execute_job` → `_invoke_gateway_for_job`). The W6 ansible `agent_task` role, when built, wraps this worker path — it does not introduce a second model-call architecture. Decision: **direct call now; the future ansible role wraps the worker, not the reverse.**

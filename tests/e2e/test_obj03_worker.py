@@ -8,11 +8,13 @@ from __future__ import annotations
 
 import os
 import tempfile
+from unittest.mock import MagicMock
 
 import pytest
 from fastapi.testclient import TestClient
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
+from general_ludd.models.gateway import ModelResponse
 from general_ludd.worker.app import create_app
 
 
@@ -103,6 +105,79 @@ class TestWorkerE2E:
         with open(conf_path) as f:
             content = f.read()
         assert "uvicorn_worker" in content
+
+
+class TestWorkerModelGatewayCall:
+    """W3.1 (C1): the worker invokes the ModelGateway for generation jobs."""
+
+    def test_execute_generation_job_calls_gateway_and_returns_response(self):
+        gateway = MagicMock()
+        gateway.call_model.return_value = ModelResponse(
+            content="GENERATED DIFF BODY",
+            model_name="test-model",
+        )
+        app = create_app(gateway=gateway)
+        client = TestClient(app)
+
+        resp = client.post(
+            "/jobs/execute",
+            json={
+                "job_id": "JOB-GEN-001",
+                "todo_id": "TODO-GEN-001",
+                "playbook": "noop.yml",
+                "queue": "core",
+                "work_type": "code",
+                "model_profile": "default",
+                "prompt_text": "Implement feature X",
+            },
+        )
+
+        assert resp.status_code == 200
+        # The gateway was called with the job's prompt.
+        gateway.call_model.assert_called_once()
+        _args, kwargs = gateway.call_model.call_args
+        messages = kwargs.get("messages") or (_args[1] if len(_args) > 1 else None)
+        assert messages is not None
+        joined = " ".join(m["content"] for m in messages)
+        assert "Implement feature X" in joined
+        # The generated response lands in the job result.
+        data = resp.json()
+        assert data["model_response"] == "GENERATED DIFF BODY"
+
+    def test_execute_non_generation_job_skips_gateway(self):
+        gateway = MagicMock()
+        app = create_app(gateway=gateway)
+        client = TestClient(app)
+
+        resp = client.post(
+            "/jobs/execute",
+            json={
+                "job_id": "JOB-NOGEN-001",
+                "todo_id": "TODO-NOGEN-001",
+                "playbook": "noop.yml",
+                "queue": "core",
+                "work_type": "release",
+            },
+        )
+        assert resp.status_code == 200
+        gateway.call_model.assert_not_called()
+
+    def test_execute_without_gateway_does_not_error(self):
+        app = create_app(gateway=None)
+        client = TestClient(app)
+        resp = client.post(
+            "/jobs/execute",
+            json={
+                "job_id": "JOB-NOGW-001",
+                "todo_id": "TODO-NOGW-001",
+                "playbook": "noop.yml",
+                "queue": "core",
+                "work_type": "code",
+                "prompt_text": "do thing",
+            },
+        )
+        assert resp.status_code == 200
+        assert resp.json()["model_response"] is None
 
 
 class TestAnsibleRunnerAdapterE2E:
