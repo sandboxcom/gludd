@@ -474,6 +474,10 @@ open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
 c=open('tests/unit/test_preflight_coverage.py').read(); \
 c=c.replace('patch(\"general_ludd.filestore.store.FileStore\"','patch(\"general_ludd.quality.preflight.FileStore\"'); \
 open('tests/unit/test_preflight_coverage.py','w').write(c)"
+	@python3 -c " \
+c=open('tests/unit/test_secrets_manager_coverage.py').read(); \
+c=c.replace('patch(\"general_ludd.config.binary_paths.BinaryPathResolver\")','patch(\"general_ludd.secrets.manager.BinaryPathResolver\")'); \
+open('tests/unit/test_secrets_manager_coverage.py','w').write(c)"
 	@echo "Fixed ratchet mock targets"
 
 git-reset:

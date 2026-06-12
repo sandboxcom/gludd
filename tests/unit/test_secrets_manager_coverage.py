@@ -128,7 +128,7 @@ class TestStartLocalContainer:
         mock_proc.communicate.return_value = (b"abc123container\n", b"")
         mock_proc.returncode = 0
         with patch("general_ludd.secrets.manager.asyncio.create_subprocess_exec", return_value=mock_proc), \
-             patch("general_ludd.config.binary_paths.BinaryPathResolver") as mock_resolver_cls:
+             patch("general_ludd.secrets.manager.BinaryPathResolver") as mock_resolver_cls:
             mock_resolver = MagicMock()
             mock_resolver.get_container_runtime.return_value = "podman"
             mock_resolver_cls.return_value = mock_resolver
@@ -142,7 +142,7 @@ class TestStartLocalContainer:
         mock_proc.communicate.return_value = (b"", b"error")
         mock_proc.returncode = 1
         with patch("general_ludd.secrets.manager.asyncio.create_subprocess_exec", return_value=mock_proc), \
-             patch("general_ludd.config.binary_paths.BinaryPathResolver") as mock_resolver_cls:
+             patch("general_ludd.secrets.manager.BinaryPathResolver") as mock_resolver_cls:
             mock_resolver = MagicMock()
             mock_resolver.get_container_runtime.return_value = "podman"
             mock_resolver_cls.return_value = mock_resolver

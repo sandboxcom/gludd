@@ -6,14 +6,12 @@ import asyncio
 import logging
 import uuid
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Any
+from typing import Any
 
 import hvac
 
+from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.secrets.config import OpenBaoConfig
-
-if TYPE_CHECKING:
-    from general_ludd.config.binary_paths import BinaryPathResolver
 
 logger = logging.getLogger(__name__)
 
