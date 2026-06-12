@@ -84,6 +84,42 @@ SESSION.md's stale self-contradictions (claimed 23, 32, and 41 ratchet entries i
 | N4 | **6 "flaky" ratchet entries paper over real races.** The 2 hvac xdist races are mock-patch races under `pytest-xdist`; `@pytest.mark.xdist_group` (suite already runs `--dist loadgroup`) pins them to one worker — a root-cause fix, not an xfail. | W2.7 |
 | N5 | The detect-secrets baseline target hardcodes an exclusion for the committed key (`Makefile scan-secrets-baseline`) — the scanner is configured not to see the worst secret in the repo. Remove the exclusion when W5.1 untracks the key. | W5.1 |
 
+### 1.4 Second sweep — original-guide H/M items re-adjudicated (2026-06-12, same pass)
+
+The H/M defects from `GLM_IMPLEMENTATION_GUIDE.md` §1 that no later guide re-checked. Verified against current code.
+
+**Already FIXED — do NOT redo these (verify only if your edit touches them):**
+
+| Item | Evidence |
+|---|---|
+| H1 benchmark routers/session factory | `routers/benchmark.py:17-27` uses `_get_session_factory()` + context-managed sessions |
+| H7 benchmark recorder starved | `daemon.py:443-446` instantiates `AutoBenchmarkRecorder` and attaches it to the loop |
+| H9 skills discovery/skill_body | `skills/loader.py:61` uses recursive `glob("**/*.md")`; `schemas/job.py:28` has `skill_body` |
+| H10 templates/autoescape | `prompts/registry.py:33` — templates_dir has env fallback; autoescape is False |
+| H11 budget guard | `daemon.py:389-393` constructs `RunBudgetGuard` from the `budget:` config |
+| M4 slurm error swallow | `routers/slurm.py:101-102` raises HTTPException instead of returning `{"jobs": []}` |
+| Live ZAI skip | `tests/live/test_zai_live.py:85` skipif when key absent |
+| M3 `_inject_auth_env` | UNVERIFIED — symbol no longer found; confirm renamed-or-removed when touching infra/ |
+
+**STILL BROKEN — new tasks below:**
+
+| Item | Evidence | Task |
+|---|---|---|
+| H2 self-improvement discards its own todos | `daemon.py:395-419` never passes `self_improve_interval`; `loop.py:~747` enqueues into a throwaway in-memory harness | W3.7 |
+| H3 worker validate/policy-validate/reload endpoints are ack stubs | `worker/app.py:101-111` | W3.8 |
+| H8 MCP never constructed; gateway has no tools param | `daemon.py:403` (`mcp_client=None`); mcp_servers cfg loaded at `daemon.py:140-154` then unused | W3.9 |
+| H12 router-built gateway records no metrics | `daemon.py:472` passes `metrics_collector`; `routers/models.py` does NOT | W3.10 |
+| H13 nothing ever clones `repo_url` — a dispatched job has no code to edit | `projects/manager.py:19-39` stores it; zero `clone` callers in src/ | W3.11 (spine-critical) |
+| H14 hot-reload theater | `reload/hot_reloader.py:103-109` returns `models_reloaded: True` after a bare existence check; `ReloadManager.execute_reload` reports success doing nothing | W3.12 |
+| H16 preflight passes unknown criteria | `quality/preflight.py:182-184` `met=True, "assumed_met"` — and commit `ecaeedf` updated tests to EXPECT this, cementing the bug | W1.7 |
+| H17 secrets `auto` mode never tries OpenBao; no read-back of migrated secrets | `daemon.py:185-197` falls straight to env | W2.9 |
+| H18 Postgres cannot work | `db/session.py:114-118` create_all SQLite-only; `alembic.ini:3` hardcodes `sqlite:///./test.db`; stamp_head SQLite-only (`daemon.py:~341`) | W3.5 (document) |
+| M2 no deployments listing; fresh `DeploymentManager` per request | `routers/compute.py:31-46`; no `/api/deployments` endpoint exists | W2.3 (same registry fix) |
+| M11 CLI `code search`/`code graph` call endpoints that DON'T EXIST | no code router in `routers/`; the CLI commands added in session 3 (`cli.py` httpx calls) 404 against every daemon — a cross-interface parity failure, the exact BUGS.md 2026-06-07 incident pattern | W3.13 |
+| M14 phases pick different random projects in one tick | `event_loop/loop.py:349,489` independent `select_project()` calls | W3.14 |
+| AUTH worker endpoints are unauthenticated | `worker/app.py:45-112` no PSK/auth check; the daemon HAS auth (`daemon.py:674-689`) | W5.6 |
+| COV the local gate never enforces coverage | pytest `addopts` has no `--cov` (`pyproject.toml:~113`) and the `gate` test step runs without `--cov` — `fail_under=70` only binds in `make test`/CI | W1.6 item 5 |
+
 ---
 
 ## 2. Phase W0 — Truth repairs — **DONE in this validation pass**
@@ -130,7 +166,14 @@ Nothing for the agent to do here except: **re-verify these files were not hand-e
 2. `MYPY_MAX := 18` variable at top; gate and validate both use it (N3). Lower it as W5.4 burns errors.
 3. `OPENCODE_DB ?= ~/.local/share/opencode/opencode.db` variable for `db-*`/`search-opencode`, or delete those targets.
 4. Remove `diag-gunicorn` from `.PHONY` (target doesn't exist).
-- Commit: `W1.6: Makefile hygiene — stderr capture, MYPY_MAX, OPENCODE_DB, PHONY`
+5. Coverage in the gate (COV, §1.4): the `gate` test step runs pytest without `--cov`, so `fail_under=70` never binds locally — add `--cov=general_ludd` to the gate's test invocation (accept the runtime cost; the gate is THE truth target).
+- Commit: `W1.6: Makefile hygiene — stderr capture, MYPY_MAX, OPENCODE_DB, PHONY, gate coverage`
+
+### W1.7 Preflight must fail-closed on unknown criteria (H16)
+- `quality/preflight.py:182-184`: an unrecognized completion criterion currently gets `met=True, reason="assumed_met"` — the quality gate literally cannot say no to a typo'd criterion. Flip it: unknown criterion → `met=False, reason="unknown_criterion"`.
+- Commit `ecaeedf` updated tests to EXPECT `assumed_met` — those tests codified the bug; rewrite them to expect fail-closed (this is fixing a test that lies about intended behavior, not deleting a guardrail).
+- **Prove:** preflight test with a made-up criterion name asserts FAIL.
+- Commit: `W1.7: H16 — preflight fails closed on unknown criteria`
 
 **Phase W1 exit gate:** `make gate` green; `make preflight` includes tick-guard + drift checks; ratchet-growth test live.
 
@@ -150,6 +193,9 @@ Read `config/ratchet.yml` first; entries may have moved. For each fixed test: re
 | W2.6 Port 8000 + runtime validator + bandit | 3 | (a) Convert remaining real-bind daemon e2e tests to the ephemeral-port helper already in `tests/e2e/conftest.py`; un-xfail the 8000-occupied proof. (b) Fix relative container path resolution in the runtime validator. (c) Add `bandit` to dev dependencies so `make sast` and its test run. |
 | W2.7 Flaky six | 6 | hvac xdist races → `@pytest.mark.xdist_group(name="hvac")` on both tests (suite already uses `--dist loadgroup`), then make the entries strict or remove them once 5 consecutive green runs. TUI builders + StopIteration → find the nondeterminism (likely shared iterator/screen state); fix the test isolation. PTY daemon-start pair → keep as env-dependent `skipif` (no PTY) instead of flaky-xfail. |
 | W2.8 Compute secrets resolver | 2 (`test_compute_launch_and_remote_slurm.py`) | Wire the secrets resolver from `app.state` into compute deploy (H17-adjacent); pass `None` cleanly when absent. |
+| W2.9 Secrets `auto` mode (H16's sibling, §1.4 H17) | 0 ratchet entries but spine-relevant | `daemon.py:185-197`: `mode: auto` (the shipped default) must TRY OpenBao (bounded health check) before falling back to env vars, and log which path won. Add a startup read-back test: migrate a secret, delete the env var, resolution still returns it. |
+
+Also fold into W2.3: persist a deployment registry keyed by `instance_id` (that fix) and expose it as `GET /api/deployments` (M2, currently no endpoint exists; `routers/compute.py:31-46` builds a fresh `DeploymentManager` per request).
 
 **Phase W2 exit gate:** `config/ratchet.yml` ≤ 8 entries (the spine-dependent ones may remain until W3), `RATCHET_MAX` lowered to match, gate green.
 
@@ -181,11 +227,48 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 
 ### W3.5 (M8) Multi-worker honesty
 - gunicorn `--workers N` spawns N event loops + N in-memory stores today. Minimum honest fix: default workers to 1 and **refuse** N>1 with SQLite (log + clamp), documenting the limit; full fix (cross-process claims via DB locking) only if Postgres support (H18) is actually pursued.
-- Commit: `W3.5: M8 — single-worker clamp on sqlite, documented`
+- H18 honesty in the same commit: `db/session.py:114-118` create_all and `daemon.py` stamp_head are SQLite-only, and `alembic.ini:3` hardcodes `sqlite:///./test.db` — Postgres does not work today. Either fix the alembic URL plumbing or state "SQLite only" in README/docs and make the daemon refuse a non-SQLite URL with a clear error. Do not leave it half-claimed.
+- Commit: `W3.5: M8/H18 — single-worker clamp, sqlite-only stated and enforced`
 
 ### W3.6 (V2.2) Per-item proof table
-- Append to `TASKS.md`: one row per G0–G7, S1–S20, F1–F7, M1–M15 with its named proof test (specs in `GLM_IMPLEMENTATION_GUIDE.md`). Run each via `make test-specific`; fix C→H→M. This is mechanical but long — it is the only way "every claimed item re-proven" stops being folklore.
+- Append to `TASKS.md`: one row per G0–G7, S1–S20, F1–F7, M1–M15 with its named proof test (specs in `GLM_IMPLEMENTATION_GUIDE.md`). Run each via `make test-specific`; fix C→H→M. This is mechanical but long — it is the only way "every claimed item re-proven" stops being folklore. Pre-fill the §1.2/§1.4 adjudications from this guide.
 - Commit per fixed group.
+
+### W3.7 (H2) Self-improvement must persist its todos
+- `daemon.py:395-419` never passes `self_improve_interval`; the loop's `_phase_self_improve` enqueues into a throwaway in-memory `SelfImprovementHarness` (`loop.py:~747`) — "todos_enqueued: N" reports todos that were discarded. Wire the interval from config and make `enqueue_todos` write through `TodoRepository`.
+- TDD: with a session factory, self-improve phase → todos exist in the DB afterwards.
+- Commit: `W3.7: H2 — self-improvement todos persisted via TodoRepository`
+
+### W3.8 (H3) Worker stub endpoints — implement or 501 honestly
+- `worker/app.py:101-111`: `/jobs/validate`, `/jobs/policy-validate`, `/jobs/reload-request` log and ack without doing anything. For each: either implement the behavior (validate → run the named validation playbook; reload-request → call the worker's actual reload path) or return HTTP 501 with a clear body so callers cannot mistake an ack for work. Pick per endpoint; no silent acks remain.
+- Commit: `W3.8: H3 — worker endpoints real or explicit 501`
+
+### W3.9 (H8) MCP wiring decision
+- `daemon.py:140-154` loads `mcp_servers` config, then `daemon.py:403` passes `mcp_client=None` — config consumed by nothing, and `ModelGateway.call_model` has no tools parameter, so tools could not reach a model even if wired. This is a DESIGN task: either (a) wire `MCPClient` construction from config + add a tools pass-through to the gateway call path (large), or (b) mark MCP experimental: refuse `mcp_servers` config with a warning, document the gap. Decide once, in writing, in TASKS.md.
+- Commit: `W3.9: H8 — MCP wired (a) or honestly fenced (b)`
+
+### W3.10 (H12) Router-built gateway records metrics
+- `routers/models.py` constructs `ModelGateway` without `metrics_collector` while `daemon.py:472` passes it — model calls made through the API are invisible to cost/metrics. Build the router's gateway from the same factory/app.state the daemon uses.
+- TDD: API model call → collector saw it.
+- Commit: `W3.10: H12 — one gateway construction path, metrics always attached`
+
+### W3.11 (H13) Projects must actually have code — spine-critical
+- `projects/manager.py:19-39` stores `repo_url`; **nothing in src/ ever clones it.** A dispatched job has no repository to edit — this nullifies the whole spine for remote projects. Implement workspace materialization: on project add/startup, clone (or verify) `repo_url` into `workspace_path` via the existing `git_automation/repo.py` (it already has real worktree/branch support — use it, don't shell out anew). Persist projects through `ProjectRepository` so restarts keep them.
+- TDD: add project with a file:// fixture repo → workspace contains a checkout; restart (new manager from DB) → project still listed.
+- Commit: `W3.11: H13 — project workspaces materialized from repo_url, persisted`
+
+### W3.12 (H14) Delete hot-reload theater
+- `reload/hot_reloader.py:103-109` returns `models_reloaded: True` after a bare existence check; `ReloadManager.execute_reload` reports success while doing nothing. Implement the model-routing reload for real (parse + swap the routing config the gateway reads) and make every other fake reload path return `{"reloaded": false, "reason": "not implemented"}`. No success reports for no-ops.
+- Commit: `W3.12: H14 — reload reports only what actually reloaded`
+
+### W3.13 (M11) CLI `code search`/`code graph` call endpoints that don't exist
+- The CLI commands (added 2026-06-11, `cli.py` httpx calls to `/admin/code/*`) 404 against every daemon — no code-intelligence router exists. The five `code_intelligence/` utilities are real with zero callers. Add the router exposing search + graph over them, OR remove the CLI commands. This is the BUGS.md 2026-06-07 cross-interface-parity incident pattern, recommitted.
+- TDD: daemon test client → `/admin/code/search?q=...` returns results from a fixture tree; CLI command test against the test app.
+- Commit: `W3.13: M11 — code-intelligence router; CLI commands now have a server side`
+
+### W3.14 (M14) One project per tick
+- `event_loop/loop.py:349,489`: claim/review phases each call `select_project()` independently — one tick can claim from project A and review project B. Select once per tick, pass it to the phases.
+- Commit: `W3.14: M14 — single project selection per tick`
 
 **Phase W3 exit gate:** spine e2e proof (`tests/integration/test_full_pipeline_e2e.py` or equivalent): submitted todo → claim → worker executes with model call (mocked) → review decision applied → git commit created → reconciled. Ratchet near 0.
 
@@ -230,12 +313,18 @@ This is the actual product. SESSION.md ticks cover C0/C2/C3/C4/H5/H6 — the rem
 ### W5.3 (V4.6) Final sweep
 - `detect-secrets scan --all-files` **without** baseline (add a `make scan-secrets-fresh` target); adjudicate every hit; regenerate baseline.
 - Grep the dist file list for `/Users/`, `Mac.localdomain`, opencode DB paths — must be clean.
+- Dependency vulnerabilities: `make pip-audit` (run 2026-06-12) reports **diskcache 5.6.3 CVE-2025-69872** (pickle deserialization → arbitrary code execution for anyone with cache-dir write access) and **pip 26.1.1 PYSEC-2026-196** (fix: 26.1.2) — and the target ends `\|\| true`, so it gates nothing. Upgrade/replace or document why each is unexploitable here; then decide whether pip-audit should fail the security target on known-exploitable hits.
 
 ### W5.4 mypy 18 → 0
 - Burn the 18 errors down; lower `MYPY_MAX` (W1.6) in the same commit as each fix group. Known clusters from guide 2: `otel_bridge.py` (observability extra / stubs), `cli.py` build_parser return type, six `no-any-return`s, `repo_map.py:47`.
 
 ### W5.5 README claims stay measured
 - Any README number/claim ("0 noqa", test counts) gets a preflight grep check or gets deleted. One source of truth: the generated gate block (W1.4).
+
+### W5.6 Worker endpoints need auth before shipping
+- The daemon enforces auth (`daemon.py:674-689`); the worker does not (`worker/app.py:45-112` — `/jobs/execute` et al. accept anyone who can reach the port). Anyone on the network can make the worker run arbitrary registered playbooks. Apply the same PSK check (the `GLUDD_PSK` mechanism CI already sets) to all worker job endpoints; unauthenticated → 401.
+- TDD: worker test client without the header → 401; with it → current behavior.
+- Commit: `W5.6: worker job endpoints require PSK auth`
 
 ---
 
@@ -262,7 +351,8 @@ Phase W1 — guardrail completion
 [ ] W1.3  STOP_SIGNAL_WORDS deleted; state-based checks only; fuzz test retargeted
 [ ] W1.4  status-snapshot writes SESSION.md in place; preflight drift detector
 [ ] W1.5  audit-evidence wired into validate, fail-closed
-[ ] W1.6  Makefile: stderr capture order, MYPY_MAX var, OPENCODE_DB var, PHONY cleanup
+[ ] W1.6  Makefile: stderr capture order, MYPY_MAX var, OPENCODE_DB var, PHONY cleanup, gate enforces coverage
+[ ] W1.7  H16: preflight fails closed on unknown criteria (rewrite ecaeedf's assumed_met tests)
 
 Phase W2 — ratchet burn-down (23 → ~0)
 [ ] W2.1  daemon lifespan real-DB tests (2)
@@ -273,14 +363,23 @@ Phase W2 — ratchet burn-down (23 → ~0)
 [ ] W2.6  ephemeral ports + 8000-occupied + runtime validator path + bandit dep (3)
 [ ] W2.7  flaky six root-caused (xdist_group, test isolation, PTY skipif)
 [ ] W2.8  compute deploy secrets resolver (2)
+[ ] W2.9  H17: secrets auto mode tries OpenBao; migrated-secret read-back proven
 
 Phase W3 — product spine
 [ ] W3.1  C1: worker invokes ModelGateway
 [ ] W3.2  H4: ReturnReviewer + apply_decision wired; failure ≠ silent pass
 [ ] W3.3  M9: asyncio.to_thread around playbook runs + shutdown drain
 [ ] W3.4  /readyz reflects degraded state; smoke checks it
-[ ] W3.5  M8: single-worker clamp on sqlite
+[ ] W3.5  M8/H18: single-worker clamp; sqlite-only stated and enforced (or alembic fixed)
 [ ] W3.6  V2.2: per-item proof table for G/S/F/M, failures fixed C→H→M
+[ ] W3.7  H2: self-improvement todos persisted via TodoRepository
+[ ] W3.8  H3: worker stub endpoints real or explicit 501
+[ ] W3.9  H8: MCP wired or honestly fenced (decision in TASKS.md)
+[ ] W3.10 H12: router gateway gets metrics_collector (one construction path)
+[ ] W3.11 H13: project workspaces cloned from repo_url + persisted (spine-critical)
+[ ] W3.12 H14: hot-reload reports only real reloads
+[ ] W3.13 M11: code-intelligence router added (or CLI commands removed)
+[ ] W3.14 M14: one select_project() per tick
 
 Phase W4 — OSS replacements finished honestly
 [ ] W4.1  tenacity IS the retry path; hand-rolled loop + demo deleted
@@ -296,6 +395,7 @@ Phase W5 — ship
 [ ] W5.3  fresh no-baseline secrets scan adjudicated; dist path-clean
 [ ] W5.4  mypy 18 → 0, MYPY_MAX lowered stepwise
 [ ] W5.5  README claims measured (preflight) or removed
+[ ] W5.6  worker job endpoints require PSK auth
 ```
 
 Start at W1.1. Prove every step with a `make` target you ran this session.
