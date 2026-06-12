@@ -70,3 +70,7 @@ W3.1 (C1) is implemented as a **direct ModelGateway call from the worker** (`src
 
 - [x] W3.1 — C1: worker invokes ModelGateway for generation jobs; response lands in extravars + result | evidence: tests/e2e/test_obj03_worker.py::TestWorkerModelGatewayCall 3 passed b4de809
 - [x] W2.4 — worker full-pipeline ratchet burned (test_execute_noop_playbook_full_pipeline genuinely passes; RATCHET_MAX 21 to 20) | evidence: tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_execute_noop_playbook_full_pipeline b4de809
+- [x] W3.2 — H4: ReturnReviewer + apply_decision wired into review phase; review failure escalates, never silent pass | evidence: tests/integration/test_w3_2_reviewer_wiring.py 3 passed a7a97c6
+- [x] W3.7 — H2: self-improvement todos persisted via TodoRepository (work_type=self_improve, BACKLOG) | evidence: tests/integration/test_w3_7_self_improve_persist.py 2 passed a7a97c6
+- [x] W3.14 — M14: one select_project() per tick, shared by claim/review/reconcile phases | evidence: tests/integration/test_w3_14_single_project_per_tick.py 2 passed a7a97c6
+- [x] W2.5 — H15: bucket lease acquire on claim + reclaim of expired leases; lease-reclaim ratchet burned (RATCHET_MAX 20 to 19) | evidence: tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease a7a97c6
