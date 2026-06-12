@@ -13,8 +13,6 @@ tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_execute_noop_playbook_full_p
 tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease: "event loop lease reclaim — pre-existing"
 tests/e2e/test_obj09_secrets.py::TestOpenBaoE2E::test_weekly_image_scan_detects_update: "openbao image scan — pre-existing"  # pragma: allowlist secret
 tests/e2e/test_obj15_runtime_packaging.py::TestRuntimeValidatorImport::test_validate_profile_relative_container_path: "runtime validator relative path — pre-existing"
-tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_event_loop_runs_tick: "daemon lifespan event loop — pre-existing"
-tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_add_todo_and_list: "daemon lifespan todo CRUD — pre-existing"
 tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST tool — pre-existing"
 tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
 tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_uses_correct_binary: "C5 fix — must deploy before destroy, old test tested money-leak behavior"

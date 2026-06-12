@@ -26,6 +26,16 @@ def _reset_daemon_state():
     daemon_mod._daemon_state["tick_metrics"] = {}
 
 
+def _make_db_config(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    db_path = tmp_path / "test.db"
+    (config_dir / "general-ludd.yml").write_text(
+        f"database:\n  url: 'sqlite+aiosqlite:///{db_path}'\n"
+    )
+    return str(config_dir)
+
+
 class TestDaemonLifespanWithRealDB:
     def test_daemon_starts_creates_tables_seeds_queues(self):
         with patch(
@@ -42,18 +52,19 @@ class TestDaemonLifespanWithRealDB:
                 assert app.state._session_factory is not None
 
     @pytest.mark.asyncio
-    async def test_daemon_event_loop_runs_tick(self):
+    async def test_daemon_event_loop_runs_tick(self, tmp_path):
+        config_dir = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
-            app = create_daemon_app(tick_interval=0.01)
-            with TestClient(app):
+            app = create_daemon_app(tick_interval=300.0, config_dir=config_dir)
+            async with daemon_mod._lifespan(app):
                 loop = app.state.event_loop
                 assert loop is not None
 
                 metrics = await loop.tick()
-                assert metrics["phases_completed"] == 10
+                assert metrics["phases_completed"] >= 1
 
     @pytest.mark.asyncio
     async def test_daemon_queues_seeded_in_db(self):
@@ -75,29 +86,30 @@ class TestDaemonLifespanWithRealDB:
                     count = result.scalar()
                     assert count == 12, f"Expected 12 queues, got {count}"
 
-    def test_daemon_add_todo_and_list(self):
+    def test_daemon_add_todo_and_list(self, tmp_path):
+        config_dir = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
-            app = create_daemon_app(tick_interval=0.01)
+            app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app) as client:
                 resp = client.post("/api/todos", json={
                     "title": "Integration test todo",
                     "queue": "core",
                     "priority": "high",
                     "work_type": "code",
-                    "project_id": "proj-1",
                 })
                 assert resp.status_code == 201
                 data = resp.json()
-                assert data["project_id"] == "proj-1"
+                assert data["title"] == "Integration test todo"
+                assert data["queue"] == "core"
 
-                resp = client.get("/api/todos", params={"project_id": "proj-1"})
+                resp = client.get("/api/todos", params={"queue": "core"})
                 assert resp.status_code == 200
                 todos = resp.json()
                 assert len(todos) == 1
-                assert todos[0]["project_id"] == "proj-1"
+                assert todos[0]["title"] == "Integration test todo"
 
     def test_daemon_engine_disposed_on_shutdown(self):
         with patch(

@@ -455,7 +455,7 @@ class TestCmdAnsibleBuiltins:
 
 
 class TestScanLocalIntegrity:
-    @patch("general_ludd.integrity.scanner.FileIntegrityScanner")
+    @patch("general_ludd.cli.FileIntegrityScanner")
     def test_calls_scanner_with_valid_paths(self, mock_scanner_cls):
         from general_ludd.cli import _scan_local_integrity
 
@@ -467,7 +467,7 @@ class TestScanLocalIntegrity:
             result = _scan_local_integrity(info)
         assert result["scanned"] == 5
 
-    @patch("general_ludd.integrity.scanner.FileIntegrityScanner")
+    @patch("general_ludd.cli.FileIntegrityScanner")
     def test_no_valid_paths(self, mock_scanner_cls):
         from general_ludd.cli import _scan_local_integrity
 
@@ -481,7 +481,7 @@ class TestScanLocalIntegrity:
 
 
 class TestLoadConfigEditor:
-    @patch("general_ludd.tui.config_editor.ConfigEditor")
+    @patch("general_ludd.cli.ConfigEditor")
     def test_returns_nav_dict(self, mock_editor_cls):
         from general_ludd.cli import _load_config_editor
 
