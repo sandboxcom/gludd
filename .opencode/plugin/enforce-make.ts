@@ -130,158 +130,7 @@ const BASH_METACHAR_POLICY = [
   "",
 ].join("\n")
 
-const STOP_SIGNAL_WORDS = [
-  "want me to proceed",
-  "want me to continue",
-  "want me to start",
-  "want me to fix",
-  "should i continue",
-  "should i proceed",
-  "should i start",
-  "should i fix",
-  "shall i continue",
-  "shall i proceed",
-  "shall i finish",
-  "shall i do",
-  "shall i start",
-  "shall i begin",
-  "shall i work",
-  "shall i implement",
-  "shall i fix",
-  "next steps are",
-  "remaining tasks",
-  "here are the remaining",
-  "what priority",
-  "here is what needs to be done",
-  "i'll stop here",
-  "let me know if you'd like",
-  "let me know if you want",
-  "i can continue",
-  "i could continue",
-  "would you like me to",
-  "ready to proceed",
-  "here's my plan",
-  "here is my plan",
-  "all done",
-  "work is complete",
-  "sprint is complete",
-  "everything is done",
-  "all objectives delivered",
-  "all objectives complete",
-  "all work done",
-  "now everything is truly complete",
-  "this is truly done",
-  "all green",
-  "gate all passed",
-  "remaining from the guide",
-  "ratchet has",
-  "ratchet entries",
-  "29 commits",
-  "c0 done",
-  "commits. ratchet",
-  "31 commits.",
-  "work continues.",
-  "implementation status",
-  "still working.",
-  "status summary",
-  "status reported",
-  "is not done",
-  "ready for review",
-  "waiting for your",
-  "fixed:",
-  "now continuing",
-  "continuing with",
-  "to summarize",
-  "in summary",
-  "recap:",
-  "the answer is",
-  "committed .",
-  "committed",
-  "— committed",
-  "— committed.",
-  "tests pass",
-  "test-and-commit",
-  "passed, 0 failed",
-  "0 failures",
-  "coverage:",
-  "mypy: 0 errors",
-  "lint: 0 errors",
-  "here's what was",
-  "here is what was",
-  "what did we do",
-  "summary of changes",
-  "changes made",
-  "completed work",
-  "finished work",
-  "done with",
-  "wrapped up",
-  "that completes",
-  "this completes",
-  "wrapping up",
-  "finishing up",
-  "remaining items",
-  "remaining work",
-  "remaining low-priority",
-  "low-priority items",
-  "session summary",
-  "here's a summary",
-  "here is a summary",
-  "summary of this session",
-  "summary of the session",
-  "update session",
-  "session.md update",
-  "updating session",
-  "session state",
-  "items done",
-  "items complete",
-  "items is done",
-  "is now complete",
-  "is fully complete",
-  "is now done",
-  "has been completed",
-  "everything is complete",
-  "everything is done",
-  "everything is requested",
-  "continuing with remaining",
-  "all complete",
-  "all requested",
-  "phase v0",
-  "phase v1",
-  "phase v2",
-  "phase v3",
-  "phase v4",
-  "phase.*complete",
-  "what was implemented",
-  "key accomplishments",
-  "| what was fixed",
-  "| fix |",
-  "| task |",
-  "--- | ---",
-  "continuing with remaining",
-  "remaining:",
-  "accomplishments",
-  "completion summary",
-  "continuing with v",
-  "continuing with v3",
-  "known-unfixed work",
-  "25 commits",
-  "done — gate",
-  "4/4 done",
-  "remaining",
-  "summary across all",
-  "here's the implementation",
-  "16 commits, gate all passed",
-  "bugs.md incidents",
-  "38 commits",
-  "was 136",
-  "34 commits",
-  "all phases",
-  "fully implemented",
-  "96 ratchet",
-]
-
-const RESUME_COMMAND = [
-  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
+const STOP_PATTERN_BLOCK = [
   "⛔ STOP-PATTERN DETECTED — AUTO-INJECTED OVERRIDE",
   "",
   "You just generated a response that appears to be a completion",
@@ -294,62 +143,29 @@ const RESUME_COMMAND = [
   "",
   "The ONLY exception: ALL todo items are marked 'completed'.",
   "If any todo is 'in_progress' or 'pending', you MUST keep working.",
-  "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━",
 ].join("\n")
 
-function detectStopPattern(responseText: string): boolean {
-  const lower = responseText.toLowerCase()
-  if (STOP_SIGNAL_WORDS.some(pattern => lower.includes(pattern))) {
-    return true
-  }
-  const lines = lower.split("\n")
-  let commitHashCount = 0
-  let passedCount = false
-  let summaryTable = false
-  let lastLineIsSummary = false
-  let testResultLine = false
-  let coverageLine = false
-  let bulletListCount = 0
-  let hasQuestionMark = false
-  let gapFindingsCount = 0
-  let boldSummaryLine = false
-  let commitDescriptionCount = 0
-  for (const line of lines) {
-    const trimmed = line.trim()
-    if (/^\[master [a-f0-9]{7}\]/.test(trimmed)) commitHashCount++
-    if (/\d+ passed/.test(trimmed) && /0 failed/.test(trimmed)) passedCount = true
-    if (/^\d+ passed/.test(trimmed)) testResultLine = true
-    if (/^\d+\.\d+%/.test(trimmed) || /coverage.*\d+%/.test(trimmed)) coverageLine = true
-    if (trimmed.includes("|") && trimmed.includes("---")) summaryTable = true
-    if (/^[-*]\s/.test(trimmed)) bulletListCount++
-    if (trimmed.endsWith("?")) hasQuestionMark = true
-    if (/gap|incomplete|missing|not wired|dead code|not implemented|stub/i.test(trimmed)) gapFindingsCount++
-    if (/^\*\*\d+ (commit|test|new)/i.test(trimmed)) boldSummaryLine = true
-    if (/^\d+\.\s+\*\*.*\*\* \(commit/.test(trimmed)) commitDescriptionCount++
-  }
-  if (lines.length > 0) {
-    const last = lines[lines.length - 1].trim().toLowerCase()
-    if (last === "done." || last === "done!" || last === "complete." || last === "all green." || last === "ready." || last === "committed." || last === "finished.") {
-      lastLineIsSummary = true
-    }
-  }
-  if (commitHashCount >= 1 && passedCount) return true
-  if (passedCount && lastLineIsSummary) return true
-  if (testResultLine && coverageLine) return true
-  if (commitHashCount >= 1 && summaryTable) return true
-  if (testResultLine && bulletListCount >= 3) return true
-  if (coverageLine && lastLineIsSummary) return true
-  if (gapFindingsCount >= 3 && hasQuestionMark) return true
-  if (summaryTable && hasQuestionMark) return true
-  if (bulletListCount >= 5 && hasQuestionMark) return true
-  if (boldSummaryLine && commitDescriptionCount >= 1) return true
-  if (boldSummaryLine && coverageLine) return true
-  if (boldSummaryLine && bulletListCount >= 2) return true
-  const hasDoneCount = /\d+\s+(items|tasks|things).*(done|complete)/i.test(lower)
-  const hasRemainingCount = /(\d+|several|many).*(remaining|left|pending|still)/i.test(lower)
-  if (hasDoneCount && hasRemainingCount) return true
-  return false
-}
+const COMPLETION_SOUNDING = [
+  "all passed",
+  "all complete",
+  "all done",
+  "phase complete",
+  "everything is done",
+  "what was implemented",
+  "task |",
+  "| what was",
+  "key accomplishments",
+  "remaining",
+  "summary",
+  "committed",
+  "passed",
+  "done",
+  "ready for review",
+  "completes the task",
+  "objectives delivered",
+  "all requested",
+  "all objectives",
+]
 
 export default (async ({ }) => {
   return {
@@ -673,7 +489,7 @@ export default (async ({ }) => {
         )
         if (hasPendingWork && soundsComplete) {
           output = [
-            "⛔ INCOMPLETE WORK — RESPONSE BLOCKED ⛔",
+            "⛔ STOP-PATTERN DETECTED — INCOMPLETE WORK ⛔",
             "",
             `config/ratchet.yml has ${ratchetLines.length} known-failure entries.`,
             "The project is NOT complete. Your completion claim is BLOCKED.",
