@@ -42,3 +42,12 @@ class PushResult:
     remote: str = "origin"
     branch: str = ""
     message: str = ""
+
+
+@dataclass
+class CloneResult:
+    path: str
+    url: str
+    success: bool
+    already_present: bool = False
+    message: str = ""

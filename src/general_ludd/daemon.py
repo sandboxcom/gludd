@@ -217,6 +217,40 @@ def build_secrets_resolver(
     return base
 
 
+async def _restore_persisted_projects(project_manager: Any, session_factory: Any) -> None:
+    """W3.11 (H13): rehydrate runtime-added projects from the DB and clone their repos.
+
+    Config-seeded projects already live in the manager; this merges in any project
+    persisted via ProjectRepository (e.g. added through /admin/projects in a prior
+    run) that the config does not cover, and materializes each project's repo_url
+    into its workspace. Best-effort: a failure here must not abort startup.
+    """
+    if project_manager is None or session_factory is None:
+        return
+    try:
+        from general_ludd.db.repository import ProjectRepository
+        from general_ludd.projects.manager import (
+            materialize_project_workspace,
+            rebuild_manager_from_db,
+        )
+
+        async with session_factory() as session:
+            repo = ProjectRepository(session)
+            db_mgr = await rebuild_manager_from_db(repo)
+
+        existing_ids = {p.project_id for p in project_manager.list_projects(active_only=False)}
+        for proj in db_mgr.list_active():
+            if proj.project_id not in existing_ids:
+                project_manager._projects[proj.project_id] = proj
+            if proj.repo_url:
+                materialize_project_workspace(
+                    repo_url=proj.repo_url,
+                    workspace_path=proj.workspace_path or proj.project_id,
+                )
+    except Exception as exc:  # pragma: no cover - defensive startup guard
+        logger.warning("Failed to restore persisted projects: %s", exc)
+
+
 def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
     workspaces: dict[str, Any] = {}
     if project_manager is not None:
@@ -350,6 +384,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
+
+        # W3.11 (H13): merge DB-persisted projects into the manager so projects
+        # added at runtime survive a restart, and materialize each repo_url into
+        # its workspace so dispatched jobs have real code to edit.
+        await _restore_persisted_projects(ext.get("projects"), session_factory)
 
         secrets_resolver = build_secrets_resolver(
             openbao_config=startup_config.get("openbao_config"),

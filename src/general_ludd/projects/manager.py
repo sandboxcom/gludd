@@ -1,9 +1,13 @@
 from __future__ import annotations
 
+import json
 import logging
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from general_ludd.db.repository import ProjectRepository
 
 logger = logging.getLogger(__name__)
 
@@ -162,6 +166,125 @@ class ProjectManager:
                 for p in projects
             ],
         }
+
+
+def materialize_project_workspace(
+    repo_url: str,
+    workspace_path: str,
+    base_dir: str = "/tmp/gludd-workspaces",
+) -> str | None:
+    """Clone ``repo_url`` into the project's workspace ``repo`` directory.
+
+    W3.11 (H13): a dispatched job has no code to edit unless the project's
+    repo_url is actually checked out. This uses the real ``GitAutomation.clone``
+    (idempotent) — no ad-hoc shelling out.
+
+    Returns the path to the materialized repo checkout, or ``None`` when there is
+    no repo_url to clone. On clone failure returns ``None`` and logs a warning
+    (the project still exists; it simply has no checkout yet).
+    """
+    if not repo_url:
+        return None
+
+    from general_ludd.git_automation.repo import GitAutomation
+    from general_ludd.projects.workspace import ProjectWorkspace
+
+    # Derive the workspace; an explicit workspace_path wins, else base_dir/<derived>.
+    ws_pid = workspace_path or "default"
+    ws = ProjectWorkspace(
+        project_id=ws_pid,
+        base_dir=base_dir,
+        workspace_path=workspace_path or None,
+    )
+    ws.ensure_dirs()
+    repo_dir = str(ws.repo_dir)
+
+    git = GitAutomation()
+    result = git.clone(repo_url, repo_dir)
+    if not result.success:
+        logger.warning(
+            "Failed to materialize workspace for %s: %s", repo_url, result.message
+        )
+        return None
+    if result.already_present:
+        logger.info("Workspace already materialized at %s", repo_dir)
+    else:
+        logger.info("Cloned %s into %s", repo_url, repo_dir)
+    return repo_dir
+
+
+async def persist_project(
+    repo: ProjectRepository,
+    *,
+    project_id: str,
+    name: str,
+    weight: float,
+    description: str = "",
+    repo_url: str = "",
+    workspace_path: str = "",
+    dispatch_mode: str = "active",
+) -> None:
+    """Persist a project through ProjectRepository so restarts keep it.
+
+    ProjectModel has no dedicated repo_url/weight/dispatch_mode columns, so those
+    spine-relevant fields live in the JSON ``config`` column. ``rebuild_manager_from_db``
+    reads them back. Idempotent: an existing project_id is updated, not duplicated.
+    """
+    cfg = {
+        "repo_url": repo_url,
+        "weight": weight,
+        "dispatch_mode": dispatch_mode,
+    }
+    existing = await repo.get_by_id(project_id)
+    if existing is not None:
+        existing.name = name
+        existing.description = description
+        existing.workspace_path = workspace_path
+        existing.config = json.dumps(cfg)
+        existing.active = True
+        return
+    await repo.create(
+        data={
+            "project_id": project_id,
+            "name": name,
+            "description": description,
+            "workspace_path": workspace_path,
+            "config": json.dumps(cfg),
+            "active": True,
+        }
+    )
+
+
+async def rebuild_manager_from_db(repo: ProjectRepository) -> ProjectManager:
+    """Build a fresh ProjectManager from the persisted (active) projects.
+
+    Used on daemon startup so DB-persisted projects survive a restart instead of
+    only living in config. repo_url/weight/dispatch_mode are read back from the
+    JSON ``config`` column.
+    """
+    mgr = ProjectManager()
+    import time
+
+    for row in await repo.list_active():
+        try:
+            cfg = json.loads(row.config) if row.config else {}
+        except (ValueError, TypeError):
+            cfg = {}
+        weight = float(cfg.get("weight", 0.0) or 0.0)
+        project = ProjectWeight(
+            project_id=row.project_id,
+            name=row.name,
+            weight=weight,
+            description=row.description or "",
+            workspace_path=row.workspace_path or "",
+            repo_url=str(cfg.get("repo_url", "") or ""),
+            dispatch_mode=str(cfg.get("dispatch_mode", "active") or "active"),
+            created_at=time.time(),
+            active=True,
+        )
+        mgr._projects[project.project_id] = project
+    logger.info("Rebuilt ProjectManager from DB: %d active project(s)", len(mgr._projects))
+    return mgr
 
 
 def seed_from_config(config: dict[str, Any]) -> ProjectManager:

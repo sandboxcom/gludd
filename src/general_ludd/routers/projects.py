@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import os
-import uuid
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -44,33 +43,42 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/projects")
     async def admin_add_project(req: AddProjectRequest) -> dict[str, Any]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
+        from general_ludd.projects.manager import (
+            materialize_project_workspace,
+            persist_project,
+        )
         ext = _get_or_create_extended_subsystems(app)
-        project_id = req.name.lower().replace(" ", "-") + "-" + uuid.uuid4().hex[:6]
-        project_data = {
-            "project_id": project_id,
-            "name": req.name,
-            "weight": req.weight,
-            "description": req.description,
-            "repo_url": req.repo_url,
-            "workspace_path": req.workspace_path,
-            "dispatch_mode": req.dispatch_mode,
-            "active": True,
-        }
-        factory = _get_session_factory(app)
-        if factory is not None:
-            async with factory() as session:
-                repo = ProjectRepository(session)
-                try:
-                    await repo.create(data=project_data)
-                    await session.commit()
-                except Exception:
-                    pass
         try:
             project = ext["projects"].add_project(
                 name=req.name, weight=req.weight, description=req.description,
                 repo_url=req.repo_url, workspace_path=req.workspace_path,
                 dispatch_mode=req.dispatch_mode,
             )
+            # W3.11 (H13): materialize the workspace from repo_url so a dispatched
+            # job has real code to edit. Persist with repo_url so a restart keeps it.
+            if req.repo_url:
+                materialize_project_workspace(
+                    repo_url=req.repo_url,
+                    workspace_path=req.workspace_path or project.project_id,
+                )
+            factory = _get_session_factory(app)
+            if factory is not None:
+                async with factory() as session:
+                    repo = ProjectRepository(session)
+                    try:
+                        await persist_project(
+                            repo,
+                            project_id=project.project_id,
+                            name=req.name,
+                            weight=req.weight,
+                            description=req.description,
+                            repo_url=req.repo_url,
+                            workspace_path=req.workspace_path,
+                            dispatch_mode=req.dispatch_mode,
+                        )
+                        await session.commit()
+                    except Exception:
+                        pass
             return {
                 "project_id": project.project_id,
                 "name": project.name, "weight": project.weight,

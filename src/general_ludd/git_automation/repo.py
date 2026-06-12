@@ -9,6 +9,7 @@ import subprocess
 from datetime import UTC, datetime
 
 from general_ludd.git_automation.types import (
+    CloneResult,
     InitResult,
     MergeResult,
     PushResult,
@@ -93,6 +94,34 @@ class GitAutomation:
     def get_current_commit(self) -> str:
         result = self._run_git("rev-parse", "HEAD")
         return result.stdout.strip()
+
+    def clone(self, url: str, target_dir: str) -> CloneResult:
+        """Clone ``url`` into ``target_dir``.
+
+        Idempotent: if ``target_dir`` already contains a git checkout, this is a
+        no-op success (we never re-clone over existing work). Failures (bad URL,
+        unreachable remote) return ``success=False`` rather than raising, so
+        callers can fail closed without try/except noise.
+        """
+        target = os.path.abspath(target_dir)
+        if os.path.isdir(os.path.join(target, ".git")):
+            return CloneResult(
+                path=target, url=url, success=True, already_present=True,
+                message="checkout already present",
+            )
+        parent = os.path.dirname(target) or "."
+        os.makedirs(parent, exist_ok=True)
+        result = subprocess.run(
+            ["git", "clone", url, target],
+            capture_output=True,
+            text=True,
+        )
+        if result.returncode != 0:
+            return CloneResult(
+                path=target, url=url, success=False,
+                message=result.stderr.strip() or result.stdout.strip() or "clone failed",
+            )
+        return CloneResult(path=target, url=url, success=True)
 
     def create_worktree(self, repo_path: str, branch_name: str, worktree_path: str) -> WorktreeResult:
         try:
