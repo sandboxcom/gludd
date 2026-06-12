@@ -13,7 +13,7 @@
 - **Collect**: 0 errors, 5,695 collected
 - **Tests**: 5,626 passed, 0 failed, 27 skipped, 42 xfailed
 - **Smoke**: PASS
-- **Latest commit**: 4790631 — burn 4 ratchet entries
+- **Latest commit**: 30d66a3 — BinaryPathResolver import fix, 3 ratchet entries burned
 
 ## Ratchet Burn-Down Progress
 - Started: 93 entries (2026-06-11)
@@ -21,8 +21,8 @@
 - After session 2 (310663b): 45 entries — worker execute/return-review fixes
 - After session 3 (d6990e5): 39 entries — code search/graph CLI implementation
 - After session 3 (e51e05d): 42 entries — 36 strict + 6 flaky (net reduction from 93)
-- After session 4 (4790631): 32 entries — 26 strict + 6 flaky
-- **Total burned**: 61 entries (93 → 32)
+- After session 4 (30d66a3): 23 entries — 17 strict + 6 flaky
+- **Total burned**: 70 entries (93 → 23, 75% reduction)
 
 ### Commits This Session
 1. `c014cd2` — LogAuditor top-level secret scan + flaky ratchet support
