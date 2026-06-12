@@ -20,11 +20,7 @@ tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST 
 tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
 tests/unit/test_deployment.py::TestDeploymentManagerDestroy::test_destroy_uses_correct_binary: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
 tests/e2e/test_new_features_e2e.py::TestDeploymentLifecycle::test_destroy_runs_terraform_destroy: "C5 fix — must deploy before destroy, old test tested money-leak behavior"
-tests/unit/test_cli_execution_coverage.py::TestCodeSearchEdgeCases::test_code_search_empty_results: "CLI code search edge — pre-existing"
 
-tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_graph_success: "TUI code graph — pre-existing"
-tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_search_with_results: "TUI code search — pre-existing"
-tests/unit/test_cli_execution_coverage.py::TestPostTUICommands::test_code_search_no_results: "TUI code search no results — pre-existing"
 tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_resolves_aws_creds_from_secrets_resolver: "compute deploy secrets — pre-existing"  # pragma: allowlist secret
 tests/unit/test_compute_launch_and_remote_slurm.py::TestComputeDeployUsesSecretsResolver::test_deploy_passes_none_resolver_when_not_on_app_state: "compute deploy none resolver — pre-existing"
 tests/unit/test_daemon_coverage_lift.py::TestBuildSecretsResolver::test_build_secrets_resolver_openbao_external: "daemon secrets resolver — pre-existing"  # pragma: allowlist secret
@@ -35,8 +31,6 @@ tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ans
 tests/unit/test_daemon_filestore_integrity.py::TestRealDaemonEndpoints::test_ansible_search_empty_query: "daemon ansible search empty — pre-existing"
 tests/unit/test_daemon_uncovered_endpoints.py::TestLocalInferenceStart::test_local_inference_start: "local inference start — pre-existing"
 tests/unit/test_mcp_transport.py::TestMCPStdioClient::test_stdio_client_sends_initialize: "MCP transport initialize — pre-existing protocol bug"
-tests/unit/test_new_cli_commands.py::TestCodeIntelCliParsing::test_code_graph: "CLI code graph — pre-existing"
-tests/unit/test_new_cli_commands.py::TestCodeIntelCliParsing::test_code_search: "CLI code search — pre-existing"
 tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_8000_occupied: "8000-occupied e2e proof — requires ephemeral port conversion of daemon tests"
 tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_creation: "preflight filestore creation — pre-existing"
 tests/unit/test_preflight_coverage.py::TestCheckFilestore::test_filestore_exception: "preflight filestore exception — pre-existing"
