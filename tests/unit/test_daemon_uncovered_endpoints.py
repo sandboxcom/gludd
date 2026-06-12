@@ -159,7 +159,7 @@ class TestLocalInferenceStart:
         mock_manager.start_server = AsyncMock()
 
         with patch(
-            "general_ludd.infra.local_inference.LocalInferenceManager",
+            "general_ludd.routers.models.LocalInferenceManager",
             return_value=mock_manager,
         ):
             async with AsyncClient(transport=transport, base_url="http://test") as client:

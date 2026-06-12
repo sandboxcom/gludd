@@ -41,7 +41,7 @@ class TestSecretMigrationInDaemonStartup:
             mock_resolver.return_value = mock_mgr
 
             with patch(
-                "general_ludd.secrets.migration.migrate_profile_secrets"
+                "general_ludd.daemon.migrate_profile_secrets"
             ) as mock_migrate:
                 mock_migrate.return_value = {
                     "migrated": 1,
@@ -50,7 +50,7 @@ class TestSecretMigrationInDaemonStartup:
                 }
 
                 with patch(
-                    "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                    "general_ludd.daemon.AnsibleRunnerAdapter",
                     return_value=MagicMock(),
                 ):
                     app = create_daemon_app(
@@ -73,10 +73,10 @@ class TestSecretMigrationInDaemonStartup:
             mock_resolver.return_value = EnvSecretsManager()
 
             with patch(
-                "general_ludd.secrets.migration.migrate_profile_secrets"
+                "general_ludd.daemon.migrate_profile_secrets"
             ) as mock_migrate:
                 with patch(
-                    "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+                    "general_ludd.daemon.AnsibleRunnerAdapter",
                     return_value=MagicMock(),
                 ):
                     app = create_daemon_app(tick_interval=0.01)

@@ -1,8 +1,8 @@
 """Tests for uncovered daemon code paths — targeting lines 97, 123-124, 128-129, 147-160,
-171, 173, 185-188, 197, 204, 211-212, 326-327, 364, 371, 440, 452, 570, 591, 609-611,
-737-743, 808-812, 822, 859-860, 870, 889, 908, 1066-1067, 1075-1076, 1319-1321, 1330-1332,
-1362-1366, 1387-1402, 1411-1413, 1433, 1460-1482, 1513, 1535-1551, 1583-1593, 1619-1626,
-1654-1655, 1702, 1730-1731, 1768-1775, 1920, 1935, 1962, 1971, 1988."""
+ 171, 173, 185-188, 197, 204, 211-212, 326-327, 364, 371, 440, 452, 570, 591, 609-611,
+ 737-743, 808-812, 822, 859-860, 870, 889, 908, 1066-1067, 1075-1076, 1319-1321, 1330-1332,
+ 1362-1366, 1387-1402, 1411-1413, 1433, 1460-1482, 1513, 1535-1551, 1583-1593, 1619-1626,
+ 1654-1655, 1702, 1730-1731, 1768-1775, 1920, 1935, 1962, 1971, 1988."""
 
 from __future__ import annotations
 
@@ -453,7 +453,10 @@ class TestBenchmarkRecordWithSession:
     @pytest.mark.asyncio
     async def test_benchmark_record_with_session(self, app, transport):
         mock_session = MagicMock()
-        app.state._session = mock_session
+        mock_sf = MagicMock()
+        mock_sf.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_sf.return_value.__aexit__ = AsyncMock(return_value=False)
+        app.state._session_factory = mock_sf
         mock_row = MagicMock()
         mock_row.id = "rec-1"
         mock_row.success = True
@@ -589,19 +592,18 @@ class TestWorktreeStatusWithMonitor:
         mock_wt.last_scanned = None
         mock_wt.last_activity = None
         mock_monitor.tracked_worktrees = {"wt-1": mock_wt}
-        with patch.dict(app.state.__dict__, {}):
-            from general_ludd.daemon import _get_or_create_extended_subsystems
+        from general_ludd.daemon import _get_or_create_extended_subsystems
 
-            with patch(
-                "general_ludd.daemon._get_or_create_extended_subsystems",
-                return_value={**_get_or_create_extended_subsystems(app), "worktree_monitor": mock_monitor},
-            ):
-                async with AsyncClient(transport=transport, base_url="http://test") as client:
-                    resp = await client.get("/admin/worktree/status")
-                    assert resp.status_code == 200
-                    data = resp.json()
-                    assert data["tracked_count"] == 1
-                    assert data["tracked_worktrees"][0]["path"] == "/tmp/test-wt"
+        with patch(
+            "general_ludd.routers.worktree._get_or_create_extended_subsystems",
+            return_value={**_get_or_create_extended_subsystems(app), "worktree_monitor": mock_monitor},
+        ):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.get("/admin/worktree/status")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["tracked_count"] == 1
+                assert data["tracked_worktrees"][0]["path"] == "/tmp/test-wt"
 
 
 class TestFilestoreReadDir:

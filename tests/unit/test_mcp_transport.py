@@ -78,7 +78,7 @@ class TestMCPStdioClient:
             await client.start()
 
         proc.stdin.write.assert_called()
-        written = proc.stdin.write.call_args[0][0]
+        written = proc.stdin.write.call_args_list[0][0][0]
         msg = json.loads(written.decode())
         assert msg["jsonrpc"] == "2.0"
         assert msg["method"] == "initialize"
