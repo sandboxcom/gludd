@@ -21,13 +21,15 @@ class TestTUIDaemonDetachment:
     def test_start_daemon_command_uses_uvicorn_worker(self):
         from general_ludd.cli import _build_daemon_start_cmd
 
+        # W3.5 (M8): workers>1 is clamped to 1 (SQLite-only single-writer). The
+        # command still uses the uvicorn worker class and binds host:port.
         cmd = _build_daemon_start_cmd(host="127.0.0.1", port=9000, workers=4)
         assert "--worker-class" in cmd
         idx = cmd.index("--worker-class")
         assert cmd[idx + 1] == "uvicorn_worker.UvicornWorker"
         assert "--workers" in cmd
         w_idx = cmd.index("--workers")
-        assert cmd[w_idx + 1] == "4"
+        assert cmd[w_idx + 1] == "1"
         assert "127.0.0.1:9000" in cmd
 
     def test_start_daemon_no_intermediate_python_wrapper(self):

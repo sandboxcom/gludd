@@ -102,16 +102,28 @@ ships with example files you can copy and customize.
 model_routing:
   default_profile: zai_coder
 
-database:
-  host: localhost
-  port: 5432
-  name: gludd
-  user: gludd
+# Database is SQLite only (see "Database & concurrency" below). You normally do
+# not set this block at all — the daemon defaults to a local SQLite file. If you
+# do set a `url`, it must be a sqlite+aiosqlite:/// URL; any other URL is refused
+# at startup with a clear error.
 
 budget:
   max_usd: 50
   warn_percent: 80
 ```
+
+### Database & concurrency (SQLite only)
+
+general_ludd is **SQLite only**. Schema creation (`create_all`) and Alembic
+migrations (`stamp_head`, `alembic.ini`) are SQLite-specific, so a Postgres URL
+does not actually work — the daemon refuses any non-SQLite database URL at
+startup rather than booting into a half-broken state.
+
+Because there is no cross-process claim coordination over a single SQLite file,
+the daemon runs a **single gunicorn worker**. `--workers` defaults to 1, and any
+`--workers N` with `N > 1` is clamped to 1 with a warning (multiple workers would
+race on the same SQLite file and double-dispatch todos). Honest multi-worker
+operation would require Postgres support, which is not implemented.
 
 ### Model Profiles
 

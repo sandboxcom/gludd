@@ -81,12 +81,21 @@ def init_engine_from_config(config: dict[str, Any] | None = None) -> AsyncEngine
     url = _compose_db_url(cfg)
     if not url:
         url = get_default_db_url()
+    # W3.5 (M8/H18): general_ludd is SQLite-only. create_all and alembic
+    # stamp_head are SQLite-only and alembic.ini hardcodes a sqlite URL — a
+    # Postgres URL does not actually work. Refuse it loudly rather than boot
+    # into a half-broken state that silently corrupts on the first migration.
+    if not is_sqlite_url(url):
+        raise ValueError(
+            f"Unsupported database URL {url!r}: general_ludd is SQLite only. "
+            "Postgres is not supported (schema creation and migrations are "
+            "SQLite-only). Use a sqlite+aiosqlite:/// URL."
+        )
     engine = create_async_engine(url)
-    if is_sqlite_url(str(engine.url)):
-        run_wal_pragmas(engine)
-        db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
-        if db_path:
-            Path(db_path).parent.mkdir(parents=True, exist_ok=True)
+    run_wal_pragmas(engine)
+    db_path = str(engine.url).replace("sqlite+aiosqlite:///", "")
+    if db_path:
+        Path(db_path).parent.mkdir(parents=True, exist_ok=True)
     return engine
 
 

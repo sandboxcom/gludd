@@ -46,10 +46,11 @@ class TestSqliteDefault:
         assert "sqlite" in str(engine.url)
         engine.sync_engine.dispose()
 
-    def test_postgres_config_returns_postgres_engine(self):
-        engine = init_engine_from_config({"url": "postgresql+psycopg://localhost/gludd"})
-        assert "postgresql" in str(engine.url)
-        engine.sync_engine.dispose()
+    def test_postgres_config_is_refused(self):
+        # W3.5 (M8/H18): SQLite-only — a Postgres URL is refused, not silently
+        # accepted into a half-broken (SQLite-only-schema) engine.
+        with pytest.raises(ValueError, match=r"SQLite only"):
+            init_engine_from_config({"url": "postgresql+psycopg://localhost/gludd"})
 
     @pytest.mark.asyncio
     async def test_wal_mode_set(self, tmp_path):

@@ -691,14 +691,12 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
         print(f"  Pre-shared key (PSK): {psk}")
         print(f"  Clients must send: Authorization: Bearer {psk}\n")
 
-    cmd = _build_daemon_start_cmd(host=bind_host, port=args.port)
-    workers_default = args.workers is None
-    if workers_default:
-        from general_ludd.hardware.probe import probe_hardware
-        hw = probe_hardware()
-        cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=hw.gunicorn_workers)
-    else:
-        cmd = _build_daemon_start_cmd(host=bind_host, port=args.port, workers=args.workers)
+    # W3.5 (M8): SQLite-only — clamp to a single worker (no hardware-based
+    # multi-worker default; multiple workers race on one SQLite file).
+    cmd = _build_daemon_start_cmd(
+        host=bind_host, port=args.port,
+        workers=_clamp_workers_for_sqlite(args.workers),
+    )
     cmd_env = _build_daemon_env(
         config_dir=config_dir,
         templates_dir=templates_dir,
@@ -2587,14 +2585,33 @@ def _build_daemon_env(
     return env
 
 
+def _clamp_workers_for_sqlite(workers: int | None) -> int:
+    """W3.5 (M8): clamp gunicorn workers to 1 for the SQLite-only deployment.
+
+    Each gunicorn worker spawns its own event loop + in-memory stores; with a
+    single SQLite file there is no cross-process claim coordination, so N>1 is
+    dishonest (duplicate dispatch, racing writers). Default to 1 and clamp any
+    N>1 down to 1 with a warning. The honest multi-worker story requires Postgres
+    (H18), which is not supported.
+    """
+    if workers is None:
+        return 1
+    if workers > 1:
+        logging.getLogger(__name__).warning(
+            "Requested %d workers but general_ludd is SQLite-only "
+            "(no cross-process claim coordination); clamping to 1 worker.",
+            workers,
+        )
+        return 1
+    return max(1, workers)
+
+
 def _build_daemon_start_cmd(
     host: str = "0.0.0.0",
     port: int = 8000,
     workers: int | None = None,
 ) -> list[str]:
-    if workers is None:
-        from general_ludd.hardware.probe import probe_hardware
-        workers = probe_hardware().gunicorn_workers
+    workers = _clamp_workers_for_sqlite(workers)
     return [
         "gunicorn",
         "general_ludd.daemon:create_daemon_app()",
