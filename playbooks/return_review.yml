@@ -1,5 +1,7 @@
+---
 - name: Return review for task return
   hosts: localhost
+  connection: local
   gather_facts: false
   vars:
     job_id: "{{ job_id | default('unknown') }}"
@@ -8,7 +10,16 @@
     model_profile: "{{ model_profile | default('default') }}"
     prompt_profile: "{{ prompt_profile | default('return_review') }}"
     generic_review: "{{ generic_review | default('no') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-return-review') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+
   tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
     - name: Validate required vars
       ansible.builtin.assert:
         that:
@@ -31,7 +42,7 @@
     - name: Write task decision artifact
       ansible.builtin.copy:
         content: "{{ review_result | to_nice_json }}"
-        dest: "{{ artifact_dir | default('/tmp') }}/task_decision.json"
+        dest: "{{ artifact_dir }}/task_decision.json"
         mode: "0600"
 
     - name: Emit review completion

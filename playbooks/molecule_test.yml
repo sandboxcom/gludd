@@ -3,7 +3,42 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    job_id: "{{ job_id | default('MOLECULE-00000000') }}"
+    todo_id: "{{ todo_id | default('none') }}"
+    test_dir: "{{ test_dir | default('.') }}"
+    scenario: "{{ scenario | default('') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-molecule-test') }}"
+
   tasks:
-    - name: Run molecule test
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run test suite via run_tests role
+      ansible.builtin.include_role:
+        name: run_tests
+      vars:
+        test_dir: "{{ test_dir }}"
+        test_cmd: "make test-count"
+        artifact_dir: "{{ artifact_dir }}"
+        allow_failure: true
+
+    - name: Write molecule test artifact
+      ansible.builtin.copy:
+        content: |
+          {
+            "job_id": "{{ job_id }}",
+            "todo_id": "{{ todo_id }}",
+            "playbook": "molecule_test.yml",
+            "scenario": "{{ scenario }}",
+            "status": "completed"
+          }
+        dest: "{{ artifact_dir }}/molecule_test_result.json"
+        mode: "0644"
+
+    - name: Report molecule test completion
       ansible.builtin.debug:
-        msg: "Molecule test placeholder"
+        msg: "Molecule test completed for job {{ job_id }} scenario {{ scenario }}"

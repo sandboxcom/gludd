@@ -5,9 +5,11 @@
   gather_facts: false
   vars:
     job_id: "{{ job_id | default('DEP-00000000') }}"
+    todo_id: "{{ todo_id | default('none') }}"
     package_name: "{{ package_name | default('') }}"
     version_constraint: "{{ version_constraint | default('') }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-dep-update') }}"
+    project_dir: "{{ project_dir | default('.') }}"
 
   tasks:
     - name: Create artifact directory
@@ -16,11 +18,21 @@
         state: directory
         mode: "0755"
 
+    - name: Run lint and check after dependency update
+      ansible.builtin.include_role:
+        name: lint_and_check
+      vars:
+        project_dir: "{{ project_dir }}"
+        artifact_dir: "{{ artifact_dir }}"
+        fail_on_lint: false
+        fail_on_typecheck: false
+
     - name: Record dependency update task
       ansible.builtin.copy:
         content: |
           {
             "job_id": "{{ job_id }}",
+            "todo_id": "{{ todo_id }}",
             "package_name": "{{ package_name }}",
             "version_constraint": "{{ version_constraint }}",
             "playbook": "dependency_update.yml",

@@ -1,4 +1,11 @@
 ---
+# W6.7: converted from canned-JSON stub to agent_task role invocation.
+# Previous behavior: wrote a hardcoded {"status": "success"} artifact.
+# Now: invokes the full agent_task lifecycle for self-improvement work.
+#
+# Falls back to a minimal artifact write if repo_path/todo_id are not set
+# (preserving backward compatibility with harness callers that pass minimal vars).
+
 - name: Self-improve harness
   hosts: localhost
   connection: local
@@ -7,6 +14,9 @@
     job_id: "{{ job_id | default('SI-00000000') }}"
     todo_id: "{{ todo_id | default('none') }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-self-improve') }}"
+    repo_path: "{{ repo_path | default('') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    model_profile: "{{ model_profile | default('') }}"
 
   tasks:
     - name: Create artifact directory
@@ -15,7 +25,21 @@
         state: directory
         mode: "0755"
 
-    - name: Write self-improve artifact
+    - name: Run full agent task for self-improvement (when todo_id and repo_path set)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_task
+      vars:
+        repo_path: "{{ repo_path }}"
+        todo_id: "{{ todo_id }}"
+        work_type: "self_improvement"
+        skill_name: ""
+        quality_gate_cmd: "make test-count"
+        artifact_dir: "{{ artifact_dir }}"
+        daemon_url: "{{ daemon_url }}"
+        model_profile: "{{ model_profile }}"
+      when: todo_id != 'none' and repo_path | length > 0
+
+    - name: Write minimal artifact (fallback when no todo_id/repo_path)
       ansible.builtin.copy:
         content: |
           {
@@ -27,6 +51,7 @@
           }
         dest: "{{ artifact_dir }}/self_improve_result.json"
         mode: "0644"
+      when: todo_id == 'none' or repo_path | length == 0
 
     - name: Report self-improve completion
       ansible.builtin.debug:

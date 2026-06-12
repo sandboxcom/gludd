@@ -7,6 +7,9 @@
     job_id: "{{ job_id | default('PROMPT-EVAL-00000000') }}"
     todo_id: "{{ todo_id | default('none') }}"
     artifact_dir: "{{ artifact_dir | default('/tmp/harness-prompt-eval') }}"
+    prompt_text: "{{ prompt_text | default('') }}"
+    model_profile: "{{ model_profile | default('default') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
 
   tasks:
     - name: Create artifact directory
@@ -14,6 +17,15 @@
         path: "{{ artifact_dir }}"
         state: directory
         mode: "0755"
+
+    - name: Call model for prompt evaluation
+      general_ludd.agent.gludd_model_call:
+        prompt: "{{ prompt_text }}"
+        model_profile: "{{ model_profile }}"
+        daemon_url: "{{ daemon_url }}"
+      register: model_result
+      when: prompt_text | length > 0
+      no_log: false
 
     - name: Write prompt eval artifact
       ansible.builtin.copy:
@@ -23,6 +35,7 @@
             "todo_id": "{{ todo_id }}",
             "playbook": "prompt_eval.yml",
             "status": "success",
+            "model_profile": "{{ model_profile }}",
             "exit_code": 0
           }
         dest: "{{ artifact_dir }}/prompt_eval_result.json"

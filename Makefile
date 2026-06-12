@@ -16,7 +16,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         test-guardrails test-scripts test-db test-live-zai test-tui-daemon \
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
-        ansible-syntax ansible-lint-playbooks playbook-list \
+        ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
         repo-status repo-diff repo-staged repo-log \
@@ -27,7 +27,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
         status-snapshot audit-evidence \
-        skill-install skill-list bootstrap-skills \
+        skill-install skill-list bootstrap-skills scan-tool-usage \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help
@@ -114,6 +114,9 @@ help:
 
 skeleton:
 	@$(PYTHON) scripts/skeleton.py
+
+scan-tool-usage:
+	@$(PYTHON) scripts/scan_tool_usage.py
 
 setup-dirs:
 	@mkdir -p src/general_ludd/worker
@@ -262,6 +265,10 @@ ansible-syntax:
 
 ansible-lint-playbooks:
 	@$(UV) run ansible-lint playbooks/roles || true
+
+ansible-collection-test:
+	@echo "=== Ansible Collection Tests (pytest) ==="
+	@$(UV) run python -m pytest tests/integration/test_playbook_registry.py -v
 
 playbook-list:
 	@ls -1 playbooks/*.yml 2>/dev/null || echo "No playbooks found"
