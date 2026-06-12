@@ -415,7 +415,7 @@ git-remote-sandboxcom:
 	@echo "Remote sandboxcom configured"
 
 git-push-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
 git-pull-sandboxcom:
