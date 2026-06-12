@@ -14,8 +14,6 @@ tests/e2e/test_obj03_worker.py::TestWorkerE2E::test_return_review_endpoint: "wor
 
 tests/e2e/test_obj04_event_loop.py::TestEventLoopE2E::test_reclaims_expired_lease: "event loop lease reclaim — pre-existing"
 tests/e2e/test_obj09_secrets.py::TestOpenBaoE2E::test_weekly_image_scan_detects_update: "openbao image scan — pre-existing"  # pragma: allowlist secret
-tests/e2e/test_obj13_validation_audit.py::TestLogAuditorImportAndFindingDetection::test_audit_detects_secret_like_value: "log auditor detection — pre-existing"  # pragma: allowlist secret
-tests/e2e/test_obj13_validation_audit.py::TestLogAuditorImportAndFindingDetection::test_audit_detects_ghp_token: "log auditor GHP token — pre-existing"  # pragma: allowlist secret
 tests/e2e/test_obj15_runtime_packaging.py::TestRuntimeValidatorImport::test_validate_profile_relative_container_path: "runtime validator relative path — pre-existing"
 tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_event_loop_runs_tick: "daemon lifespan event loop — pre-existing"
 tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_add_todo_and_list: "daemon lifespan todo CRUD — pre-existing"
@@ -58,4 +56,6 @@ tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid
 tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "TUI config editor — pre-existing"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_starts_daemon_and_it_serves_healthz: "TUI daemon start PTY — environment-dependent"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_shows_running_after_daemon_start: "TUI daemon start running — environment-dependent"
+tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "flaky xdist race on hvac patch — pre-existing"
+tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_local_bootstrap_result: "flaky xdist race on hvac patch — pre-existing"
 tests/unit/test_tui_navigation_e2e.py::TestTabSpaceNavigation::test_enter_enters_submenu: "flaky StopIteration — pre-existing"

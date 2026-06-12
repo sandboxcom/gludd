@@ -133,7 +133,20 @@ class TestLogAuditorDetectsSecretLikeValues:
             {
                 "event": "api_call",
                 "correlation_id": "corr-1",
-                "payload": {"api_key": "sk-abc123secretkey456xyz000"},
+                "payload": {"api_key": "sk-abc123secretkey456xyz000"},  # pragma: allowlist secret
+            },
+        ]
+        auditor = LogAuditor()
+        report = auditor.audit_logs(entries)
+        categories = [f.category for f in report.findings]
+        assert "secret_like_value" in categories
+
+    def test_secret_at_top_level_not_just_payload(self) -> None:
+        entries = [
+            {
+                "event": "config_load",
+                "correlation_id": "corr-2",
+                "api_key": "sk-abcdefghijklmnopqrstuvwxyz123456",  # pragma: allowlist secret
             },
         ]
         auditor = LogAuditor()

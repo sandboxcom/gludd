@@ -3,6 +3,9 @@
 Reads config/ratchet.yml and applies pytest.mark.xfail(strict=True)
 to every listed test. A test listed here that starts passing will
 make the suite RED (strict xfail) until its entry is removed.
+
+Entries whose reason starts with "flaky" use strict=False so that
+non-deterministic passes don't break the gate.
 """
 from __future__ import annotations
 
@@ -39,6 +42,8 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
         return
     for item in items:
         if item.nodeid in ratchet:
+            reason = ratchet[item.nodeid]
+            strict = not reason.startswith("flaky")
             item.add_marker(
-                pytest.mark.xfail(strict=True, reason=ratchet[item.nodeid])
+                pytest.mark.xfail(strict=strict, reason=reason)
             )

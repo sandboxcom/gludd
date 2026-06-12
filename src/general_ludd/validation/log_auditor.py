@@ -63,8 +63,11 @@ class LogAuditor:
                     evidence=f"from={from_status} to={to_status} attempt={attempt}",
                 ))
 
+        values_to_check = list(entry.values())
         payload = entry.get("payload", {})
-        for val in payload.values() if isinstance(payload, dict) else []:
+        if isinstance(payload, dict):
+            values_to_check.extend(payload.values())
+        for val in values_to_check:
             if isinstance(val, str):
                 for pat in _SECRET_PATTERNS:
                     if pat.search(val):
