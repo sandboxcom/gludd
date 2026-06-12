@@ -13,7 +13,7 @@
 - **Collect**: 0 errors, 5,695 collected
 - **Tests**: 5,626 passed, 0 failed, 27 skipped, 42 xfailed
 - **Smoke**: PASS
-- **Latest commit**: 4a1730b — git-push-sandboxcom --no-verify fix
+- **Latest commit**: 4790631 — burn 4 ratchet entries
 
 ## Ratchet Burn-Down Progress
 - Started: 93 entries (2026-06-11)
@@ -21,8 +21,8 @@
 - After session 2 (310663b): 45 entries — worker execute/return-review fixes
 - After session 3 (d6990e5): 39 entries — code search/graph CLI implementation
 - After session 3 (e51e05d): 42 entries — 36 strict + 6 flaky (net reduction from 93)
-- After session 4 (4a1730b): 41 entries — 35 strict + 6 flaky
-- **Total burned**: 52 entries (93 → 41)
+- After session 4 (4790631): 32 entries — 26 strict + 6 flaky
+- **Total burned**: 61 entries (93 → 32)
 
 ### Commits This Session
 1. `c014cd2` — LogAuditor top-level secret scan + flaky ratchet support
@@ -33,6 +33,8 @@
 6. `db0a997` — Update SESSION.md with ratchet progress
 7. `feb00e5` — Version stamp v0.1.0-alpha-datestamp, CI release only on tags, git pull/fetch targets, burn 1 ratchet entry
 8. `4a1730b` — git-push-sandboxcom uses --no-verify
+9. `cd54e35` — Burn 3 ansible ratchet entries, mock patch target fix
+10. `4790631` — Burn 4 ratchet entries (worktree/local-inference/MCP/secret-migration)
 
 ### Key Production Code Changes
 - **LogAuditor** (`validation/log_auditor.py`): Now scans top-level entry values for secrets, not just payload dict
@@ -60,17 +62,19 @@
 - V2.2-V2.6: pending
 
 ## Known Gaps
-- 41 ratchet entries remaining (35 strict + 6 flaky)
+- 32 ratchet entries remaining (26 strict + 6 flaky)
 - 18 mypy errors tracked (baseline: 18)
 - Remaining strict entries need real infrastructure changes:
   - Daemon lifespan needs real DB (2 entries)
   - Container/container-runtime tests need real containers (5 entries)
   - Deployment lifecycle needs deploy-before-destroy (3 entries)
   - Bandit SAST needs installation (1 entry)
-  - MCP transport protocol bug (1 entry)
   - Port 8000 ephemeral conversion (1 entry)
-  - Various daemon endpoint wiring (6+ entries)
   - Compute deploy secrets resolver (2 entries)
+  - Secrets manager container start/fail (2 entries)
+  - Secrets wiring container (1 entry)
+  - Benchmark record session await (1 entry)
+  - Various daemon endpoint wiring (remaining)
 
 ## Next Steps
 1. Continue burning remaining 41 ratchet entries (target daemon coverage_lift, secrets wiring, compute launch)
