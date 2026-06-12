@@ -303,18 +303,7 @@ git-init:
 	@git config user.name "General Ludd Agent" || true
 
 status-snapshot:
-	@echo "<!-- gate:begin -->" > /tmp/gludd-status-snippet.md
-	@echo "## Current Gate Status ($(shell date -u +%Y-%m-%d))" >> /tmp/gludd-status-snippet.md
-	@echo "" >> /tmp/gludd-status-snippet.md
-	@if [ -f .gate-status ]; then \
-		sed 's/^/- /' .gate-status >> /tmp/gludd-status-snippet.md; \
-	else \
-		echo "- No .gate-status file. Run 'make gate' first." >> /tmp/gludd-status-snippet.md; \
-	fi
-	@echo "" >> /tmp/gludd-status-snippet.md
-	@echo "<!-- gate:end -->" >> /tmp/gludd-status-snippet.md
-	@echo "Status snapshot written to /tmp/gludd-status-snippet.md"
-	@echo "Replace the gate block in SESSION.md with this content."
+	@python3 scripts/status_snapshot.py
 
 audit-evidence:
 	@echo "=== Evidence Audit ==="

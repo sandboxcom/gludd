@@ -167,6 +167,32 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
     }
 
 
+def check_session_drift() -> dict[str, Any]:
+    session_path = REPO_ROOT / "SESSION.md"
+    gate_path = REPO_ROOT / ".gate-status"
+    if not session_path.exists() or not gate_path.exists():
+        return {"passed": True, "violations": [], "reason": "files missing"}
+    session_text = session_path.read_text()
+    gate_text = gate_path.read_text()
+    begin = session_text.find("<!-- gate:begin -->")
+    end = session_text.find("<!-- gate:end -->")
+    if begin == -1 or end == -1:
+        return {"passed": False, "violations": ["SESSION.md missing gate markers"]}
+    block = session_text[begin:end]
+    violations: list[str] = []
+    for line in gate_text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("===") or stripped.startswith("---") or stripped.startswith("epoch"):
+            continue
+        key = stripped.split()[0] if stripped else ""
+        if key and key not in block:
+            violations.append(f"SESSION.md gate block missing: {stripped}")
+    return {
+        "passed": len(violations) == 0,
+        "violations": violations,
+    }
+
+
 def run_preflight() -> dict[str, Any]:
     checks: list[dict[str, Any]] = [
         {"name": "coverage_85pct", **check_coverage(threshold=85.0)},
@@ -179,6 +205,7 @@ def run_preflight() -> dict[str, Any]:
         {"name": "sprint_boxes_checked", **check_sprint_boxes()},
         {"name": "completion_audit", **run_completion_audit()},
         {"name": "tasks_ticks_valid", **check_tasks_ticks()},
+        {"name": "session_gate_drift", **check_session_drift()},
     ]
     all_passed = all(c.get("passed", False) for c in checks)
     return {

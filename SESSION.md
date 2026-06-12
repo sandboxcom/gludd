@@ -8,12 +8,15 @@
 - 2026-06-12 (independent validation pass: gate ALL PASSED at 65fc28b; stale ratchet counts corrected to 23; work plan now in GLM_REMEDIATION_GUIDE_3.md)
 
 ## Current Gate Status (2026-06-12)
-- **Lint**: 0 errors
-- **Typecheck**: 18 errors (ratchet baseline: 18)
-- **Collect**: 0 errors, 5,695 collected
-- **Tests**: 5,626 passed, 0 failed, 27 skipped, 42 xfailed
-- **Smoke**: PASS
-- **Latest commit**: 30d66a3 — BinaryPathResolver import fix, 3 ratchet entries burned
+## Current Gate Status (2026-06-12)
+<!-- gate:begin -->
+- lint PASS 0
+- typecheck PASS 18
+- collect PASS 0
+- test FAIL non-zero-exit
+- smoke PASS
+
+<!-- gate:end -->
 
 ## Ratchet Burn-Down Progress
 - Started: 93 entries (2026-06-11)
