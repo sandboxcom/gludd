@@ -2,10 +2,10 @@ name: Build and Release
 
 on:
   push:
-    branches: [master]
+    branches: [master, main]
     tags: ["v*"]
   pull_request:
-    branches: [master]
+    branches: [master, main]
   workflow_dispatch:
 
 permissions:
@@ -48,7 +48,7 @@ jobs:
   linux:
     needs: [version, gate]
     runs-on: ubuntu-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -82,7 +82,7 @@ jobs:
   macos:
     needs: [version, gate]
     runs-on: macos-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -116,7 +116,7 @@ jobs:
   windows:
     needs: [version, gate]
     runs-on: windows-latest
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
@@ -151,7 +151,7 @@ jobs:
   termux:
     needs: [version, gate]
     runs-on: ubuntu-24.04-arm
-    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch'
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
