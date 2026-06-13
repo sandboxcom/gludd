@@ -264,7 +264,7 @@ class SecretsManager:
                 method="HEAD",
             )
             with urllib.request.urlopen(req, timeout=5) as resp:
-                digest = resp.headers.get("Docker-Content-Digest") or resp.headers.get("ETag", "")
+                digest: str = resp.headers.get("Docker-Content-Digest") or resp.headers.get("ETag", "")
                 if digest and digest.startswith("sha256:"):
                     return digest
         except (urllib.error.URLError, OSError, Exception):

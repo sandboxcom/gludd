@@ -44,7 +44,7 @@ class CodeSymbol(BaseModel):
 
     @field_validator("line_end")
     @classmethod
-    def _line_end_check(cls, v: int, info) -> int:
+    def _line_end_check(cls, v: int, info: Any) -> int:
         return v
 
     @model_validator(mode="after")

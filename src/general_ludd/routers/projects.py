@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
@@ -145,7 +145,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         summary = ext["projects"].get_summary()
         if isinstance(summary, dict):
             summary["db_projects"] = db_projects
-        return summary
+        return cast("dict[str, Any]", summary)
 
     @app.post("/admin/projects/skills")
     async def admin_project_skills(req: dict[str, Any]) -> dict[str, Any]:

@@ -1,7 +1,7 @@
 MSG ?=
 FILES ?=
 TESTFILE ?=
-MYPY_MAX := 13
+MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
 PYTHON := python3
@@ -30,7 +30,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         skill-install skill-list bootstrap-skills scan-tool-usage \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
-        git-add-all help
+        git-add-all help grep scan-secrets-fresh untrack \
+        git-tracked-keys git-ls-tracked git-history-file dist-path-check
 
 help:
 	@echo "Usage: make [target]"
@@ -213,6 +214,7 @@ collect-check:
 	echo "Collection OK"
 
 gate:
+	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@echo "epoch $(shell date +%s)" >> .gate-status
 	@printf "lint " >> .gate-status
@@ -222,8 +224,9 @@ gate:
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
 	fi
 	@printf "typecheck " >> .gate-status
-	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
-	if [ $$TC_ERRS -le $(MYPY_MAX) ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
+	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
+	TC_ERRS=$${TC_ERRS:-0}; \
+	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@printf "test " >> .gate-status
@@ -333,6 +336,21 @@ untrack:
 git-log:
 	@git log --oneline -10 || echo "No git history"
 
+grep:
+	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
+	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
+
+git-tracked-keys:
+	@echo "=== Tracked files matching private-key / key patterns ==="
+	@git ls-files | grep -E 'id_rsa|id_ed25519|\.pem$$|_rsa$$|_rsa\.pub$$|sandboxcom_github' || echo "NONE TRACKED"
+
+git-ls-tracked:
+	@git ls-files $(if $(Q),| grep -E "$(Q)",)
+
+git-history-file:
+	@[ -n "$(Q)" ] || { echo "Usage: make git-history-file Q='path'"; exit 1; }
+	@git log --all --full-history --oneline -- "$(Q)" || echo "No history"
+
 audit-messages:
 	@$(PYTHON) scripts/audit_messages.py 2>&1 || echo "No opencode database found"
 
@@ -425,6 +443,18 @@ git-fetch-sandboxcom:
 
 scan-secrets:
 	@$(UV) run detect-secrets scan --baseline .secrets.baseline $(ARGS)
+
+scan-secrets-fresh:
+	@echo "=== Fresh secrets scan (NO baseline, NO key exclusion) — W5.3 ==="
+	@$(UV) run detect-secrets scan --all-files > /tmp/gludd-secrets-fresh.json 2>/dev/null || true
+	@$(UV) run python -c "import json; d=json.load(open('/tmp/gludd-secrets-fresh.json')); r=d.get('results',{}); print('Files with potential secrets:', len(r)); [print(' ', f) for f in sorted(r)]"
+
+dist-path-check:
+	@echo "=== Scanning the built tarball dir(s) for absolute local paths (W5.3) ==="
+	@DIRS=$$(ls -d dist/general-ludd-agent-* 2>/dev/null | grep -v '\.tar\.gz' || true); \
+	if [ -z "$$DIRS" ]; then echo "No tarball dir — run 'make dist' first"; exit 0; fi; \
+	HITS=$$(grep -rIl -e '/Users/' -e 'Mac.localdomain' $$DIRS 2>/dev/null || true); \
+	if [ -n "$$HITS" ]; then echo "LEAKED LOCAL PATHS in tarball:"; echo "$$HITS"; exit 1; else echo "Tarball dir(s) path-clean."; fi
 
 git-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit MSG='message'"; exit 1; fi
@@ -567,7 +597,7 @@ build-executable:
 verify-status:
 	@$(UV) run python scripts/verify_status.py
 
-dist: build-executable bundle-binaries
+dist: build-executable bundle-binaries sbom
 	@echo "Assembling tarball..."
 	@chmod +x dist/install.sh
 	@rm -rf $(TARBALL_DIR)
@@ -579,11 +609,21 @@ dist: build-executable bundle-binaries
 	@cp -r config $(TARBALL_DIR)/config
 	@cp -r templates $(TARBALL_DIR)/templates
 	@cp -r dist/binaries $(TARBALL_DIR)/binaries 2>/dev/null || true
+	@echo "Packing license + SBOM (W5.2)..."
+	@cp LICENSE $(TARBALL_DIR)/LICENSE
+	@if [ ! -f THIRD_PARTY_LICENSES.md ]; then echo "ERROR: THIRD_PARTY_LICENSES.md missing"; exit 1; fi
+	@cp THIRD_PARTY_LICENSES.md $(TARBALL_DIR)/THIRD_PARTY_LICENSES.md
+	@echo "Scrubbing build-machine paths from SBOM (W5.3)..."
+	@$(UV) run python -c "import re,pathlib; p=pathlib.Path('dist/sbom.json'); t=p.read_text(); import os; t=t.replace('file://'+os.getcwd(),'file:///opt/general-ludd').replace(os.getcwd(),'/opt/general-ludd'); pathlib.Path('$(TARBALL_DIR)/sbom.json').write_text(t)"
 	@mkdir -p $(TARBALL_DIR)/docs
 	@if [ -f docs/quickstart.md ]; then cp docs/quickstart.md $(TARBALL_DIR)/docs/; fi
 	@if [ -f docs/configuration.md ]; then cp docs/configuration.md $(TARBALL_DIR)/docs/; fi
 	@if [ -f docs/architecture.md ]; then cp docs/architecture.md $(TARBALL_DIR)/docs/; fi
 	@if [ -f docs/model-setup.md ]; then cp docs/model-setup.md $(TARBALL_DIR)/docs/; fi
+	@echo "Verifying no build-machine paths leaked into the tarball dir (W5.3)..."
+	@if grep -rIl -e '/Users/' -e 'Mac.localdomain' $(TARBALL_DIR) 2>/dev/null; then \
+		echo "ERROR: absolute local paths leaked into $(TARBALL_DIR)"; exit 1; \
+	else echo "Tarball dir is path-clean."; fi
 	@cd dist && tar czf $(TARBALL_NAME).tar.gz $(TARBALL_NAME)
 	@cd dist && shasum -a 256 $(TARBALL_NAME).tar.gz > $(TARBALL_NAME).tar.gz.sha256
 	@echo "Created dist/$(TARBALL_NAME).tar.gz"
@@ -627,9 +667,8 @@ qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
 
 validate: lint ansible-syntax healthcheck
-	@$(UV) run mypy src > /dev/null 2>&1; E=$$?; \
-	ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:' || echo 0); \
-	if [ $$ERRS -le $(MYPY_MAX) ]; then echo "typecheck: OK ($$ERRS errors, baseline $(MYPY_MAX))"; else echo "typecheck: FAIL ($$ERRS errors > baseline $(MYPY_MAX))"; exit 1; fi
+	@ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); ERRS=$${ERRS:-0}; \
+	if [ "$$ERRS" -le "$(MYPY_MAX)" ]; then echo "typecheck: OK ($$ERRS errors, baseline $(MYPY_MAX))"; else echo "typecheck: FAIL ($$ERRS errors > baseline $(MYPY_MAX))"; exit 1; fi
 	@$(UV) run python -m pytest tests/ $(_XD) -q > /tmp/gludd-validate.txt 2>&1; EXIT=$$?; \
 	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi
 	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "smoke: PASS" || (echo "smoke: FAIL" && exit 1)

@@ -58,5 +58,5 @@ class DashboardDataProvider:
     def _get_uptime(self) -> float:
         if self._metrics:
             import time
-            return time.monotonic() - self._metrics._started_at
+            return float(time.monotonic() - self._metrics._started_at)
         return 0.0

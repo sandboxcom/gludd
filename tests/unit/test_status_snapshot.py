@@ -62,3 +62,47 @@ class TestSessionDriftDetector:
             assert not result["passed"]
         finally:
             pf.REPO_ROOT = orig
+
+
+class TestReadmeNoHardcodedMetrics:
+    """W5.5: README must not hardcode measured metrics; the gate is the truth."""
+
+    def _run_against(self, tmp_path: Path, readme_text: str):
+        import general_ludd.quality.preflight as pf
+        (tmp_path / "README.md").write_text(readme_text)
+        orig = pf.REPO_ROOT
+        pf.REPO_ROOT = tmp_path
+        try:
+            return pf.check_readme_no_hardcoded_metrics()
+        finally:
+            pf.REPO_ROOT = orig
+
+    def test_live_readme_has_no_hardcoded_metrics(self):
+        from general_ludd.quality.preflight import check_readme_no_hardcoded_metrics
+        result = check_readme_no_hardcoded_metrics()
+        assert result["passed"], (
+            "README.md contains hardcoded metrics that drift from the gate:\n"
+            + "\n".join(result.get("violations", []))
+        )
+
+    def test_hardcoded_test_count_fails(self, tmp_path):
+        result = self._run_against(
+            tmp_path, "The suite has 5,460 passing tests as of today.\n"
+        )
+        assert not result["passed"]
+        assert result["violations"]
+
+    def test_hardcoded_mypy_count_fails(self, tmp_path):
+        result = self._run_against(tmp_path, "There are 21 mypy errors in source.\n")
+        assert not result["passed"]
+
+    def test_hardcoded_coverage_pct_fails(self, tmp_path):
+        result = self._run_against(tmp_path, "Coverage is 85% across the suite.\n")
+        assert not result["passed"]
+
+    def test_pointer_to_gate_passes(self, tmp_path):
+        result = self._run_against(
+            tmp_path,
+            "Run `make gate`; see `.gate-status` for the current counts.\n",
+        )
+        assert result["passed"], result.get("violations")

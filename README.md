@@ -25,21 +25,27 @@ copilot. It is a daemon that loops: claim, dispatch, review, reconcile, repeat.
 
 ## Current Stability
 
-This project is **alpha-quality research software**. The test suite contains over 5,600
-tests (5,460 passing, 116 known failures as of the latest baseline). The daemon boots, the
-event loop ticks, the database layer works, and the model gateway can call real APIs. But
-many subsystems are wired but not fully exercised end-to-end. **Do not run this in
-production without understanding the failure modes.** Expect rough edges around Ansible
-playbook execution, multi-model failover, and project workspace management.
+This project is **alpha-quality research software**. The daemon boots, the event loop
+ticks, the database layer works, and the model gateway can call real APIs. But many
+subsystems are wired but not fully exercised end-to-end. **Do not run this in production
+without understanding the failure modes.** Expect rough edges around Ansible playbook
+execution, multi-model failover, and project workspace management.
 
-Key numbers:
-- **5,654 tests collected**, 5,460 passing, 116 known pre-existing failures
-- **21 mypy errors** across 10 files (within baseline of 25)
-- **0 lint errors** (ruff, strict)
-- **0 `# noqa` / `# type: ignore` / `# nosec` comments** in source — all suppressions
-  resolved or moved to `pyproject.toml`
-- **10 pre-commit hooks** enforce secrets scanning (detect-secrets), linting (ruff),
-  collection-check (pytest --co), trailing whitespace, private key detection, and more
+### Measured status (single source of truth)
+
+This README intentionally does **not** hardcode test counts, mypy error totals, or
+coverage percentages — stale numbers in docs were a recurring source of false "done"
+claims. The live, authoritative status is the gate:
+
+```bash
+make gate            # lint + typecheck + collect + test + smoke; writes .gate-status
+cat .gate-status     # the single source of truth for current counts
+make test-count      # collected-test count, 0 collection errors required
+make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see Makefile)
+```
+
+Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
+may only shrink). The gate passes only when `make test` exits 0.
 
 Version: `v0.1.0-alpha` — prereleases are built automatically on every push to master and
 published as GitHub Releases with artifacts for Linux (x86_64, aarch64), macOS (arm64), and
@@ -227,8 +233,8 @@ make test-count        # check collection (0 errors required)
 
 ```bash
 make lint              # ruff (0 errors required)
-make typecheck         # mypy (≤ 25 errors baseline)
-make gate              # full gate: lint + typecheck + collect + test
+make typecheck         # mypy (gate enforces ≤ MYPY_MAX; see Makefile)
+make gate              # full gate: lint + typecheck + collect + test + smoke
 make validate          # gate + ansible syntax + healthcheck
 ```
 
@@ -284,8 +290,8 @@ Pull requests are welcome. Please follow these guidelines:
    - "Fix the race condition in claim_runnable by adding SELECT ... FOR UPDATE SKIP LOCKED"
    ```
 
-4. **Gate must be green** — run `make gate` before opening the PR. All four checks
-   (lint, typecheck, collect, test) must pass or be within baseline. The
+4. **Gate must be green** — run `make gate` before opening the PR. Every gate check
+   (lint, typecheck, collect, test, smoke) must pass or be within baseline. The
    `.gate-status` file is the single source of truth.
 
 5. **TDD** — new behavior must have a failing test committed before the

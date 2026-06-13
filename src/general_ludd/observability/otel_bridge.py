@@ -36,11 +36,23 @@ class OTelBridge:
             logger.debug("OpenTelemetry packages not installed, bridge disabled")
             return
 
-        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import OTLPSpanExporter
-        from opentelemetry.sdk.resources import Resource
-        from opentelemetry.sdk.trace import TracerProvider
-        from opentelemetry.sdk.trace.export import BatchSpanProcessor
-        from opentelemetry.trace import Status, StatusCode, get_tracer
+        # opentelemetry is an optional extra (observability). When it is not
+        # installed mypy cannot find stubs; the runtime guard above
+        # (_check_otel_available) ensures these imports only execute when the
+        # packages are present, so the missing-stub errors are suppressed here.
+        from opentelemetry.exporter.otlp.proto.grpc.trace_exporter import (  # type: ignore[import-not-found]
+            OTLPSpanExporter,
+        )
+        from opentelemetry.sdk.resources import Resource  # type: ignore[import-not-found]
+        from opentelemetry.sdk.trace import TracerProvider  # type: ignore[import-not-found]
+        from opentelemetry.sdk.trace.export import (  # type: ignore[import-not-found]
+            BatchSpanProcessor,
+        )
+        from opentelemetry.trace import (  # type: ignore[import-not-found]
+            Status,
+            StatusCode,
+            get_tracer,
+        )
 
         self._Status = Status
         self._StatusCode = StatusCode

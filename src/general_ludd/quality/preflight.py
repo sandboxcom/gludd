@@ -193,6 +193,45 @@ def check_session_drift() -> dict[str, Any]:
     }
 
 
+def check_readme_no_hardcoded_metrics() -> dict[str, Any]:
+    """W5.5: README must not hardcode test counts / mypy totals / coverage %.
+
+    Stale numbers in docs were a recurring false-"done" source. The gate
+    (`.gate-status`, `make test-count`) is the single source of truth. This
+    check fails if README.md grows a line that asserts a specific measured
+    metric, forcing the number to be deleted or expressed as a pointer to the
+    gate instead.
+    """
+    import re
+
+    readme = REPO_ROOT / "README.md"
+    if not readme.exists():
+        return {"passed": True, "violations": [], "reason": "README.md missing"}
+    text = readme.read_text()
+    violations: list[str] = []
+    # Patterns that assert a measured count/percentage as fact.
+    patterns = [
+        # "5,460 passing" / "116 known failures" / "5,654 tests collected"
+        (r"[\d,]{3,}\s+(?:tests?\s+(?:collected|passing)|passing|known\s+(?:pre-existing\s+)?failures?)",
+         "hardcoded test count"),
+        # "21 mypy errors" / "mypy errors ... 25"
+        (r"\b\d+\s+mypy\s+errors?\b", "hardcoded mypy error count"),
+        # "baseline of 25" near mypy/error context
+        (r"baseline\s+of\s+\d+", "hardcoded baseline number"),
+        # "85% coverage" / "coverage ... 70%"
+        (r"\b\d{1,3}\s*%\s*coverage\b|\bcoverage[^.\n]{0,20}\b\d{1,3}\s*%",
+         "hardcoded coverage percentage"),
+    ]
+    for line_no, line in enumerate(text.splitlines(), start=1):
+        for pat, label in patterns:
+            if re.search(pat, line, re.IGNORECASE):
+                violations.append(f"README.md:{line_no} {label}: {line.strip()[:80]}")
+    return {
+        "passed": len(violations) == 0,
+        "violations": violations,
+    }
+
+
 def run_preflight() -> dict[str, Any]:
     checks: list[dict[str, Any]] = [
         {"name": "coverage_85pct", **check_coverage(threshold=85.0)},
@@ -206,6 +245,7 @@ def run_preflight() -> dict[str, Any]:
         {"name": "completion_audit", **run_completion_audit()},
         {"name": "tasks_ticks_valid", **check_tasks_ticks()},
         {"name": "session_gate_drift", **check_session_drift()},
+        {"name": "readme_no_hardcoded_metrics", **check_readme_no_hardcoded_metrics()},
     ]
     all_passed = all(c.get("passed", False) for c in checks)
     return {

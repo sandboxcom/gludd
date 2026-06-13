@@ -79,12 +79,12 @@ class ReturnReviewer:
                 "assistant", json.dumps(decision.model_dump(mode="json"))
             )
             return decision
-        decision = self._parse_model_output(raw_output, task_return)
-        if decision is not None:
+        parsed = self._parse_model_output(raw_output, task_return)
+        if parsed is not None:
             conv.add_message(
-                "assistant", json.dumps(decision.model_dump(mode="json"))
+                "assistant", json.dumps(parsed.model_dump(mode="json"))
             )
-            return decision
+            return parsed
         logger.warning(
             "Invalid model output for return %s, falling back to failed",
             task_return.return_id,

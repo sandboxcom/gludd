@@ -8,7 +8,7 @@ and the results are fed back to continue the conversation.
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.schemas.job import JobSpec
 
@@ -41,7 +41,7 @@ class ToolCallLoop:
         user_prompt: str,
     ) -> str:
         if self._mcp_client is None:
-            return await self._call_model(job, system_prompt, user_prompt)
+            return cast(str, await self._call_model(job, system_prompt, user_prompt))
 
         messages: list[dict[str, Any]] = [
             {"role": "system", "content": system_prompt},

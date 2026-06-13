@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
+from fastapi.responses import JSONResponse
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.models.gateway import ModelGateway, ModelProfile
@@ -109,6 +111,31 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
     if gateway is _UNSET:
         gateway = build_gateway_from_config()
     application.state.gateway = gateway
+
+    # W5.6 (AUTH blocker): the worker runs arbitrary registered playbooks for any
+    # caller who can reach the port. Enforce the same pre-shared-key the daemon
+    # uses (GLUDD_PSK). When the env var is unset, auth is disabled (matching the
+    # daemon's behavior) so local/dev callers and existing tests still work.
+    _psk = os.environ.get("GLUDD_PSK", "")
+    application.state._psk = _psk
+    _public_paths = {"/healthz", "/docs", "/openapi.json", "/redoc"}
+
+    @application.middleware("http")
+    async def _psk_auth_middleware(request: Any, call_next: Any) -> Any:
+        if _psk:
+            path = request.url.path
+            if path not in _public_paths and not path.startswith("/docs"):
+                auth = request.headers.get("Authorization", "")
+                token = (
+                    auth.removeprefix("Bearer ").strip()
+                    if auth.startswith("Bearer ")
+                    else ""
+                )
+                if not token or token != _psk:
+                    return JSONResponse(
+                        status_code=401, content={"error": "unauthorized"}
+                    )
+        return await call_next(request)
 
     @application.get("/healthz")
     async def healthz() -> dict[str, str]:

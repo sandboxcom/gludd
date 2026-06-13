@@ -60,7 +60,7 @@ def run_wal_pragmas(engine: AsyncEngine) -> None:
 def _compose_db_url(cfg: dict[str, Any]) -> str | None:
     url = cfg.get("url")
     if url:
-        return url
+        return str(url)
     env_url = os.environ.get("DATABASE_URL")
     if env_url:
         return env_url

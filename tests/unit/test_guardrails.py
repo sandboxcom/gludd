@@ -437,3 +437,73 @@ class TestTDDGateSharpened:
         assert "readdirSync" in content or "testExists" in content, (
             "TDD gate must search for existing test files before rejecting edits"
         )
+
+
+# Built from fragments so the verbatim armor string never appears as a source
+# literal (that would trip detect-private-key / detect-secrets on this very test
+# file). The runtime values are identical to the real PEM/OpenSSH markers.
+_KEY_DASHES = "-" * 5
+_KEY_KINDS = ("OPENSSH ", "RSA ", "DSA ", "EC ", "")
+_PRIVATE_KEY_ARMOR = tuple(
+    f"{_KEY_DASHES}BEGIN {k}PRIVATE KEY{_KEY_DASHES}" for k in _KEY_KINDS
+)
+
+
+class TestNoTrackedPrivateKeys:
+    """W5.1: no OpenSSH/PEM private-key armor may appear in any tracked file.
+
+    The `sandboxcom_github_rsa` deploy key was distributed at the repo root.
+    This guard proves it (or any other private key) is NOT committed: it scans
+    the actual git-tracked file list, not the working directory, so an
+    untracked-but-present key does not trip it (that is an operator concern,
+    documented in TASKS.md W5.1 preconditions).
+    """
+
+    _ARMOR = _PRIVATE_KEY_ARMOR
+
+    def _tracked_files(self) -> list[str]:
+        result = subprocess.run(
+            ["git", "ls-files"],
+            capture_output=True, text=True, cwd=str(ROOT), timeout=30,
+        )
+        assert result.returncode == 0, f"git ls-files failed: {result.stderr}"
+        return [f for f in result.stdout.splitlines() if f.strip()]
+
+    @staticmethod
+    def _looks_like_real_key(text: str) -> bool:
+        """True only for armor wrapping a substantial base64 body.
+
+        Test fixtures use placeholder armor with an ellipsis body (BEGIN/END
+        lines around ``...``) — those are not real keys. A real key has a long
+        contiguous base64 block between the BEGIN/END lines. Require a line of
+        >= 60 base64 chars to distinguish a real key from a placeholder.
+        """
+        import re
+
+        if not any(marker in text for marker in TestNoTrackedPrivateKeys._ARMOR):
+            return False
+        # A genuine PEM/OpenSSH key body has many ~64-char base64 lines.
+        return bool(re.search(r"^[A-Za-z0-9+/]{60,}={0,2}$", text, re.MULTILINE))
+
+    def test_no_private_key_armor_in_tracked_files(self):
+        offenders: list[str] = []
+        for rel in self._tracked_files():
+            path = ROOT / rel
+            if not path.is_file():
+                continue
+            try:
+                text = path.read_text(encoding="utf-8", errors="ignore")
+            except OSError:
+                continue
+            if self._looks_like_real_key(text):
+                offenders.append(rel)
+        assert not offenders, (
+            "Real private-key material found in tracked files: "
+            f"{offenders}. Untrack and rotate immediately (see docs/history-scrub.md)."
+        )
+
+    def test_known_key_filenames_not_tracked(self):
+        tracked = set(self._tracked_files())
+        forbidden = {"sandboxcom_github_rsa", "sandboxcom_github_rsa.pub"}
+        leaked = forbidden & tracked
+        assert not leaked, f"Key files are tracked in git: {leaked}"
