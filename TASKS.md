@@ -219,7 +219,18 @@ green (58 + 37 + 100 + 87 + 238 + 5 = 525 proof assertions, 0 fail).
 | M14 one select_project per tick | tests/integration/test_w3_14_single_project_per_tick.py | PASS |
 | M15 no random digest (real sha) | tests/unit/test_runtime.py | PASS |
 
-- [ ] W3.6 — V2.2 per-item proof table appended (tick finalized with commit hash in the follow-up docs commit)
+### W3.6 proof-table coverage summary (finalized 2026-06-13)
+
+The full proof table above is COMPLETE: **50 proof IDs** (G0–G7 = 8, S1–S20 = 20,
+F1–F7 = 7, M1–M15 = 15), every one mapped to a named acceptance test, **all PASS,
+0 GAP**. Re-verified this session via `make test-specific` across the named
+tests (G0–G7 + F6 batch 51 passed; F1/F3 in test_w3_6_f_proofs.py; S/M proofs
+in their named files). No proof was fabricated — each row's test exists and runs
+green. S11 (MCP wired) is proven by tests/unit/test_mcp_wiring.py and is
+consistent with the W3.9 DEFER decision (registry/client plumbing exists; only
+the config source is deferred).
+
+- [x] W3.6 — V2.2 per-item proof table complete: 50 proofs, 50 with passing tests, 0 GAP | evidence: tests/integration/test_full_pipeline_e2e.py + tests/unit/test_w3_6_f_proofs.py + named G/S/F/M proof tests re-run green this session (G0-G7+F6 batch 51 passed) 6915362
 
 ## Phase W5.3 residual — CVE adjudication (2026-06-13)
 
@@ -249,3 +260,69 @@ Molecule infrastructure not present — pytest structural validation used per W6
 - [x] W8.2 — Deliverable B: 5 audit/report roles: `audit_security` (gludd_facts + agent security scan, JSON+md artifact, never uses gludd_git or todo_update_status), `audit_dependencies` (gludd_facts + agent dep audit, JSON+md), `report_status` (gludd_facts → health=healthy/degraded/critical via success_rate, JSON+md, concrete "YAML decides next action" proof), `report_metrics` (gludd_facts → throughput_tier=high/medium/low, model usage, success rates, JSON+md), `report_audit` (gludd_facts + consolidates audit sub-reports via ansible.builtin.slurp, JSON+md). | evidence: tests/integration/test_w8_roles_and_reports.py TestAuditReportRolesUseGluddFacts 107 passed 2eec9e1
 - [x] W8.3 — Deliverable C: 2 new playbooks: `agent_coordination_demo.yml` (Play 1: gludd_facts → set_fact dispatch payload → gludd_message send; Play 2: gludd_message receive + ack → process → artifact; proves end-to-end facts-as-MQ channel); `system_report.yml` (includes report_status + report_metrics + report_audit + writes system_report_index.json). Both pass ansible-syntax, manifest extraction, ActionPolicy. | evidence: make ansible-syntax "31 playbooks all passed" tests/integration/test_w8_roles_and_reports.py TestNewPlaybooksStructure + TestAgentCoordinationDemo + TestSystemReportPlaybook 107 passed 2eec9e1
 - [x] W8.4 — Deliverable D: `tests/integration/test_w8_roles_and_reports.py` 107 tests: TestRoleStructure (role 4-file structure for all 12 roles), TestAgentTaskRolesUseGluddFacts (gludd_facts + enable_git_push=false for all 7 task roles), TestAgentTaskRolesUseGluddMessage (3 coordination roles use gludd_message), TestAuditReportRolesUseGluddFacts (gludd_facts + artifact_dir + no-mutation guarantees), TestNewPlaybooksStructure (YAML valid + manifest + ActionPolicy), TestAgentCoordinationDemo (gludd_facts + send + receive), TestSystemReportPlaybook (all 3 report roles present). Molecule choice: pytest structural (no molecule infra). | evidence: make test-count "6087 collected" ansible-syntax PASS typecheck "0 errors in 212 files" 2eec9e1
+
+## Phase W9 — completion_audit dead-code burn-down (2026-06-13)
+
+`make preflight` `completion_audit` went from **83.0% (29 unwired classes)**
+to **100.0% (0 findings)**. Every class was WIRED into a real production call
+path with a TDD proof in `tests/unit/test_completion_audit_wiring.py` — no
+throwaway references, no audit-logic weakening (the audit still flags truly
+dead new classes; `make audit-findings` lists them).
+
+### Per-class disposition (all 29 — disposition: wired / removed / exempt)
+
+| Class | Disposition | Where wired (production call path) |
+|-------|-------------|------------------------------------|
+| PlaybookRemovedEvent | wired | `reload/hot_reloader.py::_reload_playbooks` publishes it when a registered playbook disappears |
+| HookTriggeredEvent | wired | `reload/hot_reloader.py::_fire_hooks` publishes it on every hook fire |
+| WorkerPingEvent | wired | `worker/heartbeat.py` + `worker/app.py POST /ping` |
+| WorkerPongEvent | wired | `worker/heartbeat.py::handle_ping` (correlated reply), served by `/ping` |
+| AuditEventType | wired | `db/repository.py::AuditEventRepository.record_typed`; `event_loop/loop.py` reconcile uses `AuditEventType.TODO_STATUS_CHANGED` |
+| ContextCompactor | wired | `agents/capabilities.py::AgentCapabilities.prepare_messages`; used by `worker/app.py::_invoke_gateway_for_job` |
+| TokenWindowManager | wired | `agents/capabilities.py::AgentCapabilities.within_budget` (worker generation path) |
+| AgentToolAdapter | wired | `agents/capabilities.py::AgentCapabilities.list_agent_tools` |
+| ToolCallLoop | wired | `agents/capabilities.py::AgentCapabilities.make_tool_loop` |
+| ModelFailoverChain | wired | `agents/capabilities.py::AgentCapabilities.failover` |
+| DogfoodRunner | wired | `dogfood/orchestrator.py::run_smoke_and_validate`; `scripts/dogfood.py` delegates to it |
+| DogfoodValidator | wired | `dogfood/orchestrator.py::run_smoke_and_validate` |
+| BudgetController | wired | `controllers/budget_manager.py` delegates estimate_call_cost + check_local_model_resources |
+| SlurmConnectionError | wired | `infra/slurm.py::SlurmAdapter._request` raises it on httpx transport failure |
+| QueueRepository | wired | `db/session.py::seed_initial_queues` now seeds via QueueRepository (raw SQL removed) |
+| SelfImprovementWorkflow | wired | `routers/self_improve.py POST /admin/self-improve/apply` (validate→apply→reload) |
+| EvidenceChecker | wired | `review/reviewer.py::_audit_evidence` flags unsupported claims in the model's review notes |
+| ProjectLogFilter | wired | `logging/project_log.py::install_project_log_filter`; `cli.py` daemon startup installs it |
+| PRDelivery | wired | `event_loop/loop.py::_maybe_open_pr` (config-gated git_automation.open_pr) |
+| GitIntelligence | wired | `routers/maintenance.py GET /admin/code-intel/hot-files` |
+| DependencyManager | wired | `routers/maintenance.py GET /admin/deps/outdated` |
+| QualityGateChecker | wired | `routers/maintenance.py POST /admin/quality/check` |
+| GitHubIssueIngestor | wired | `routers/maintenance.py POST /admin/issues/poll` |
+| AnsibleTemplater | wired | `routers/ansible.py POST /admin/ansible/render` |
+| LangGraphGateway | wired | `agents/capabilities.py::AgentCapabilities.make_graph_gateway` |
+| PromptScoringEngine | wired | `agents/capabilities.py::AgentCapabilities.make_graph_gateway` (scoring engine for LangGraphGateway) |
+| ContainerBuilder | wired | `runtime/release_orchestrator.py::build_and_validate_release`; `make release-validate` |
+| PipBundleBuilder | wired | `runtime/release_orchestrator.py::build_and_validate_release` |
+| ReleaseArtifactValidator | wired | `runtime/release_orchestrator.py::build_and_validate_release` |
+
+Disposition counts: **wired 29 / removed 0 / exempt 0**. No class left unresolved.
+
+- [x] W9.1 — completion_audit 83.0%→100.0%: 29 classes wired into real call paths (per-class table above), each with a TDD proof in tests/unit/test_completion_audit_wiring.py | evidence: tests/unit/test_completion_audit_wiring.py 26 passed; make preflight completion_audit PASS 100.0% 0 findings; make gate "ALL PASSED" lint 0 typecheck 0 collect 0 test 0 smoke PASS 6915362
+
+## Phase W3.9 — MCP wiring decision (final, 2026-06-13)
+
+**DECISION: DEFER (option b) — MCP stays experimental, honestly fenced.**
+1. There is NO MCP config plumbing: `UserConfig` has no `mcp_servers` field and
+   no loader builds `MCPServerConfig`s, so wiring `MCPClient` from config would
+   wire an always-empty client. The daemon passes `mcp_client=None` explicitly.
+2. The fencing is already honest (no silent no-op success): `ToolCallLoop.is_available()`
+   returns False when `mcp_client is None`; the worker's `gludd_mcp_tool`
+   (W6.6) reports `not_implemented=True`; `EventLoop.get_available_tools()`
+   returns `[]` when no `mcp_tool_registry` is present and only injects tools
+   into `budget_context` when a registry IS supplied (test_mcp_wiring.py).
+3. When an `MCPToolRegistry`/`MCPClient` IS supplied (e.g. by a test or future
+   config loader), the EventLoop already threads tools through dispatch — the
+   plumbing exists; only the config source is deferred.
+4. Adopting the official `mcp` SDK is also deferred (W4.2 transport KEEP).
+5. Re-open when a concrete project needs MCP tools: add `mcp_servers` to
+   UserConfig + a loader that builds `MCPClient`, pass it into `EventLoop`.
+
+- [x] W3.9 — MCP DEFER rationale recorded; code honestly fences MCP (no silent success), EventLoop already threads a supplied registry/client; config source deferred | evidence: tests/unit/test_mcp_wiring.py passing (registry→budget_context only when supplied; None→[]); src/general_ludd/daemon.py mcp_client=None explicit 6915362
