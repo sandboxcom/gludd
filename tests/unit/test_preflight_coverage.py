@@ -257,6 +257,18 @@ class TestCheckSprintBoxes:
 
 
 class TestRunPreflight:
+    @patch(
+        "general_ludd.quality.preflight.check_readme_no_hardcoded_metrics",
+        return_value={"passed": True, "violations": []},
+    )
+    @patch(
+        "general_ludd.quality.preflight.check_session_drift",
+        return_value={"passed": True, "violations": []},
+    )
+    @patch(
+        "general_ludd.quality.preflight.check_tasks_ticks",
+        return_value={"passed": True, "violations": [], "checked": 5},
+    )
     @patch("general_ludd.quality.preflight.run_completion_audit", return_value={"passed": True, "overall": "PASS"})
     @patch("general_ludd.quality.preflight.check_sprint_boxes", return_value={"passed": True, "unchecked_count": 0})
     @patch("general_ludd.quality.preflight.check_filestore", return_value={"passed": True, "root_path": "/tmp"})
@@ -281,6 +293,7 @@ class TestRunPreflight:
     def test_all_pass(
         self, mock_cov, mock_lint, mock_mypy, mock_tpl,
         mock_pb, mock_mol, mock_fs, mock_sprint, mock_audit,
+        mock_ticks, mock_drift, mock_readme,
     ):
         from general_ludd.quality.preflight import run_preflight
 
@@ -288,6 +301,18 @@ class TestRunPreflight:
         assert report["overall"] == "PASS"
         assert report["passed_count"] == report["total_count"]
 
+    @patch(
+        "general_ludd.quality.preflight.check_readme_no_hardcoded_metrics",
+        return_value={"passed": True, "violations": []},
+    )
+    @patch(
+        "general_ludd.quality.preflight.check_session_drift",
+        return_value={"passed": True, "violations": []},
+    )
+    @patch(
+        "general_ludd.quality.preflight.check_tasks_ticks",
+        return_value={"passed": True, "violations": [], "checked": 5},
+    )
     @patch("general_ludd.quality.preflight.run_completion_audit", return_value={"passed": True, "overall": "PASS"})
     @patch("general_ludd.quality.preflight.check_sprint_boxes", return_value={"passed": True, "unchecked_count": 0})
     @patch("general_ludd.quality.preflight.check_filestore", return_value={"passed": True, "root_path": "/tmp"})
@@ -312,6 +337,7 @@ class TestRunPreflight:
     def test_some_fail(
         self, mock_cov, mock_lint, mock_mypy, mock_tpl,
         mock_pb, mock_mol, mock_fs, mock_sprint, mock_audit,
+        mock_ticks, mock_drift, mock_readme,
     ):
         from general_ludd.quality.preflight import run_preflight
 
