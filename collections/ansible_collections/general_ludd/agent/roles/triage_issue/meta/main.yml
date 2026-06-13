@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: triage_issue
+  author: Agentic Harness Agent
+  description: >
+    Turn an inbound issue/todo into a structured plan. Gathers live facts,
+    runs a model agent to classify severity/complexity, then hands off the
+    plan to the appropriate downstream role via the message queue.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

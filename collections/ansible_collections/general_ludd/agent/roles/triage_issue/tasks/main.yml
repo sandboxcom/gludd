@@ -1,0 +1,130 @@
+---
+# triage_issue role — turn an inbound issue/todo into a plan
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) — check current backlog, model health
+#   2. Skip if issue_body is empty and backlog is empty
+#   3. Run model agent to produce a triage plan
+#   4. Send plan to the appropriate downstream role via gludd_message
+#   5. Write result artifact
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Skip when no issue to triage and backlog is empty
+  ansible.builtin.meta: end_play
+  when:
+    - issue_body | length == 0
+    - live_facts.ansible_facts.gludd.todos.backlog_size | int == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Announce triage start via message queue
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: "triage_issue"
+    recipient: "broadcast"
+    topic: "triage_issue.started"
+    body: "{{ {'issue_id': issue_id, 'issue_title': issue_title} | to_json }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when: not ansible_check_mode
+
+# ---- main lifecycle block ----
+- name: Triage issue lifecycle
+  block:
+
+    - name: Run model agent to produce triage plan
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Triage the following issue and produce a structured plan:
+
+          Issue ID: {{ issue_id | default('unknown') }}
+          Title: {{ issue_title | default('(no title)') }}
+          Body: {{ issue_body }}
+
+          Current system state:
+          - Backlog size: {{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) }}
+          - History success rate: {{ live_facts.ansible_facts.gludd.history.success_rate | default('unknown') }}
+          - Active models: {{ live_facts.ansible_facts.gludd.models.active_count | default(0) }}
+
+          Produce a triage plan with:
+          1. Severity classification (critical/high/medium/low)
+          2. Work type (code/test/docs/infra/security/analysis)
+          3. Estimated complexity (small/medium/large)
+          4. Next action (implement_change / write_tests / debug_failure / escalate)
+          5. Brief implementation notes
+
+          Respond in JSON format.
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: 5
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Send triage plan to downstream role via message queue
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: "triage_issue"
+        recipient: "{{ triage_handoff_recipient }}"
+        topic: "triage_issue.plan_ready"
+        body: >-
+          {{ {
+            'issue_id': issue_id,
+            'issue_title': issue_title,
+            'plan': (agent_run.answer | default(''))[:500],
+            'facts': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0)
+            }
+          } | to_json }}
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Write triage result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'triage_issue',
+            'issue_id': issue_id,
+            'issue_title': issue_title,
+            'status': 'triaged',
+            'plan_excerpt': (agent_run.answer | default(''))[:500],
+            'handoff_recipient': triage_handoff_recipient,
+            'facts_snapshot': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+              'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/triage_issue_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'triage_issue',
+            'issue_id': issue_id,
+            'status': 'failed'
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/triage_issue_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "triage_issue failed for {{ issue_id }} — see artifact"

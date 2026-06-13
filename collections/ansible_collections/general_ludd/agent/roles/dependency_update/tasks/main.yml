@@ -1,0 +1,89 @@
+---
+# dependency_update role — check for outdated/vulnerable deps and propose updates
+#
+# Flow:
+#   1. Gather live facts (gludd_facts)
+#   2. Run model agent to analyze dependencies and propose updates
+#   3. Write result artifact
+#
+# This role uses the existing DependencyManager patterns.
+# Actual package mutations are DISABLED by default (apply_updates: false).
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main lifecycle block ----
+- name: Dependency update lifecycle
+  block:
+
+    - name: Run model agent to analyze and propose dependency updates
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Analyze the dependencies in {{ repo_path | default('.') }} and propose updates:
+
+          {% if dep_package | length > 0 %}Specific package: {{ dep_package }}{% endif %}
+          {% if dep_constraint | length > 0 %}Version constraint: {{ dep_constraint }}{% endif %}
+          Ecosystem: {{ dep_ecosystem }}
+
+          Check for:
+          1. Outdated packages (newer stable versions available)
+          2. Known vulnerabilities (CVE/advisory mentions)
+          3. Breaking change risks for proposed updates
+          4. Compatibility with current Python/runtime version
+
+          Respond with a structured JSON report of proposed updates.
+          Do NOT apply any changes — analysis only.
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: 5
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Write dependency analysis artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'dependency_update',
+            'todo_id': todo_id,
+            'status': 'analyzed',
+            'dep_package': dep_package,
+            'dep_ecosystem': dep_ecosystem,
+            'apply_updates': apply_updates | bool,
+            'analysis': (agent_run.answer | default(''))[:2000],
+            'facts_snapshot': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+              'model_success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/dependency_update_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'dependency_update',
+            'todo_id': todo_id,
+            'status': 'failed'
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/dependency_update_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "dependency_update analysis failed — see artifact"

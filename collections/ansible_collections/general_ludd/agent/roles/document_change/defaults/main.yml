@@ -1,0 +1,33 @@
+---
+# document_change role defaults
+
+# What to document (at least one required)
+doc_target: ""           # file/module/API to document
+change_summary: ""       # summary of the change to document
+
+# Optional todo linkage
+todo_id: ""
+
+# Repository context
+repo_path: ""
+
+# Documentation settings
+doc_type: "inline"       # inline, api, changelog, readme, architecture
+doc_format: "markdown"   # markdown, rst, plain
+doc_output_file: ""      # relative path in repo to write doc (empty = artifact only)
+
+# Whether to write docs back to the repo
+write_to_repo: false     # must be explicitly enabled
+
+# Model routing
+model_profile: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-document-change"
+
+# Destructive ops guard
+enable_git_push: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""

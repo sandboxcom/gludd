@@ -1,0 +1,30 @@
+---
+# write_tests role defaults
+
+# What to write tests for (required)
+test_subject: ""         # description of what to test
+
+# Optional todo linkage
+todo_id: ""
+
+# Repository / test settings
+repo_path: ""            # absolute path to git repo root
+test_target_dir: ""      # directory to run tests in (defaults to repo_path)
+test_output_file: ""     # where to write test file (empty = agent decides)
+test_framework: "pytest" # test framework name
+test_style: "unit"       # unit, integration, e2e
+test_run_cmd: ""         # command to run tests after writing (empty = skip run)
+
+# Model routing
+model_profile: ""
+agent_max_iterations: 10
+
+# Artifact output
+artifact_dir: "/tmp/gludd-write-tests"
+
+# Destructive ops guard — DISABLED by default
+enable_git_push: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""   # prefer GLUDD_PSK env var

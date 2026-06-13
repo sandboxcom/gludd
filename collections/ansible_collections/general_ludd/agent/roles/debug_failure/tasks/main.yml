@@ -1,0 +1,118 @@
+---
+# debug_failure role — analyze a failing test/return and propose a fix
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) — branch on recent failure rate
+#   2. Run model agent to analyze the failure and propose a fix
+#   3. Send diagnosis via gludd_message to the implement_change role
+#   4. Write structured diagnosis artifact
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Skip if no failure information provided
+  ansible.builtin.meta: end_play
+  when: failure_output | length == 0 and failure_description | length == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main lifecycle block ----
+- name: Debug failure lifecycle
+  block:
+
+    - name: Run model agent to analyze failure and propose fix
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Analyze the following failure and propose a targeted fix:
+
+          {% if failure_description | length > 0 %}Description: {{ failure_description }}{% endif %}
+          {% if failure_output | length > 0 %}
+          Failure output:
+          {{ failure_output }}
+          {% endif %}
+          {% if todo_id | length > 0 %}Todo ID: {{ todo_id }}{% endif %}
+          {% if repo_path | length > 0 %}Repository: {{ repo_path }}{% endif %}
+
+          System context:
+          - Recent success rate: {{ live_facts.ansible_facts.gludd.history.success_rate | default('unknown') }}
+          - Total historical runs: {{ live_facts.ansible_facts.gludd.history.total_runs | default(0) }}
+
+          Provide:
+          1. Root cause analysis
+          2. Proposed fix (specific files and changes)
+          3. Confidence level (high/medium/low)
+          4. Risk assessment of the fix
+
+          Be specific and actionable.
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: 8
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Send diagnosis to implement_change role via message queue
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: "debug_failure"
+        recipient: "{{ debug_handoff_recipient }}"
+        topic: "debug_failure.diagnosis_ready"
+        body: >-
+          {{ {
+            'todo_id': todo_id,
+            'failure_summary': (failure_description + ' ' + failure_output[:200]) | trim,
+            'diagnosis': (agent_run.answer | default(''))[:800],
+            'facts': {
+              'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+            }
+          } | to_json }}
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Write diagnosis artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'debug_failure',
+            'todo_id': todo_id,
+            'status': 'diagnosed',
+            'failure_description': failure_description,
+            'diagnosis': (agent_run.answer | default(''))[:1000],
+            'handoff_recipient': debug_handoff_recipient,
+            'facts_snapshot': {
+              'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0),
+              'recent_failures': live_facts.ansible_facts.gludd.history.recent_failures | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/debug_failure_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'debug_failure',
+            'todo_id': todo_id,
+            'status': 'failed',
+            'failure_description': failure_description
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/debug_failure_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "debug_failure failed for {{ todo_id }} — see artifact"

@@ -1,0 +1,95 @@
+---
+# write_tests role — generate + place tests, then run them via run_tests role
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) — branch on history success rate
+#   2. Run model agent to generate test code
+#   3. Run the tests via ansible.builtin.command
+#   4. Write result artifact (JSON + summary)
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main lifecycle block ----
+- name: Write tests lifecycle
+  block:
+
+    - name: Run model agent to generate test code
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Generate tests for the following in the repository at {{ test_target_dir | default(repo_path) }}:
+
+          {{ test_subject }}
+
+          {% if todo_id | length > 0 %}Todo ID: {{ todo_id }}{% endif %}
+          Test framework: {{ test_framework }}
+          Test style: {{ test_style }}
+
+          Write the tests to {{ test_output_file | default('tests/') }}.
+          Follow TDD: tests should be runnable and initially verify expected behavior.
+          Do not add implementation — tests only.
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: "{{ agent_max_iterations }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Run the generated tests
+      ansible.builtin.command:
+        cmd: "{{ test_run_cmd }}"
+        chdir: "{{ test_target_dir | default(repo_path) }}"
+      register: test_result
+      changed_when: false
+      failed_when: false
+      when:
+        - not ansible_check_mode
+        - test_run_cmd | length > 0
+
+    - name: Write success result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'write_tests',
+            'todo_id': todo_id,
+            'status': 'success' if (test_result.rc | default(0)) == 0 else 'tests_failed',
+            'test_subject': test_subject,
+            'test_exit_code': test_result.rc | default(0),
+            'agent_excerpt': (agent_run.answer | default(''))[:200],
+            'facts_snapshot': {
+              'history_success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0),
+              'total_runs': live_facts.ansible_facts.gludd.history.total_runs | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/write_tests_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'write_tests',
+            'todo_id': todo_id,
+            'status': 'failed',
+            'test_subject': test_subject
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/write_tests_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "write_tests failed for {{ test_subject }} — see artifact for details"

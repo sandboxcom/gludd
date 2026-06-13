@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: report_audit
+  author: Agentic Harness Agent
+  description: >
+    Consolidates audit role outputs (audit_security, audit_dependencies) into
+    one unified report. Gathers live facts for freshness context. NEVER mutates
+    the repo — consolidation only.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

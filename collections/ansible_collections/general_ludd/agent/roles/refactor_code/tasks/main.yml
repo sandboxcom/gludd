@@ -1,0 +1,125 @@
+---
+# refactor_code role — model-driven code refactoring in an isolated worktree
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) — check model health, history rate
+#   2. Create worktree
+#   3. Run model agent to perform refactoring
+#   4. Commit changes (push disabled by default)
+#   5. Write result artifact
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Skip if no refactor target specified
+  ansible.builtin.meta: end_play
+  when: refactor_target | length == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main lifecycle block ----
+- name: Refactor code lifecycle
+  block:
+
+    - name: Set derived worktree variables
+      ansible.builtin.set_fact:
+        _rc_branch: "{{ worktree_branch | default('auto/refactor/' + (todo_id | default('task')), true) }}"
+        _rc_path: "{{ worktree_path | default(worktree_base + '/refactor/' + (todo_id | default('task')), true) }}"
+
+    - name: Create git worktree for refactoring
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _rc_branch }}"
+        worktree_path: "{{ _rc_path }}"
+        state: present
+      when: repo_path | length > 0
+
+    - name: Run model agent to perform refactoring
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Refactor the following code in {{ _rc_path | default(repo_path) }}:
+
+          Target: {{ refactor_target }}
+          Goal: {{ refactor_goal }}
+          {% if refactor_constraints | length > 0 %}Constraints: {{ refactor_constraints }}{% endif %}
+
+          System health context:
+          - Model success rate: {{ live_facts.ansible_facts.gludd.history.success_rate | default('unknown') }}
+
+          Rules:
+          - Preserve all existing behavior (refactor, do not rewrite)
+          - Keep the public API unchanged
+          - Improve readability, remove duplication, simplify complexity
+          - Do not introduce new dependencies
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: "{{ agent_max_iterations }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Commit refactored changes
+      general_ludd.agent.gludd_git:
+        path: "{{ _rc_path | default(repo_path) }}"
+        op: commit
+        message: "refactor: {{ refactor_target | truncate(60) }} — {{ refactor_goal | truncate(40) }}"
+      register: git_commit
+      when:
+        - not ansible_check_mode
+        - repo_path | length > 0
+
+    - name: Write success result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'refactor_code',
+            'todo_id': todo_id,
+            'status': 'success',
+            'refactor_target': refactor_target,
+            'commit_sha': (git_commit.sha | default('')),
+            'agent_excerpt': (agent_run.answer | default(''))[:200],
+            'facts_snapshot': {
+              'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/refactor_code_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'refactor_code',
+            'todo_id': todo_id,
+            'status': 'failed',
+            'refactor_target': refactor_target
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/refactor_code_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "refactor_code failed for {{ refactor_target }} — see artifact"
+
+  always:
+
+    - name: Remove worktree (always)
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _rc_branch | default('') }}"
+        worktree_path: "{{ _rc_path | default('') }}"
+        state: absent
+      failed_when: false
+      when: repo_path | length > 0 and (_rc_path | default('')) | length > 0

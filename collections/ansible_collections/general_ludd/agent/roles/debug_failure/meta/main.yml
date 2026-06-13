@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: debug_failure
+  author: Agentic Harness Agent
+  description: >
+    Analyze a failing test or task return and propose a fix. Gathers live facts
+    to provide system context, runs gludd_agent_run for root cause analysis,
+    then sends the diagnosis to the implement_change role via gludd_message.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

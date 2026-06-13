@@ -1,0 +1,17 @@
+---
+galaxy_info:
+  role_name: write_tests
+  author: Agentic Harness Agent
+  description: >
+    Generate and place tests via model agent, then run them via the configured
+    test command. Gathers live facts first and branches on history success rate.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: refactor_code
+  author: Agentic Harness Agent
+  description: >
+    Model-driven code refactoring in an isolated worktree. Gathers live facts
+    to check model health, runs gludd_agent_run to perform the refactoring,
+    commits, and cleans up the worktree.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

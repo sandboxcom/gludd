@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: report_metrics
+  author: Agentic Harness Agent
+  description: >
+    Model usage, success/failure rates, and throughput metrics from live
+    gludd_facts. Classifies throughput tier (high/medium/low) based on total
+    runs. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

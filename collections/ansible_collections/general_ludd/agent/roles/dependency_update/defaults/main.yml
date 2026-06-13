@@ -1,0 +1,29 @@
+---
+# dependency_update role defaults
+
+# Dependency to check (optional — empty = all deps)
+dep_package: ""          # specific package name (empty = all)
+dep_constraint: ""       # version constraint (e.g. ">=2.0,<3.0")
+dep_ecosystem: "python"  # python, node, go, rust
+
+# Optional todo linkage
+todo_id: ""
+
+# Repository context
+repo_path: ""
+
+# Safety guard — actual package mutations disabled by default
+apply_updates: false     # must be explicitly true to apply changes
+
+# Model routing
+model_profile: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-dependency-update"
+
+# Destructive ops guard
+enable_git_push: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""

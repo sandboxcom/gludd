@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: audit_dependencies
+  author: Agentic Harness Agent
+  description: >
+    Outdated/vulnerable dependency audit (report-only). Analyzes dependency
+    manifests for outdated packages, CVEs, and license compliance. NEVER
+    commits, pushes, or mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

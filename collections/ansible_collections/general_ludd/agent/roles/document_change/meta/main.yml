@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: document_change
+  author: Agentic Harness Agent
+  description: >
+    Generate documentation for a code change via model agent. Writes documentation
+    to the artifact directory, and optionally to the repo when write_to_repo is true.
+    Safe by default — write_to_repo defaults to false.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

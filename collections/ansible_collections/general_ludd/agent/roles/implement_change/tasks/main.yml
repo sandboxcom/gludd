@@ -1,0 +1,164 @@
+---
+# implement_change role — apply a model-generated code change in a worktree
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) — skip if no actionable work
+#   2. Announce start via gludd_message
+#   3. Create worktree via gludd_worktree
+#   4. Run model agent (gludd_agent_run) to generate the change
+#   5. Commit via gludd_git (only when enable_git_push is not blocking)
+#   6. Announce completion via gludd_message
+#   7. Write result artifact
+#
+# Destructive guards: enable_git_push defaults to false. No push without
+# explicit opt-in. All ops run in an isolated worktree that is cleaned up.
+
+- name: Gather live daemon facts before implementing change
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Skip if system has no actionable work and no explicit todo
+  ansible.builtin.meta: end_play
+  when:
+    - todo_id | length == 0
+    - live_facts.ansible_facts.gludd.todos.backlog_size | int == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Announce implementation start via message queue
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: "implement_change"
+    recipient: "broadcast"
+    topic: "implement_change.started"
+    body: "{{ {'todo_id': todo_id, 'change_description': change_description} | to_json }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when: not ansible_check_mode
+
+# ---- main lifecycle block ----
+- name: Implement change lifecycle
+  block:
+
+    - name: Set derived worktree variables
+      ansible.builtin.set_fact:
+        _ic_branch: "{{ worktree_branch | default('auto/implement/' + (todo_id | default('change')), true) }}"
+        _ic_path: "{{ worktree_path | default(worktree_base + '/implement/' + (todo_id | default('change')), true) }}"
+
+    - name: Create git worktree for isolated change
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _ic_branch }}"
+        worktree_path: "{{ _ic_path }}"
+        state: present
+      when: repo_path | length > 0
+
+    - name: Run model agent to generate and apply change
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Implement the following change in the repository at {{ _ic_path | default(repo_path) }}:
+
+          {{ change_description }}
+
+          {% if todo_id | length > 0 %}Todo ID: {{ todo_id }}{% endif %}
+          {% if change_context | length > 0 %}Context: {{ change_context }}{% endif %}
+
+          Apply the change to the files, make it minimal and targeted.
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: "{{ agent_max_iterations }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Commit changes in worktree
+      general_ludd.agent.gludd_git:
+        path: "{{ _ic_path | default(repo_path) }}"
+        op: commit
+        message: "implement_change: {{ todo_id | default('change') }} — {{ change_description | truncate(72) }}"
+      register: git_commit
+      when:
+        - not ansible_check_mode
+        - repo_path | length > 0
+
+    - name: Write success result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'implement_change',
+            'todo_id': todo_id,
+            'status': 'success',
+            'commit_sha': (git_commit.sha | default('')),
+            'change_description': change_description,
+            'answer_excerpt': (agent_run.answer | default(''))[:200],
+            'facts_snapshot': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+              'history_success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/implement_change_result.json"
+        mode: "0644"
+
+    - name: Announce implementation completion via message queue
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: "implement_change"
+        recipient: "broadcast"
+        topic: "implement_change.completed"
+        body: "{{ {'todo_id': todo_id, 'commit_sha': (git_commit.sha | default('')), 'status': 'success'} | to_json }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'implement_change',
+            'todo_id': todo_id,
+            'status': 'failed',
+            'change_description': change_description
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/implement_change_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Announce failure via message queue
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: "implement_change"
+        recipient: "broadcast"
+        topic: "implement_change.failed"
+        body: "{{ {'todo_id': todo_id, 'status': 'failed'} | to_json }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      no_log: "{{ psk | length > 0 }}"
+      failed_when: false
+      when: not ansible_check_mode
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "implement_change failed for {{ todo_id }} — see artifact for details"
+
+  always:
+
+    - name: Remove worktree (always — even on failure)
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _ic_branch | default('') }}"
+        worktree_path: "{{ _ic_path | default('') }}"
+        state: absent
+      failed_when: false
+      when: repo_path | length > 0 and (_ic_path | default('')) | length > 0

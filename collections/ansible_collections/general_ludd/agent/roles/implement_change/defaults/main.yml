@@ -1,0 +1,31 @@
+---
+# implement_change role defaults
+
+# What to implement (required if no todo_id)
+change_description: ""   # human-readable description of the change
+change_context: ""       # additional context/constraints
+
+# Optional todo linkage
+todo_id: ""
+
+# Repository settings
+repo_path: ""            # absolute path to git repo root
+
+# Worktree settings
+worktree_base: "/tmp/gludd-worktrees"
+worktree_branch: ""      # defaults to auto/implement/{{ todo_id }}
+worktree_path: ""        # defaults to {{ worktree_base }}/implement/{{ todo_id }}
+
+# Model routing
+model_profile: ""
+agent_max_iterations: 10
+
+# Artifact output
+artifact_dir: "/tmp/gludd-implement-change"
+
+# Destructive ops guard — DISABLED by default
+enable_git_push: false   # must be explicitly set to true to push
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""   # prefer GLUDD_PSK env var

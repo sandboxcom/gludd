@@ -1,0 +1,28 @@
+---
+# debug_failure role defaults
+
+# Failure information (at least one required)
+failure_description: ""  # human-readable description of the failure
+failure_output: ""       # raw output from the failing test/command
+
+# Optional todo linkage
+todo_id: ""
+
+# Repository context
+repo_path: ""
+
+# Where to hand off the diagnosis
+debug_handoff_recipient: "implement_change"
+
+# Model routing
+model_profile: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-debug-failure"
+
+# Destructive ops guard
+enable_git_push: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""

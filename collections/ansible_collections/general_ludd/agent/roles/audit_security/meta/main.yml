@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: audit_security
+  author: Agentic Harness Agent
+  description: >
+    Security scan oriented audit (report-only). Checks for hardcoded secrets,
+    injection vulnerabilities, path traversal, auth gaps via model analysis.
+    NEVER commits, pushes, or mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

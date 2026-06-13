@@ -1,0 +1,16 @@
+---
+# report_audit role defaults — REPORT-ONLY consolidation
+
+# Paths to audit sub-reports (empty = skip that sub-report)
+audit_security_artifact: ""      # path to audit_security_report.json
+audit_dependencies_artifact: ""  # path to audit_dependencies_report.json
+
+# Artifact output
+artifact_dir: "/tmp/gludd-report-audit"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard — report-only
+enable_git_push: false

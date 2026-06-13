@@ -1,0 +1,32 @@
+---
+# refactor_code role defaults
+
+# What to refactor (required)
+refactor_target: ""      # file, module, or component to refactor
+refactor_goal: ""        # what improvement to make
+refactor_constraints: "" # constraints/restrictions to respect
+
+# Optional todo linkage
+todo_id: ""
+
+# Repository settings
+repo_path: ""
+
+# Worktree settings
+worktree_base: "/tmp/gludd-worktrees"
+worktree_branch: ""
+worktree_path: ""
+
+# Model routing
+model_profile: ""
+agent_max_iterations: 10
+
+# Artifact output
+artifact_dir: "/tmp/gludd-refactor-code"
+
+# Destructive ops guard — DISABLED by default
+enable_git_push: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""

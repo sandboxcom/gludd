@@ -1,0 +1,148 @@
+---
+# agent_coordination_demo.yml — demonstrates facts-as-message-queue inter-agent channel
+#
+# Proves the end-to-end coordination: Role A reads facts, sends a message,
+# Role B (gludd_message receive) picks it up and acts on it.
+#
+# Architecture:
+#   Play 1 (role_a): Load gludd_facts → branch on backlog → send message via gludd_message
+#   Play 2 (role_b): Receive via gludd_message → process the message → write artifact
+#
+# This is safe-by-default: no push, no destructive ops. localhost only.
+
+- name: "Agent A — reads facts and dispatches work via message queue"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-coord-demo') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    demo_sender: "role_a_facts_reader"
+    demo_recipient: "role_b_message_worker"
+    demo_topic: "coordination_demo.work_dispatched"
+
+  tasks:
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: "Role A — gather live daemon facts"
+      general_ludd.agent.gludd_facts:
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk | default('') }}"
+      register: live_facts
+      no_log: "{{ (psk | default('')) | length > 0 }}"
+
+    - name: "Role A — set coordination payload from live facts"
+      ansible.builtin.set_fact:
+        coord_payload:
+          sender: "{{ demo_sender }}"
+          backlog_size: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) }}"
+          success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) }}"
+          active_models: "{{ live_facts.ansible_facts.gludd.models.active_count | default(0) }}"
+          dispatch_action: "{{ 'process_backlog' if (live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int > 0) else 'idle' }}"
+          timestamp: "{{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') | default('unknown') }}"
+
+    - name: "Role A — send coordination message to Role B"
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: "{{ demo_sender }}"
+        recipient: "{{ demo_recipient }}"
+        topic: "{{ demo_topic }}"
+        body: "{{ coord_payload | to_json }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk | default('') }}"
+      register: sent_message
+      no_log: "{{ (psk | default('')) | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: "Role A — write dispatch artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'play': 'role_a',
+            'role': 'facts_reader_dispatcher',
+            'action': 'sent_coordination_message',
+            'payload': coord_payload,
+            'message_id': (sent_message.message_id | default('check-mode')),
+            'facts_used': {
+              'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+              'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/role_a_dispatch.json"
+        mode: "0644"
+
+    - name: "Role A — report dispatch result"
+      ansible.builtin.debug:
+        msg: >-
+          Role A dispatched work via message queue:
+          backlog={{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) }},
+          action={{ coord_payload.dispatch_action }}
+
+# ── Play 2: Role B receives and processes ─────────────────────────────────
+
+- name: "Agent B — receives message from queue and acts on it"
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-coord-demo') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    demo_recipient: "role_b_message_worker"
+
+  tasks:
+
+    - name: "Role B — receive messages from queue (ack immediately)"
+      general_ludd.agent.gludd_message:
+        state: receive
+        recipient: "{{ demo_recipient }}"
+        unread: true
+        ack: true
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk | default('') }}"
+      register: inbox
+      no_log: "{{ (psk | default('')) | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: "Role B — set inbox summary (check mode fallback)"
+      ansible.builtin.set_fact:
+        _inbox_messages: "{{ inbox.messages | default([]) }}"
+        _inbox_count: "{{ inbox.messages | default([]) | length }}"
+
+    - name: "Role B — process each received message"
+      ansible.builtin.debug:
+        msg: "Role B processing message {{ item.id | default('?') }} topic={{ item.topic | default('?') }} from={{ item.sender | default('?') }}"
+      loop: "{{ _inbox_messages }}"
+      when: _inbox_count | int > 0
+
+    - name: "Role B — report idle when no messages"
+      ansible.builtin.debug:
+        msg: "Role B: no messages in inbox for {{ demo_recipient }} — idle"
+      when: _inbox_count | int == 0
+
+    - name: "Role B — write processing artifact"
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'play': 'role_b',
+            'role': 'message_worker',
+            'action': 'received_and_processed',
+            'messages_received': _inbox_count | int,
+            'message_ids': (_inbox_messages | map(attribute='id') | list),
+            'demo_complete': true,
+            'coordination_channel': 'gludd_message (facts-as-MQ)'
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/role_b_processed.json"
+        mode: "0644"
+
+    - name: "Coordination demo complete"
+      ansible.builtin.debug:
+        msg: >-
+          Agent coordination demo complete.
+          Role A read live facts → sent message →
+          Role B received {{ _inbox_count }} message(s) via gludd_message.
+          Artifacts: {{ artifact_dir }}/role_a_dispatch.json, {{ artifact_dir }}/role_b_processed.json

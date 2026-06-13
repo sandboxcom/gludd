@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: implement_change
+  author: Agentic Harness Agent
+  description: >
+    Apply a model-generated code change in an isolated worktree.
+    Gathers live facts first, announces start/completion via message queue,
+    runs gludd_agent_run, commits, and cleans up the worktree.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

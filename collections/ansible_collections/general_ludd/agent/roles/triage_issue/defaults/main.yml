@@ -1,0 +1,23 @@
+---
+# triage_issue role defaults
+
+# Issue to triage
+issue_id: ""             # issue identifier (GitHub issue number, JIRA key, etc.)
+issue_title: ""          # issue title
+issue_body: ""           # issue body/description (required for triage)
+
+# Where to hand off the triage plan
+triage_handoff_recipient: "implement_change"  # role/agent to notify
+
+# Model routing
+model_profile: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-triage-issue"
+
+# Destructive ops guard
+enable_git_push: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""   # prefer GLUDD_PSK env var

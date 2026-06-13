@@ -1,0 +1,106 @@
+---
+# document_change role — generate documentation for a code change
+#
+# Flow:
+#   1. Gather live facts (gludd_facts)
+#   2. Run model agent to generate documentation
+#   3. Write documentation output
+#   4. Write result artifact
+#
+# Report-only variant: set write_to_repo=false to only emit the artifact
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Skip if no change to document
+  ansible.builtin.meta: end_play
+  when: change_summary | length == 0 and doc_target | length == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main lifecycle block ----
+- name: Document change lifecycle
+  block:
+
+    - name: Run model agent to generate documentation
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Generate documentation for the following change:
+
+          {% if doc_target | length > 0 %}Target: {{ doc_target }}{% endif %}
+          {% if change_summary | length > 0 %}Change summary: {{ change_summary }}{% endif %}
+          {% if todo_id | length > 0 %}Todo ID: {{ todo_id }}{% endif %}
+          {% if repo_path | length > 0 %}Repository: {{ repo_path }}{% endif %}
+
+          Documentation type: {{ doc_type }}
+          Documentation format: {{ doc_format }}
+
+          Requirements:
+          - Be accurate to the actual change
+          - Use the specified format
+          - Include examples where appropriate
+          - Keep it concise but complete
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: 5
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Write documentation to file (when write_to_repo is enabled)
+      ansible.builtin.copy:
+        content: "{{ agent_run.answer | default('') }}"
+        dest: "{{ repo_path }}/{{ doc_output_file }}"
+        mode: "0644"
+      when:
+        - write_to_repo | bool
+        - repo_path | length > 0
+        - doc_output_file | length > 0
+        - not ansible_check_mode
+
+    - name: Write documentation result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'document_change',
+            'todo_id': todo_id,
+            'status': 'success',
+            'doc_type': doc_type,
+            'doc_format': doc_format,
+            'doc_target': doc_target,
+            'documentation': (agent_run.answer | default(''))[:2000],
+            'written_to_repo': (write_to_repo | bool) and (doc_output_file | length > 0),
+            'facts_snapshot': {
+              'total_work': live_facts.ansible_facts.gludd.work.total | default(0)
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/document_change_result.json"
+        mode: "0644"
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'document_change',
+            'todo_id': todo_id,
+            'status': 'failed',
+            'doc_target': doc_target
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/document_change_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "document_change failed for {{ doc_target }} — see artifact"

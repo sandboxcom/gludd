@@ -1,0 +1,20 @@
+---
+# audit_dependencies role defaults — REPORT-ONLY
+
+# What to audit
+dep_scan_path: "."       # path containing dependency manifests
+dep_ecosystem: "python"  # python, node, go, rust
+
+# Model routing
+model_profile: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-audit-dependencies"
+
+# Destructive ops guard — report-only
+enable_git_push: false
+apply_changes: false
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""

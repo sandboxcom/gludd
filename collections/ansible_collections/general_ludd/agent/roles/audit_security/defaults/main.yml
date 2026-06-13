@@ -1,0 +1,26 @@
+---
+# audit_security role defaults — REPORT-ONLY
+
+# What to scan
+scan_target: "."         # path to scan (relative or absolute)
+
+# Security focus areas
+security_focus_areas:
+  - "hardcoded secrets"
+  - "injection vulnerabilities"
+  - "path traversal"
+  - "authentication gaps"
+
+# Model routing
+model_profile: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-audit-security"
+
+# Destructive ops guard — all FALSE and immutable for this report-only role
+enable_git_push: false
+apply_changes: false     # never apply changes from a security audit
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""

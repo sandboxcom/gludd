@@ -1,0 +1,76 @@
+---
+# system_report.yml — runs report_status + report_metrics + report_audit
+#
+# Emits a consolidated report artifact showing the full system state.
+# All roles are report-only: no git commits, no pushes, no repo mutations.
+
+- name: System status and metrics report
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-system-report') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    audit_security_artifact: "{{ audit_security_artifact | default('') }}"
+    audit_dependencies_artifact: "{{ audit_dependencies_artifact | default('') }}"
+
+  tasks:
+
+    - name: Create top-level artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run report_status role (system health from live facts)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.report_status
+      vars:
+        artifact_dir: "{{ artifact_dir }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk | default('') }}"
+
+    - name: Run report_metrics role (model usage + throughput from live facts)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.report_metrics
+      vars:
+        artifact_dir: "{{ artifact_dir }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk | default('') }}"
+
+    - name: Run report_audit role (consolidate audit sub-reports)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.report_audit
+      vars:
+        artifact_dir: "{{ artifact_dir }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk | default('') }}"
+        audit_security_artifact: "{{ audit_security_artifact }}"
+        audit_dependencies_artifact: "{{ audit_dependencies_artifact }}"
+
+    - name: Write consolidated system report index
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'playbook': 'system_report.yml',
+            'status': 'completed',
+            'artifact_dir': artifact_dir,
+            'reports': [
+              artifact_dir + '/report_status.json',
+              artifact_dir + '/report_metrics.json',
+              artifact_dir + '/report_audit.json'
+            ],
+            'markdowns': [
+              artifact_dir + '/report_status.md',
+              artifact_dir + '/report_metrics.md',
+              artifact_dir + '/report_audit.md'
+            ]
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/system_report_index.json"
+        mode: "0644"
+
+    - name: Report system report completion
+      ansible.builtin.debug:
+        msg: >-
+          System report complete. Artifacts in {{ artifact_dir }}:
+          report_status.json, report_metrics.json, report_audit.json

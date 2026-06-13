@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: dependency_update
+  author: Agentic Harness Agent
+  description: >
+    Analyze dependencies for outdated packages and vulnerabilities. Report-only
+    by default (apply_updates: false). Uses gludd_agent_run to produce a
+    structured analysis. Wires into the existing DependencyManager patterns.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
