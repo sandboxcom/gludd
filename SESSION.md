@@ -10,9 +10,10 @@
 ## Current Gate Status (2026-06-12)
 ## Current Gate Status (2026-06-12)
 ## Current Gate Status (2026-06-12)
+## Current Gate Status (2026-06-13)
 <!-- gate:begin -->
 - lint PASS 0
-- typecheck PASS 18
+- typecheck PASS 13
 - collect PASS 0
 - test PASS 0
 - smoke PASS
