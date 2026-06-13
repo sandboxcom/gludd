@@ -40,6 +40,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if not hasattr(app.state, "_model_gateway") or app.state._model_gateway is None:
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
+            # H12 (W3.10): pass metrics_collector from app.state so API-driven
+            # model calls are visible to the cost/metrics subsystem.
+            metrics_collector = getattr(app.state, "_metrics_collector", None)
             app.state._model_gateway = ModelGateway(
                 provider_registry=ProviderRegistry(),
                 router=ModelRouter(),
@@ -48,6 +51,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
                 health_tracker=app.state._health_tracker,
+                metrics_collector=metrics_collector,
             )
         gateway: ModelGateway = app.state._model_gateway
         profile = gateway.add_profile(
@@ -140,12 +144,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         task_type: str | None = None,
         sort_by: str = "composite",
     ) -> dict[str, Any]:
-        session = getattr(app.state, "_session", None)
-        if session is None:
+        # H1-residual (W3.10): lifespan sets _session_factory, never _session.
+        # Reading _session always returned "No DB session available".
+        session_factory = getattr(app.state, "_session_factory", None)
+        if session_factory is None:
             return {"rankings": [], "summary": "No DB session available"}
-        repo = BenchmarkRepository(session)
-        comparison = ModelComparison(benchmark_repo=repo)
-        return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
+        async with session_factory() as session:
+            repo = BenchmarkRepository(session)
+            comparison = ModelComparison(benchmark_repo=repo)
+            return await comparison.compare_models(task_type=task_type, sort_by=sort_by)
 
     @app.post("/admin/code/blocks")
     async def admin_code_blocks(request: Request) -> dict[str, Any]:

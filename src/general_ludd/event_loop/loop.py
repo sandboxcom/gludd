@@ -698,7 +698,15 @@ class EventLoop:
                 runner_env["ANSIBLE_ROLES_PATH"] = str(ws.roles_dir)
             if ws is not None and hasattr(ws, "templates_dir") and ws.templates_dir.is_dir():
                 runner_env["GLUDD_TEMPLATES_DIR"] = str(ws.templates_dir)
-            self._runner.run_playbook(playbook_name=playbook, private_data_dir=pdd, env=runner_env)
+            # M9 (W3.3): run_playbook is a blocking I/O call; wrap in
+            # asyncio.to_thread so the event loop stays responsive during
+            # long playbook executions and CancelledError propagates cleanly.
+            await asyncio.to_thread(
+                self._runner.run_playbook,
+                playbook_name=playbook,
+                private_data_dir=pdd,
+                env=runner_env,
+            )
             return
         if self._http_client is None:
             return

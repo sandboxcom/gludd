@@ -77,7 +77,8 @@ class TestWorkerE2E:
         )
         assert resp.status_code in (200, 202)
 
-    def test_validate_endpoint(self, client):
+    def test_validate_endpoint_returns_501_not_implemented(self, client):
+        # W3.8: /jobs/validate has no backing playbook — must return 501, not fake-success.
         resp = client.post(
             "/jobs/validate",
             json={
@@ -88,7 +89,9 @@ class TestWorkerE2E:
                 "work_type": "validation",
             },
         )
-        assert resp.status_code in (200, 202)
+        assert resp.status_code == 501
+        data = resp.json()
+        assert data["detail"]["reason"] == "not_implemented"
 
     def test_worker_correlation_ids(self, client):
         resp = client.get("/healthz")

@@ -539,6 +539,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._session_factory = session_factory
         task = asyncio.create_task(event_loop.run_forever(interval=tick_interval))
         task.add_done_callback(_on_event_loop_done)
+        app.state._event_loop_task = task  # W3.4: readyz checks this
 
         from general_ludd.controllers.budget_manager import BudgetManager
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
@@ -766,7 +767,7 @@ def create_daemon_app(
     _psk = os.environ.get("GLUDD_PSK", "")
     app.state._psk = _psk
 
-    _PUBLIC_PATHS = {"/healthz", "/api/status", "/api/todos", "/docs", "/openapi.json", "/redoc"}
+    _PUBLIC_PATHS = {"/healthz", "/readyz", "/api/status", "/api/todos", "/docs", "/openapi.json", "/redoc"}
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -809,6 +810,32 @@ def create_daemon_app(
         if degraded:
             return {"status": "degraded", "reason": str(degraded)[:200]}
         return {"status": "healthy"}
+
+    @app.get("/readyz")
+    async def readyz() -> Any:
+        """Readiness probe (N1/C6, W3.4): 503 when degraded or event-loop done/cancelled.
+
+        Distinct from /healthz (liveness):
+          - /healthz: process is alive (always 200 unless catastrophic)
+          - /readyz: process can accept work (503 when degraded or loop finished)
+        """
+        from fastapi.responses import JSONResponse
+
+        degraded = getattr(app.state, "_degraded", None)
+        if degraded:
+            return JSONResponse(
+                status_code=503,
+                content={"status": "degraded", "reason": str(degraded)[:200]},
+            )
+        # Check whether the event-loop task has completed/been cancelled
+        el_task = getattr(app.state, "_event_loop_task", None)
+        if el_task is not None and el_task.done():
+            reason = "event_loop_cancelled" if el_task.cancelled() else "event_loop_done"
+            return JSONResponse(
+                status_code=503,
+                content={"status": "not_ready", "reason": reason},
+            )
+        return {"status": "ready"}
 
     @app.get("/metrics")
     async def metrics_prometheus() -> Any:

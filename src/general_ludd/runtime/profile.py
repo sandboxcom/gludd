@@ -30,11 +30,11 @@ class DataSourceMount(BaseModel):
             raise ValueError("mount_id must not be empty")
         return v
 
-    @field_validator("container_path")
+    @field_validator("container_path", mode="before")
     @classmethod
-    def _absolute_path(cls, v: str) -> str:
-        if not v.startswith("/"):
-            raise ValueError("container_path must be absolute")
+    def _require_absolute_container_path(cls, v: str) -> str:
+        if isinstance(v, str) and v and not v.startswith("/"):
+            raise ValueError("container_path must be absolute (must start with '/')")
         return v
 
 

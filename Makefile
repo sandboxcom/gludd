@@ -1,7 +1,7 @@
 MSG ?=
 FILES ?=
 TESTFILE ?=
-MYPY_MAX := 18
+MYPY_MAX := 13
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
 PYTHON := python3
@@ -672,3 +672,6 @@ skill-install:
 bootstrap-skills:
 	@echo "Installing default mattpocock skills..."
 	@$(UV) run $(PYTHON) scripts/bootstrap_skills.py
+
+analyze-jsonl:
+	@python3 /tmp/analyze_tools.py

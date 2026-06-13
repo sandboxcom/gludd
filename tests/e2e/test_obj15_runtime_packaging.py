@@ -9,6 +9,8 @@ from __future__ import annotations
 import json
 import os
 
+import pytest
+
 from general_ludd.runtime import (
     BuildResult,
     BundleManifest,
@@ -258,18 +260,14 @@ class TestRuntimeValidatorImport:
         assert result["valid"] is False
 
     def test_validate_profile_relative_container_path(self):
-        v = RuntimeValidator()
-        mount = DataSourceMount(
-            mount_id="bad-path",
-            container_path="relative/path",
-        )
-        profile = RuntimeProfile(
-            runtime_profile_id="con-2",
-            mode="container",
-            mounts=[mount],
-        )
-        result = v.validate_profile(profile)
-        assert result["valid"] is False
+        # container_path must be absolute — pydantic raises at construction time.
+        from pydantic import ValidationError
+
+        with pytest.raises(ValidationError, match="container_path must be absolute"):
+            DataSourceMount(
+                mount_id="bad-path",
+                container_path="relative/path",
+            )
 
 
 class TestRuntimeValidatorModes:

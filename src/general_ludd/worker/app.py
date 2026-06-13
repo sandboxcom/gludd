@@ -183,14 +183,49 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
 
     @application.post("/jobs/validate")
     async def validate_job(job: JobSpec) -> dict[str, Any]:
-        return {"status": "ack", "job_id": job.job_id}
+        # H3 (W3.8): returning a silent ack made callers believe validation
+        # had run.  Until a real validation playbook is wired, return 501 so
+        # callers know this path is unimplemented.
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "reason": "not_implemented",
+                "description": (
+                    "/jobs/validate has no backing playbook yet. "
+                    "POST to /jobs/execute with work_type='validation' to run a real validation job."
+                ),
+                "job_id": job.job_id,
+            },
+        )
 
     @application.post("/jobs/policy-validate")
     async def policy_validate_job(job: JobSpec) -> dict[str, Any]:
-        return {"status": "ack", "job_id": job.job_id}
+        # H3 (W3.8): same as above — return 501 instead of silent ack.
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "reason": "not_implemented",
+                "description": (
+                    "/jobs/policy-validate has no backing policy engine yet. "
+                    "Silent ack was removed to prevent callers from assuming validation ran."
+                ),
+                "job_id": job.job_id,
+            },
+        )
 
     @application.post("/jobs/reload-request")
     async def reload_request_job(job: JobSpec) -> dict[str, Any]:
-        return {"status": "ack", "job_id": job.job_id}
+        # H3 (W3.8): reload routing is not wired through the worker yet.
+        raise HTTPException(
+            status_code=501,
+            detail={
+                "reason": "not_implemented",
+                "description": (
+                    "/jobs/reload-request is not connected to the worker's reload path. "
+                    "Use the daemon's /admin/reload endpoint instead."
+                ),
+                "job_id": job.job_id,
+            },
+        )
 
     return application

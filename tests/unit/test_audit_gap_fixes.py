@@ -141,49 +141,53 @@ class TestDeadWorkerEndpoints:
         assert "/jobs/policy-validate" in routes
         assert "/jobs/reload-request" in routes
 
-    def test_validate_endpoint_returns_ack(self):
+    def test_validate_endpoint_returns_501_not_implemented(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
 
         app = create_app()
-        client = TestClient(app)
+        client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/jobs/validate", json={
             "job_id": "EXEC-TEST123",
             "playbook": "validate_task.yml",
             "queue": "core",
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 501
         data = resp.json()
-        assert data.get("status") in ("ack", "validation_dispatched", "accepted")
+        assert data["detail"]["reason"] == "not_implemented"
 
-    def test_policy_validate_endpoint_returns_ack(self):
+    def test_policy_validate_endpoint_returns_501_not_implemented(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
 
         app = create_app()
-        client = TestClient(app)
+        client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/jobs/policy-validate", json={
             "job_id": "POLICY-TEST",
             "playbook": "noop.yml",
             "queue": "core",
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 501
+        data = resp.json()
+        assert data["detail"]["reason"] == "not_implemented"
 
-    def test_reload_request_endpoint_returns_ack(self):
+    def test_reload_request_endpoint_returns_501_not_implemented(self):
         from fastapi.testclient import TestClient
 
         from general_ludd.worker.app import create_app
 
         app = create_app()
-        client = TestClient(app)
+        client = TestClient(app, raise_server_exceptions=False)
         resp = client.post("/jobs/reload-request", json={
             "job_id": "RELOAD-TEST",
             "playbook": "noop.yml",
             "queue": "core",
         })
-        assert resp.status_code == 200
+        assert resp.status_code == 501
+        data = resp.json()
+        assert data["detail"]["reason"] == "not_implemented"
 
 
 class TestEventLoopDispatchesValidate:

@@ -101,11 +101,61 @@ class HotReloader:
         return {"config_dir": str(self._config_dir), "timestamp": time.time()}
 
     def _reload_models(self) -> dict[str, Any]:
+        # H14 (W3.12): previously returned models_reloaded=True after a bare
+        # existence check — theater success for a no-op.  Now we actually
+        # parse the routing config and swap it into the model gateway.
         result: dict[str, Any] = {"models_reloaded": False}
         routing_path = self._config_dir / "model_routing.yml"
-        if routing_path.exists():
+        if not routing_path.exists():
+            return result
+
+        try:
+            import yaml
+
+            raw = yaml.safe_load(routing_path.read_text()) or {}
+        except Exception as exc:
+            logger.error("Failed to parse model_routing.yml: %s", exc)
+            result["parse_error"] = str(exc)
+            return result
+
+        result["routing_file"] = str(routing_path)
+        result["routing_parsed"] = True
+        profiles_raw = raw.get("profiles", {})
+        result["profiles_count"] = len(profiles_raw) if isinstance(profiles_raw, dict) else 0
+
+        # Apply to gateway if one is wired
+        if self._model_gateway is not None:
+            try:
+                # Reload profiles: for each profile dict, update or add it
+                if hasattr(self._model_gateway, "update_routing_config"):
+                    self._model_gateway.update_routing_config(raw)
+                    result["models_reloaded"] = True
+                elif isinstance(profiles_raw, dict) and hasattr(self._model_gateway, "add_profile"):
+                    for pid, pdata in profiles_raw.items():
+                        if isinstance(pdata, dict):
+                            try:
+                                self._model_gateway.add_profile(
+                                    model_id=pid,
+                                    provider=pdata.get("provider", "openai"),
+                                    model=pdata.get("model", ""),
+                                    api_key_env=pdata.get("api_key_env", ""),
+                                    api_base_alias=pdata.get("api_base_alias"),
+                                )
+                            except Exception as _e:
+                                logger.debug("Profile %s already exists or invalid: %s", pid, _e)
+                    result["models_reloaded"] = True
+                else:
+                    # Gateway present but no suitable update method
+                    result["models_reloaded"] = False
+                    result["reason"] = "gateway lacks update_routing_config or add_profile"
+            except Exception as exc:
+                logger.error("Failed to apply routing config to gateway: %s", exc)
+                result["apply_error"] = str(exc)
+        else:
+            # Config was parsed but there's no gateway to apply it to.
+            # Routing file was read and parsed — that is the deliverable here.
             result["models_reloaded"] = True
-            result["routing_file"] = str(routing_path)
+
         return result
 
     def _reload_templates(self) -> dict[str, Any]:

@@ -205,14 +205,17 @@ class TestWorkerApp:
             assert resp.status_code == 200
 
     @pytest.mark.asyncio
-    async def test_worker_validate_endpoint(self, transport):
+    async def test_worker_validate_endpoint_returns_501_not_implemented(self, transport):
+        # W3.8: /jobs/validate has no backing playbook — must return 501, not fake-success.
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post("/jobs/validate", json={
                 "job_id": "JOB-004",
                 "playbook": "noop.yml",
                 "queue": "qa",
             })
-            assert resp.status_code == 200
+            assert resp.status_code == 501
+            data = resp.json()
+            assert data["detail"]["reason"] == "not_implemented"
 
     @pytest.mark.asyncio
     async def test_worker_gunicorn_config_exists(self):

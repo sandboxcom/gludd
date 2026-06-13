@@ -205,7 +205,7 @@ def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
     sys.exit(1)
 
 
-def build_parser() -> argparse.ArgumentParser:
+def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     parser = argparse.ArgumentParser(
         prog="gludd",
         description="General Ludd Agent — the black swan agentic coding system",
@@ -2882,13 +2882,25 @@ def _cmd_playbooks_refresh(args: argparse.Namespace) -> None:
 
 
 def _cmd_code_graph(args: argparse.Namespace) -> None:
+    # M11 (W3.13): hit /admin/code/graph (not /admin/code-graph), and
+    # read file contents when --source is a file path.
     try:
         params: dict[str, str] = {}
-        if getattr(args, "source", None):
-            params["source"] = str(args.source)
+        source_arg = getattr(args, "source", None) or ""
+        if source_arg:
+            import os as _os
+
+            if _os.path.isfile(source_arg):
+                try:
+                    with open(source_arg) as _f:
+                        source_arg = _f.read()
+                except OSError as e:
+                    print(f"Cannot read source file: {e}", file=sys.stderr)
+                    sys.exit(1)
+            params["source"] = source_arg
         if getattr(args, "language", None):
             params["language"] = str(args.language)
-        resp = httpx.get(f"{args.daemon_url}/admin/code-graph", params=params, timeout=10.0)
+        resp = httpx.get(f"{args.daemon_url}/admin/code/graph", params=params, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
             nodes = data.get("nodes", [])
@@ -2901,13 +2913,27 @@ def _cmd_code_graph(args: argparse.Namespace) -> None:
 
 
 def _cmd_code_search(args: argparse.Namespace) -> None:
+    # M11 (W3.13): hit /admin/code/search (not /admin/code-search), and
+    # read file contents when --source is a file path.
     try:
         params: dict[str, str] = {}
+        source_arg = getattr(args, "source", None) or ""
+        if source_arg:
+            import os as _os
+
+            if _os.path.isfile(source_arg):
+                try:
+                    with open(source_arg) as _f:
+                        source_arg = _f.read()
+                except OSError as e:
+                    print(f"Cannot read source file: {e}", file=sys.stderr)
+                    sys.exit(1)
+            params["source"] = source_arg
         if getattr(args, "query", None):
             params["query"] = str(args.query)
         if getattr(args, "language", None):
             params["language"] = str(args.language)
-        resp = httpx.get(f"{args.daemon_url}/admin/code-search", params=params, timeout=10.0)
+        resp = httpx.get(f"{args.daemon_url}/admin/code/search", params=params, timeout=10.0)
         if resp.status_code == 200:
             data = resp.json()
             results = data.get("results", [])
