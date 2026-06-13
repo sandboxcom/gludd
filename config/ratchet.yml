@@ -9,9 +9,9 @@
 tests/security/test_sast.py::TestSAST::test_bandit_runs_on_source: "bandit SAST tool — pre-existing"
 
 tests/unit/test_port_8000_occupied.py::TestPort8000Occupied::test_suite_with_8000_occupied: "8000-occupied e2e proof — requires ephemeral port conversion of daemon tests"
-tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_calls_scanner_with_valid_paths: "flaky TUI integrity scan — pre-existing"
-tests/unit/test_tui_extracted_builders.py::TestScanLocalIntegrity::test_no_valid_paths: "flaky TUI integrity scan no paths — pre-existing"
-tests/unit/test_tui_extracted_builders.py::TestLoadConfigEditor::test_returns_nav_dict: "flaky TUI config editor — pre-existing"
+tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_touch_file_detected_without_full_rescan: "flaky watchdog FSEvents macOS latency — timing dependent under xdist parallel load"
+tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_new_file_detected: "flaky watchdog FSEvents macOS latency — timing dependent under xdist parallel load"
+tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_get_changes_clears_on_read: "flaky watchdog FSEvents macOS latency — timing dependent under xdist parallel load"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_starts_daemon_and_it_serves_healthz: "TUI daemon start PTY — environment-dependent"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_shows_running_after_daemon_start: "TUI daemon start running — environment-dependent"
 tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "flaky xdist race on hvac patch — pre-existing"

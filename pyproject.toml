@@ -13,6 +13,7 @@ dependencies = [
     "gunicorn>=23.0.0",
     "httpx>=0.28.0",
     "pydantic>=2.10.0",
+    "pydantic-settings>=2.0.0",
     "sqlalchemy>=2.0.0",
     "alembic>=1.14.0",
     "psycopg[binary]>=3.2.0",
@@ -96,7 +97,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -145,6 +146,7 @@ dev = [
     "bandit>=1.8.0",
     "cyclonedx-py>=0.7.0",
     "pip-audit>=0.3.0",
+    "deptry>=0.20.0",
     "molecule>=24.0.0",
     "ansible-lint>=24.0.0",
 ]

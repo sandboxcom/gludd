@@ -1,3 +1,14 @@
+"""MCP stdio client transport — hand-rolled, kept as-is.
+
+KEEP LIST (V3.2): Both named protocol bugs are fixed in this file:
+  - transport.py:52 matches responses by ``id`` to guard against interleaving.
+  - transport.py:98 sends ``notifications/initialized`` after handshake.
+The official ``mcp`` Python SDK is NOT a declared dependency; adopting it would
+add a heavy transitive closure for marginal benefit. The two-bug rationale from
+guide 2 no longer applies (both fixed). Decision: keep this 125-LOC client
+until a concrete need for SDK features (e.g., sampling, roots, auth) arises.
+"""
+
 from __future__ import annotations
 
 import asyncio

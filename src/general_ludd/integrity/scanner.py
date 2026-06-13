@@ -1,4 +1,10 @@
-"""File integrity monitoring — hash recording, change detection, OpenBao signing."""
+"""File integrity monitoring — hash recording, change detection, OpenBao signing.
+
+Change detection: watchdog Observer drives event collection (W4.3).
+The `FileWatcher` class uses watchdog's `Observer` for real-time event-based
+change detection. The `FileIntegrityScanner.scan()` method keeps its existing
+os.walk baseline-scan API; `FileWatcher` is the incremental change path.
+"""
 
 from __future__ import annotations
 
@@ -9,10 +15,20 @@ import logging
 import os
 import re
 import secrets
+import threading
 import time
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Any
+
+from watchdog.events import (
+    FileCreatedEvent,
+    FileDeletedEvent,
+    FileModifiedEvent,
+    FileMovedEvent,
+    FileSystemEventHandler,
+)
+from watchdog.observers import Observer
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +85,8 @@ class FileIntegrityScanner:
     def _load_hashes(self) -> dict[str, str]:
         if self._store.exists():
             try:
-                return json.loads(self._store.read_text())
+                data: dict[str, str] = json.loads(self._store.read_text())
+                return data
             except Exception:
                 pass
         return {}
@@ -143,6 +160,87 @@ class FileIntegrityScanner:
 
         self._save_hashes(new_hashes)
         return {"scanned": len(files), "files": files, "changes": changes}
+
+
+class _IntegrityEventHandler(FileSystemEventHandler):
+    """Watchdog event handler that collects filesystem change events."""
+
+    def __init__(self, changes: list[dict[str, Any]], lock: threading.Lock) -> None:
+        super().__init__()
+        self._changes = changes
+        self._lock = lock
+
+    def _record(self, event_type: str, src: str, dest: str | None = None) -> None:
+        entry: dict[str, Any] = {
+            "type": event_type,
+            "file": src,
+            "detected_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        }
+        if dest:
+            entry["dest"] = dest
+        with self._lock:
+            self._changes.append(entry)
+
+    def on_created(self, event: FileCreatedEvent) -> None:  # type: ignore[override]
+        if not event.is_directory:
+            self._record("new", str(event.src_path))
+
+    def on_modified(self, event: FileModifiedEvent) -> None:  # type: ignore[override]
+        if not event.is_directory:
+            self._record("modified", str(event.src_path))
+
+    def on_deleted(self, event: FileDeletedEvent) -> None:  # type: ignore[override]
+        if not event.is_directory:
+            self._record("removed", str(event.src_path))
+
+    def on_moved(self, event: FileMovedEvent) -> None:  # type: ignore[override]
+        if not event.is_directory:
+            self._record("moved", str(event.src_path), str(event.dest_path))
+
+
+class FileWatcher:
+    """Event-based file change detector using watchdog Observer (replaces os.walk polling).
+
+    Usage::
+
+        watcher = FileWatcher()
+        watcher.start(["/path/to/watch"])
+        # ... time passes ...
+        changes = watcher.get_changes()  # returns and clears the event buffer
+        watcher.stop()
+
+    ``get_changes()`` consumes and clears the buffer, so each call returns only
+    events since the previous call.
+    """
+
+    def __init__(self) -> None:
+        self._observer: Any = None  # watchdog.observers.Observer, typed as Any (no stubs)
+        self._changes: list[dict[str, Any]] = []
+        self._lock = threading.Lock()
+
+    def start(self, watch_paths: list[str]) -> None:
+        """Start watching the given paths recursively."""
+        self._observer = Observer()
+        handler = _IntegrityEventHandler(self._changes, self._lock)
+        for path in watch_paths:
+            p = Path(path).expanduser().resolve()
+            if p.exists():
+                self._observer.schedule(handler, str(p), recursive=True)
+        self._observer.start()
+
+    def get_changes(self) -> list[dict[str, Any]]:
+        """Return all collected change events and clear the internal buffer."""
+        with self._lock:
+            result = list(self._changes)
+            self._changes.clear()
+        return result
+
+    def stop(self) -> None:
+        """Stop the watchdog observer cleanly."""
+        if self._observer is not None and self._observer.is_alive():
+            self._observer.stop()
+            self._observer.join(timeout=2.0)
+        self._observer = None
 
 
 def sign_change(change: ChangeRecord, reason: str, signer: str) -> dict[str, Any]:

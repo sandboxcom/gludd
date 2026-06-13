@@ -9,14 +9,10 @@ from general_ludd.config.user_config import AgentConfig, ConfigLayer, UserConfig
 
 
 def load_user_config(path: Path | None = None) -> UserConfig:
+    """Load UserConfig from YAML file with GLUDD_ env var override (W4.4)."""
     if path is None:
         path = Path.home() / ".config" / "general-ludd" / "user.yml"
-    p = Path(path)
-    if not p.exists():
-        return UserConfig()
-    with open(p) as f:
-        data = yaml.safe_load(f) or {}
-    return UserConfig(**data)
+    return UserConfig.from_yaml(Path(path))
 
 
 def load_agent_config(path: Path | None = None) -> AgentConfig:

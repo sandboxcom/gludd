@@ -50,6 +50,8 @@ class TestTenacityReplacement:
         assert call_count["count"] == 3
 
     def test_gateway_call_with_tenacity(self):
+        # call_with_tenacity (demo) was deleted in W4.1 — the real retry path is
+        # call_model_with_retry. Prove call_model_with_retry exists and works.
         profile = ModelProfile(
             model_profile_id="m1",
             provider="openai",
@@ -62,6 +64,6 @@ class TestTenacityReplacement:
         mock_response = ModelResponse(content="tenacity result")
         gateway.call_model = MagicMock(return_value=mock_response)
 
-        result = gateway.call_with_tenacity("m1", [{"role": "user", "content": "hi"}])
+        result = gateway.call_model_with_retry("m1", [{"role": "user", "content": "hi"}])
         assert result.content == "tenacity result"
         gateway.call_model.assert_called_once()

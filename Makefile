@@ -26,7 +26,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
-        status-snapshot audit-evidence \
+        status-snapshot audit-evidence deps-audit \
         skill-install skill-list bootstrap-skills scan-tool-usage \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
@@ -340,10 +340,9 @@ audit-schema:
 	@$(PYTHON) scripts/db_schema.py
 
 deps-audit:
-	@echo "=== Dependency Audit ==="
-	@$(UV) run deptry src || echo "Install deptry: uv pip install deptry"
+	@echo "=== Dependency Audit (deptry) ==="
+	@$(UV) run deptry src --ignore DEP004 || true
 	@echo "=== Audit Complete ==="
-	@$(PYTHON) scripts/db_schema.py
 
 repo-log:
 	@git log --oneline -10 || echo "No git history"

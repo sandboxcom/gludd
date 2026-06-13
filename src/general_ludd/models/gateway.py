@@ -262,9 +262,23 @@ class ModelGateway:
         base_backoff_seconds: float = 1.0,
         **kwargs: Any,
     ) -> ModelResponse:
+        """Retry a model call using tenacity with TimeoutRetryPolicy semantics.
+
+        Retry strategy (ported from hand-rolled loop via TimeoutRetryPolicy):
+        - AUTH_ERROR / CONTEXT_LENGTH: not retryable, re-raise immediately.
+        - All other retryable exceptions (HTTPStatusError, TimeoutException,
+          ConnectError, TimeoutError): exponential backoff with jitter per
+          TimeoutRetryPolicy._compute_backoff; max_backoff=60s.
+        - After failover_after_retries (3) attempts: stop retrying on the
+          primary profile and walk the fallback_profiles chain.
+        - Health tracker: records timeout events and checks profile health
+          before attempting; unhealthy primary → skip to fallbacks immediately.
+        """
         import time as _time
 
         import httpx
+
+        from general_ludd.models.timeout_detector import TimeoutKind
 
         profile = self._profiles.get(profile_id)
         if profile is None:
@@ -276,6 +290,7 @@ class ModelGateway:
             base_backoff_seconds=base_backoff_seconds,
         )
 
+        # If primary is already unhealthy, skip straight to fallbacks.
         if tracker is not None and not tracker.is_healthy(profile_id):
             fallback_ids = list(profile.fallback_profiles)
             for fb_id in fallback_ids:
@@ -284,20 +299,32 @@ class ModelGateway:
             if fallback_ids:
                 return self.call_model(fallback_ids[0], messages, **kwargs)
 
-        attempt = 0
-        last_exc: BaseException | None = None
+        _retryable_exc_types = (
+            httpx.HTTPStatusError,
+            httpx.TimeoutException,
+            httpx.ConnectError,
+            TimeoutError,
+        )
 
-        while True:
-            attempt += 1
-            try:
-                result = self.call_model(profile_id, messages, **kwargs)
-                if tracker is not None:
-                    tracker.record_success(profile_id)
-                return result
-            except (httpx.HTTPStatusError, httpx.TimeoutException, httpx.ConnectError, TimeoutError) as exc:
-                last_exc = exc
+        _attempt_counter: list[int] = [0]
+        _last_exc: list[BaseException | None] = [None]
+
+        def _is_retryable(exc: BaseException) -> bool:
+            """Tenacity retry predicate: True → retry, False → re-raise."""
+            if not isinstance(exc, _retryable_exc_types):
+                return False
+            kind = TimeoutClassifier.classify(exc)
+            # Non-retryable kinds: immediate re-raise.
+            if kind in (TimeoutKind.AUTH_ERROR, TimeoutKind.CONTEXT_LENGTH):
+                return False
+            decision = policy.decide(kind, _attempt_counter[0])
+            return bool(decision.should_retry)
+
+        def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
+            """Record health tracker event and perform policy-computed sleep."""
+            exc = retry_state.outcome.exception() if retry_state.outcome else None
+            if exc is not None and isinstance(exc, _retryable_exc_types):
                 kind = TimeoutClassifier.classify(exc)
-
                 if tracker is not None:
                     tracker.record_event(TimeoutEvent(
                         model_id=profile_id,
@@ -305,26 +332,64 @@ class ModelGateway:
                         timestamp=_time.monotonic(),
                         duration_s=0.0,
                     ))
+                wait_s = policy._compute_backoff(kind, _attempt_counter[0], None)
+                if wait_s > 0:
+                    _time.sleep(wait_s)
 
-                decision = policy.decide(kind, attempt)
+        # failover_after_retries == 3: stop retrying primary after 3 attempts.
+        failover_after = policy._failover_after
 
-                if decision.should_failover:
-                    fallback_ids = list(profile.fallback_profiles)
-                    for fb_id in fallback_ids:
-                        try:
-                            return self.call_model(fb_id, messages, **kwargs)
-                        except Exception:
-                            continue
-                    if last_exc is not None:
-                        raise last_exc from None
+        _exhausted = False
+        try:
+            for attempt in tenacity.Retrying(
+                retry=tenacity.retry_if_exception(_is_retryable),
+                wait=tenacity.wait_none(),
+                stop=tenacity.stop_after_attempt(failover_after),
+                before_sleep=_before_sleep,
+                reraise=True,
+            ):
+                with attempt:
+                    _attempt_counter[0] = attempt.retry_state.attempt_number
+                    try:
+                        result = self.call_model(profile_id, messages, **kwargs)
+                        if tracker is not None:
+                            tracker.record_success(profile_id)
+                        return result
+                    except _retryable_exc_types as exc:
+                        _last_exc[0] = exc
+                        kind = TimeoutClassifier.classify(exc)
+                        if kind in (TimeoutKind.AUTH_ERROR, TimeoutKind.CONTEXT_LENGTH):
+                            # Non-retryable: record and re-raise immediately.
+                            if tracker is not None:
+                                tracker.record_event(TimeoutEvent(
+                                    model_id=profile_id,
+                                    kind=kind,
+                                    timestamp=_time.monotonic(),
+                                    duration_s=0.0,
+                                ))
+                            raise
+                        raise
+        except _retryable_exc_types as exc:
+            # Tenacity exhausted retries on primary and re-raised last exception.
+            _last_exc[0] = exc
+            _exhausted = True
 
-                if not decision.should_retry:
-                    if last_exc is not None:
-                        raise last_exc from None
-                    raise exc
+        if not _exhausted:
+            # Should not reach here (return or raise should happen above).
+            return None  # type: ignore[return-value]
 
-                if decision.wait_seconds > 0:
-                    _time.sleep(decision.wait_seconds)
+        # Tenacity exhausted (failover_after attempts tried on primary) → walk fallbacks.
+        fallback_ids = list(profile.fallback_profiles)
+        for fb_id in fallback_ids:
+            try:
+                return self.call_model(fb_id, messages, **kwargs)
+            except Exception:
+                continue
+
+        last = _last_exc[0]
+        if last is not None:
+            raise last from None
+        raise RuntimeError(f"call_model_with_retry: all attempts failed for profile '{profile_id}'")
 
     def record_timeout_on_failure(
         self,
@@ -442,35 +507,6 @@ class ModelGateway:
             except Exception as exc:
                 logger.warning("Worker broadcast failed for model add: %s", exc)
         return profile
-
-    def call_with_tenacity(
-        self,
-        profile_id: str,
-        messages: list[dict[str, str]],
-        *,
-        max_retries: int = 3,
-        **kwargs: Any,
-    ) -> ModelResponse:
-        """V3.1: tenacity-based retry — proves OSS retry can replace hand-rolled loop."""
-        import httpx
-
-        profile = self._profiles.get(profile_id)
-        if profile is None:
-            raise ValueError(f"Profile '{profile_id}' not found")
-
-        @tenacity.retry(
-            stop=tenacity.stop_after_attempt(max_retries + 1),
-            wait=tenacity.wait_exponential(multiplier=1, min=1, max=30),
-            retry=tenacity.retry_if_exception_type((
-                httpx.HTTPStatusError, httpx.TimeoutException,
-                httpx.ConnectError, TimeoutError,
-            )),
-            reraise=True,
-        )
-        def _call() -> ModelResponse:
-            return self.call_model(profile_id, messages, **kwargs)
-
-        return _call()
 
     def remove_profile(self, model_id: str) -> None:
         self._profiles.pop(model_id, None)
