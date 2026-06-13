@@ -81,6 +81,11 @@ class ReturnReviewer:
             return decision
         parsed = self._parse_model_output(raw_output, task_return)
         if parsed is not None:
+            evidence_notes = self._audit_evidence(parsed, artifacts)
+            if evidence_notes:
+                parsed = parsed.model_copy(
+                    update={"audit_notes": [*parsed.audit_notes, *evidence_notes]}
+                )
             conv.add_message(
                 "assistant", json.dumps(parsed.model_dump(mode="json"))
             )
@@ -102,6 +107,28 @@ class ReturnReviewer:
             "assistant", json.dumps(fallback.model_dump(mode="json"))
         )
         return fallback
+
+    def _audit_evidence(
+        self, decision: TaskDecision, artifacts: list[str]
+    ) -> list[str]:
+        """Flag unsupported factual claims in the model's audit notes.
+
+        Uses EvidenceChecker to scan the review's own audit_notes for factual
+        claims with no backing source (file:line / artifact), so a confidently
+        wrong review leaves a trail rather than passing silently.
+        """
+        from general_ludd.review.evidence_checker import EvidenceChecker
+
+        checker = EvidenceChecker()
+        notes: list[str] = []
+        for claim_text in decision.audit_notes:
+            results = checker.audit_response(claim_text, artifacts)
+            for res in results:
+                if not res.supported:
+                    notes.append(
+                        f"evidence: unsupported claim in review — {res.claim[:120]}"
+                    )
+        return notes
 
     def _call_model(self, prompt: str) -> tuple[str | None, str | None]:
         if self._router is not None:

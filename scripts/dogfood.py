@@ -251,6 +251,17 @@ async def run_dogfood() -> int:
         if final_status == "complete":
             progress["state_advanced"] = True
 
+        # --- 6b. Smoke-task + dogfood validation via the real dogfood module ---
+        # Delegate to the production orchestrator (DogfoodRunner +
+        # DogfoodValidator) so this script exercises the real classes.
+        from general_ludd.dogfood.orchestrator import run_smoke_and_validate
+
+        df_report = run_smoke_and_validate(repo_root=str(REPO_ROOT), task_name="noop")
+        _log(
+            f"dogfood smoke task 'noop': success={df_report['smoke']['success']} "
+            f"validation valid={df_report['validation']['valid']}"
+        )
+
         # --- 7. Write the result artifact ---
         artifact = {
             "todo_id": todo_id,
@@ -259,6 +270,7 @@ async def run_dogfood() -> int:
             "final_status": final_status,
             "branch": gludd_branches[0] if gludd_branches else None,
             "decision": decision.decision,
+            "dogfood": df_report,
             "progress": progress,
         }
         artifact_path.write_text(json.dumps(artifact, indent=2))

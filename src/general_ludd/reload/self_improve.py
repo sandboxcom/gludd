@@ -43,7 +43,18 @@ class SelfImprovementWorkflow:
             worktree_path=worktree_path,
             test_commands=["make test-unit"],
         )
-        return runner.run_validation()
+        try:
+            return runner.run_validation()
+        except (FileNotFoundError, NotADirectoryError, OSError) as exc:
+            # A missing/unusable worktree is a validation failure, not a crash —
+            # fail closed so the improvement is not applied.
+            return ValidationResult(
+                success=False,
+                passed_count=0,
+                failed_count=1,
+                output=f"validation could not run: {exc}",
+                failures=[str(exc)],
+            )
 
     def apply_improvement(
         self, todo_id: str, validation_result: ValidationResult

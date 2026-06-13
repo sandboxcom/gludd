@@ -9,7 +9,9 @@ from typing import Any
 
 from general_ludd.events.types import (
     ConfigReloadedEvent,
+    HookTriggeredEvent,
     PlaybookRegisteredEvent,
+    PlaybookRemovedEvent,
     ReloadCompletedEvent,
     ReloadFailedEvent,
     ReloadRequestedEvent,
@@ -67,6 +69,9 @@ class HotReloader:
         self._model_gateway = model_gateway
         self._prompt_registry = prompt_registry
         self._last_state = _ReloadState()
+        # Playbooks seen on the previous reload — used to detect removals so a
+        # PlaybookRemovedEvent fires when a registered playbook disappears.
+        self._known_playbooks: set[str] = set()
 
     def reload(self, scope: ReloadScope) -> ReloadResult:
         self._publish(ReloadRequestedEvent(scope=scope.value))
@@ -173,9 +178,16 @@ class HotReloader:
         result: dict[str, Any] = {"playbooks": []}
         if self._playbooks_dir and self._playbooks_dir.exists():
             playbooks = list(self._playbooks_dir.glob("*.yml"))
+            current_names = {p.name for p in playbooks}
             result["playbooks"] = [p.name for p in playbooks]
             for p in playbooks:
                 self._publish(PlaybookRegisteredEvent(playbook=p.name))
+            # Anything registered last time but gone now was removed.
+            removed = sorted(self._known_playbooks - current_names)
+            for name in removed:
+                self._publish(PlaybookRemovedEvent(playbook=name))
+            result["removed"] = removed
+            self._known_playbooks = current_names
         return result
 
     def _reload_skills(self) -> dict[str, Any]:
@@ -195,6 +207,9 @@ class HotReloader:
     def _fire_hooks(self, event_name: str, payload: dict[str, Any]) -> None:
         if self._hooks:
             self._hooks.fire(event_name, payload)
+        # Surface the hook firing on the event bus so subscribers (metrics,
+        # observers) can react to it, independent of the hook system itself.
+        self._publish(HookTriggeredEvent(event_name=event_name))
 
     def _broadcast_reload(self, scope: ReloadScope) -> None:
         if self._broadcaster:

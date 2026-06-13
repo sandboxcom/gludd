@@ -845,14 +845,15 @@ class EventLoop:
                         await self._try_commit_completed_work(todo)
                 if self._audit_repo is not None:
                     with contextlib.suppress(Exception):
-                        await self._audit_repo.create(
-                            event_type="todo_status_changed",
+                        from general_ludd.db.models import AuditEventType
+                        await self._audit_repo.record_typed(
+                            AuditEventType.TODO_STATUS_CHANGED,
                             entity_type="todo", entity_id=todo.todo_id,
                             project_id=todo.project_id,
-                            details=json.dumps({
+                            details={
                                 "old": todo.status, "new": new_status.value,
                                 "decision": d.decision,
-                            }),
+                            },
                         )
         self._tick_metrics["decisions_applied"] = reconciled
 
@@ -876,8 +877,37 @@ class EventLoop:
                 repo.commit(f"[{todo.todo_id}] {todo.title}")
                 repo.push(branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
+                self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:
                 logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
+
+    def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
+        """F1: open a PR for completed work when git_automation.open_pr is set.
+
+        Disabled by default — only fires when config opts in, so the daemon
+        never opens PRs unexpectedly. Uses PRDelivery (push branch + gh pr
+        create).
+        """
+        ga_cfg = self.config.get("git_automation", {}) or {}
+        if not ga_cfg.get("open_pr", False):
+            return
+        from general_ludd.git_automation.pr_delivery import PRDelivery
+
+        delivery = PRDelivery(
+            base_branch=str(ga_cfg.get("base_branch", "main")),
+            draft=bool(ga_cfg.get("pr_draft", False)),
+            labels=list(ga_cfg.get("pr_labels", [])),
+        )
+        result = delivery.push_and_create_pr(
+            repo_path=worktree,
+            branch_name=branch_name,
+            todo_id=todo.todo_id,
+            title=getattr(todo, "title", todo.todo_id),
+        )
+        if result.get("error"):
+            logger.warning("F1: PR delivery for %s failed: %s", todo.todo_id, result["error"])
+        else:
+            logger.info("F1: opened PR for %s: %s", todo.todo_id, result.get("pr_url"))
 
     async def _phase_self_improve(self) -> None:
         interval = self._self_improve_interval

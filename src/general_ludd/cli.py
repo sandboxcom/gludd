@@ -678,6 +678,11 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     log_level = args.log_level.upper()
     logging.basicConfig(level=getattr(logging, log_level), format="%(asctime)s %(levelname)s %(name)s %(message)s")
+    # Ensure every record carries a project_id attribute (None at the daemon
+    # level) so per-project log lines and formatters work uniformly.
+    from general_ludd.logging.project_log import install_project_log_filter
+
+    install_project_log_filter()
 
     config_dir = getattr(args, "config_dir", None)
     templates_dir = getattr(args, "templates_dir", None)

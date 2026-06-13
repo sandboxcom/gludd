@@ -47,6 +47,30 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             _daemon_state["todos"].extend(result["todos"])
         return result
 
+    @app.post("/admin/self-improve/apply")
+    async def admin_self_improve_apply(payload: dict[str, Any]) -> dict[str, Any]:
+        # Validate -> apply -> reload an improvement using SelfImprovementWorkflow.
+        # Validation runs the test suite in the given worktree; a failing or
+        # missing worktree means the improvement is NOT applied (fail-closed).
+        from general_ludd.reload.self_improve import SelfImprovementWorkflow
+
+        workflow = SelfImprovementWorkflow()
+        todo = workflow.create_improvement_todo(
+            title=str(payload.get("title", "")),
+            description=str(payload.get("description", "")),
+        )
+        worktree_path = str(payload.get("worktree_path", ""))
+        validation = workflow.validate_improvement(worktree_path)
+        apply_result = workflow.apply_improvement(todo["todo_id"], validation)
+        reload_result = workflow.reload_if_needed(apply_result)
+        return {
+            "todo_id": todo["todo_id"],
+            "validation_passed": validation.success,
+            "applied": apply_result.applied,
+            "reload_needed": apply_result.reload_needed,
+            "reload_status": reload_result.status,
+        }
+
     @app.get("/admin/self-improve/status")
     async def admin_self_improve_status() -> dict[str, Any]:
         last = _daemon_state.get("self_improve_last_analysis")

@@ -25,5 +25,26 @@ class ProjectLogFilter(logging.Filter):
         self.project_id = project_id
 
     def filter(self, record: logging.LogRecord) -> bool:
-        record.project_id = self.project_id
+        # Don't clobber a project_id already set by a ProjectLogAdapter.
+        if not hasattr(record, "project_id"):
+            record.project_id = self.project_id
         return True
+
+
+def install_project_log_filter(
+    project_id: str | None = None,
+    logger: logging.Logger | None = None,
+) -> ProjectLogFilter:
+    """Install a ProjectLogFilter on a logger (root by default), idempotently.
+
+    Guarantees every emitted record carries a ``project_id`` attribute so log
+    formatters can include it without each call site setting it. Returns the
+    installed (or pre-existing) filter.
+    """
+    target = logger or logging.getLogger()
+    for existing in target.filters:
+        if isinstance(existing, ProjectLogFilter):
+            return existing
+    flt = ProjectLogFilter(project_id=project_id)
+    target.addFilter(flt)
+    return flt

@@ -22,3 +22,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/admin/ansible/builtins")
     async def admin_ansible_builtins() -> dict[str, Any]:
         return {"modules": get_builtin_modules()}
+
+    @app.post("/admin/ansible/render")
+    async def admin_ansible_render(req: dict[str, Any]) -> dict[str, Any]:
+        # Render a Jinja2 template through Ansible's variable resolution
+        # (AnsibleTemplater wraps CoreAnsibleRunner) so prompts/skills can use
+        # the same filter/var semantics as playbooks.
+        from general_ludd.ansible.templating import AnsibleTemplater
+
+        templater = AnsibleTemplater(extra_vars=req.get("extra_vars", {}))
+        rendered = templater.render(str(req.get("template", "")))
+        return {"rendered": rendered}

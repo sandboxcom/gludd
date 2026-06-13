@@ -78,6 +78,28 @@ class SlurmAdapter:
         url = (self._api_url or "").rstrip("/")
         return f"{url}/slurm/{_SLURM_API_VERSION}"
 
+    def _request(self, method: str, url: str, **kwargs: object) -> httpx.Response:
+        """Issue an HTTP request, converting transport failures to SlurmConnectionError.
+
+        A raw ``httpx.ConnectError``/``TimeoutException`` leaking out of the REST
+        path is indistinguishable from a programming error to callers. Wrapping
+        it in :class:`SlurmConnectionError` makes "the controller is unreachable"
+        an explicit, catchable condition.
+        """
+        m = method.upper()
+        try:
+            if m == "GET":
+                return httpx.get(url, **kwargs)  # type: ignore[arg-type]
+            if m == "POST":
+                return httpx.post(url, **kwargs)  # type: ignore[arg-type]
+            if m == "DELETE":
+                return httpx.delete(url, **kwargs)  # type: ignore[arg-type]
+            raise ValueError(f"unsupported method: {method}")
+        except (httpx.ConnectError, httpx.TimeoutException, httpx.NetworkError) as exc:
+            raise SlurmConnectionError(
+                f"Slurm REST API unreachable at {url}: {exc}"
+            ) from exc
+
     def submit(
         self,
         command: str,
@@ -168,7 +190,8 @@ class SlurmAdapter:
             },
         }
 
-        resp = httpx.post(
+        resp = self._request(
+            "POST",
             f"{self._api_base()}/job/submit",
             json=payload,
             headers=self._headers(),
@@ -185,7 +208,8 @@ class SlurmAdapter:
         return str(job_id)
 
     def _remote_status(self, job_id: str) -> SlurmJobInfo:
-        resp = httpx.get(
+        resp = self._request(
+            "GET",
             f"{self._api_base()}/job/{job_id}",
             headers=self._headers(),
             timeout=15.0,
@@ -210,7 +234,8 @@ class SlurmAdapter:
         )
 
     def _remote_cancel(self, job_id: str) -> None:
-        resp = httpx.delete(
+        resp = self._request(
+            "DELETE",
             f"{self._api_base()}/job/{job_id}",
             headers=self._headers(),
             timeout=15.0,
@@ -229,7 +254,8 @@ class SlurmAdapter:
             return False
 
     def _remote_list_jobs(self) -> list[SlurmJobInfo]:
-        resp = httpx.get(
+        resp = self._request(
+            "GET",
             f"{self._api_base()}/jobs",
             headers=self._headers(),
             timeout=15.0,

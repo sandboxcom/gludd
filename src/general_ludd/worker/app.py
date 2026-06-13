@@ -85,10 +85,18 @@ def _invoke_gateway_for_job(
         )
         return None
     profile_id = job.model_profile or "default"
-    messages = []
-    if job.skill_body:
-        messages.append({"role": "system", "content": job.skill_body})
-    messages.append({"role": "user", "content": job.prompt_text})
+    # Bound the prompt to the model's token window via the shared agent
+    # capabilities bundle (ContextCompactor + TokenWindowManager). The system
+    # turn is the skill body; the user turn is the task prompt.
+    from general_ludd.agents.capabilities import AgentCapabilities
+
+    caps = AgentCapabilities(primary_profile=profile_id)
+    system_prompt = job.skill_body or ""
+    history = [{"role": "user", "content": job.prompt_text}]
+    messages = [
+        m for m in caps.prepare_messages(system_prompt, history)
+        if m["content"].strip()
+    ]
     try:
         response = gateway.call_model(profile_id, messages=messages)
         return response.content
@@ -140,6 +148,23 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
     @application.get("/healthz")
     async def healthz() -> dict[str, str]:
         return {"status": "healthy"}
+
+    @application.post("/ping")
+    async def ping() -> dict[str, Any]:
+        # Liveness over the wire: a ping in, a correlated pong out. Uses the
+        # WorkerPingEvent/WorkerPongEvent taxonomy so peers can match request
+        # to response by correlation_id.
+        from general_ludd.worker.heartbeat import handle_ping, make_ping
+
+        ping_event = make_ping()
+        worker_id = os.environ.get("GLUDD_WORKER_ID", "worker")
+        pong = handle_ping(ping_event, worker_id=worker_id)
+        return {
+            "type": str(pong.type),
+            "worker_id": pong.payload["worker_id"],
+            "correlation_id": pong.correlation_id,
+            "ping_id": ping_event.event_id,
+        }
 
     @application.post("/jobs/execute")
     async def execute_job(job: JobSpec) -> dict[str, Any]:

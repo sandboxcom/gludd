@@ -12,10 +12,10 @@ from collections.abc import AsyncGenerator
 from pathlib import Path
 from typing import Any
 
-from sqlalchemy import event, text
+from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from general_ludd.db.models import Base, QueueModel
+from general_ludd.db.models import Base
 from general_ludd.schemas.queue import INITIAL_QUEUES
 
 logger = logging.getLogger(__name__)
@@ -128,30 +128,31 @@ async def ensure_tables(engine: AsyncEngine) -> None:
 
 
 async def seed_initial_queues(session: AsyncSession) -> int:
+    # Seed via QueueRepository so existence checks + inserts go through the
+    # same persistence boundary the rest of the app uses (no raw SQL here).
+    from general_ludd.db.repository import QueueRepository
+
+    repo = QueueRepository(session)
     count = 0
     for q in INITIAL_QUEUES:
-        existing = await session.execute(
-            text("SELECT queue_name FROM queues WHERE queue_name=:name"),
-            {"name": q.queue_name},
-        )
-        if existing.scalar() is None:
-            model = QueueModel(
-                queue_name=q.queue_name,
-                queue_enabled=q.queue_enabled,
-                priority_weight=q.priority_weight,
-                resource_profile=q.resource_profile,
-                hard_cap=q.hard_cap,
-                soft_cap=q.soft_cap,
-                pid_group=q.pid_group,
-                allowed_playbooks=json_dumps(q.allowed_playbooks),
-                allowed_model_profiles=json_dumps(q.allowed_model_profiles),
-                allowed_prompt_profiles=json_dumps(q.allowed_prompt_profiles),
-                required_molecule_coverage_profile=q.required_molecule_coverage_profile,
-                max_error_rate=q.max_error_rate,
-                retry_policy=json_dumps(q.retry_policy) if q.retry_policy else "{}",
-            )
-            session.add(model)
-            count += 1
+        if await repo.get_by_name(q.queue_name) is not None:
+            continue
+        await repo.create({
+            "queue_name": q.queue_name,
+            "queue_enabled": q.queue_enabled,
+            "priority_weight": q.priority_weight,
+            "resource_profile": q.resource_profile,
+            "hard_cap": q.hard_cap,
+            "soft_cap": q.soft_cap,
+            "pid_group": q.pid_group,
+            "allowed_playbooks": json_dumps(q.allowed_playbooks),
+            "allowed_model_profiles": json_dumps(q.allowed_model_profiles),
+            "allowed_prompt_profiles": json_dumps(q.allowed_prompt_profiles),
+            "required_molecule_coverage_profile": q.required_molecule_coverage_profile,
+            "max_error_rate": q.max_error_rate,
+            "retry_policy": json_dumps(q.retry_policy) if q.retry_policy else "{}",
+        })
+        count += 1
     if count:
         await session.flush()
         logger.info("Seeded %d initial queues", count)

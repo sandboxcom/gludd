@@ -12,6 +12,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 from general_ludd.db.models import (
     AgentMessageModel,
     AuditEventModel,
+    AuditEventType,
     BenchmarkResultModel,
     ProjectModel,
     PromptProfileModel,
@@ -302,6 +303,30 @@ class AuditEventRepository:
         self._session.add(row)
         await self._session.flush()
         return row
+
+    async def record_typed(
+        self,
+        event_type: AuditEventType,
+        entity_type: str,
+        entity_id: str,
+        project_id: str | None = None,
+        details: dict[str, Any] | None = None,
+    ) -> AuditEventModel:
+        """Record an audit event from the typed AuditEventType taxonomy.
+
+        Serializes ``details`` to JSON and delegates to :meth:`create`. This is
+        the typed entry point the event loop uses so audit rows carry values
+        from the AuditEventType enum rather than ad-hoc magic strings.
+        """
+        import json as _json
+
+        return await self.create(
+            event_type=event_type.value,
+            entity_type=entity_type,
+            entity_id=entity_id,
+            project_id=project_id,
+            details=_json.dumps(details) if details is not None else None,
+        )
 
     async def list_by_entity(self, entity_type: str, entity_id: str, limit: int = 50) -> list[AuditEventModel]:
         stmt = (

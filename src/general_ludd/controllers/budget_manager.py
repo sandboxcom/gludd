@@ -29,6 +29,24 @@ class BudgetManager:
         self._daily_spend: float = 0.0
         self._daily_start: float = time.monotonic()
         self._paused: bool = False
+        # API cost estimation + local-resource gating are delegated to the
+        # threshold-based BudgetController so this manager has a single source
+        # for both monetary and compute-pressure budget decisions.
+        from general_ludd.controllers.pid import BudgetController
+
+        self._controller = BudgetController(
+            default_run_budget_usd=(
+                daily_limit_usd if daily_limit_usd != float("inf") else 200.0
+            )
+        )
+
+    def estimate_call_cost(self, tokens: int, cost_per_1k: float) -> float:
+        """Estimate the USD cost of a model call (via BudgetController)."""
+        return self._controller.estimate_call_cost(tokens, cost_per_1k)
+
+    def check_local_model_resources(self, snapshot: Any) -> dict[str, bool | str]:
+        """Gate a local-model run on CPU/memory/disk/load pressure."""
+        return self._controller.check_local_model_resources(snapshot)
 
     def check_todo_budget(self, todo_id: str, estimated_cost: float) -> dict[str, Any]:
         current = self._todo_spend.get(todo_id, 0.0)

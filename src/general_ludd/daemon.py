@@ -888,6 +888,7 @@ def create_daemon_app(
         facts,
         filestore,
         integrity,
+        maintenance,
         mcp,
         messages,
         models,
@@ -920,5 +921,6 @@ def create_daemon_app(
     ansible.register(app, _daemon_state)
     slurm.register(app, _daemon_state)
     self_improve.register(app, _daemon_state)
+    maintenance.register(app, _daemon_state)
 
     return app

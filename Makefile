@@ -751,3 +751,9 @@ list-tests:
 
 dogfood:
 	@$(UV) run python scripts/dogfood.py
+
+audit-findings:
+	@$(UV) run python -c "from general_ludd.quality.preflight import run_completion_audit as a; r=a(); print('pct', r['completion_pct'], 'failed', r['failed_count']); [print(f['class_name'], f['file']) for f in r['findings']]"
+
+release-validate:
+	@$(UV) run python -c "import json; from general_ludd.runtime.release_orchestrator import build_and_validate_release as b; from general_ludd import __version__ as v; print(json.dumps(b(version=v, output_dir='dist', build_container=False), indent=2))"
