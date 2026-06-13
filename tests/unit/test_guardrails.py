@@ -71,9 +71,14 @@ class TestMakefileTargets:
     def test_make_ansible_syntax_passes(self):
         if not shutil.which("ansible-playbook"):
             pytest.skip("ansible-playbook not installed")
+        # `make ansible-syntax` runs `ansible-playbook --syntax-check` across all
+        # registered playbooks (~30), each paying ansible import overhead. Inside
+        # the full gate this test runs concurrently with the rest of the suite
+        # under xdist, so the wall-clock contends for CPU; 60s was too tight and
+        # flaked. 300s tolerates parallel-gate load while still catching a hang.
         result = subprocess.run(
             ["make", "ansible-syntax"],
-            capture_output=True, text=True, cwd=str(ROOT), timeout=60,
+            capture_output=True, text=True, cwd=str(ROOT), timeout=300,
         )
         assert result.returncode == 0, f"make ansible-syntax failed:\n{result.stderr}\n{result.stdout}"
 

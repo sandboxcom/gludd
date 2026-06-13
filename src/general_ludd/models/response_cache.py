@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -30,7 +31,18 @@ def _make_cache_key(
 class ModelResponseCache:
     def __init__(self, cache_dir: str | None = None) -> None:
         from diskcache import Cache
-        self._cache: Any = Cache(os.path.expanduser(cache_dir or DEFAULT_CACHE_DIR))
+
+        path = os.path.expanduser(cache_dir or DEFAULT_CACHE_DIR)
+        # Mitigation for diskcache CVE-2025-69872 (pickle deserialization →
+        # arbitrary code execution for anyone with WRITE access to the cache
+        # dir). diskcache has no fixed release; we cannot remove the pickle
+        # codepath, so we remove the precondition: create the cache directory
+        # owner-only (0o700) so no other local user can plant a malicious
+        # pickle. See SECURITY.md "Known dependency advisories".
+        os.makedirs(path, mode=0o700, exist_ok=True)
+        with contextlib.suppress(OSError):
+            os.chmod(path, 0o700)
+        self._cache: Any = Cache(path)
 
     def get(self, cache_key: str) -> dict[str, Any] | None:
         result: Any = self._cache.get(cache_key)

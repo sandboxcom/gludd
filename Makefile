@@ -216,7 +216,6 @@ collect-check:
 gate:
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
-	@echo "epoch $(shell date +%s)" >> .gate-status
 	@printf "lint " >> .gate-status
 	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
 		echo "PASS 0" >> .gate-status; \
@@ -237,6 +236,10 @@ gate:
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
 	@echo "---" >> .gate-status
+	@# Stamp the epoch at COMPLETION (executed via $$(...), not parse-time $(shell)).
+	@# The git-commit freshness window (30 min) must start when the gate FINISHES,
+	@# not when it began — the full gate can run longer than 30 min as the suite grows.
+	@echo "epoch $$(date +%s)" >> .gate-status
 	@cat .gate-status
 	@if [ -f .gate-failed ]; then rm -f .gate-failed; exit 1; fi
 	@echo "Gate: ALL PASSED"
@@ -320,13 +323,21 @@ status-snapshot:
 audit-evidence:
 	@echo "=== Evidence Audit ==="
 	@if [ ! -f TASKS.md ]; then echo "TASKS.md missing"; exit 1; fi
-	@grep -oP 'tests/[^ :]+::\S+' TASKS.md | sort -u > /tmp/gludd-evidence-tests.txt
+	@# Portable extraction (BSD grep on macOS has no -P): pull every
+	@# `tests/...::...` node id out of TASKS.md with stdlib re, de-duped.
+	@$(PYTHON) -c "import re; ids=sorted(set(re.findall(r'tests/[^\s:]+(?:::[A-Za-z0-9_]+)+', open('TASKS.md').read()))); open('/tmp/gludd-evidence-tests.txt','w').write('\n'.join(ids))"
 	@if [ ! -s /tmp/gludd-evidence-tests.txt ]; then \
-		echo "No test evidence references found in TASKS.md"; \
-		exit 0; \
+		echo "ERROR: no test-evidence node ids found in TASKS.md (extractor empty) — failing closed"; \
+		exit 1; \
 	fi
-	@echo "Running evidence tests..."
-	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) $(_XD) -q > /dev/null 2>&1
+	@echo "Running $$(wc -l < /tmp/gludd-evidence-tests.txt | tr -d ' ') evidence tests..."
+	@$(UV) run python -m pytest $$(cat /tmp/gludd-evidence-tests.txt) $(_XD) -q > /tmp/gludd-evidence-out.txt 2>&1; \
+	EXIT=$$?; \
+	if [ $$EXIT -ne 0 ]; then \
+		echo "ERROR: evidence tests FAILED (exit $$EXIT) — failing closed"; \
+		tail -20 /tmp/gludd-evidence-out.txt; \
+		exit 1; \
+	fi
 	@echo "=== Evidence Audit Complete ==="
 
 untrack:
@@ -658,8 +669,29 @@ sbom:
 	@mkdir -p dist
 	@$(UV) run cyclonedx-py environment .venv -o dist/sbom.json --of JSON
 
+# Informational full audit (shows every advisory, never gates).
 pip-audit:
 	@$(UV) run pip-audit --desc || true
+
+# Gating audit (W5.3): fail-closed on any NEW advisory. The two known,
+# adjudicated advisories are ignored with a documented rationale in
+# SECURITY.md "Known dependency advisories":
+#   - CVE-2025-69872 (diskcache): no upstream fix; mitigated by owner-only
+#     (0o700) cache dir in models/response_cache.py — attacker needs cache-dir
+#     write access, which the permission removes.
+#   - PYSEC-2026-196 (pip): build-time installer only; pip is NOT a runtime
+#     dependency (not in pyproject) and is absent from the shipped PyInstaller
+#     binary; fixed pip 26.1.2 is used in CI/dev.
+pip-audit-gate:
+	@echo "=== pip-audit (gating, W5.3) — fails on NEW advisories ==="
+	@$(UV) run pip-audit --desc \
+		--ignore-vuln CVE-2025-69872 \
+		--ignore-vuln PYSEC-2026-196
+	@echo "=== pip-audit-gate: no un-adjudicated advisories ==="
+
+pip-upgrade:
+	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run python -m pip install --upgrade 'pip>=26.1.2'
+	@$(UV) run python -m pip --version
 
 security: sast sbom pip-audit
 
@@ -713,3 +745,9 @@ bootstrap-skills:
 
 analyze-jsonl:
 	@python3 /tmp/analyze_tools.py
+
+list-tests:
+	@find tests -name 'test_*.py' -type f | sort
+
+dogfood:
+	@$(UV) run python scripts/dogfood.py

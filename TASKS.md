@@ -143,3 +143,87 @@ OPERATOR PRECONDITIONS (must happen before any push to the public mirror; out of
 - [x] W5.4 — mypy 12 -> 0; MYPY_MAX lowered 13 -> 0 in the single Makefile var (gate + validate both use it): annotations/casts on dashboard_data, repo_map, tool_loop, secrets/manager, db/session, routers/projects, reviewer variable rename; otel_bridge optional-extra imports get type:ignore[import-not-found] with rationale (runtime-guarded). Gate typecheck step + validate fixed for the 0-error grep edge case | evidence: make typecheck "Success: no issues found in 210 source files"; make gate "typecheck PASS 0" 526104b
 - [x] W5.5 — README claims measured: hardcoded test/mypy/coverage/hook counts deleted and replaced with a "single source of truth" pointer to `make gate` / `.gate-status`; preflight `check_readme_no_hardcoded_metrics` greps README for re-introduced metric numbers and fails the gate if any return | evidence: tests/unit/test_status_snapshot.py::TestReadmeNoHardcodedMetrics 5 passed 526104b
 - [x] W5.6 — worker /jobs/* require PSK auth: `worker/app.py` adds a GLUDD_PSK middleware mirroring the daemon — no/wrong Bearer token -> 401 on all /jobs/* (auth fires BEFORE the W3.8 501 stubs); /healthz public; unset PSK disables auth for back-compat | evidence: tests/unit/test_w5_6_worker_auth.py 9 passed; tests/unit/test_worker.py + tests/unit/test_w3_8_worker_501.py still green 526104b
+
+## Phase W3.6 — Per-item proof table (V2.2; GLM_REMEDIATION_GUIDE_3.md §5 W3.6)
+
+Every G/S/F/M item re-proven by running its NAMED acceptance test via
+`make test-specific` this session (2026-06-13, HEAD 8eea6f0). Each row =
+proof status + the test path that proves it. Five batches were run; all
+green (58 + 37 + 100 + 87 + 238 + 5 = 525 proof assertions, 0 fail).
+
+### Spine G0–G7 (batch: 58 passed)
+
+| ID | Proof | Status |
+|----|-------|--------|
+| G0 daemon starts configured | tests/unit/test_daemon_launch_config.py | PASS |
+| G1 session-per-tick + crash-proof phases + death log | tests/unit/test_event_loop_session_per_tick.py | PASS |
+| G2 POST /api/todos persists; reads from DB | tests/e2e/test_todos_persistence.py | PASS |
+| G3 runner resolves real playbooks; no-raise unknown | tests/unit/test_runner_resolution.py | PASS |
+| G4 real model call → parsed output → applied edits | tests/unit/test_execution_engine.py | PASS |
+| G5 real ReturnReviewer; failure explicit | tests/unit/test_return_review_wired.py | PASS |
+| G6 work lands in git (branch+commit+SHA) | tests/unit/test_execution_git_delivery.py | PASS |
+| G7 full-pipeline e2e (the proof) | tests/integration/test_full_pipeline_e2e.py | PASS |
+
+### Secondary S1–S20 (batches: 37 + 100 + 87 passed)
+
+| ID | Proof | Status |
+|----|-------|--------|
+| S1 router DB sessions + benchmark repo | tests/unit/test_benchmark_repo_session_factory.py | PASS |
+| S2 benchmark recorder feeds router | tests/unit/test_recorder_coverage.py | PASS |
+| S3 self-improve persists todos | tests/integration/test_w3_7_self_improve_persist.py | PASS |
+| S4 worker endpoints real or 501 | tests/unit/test_w3_8_worker_501.py | PASS |
+| S5 lease acquire + reclaim (H15) | tests/e2e/test_obj04_event_loop.py | PASS |
+| S6 budget guard wired | tests/unit/test_budget_wiring.py | PASS |
+| S7 metrics fed by gateway | tests/unit/test_w3_10_metrics_gateway.py | PASS |
+| S8 projects persist + clone workspace | tests/unit/test_project_workspace_clone.py | PASS |
+| S9 skills discovery/catalog | tests/unit/test_skills_catalog.py | PASS |
+| S10 prompts production render | tests/unit/test_prompt_system_wiring.py | PASS |
+| S11 MCP wired (client/registry params) | tests/unit/test_mcp_wiring.py | PASS |
+| S12 secrets honest auto mode + round-trip | tests/unit/test_secrets_auto_mode.py | PASS |
+| S13 CLI/API code parity | tests/unit/test_w3_13_cli_code_parity.py | PASS |
+| S14 DB sqlite-only enforced | tests/unit/test_single_worker_sqlite.py | PASS |
+| S15 compute deploy/destroy registry | tests/unit/test_deployment_registry.py | PASS |
+| S16 honest degradation (no empty-on-exception) | tests/unit/test_audit_gap_fixes.py | PASS |
+| S17 reload de-theatered + worktree monitor | tests/unit/test_w3_12_reload.py + tests/unit/test_worktree_monitor_construction.py | PASS |
+| S18 preflight honesty (unknown → fail) | tests/unit/test_preflight.py | PASS |
+| S19 startup surface + /readyz + to_thread | tests/unit/test_w3_4_readyz.py + tests/unit/test_w3_3_asyncio_thread.py | PASS |
+| S20 small honesty fixes (M1/M6/M10/M12/M13) | tests/unit/test_m1_ansible_events.py, test_m6_refresh_loop_runner.py, test_m10_integrity_approvals.py, test_m12_pid_active_jobs.py, test_m13_config_sections.py | PASS |
+
+### Features F1–F7 (batch: 238 passed; F1/F3 new proofs: 5 passed)
+
+| ID | Proof | Status |
+|----|-------|--------|
+| F1 PR delivery via gh | tests/unit/test_w3_6_f_proofs.py::TestF1PRDelivery | PASS |
+| F2 MCP tools in model calls | tests/e2e/test_mcp_integration.py | PASS |
+| F3 GitHub issues → todos | tests/unit/test_w3_6_f_proofs.py::TestF3IssueIngestion | PASS |
+| F4 run-history/artifact (plan artifact) | tests/unit/test_plan_artifact.py | PASS |
+| F5 per-todo/daily budget caps | tests/unit/test_budget_caps.py | PASS |
+| F6 model failover chain | tests/unit/test_model_gateway_fallback.py + tests/unit/test_r2_5a_profiles_failover.py | PASS |
+| F7 TUI dashboard on real data | tests/unit/test_tui_view_actions.py | PASS |
+
+### Original-guide M1–M15 (covered across the batches above)
+
+| ID | Proof | Status |
+|----|-------|--------|
+| M1 ansible events real | tests/unit/test_m1_ansible_events.py | PASS |
+| M2 deployments listing | tests/unit/test_deployment_registry.py::TestRegistryPersistence::test_list_deployments | PASS |
+| M3 inject_auth_env / infra | tests/unit/test_infra_compute.py | PASS |
+| M4 slurm error not empty-success | tests/unit/test_slurm_daemon_endpoints.py | PASS |
+| M5/M11 CLI ↔ code endpoint parity | tests/unit/test_w3_13_cli_code_parity.py + tests/unit/test_code_intelligence.py | PASS |
+| M6 refresh targets loop runner | tests/unit/test_m6_refresh_loop_runner.py | PASS |
+| M7 worktree/reload de-theatered | tests/unit/test_w3_12_reload.py | PASS |
+| M8/M9 sqlite-only clamp + to_thread | tests/unit/test_single_worker_sqlite.py + tests/unit/test_w3_3_asyncio_thread.py | PASS |
+| M10 integrity HMAC + approvals | tests/unit/test_m10_integrity_approvals.py | PASS |
+| M12 pid active_jobs real + cap | tests/unit/test_m12_pid_active_jobs.py | PASS |
+| M13 config sections consumed/deleted | tests/unit/test_m13_config_sections.py | PASS |
+| M14 one select_project per tick | tests/integration/test_w3_14_single_project_per_tick.py | PASS |
+| M15 no random digest (real sha) | tests/unit/test_runtime.py | PASS |
+
+- [ ] W3.6 — V2.2 per-item proof table appended (tick finalized with commit hash in the follow-up docs commit)
+
+## Phase W5.3 residual — CVE adjudication (2026-06-13)
+
+`make pip-audit` reports two advisories; both adjudicated, neither blocks ship:
+
+- [ ] W5.3-CVE diskcache CVE-2025-69872 (tick finalized with commit hash in the follow-up docs commit)
+- [ ] W5.3-CVE pip PYSEC-2026-196 (tick finalized with commit hash in the follow-up docs commit)
