@@ -311,6 +311,39 @@ class PromptProfileModel(Base):
     updated_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
 
+class AgentMessageModel(Base):
+    """Message-queue row for inter-agent / inter-role coordination.
+
+    A message is addressed to a single ``recipient`` (a role/agent name) or to
+    the literal string ``"broadcast"`` to reach every recipient. ``read_at`` is
+    NULL until acked; ``ttl_seconds`` (when set) makes the row eligible for
+    purge once ``created_at + ttl_seconds`` is in the past.
+    """
+
+    __tablename__ = "agent_messages"
+
+    id: Mapped[str] = mapped_column(
+        String(40), primary_key=True, default=lambda: f"MSG-{uuid4().hex[:12].upper()}"
+    )
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
+    sender: Mapped[str] = mapped_column(String(128), nullable=False)
+    recipient: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    topic: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="normal")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+    read_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    ttl_seconds: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    __table_args__ = (
+        Index("ix_agent_messages_recipient_read", "recipient", "read_at"),
+    )
+
+
 class BenchmarkResultModel(Base):
     __tablename__ = "benchmark_results"
 

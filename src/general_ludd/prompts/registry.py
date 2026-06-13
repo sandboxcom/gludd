@@ -92,3 +92,47 @@ def get_template_name_for_work_type(work_type: str) -> str:
     if work_type in _WORK_TYPE_TEMPLATE_MAP:
         return _WORK_TYPE_TEMPLATE_MAP[work_type]
     return _WORK_TYPE_TEMPLATE_MAP.get(work_type, "implementation.md.j2")
+
+
+def render_message_queue_section(
+    role: str,
+    unread_count: int = 0,
+    senders: list[str] | None = None,
+    enabled: bool = False,
+) -> str:
+    """Render the message-queue + facts availability blurb for a dispatched agent.
+
+    Part 4 of the facts/MQ backbone: when an agent/model is dispatched, its
+    prompt is told the message queue and live facts are available, and how many
+    messages are waiting. Gated behind ``enabled`` — when False, returns the
+    empty string so prompts without MQ context are byte-for-byte unchanged.
+
+    Parameters
+    ----------
+    role:
+        The agent/role name the prompt is addressed to (e.g. ``coder``).
+    unread_count:
+        Number of unread messages waiting for this role.
+    senders:
+        Optional distinct sender names contributing to those unread messages.
+    enabled:
+        Feature flag. When False (default) this returns ``""``.
+    """
+    if not enabled:
+        return ""
+    mail = (
+        "You have 1 unread message"
+        if unread_count == 1
+        else f"You have {unread_count} unread message(s)"
+    )
+    from_clause = ""
+    if senders:
+        uniq = sorted({s for s in senders if s})
+        if uniq:
+            from_clause = " from " + ", ".join(uniq)
+    return (
+        f"Message queue: you are agent '{role}'. {mail}{from_clause}. "
+        "To read them, the playbook runs gludd_message(receive). To coordinate, "
+        "you may send messages to other agents/roles via the message queue. "
+        "Live facts (work/todo/model/history stats) are available via gludd_facts."
+    )

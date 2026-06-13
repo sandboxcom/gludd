@@ -198,6 +198,40 @@ class EventLoop:
         profile_name = _safe_str(todo, "prompt_profile")
         return _resolve_prompt_text_static(self._prompt_registry, profile_name)
 
+    async def _append_message_queue_section(
+        self, prompt_text: str | None, todo: Any, project_id: str | None
+    ) -> str | None:
+        """PART 4: tell a dispatched agent the MQ + facts are available.
+
+        Gated behind config flag ``message_queue_prompt`` (default off) so prompts
+        without MQ context are byte-for-byte unchanged. The agent "role" is the
+        todo's assigned_agent, falling back to its work_type.
+        """
+        if not self.config.get("message_queue_prompt"):
+            return prompt_text
+        role = _safe_str(todo, "assigned_agent") or _safe_str(todo, "work_type") or "agent"
+        unread = 0
+        senders: list[str] = []
+        factory = self._session_factory
+        if factory is not None:
+            try:
+                from general_ludd.db.repository import AgentMessageRepository
+                async with factory() as session:
+                    repo = AgentMessageRepository(session)
+                    msgs = await repo.inbox(role, unread_only=True, project_id=project_id)
+                    unread = len(msgs)
+                    senders = [m.sender for m in msgs]
+            except Exception:
+                unread = 0
+                senders = []
+        from general_ludd.prompts.registry import render_message_queue_section
+        section = render_message_queue_section(
+            role=role, unread_count=unread, senders=senders, enabled=True
+        )
+        if not section:
+            return prompt_text
+        return f"{prompt_text}\n\n{section}" if prompt_text else section
+
     async def _resolve_adaptive_prompt(
         self, todo: Any, default_model_profile: str = "default"
     ) -> tuple[str | None, str | None, Any | None]:
@@ -671,6 +705,9 @@ class EventLoop:
         )
         if prompt_text is None:
             prompt_text = self._resolve_prompt_text(todo)
+        prompt_text = await self._append_message_queue_section(
+            prompt_text, todo, project_id_val,
+        )
         skill_body = self._resolve_skill_body(todo)
         shared_vars = await self._load_shared_vars(project_id_val)
         if self._runner is not None:

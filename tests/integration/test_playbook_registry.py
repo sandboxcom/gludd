@@ -136,6 +136,8 @@ class TestCollectionStructure:
         "gludd_skill",
         "gludd_mcp_tool",
         "gludd_agent_run",
+        "gludd_facts",
+        "gludd_message",
     ])
     def test_module_file_exists(self, module_name: str):
         module_path = self.COLLECTION_DIR / "plugins" / "modules" / f"{module_name}.py"
@@ -213,6 +215,69 @@ class TestModuleSecurityProperties:
         assert "supports_check_mode" in content, (
             f"{module_name}: missing supports_check_mode declaration"
         )
+
+
+class TestFactsAndMessageModules:
+    """Facts + message-queue Ansible modules (gludd_facts, gludd_message).
+
+    Covers import, DOCUMENTATION/EXAMPLES/RETURN presence, argument_spec, PSK
+    no_log, and check-mode support.
+    """
+
+    MODULES_DIR = (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent"
+        / "plugins" / "modules"
+    )
+
+    def _read_module(self, name: str) -> str:
+        path = self.MODULES_DIR / f"{name}.py"
+        assert path.is_file(), f"{name}.py missing"
+        return path.read_text()
+
+    @pytest.mark.parametrize("module_name", ["gludd_facts", "gludd_message"])
+    def test_module_exists_and_importable(self, module_name: str):
+        import importlib.util
+
+        path = self.MODULES_DIR / f"{module_name}.py"
+        assert path.is_file(), f"{module_name}.py missing"
+        spec = importlib.util.spec_from_file_location(module_name, str(path))
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        # Loads the module body (its main() only runs under __main__).
+        spec.loader.exec_module(mod)
+        assert hasattr(mod, "main")
+
+    @pytest.mark.parametrize("module_name", ["gludd_facts", "gludd_message"])
+    def test_has_doc_blocks(self, module_name: str):
+        content = self._read_module(module_name)
+        assert "DOCUMENTATION:" in content
+        assert "EXAMPLES:" in content
+        assert "RETURN:" in content
+
+    @pytest.mark.parametrize("module_name", ["gludd_facts", "gludd_message"])
+    def test_argument_spec_and_check_mode(self, module_name: str):
+        content = self._read_module(module_name)
+        assert "argument_spec=dict(" in content
+        assert "supports_check_mode=True" in content
+
+    @pytest.mark.parametrize("module_name", ["gludd_facts", "gludd_message"])
+    def test_psk_no_log(self, module_name: str):
+        content = self._read_module(module_name)
+        assert 'psk=dict(type="str", default="", no_log=True)' in content
+
+    def test_message_body_no_log(self):
+        """gludd_message body may carry sensitive content and must be no_log."""
+        content = self._read_module("gludd_message")
+        assert 'body=dict(type="str", default="", no_log=True)' in content
+
+    def test_facts_returns_ansible_facts(self):
+        content = self._read_module("gludd_facts")
+        assert '"ansible_facts": {"gludd"' in content
+
+    def test_message_states(self):
+        content = self._read_module("gludd_message")
+        assert 'choices=["send", "receive", "ack"]' in content
+        assert '"gludd_inbox"' in content
 
 
 class TestSkillRenderer:

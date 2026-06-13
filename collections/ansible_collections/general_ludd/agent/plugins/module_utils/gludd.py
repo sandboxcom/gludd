@@ -95,6 +95,9 @@ class GluddClient:
         headers: dict[str, str] = {"Content-Type": "application/json", "Accept": "application/json"}
         psk = self._psk or os.environ.get("GLUDD_PSK", "")
         if psk:
+            # The daemon middleware authenticates on "Authorization: Bearer <psk>".
+            # X-PSK is also sent for any future/legacy header-based check.
+            headers["Authorization"] = "Bearer " + psk
             headers["X-PSK"] = psk
         return headers
 

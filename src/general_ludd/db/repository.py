@@ -10,6 +10,7 @@ from sqlalchemy import select
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker
 
 from general_ludd.db.models import (
+    AgentMessageModel,
     AuditEventModel,
     BenchmarkResultModel,
     ProjectModel,
@@ -141,6 +142,43 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         return result.scalar() or 0
 
+    async def status_summary(self, project_id: str | None = None) -> dict[str, Any]:
+        """Aggregate todo facts: counts by status / queue / work_type, oldest age,
+        backlog size. Reused by the /api/facts aggregation endpoint."""
+        stmt = select(TodoModel)
+        if project_id is not None:
+            stmt = stmt.where(TodoModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        by_status: dict[str, int] = {}
+        by_queue: dict[str, int] = {}
+        by_work_type: dict[str, int] = {}
+        oldest_created: datetime | None = None
+        for r in rows:
+            by_status[r.status] = by_status.get(r.status, 0) + 1
+            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
+            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
+            created = r.created_at
+            if created is not None:
+                if created.tzinfo is None:
+                    created = created.replace(tzinfo=UTC)
+                if oldest_created is None or created < oldest_created:
+                    oldest_created = created
+        oldest_age_seconds: float | None = None
+        if oldest_created is not None:
+            oldest_age_seconds = (datetime.now(UTC) - oldest_created).total_seconds()
+        backlog = by_status.get(TodoStatus.BACKLOG.value, 0) + by_status.get(
+            TodoStatus.QUEUED.value, 0
+        )
+        return {
+            "total": len(rows),
+            "by_status": by_status,
+            "by_queue": by_queue,
+            "by_work_type": by_work_type,
+            "oldest_age_seconds": oldest_age_seconds,
+            "backlog_size": backlog,
+        }
+
     async def transition(self, todo_id: str, new_status: TodoStatus, expected_version: int) -> TodoModel:
         todo = await self.get_by_id(todo_id)
         if todo is None:
@@ -172,6 +210,61 @@ class TaskReturnRepository:
         stmt = select(TaskReturnModel).where(TaskReturnModel.return_id == return_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
+
+    async def work_summary(self, project_id: str | None = None) -> dict[str, Any]:
+        """In-flight/claimed task-return counts by status / queue / work_type.
+
+        Task returns represent dispatched work; this is the "work" facet of
+        /api/facts. Reused, not duplicated, by the facts endpoint."""
+        stmt = select(TaskReturnModel)
+        if project_id is not None:
+            stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        by_status: dict[str, int] = {}
+        by_queue: dict[str, int] = {}
+        by_work_type: dict[str, int] = {}
+        for r in rows:
+            by_status[r.status] = by_status.get(r.status, 0) + 1
+            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
+            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
+        return {
+            "total": len(rows),
+            "by_status": by_status,
+            "by_queue": by_queue,
+            "by_work_type": by_work_type,
+        }
+
+    async def history_summary(
+        self, project_id: str | None = None, recent_limit: int = 10
+    ) -> dict[str, Any]:
+        """Recent returns + success/failure rates (exit_code 0 == success)."""
+        stmt = select(TaskReturnModel)
+        if project_id is not None:
+            stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        stmt = stmt.order_by(TaskReturnModel.created_at.desc())
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        total = len(rows)
+        successes = sum(1 for r in rows if r.exit_code == 0)
+        failures = total - successes
+        recent = [
+            {
+                "return_id": r.return_id,
+                "playbook": r.playbook,
+                "status": r.status,
+                "exit_code": r.exit_code,
+                "created_at": str(r.created_at) if r.created_at else None,
+            }
+            for r in rows[:recent_limit]
+        ]
+        return {
+            "total_returns": total,
+            "success_count": successes,
+            "failure_count": failures,
+            "success_rate": (successes / total) if total else 0.0,
+            "recent": recent,
+        }
 
     async def claim_unreviewed(self, project_id: str | None = None, limit: int = 10) -> list[TaskReturnModel]:
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
@@ -493,3 +586,116 @@ class ProjectRepository:
         if project is not None:
             project.active = False
             await self._session.flush()
+
+
+BROADCAST_RECIPIENT = "broadcast"
+
+
+class AgentMessageRepository:
+    """Persistence for the inter-agent message queue (AgentMessageModel)."""
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def send(self, data: dict[str, Any]) -> AgentMessageModel:
+        row = AgentMessageModel(**data)
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def get_by_id(self, message_id: str) -> AgentMessageModel | None:
+        stmt = select(AgentMessageModel).where(AgentMessageModel.id == message_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def inbox(
+        self,
+        recipient: str,
+        unread_only: bool = True,
+        include_broadcast: bool = True,
+        project_id: str | None = None,
+        limit: int = 100,
+    ) -> list[AgentMessageModel]:
+        """Return messages addressed to ``recipient`` (and broadcasts).
+
+        Expired messages (past their ttl) are never returned.
+        """
+        from sqlalchemy import or_
+
+        target: Any
+        if include_broadcast:
+            target = AgentMessageModel.recipient.in_([recipient, BROADCAST_RECIPIENT])
+        else:
+            target = AgentMessageModel.recipient == recipient
+        stmt = select(AgentMessageModel).where(target)
+        if unread_only:
+            stmt = stmt.where(AgentMessageModel.read_at.is_(None))
+        if project_id is not None:
+            stmt = stmt.where(
+                or_(
+                    AgentMessageModel.project_id == project_id,
+                    AgentMessageModel.project_id.is_(None),
+                )
+            )
+        stmt = stmt.order_by(AgentMessageModel.created_at.asc()).limit(limit)
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        now = datetime.now(UTC)
+        return [r for r in rows if not self._is_expired(r, now)]
+
+    async def ack(self, message_id: str) -> AgentMessageModel | None:
+        """Mark a message read. Returns the row, or None if it does not exist."""
+        row = await self.get_by_id(message_id)
+        if row is None:
+            return None
+        if row.read_at is None:
+            row.read_at = datetime.now(UTC)
+            await self._session.flush()
+        return row
+
+    async def purge_expired(self) -> int:
+        """Delete every message whose ttl has elapsed. Returns the count purged."""
+        stmt = select(AgentMessageModel).where(AgentMessageModel.ttl_seconds.isnot(None))
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        now = datetime.now(UTC)
+        purged = 0
+        for row in rows:
+            if self._is_expired(row, now):
+                await self._session.delete(row)
+                purged += 1
+        if purged:
+            await self._session.flush()
+        return purged
+
+    async def unread_counts(self, project_id: str | None = None) -> dict[str, int]:
+        """Per-recipient unread counts (excludes expired). Used by /api/facts."""
+        stmt = select(AgentMessageModel).where(AgentMessageModel.read_at.is_(None))
+        if project_id is not None:
+            from sqlalchemy import or_
+            stmt = stmt.where(
+                or_(
+                    AgentMessageModel.project_id == project_id,
+                    AgentMessageModel.project_id.is_(None),
+                )
+            )
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        now = datetime.now(UTC)
+        counts: dict[str, int] = {}
+        for row in rows:
+            if self._is_expired(row, now):
+                continue
+            counts[row.recipient] = counts.get(row.recipient, 0) + 1
+        return counts
+
+    @staticmethod
+    def _is_expired(row: AgentMessageModel, now: datetime) -> bool:
+        if row.ttl_seconds is None:
+            return False
+        created = row.created_at
+        if created is None:
+            return False
+        if created.tzinfo is None:
+            created = created.replace(tzinfo=UTC)
+        return (now - created).total_seconds() > row.ttl_seconds
