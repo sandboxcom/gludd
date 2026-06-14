@@ -1,0 +1,21 @@
+---
+# sprint_plan role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-sprint-plan"
+
+# Sprint name
+sprint_name: "Sprint-1"
+
+# Explicit sprint capacity in points. 0 = derive from history velocity.
+sprint_capacity: 0
+
+# SAFE-BY-DEFAULT: do NOT write sprint selection back to gludd_db.
+write_back: false
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

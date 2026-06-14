@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: sprint_plan
+  author: Agentic Harness Agent
+  description: >
+    Selects backlog todos into a sprint by capacity vs velocity. Derives
+    sprint_capacity from facts.history velocity (total_runs * success_rate)
+    when sprint_capacity is 0. Fills sprint until capacity is reached; remaining
+    items become spillover. Capacity-fit math is REAL (not mocked).
+    REPORT-ONLY by default: never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

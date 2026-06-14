@@ -1,0 +1,15 @@
+---
+# sprint_board_report role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-sprint-board-report"
+
+# Sprint name for the board header
+sprint_name: "Sprint-1"
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

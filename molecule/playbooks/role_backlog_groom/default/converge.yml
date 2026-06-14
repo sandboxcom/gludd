@@ -1,0 +1,18 @@
+---
+# Run the REAL backlog_groom role against the mock daemon.
+- name: Converge - run backlog_groom role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8819', true) }}"
+  tasks:
+    - name: Invoke backlog_groom (max_split_points=8, write_back=false)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.backlog_groom
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-backlog-groom-{{ mock_port }}"
+        max_split_points: 8
+        write_back: false

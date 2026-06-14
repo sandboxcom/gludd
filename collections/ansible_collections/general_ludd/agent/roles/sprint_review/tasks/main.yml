@@ -1,0 +1,144 @@
+---
+# sprint_review role — completed-work demo summary from history + traces
+#
+# Uses gludd_facts.history + gludd_facts.traces to produce a sprint review
+# with completed[], highlights[], and demo_notes. REPORT-ONLY: never mutates.
+
+- name: Gather live daemon facts for sprint review
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract history + traces from facts ───────────────────────────────────────
+
+- name: Extract history from live facts
+  ansible.builtin.set_fact:
+    _sr_total_runs: "{{ live_facts.ansible_facts.gludd.history.total_runs | default(0) | int }}"
+    _sr_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+    _sr_failures: "{{ live_facts.ansible_facts.gludd.history.failures | default(0) | int }}"
+    _sr_todos: "{{ live_facts.ansible_facts.gludd.todos['items'] | default([]) }}"
+    _sr_done_count: "{{ live_facts.ansible_facts.gludd.todos.done | default(0) | int }}"
+    _sr_traces: "{{ live_facts.ansible_facts.gludd.traces.recent | default([]) }}"
+    _sr_trace_count: "{{ live_facts.ansible_facts.gludd.traces.count | default(0) | int }}"
+    _sr_by_phase: "{{ live_facts.ansible_facts.gludd.traces.by_phase | default({}) }}"
+
+# ── Build completed[] from history ────────────────────────────────────────────
+
+- name: Build completed items list from history facts
+  ansible.builtin.set_fact:
+    _sr_completed:
+      - "{{ _sr_total_runs }} total work runs completed in this sprint period"
+      - "{{ (_sr_total_runs | int - _sr_failures | int) }} successful runs ({{ (_sr_success_rate * 100) | round(1) }}% success rate)"
+      - "{{ _sr_done_count }} backlog items moved to done"
+      - "{{ _sr_trace_count }} execution traces recorded"
+
+# ── Build highlights[] from traces ────────────────────────────────────────────
+
+- name: Build highlights from recent traces
+  ansible.builtin.set_fact:
+    _sr_highlights: >-
+      {%- set hl = [] -%}
+      {%- for trace in _sr_traces -%}
+        {%- set _ = hl.append({
+          'trace_id': trace.trace_id | default('unknown'),
+          'todo_id': trace.todo_id | default('unknown'),
+          'work_type': trace.work_type | default('code'),
+          'cost_usd': trace.total_cost_usd | default(0),
+          'tokens': trace.total_tokens | default(0),
+          'success_rate': trace.success_rate | default(0),
+          'span_count': trace.span_count | default(0)
+        }) -%}
+      {%- endfor -%}
+      {%- if hl | length == 0 -%}
+        {%- set _ = hl.append({'note': 'No individual traces recorded yet — see history for aggregate counts'}) -%}
+      {%- endif -%}
+      {{ hl }}
+
+# ── Build demo notes from by_phase aggregate ─────────────────────────────────
+
+- name: Build demo notes from phase summary
+  ansible.builtin.set_fact:
+    _sr_demo_notes: >-
+      {%- set notes = [] -%}
+      {%- for phase, data in _sr_by_phase.items() -%}
+        {%- set _ = notes.append(
+          phase ~ ': '
+          ~ data.span_count | default(0) | string ~ ' spans, '
+          ~ data.total_tokens | default(0) | string ~ ' tokens, '
+          ~ '$' ~ (data.total_cost_usd | default(0) | float | round(4)) | string
+        ) -%}
+      {%- endfor -%}
+      {%- if notes | length == 0 -%}
+        {%- set _ = notes.append('No phase data recorded — run work items to generate trace data') -%}
+      {%- endif -%}
+      {{ notes }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON sprint review artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'sprint_review',
+        'status': 'completed',
+        'sprint_name': sprint_name,
+        'completed': _sr_completed,
+        'highlights': _sr_highlights,
+        'demo_notes': _sr_demo_notes,
+        'history': {
+          'total_runs': _sr_total_runs | int,
+          'success_rate': _sr_success_rate | float,
+          'failures': _sr_failures | int,
+          'done_count': _sr_done_count | int
+        },
+        'traces': {
+          'count': _sr_trace_count | int,
+          'by_phase': _sr_by_phase
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/sprint_review.json"
+    mode: "0644"
+
+- name: Write markdown sprint review artifact
+  ansible.builtin.copy:
+    content: |
+      # Sprint Review: {{ sprint_name }}
+
+      ## Completed
+
+      {% for item in _sr_completed %}
+      - {{ item }}
+      {% endfor %}
+
+      ## Highlights (from execution traces)
+
+      {% for item in _sr_highlights %}
+      - {{ item if item is string else item | to_nice_json }}
+      {% endfor %}
+
+      ## Demo Notes (by phase)
+
+      {% for note in _sr_demo_notes %}
+      - {{ note }}
+      {% endfor %}
+
+      ---
+      *Generated by general_ludd.agent.sprint_review — report-only.*
+    dest: "{{ artifact_dir }}/sprint_review.md"
+    mode: "0644"
+
+- name: Report sprint review completion
+  ansible.builtin.debug:
+    msg: >-
+      Sprint review: sprint={{ sprint_name }}
+      completed={{ _sr_completed | length }}
+      highlights={{ _sr_highlights | length }}
+      demo_notes={{ _sr_demo_notes | length }}

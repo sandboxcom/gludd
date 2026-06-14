@@ -1,0 +1,82 @@
+---
+- name: Verify - story_create wrote story artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8817', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8817', true) }}.pid"
+    artifact: "/tmp/gludd-story-create-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8817', true) }}/story_create.json"
+    artifact_md: "/tmp/gludd-story-create-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8817', true) }}/story_create.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity and status
+      ansible.builtin.assert:
+        that:
+          - result.role == 'story_create'
+          - result.status == 'completed'
+        fail_msg: "story_create artifact wrong role/status: {{ result }}"
+        success_msg: "story_create role={{ result.role }} status={{ result.status }}"
+
+    - name: Assert title is present and non-empty
+      ansible.builtin.assert:
+        that:
+          - result.title is defined
+          - result.title | length > 0
+        fail_msg: "story_create title missing or empty"
+        success_msg: "title={{ result.title }}"
+
+    - name: Assert narrative is present and contains story structure
+      ansible.builtin.assert:
+        that:
+          - result.narrative is defined
+          - result.narrative | length > 0
+        fail_msg: "story_create narrative missing"
+        success_msg: "narrative non-empty"
+
+    - name: Assert acceptance_criteria is a non-empty list
+      ansible.builtin.assert:
+        that:
+          - result.acceptance_criteria is defined
+          - result.acceptance_criteria | list | length >= 1
+        fail_msg: "acceptance_criteria missing or empty"
+        success_msg: "acceptance_criteria={{ result.acceptance_criteria | length }} items"
+
+    - name: Assert write_back=false (no todo created in report-only mode)
+      ansible.builtin.assert:
+        that:
+          - result.write_back == false
+        fail_msg: "Expected write_back=false in artifact"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-story-create-{{ mock_port }}"
+        state: absent
+      failed_when: false

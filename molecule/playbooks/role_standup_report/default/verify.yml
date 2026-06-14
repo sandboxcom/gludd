@@ -1,0 +1,89 @@
+---
+- name: Verify - standup_report surfaced seeded blocker from /api/messages
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8821', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8821', true) }}.pid"
+    artifact: "/tmp/gludd-standup-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8821', true) }}/standup_report.json"
+    artifact_md: "/tmp/gludd-standup-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8821', true) }}/standup_report.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'standup_report'
+          - result.status == 'completed'
+        fail_msg: "standup_report artifact wrong: {{ result }}"
+
+    - name: Assert done[] is non-empty (from history)
+      ansible.builtin.assert:
+        that:
+          - result.done is defined
+          - result.done | length >= 1
+        fail_msg: "done list empty"
+        success_msg: "done={{ result.done | length }} items"
+
+    - name: Assert in_progress[] is non-empty (from work facts)
+      ansible.builtin.assert:
+        that:
+          - result.in_progress is defined
+          - result.in_progress | length >= 1
+        fail_msg: "in_progress list empty"
+
+    - name: Assert blockers[] is non-empty (seeded message from /api/messages)
+      ansible.builtin.assert:
+        that:
+          - result.blockers is defined
+          - result.blockers | length >= 1
+        fail_msg: "blockers list empty — expected seeded MSG-MOCK-IN-1"
+        success_msg: "blockers={{ result.blockers | length }} item(s) surfaced"
+
+    - name: Assert history context from seeded facts (total_runs=25)
+      ansible.builtin.assert:
+        that:
+          - result.history.total_runs | int == 25
+          - result.history.success_rate | float == 0.92
+        fail_msg: "history context wrong: {{ result.history }}"
+        success_msg: "history total_runs={{ result.history.total_runs }}"
+
+    - name: Assert message_count reflects seeded inbox (at least 1)
+      ansible.builtin.assert:
+        that:
+          - result.message_count | int >= 1
+        fail_msg: "message_count should be >= 1 (seeded MSG-MOCK-IN-1), got {{ result.message_count }}"
+        success_msg: "message_count={{ result.message_count }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-standup-report-{{ mock_port }}"
+        state: absent
+      failed_when: false

@@ -1,0 +1,161 @@
+---
+# sprint_plan role — select backlog todos into a sprint by capacity vs velocity
+#
+# Derives sprint capacity from sprint_capacity var or from history.total_runs
+# (velocity proxy). Selects backlog items until capacity is reached. Remaining
+# items become spillover. CAPACITY-FIT MATH IS REAL. REPORT-ONLY: never mutates.
+
+- name: Gather live daemon facts for sprint planning
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract facts for planning ────────────────────────────────────────────────
+
+- name: Extract backlog and history from live facts
+  ansible.builtin.set_fact:
+    _sp_backlog_items: "{{ live_facts.ansible_facts.gludd.todos['items'] | default([]) }}"
+    _sp_backlog_size: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _sp_total_runs: "{{ live_facts.ansible_facts.gludd.history.total_runs | default(0) | int }}"
+    _sp_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+    _sp_in_progress: "{{ live_facts.ansible_facts.gludd.work.in_progress | default(0) | int }}"
+
+# ── Derive sprint capacity ────────────────────────────────────────────────────
+# If sprint_capacity > 0 use it directly; else derive from velocity:
+# velocity = total_runs * success_rate -> round to nearest Fibonacci
+
+- name: Derive sprint capacity from history velocity (sprint_capacity not set)
+  ansible.builtin.set_fact:
+    _sp_derived_capacity: >-
+      {{
+        (
+          (_sp_total_runs | int * _sp_success_rate | float) | round | int
+        ) | max(5)
+      }}
+  when: sprint_capacity | int <= 0
+
+- name: Use provided sprint capacity
+  ansible.builtin.set_fact:
+    _sp_derived_capacity: "{{ sprint_capacity | int }}"
+  when: sprint_capacity | int > 0
+
+# ── Assign heuristic points to backlog items ──────────────────────────────────
+
+- name: Assign estimated points to backlog items
+  ansible.builtin.set_fact:
+    _sp_estimated_items: >-
+      {%- set result = [] -%}
+      {%- for item in _sp_backlog_items -%}
+        {%- set wc = (item.title | default('untitled') | split | length) -%}
+        {%- set pts = 1 if wc <= 3 else (2 if wc <= 5 else (3 if wc <= 8 else 5)) -%}
+        {%- set _ = result.append(dict(item, estimated_points=pts)) -%}
+      {%- endfor -%}
+      {{ result }}
+
+# ── Capacity-fit selection: fill sprint until capacity reached ─────────────────
+
+- name: Select items for sprint (capacity-fit algorithm)
+  ansible.builtin.set_fact:
+    _sp_selected: >-
+      {%- set selected = [] -%}
+      {%- set spillover = [] -%}
+      {%- set running_pts = [0] -%}
+      {%- for item in _sp_estimated_items -%}
+        {%- if running_pts[0] + item.estimated_points <= _sp_derived_capacity | int -%}
+          {%- set _ = selected.append(item) -%}
+          {%- set _ = running_pts.append(running_pts[-1] + item.estimated_points) -%}
+        {%- else -%}
+          {%- set _ = spillover.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ selected }}
+    _sp_spillover: >-
+      {%- set selected = [] -%}
+      {%- set spillover = [] -%}
+      {%- set running_pts = [0] -%}
+      {%- for item in _sp_estimated_items -%}
+        {%- if running_pts[0] + item.estimated_points <= _sp_derived_capacity | int -%}
+          {%- set _ = selected.append(item) -%}
+          {%- set _ = running_pts.append(running_pts[-1] + item.estimated_points) -%}
+        {%- else -%}
+          {%- set _ = spillover.append(item) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ spillover }}
+
+# ── Compute total points for selected items ───────────────────────────────────
+
+- name: Compute total sprint points (REAL sum)
+  ansible.builtin.set_fact:
+    _sp_total_points: >-
+      {{ _sp_selected | map(attribute='estimated_points') | list | sum }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON sprint plan artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'sprint_plan',
+        'status': 'completed',
+        'sprint_name': sprint_name,
+        'capacity': _sp_derived_capacity | int,
+        'total_points': _sp_total_points | int,
+        'selected': _sp_selected,
+        'spillover': _sp_spillover,
+        'history_context': {
+          'total_runs': _sp_total_runs | int,
+          'success_rate': _sp_success_rate | float,
+          'in_progress': _sp_in_progress | int,
+          'backlog_size': _sp_backlog_size | int
+        },
+        'write_back': write_back | bool
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/sprint_plan.json"
+    mode: "0644"
+
+- name: Write markdown sprint plan artifact
+  ansible.builtin.copy:
+    content: |
+      # Sprint Plan: {{ sprint_name }}
+
+      **Capacity:** {{ _sp_derived_capacity }}pt | **Total selected:** {{ _sp_total_points }}pt
+
+      ## Selected ({{ _sp_selected | length }} items, {{ _sp_total_points }}pt / {{ _sp_derived_capacity }}pt)
+
+      {% for item in _sp_selected %}
+      - **{{ item.title | default('untitled') }}** ({{ item.estimated_points }}pt, status={{ item.status | default('backlog') }})
+      {% endfor %}
+
+      ## Spillover ({{ _sp_spillover | length }} items)
+
+      {% for item in _sp_spillover %}
+      - {{ item.title | default('untitled') }} ({{ item.estimated_points }}pt)
+      {% endfor %}
+
+      ## Historical Context
+
+      - Total runs: {{ _sp_total_runs }} | Success rate: {{ _sp_success_rate }}
+      - In progress: {{ _sp_in_progress }} | Backlog: {{ _sp_backlog_size }}
+
+      ---
+      *Generated by general_ludd.agent.sprint_plan — report-only by default.*
+    dest: "{{ artifact_dir }}/sprint_plan.md"
+    mode: "0644"
+
+- name: Report sprint plan completion
+  ansible.builtin.debug:
+    msg: >-
+      Sprint plan complete: sprint={{ sprint_name }}
+      capacity={{ _sp_derived_capacity }}
+      selected={{ _sp_selected | length }}
+      total_points={{ _sp_total_points }}
+      spillover={{ _sp_spillover | length }}

@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: sprint_board_report
+  author: Agentic Harness Agent
+  description: >
+    Board state grouped by status (todo/in_progress/review/done) from
+    gludd_facts.todos/work. COMPOSES report_status data — does NOT duplicate
+    health-classification logic. Outputs columns{status:[items]} and counts.
+    REPORT-ONLY: never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

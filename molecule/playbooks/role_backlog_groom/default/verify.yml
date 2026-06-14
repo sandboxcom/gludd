@@ -1,0 +1,86 @@
+---
+- name: Verify - backlog_groom ranked the seeded backlog
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8819', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8819', true) }}.pid"
+    artifact: "/tmp/gludd-backlog-groom-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8819', true) }}/backlog_groom.json"
+    artifact_md: "/tmp/gludd-backlog-groom-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8819', true) }}/backlog_groom.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'backlog_groom'
+          - result.status == 'completed'
+        fail_msg: "backlog_groom artifact wrong: {{ result }}"
+
+    - name: Assert ranked list is non-empty (seeded items=[2 items])
+      ansible.builtin.assert:
+        that:
+          - result.ranked is defined
+          - result.ranked | list | length >= 1
+        fail_msg: "ranked list empty — expected seeded todos: {{ result }}"
+        success_msg: "ranked={{ result.ranked | length }} items"
+
+    - name: Assert all ranked items have estimated_points
+      ansible.builtin.assert:
+        that:
+          - result.ranked | selectattr('estimated_points', 'defined') | list | length == result.ranked | length
+        fail_msg: "Some ranked items missing estimated_points: {{ result.ranked }}"
+
+    - name: Assert actions list is non-empty
+      ansible.builtin.assert:
+        that:
+          - result.actions is defined
+          - result.actions | length >= 1
+        fail_msg: "actions empty: {{ result }}"
+        success_msg: "actions={{ result.actions | length }}"
+
+    - name: Assert max_split_points=8 in artifact
+      ansible.builtin.assert:
+        that:
+          - result.max_split_points == 8
+        fail_msg: "max_split_points wrong: {{ result.max_split_points }}"
+
+    - name: Assert backlog_size from seeded facts
+      ansible.builtin.assert:
+        that:
+          - result.backlog_size | int == 3
+        fail_msg: "backlog_size should be 3 (seeded): {{ result.backlog_size }}"
+        success_msg: "backlog_size={{ result.backlog_size }} (seeded=3)"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-backlog-groom-{{ mock_port }}"
+        state: absent
+      failed_when: false

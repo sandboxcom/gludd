@@ -1,0 +1,88 @@
+---
+- name: Verify - sprint_review produced completed/highlights/demo_notes from seeded data
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8824', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8824', true) }}.pid"
+    artifact: "/tmp/gludd-sprint-review-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8824', true) }}/sprint_review.json"
+    artifact_md: "/tmp/gludd-sprint-review-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8824', true) }}/sprint_review.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'sprint_review'
+          - result.status == 'completed'
+        fail_msg: "sprint_review artifact wrong: {{ result }}"
+
+    - name: Assert sprint_name
+      ansible.builtin.assert:
+        that:
+          - result.sprint_name == 'Sprint-Test-1'
+        fail_msg: "sprint_name wrong: {{ result.sprint_name }}"
+
+    - name: Assert completed[] is non-empty (from history total_runs=25)
+      ansible.builtin.assert:
+        that:
+          - result.completed is defined
+          - result.completed | length >= 1
+        fail_msg: "completed empty"
+        success_msg: "completed={{ result.completed | length }} items"
+
+    - name: Assert highlights[] is non-empty
+      ansible.builtin.assert:
+        that:
+          - result.highlights is defined
+          - result.highlights | length >= 1
+        fail_msg: "highlights empty"
+        success_msg: "highlights={{ result.highlights | length }} items"
+
+    - name: Assert demo_notes[] is non-empty (seeded traces have by_phase data)
+      ansible.builtin.assert:
+        that:
+          - result.demo_notes is defined
+          - result.demo_notes | length >= 1
+        fail_msg: "demo_notes empty"
+        success_msg: "demo_notes={{ result.demo_notes | length }} items"
+
+    - name: Assert history context from seeded data (total_runs=25)
+      ansible.builtin.assert:
+        that:
+          - result.history.total_runs | int == 25
+          - result.history.success_rate | float == 0.92
+        fail_msg: "history context wrong: {{ result.history }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-sprint-review-{{ mock_port }}"
+        state: absent
+      failed_when: false

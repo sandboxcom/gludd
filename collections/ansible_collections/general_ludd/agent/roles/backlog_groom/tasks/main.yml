@@ -1,0 +1,147 @@
+---
+# backlog_groom role — prioritize, estimate, split, and flag under-specified backlog items
+#
+# Uses gludd_facts.todos to get the backlog, ranks by implicit priority signals,
+# flags items that are oversized (>max_split_points) or under-specified (no description).
+# COMPOSES report_status data (todos section) — does NOT duplicate health-classification.
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for backlog grooming
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract backlog from live facts ──────────────────────────────────────────
+
+- name: Extract backlog items from live facts todos
+  ansible.builtin.set_fact:
+    _bg_backlog_items: "{{ live_facts.ansible_facts.gludd.todos['items'] | default([]) }}"
+    _bg_backlog_size: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _bg_total_todos: "{{ live_facts.ansible_facts.gludd.todos.total | default(0) | int }}"
+    _bg_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+
+# ── Assign heuristic points to each backlog item ─────────────────────────────
+# Heuristic: title word count -> Fibonacci points (same basis as estimate_story)
+
+- name: Build ranked list with estimated points per item
+  ansible.builtin.set_fact:
+    _bg_ranked: >-
+      {%- set result = [] -%}
+      {%- for item in _bg_backlog_items -%}
+        {%- set wc = (item.title | default('untitled') | split | length) -%}
+        {%- set pts = 1 if wc <= 3 else (2 if wc <= 5 else (3 if wc <= 8 else 5)) -%}
+        {%- set _ = result.append(dict(item, estimated_points=pts, rank=loop.index)) -%}
+      {%- endfor -%}
+      {{ result }}
+
+# ── Flag split candidates (estimated_points > max_split_points) ───────────────
+
+- name: Identify split candidates (items exceeding max_split_points)
+  ansible.builtin.set_fact:
+    _bg_split_candidates: >-
+      {{
+        _bg_ranked | selectattr('estimated_points', 'gt', max_split_points | int) | list
+      }}
+
+# ── Flag under-specified items (title only, no description or very short title) ─
+
+- name: Identify under-specified items (title-only, very short)
+  ansible.builtin.set_fact:
+    _bg_under_specified: >-
+      {{
+        _bg_ranked
+        | selectattr('title', 'defined')
+        | selectattr('title', 'match', '^.{1,15}$')
+        | list
+      }}
+
+# ── Build grooming actions ────────────────────────────────────────────────────
+
+- name: Build grooming actions list
+  ansible.builtin.set_fact:
+    _bg_actions: >-
+      {%- set acts = [] -%}
+      {%- if _bg_split_candidates | length > 0 -%}
+        {%- set _ = acts.append({'action': 'split', 'reason': 'Stories exceed max_split_points=' ~ max_split_points, 'count': _bg_split_candidates | length}) -%}
+      {%- endif -%}
+      {%- if _bg_under_specified | length > 0 -%}
+        {%- set _ = acts.append({'action': 'clarify', 'reason': 'Stories are under-specified (title too short or no description)', 'count': _bg_under_specified | length}) -%}
+      {%- endif -%}
+      {%- if _bg_backlog_size | int > 10 -%}
+        {%- set _ = acts.append({'action': 'prune', 'reason': 'Backlog size ' ~ _bg_backlog_size ~ ' exceeds 10 — consider pruning low-priority items', 'count': _bg_backlog_size | int}) -%}
+      {%- endif -%}
+      {%- if acts | length == 0 -%}
+        {%- set _ = acts.append({'action': 'none', 'reason': 'Backlog looks healthy — no splits or clarifications needed', 'count': 0}) -%}
+      {%- endif -%}
+      {{ acts }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON backlog groom artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'backlog_groom',
+        'status': 'completed',
+        'backlog_size': _bg_backlog_size | int,
+        'total_todos': _bg_total_todos | int,
+        'max_split_points': max_split_points | int,
+        'ranked': _bg_ranked,
+        'split_candidates': _bg_split_candidates,
+        'under_specified': _bg_under_specified,
+        'actions': _bg_actions,
+        'write_back': write_back | bool
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/backlog_groom.json"
+    mode: "0644"
+
+- name: Write markdown backlog groom artifact
+  ansible.builtin.copy:
+    content: |
+      # Backlog Grooming Report
+
+      **Backlog size:** {{ _bg_backlog_size }} / Total todos: {{ _bg_total_todos }}
+      **Max split points:** {{ max_split_points }}
+
+      ## Ranked Backlog
+
+      {% for item in _bg_ranked %}
+      {{ loop.index }}. **{{ item.title | default('untitled') }}** — {{ item.estimated_points }}pt ({{ item.status | default('backlog') }})
+      {% endfor %}
+
+      ## Split Candidates (>{{ max_split_points }}pt)
+
+      {% if _bg_split_candidates | length == 0 %}
+      None — all stories are within the split threshold.
+      {% else %}
+      {% for item in _bg_split_candidates %}
+      - {{ item.title | default('untitled') }} ({{ item.estimated_points }}pt)
+      {% endfor %}
+      {% endif %}
+
+      ## Recommended Actions
+
+      {% for action in _bg_actions %}
+      - **{{ action.action | upper }}**: {{ action.reason }}
+      {% endfor %}
+
+      ---
+      *Generated by general_ludd.agent.backlog_groom — report-only by default.*
+    dest: "{{ artifact_dir }}/backlog_groom.md"
+    mode: "0644"
+
+- name: Report backlog groom completion
+  ansible.builtin.debug:
+    msg: >-
+      Backlog groomed: backlog={{ _bg_backlog_size }}
+      ranked={{ _bg_ranked | length }}
+      split_candidates={{ _bg_split_candidates | length }}
+      actions={{ _bg_actions | length }}

@@ -1,0 +1,81 @@
+---
+- name: Verify - estimate_story computed Fibonacci points from seeded facts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}.pid"
+    artifact: "/tmp/gludd-estimate-story-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}/estimate_story.json"
+    artifact_md: "/tmp/gludd-estimate-story-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}/estimate_story.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity and status
+      ansible.builtin.assert:
+        that:
+          - result.role == 'estimate_story'
+          - result.status == 'completed'
+        fail_msg: "estimate_story artifact wrong: {{ result }}"
+
+    - name: Assert points is a valid Fibonacci value
+      ansible.builtin.assert:
+        that:
+          - result.points is defined
+          - result.points | int in [1, 2, 3, 5, 8, 13, 21]
+        fail_msg: "points={{ result.points }} not in Fibonacci scale [1,2,3,5,8,13,21]"
+        success_msg: "points={{ result.points }} is valid Fibonacci"
+
+    - name: Assert rationale is present
+      ansible.builtin.assert:
+        that:
+          - result.rationale is defined
+          - result.rationale | length > 0
+        fail_msg: "rationale missing"
+
+    - name: Assert history context captured from seeded facts (total_runs=25)
+      ansible.builtin.assert:
+        that:
+          - result.history_context is defined
+          - result.history_context.total_runs | int == 25
+          - result.history_context.success_rate | float == 0.92
+        fail_msg: "history_context wrong: {{ result.history_context }}"
+        success_msg: "history_context total_runs={{ result.history_context.total_runs }}"
+
+    - name: Assert scale is fibonacci
+      ansible.builtin.assert:
+        that:
+          - result.scale == 'fibonacci'
+        fail_msg: "scale wrong: {{ result.scale }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-estimate-story-{{ mock_port }}"
+        state: absent
+      failed_when: false

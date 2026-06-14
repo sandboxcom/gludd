@@ -1,0 +1,12 @@
+---
+# standup_report role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-standup-report"
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

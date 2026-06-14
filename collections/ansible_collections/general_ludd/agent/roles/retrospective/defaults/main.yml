@@ -1,0 +1,18 @@
+---
+# retrospective role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-retrospective"
+
+# Model profile for narrative generation (empty = daemon default)
+model_profile: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

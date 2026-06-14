@@ -1,0 +1,17 @@
+---
+# Run the REAL retrospective role against the mock daemon.
+- name: Converge - run retrospective role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8825', true) }}"
+  tasks:
+    - name: Invoke retrospective (enable_model_call=false)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.retrospective
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-retrospective-{{ mock_port }}"
+        enable_model_call: false

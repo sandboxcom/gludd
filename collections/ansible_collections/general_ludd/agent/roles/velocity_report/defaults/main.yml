@@ -1,0 +1,15 @@
+---
+# velocity_report role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-velocity-report"
+
+# Number of sprints to include in the velocity window
+window: 5
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

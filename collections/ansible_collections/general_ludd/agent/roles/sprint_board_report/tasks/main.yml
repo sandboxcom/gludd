@@ -1,0 +1,135 @@
+---
+# sprint_board_report role — board state grouped by status from facts.todos/work
+#
+# COMPOSES report_status data (todos section) — does NOT duplicate health logic.
+# Groups backlog items into board columns: todo, in_progress, review, done.
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for sprint board
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract facts for board ───────────────────────────────────────────────────
+
+- name: Extract todos and work from live facts
+  ansible.builtin.set_fact:
+    _sbr_items: "{{ live_facts.ansible_facts.gludd.todos['items'] | default([]) }}"
+    _sbr_backlog_size: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _sbr_total: "{{ live_facts.ansible_facts.gludd.todos.total | default(0) | int }}"
+    _sbr_done_total: "{{ live_facts.ansible_facts.gludd.todos.done | default(0) | int }}"
+    _sbr_active_jobs: "{{ live_facts.ansible_facts.gludd.work.active_jobs | default(0) | int }}"
+    _sbr_queued: "{{ live_facts.ansible_facts.gludd.work.queued_jobs | default(0) | int }}"
+    _sbr_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+
+# ── Group items into board columns ────────────────────────────────────────────
+# Items from facts.todos.items carry a 'status' field.
+# Map: backlog -> todo, in_progress -> in_progress, review -> review, done -> done
+
+- name: Build board columns from todo items
+  ansible.builtin.set_fact:
+    _sbr_col_todo: >-
+      {{
+        _sbr_items
+        | selectattr('status', 'defined')
+        | selectattr('status', 'in', ['backlog', 'todo', 'pending'])
+        | list
+      }}
+    _sbr_col_in_progress: >-
+      {{
+        _sbr_items
+        | selectattr('status', 'defined')
+        | selectattr('status', 'in', ['in_progress', 'active', 'running'])
+        | list
+      }}
+    _sbr_col_review: >-
+      {{
+        _sbr_items
+        | selectattr('status', 'defined')
+        | selectattr('status', 'in', ['review', 'pr_open', 'needs_review'])
+        | list
+      }}
+    _sbr_col_done: >-
+      {{
+        _sbr_items
+        | selectattr('status', 'defined')
+        | selectattr('status', 'in', ['done', 'completed', 'closed'])
+        | list
+      }}
+
+# ── Build column counts ───────────────────────────────────────────────────────
+
+- name: Compute board counts
+  ansible.builtin.set_fact:
+    _sbr_counts:
+      todo: "{{ _sbr_col_todo | length + _sbr_backlog_size | int }}"
+      in_progress: "{{ _sbr_col_in_progress | length + _sbr_active_jobs | int }}"
+      review: "{{ _sbr_col_review | length }}"
+      done: "{{ _sbr_col_done | length + _sbr_done_total | int }}"
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON sprint board artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'sprint_board_report',
+        'status': 'completed',
+        'sprint_name': sprint_name,
+        'columns': {
+          'todo': _sbr_col_todo,
+          'in_progress': _sbr_col_in_progress,
+          'review': _sbr_col_review,
+          'done': _sbr_col_done
+        },
+        'counts': _sbr_counts,
+        'work_context': {
+          'active_jobs': _sbr_active_jobs | int,
+          'queued_jobs': _sbr_queued | int,
+          'backlog_size': _sbr_backlog_size | int,
+          'total_todos': _sbr_total | int,
+          'done_total': _sbr_done_total | int,
+          'success_rate': _sbr_success_rate | float
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/sprint_board_report.json"
+    mode: "0644"
+
+- name: Write markdown sprint board artifact
+  ansible.builtin.copy:
+    content: |
+      # Sprint Board: {{ sprint_name }}
+
+      | TODO ({{ _sbr_counts.todo }}) | IN PROGRESS ({{ _sbr_counts.in_progress }}) | REVIEW ({{ _sbr_counts.review }}) | DONE ({{ _sbr_counts.done }}) |
+      |---|---|---|---|
+      {% set max_len = [_sbr_col_todo|length, _sbr_col_in_progress|length, _sbr_col_review|length, _sbr_col_done|length] | max %}
+      {% for i in range(max_len) %}
+      | {{ _sbr_col_todo[i].title | default('') if i < _sbr_col_todo|length else '' }} | {{ _sbr_col_in_progress[i].title | default('') if i < _sbr_col_in_progress|length else '' }} | {{ _sbr_col_review[i].title | default('') if i < _sbr_col_review|length else '' }} | {{ _sbr_col_done[i].title | default('') if i < _sbr_col_done|length else '' }} |
+      {% endfor %}
+
+      ## Work Context
+
+      - Active jobs: {{ _sbr_active_jobs }} | Queued: {{ _sbr_queued }}
+      - Backlog: {{ _sbr_backlog_size }} | Success rate: {{ _sbr_success_rate }}
+
+      ---
+      *Generated by general_ludd.agent.sprint_board_report — composes report_status data.*
+    dest: "{{ artifact_dir }}/sprint_board_report.md"
+    mode: "0644"
+
+- name: Report sprint board completion
+  ansible.builtin.debug:
+    msg: >-
+      Sprint board: sprint={{ sprint_name }}
+      todo={{ _sbr_counts.todo }}
+      in_progress={{ _sbr_counts.in_progress }}
+      review={{ _sbr_counts.review }}
+      done={{ _sbr_counts.done }}

@@ -1,0 +1,86 @@
+---
+- name: Verify - sprint_plan capacity-fit math against seeded data
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8820', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8820', true) }}.pid"
+    artifact: "/tmp/gludd-sprint-plan-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8820', true) }}/sprint_plan.json"
+    artifact_md: "/tmp/gludd-sprint-plan-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8820', true) }}/sprint_plan.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'sprint_plan'
+          - result.status == 'completed'
+        fail_msg: "sprint_plan artifact wrong: {{ result }}"
+
+    - name: Assert sprint name is correct
+      ansible.builtin.assert:
+        that:
+          - result.sprint_name == 'Sprint-Test-1'
+        fail_msg: "sprint_name wrong: {{ result.sprint_name }}"
+
+    - name: Assert capacity matches provided value (10)
+      ansible.builtin.assert:
+        that:
+          - result.capacity | int == 10
+        fail_msg: "capacity should be 10 (explicit), got {{ result.capacity }}"
+        success_msg: "capacity={{ result.capacity }}"
+
+    - name: Assert total_points does not exceed capacity (capacity-fit correctness)
+      ansible.builtin.assert:
+        that:
+          - result.total_points | int <= result.capacity | int
+        fail_msg: "total_points={{ result.total_points }} exceeds capacity={{ result.capacity }} — capacity-fit broken"
+        success_msg: "total_points={{ result.total_points }} <= capacity={{ result.capacity }} — capacity-fit correct"
+
+    - name: Assert selected and spillover are lists
+      ansible.builtin.assert:
+        that:
+          - result.selected is defined
+          - result.spillover is defined
+        fail_msg: "selected or spillover missing"
+
+    - name: Assert history context captured from seeded facts
+      ansible.builtin.assert:
+        that:
+          - result.history_context.total_runs | int == 25
+          - result.history_context.success_rate | float == 0.92
+        fail_msg: "history_context wrong: {{ result.history_context }}"
+        success_msg: "history_context total_runs={{ result.history_context.total_runs }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-sprint-plan-{{ mock_port }}"
+        state: absent
+      failed_when: false

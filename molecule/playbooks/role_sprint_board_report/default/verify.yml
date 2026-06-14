@@ -1,0 +1,92 @@
+---
+- name: Verify - sprint_board_report grouped seeded todos by status
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8822', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8822', true) }}.pid"
+    artifact: "/tmp/gludd-sprint-board-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8822', true) }}/sprint_board_report.json"
+    artifact_md: "/tmp/gludd-sprint-board-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8822', true) }}/sprint_board_report.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'sprint_board_report'
+          - result.status == 'completed'
+        fail_msg: "sprint_board_report artifact wrong: {{ result }}"
+
+    - name: Assert sprint name
+      ansible.builtin.assert:
+        that:
+          - result.sprint_name == 'Sprint-Test-1'
+        fail_msg: "sprint_name wrong: {{ result.sprint_name }}"
+
+    - name: Assert board columns are present
+      ansible.builtin.assert:
+        that:
+          - result.columns is defined
+          - result.columns.todo is defined
+          - result.columns.in_progress is defined
+          - result.columns.review is defined
+          - result.columns.done is defined
+        fail_msg: "board columns missing: {{ result.columns | default({}) }}"
+        success_msg: "All 4 board columns present"
+
+    - name: Assert counts are present
+      ansible.builtin.assert:
+        that:
+          - result.counts is defined
+          - result.counts.todo is defined
+          - result.counts.in_progress is defined
+          - result.counts.review is defined
+          - result.counts.done is defined
+        fail_msg: "counts missing"
+
+    - name: Assert todo count >= backlog_size from seeded facts (backlog_size=3)
+      ansible.builtin.assert:
+        that:
+          - result.counts.todo | int >= 3
+        fail_msg: "Expected todo count >= 3 (backlog_size=3 seeded), got {{ result.counts.todo }}"
+        success_msg: "todo count={{ result.counts.todo }} (backlog_size=3 seeded)"
+
+    - name: Assert work_context captured from seeded facts
+      ansible.builtin.assert:
+        that:
+          - result.work_context is defined
+          - result.work_context.backlog_size | int == 3
+        fail_msg: "work_context.backlog_size should be 3 (seeded): {{ result.work_context }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-sprint-board-report-{{ mock_port }}"
+        state: absent
+      failed_when: false

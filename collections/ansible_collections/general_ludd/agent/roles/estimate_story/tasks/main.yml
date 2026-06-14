@@ -1,0 +1,233 @@
+---
+# estimate_story role — assign story points (Fibonacci) from complexity heuristics
+#
+# Uses facts.history (velocity, success_rate, total_runs) to calibrate points.
+# Fetches story from gludd_db if story_id given, else uses story_text.
+# Point computation uses REAL heuristics: text complexity + historical velocity.
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for estimate (history/velocity)
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Fetch story if story_id provided ─────────────────────────────────────────
+
+- name: Fetch story from todo store (story_id given)
+  general_ludd.agent.gludd_db:
+    op: todo_get
+    todo_id: "{{ story_id }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _es_story_fetch
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - story_id | length > 0
+    - not ansible_check_mode
+
+- name: Set effective story text from fetched record
+  ansible.builtin.set_fact:
+    _es_story_text_effective: >-
+      {{
+        (_es_story_fetch.ansible_facts.gludd_todo.title | default(''))
+        + ' '
+        + (_es_story_fetch.ansible_facts.gludd_todo.description | default(''))
+        | trim
+      }}
+  when:
+    - story_id | length > 0
+    - not ansible_check_mode
+    - _es_story_fetch is defined
+    - "'ansible_facts' in _es_story_fetch"
+
+- name: Set effective story text (inline or check_mode)
+  ansible.builtin.set_fact:
+    _es_story_text_effective: "{{ story_text }}"
+  when: _es_story_text_effective is not defined
+
+# ── Extract historical velocity for calibration ───────────────────────────────
+
+- name: Extract historical velocity from live facts
+  ansible.builtin.set_fact:
+    _es_total_runs: "{{ live_facts.ansible_facts.gludd.history.total_runs | default(0) | int }}"
+    _es_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+    _es_backlog_size: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+
+# ── Compute complexity score from text heuristics ────────────────────────────
+# Heuristics: word count, presence of integration keywords, backlog pressure
+
+- name: Compute text word count (proxy for scope)
+  ansible.builtin.set_fact:
+    _es_word_count: "{{ _es_story_text_effective.split() | length }}"
+
+- name: Compute complexity score from heuristics
+  ansible.builtin.set_fact:
+    _es_complexity_score: >-
+      {{
+        (
+          (_es_word_count | int // 10)
+          + (2 if 'integrat' in _es_story_text_effective.lower() else 0)
+          + (2 if 'secur' in _es_story_text_effective.lower() else 0)
+          + (1 if 'test' in _es_story_text_effective.lower() else 0)
+          + (1 if 'migrat' in _es_story_text_effective.lower() else 0)
+          + (1 if _es_backlog_size | int > 5 else 0)
+        )
+      }}
+
+# ── Map complexity score to Fibonacci scale ───────────────────────────────────
+# Fibonacci: 1, 2, 3, 5, 8, 13, 21
+# Low velocity (few runs) -> inflate estimate for risk; high success -> moderate
+
+- name: Map complexity to Fibonacci points (1 point — trivial)
+  ansible.builtin.set_fact:
+    _es_points: 1
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Trivial scope: straightforward change with no integrations.
+  when: _es_complexity_score | int <= 1
+
+- name: Map complexity to Fibonacci points (2 points — simple)
+  ansible.builtin.set_fact:
+    _es_points: 2
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Simple: small change, low risk.
+  when: _es_complexity_score | int == 2
+
+- name: Map complexity to Fibonacci points (3 points — moderate)
+  ansible.builtin.set_fact:
+    _es_points: 3
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Moderate: some unknowns or integration points.
+  when: _es_complexity_score | int == 3
+
+- name: Map complexity to Fibonacci points (5 points — standard)
+  ansible.builtin.set_fact:
+    _es_points: 5
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Standard: multi-step with known integrations.
+  when: _es_complexity_score | int >= 4 and _es_complexity_score | int <= 5
+
+- name: Map complexity to Fibonacci points (8 points — complex)
+  ansible.builtin.set_fact:
+    _es_points: 8
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Complex: multiple integrations or security implications.
+  when: _es_complexity_score | int >= 6 and _es_complexity_score | int <= 7
+
+- name: Map complexity to Fibonacci points (13 points — large)
+  ansible.builtin.set_fact:
+    _es_points: 13
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Large: significant scope, consider splitting.
+  when: _es_complexity_score | int >= 8 and _es_complexity_score | int <= 10
+
+- name: Map complexity to Fibonacci points (21 points — epic)
+  ansible.builtin.set_fact:
+    _es_points: 21
+    _es_rationale: >-
+      Score {{ _es_complexity_score }} (word_count={{ _es_word_count }},
+      total_runs={{ _es_total_runs }}, success_rate={{ _es_success_rate }}).
+      Epic: must be split before sprint planning.
+  when: _es_complexity_score | int > 10
+
+# ── Optionally call model for enhanced estimate ───────────────────────────────
+
+- name: Call model for estimate rationale (enable_model_call=true only)
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      Estimate story points (Fibonacci: 1,2,3,5,8,13,21) for this story.
+      Historical velocity: {{ _es_total_runs }} runs, {{ _es_success_rate * 100 }}% success.
+      Story: {{ _es_story_text_effective }}
+      Respond with: POINTS: <number>
+      RATIONALE: <one sentence>
+    model_profile: "{{ model_profile | default('') }}"
+  register: _es_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Use model rationale (enable_model_call=true)
+  ansible.builtin.set_fact:
+    _es_rationale: "{{ _es_model_result.text | default(_es_rationale) }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _es_model_result is defined
+    - "'text' in _es_model_result"
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON estimate artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'estimate_story',
+        'status': 'completed',
+        'story_text': _es_story_text_effective,
+        'scale': scale,
+        'points': _es_points | int,
+        'complexity_score': _es_complexity_score | int,
+        'rationale': _es_rationale,
+        'history_context': {
+          'total_runs': _es_total_runs | int,
+          'success_rate': _es_success_rate | float,
+          'backlog_size': _es_backlog_size | int
+        },
+        'model_call_used': enable_model_call | bool and not ansible_check_mode
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/estimate_story.json"
+    mode: "0644"
+
+- name: Write markdown estimate artifact
+  ansible.builtin.copy:
+    content: |
+      # Story Estimate
+
+      **Story:** {{ _es_story_text_effective | truncate(120) }}
+
+      **Points:** {{ _es_points }} (scale: {{ scale }})
+      **Complexity score:** {{ _es_complexity_score }}
+
+      ## Rationale
+
+      {{ _es_rationale }}
+
+      ## Historical Context
+
+      - Total runs: {{ _es_total_runs }}
+      - Success rate: {{ _es_success_rate }}
+      - Backlog size: {{ _es_backlog_size }}
+
+      ---
+      *Generated by general_ludd.agent.estimate_story — report-only.*
+    dest: "{{ artifact_dir }}/estimate_story.md"
+    mode: "0644"
+
+- name: Report estimate completion
+  ansible.builtin.debug:
+    msg: >-
+      Story estimated: points={{ _es_points }}
+      complexity_score={{ _es_complexity_score }}
+      scale={{ scale }}

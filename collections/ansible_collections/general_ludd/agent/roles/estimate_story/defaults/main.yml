@@ -1,0 +1,26 @@
+---
+# estimate_story role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-estimate-story"
+
+# Story to estimate. Provide story_id to fetch from gludd_db,
+# or story_text for an inline story. story_id takes precedence.
+story_id: ""
+story_text: "As a developer, I want to implement a new feature so that users can do something useful."
+
+# Point scale: fibonacci (1,2,3,5,8,13,21) or tshirt (XS,S,M,L,XL)
+scale: "fibonacci"
+
+# Model profile for estimate augmentation (empty = daemon default)
+model_profile: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

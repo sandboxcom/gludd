@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: retrospective
+  author: Agentic Harness Agent
+  description: >
+    What-went-well / what-went-ill / actions from gludd_facts.metrics +
+    gludd_facts.history + gludd_message receive. All three lists (well[], ill[],
+    actions[]) are ALWAYS non-empty for the seeded data (success_rate=0.92,
+    failures=2, backlog=3, inbox message). Optionally calls a model for a
+    narrative summary. REPORT-ONLY: never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

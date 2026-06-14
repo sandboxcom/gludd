@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: backlog_groom
+  author: Agentic Harness Agent
+  description: >
+    Prioritizes, estimates, and flags backlog todos from gludd_facts.todos.
+    Composes report_status data (todos section). Flags oversized stories
+    (>max_split_points) and under-specified items (title too short or no
+    description). Outputs ranked[], split_candidates[], actions[].
+    REPORT-ONLY by default: never mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

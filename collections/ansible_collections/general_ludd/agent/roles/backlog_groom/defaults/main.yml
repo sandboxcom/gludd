@@ -1,0 +1,18 @@
+---
+# backlog_groom role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-backlog-groom"
+
+# Stories with estimated_points > max_split_points are flagged as split_candidates
+max_split_points: 8
+
+# SAFE-BY-DEFAULT: do NOT write back to gludd_db unless explicitly enabled.
+write_back: false
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: velocity_report
+  author: Agentic Harness Agent
+  description: >
+    Points/throughput over recent history (window sprints). COMPOSES
+    report_metrics data. Uses gludd_facts.history + gludd_metrics to compute
+    points_per_sprint[], avg velocity, and trend (improving/declining/stable).
+    Trend compares first-half vs second-half of window. REPORT-ONLY.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

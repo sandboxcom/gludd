@@ -1,0 +1,20 @@
+---
+# Run the REAL estimate_story role against the mock daemon.
+- name: Converge - run estimate_story role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8818', true) }}"
+  tasks:
+    - name: Invoke estimate_story (inline story, fibonacci scale)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.estimate_story
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-estimate-story-{{ mock_port }}"
+        story_id: ""
+        story_text: "As a developer I want to add integration tests so that the agent pipeline is fully validated"
+        scale: "fibonacci"
+        enable_model_call: false

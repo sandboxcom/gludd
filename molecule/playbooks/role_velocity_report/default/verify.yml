@@ -1,0 +1,92 @@
+---
+- name: Verify - velocity_report computed points per sprint from seeded data
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8823', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8823', true) }}.pid"
+    artifact: "/tmp/gludd-velocity-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8823', true) }}/velocity_report.json"
+    artifact_md: "/tmp/gludd-velocity-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8823', true) }}/velocity_report.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'velocity_report'
+          - result.status == 'completed'
+        fail_msg: "velocity_report artifact wrong: {{ result }}"
+
+    - name: Assert window=5 in artifact
+      ansible.builtin.assert:
+        that:
+          - result.window | int == 5
+        fail_msg: "window wrong: {{ result.window }}"
+
+    - name: Assert points_per_sprint has exactly window=5 entries
+      ansible.builtin.assert:
+        that:
+          - result.points_per_sprint | length == 5
+        fail_msg: "points_per_sprint should have 5 entries (window=5), got {{ result.points_per_sprint | length }}"
+        success_msg: "points_per_sprint={{ result.points_per_sprint | length }} entries"
+
+    - name: Assert each sprint entry has a sprint name and positive points
+      ansible.builtin.assert:
+        that:
+          - result.points_per_sprint | selectattr('sprint', 'defined') | list | length == 5
+          - result.points_per_sprint | map(attribute='points') | list | min >= 1
+        fail_msg: "points_per_sprint entries malformed: {{ result.points_per_sprint }}"
+
+    - name: "Assert avg_velocity is greater than 0 (seeded: total_runs=25)"
+      ansible.builtin.assert:
+        that:
+          - result.avg_velocity | float > 0
+        fail_msg: "avg_velocity should be >0 (total_runs=25 seeded), got {{ result.avg_velocity }}"
+        success_msg: "avg_velocity={{ result.avg_velocity }}"
+
+    - name: Assert trend is one of the valid values
+      ansible.builtin.assert:
+        that:
+          - result.trend in ['improving', 'declining', 'stable']
+        fail_msg: "trend invalid: {{ result.trend }}"
+        success_msg: "trend={{ result.trend }}"
+
+    - name: Assert history_context captured from seeded facts
+      ansible.builtin.assert:
+        that:
+          - result.history_context.total_runs | int == 25
+          - result.history_context.success_rate | float == 0.92
+        fail_msg: "history_context wrong: {{ result.history_context }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-velocity-report-{{ mock_port }}"
+        state: absent
+      failed_when: false

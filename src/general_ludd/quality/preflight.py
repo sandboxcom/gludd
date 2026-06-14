@@ -111,8 +111,12 @@ def check_playbooks() -> dict[str, Any]:
 # role_threat_model (8810), role_security_review (8811), role_secret_scan (8812),
 # role_sbom_generate (8813), role_supply_chain_verify (8814),
 # role_security_requirements (8815), role_security_gate (8816)).
+# Raised 40 -> 49 once the 9 agile/sprint roles landed (W15:
+# role_story_create (8817), role_estimate_story (8818), role_backlog_groom (8819),
+# role_sprint_plan (8820), role_standup_report (8821), role_sprint_board_report (8822),
+# role_velocity_report (8823), role_sprint_review (8824), role_retrospective (8825)).
 # This only ratchets UP as more role/module scenarios are added — never weaken.
-MIN_MOLECULE_SCENARIOS = 40
+MIN_MOLECULE_SCENARIOS = 49
 
 
 def check_molecule_scenarios() -> dict[str, Any]:

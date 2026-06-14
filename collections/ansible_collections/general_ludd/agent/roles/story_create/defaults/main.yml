@@ -1,0 +1,24 @@
+---
+# story_create role defaults — REPORT-ONLY by default
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-story-create"
+
+# The free-form request to convert into a user story
+request_text: "As a developer I want to improve the system"
+
+# Model profile for story drafting (empty = daemon default)
+model_profile: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# SAFE-BY-DEFAULT: do NOT create a todo in gludd_db unless explicitly enabled.
+write_back: false
+
+# Destructive ops guard — report-only by default
+enable_git_push: false
