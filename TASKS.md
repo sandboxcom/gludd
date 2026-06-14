@@ -390,3 +390,9 @@ triage_issue, write_tests.
   - role_document_change (port 8791): gludd_agent_run (write_to_repo=false) → document_change_result.json; asserts documentation non-empty
   - role_dependency_update (port 8792): gludd_agent_run analysis-only → dependency_update_result.json; asserts status=='analyzed'
   - role_agent_task (port 8793): full lifecycle: gludd_db todo_get + gludd_worktree + gludd_agent_run + quality_gate + gludd_git commit + gludd_db todo_done → agent_task_result.json; asserts status=='success' commit_sha defined
+
+## Phase W11 — CI version PEP 440 fix (2026-06-14)
+
+Root cause: version job emitted `v0.1.0-alpha-$(date...)` — invalid PEP 440 (leading `v` + hyphen separator). `uv sync` / hatchling rejected it → all gate+build jobs failed → zero artifacts.
+
+- [x] W11.1 — CI version PEP 440 fix: version job non-tag path now emits `0.1.0-alpha.$(date -u +%Y%m%d%H%M)` (no leading `v`, dot before timestamp); tag path strips leading `v` via `${GITHUB_REF_NAME#v}`; `__init__.py` __version__ aligned to dot separator; 7 new PEP 440 regression tests in tests/security/test_ci_workflow.py::TestVersionPEP440; `make build-executable` succeeded → dist/gludd produced (pyinstaller 6.20.0, arm64 Mach-O, 45s build); gate ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS; 6166 collected | evidence: tests/security/test_ci_workflow.py::TestVersionPEP440 7 passed; make build-executable "Built dist/gludd"; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" COMMIT_HASH

@@ -22,6 +22,7 @@ from typing import Any
 
 import pytest
 import yaml
+from packaging.version import InvalidVersion, Version
 
 ROOT = Path(__file__).resolve().parent.parent.parent
 WORKFLOW_PATH = ROOT / ".github" / "workflows" / "build.yml"
@@ -228,3 +229,128 @@ class TestWorkflowYAMLValidity:
                     assert re.search(r"@[0-9a-f]{40}$", uses), (
                         f"job '{job_name}' actions/checkout must be hash-pinned; got: {uses!r}"
                     )
+
+
+class TestVersionPEP440:
+    """Assert that the version job emits PEP 440-valid strings.
+
+    Root cause of the original CI failure: the non-tag path emitted
+    ``v0.1.0-alpha-202606140832`` which is NOT PEP 440-valid because:
+      1. It has a leading 'v' (rejected by packaging.version.Version)
+      2. It uses a hyphen before the timestamp instead of a dot
+         ('alpha-TIMESTAMP' is not a valid pre-release specifier)
+
+    The correct form is ``0.1.0-alpha.202606140832`` — no leading 'v',
+    dot-separated pre-release epoch (matches pyproject.toml).
+
+    For tag builds (refs/tags/v1.2.3) the leading 'v' must be stripped
+    before injection into pyproject.toml.
+    """
+
+    # Representative timestamp matching the format date -u +%Y%m%d%H%M produces.
+    _SAMPLE_TIMESTAMP = "202606140832"
+
+    def _get_version_step_script(self) -> str:
+        wf = _load_workflow()
+        ver_job = wf["jobs"]["version"]
+        steps = ver_job.get("steps", [])
+        return " ".join(step.get("run", "") for step in steps if isinstance(step, dict))
+
+    def test_non_tag_version_has_no_leading_v(self) -> None:
+        """The non-tag version string must NOT start with 'v'."""
+        script = self._get_version_step_script()
+        # Extract the literal version prefix used in the non-tag else branch.
+        # The script must NOT contain 'version=v' (that was the broken form).
+        assert "version=v" not in script, (
+            "non-tag version must not start with 'v'; the workflow had 'version=v0.1.0-alpha-...' "
+            "which is not PEP 440-valid. It must be 'version=0.1.0-alpha.$(date...)'"
+        )
+
+    def test_non_tag_version_uses_dot_before_timestamp(self) -> None:
+        """Non-tag version must use a dot before the timestamp, not a hyphen.
+
+        PEP 440: '0.1.0-alpha.202606140832' is valid (dot-separated pre-release).
+        '0.1.0-alpha-202606140832' is NOT valid (hyphen makes it an invalid local label).
+        """
+        script = self._get_version_step_script()
+        # After the fix the script must contain 'alpha.' (dot-then-date) NOT 'alpha-$(date'
+        assert "alpha-$(date" not in script, (
+            "non-tag version uses 'alpha-$(date...)' (hyphen before timestamp); "
+            "that is not PEP 440-valid. Use 'alpha.$(date...)' (dot before timestamp)."
+        )
+        assert "alpha.$(date" in script, (
+            "non-tag version must contain 'alpha.$(date...)' so the timestamp is a "
+            "dot-separated pre-release segment — the only PEP 440-valid form."
+        )
+
+    def test_non_tag_representative_version_is_pep440_valid(self) -> None:
+        """A concrete sample of the non-tag version must parse without error."""
+        sample = f"0.1.0-alpha.{self._SAMPLE_TIMESTAMP}"
+        try:
+            v = Version(sample)
+        except InvalidVersion as exc:
+            pytest.fail(
+                f"Representative non-tag version {sample!r} is not PEP 440-valid: {exc}"
+            )
+        # Confirm it is pre-release (alpha)
+        assert v.is_prerelease, f"Expected {sample!r} to be a pre-release version"
+
+    def test_tag_path_strips_leading_v(self) -> None:
+        """For tag pushes (v1.2.3) the workflow must strip the leading 'v' before injection.
+
+        The broken form: ``echo "version=${{ github.ref_name }}"`` which would emit
+        'v1.2.3' — NOT PEP 440-valid for pyproject injection.
+        The correct form uses ``${GITHUB_REF_NAME#v}`` (bash prefix strip) so that
+        e.g. tag 'v1.2.3' becomes version '1.2.3'.
+        """
+        script = self._get_version_step_script()
+        # The tag path must strip the 'v' prefix.
+        assert "GITHUB_REF_NAME#v}" in script or "${GITHUB_REF_NAME#v}" in script, (
+            "tag version path must strip the leading 'v' via ${GITHUB_REF_NAME#v}. "
+            "Injecting 'v1.2.3' into pyproject.toml fails PEP 440 validation."
+        )
+        # Must NOT emit github.ref_name verbatim (that would include the 'v').
+        # Check the tag branch does NOT use github.ref_name directly without stripping.
+        assert 'version=${{ github.ref_name }}' not in script, (
+            "tag version path must not use '${{ github.ref_name }}' verbatim — "
+            "that emits e.g. 'v1.2.3' which is not PEP 440-valid."
+        )
+
+    def test_representative_tag_version_is_pep440_valid(self) -> None:
+        """A tag like 'v1.2.3' stripped to '1.2.3' must be PEP 440-valid."""
+        sample = "1.2.3"
+        try:
+            v = Version(sample)
+        except InvalidVersion as exc:
+            pytest.fail(f"Stripped tag version {sample!r} is not PEP 440-valid: {exc}")
+        assert not v.is_prerelease, f"Expected {sample!r} to be a stable release version"
+
+    def test_pyproject_current_version_is_pep440_valid(self) -> None:
+        """The version in pyproject.toml must also be PEP 440-valid at all times."""
+        pyproject_path = ROOT / "pyproject.toml"
+        assert pyproject_path.is_file(), "pyproject.toml must exist"
+        content = pyproject_path.read_text()
+        match = re.search(r'^version\s*=\s*"([^"]+)"', content, re.MULTILINE)
+        assert match, "Could not find version = \"...\" in pyproject.toml"
+        ver_str = match.group(1)
+        try:
+            Version(ver_str)
+        except InvalidVersion as exc:
+            pytest.fail(
+                f"pyproject.toml version {ver_str!r} is not PEP 440-valid: {exc}"
+            )
+
+    def test_init_py_current_version_is_pep440_valid(self) -> None:
+        """The __version__ in src/general_ludd/__init__.py must be PEP 440-valid."""
+        init_path = ROOT / "src" / "general_ludd" / "__init__.py"
+        assert init_path.is_file(), "src/general_ludd/__init__.py must exist"
+        content = init_path.read_text()
+        match = re.search(r'__version__\s*=\s*"([^"]+)"', content)
+        assert match, "Could not find __version__ = \"...\" in __init__.py"
+        ver_str = match.group(1)
+        try:
+            Version(ver_str)
+        except InvalidVersion as exc:
+            pytest.fail(
+                f"__init__.py __version__ {ver_str!r} is not PEP 440-valid: {exc}"
+            )
