@@ -1,0 +1,67 @@
+---
+- name: Verify - ci_pipeline_repair wrote its report artifact and detected findings
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}.pid"
+    fake_repo: "/tmp/gludd-ci-repair-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}"
+    artifact: "/tmp/gludd-ci-pipeline-repair-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}/ci_pipeline_repair.json"
+    artifact_md: "/tmp/gludd-ci-pipeline-repair-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}/ci_pipeline_repair.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields and that workflow file was scanned
+      ansible.builtin.assert:
+        that:
+          - result.role == 'ci_pipeline_repair'
+          - result.status == 'completed'
+          - result.ci_health is defined
+          - result.ci_health in ['healthy', 'degraded', 'broken', 'no_workflows']
+          - result.workflow_files_found | int >= 1
+          - result.auto_fix_enabled == false
+          - result.system_context is defined
+          # The fake workflow has a build step without upload-artifact,
+          # so we expect at least one finding.
+          - result.total_findings | int >= 1
+        fail_msg: "ci_pipeline_repair artifact wrong: {{ result }}"
+        success_msg: "ci_pipeline_repair scanned fake workflow; health={{ result.ci_health }} findings={{ result.total_findings }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon + remove fake repo ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove fake repo dir
+      ansible.builtin.file:
+        path: "{{ fake_repo }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-ci-pipeline-repair-{{ mock_port }}"
+        state: absent
+      failed_when: false

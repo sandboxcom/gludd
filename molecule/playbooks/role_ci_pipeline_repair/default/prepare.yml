@@ -1,0 +1,68 @@
+---
+# ci_pipeline_repair prepare: start the mock daemon AND create a fake repo tree
+# with a .github/workflows file so the role has something real to scan.
+- name: Prepare - mock daemon + fake CI repo structure for ci_pipeline_repair
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}.pid"
+    fake_repo: "/tmp/gludd-ci-repair-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Create fake repo .github/workflows dir
+      ansible.builtin.file:
+        path: "{{ fake_repo }}/.github/workflows"
+        state: directory
+        mode: "0755"
+
+    - name: Write a workflow file with a known breakage pattern (missing artifact upload)
+      ansible.builtin.copy:
+        content: |
+          name: CI
+          on: [push, pull_request]
+          jobs:
+            gate:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v3
+                - name: Run gate
+                  run: make gate
+            build:
+              runs-on: ubuntu-latest
+              steps:
+                - uses: actions/checkout@v3
+                - name: Build dist
+                  run: make dist
+                # No upload-artifact step — should trigger missing_artifact_upload finding
+        dest: "{{ fake_repo }}/.github/workflows/ci.yml"
+        mode: "0644"
+
+    - name: Write a fake pyproject.toml (clean version — no PEP 440 issues)
+      ansible.builtin.copy:
+        content: |
+          [tool.poetry]
+          name = "fake-project"
+          version = "0.1.0"
+        dest: "{{ fake_repo }}/pyproject.toml"
+        mode: "0644"

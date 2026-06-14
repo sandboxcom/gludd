@@ -1,0 +1,27 @@
+---
+# Run the REAL gate_triage role against the mock daemon.
+# enable_gate_run=false (default) so the 40-min gate never runs.
+# gate_output_override injects a pre-canned gate result with mixed signals so
+# the role's YAML logic exercises the classification branches.
+- name: Converge - run gate_triage role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8800', true) }}"
+  tasks:
+    - name: Invoke gate_triage (gate not run; override with a flaky-signal output)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.gate_triage
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-gate-triage-{{ mock_port }}"
+        enable_gate_run: false
+        # Inject gate output that contains an xpass signal so role classifies
+        # as rerun_or_quarantine (exercises the flaky-path branch).
+        gate_output_override: >-
+          FAILED tests/unit/test_foo.py::test_bar XPASS strict=True
+          xfailed 1 test
+        handoff_recipient: ""
+        repo_path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"

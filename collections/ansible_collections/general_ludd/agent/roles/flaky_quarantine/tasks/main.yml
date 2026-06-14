@@ -1,0 +1,176 @@
+---
+# flaky_quarantine role — given a failing test signature, produce the
+# ratchet/marker change recommendation with evidence. Report-only by default.
+#
+# Codifies the recurring flaky-test reclassification workflow:
+# XPASS-strict failures -> add strict=False to ratchet + xfail marker;
+# timeout-under-load -> pytest-timeout marker; FSEvents -> skip on CI.
+#
+# Flow:
+#   1. Gather live daemon facts (system health context via gludd_facts).
+#   2. Classify failure signature (XPASS-strict, timeout, FSEvents, or unknown).
+#   3. Produce ratchet/pytest marker recommendation.
+#   4. Write JSON+MD recommendation artifact.
+#   5. Send gludd_message with recommendation.
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Classify the failure signature ────────────────────────────────────────
+
+- name: Classify failure signature
+  ansible.builtin.set_fact:
+    _fq_signature_type: >-
+      {%- set sig = failure_signature | lower -%}
+      {%- if 'xpass' in sig and 'strict' in sig -%}
+        xpass_strict
+      {%- elif 'timeout' in sig or 'timed out' in sig -%}
+        timeout_under_load
+      {%- elif 'fsevents' in sig or 'kqueue' in sig or 'inotify' in sig -%}
+        fsevents_race
+      {%- elif 'flaky' in sig or 'intermittent' in sig or 'random' in sig -%}
+        intermittent
+      {%- else -%}
+        unknown_signature
+      {%- endif -%}
+
+# ── Produce recommendation per signature type ─────────────────────────────
+
+- name: Build xpass_strict recommendation
+  ansible.builtin.set_fact:
+    _fq_recommendation: "xfail(strict=False, reason='{{ failure_signature }}')"
+    _fq_ratchet_action: "add to ratchet with strict=False — xpass no longer fails gate"
+    _fq_marker_template: "@pytest.mark.xfail(strict=False, reason='flaky: XPASS-strict {{ test_name }}')"
+    _fq_confidence: "high"
+  when: _fq_signature_type == 'xpass_strict'
+
+- name: Build timeout_under_load recommendation
+  ansible.builtin.set_fact:
+    _fq_recommendation: "pytest.mark.timeout({{ timeout_seconds | int }}) — extend timeout for load conditions"
+    _fq_ratchet_action: "add @pytest.mark.timeout({{ timeout_seconds | int }}) to {{ test_name }}"
+    _fq_marker_template: "@pytest.mark.timeout({{ timeout_seconds | int }})"
+    _fq_confidence: "high"
+  when: _fq_signature_type == 'timeout_under_load'
+
+- name: Build fsevents_race recommendation
+  ansible.builtin.set_fact:
+    _fq_recommendation: "skip on CI with @pytest.mark.skipif(os.environ.get('CI'), reason='FSEvents race')"
+    _fq_ratchet_action: "add skipif marker for CI environment; local-only test"
+    _fq_marker_template: "@pytest.mark.skipif(os.environ.get('CI') == 'true', reason='FSEvents/kqueue race condition in CI')"
+    _fq_confidence: "medium"
+  when: _fq_signature_type == 'fsevents_race'
+
+- name: Build intermittent recommendation
+  ansible.builtin.set_fact:
+    _fq_recommendation: "xfail(strict=False) + add to FLAKY_TESTS ratchet list"
+    _fq_ratchet_action: "classify as flaky; add to ratchet and xfail marker"
+    _fq_marker_template: "@pytest.mark.xfail(strict=False, reason='intermittent: {{ failure_signature }}')"
+    _fq_confidence: "medium"
+  when: _fq_signature_type == 'intermittent'
+
+- name: Build unknown_signature recommendation
+  ansible.builtin.set_fact:
+    _fq_recommendation: "manual investigation required — signature not recognized"
+    _fq_ratchet_action: "no automated ratchet change — review test manually"
+    _fq_marker_template: ""
+    _fq_confidence: "low"
+  when: _fq_signature_type == 'unknown_signature'
+
+# ── Write artifacts ──────────────────────────────────────────────────────
+
+- name: Write JSON flaky quarantine artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'flaky_quarantine',
+        'status': 'completed',
+        'test_name': test_name,
+        'failure_signature': failure_signature,
+        'signature_type': _fq_signature_type,
+        'recommendation': _fq_recommendation,
+        'ratchet_action': _fq_ratchet_action,
+        'marker_template': _fq_marker_template,
+        'confidence': _fq_confidence,
+        'auto_apply_enabled': enable_auto_apply | bool,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/flaky_quarantine.json"
+    mode: "0644"
+
+- name: Write markdown flaky quarantine report
+  ansible.builtin.copy:
+    content: |
+      # Flaky Test Quarantine Report
+
+      **Test:** `{{ test_name }}`
+      **Failure signature:** `{{ failure_signature }}`
+      **Signature type:** {{ _fq_signature_type }}
+      **Confidence:** {{ _fq_confidence | upper }}
+      **Auto-apply enabled:** {{ enable_auto_apply }}
+
+      ## Recommendation
+
+      {{ _fq_recommendation }}
+
+      ## Ratchet Action
+
+      {{ _fq_ratchet_action }}
+
+      {% if _fq_marker_template | length > 0 %}
+      ## Marker to Add
+
+      ```python
+      {{ _fq_marker_template }}
+      ```
+      {% endif %}
+
+      ## Evidence Required (before applying)
+
+      - Reproduce failure locally (or cite CI run URL)
+      - Confirm signature matches (run gate twice to confirm non-determinism)
+      - Add `evidence:` comment in TASKS.md when applied
+
+      ---
+      *Generated by general_ludd.agent.flaky_quarantine — recommendation only unless enable_auto_apply=true*
+    dest: "{{ artifact_dir }}/flaky_quarantine.md"
+    mode: "0644"
+
+# ── Handoff via gludd_message ────────────────────────────────────────────
+
+- name: Send quarantine recommendation message
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: flaky_quarantine
+    recipient: "{{ handoff_recipient }}"
+    topic: flaky_quarantine_recommendation
+    body: >-
+      {{ {
+        'test_name': test_name,
+        'signature_type': _fq_signature_type,
+        'recommendation': _fq_recommendation,
+        'confidence': _fq_confidence
+      } | to_json }}
+    priority: "{{ 'normal' if _fq_confidence == 'high' else 'low' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+- name: Report flaky quarantine completion
+  ansible.builtin.debug:
+    msg: "Flaky quarantine: test={{ test_name }} type={{ _fq_signature_type }} confidence={{ _fq_confidence }}"

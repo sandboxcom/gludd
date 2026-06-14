@@ -1,0 +1,25 @@
+---
+# Run the REAL validate_and_push role against the mock daemon.
+# enable_validate=false + validate_output_override injects a passing validate
+# result without running make validate.
+# enable_push=false (safe default) — push never runs.
+# Expected outcome: 'validated_no_push' (validation passed, push not requested).
+- name: Converge - run validate_and_push role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8804', true) }}"
+  tasks:
+    - name: Invoke validate_and_push (validate override; no push)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.validate_and_push
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-validate-and-push-{{ mock_port }}"
+        repo_path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        enable_validate: false
+        validate_output_override: "Full validation passed lint 0 ansible-syntax PASS typecheck 0 test PASS smoke PASS"
+        enable_push: false
+        handoff_recipient: ""

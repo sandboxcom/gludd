@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: release_build
+  author: Agentic Harness Agent
+  description: >
+    Stamp a PEP 440 timestamped-alpha version string (no leading v, dot before
+    timestamp e.g. 0.1.0-alpha.202406141200), optionally build the release
+    artifact via make build-executable / make dist, and verify the artifact was
+    produced. Codifies the W11 release workflow. All build ops are gated behind
+    enable_build=false by default and skipped in check_mode. Always produces a
+    JSON+MD report. Uses gludd_facts for system context and gludd_message on
+    success/failure.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

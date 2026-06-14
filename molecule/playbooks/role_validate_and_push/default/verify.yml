@@ -1,0 +1,58 @@
+---
+- name: Verify - validate_and_push wrote its report artifact and took the validated_no_push path
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8804', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8804', true) }}.pid"
+    artifact: "/tmp/gludd-validate-and-push-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8804', true) }}/validate_and_push.json"
+    artifact_md: "/tmp/gludd-validate-and-push-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8804', true) }}/validate_and_push.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields — validated but not pushed
+      ansible.builtin.assert:
+        that:
+          - result.role == 'validate_and_push'
+          - result.status == 'completed'
+          - result.outcome == 'validated_no_push'
+          - result.validation_passed == true
+          - result.validate_ran == false
+          - result.push_ran == false
+          - result.push_blocked_reason == 'enable_push_false'
+          - result.system_context is defined
+        fail_msg: "validate_and_push artifact wrong: {{ result }}"
+        success_msg: "validate_and_push ran end-to-end; outcome={{ result.outcome }} push_blocked={{ result.push_blocked_reason }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-validate-and-push-{{ mock_port }}"
+        state: absent
+      failed_when: false

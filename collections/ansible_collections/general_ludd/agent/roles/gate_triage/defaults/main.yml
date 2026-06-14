@@ -1,0 +1,23 @@
+---
+# gate_triage role defaults
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-gate-triage"
+
+# Repo path (where to run make gate)
+repo_path: "."
+
+# SAFE-BY-DEFAULT: do NOT run make gate unless explicitly enabled.
+# Set enable_gate_run: true to actually invoke make gate.
+enable_gate_run: false
+
+# When enable_gate_run=false (or check_mode), use this pre-canned gate output
+# for testing / dry-run purposes.
+gate_output_override: "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS"
+
+# Message handoff: recipient role/agent to notify (empty = no message sent)
+handoff_recipient: ""

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: gate_triage
+  author: Agentic Harness Agent
+  description: >
+    Run the quality gate (optionally; gated behind enable_gate_run=false by
+    default), parse pass/fail, classify failures as flaky vs real using known
+    signature patterns (XPASS-strict, FSEvents, timeout-under-load), and emit
+    a structured JSON+MD artifact + gludd_message handoff. Codifies the
+    recurring "run gate → triage failures → decide next action" loop.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

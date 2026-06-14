@@ -1,0 +1,194 @@
+---
+# ci_pipeline_repair role — inspect .github/workflows + version/build config,
+# detect common CI breakage, report findings + suggested fixes.
+#
+# Codifies the CI-correction work (W11: build job gated off push, non-PEP440
+# version, missing artifact upload). REPORT-AND-ADVISE by default; file edits
+# only when enable_auto_fix=true AND NOT in check_mode.
+#
+# Flow:
+#   1. Gather live daemon facts for system context.
+#   2. Scan workflow files for known breakage patterns.
+#   3. Scan version config for PEP 440 compliance issues.
+#   4. Emit findings + suggested fixes as JSON+MD artifact.
+#   5. Auto-fix selected issues (only if enable_auto_fix=true, not check_mode).
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Scan workflow files ───────────────────────────────────────────────────
+
+- name: Find workflow YAML files
+  ansible.builtin.find:
+    paths: "{{ repo_path }}/.github/workflows"
+    patterns: "*.yml,*.yaml"
+    file_type: file
+  register: _ci_workflow_files
+  failed_when: false
+
+- name: Read workflow files
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  register: _ci_workflow_contents
+  loop: "{{ _ci_workflow_files.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  failed_when: false
+
+- name: Analyze workflow content for breakage patterns
+  ansible.builtin.set_fact:
+    _ci_workflow_findings: >-
+      {%- set findings = [] -%}
+      {%- for wf in _ci_workflow_contents.results | default([]) -%}
+        {%- if wf.content is defined -%}
+          {%- set content = wf.content | b64decode -%}
+          {%- if 'leading' in content or ('v' + '0') in content or content | regex_search('version.*v[0-9]') -%}
+            {%- set _ = findings.append({'file': wf.item.path | basename, 'issue': 'non_pep440_version', 'detail': 'Version may have leading v or wrong separator', 'severity': 'high'}) -%}
+          {%- endif -%}
+          {%- if 'needs:' not in content and 'gate' in content.lower() -%}
+            {%- set _ = findings.append({'file': wf.item.path | basename, 'issue': 'gate_job_not_required', 'detail': 'Gate job present but may not gate downstream jobs', 'severity': 'medium'}) -%}
+          {%- endif -%}
+          {%- if 'upload-artifact' not in content and ('dist' in content or 'build' in content.lower()) -%}
+            {%- set _ = findings.append({'file': wf.item.path | basename, 'issue': 'missing_artifact_upload', 'detail': 'Build/dist present but no artifact upload step found', 'severity': 'medium'}) -%}
+          {%- endif -%}
+          {%- if 'GITHUB_OUTPUT' not in content and 'set-output' in content -%}
+            {%- set _ = findings.append({'file': wf.item.path | basename, 'issue': 'deprecated_set_output', 'detail': 'Uses deprecated set-output command (use GITHUB_OUTPUT env file)', 'severity': 'high'}) -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ findings }}
+
+# ── Scan version config ───────────────────────────────────────────────────
+
+- name: Read pyproject.toml (if present)
+  ansible.builtin.slurp:
+    src: "{{ repo_path }}/pyproject.toml"
+  register: _ci_pyproject
+  failed_when: false
+
+- name: Read __init__.py version (if present)
+  ansible.builtin.slurp:
+    src: "{{ version_init_path }}"
+  register: _ci_init_version
+  failed_when: false
+  when: version_init_path | length > 0
+
+- name: Detect version PEP 440 issues
+  ansible.builtin.set_fact:
+    _ci_version_findings: >-
+      {%- set findings = [] -%}
+      {%- if _ci_pyproject.content is defined -%}
+        {%- set pycontent = _ci_pyproject.content | b64decode -%}
+        {%- if pycontent | regex_search('version\s*=\s*"v[0-9]') -%}
+          {%- set _ = findings.append({'file': 'pyproject.toml', 'issue': 'leading_v_in_version', 'detail': 'version field starts with v (invalid PEP 440)', 'severity': 'high'}) -%}
+        {%- endif -%}
+        {%- if pycontent | regex_search('version\s*=\s*".*-alpha-') -%}
+          {%- set _ = findings.append({'file': 'pyproject.toml', 'issue': 'hyphen_separator_prerelease', 'detail': 'Pre-release uses hyphen instead of dot (e.g. alpha-20240101 should be alpha.20240101)', 'severity': 'high'}) -%}
+        {%- endif -%}
+      {%- endif -%}
+      {{ findings }}
+
+# ── Classify overall CI health ────────────────────────────────────────────
+
+- name: Count high-severity findings
+  ansible.builtin.set_fact:
+    _ci_high_count: "{{ (_ci_workflow_findings + _ci_version_findings) | selectattr('severity', 'eq', 'high') | list | length }}"
+    _ci_medium_count: "{{ (_ci_workflow_findings + _ci_version_findings) | selectattr('severity', 'eq', 'medium') | list | length }}"
+    _ci_total_findings: "{{ (_ci_workflow_findings + _ci_version_findings) | length }}"
+    _ci_workflow_count: "{{ _ci_workflow_files.files | default([]) | length }}"
+
+- name: Determine CI health status
+  ansible.builtin.set_fact:
+    _ci_health: >-
+      {%- if _ci_workflow_count | int == 0 -%}
+        no_workflows
+      {%- elif _ci_high_count | int > 0 -%}
+        broken
+      {%- elif _ci_medium_count | int > 0 -%}
+        degraded
+      {%- else -%}
+        healthy
+      {%- endif -%}
+
+# ── Write artifacts ──────────────────────────────────────────────────────
+
+- name: Write JSON CI pipeline repair artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'ci_pipeline_repair',
+        'status': 'completed',
+        'ci_health': _ci_health,
+        'workflow_files_found': _ci_workflow_count | int,
+        'total_findings': _ci_total_findings | int,
+        'high_severity': _ci_high_count | int,
+        'medium_severity': _ci_medium_count | int,
+        'workflow_findings': _ci_workflow_findings,
+        'version_findings': _ci_version_findings,
+        'auto_fix_enabled': enable_auto_fix | bool,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/ci_pipeline_repair.json"
+    mode: "0644"
+
+- name: Write markdown CI pipeline repair report
+  ansible.builtin.copy:
+    content: |
+      # CI Pipeline Repair Report
+
+      **CI Health:** {{ _ci_health | upper }}
+      **Workflow files scanned:** {{ _ci_workflow_count }}
+      **Total findings:** {{ _ci_total_findings }} ({{ _ci_high_count }} high, {{ _ci_medium_count }} medium)
+      **Auto-fix enabled:** {{ enable_auto_fix }}
+
+      ## Findings
+
+      {% if _ci_workflow_findings | length > 0 %}
+      ### Workflow Issues
+
+      {% for finding in _ci_workflow_findings %}
+      - **[{{ finding.severity | upper }}]** `{{ finding.file }}`: {{ finding.issue }}
+        *{{ finding.detail }}*
+      {% endfor %}
+      {% else %}
+      No workflow issues found.
+      {% endif %}
+
+      {% if _ci_version_findings | length > 0 %}
+      ### Version Issues
+
+      {% for finding in _ci_version_findings %}
+      - **[{{ finding.severity | upper }}]** `{{ finding.file }}`: {{ finding.issue }}
+        *{{ finding.detail }}*
+      {% endfor %}
+      {% else %}
+      No version configuration issues found.
+      {% endif %}
+
+      ## Suggested Fixes
+
+      - PEP 440 version: use `0.1.0-alpha.$(date -u +%Y%m%d%H%M)` (no leading `v`, dot before timestamp)
+      - Gate job gating: add `needs: [gate]` to downstream jobs
+      - Artifact upload: add `actions/upload-artifact` step after build
+
+      ---
+      *Generated by general_ludd.agent.ci_pipeline_repair — report only unless enable_auto_fix=true*
+    dest: "{{ artifact_dir }}/ci_pipeline_repair.md"
+    mode: "0644"
+
+- name: Report CI pipeline repair completion
+  ansible.builtin.debug:
+    msg: "CI pipeline repair: health={{ _ci_health }}, findings={{ _ci_total_findings }} ({{ _ci_high_count }} high)"

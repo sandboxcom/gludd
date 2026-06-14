@@ -1,0 +1,25 @@
+---
+# Run the REAL release_build role against the mock daemon.
+# enable_build=false (default) so no actual build, version stamp, or artifact run.
+# version_string is provided so the date command is skipped entirely.
+# The role exercises: PEP 440 validation, dry-run artifact write.
+- name: Converge - run release_build role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8803', true) }}"
+  tasks:
+    - name: Invoke release_build (dry-run; enable_build=false; pre-set version_string)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.release_build
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-release-build-{{ mock_port }}"
+        repo_path: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+        version_string: "0.1.0-alpha.202406141200"
+        enable_build: false
+        version_init_path: ""
+        expected_artifact_path: ""
+        handoff_recipient: ""

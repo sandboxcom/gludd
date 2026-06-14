@@ -1,0 +1,21 @@
+---
+# Run the REAL ci_pipeline_repair role against the mock daemon and fake repo.
+# enable_auto_fix=false (default) so no files are written to the fake repo.
+- name: Converge - run ci_pipeline_repair role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}"
+    fake_repo: "/tmp/gludd-ci-repair-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8801', true) }}"
+  tasks:
+    - name: Invoke ci_pipeline_repair (report-only; scans fake workflow file)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.ci_pipeline_repair
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-ci-pipeline-repair-{{ mock_port }}"
+        repo_path: "{{ fake_repo }}"
+        enable_auto_fix: false
+        version_init_path: ""

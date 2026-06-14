@@ -1,0 +1,22 @@
+---
+# Run the REAL flaky_quarantine role against the mock daemon.
+# enable_auto_apply=false (default) so no test files are modified.
+# We exercise the xpass_strict classification branch by providing the right signature.
+- name: Converge - run flaky_quarantine role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8802', true) }}"
+  tasks:
+    - name: Invoke flaky_quarantine (xpass_strict signature — exercises high-confidence branch)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.flaky_quarantine
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-flaky-quarantine-{{ mock_port }}"
+        test_name: "tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_touch_file_detected_without_full_rescan"
+        failure_signature: "XPASS strict=True xpass strict mode set for this test"
+        enable_auto_apply: false
+        handoff_recipient: ""

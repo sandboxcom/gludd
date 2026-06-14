@@ -104,8 +104,11 @@ def check_playbooks() -> dict[str, Any]:
 # Raised 26 -> 28 once the observability fact modules landed (W12: the
 # gludd_metrics -> test_gludd_metrics and gludd_traces -> test_gludd_traces
 # scenarios expose /api/metrics + /api/traces as Ansible dynamic facts).
+# Raised 28 -> 33 once the 5 workflow-pipeline roles landed (W13:
+# role_gate_triage, role_ci_pipeline_repair, role_flaky_quarantine,
+# role_release_build, role_validate_and_push — ports 8800-8804).
 # This only ratchets UP as more role/module scenarios are added — never weaken.
-MIN_MOLECULE_SCENARIOS = 28
+MIN_MOLECULE_SCENARIOS = 33
 
 
 def check_molecule_scenarios() -> dict[str, Any]:

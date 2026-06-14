@@ -1,0 +1,59 @@
+---
+- name: Verify - gate_triage wrote its report artifacts and made the right decision
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8800', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8800', true) }}.pid"
+    artifact: "/tmp/gludd-gate-triage-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8800', true) }}/gate_triage.json"
+    artifact_md: "/tmp/gludd-gate-triage-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8800', true) }}/gate_triage.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields and decision logic
+      ansible.builtin.assert:
+        that:
+          - result.role == 'gate_triage'
+          - result.status == 'completed'
+          - result.gate_ran == false
+          - result.next_action is defined
+          # The override output has XPASS/xfailed signals; flaky_count >= 1
+          - result.flaky_signatures_found | int >= 1
+          # With flaky signals and FAILED line: next_action should classify
+          - result.next_action in ['rerun_or_quarantine', 'fix_failures', 'investigate']
+          - result.system_context is defined
+        fail_msg: "gate_triage artifact wrong: {{ result }}"
+        success_msg: "gate_triage ran end-to-end; next_action={{ result.next_action }} flaky={{ result.flaky_signatures_found }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-gate-triage-{{ mock_port }}"
+        state: absent
+      failed_when: false

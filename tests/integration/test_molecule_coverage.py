@@ -66,18 +66,23 @@ _NOT_YET_COVERED_MODULES: set[str] = set()
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
 _NOT_YET_COVERED_ROLES: set[str] = set()
-# All roles now have molecule scenarios (W10 role-coverage complete):
+# All roles now have molecule scenarios (W10 role-coverage complete + W13):
 #   agent_task         -> role_agent_task         (port 8793, full lifecycle: todo_get/worktree/agent/commit/todo_done)
 #   audit_dependencies -> role_audit_dependencies (port 8786, gludd_facts+gludd_agent_run -> artifact)
 #   audit_security     -> role_audit_security     (port 8785, gludd_facts+gludd_agent_run -> artifact)
+#   ci_pipeline_repair -> role_ci_pipeline_repair (port 8801, scan fake .github/workflows -> findings artifact)
 #   debug_failure      -> role_debug_failure      (port 8790, gludd_agent_run+gludd_message -> diagnosis artifact)
 #   dependency_update  -> role_dependency_update  (port 8792, gludd_agent_run analysis-only -> artifact)
 #   document_change    -> role_document_change    (port 8791, gludd_agent_run artifact-only write_to_repo=false)
+#   flaky_quarantine   -> role_flaky_quarantine   (port 8802, xpass_strict classification -> recommendation artifact)
+#   gate_triage        -> role_gate_triage        (port 8800, gate output classification -> triage artifact)
 #   refactor_code      -> role_refactor_code      (port 8789, worktree+gludd_agent_run+gludd_git -> artifact)
+#   release_build      -> role_release_build      (port 8803, dry-run PEP 440 version + report artifact)
 #   report_audit       -> role_report_audit       (port 8784, gludd_facts consolidation no_data path)
 #   report_metrics     -> role_report_metrics     (port 8783, gludd_facts -> metrics artifact)
 #   report_status      -> role_report_status      (port 8782, gludd_facts -> status artifact)
 #   triage_issue       -> role_triage_issue       (port 8787, gludd_agent_run+gludd_message -> triage artifact)
+#   validate_and_push  -> role_validate_and_push  (port 8804, override-pass + no push -> validated_no_push artifact)
 #   write_tests        -> role_write_tests        (port 8788, gludd_agent_run test_run_cmd empty -> artifact)
 
 

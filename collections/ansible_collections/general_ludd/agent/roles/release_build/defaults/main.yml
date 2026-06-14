@@ -1,0 +1,38 @@
+---
+# release_build role defaults
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-release-build"
+
+# Repo path
+repo_path: "."
+
+# Version string — if empty, a PEP 440 timestamped pre-release is generated.
+# Format: "0.1.0-alpha.202406141200" (no leading v, dot before timestamp)
+version_string: ""
+
+# Base version used when generating the timestamped pre-release
+version_base: "0.1.0"
+
+# Path to __init__.py with __version__ to stamp (empty = skip)
+version_init_path: ""
+
+# Make target to invoke for the build
+build_make_target: "build-executable"
+
+# Expected artifact path to verify (empty = skip verification)
+expected_artifact_path: ""
+
+# SAFE-BY-DEFAULT: do NOT run the build unless explicitly enabled.
+# Set enable_build: true to actually stamp version + run make build-executable.
+enable_build: false
+
+# Destructive ops guard
+enable_git_push: false
+
+# Message handoff recipient (empty = no message sent)
+handoff_recipient: ""

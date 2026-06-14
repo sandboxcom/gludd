@@ -1,0 +1,31 @@
+---
+# validate_and_push role defaults
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-validate-and-push"
+
+# Repo path
+repo_path: "."
+
+# Make target for validation (default: full validate)
+validate_make_target: "validate"
+
+# Make target for push (default: safe sandboxcom push; adjust to git-push or similar)
+push_make_target: "git-push-sandboxcom"
+
+# Run validation? (default: yes — opt out with enable_validate: false)
+enable_validate: true
+
+# Override output for dry-run / test (used when validate doesn't run)
+validate_output_override: "Full validation passed lint 0 ansible-syntax PASS typecheck 0 test PASS smoke PASS"
+
+# SAFE-BY-DEFAULT: do NOT push unless explicitly enabled.
+# Set enable_push: true to push after a passing validation.
+enable_push: false
+
+# Message handoff recipient (empty = no message sent)
+handoff_recipient: ""

@@ -1,0 +1,193 @@
+---
+# validate_and_push role — run full validation then (only with explicit
+# enable_push=true) push; report the validation result.
+#
+# Codifies the recurring "make validate → make git-push" workflow.
+# SAFE-BY-DEFAULT: push never runs unless enable_push=true AND not check_mode.
+#
+# Flow:
+#   1. Gather live daemon facts.
+#   2. Optionally run make validate (gated behind enable_validate; default true).
+#   3. Determine push eligibility (validate passed + enable_push + not check_mode).
+#   4. Optionally push (enable_push=true only).
+#   5. Write JSON+MD report artifact.
+#   6. Send gludd_message with outcome.
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Run validate (opt-out via enable_validate=false) ────────────────────
+
+- name: Run make validate (skipped in check_mode or when enable_validate=false)
+  ansible.builtin.command:
+    cmd: "make {{ validate_make_target }}"
+    chdir: "{{ repo_path }}"
+  register: _vp_validate_run
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_validate | bool
+    - not ansible_check_mode
+
+- name: Set validation result from run
+  ansible.builtin.set_fact:
+    _vp_validate_stdout: >-
+      {{ (_vp_validate_run.stdout | default('')) + (_vp_validate_run.stderr | default(''))
+         if (enable_validate | bool and not ansible_check_mode)
+         else validate_output_override }}
+    _vp_validate_rc: >-
+      {{ _vp_validate_run.rc | default(0) | int
+         if (enable_validate | bool and not ansible_check_mode)
+         else 0 }}
+
+- name: Determine validation pass/fail
+  ansible.builtin.set_fact:
+    _vp_validation_passed: >-
+      {{ ('Full validation passed' in _vp_validate_stdout or 'PASS' in _vp_validate_stdout)
+         and _vp_validate_rc | int == 0 }}
+
+# ── Determine push eligibility ────────────────────────────────────────────
+
+- name: Evaluate push eligibility
+  ansible.builtin.set_fact:
+    _vp_push_eligible: >-
+      {{ _vp_validation_passed | bool
+         and (enable_push | bool)
+         and not ansible_check_mode }}
+    _vp_push_blocked_reason: >-
+      {%- if not _vp_validation_passed | bool -%}
+        validation_failed
+      {%- elif not (enable_push | bool) -%}
+        enable_push_false
+      {%- elif ansible_check_mode -%}
+        check_mode
+      {%- else -%}
+        none
+      {%- endif -%}
+
+# ── Push (only when eligible) ────────────────────────────────────────────
+
+- name: Push to remote (enable_push=true, validation passed, not check_mode)
+  ansible.builtin.command:
+    cmd: "make {{ push_make_target }}"
+    chdir: "{{ repo_path }}"
+  register: _vp_push_run
+  changed_when: true
+  failed_when: false
+  when: _vp_push_eligible | bool
+
+- name: Set push result
+  ansible.builtin.set_fact:
+    _vp_push_rc: "{{ _vp_push_run.rc | default(-1) | int if _vp_push_eligible | bool else -1 }}"
+    _vp_push_ran: "{{ _vp_push_eligible | bool }}"
+
+- name: Determine overall outcome
+  ansible.builtin.set_fact:
+    _vp_outcome: >-
+      {%- if not _vp_validation_passed | bool -%}
+        validation_failed
+      {%- elif not (enable_push | bool) -%}
+        validated_no_push
+      {%- elif ansible_check_mode -%}
+        validated_dry_run
+      {%- elif _vp_push_rc | int == 0 -%}
+        pushed
+      {%- else -%}
+        push_failed
+      {%- endif -%}
+
+# ── Write artifacts ──────────────────────────────────────────────────────
+
+- name: Write JSON validate-and-push artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'validate_and_push',
+        'status': 'completed',
+        'outcome': _vp_outcome,
+        'validation_passed': _vp_validation_passed | bool,
+        'validate_ran': enable_validate | bool and not ansible_check_mode,
+        'validate_rc': _vp_validate_rc | int,
+        'push_ran': _vp_push_ran | bool,
+        'push_rc': _vp_push_rc | int,
+        'push_blocked_reason': _vp_push_blocked_reason,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/validate_and_push.json"
+    mode: "0644"
+
+- name: Write markdown validate-and-push report
+  ansible.builtin.copy:
+    content: |
+      # Validate and Push Report
+
+      **Outcome:** {{ _vp_outcome | upper }}
+      **Validation passed:** {{ _vp_validation_passed }}
+      **Push ran:** {{ _vp_push_ran }}
+      **Push blocked reason:** {{ _vp_push_blocked_reason }}
+
+      ## Validation
+
+      - Make target: `{{ validate_make_target }}`
+      - Return code: {{ _vp_validate_rc }}
+      - Ran: {{ enable_validate | bool and not ansible_check_mode }}
+
+      ## Push
+
+      - Make target: `{{ push_make_target }}`
+      - Return code: {{ _vp_push_rc }}
+      - Push enabled: {{ enable_push }}
+
+      {% if _vp_outcome == 'validation_failed' %}
+      Validation FAILED — push blocked. Fix validation errors before pushing.
+      {% elif _vp_outcome == 'validated_no_push' %}
+      Validation PASSED. Push not requested (enable_push=false). Safe to push when ready.
+      {% elif _vp_outcome == 'pushed' %}
+      Validation PASSED and push succeeded.
+      {% elif _vp_outcome == 'push_failed' %}
+      Validation PASSED but push FAILED (rc={{ _vp_push_rc }}). Check remote connectivity.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.validate_and_push*
+    dest: "{{ artifact_dir }}/validate_and_push.md"
+    mode: "0644"
+
+# ── Handoff via gludd_message ────────────────────────────────────────────
+
+- name: Send validate-and-push outcome message
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: validate_and_push
+    recipient: "{{ handoff_recipient }}"
+    topic: validate_and_push_result
+    body: >-
+      {{ {
+        'outcome': _vp_outcome,
+        'validation_passed': _vp_validation_passed | bool,
+        'push_ran': _vp_push_ran | bool
+      } | to_json }}
+    priority: "{{ 'high' if _vp_outcome in ['validation_failed', 'push_failed'] else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+- name: Report validate-and-push completion
+  ansible.builtin.debug:
+    msg: "Validate-and-push: outcome={{ _vp_outcome }} validation={{ _vp_validation_passed }} push={{ _vp_push_ran }}"

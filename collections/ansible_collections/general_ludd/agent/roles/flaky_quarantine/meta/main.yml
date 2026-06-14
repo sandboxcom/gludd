@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: flaky_quarantine
+  author: Agentic Harness Agent
+  description: >
+    Given a failing test signature (XPASS-strict, timeout-under-load, FSEvents
+    race condition, or intermittent), produce the ratchet/pytest marker change
+    recommendation with evidence requirements. Report-only by default
+    (enable_auto_apply=false). Codifies the recurring flaky-test
+    reclassification workflow: XPASS-strict -> xfail(strict=False),
+    timeout -> pytest.mark.timeout, FSEvents -> skipif(CI). Uses gludd_facts
+    for system context and gludd_message to send the recommendation.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

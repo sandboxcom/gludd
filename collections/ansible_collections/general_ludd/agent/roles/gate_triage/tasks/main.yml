@@ -1,0 +1,170 @@
+---
+# gate_triage role — run the quality gate, parse pass/fail, classify failures
+#
+# Codifies the recurring "run gate → triage failures → summarize next action"
+# loop. The 40-min gate is guarded behind enable_gate_run (default: false) so
+# molecule can exercise the full decision + artifact logic with enable_gate_run
+# false and a pre-seeded gate_output_override. Heavy ops only run when the
+# caller explicitly opts in.
+#
+# Flow:
+#   1. Gather live facts (gludd_facts) for system context.
+#   2. Optionally run make gate (enable_gate_run=true only; skipped in check_mode).
+#   3. Classify failures as flaky vs real using known signature patterns.
+#   4. Write JSON + MD report artifact.
+#   5. Send gludd_message handoff when failures found.
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Optionally run the full gate (heavy op — gated behind enable_gate_run) ──
+
+- name: Run quality gate (enable_gate_run=true only; skipped in check_mode)
+  ansible.builtin.command:
+    cmd: make gate
+    chdir: "{{ repo_path }}"
+  register: _gt_gate_run
+  changed_when: true
+  failed_when: false
+  when:
+    - enable_gate_run | bool
+    - not ansible_check_mode
+
+- name: Use override gate output (when enable_gate_run=false or check_mode)
+  ansible.builtin.set_fact:
+    _gt_gate_stdout: >-
+      {{ gate_output_override if not (enable_gate_run | bool) or ansible_check_mode
+         else (_gt_gate_run.stdout | default('')) + (_gt_gate_run.stderr | default('')) }}
+    _gt_gate_rc: >-
+      {{ 0 if not (enable_gate_run | bool) or ansible_check_mode
+         else (_gt_gate_run.rc | default(0)) | int }}
+
+# ── Parse gate output ─────────────────────────────────────────────────────
+
+- name: Determine gate pass/fail
+  ansible.builtin.set_fact:
+    _gt_gate_passed: "{{ ('ALL PASSED' in _gt_gate_stdout) or (_gt_gate_rc | int == 0 and 'FAILED' not in _gt_gate_stdout) }}"
+
+# ── Classify failures using known signature patterns ─────────────────────
+
+- name: Classify flaky failures (XPASS-strict, FSEvents, timeout-under-load)
+  ansible.builtin.set_fact:
+    _gt_flaky_count: >-
+      {{ [
+        (1 if 'xpass' in _gt_gate_stdout.lower() else 0),
+        (1 if 'fsevents' in _gt_gate_stdout.lower() else 0),
+        (1 if 'timeout' in _gt_gate_stdout.lower() and 'load' in _gt_gate_stdout.lower() else 0),
+        (1 if 'xfailed' in _gt_gate_stdout.lower() else 0)
+      ] | sum }}
+    _gt_real_failures: >-
+      {{ [
+        (1 if 'FAILED' in _gt_gate_stdout and 'xpass' not in _gt_gate_stdout.lower() else 0),
+        (1 if 'error' in _gt_gate_stdout.lower() and 'typecheck' in _gt_gate_stdout.lower() else 0),
+        (1 if 'lint' in _gt_gate_stdout.lower() and 'error' in _gt_gate_stdout.lower() else 0)
+      ] | sum }}
+
+- name: Determine next action based on classification
+  ansible.builtin.set_fact:
+    _gt_next_action: >-
+      {%- if _gt_gate_passed | bool -%}
+        commit_immediately
+      {%- elif (_gt_real_failures | int) > 0 -%}
+        fix_failures
+      {%- elif (_gt_flaky_count | int) > 0 -%}
+        rerun_or_quarantine
+      {%- else -%}
+        investigate
+      {%- endif -%}
+    _gt_backlog_size: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _gt_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(0) | float }}"
+
+# ── Write artifacts ──────────────────────────────────────────────────────
+
+- name: Write JSON gate triage artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'gate_triage',
+        'status': 'completed',
+        'gate_passed': _gt_gate_passed | bool,
+        'gate_ran': enable_gate_run | bool and not ansible_check_mode,
+        'gate_rc': _gt_gate_rc | int,
+        'flaky_signatures_found': _gt_flaky_count | int,
+        'real_failure_signals': _gt_real_failures | int,
+        'next_action': _gt_next_action,
+        'system_context': {
+          'backlog_size': _gt_backlog_size | int,
+          'success_rate': _gt_success_rate | float,
+          'total_runs': live_facts.ansible_facts.gludd.history.total_runs | default(0) | int
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/gate_triage.json"
+    mode: "0644"
+
+- name: Write markdown gate triage report
+  ansible.builtin.copy:
+    content: |
+      # Gate Triage Report
+
+      **Gate passed:** {{ _gt_gate_passed }}
+      **Gate actually ran:** {{ enable_gate_run | bool and not ansible_check_mode }}
+      **Next action:** {{ _gt_next_action | upper }}
+
+      ## Failure Classification
+
+      - Flaky/known-signature signals: {{ _gt_flaky_count }}
+      - Real failure signals: {{ _gt_real_failures }}
+
+      ## System Context (from gludd_facts)
+
+      - Backlog: {{ _gt_backlog_size }}
+      - Success rate: {{ _gt_success_rate }}%
+      - Total runs: {{ live_facts.ansible_facts.gludd.history.total_runs | default(0) }}
+
+      ## Next Action
+
+      {% if _gt_next_action == 'commit_immediately' %}
+      Gate is GREEN — commit immediately.
+      {% elif _gt_next_action == 'fix_failures' %}
+      Real failures found — investigate and fix before re-running gate.
+      {% elif _gt_next_action == 'rerun_or_quarantine' %}
+      Flaky signals found — re-run gate or quarantine via flaky_quarantine role.
+      {% else %}
+      Gate output requires manual investigation.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.gate_triage*
+    dest: "{{ artifact_dir }}/gate_triage.md"
+    mode: "0644"
+
+# ── Handoff via gludd_message when failures need attention ──────────────
+
+- name: Send triage handoff message (failures found)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: gate_triage
+    recipient: "{{ handoff_recipient }}"
+    topic: gate_triage_result
+    body: "{{ {'gate_passed': _gt_gate_passed | bool, 'next_action': _gt_next_action, 'real_failures': _gt_real_failures | int, 'flaky': _gt_flaky_count | int} | to_json }}"
+    priority: "{{ 'high' if not _gt_gate_passed | bool else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+- name: Report triage completion
+  ansible.builtin.debug:
+    msg: "Gate triage complete: passed={{ _gt_gate_passed }} next_action={{ _gt_next_action }}"

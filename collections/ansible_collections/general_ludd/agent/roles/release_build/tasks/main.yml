@@ -1,0 +1,220 @@
+---
+# release_build role — stamp a PEP 440 timestamped-alpha version, build the
+# artifact (wraps make build-executable / make dist), and verify it was produced.
+#
+# Codifies the W11 release workflow: PEP 440 version stamping + artifact build.
+# SAFE-BY-DEFAULT: all build ops are gated behind enable_build=true AND
+# not check_mode. The role always produces a report artifact.
+#
+# Flow:
+#   1. Gather live daemon facts for context.
+#   2. Generate PEP 440 version string (or use provided version).
+#   3. Stamp version into pyproject.toml + __init__.py (if enable_build=true).
+#   4. Run make build-executable (if enable_build=true, not check_mode).
+#   5. Verify artifact was produced.
+#   6. Write JSON+MD report artifact.
+#   7. Send gludd_message on success/failure.
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Generate PEP 440 version string ─────────────────────────────────────
+
+- name: Generate PEP 440 timestamped pre-release version (if not provided)
+  ansible.builtin.command:
+    cmd: "date -u +%Y%m%d%H%M"
+  register: _rb_timestamp
+  changed_when: false
+  when: version_string | length == 0
+
+- name: Set version string
+  ansible.builtin.set_fact:
+    _rb_version: >-
+      {{ version_string if version_string | length > 0
+         else version_base + '-alpha.' + _rb_timestamp.stdout.strip() }}
+
+- name: Validate PEP 440 compliance (no leading v, dot separator for pre-release)
+  ansible.builtin.assert:
+    that:
+      - not _rb_version.startswith('v')
+      - "'-alpha.' in _rb_version or _rb_version | regex_search('^[0-9]+\\.[0-9]+\\.[0-9]+$')"
+    fail_msg: "Version '{{ _rb_version }}' does not look PEP 440 compliant (no leading v; use dot before timestamp)"
+    success_msg: "Version '{{ _rb_version }}' is PEP 440 compliant"
+
+# ── Stamp version into project files (enable_build=true only) ────────────
+
+- name: Read pyproject.toml current version line
+  ansible.builtin.slurp:
+    src: "{{ repo_path }}/pyproject.toml"
+  register: _rb_pyproject_content
+  when:
+    - enable_build | bool
+    - not ansible_check_mode
+
+- name: Stamp version into pyproject.toml
+  ansible.builtin.copy:
+    content: "{{ (_rb_pyproject_content.content | b64decode) | regex_replace('(?m)^version = \".*\"$', 'version = \"' + _rb_version + '\"') }}"
+    dest: "{{ repo_path }}/pyproject.toml"
+    mode: "0644"
+  when:
+    - enable_build | bool
+    - not ansible_check_mode
+    - _rb_pyproject_content is defined
+    - _rb_pyproject_content.content is defined
+
+- name: Read __init__.py for version stamp
+  ansible.builtin.slurp:
+    src: "{{ version_init_path }}"
+  register: _rb_init_content
+  when:
+    - enable_build | bool
+    - not ansible_check_mode
+    - version_init_path | length > 0
+
+- name: Stamp version into __init__.py
+  ansible.builtin.copy:
+    content: "{{ (_rb_init_content.content | b64decode) | regex_replace('(?m)^__version__ = \".*\"$', '__version__ = \"' + _rb_version + '\"') }}"
+    dest: "{{ version_init_path }}"
+    mode: "0644"
+  when:
+    - enable_build | bool
+    - not ansible_check_mode
+    - version_init_path | length > 0
+    - _rb_init_content is defined
+    - _rb_init_content.content is defined
+
+# ── Run build command (heavy op, gated) ─────────────────────────────────
+
+- name: Run make build-executable (enable_build=true, not check_mode)
+  ansible.builtin.command:
+    cmd: "make {{ build_make_target }}"
+    chdir: "{{ repo_path }}"
+  register: _rb_build_run
+  changed_when: true
+  failed_when: false
+  environment:
+    GLUDD_VERSION: "{{ _rb_version }}"
+  when:
+    - enable_build | bool
+    - not ansible_check_mode
+
+# ── Verify artifact was produced ─────────────────────────────────────────
+
+- name: Check artifact was produced (build ran)
+  ansible.builtin.stat:
+    path: "{{ expected_artifact_path }}"
+  register: _rb_artifact_stat
+  when:
+    - enable_build | bool
+    - not ansible_check_mode
+    - expected_artifact_path | length > 0
+
+- name: Set artifact verification result
+  ansible.builtin.set_fact:
+    _rb_artifact_produced: >-
+      {%- if not (enable_build | bool) or ansible_check_mode -%}
+        skipped
+      {%- elif expected_artifact_path | length == 0 -%}
+        not_checked
+      {%- elif _rb_artifact_stat is defined and _rb_artifact_stat.stat.exists -%}
+        yes
+      {%- else -%}
+        missing
+      {%- endif -%}
+    _rb_build_rc: >-
+      {{ _rb_build_run.rc | default(-1) if (enable_build | bool and not ansible_check_mode) else -1 }}
+
+- name: Determine build status
+  ansible.builtin.set_fact:
+    _rb_build_status: >-
+      {%- if not (enable_build | bool) or ansible_check_mode -%}
+        dry_run
+      {%- elif _rb_build_rc | int == 0 and _rb_artifact_produced in ['yes', 'not_checked'] -%}
+        success
+      {%- elif _rb_artifact_produced == 'missing' -%}
+        artifact_missing
+      {%- else -%}
+        failed
+      {%- endif -%}
+
+# ── Write artifacts ──────────────────────────────────────────────────────
+
+- name: Write JSON release build artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'release_build',
+        'status': _rb_build_status,
+        'version': _rb_version,
+        'build_ran': enable_build | bool and not ansible_check_mode,
+        'build_rc': _rb_build_rc | int,
+        'artifact_produced': _rb_artifact_produced,
+        'expected_artifact_path': expected_artifact_path,
+        'build_make_target': build_make_target,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0),
+          'total_runs': live_facts.ansible_facts.gludd.history.total_runs | default(0)
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/release_build.json"
+    mode: "0644"
+
+- name: Write markdown release build report
+  ansible.builtin.copy:
+    content: |
+      # Release Build Report
+
+      **Status:** {{ _rb_build_status | upper }}
+      **Version:** `{{ _rb_version }}`
+      **Build ran:** {{ enable_build | bool and not ansible_check_mode }}
+      **Artifact produced:** {{ _rb_artifact_produced }}
+      **Make target:** `{{ build_make_target }}`
+
+      {% if _rb_artifact_produced == 'yes' %}
+      Build artifact found at `{{ expected_artifact_path }}`.
+      {% elif _rb_artifact_produced == 'missing' %}
+      WARNING: Build succeeded (rc=0) but artifact not found at `{{ expected_artifact_path }}`.
+      {% elif _rb_artifact_produced == 'skipped' %}
+      Build not run (enable_build=false or check_mode). Version stamped for dry-run review.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.release_build*
+    dest: "{{ artifact_dir }}/release_build.md"
+    mode: "0644"
+
+# ── Handoff via gludd_message ────────────────────────────────────────────
+
+- name: Send release build result message
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: release_build
+    recipient: "{{ handoff_recipient }}"
+    topic: release_build_result
+    body: >-
+      {{ {
+        'version': _rb_version,
+        'build_status': _rb_build_status,
+        'artifact_produced': _rb_artifact_produced
+      } | to_json }}
+    priority: "{{ 'high' if _rb_build_status == 'failed' else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+- name: Report release build completion
+  ansible.builtin.debug:
+    msg: "Release build: version={{ _rb_version }} status={{ _rb_build_status }} artifact={{ _rb_artifact_produced }}"

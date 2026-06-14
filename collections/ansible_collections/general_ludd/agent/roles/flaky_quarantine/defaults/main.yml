@@ -1,0 +1,29 @@
+---
+# flaky_quarantine role defaults
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-flaky-quarantine"
+
+# Test to quarantine (required: must be set by caller)
+test_name: ""
+
+# Failure signature string — the error/output that characterizes the flakiness.
+# Examples: "XPASS strict=True", "timeout after 10s under load", "FSEvents kqueue race"
+failure_signature: ""
+
+# Timeout value (seconds) for timeout_under_load recommendations
+timeout_seconds: 30
+
+# SAFE-BY-DEFAULT: produce recommendation only; don't edit test files.
+# Set enable_auto_apply: true to write the marker directly into the test file.
+enable_auto_apply: false
+
+# Destructive ops guard
+enable_git_push: false
+
+# Message handoff recipient (empty = no message sent)
+handoff_recipient: ""

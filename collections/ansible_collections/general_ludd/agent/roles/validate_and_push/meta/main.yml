@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: validate_and_push
+  author: Agentic Harness Agent
+  description: >
+    Run full validation (make validate by default) then, ONLY with explicit
+    enable_push=true and a passing validation, push to remote. Safe-by-default:
+    push never runs unless enable_push=true AND not check_mode AND validation
+    passed. Emits a structured JSON+MD report and gludd_message with outcome.
+    Codifies the recurring validate-then-push workflow. Uses gludd_facts for
+    system context.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

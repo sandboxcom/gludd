@@ -1,0 +1,59 @@
+---
+- name: Verify - release_build wrote its report artifact with correct version and dry-run status
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8803', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8803', true) }}.pid"
+    artifact: "/tmp/gludd-release-build-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8803', true) }}/release_build.json"
+    artifact_md: "/tmp/gludd-release-build-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8803', true) }}/release_build.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields — version PEP 440, dry-run status, no build
+      ansible.builtin.assert:
+        that:
+          - result.role == 'release_build'
+          - result.status == 'dry_run'
+          - result.version == '0.1.0-alpha.202406141200'
+          - result.build_ran == false
+          - result.artifact_produced == 'skipped'
+          - result.system_context is defined
+          # PEP 440: no leading v, has -alpha. separator
+          - not result.version.startswith('v')
+          - "'-alpha.' in result.version"
+        fail_msg: "release_build artifact wrong: {{ result }}"
+        success_msg: "release_build ran end-to-end; version={{ result.version }} status={{ result.status }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-release-build-{{ mock_port }}"
+        state: absent
+      failed_when: false

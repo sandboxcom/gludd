@@ -1,0 +1,60 @@
+---
+- name: Verify - flaky_quarantine wrote its recommendation artifact and classified correctly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8802', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8802', true) }}.pid"
+    artifact: "/tmp/gludd-flaky-quarantine-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8802', true) }}/flaky_quarantine.json"
+    artifact_md: "/tmp/gludd-flaky-quarantine-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8802', true) }}/flaky_quarantine.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields and classification correctness
+      ansible.builtin.assert:
+        that:
+          - result.role == 'flaky_quarantine'
+          - result.status == 'completed'
+          - result.test_name is defined
+          - result.signature_type == 'xpass_strict'
+          - result.confidence == 'high'
+          - result.auto_apply_enabled == false
+          - result.recommendation is defined
+          - result.ratchet_action is defined
+          - result.marker_template | length > 0
+          - result.system_context is defined
+        fail_msg: "flaky_quarantine artifact wrong: {{ result }}"
+        success_msg: "flaky_quarantine ran end-to-end; type={{ result.signature_type }} confidence={{ result.confidence }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-flaky-quarantine-{{ mock_port }}"
+        state: absent
+      failed_when: false
