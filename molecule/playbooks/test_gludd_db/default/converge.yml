@@ -1,0 +1,47 @@
+---
+# Exercise the REAL gludd_db module: todo_get, todo_update_status, resource_preference.
+- name: Converge - gludd_db todo and resource ops via mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8776', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+    todo_id: "TODO-001"
+
+  tasks:
+    - name: Fetch a todo (GET /api/todos/<id>)
+      general_ludd.agent.gludd_db:
+        op: todo_get
+        todo_id: "{{ todo_id }}"
+        daemon_url: "{{ daemon_url }}"
+      register: get_result
+
+    - name: Update todo status (PATCH /api/todos/<id>)
+      general_ludd.agent.gludd_db:
+        op: todo_update_status
+        todo_id: "{{ todo_id }}"
+        status: "in_progress"
+        daemon_url: "{{ daemon_url }}"
+      register: update_result
+
+    - name: Read resource preference (GET /api/resource-preferences)
+      general_ludd.agent.gludd_db:
+        op: resource_preference
+        resource_type: "model"
+        daemon_url: "{{ daemon_url }}"
+      register: pref_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'todo_get': get_result, 'todo_update': update_result, 'pref': pref_result} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-db.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: item
+      loop:
+        - "{{ get_result }}"
+        - "{{ update_result }}"
+        - "{{ pref_result }}"

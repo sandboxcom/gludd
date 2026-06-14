@@ -1,0 +1,47 @@
+---
+- name: Verify - gludd_git committed and branched on the throwaway repo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}.pid"
+    repo_path: "/tmp/gludd-git-repo-{{ mock_port }}"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-git.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert commit returned a SHA and changed=true
+      ansible.builtin.assert:
+        that:
+          - res.commit.changed | bool
+          - res.commit.sha is defined
+          - res.commit.sha | length >= 7
+          - "'molecule' in res.commit.message"
+        fail_msg: "gludd_git commit failed: {{ res.commit }}"
+        success_msg: "gludd_git commit: SHA returned, changed=true"
+
+    - name: Assert branch was created and changed=true
+      ansible.builtin.assert:
+        that:
+          - res.branch.changed | bool
+          - "'test-branch' in res.branch.branch"
+        fail_msg: "gludd_git branch failed: {{ res.branch }}"
+        success_msg: "gludd_git branch: molecule/test-branch created"
+
+    - name: Clean up throwaway repo
+      ansible.builtin.file:
+        path: "{{ repo_path }}"
+        state: absent
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

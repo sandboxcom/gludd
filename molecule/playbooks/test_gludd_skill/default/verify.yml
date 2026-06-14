@@ -1,0 +1,49 @@
+---
+- name: Verify - gludd_skill rendered the skill body with Jinja2 variables
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8777', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8777', true) }}.pid"
+    skills_dir: "/tmp/gludd-mock-skills-{{ mock_port }}"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-skill.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert skill_by_name returned rendered body with variables substituted
+      ansible.builtin.assert:
+        that:
+          - not res.by_name.changed
+          - res.by_name.skill_name == "mock-review"
+          - "'python' in res.by_name.rendered_body"
+          - "'gludd' in res.by_name.rendered_body"
+          - res.by_name.required_vars is defined
+        fail_msg: "gludd_skill by_name failed: {{ res.by_name }}"
+        success_msg: "gludd_skill by_name: mock-review rendered with python/gludd variables"
+
+    - name: Assert skill_by_trigger also matched and rendered correctly
+      ansible.builtin.assert:
+        that:
+          - not res.by_trigger.changed
+          - res.by_trigger.skill_name == "mock-review"
+          - "'python' in res.by_trigger.rendered_body"
+        fail_msg: "gludd_skill by_trigger failed: {{ res.by_trigger }}"
+        success_msg: "gludd_skill by_trigger: trigger matched mock-review"
+
+    - name: Clean up throwaway skills directory
+      ansible.builtin.file:
+        path: "{{ skills_dir }}"
+        state: absent
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

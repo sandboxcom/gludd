@@ -1,0 +1,35 @@
+---
+- name: Verify - gludd_model_call returned text and usage from mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8775', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8775', true) }}.pid"
+  tasks:
+    - name: Load persisted model call result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-model_call.json"
+      register: raw
+
+    - name: Parse result
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert model call returned expected text and usage
+      ansible.builtin.assert:
+        that:
+          - res.changed | bool
+          - res.text is defined
+          - "'mock-daemon' in res.text"
+          - res.model_profile_id == "mock-profile"
+          - res.usage is defined
+          - res.usage.total_tokens | int == 15
+        fail_msg: "gludd_model_call result unexpected: {{ res }}"
+        success_msg: "gludd_model_call: got text and usage from mock POST /admin/models/call"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

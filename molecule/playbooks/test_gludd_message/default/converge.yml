@@ -1,0 +1,49 @@
+---
+# Exercise the REAL gludd_message module: send, receive, and ack.
+- name: Converge - send/receive/ack messages via mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8774', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+
+  tasks:
+    - name: Send a message (POST /api/messages)
+      general_ludd.agent.gludd_message:
+        state: send
+        sender: coder
+        recipient: reviewer
+        topic: ready-for-review
+        body: "PR #42 is ready"
+        daemon_url: "{{ daemon_url }}"
+      register: send_result
+
+    - name: Receive inbox (GET /api/messages)
+      general_ludd.agent.gludd_message:
+        state: receive
+        recipient: reviewer
+        unread: true
+        daemon_url: "{{ daemon_url }}"
+      register: receive_result
+
+    - name: Ack a message by id (POST /api/messages/<id>/ack)
+      general_ludd.agent.gludd_message:
+        state: ack
+        message_id: "MSG-MOCK-IN-1"
+        daemon_url: "{{ daemon_url }}"
+      register: ack_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'send': send_result, 'receive': receive_result, 'ack': ack_result} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-message.json"
+        mode: "0644"
+
+    - name: Show all results
+      ansible.builtin.debug:
+        var: item
+      loop:
+        - "{{ send_result }}"
+        - "{{ receive_result }}"
+        - "{{ ack_result }}"

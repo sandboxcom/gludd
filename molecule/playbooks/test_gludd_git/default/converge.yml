@@ -1,0 +1,43 @@
+---
+# Exercise the REAL gludd_git module: commit and branch ops on a throwaway local repo.
+- name: Converge - gludd_git commit and branch on throwaway repo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}"
+    repo_path: "/tmp/gludd-git-repo-{{ mock_port }}"
+
+  tasks:
+    - name: Add a new file so there is something to commit
+      ansible.builtin.copy:
+        dest: "{{ repo_path }}/change.txt"
+        content: "molecule test change\n"
+        mode: "0644"
+
+    - name: Commit the new file via gludd_git
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: commit
+        message: "molecule: test commit from gludd_git"
+      register: commit_result
+
+    - name: Create a branch via gludd_git
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: branch
+        branch: "molecule/test-branch"
+      register: branch_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'commit': commit_result, 'branch': branch_result} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-git.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: item
+      loop:
+        - "{{ commit_result }}"
+        - "{{ branch_result }}"

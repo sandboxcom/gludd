@@ -1,0 +1,46 @@
+---
+# Exercise the REAL gludd_worktree module: create (present) then remove (absent).
+- name: Converge - gludd_worktree present then absent on throwaway repo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8780', true) }}"
+    repo_path: "/tmp/gludd-worktree-repo-{{ mock_port }}"
+    worktree_path: "/tmp/gludd-worktree-wt-{{ mock_port }}"
+    branch_name: "molecule/wt-test"
+
+  tasks:
+    - name: Create worktree (state=present)
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ branch_name }}"
+        worktree_path: "{{ worktree_path }}"
+        state: present
+      register: present_result
+
+    - name: Assert worktree directory now exists
+      ansible.builtin.stat:
+        path: "{{ worktree_path }}"
+      register: wt_stat
+
+    - name: Remove worktree (state=absent)
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ branch_name }}"
+        worktree_path: "{{ worktree_path }}"
+        state: absent
+      register: absent_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'present': present_result, 'absent': absent_result, 'wt_existed': wt_stat.stat.exists} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-worktree.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: item
+      loop:
+        - "{{ present_result }}"
+        - "{{ absent_result }}"

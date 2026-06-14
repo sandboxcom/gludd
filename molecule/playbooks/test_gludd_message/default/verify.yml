@@ -1,0 +1,54 @@
+---
+- name: Verify - gludd_message send/receive/ack exercised the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8774', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8774', true) }}.pid"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-message.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert send returned a created message with id
+      ansible.builtin.assert:
+        that:
+          - res.send.changed | bool
+          - res.send.message is defined
+          - res.send.message.id == "MSG-MOCK-0001"
+          - res.send.message.sender == "coder"
+          - res.send.message.status == "unread"
+        fail_msg: "gludd_message send failed: {{ res.send }}"
+        success_msg: "gludd_message send: MSG-MOCK-0001 created"
+
+    - name: Assert receive returned inbox messages and injected ansible_facts.gludd_inbox
+      ansible.builtin.assert:
+        that:
+          - res.receive.messages is defined
+          - res.receive.messages | length >= 1
+          - res.receive.messages[0].id == "MSG-MOCK-IN-1"
+          - res.receive.ansible_facts.gludd_inbox is defined
+          - res.receive.ansible_facts.gludd_inbox | length >= 1
+        fail_msg: "gludd_message receive failed: {{ res.receive }}"
+        success_msg: "gludd_message receive: inbox has messages and gludd_inbox fact set"
+
+    - name: Assert ack returned acked=true
+      ansible.builtin.assert:
+        that:
+          - res.ack.acked | bool
+          - res.ack.message_id == "MSG-MOCK-IN-1"
+        fail_msg: "gludd_message ack failed: {{ res.ack }}"
+        success_msg: "gludd_message ack: MSG-MOCK-IN-1 acked"
+
+    # ---- always clean up the mock daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

@@ -359,11 +359,18 @@ GLUDD_MOCK_PORT=<port>) + `default/{prepare,converge,verify}.yml`
 - [x] W10.3 — suite wiring: Makefile molecule-test-all loops every molecule/playbooks/ scenario and fails if any fail; CI molecule job (hash-pinned, localhost driver) added to .github/workflows/build.yml; two stale pre-existing scenarios (prompt_eval, runtime_validate) repaired (ansible.builtin.script inline-Python → command on committed files/ scripts; stale gunicorn/job_id assertions corrected) | evidence: make molecule-test-all "ALL scenarios passed" (noop prompt_eval role_implement_change runtime_validate test_gludd_facts test_gludd_ping); .github/workflows/build.yml molecule job; Makefile molecule-test-all e865e31
 - [x] W10.4 — coverage gate + checklist: tests/integration/test_molecule_coverage.py asserts mock daemon + 3 exemplars present and partitions the full role/module inventory into covered vs a shrinking _NOT_YET_COVERED checklist (adding a scenario without ticking it off fails the test); preflight MIN_MOLECULE_SCENARIOS raised 1→6 (ratchets up only) | evidence: make test-specific TESTFILE='tests/integration/test_molecule_coverage.py' "7 passed"; src/general_ludd/quality/preflight.py MIN_MOLECULE_SCENARIOS=6 e865e31
 
-### W10 remaining coverage checklist (the TODO for later passes)
-Modules still needing a focused `test_gludd_<x>` scenario (8): gludd_agent_run,
-gludd_db, gludd_git, gludd_mcp_tool, gludd_message, gludd_model_call,
-gludd_skill, gludd_worktree (agent_run/git/message/worktree are exercised
-indirectly by role_implement_change; add focused module scenarios next).
+- [x] W10.5 — all 8 remaining gludd_* modules have focused molecule scenarios (all GREEN); _NOT_YET_COVERED_MODULES emptied; make molecule-test-all 14/14 PASS | evidence: make molecule-test-all "ALL scenarios passed" (14 scenarios); make test-specific TESTFILE='tests/integration/test_molecule_coverage.py' "7 passed"; make test-count "6159 collected" 1e7ebed
+  Per-module verify details:
+  - test_gludd_message (port 8774): send POST /api/messages → MSG-MOCK-0001; receive GET /api/messages → gludd_inbox fact; ack POST /api/messages/MSG-MOCK-0001/ack
+  - test_gludd_model_call (port 8775): POST /admin/models/call → text+usage+model_profile_id
+  - test_gludd_db (port 8776): todo_get GET /api/todos/TODO-001; todo_update_status PATCH; resource_preference GET /api/resource-preferences
+  - test_gludd_skill (port 8777): render by name + by trigger using Jinja2 on throwaway skill file; variables substituted in rendered_body
+  - test_gludd_mcp_tool (port 8778): honest not_implemented=true (W3.9 fence), reason contains 'W3.9', changed=false, never fails
+  - test_gludd_git (port 8779): REAL git commit on throwaway repo → SHA returned; REAL branch create → branch name confirmed
+  - test_gludd_worktree (port 8780): REAL git worktree present (created, dir exists) then absent (removed, dir gone)
+  - test_gludd_agent_run (port 8781): HTTP fallback path → POST /admin/models/call → answer+tool_calls+usage+iterations returned
+
+### W10 remaining coverage (roles — intentional later-phase work)
 Roles still needing a `role_<name>` scenario (12): agent_task,
 audit_dependencies, audit_security, debug_failure, dependency_update,
 document_change, refactor_code, report_audit, report_metrics, report_status,

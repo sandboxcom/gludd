@@ -1,0 +1,31 @@
+---
+# Exercise the REAL gludd_agent_run module. The module tries local ToolCallLoop
+# first; if it fails (no model config in molecule env) it falls back to
+# POST /admin/models/call on the mock daemon. Either path exercises real module logic.
+- name: Converge - run agent via mock daemon (HTTP fallback path)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8781', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+
+  tasks:
+    - name: Run agent via gludd_agent_run (HTTP daemon fallback)
+      general_ludd.agent.gludd_agent_run:
+        prompt: "Summarize the current project status in one sentence."
+        system_prompt: "You are a helpful coding agent."
+        max_iterations: 3
+        model_profile: "mock-profile"
+        daemon_url: "{{ daemon_url }}"
+      register: agent_result
+
+    - name: Persist result for verify
+      ansible.builtin.copy:
+        content: "{{ agent_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-agent_run.json"
+        mode: "0644"
+
+    - name: Show agent_run result
+      ansible.builtin.debug:
+        var: agent_result

@@ -1,0 +1,31 @@
+---
+# Exercise the REAL gludd_mcp_tool module. Per W3.9 decision the module is
+# honestly fenced: it always returns not_implemented=true without calling any
+# endpoint. The scenario verifies HONEST not_implemented behavior — no fake success.
+- name: Converge - call gludd_mcp_tool and assert honest not_implemented response
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8778', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+
+  tasks:
+    - name: Invoke gludd_mcp_tool (expects not_implemented=true, never fails)
+      general_ludd.agent.gludd_mcp_tool:
+        server: "filesystem"
+        tool: "read_file"
+        arguments:
+          path: "/workspace/myfile.py"
+        daemon_url: "{{ daemon_url }}"
+      register: mcp_result
+
+    - name: Persist result for verify
+      ansible.builtin.copy:
+        content: "{{ mcp_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-mcp_tool.json"
+        mode: "0644"
+
+    - name: Show mcp_tool result
+      ansible.builtin.debug:
+        var: mcp_result

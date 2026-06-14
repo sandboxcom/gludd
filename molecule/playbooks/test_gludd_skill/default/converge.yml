@@ -1,0 +1,41 @@
+---
+# Exercise the REAL gludd_skill module: discover and render a skill by name and by trigger.
+- name: Converge - render skill via gludd_skill module
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8777', true) }}"
+    skills_dir: "/tmp/gludd-mock-skills-{{ mock_port }}"
+
+  tasks:
+    - name: Render skill by name
+      general_ludd.agent.gludd_skill:
+        name: "mock-review"
+        skills_path: "{{ skills_dir }}"
+        variables:
+          language: "python"
+          project_name: "gludd"
+      register: skill_by_name
+
+    - name: Render skill by trigger
+      general_ludd.agent.gludd_skill:
+        trigger: "code review request"
+        skills_path: "{{ skills_dir }}"
+        variables:
+          language: "python"
+          project_name: "gludd"
+      register: skill_by_trigger
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'by_name': skill_by_name, 'by_trigger': skill_by_trigger} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-skill.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: item
+      loop:
+        - "{{ skill_by_name }}"
+        - "{{ skill_by_trigger }}"

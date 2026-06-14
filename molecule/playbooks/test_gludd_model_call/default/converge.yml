@@ -1,0 +1,28 @@
+---
+# Exercise the REAL gludd_model_call module against POST /admin/models/call.
+- name: Converge - call model via mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8775', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+
+  tasks:
+    - name: Call gludd_model_call with explicit model_profile
+      general_ludd.agent.gludd_model_call:
+        prompt: "Write a docstring for function foo(x: int) -> str"
+        model_profile: "mock-profile"
+        max_tokens: 512
+        daemon_url: "{{ daemon_url }}"
+      register: model_result
+
+    - name: Persist result for verify
+      ansible.builtin.copy:
+        content: "{{ model_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-model_call.json"
+        mode: "0644"
+
+    - name: Show model call result
+      ansible.builtin.debug:
+        var: model_result

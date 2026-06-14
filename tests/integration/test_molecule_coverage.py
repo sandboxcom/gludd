@@ -53,16 +53,16 @@ def _role_scenario(role: str) -> str:
 # --- The shrinking checklist -------------------------------------------------
 # Modules that DO NOT yet have a test_<module> molecule scenario.
 # Remove a name here the moment you add its scenario (see test below).
-_NOT_YET_COVERED_MODULES = {
-    "gludd_agent_run",   # TODO: covered indirectly by role_implement_change; add a focused scenario
-    "gludd_db",          # TODO: scenario test_gludd_db (todo_get/update/resource_preference)
-    "gludd_git",         # TODO: covered indirectly by role_implement_change; add a focused scenario
-    "gludd_mcp_tool",    # TODO: scenario test_gludd_mcp_tool (asserts not_implemented=true)
-    "gludd_message",     # TODO: covered indirectly by role_implement_change; add a focused scenario
-    "gludd_model_call",  # TODO: scenario test_gludd_model_call (POST /admin/models/call)
-    "gludd_skill",       # TODO: scenario test_gludd_skill (render a skill body)
-    "gludd_worktree",    # TODO: covered indirectly by role_implement_change; add a focused scenario
-}
+_NOT_YET_COVERED_MODULES: set[str] = set()
+# All gludd_* modules now have molecule scenarios (W10 complete):
+#   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
+#   gludd_db          -> test_gludd_db          (port 8776, todo_get/update/resource_preference)
+#   gludd_git         -> test_gludd_git         (port 8779, real git commit+branch on throwaway repo)
+#   gludd_mcp_tool    -> test_gludd_mcp_tool    (port 8778, honest not_implemented W3.9 fence)
+#   gludd_message     -> test_gludd_message     (port 8774, send/receive/ack)
+#   gludd_model_call  -> test_gludd_model_call  (port 8775, POST /admin/models/call)
+#   gludd_skill       -> test_gludd_skill       (port 8777, local skill render with Jinja2)
+#   gludd_worktree    -> test_gludd_worktree    (port 8780, real git worktree present+absent)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
 _NOT_YET_COVERED_ROLES = {

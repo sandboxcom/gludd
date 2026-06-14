@@ -1,0 +1,36 @@
+---
+- name: Verify - gludd_agent_run returned an answer from the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8781', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8781', true) }}.pid"
+  tasks:
+    - name: Load persisted agent_run result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-agent_run.json"
+      register: raw
+
+    - name: Parse result
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert agent_run returned an answer and tool_calls list
+      ansible.builtin.assert:
+        that:
+          - not res.failed
+          - res.answer is defined
+          - res.answer | length > 0
+          - res.tool_calls is defined
+          - res.usage is defined
+          - res.iterations is defined
+          - res.iterations | int >= 1
+        fail_msg: "gludd_agent_run did not return expected answer: {{ res }}"
+        success_msg: "gludd_agent_run: answer returned from mock (local or HTTP path)"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

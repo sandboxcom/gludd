@@ -1,0 +1,53 @@
+---
+- name: Verify - gludd_db todo get/update and resource_preference round-trip
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8776', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8776', true) }}.pid"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-db.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert todo_get returned the todo record
+      ansible.builtin.assert:
+        that:
+          - not res.todo_get.changed
+          - res.todo_get.todo is defined
+          - res.todo_get.todo.id == "TODO-001"
+          - res.todo_get.todo.title == "mock todo"
+          - res.todo_get.todo.status == "backlog"
+        fail_msg: "gludd_db todo_get failed: {{ res.todo_get }}"
+        success_msg: "gludd_db todo_get: TODO-001 returned from mock"
+
+    - name: Assert todo_update_status changed the status
+      ansible.builtin.assert:
+        that:
+          - res.todo_update.changed | bool
+          - res.todo_update.updated | bool
+          - res.todo_update.todo_id == "TODO-001"
+          - res.todo_update.status == "in_progress"
+        fail_msg: "gludd_db todo_update_status failed: {{ res.todo_update }}"
+        success_msg: "gludd_db todo_update_status: status set to in_progress"
+
+    - name: Assert resource_preference returned a value
+      ansible.builtin.assert:
+        that:
+          - not res.pref.changed
+          - res.pref.preference is defined
+          - res.pref.preference == "mock-profile"
+        fail_msg: "gludd_db resource_preference failed: {{ res.pref }}"
+        success_msg: "gludd_db resource_preference: mock-profile returned"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

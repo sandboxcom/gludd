@@ -94,10 +94,11 @@ def check_playbooks() -> dict[str, Any]:
 
 
 # Floor for molecule coverage. Raised from 1 -> 6 once the W10 mock-daemon
-# harness landed (noop, prompt_eval, runtime_validate, test_gludd_ping,
-# test_gludd_facts, role_implement_change). This only ratchets UP as more
-# role/module scenarios are added — never weaken it.
-MIN_MOLECULE_SCENARIOS = 6
+# harness landed. Raised 6 -> 14 once all 8 gludd_* module scenarios were
+# added (W10.5: test_gludd_message/model_call/db/skill/mcp_tool/git/worktree/
+# agent_run + original 6). This only ratchets UP as more role/module scenarios
+# are added — never weaken it.
+MIN_MOLECULE_SCENARIOS = 14
 
 
 def check_molecule_scenarios() -> dict[str, Any]:

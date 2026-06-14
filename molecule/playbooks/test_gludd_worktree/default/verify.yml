@@ -1,0 +1,60 @@
+---
+- name: Verify - gludd_worktree created then removed the worktree
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8780', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8780', true) }}.pid"
+    repo_path: "/tmp/gludd-worktree-repo-{{ mock_port }}"
+    worktree_path: "/tmp/gludd-worktree-wt-{{ mock_port }}"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-worktree.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert worktree was created (state=present, changed=true)
+      ansible.builtin.assert:
+        that:
+          - res.present.changed | bool
+          - res.present.state == "present"
+          - res.present.worktree_path == worktree_path
+          - res.wt_existed | bool
+        fail_msg: "gludd_worktree present failed: {{ res.present }}"
+        success_msg: "gludd_worktree present: worktree created at expected path"
+
+    - name: Assert worktree was removed (state=absent, changed=true)
+      ansible.builtin.assert:
+        that:
+          - res.absent.changed | bool
+          - res.absent.state == "absent"
+        fail_msg: "gludd_worktree absent failed: {{ res.absent }}"
+        success_msg: "gludd_worktree absent: worktree removed"
+
+    - name: Confirm worktree directory is gone
+      ansible.builtin.stat:
+        path: "{{ worktree_path }}"
+      register: wt_gone
+
+    - name: Assert worktree directory is absent after removal
+      ansible.builtin.assert:
+        that:
+          - not wt_gone.stat.exists
+        fail_msg: "worktree directory still exists after absent: {{ worktree_path }}"
+        success_msg: "worktree directory is cleanly removed"
+
+    - name: Clean up throwaway repo
+      ansible.builtin.file:
+        path: "{{ repo_path }}"
+        state: absent
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
