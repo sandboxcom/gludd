@@ -409,4 +409,4 @@ Trace store decision: execution traces are produced in-process (timing/tokens/co
 
 Goal: codify the 5 recurring pipeline-maintenance workflows as facts-driven, safe-by-default Ansible roles with molecule scenarios; bring total molecule scenarios 28→33.
 
-- [ ] W13.1 — 5 workflow-pipeline roles + molecule scenarios + MIN_MOLECULE_SCENARIOS 28→33 | evidence: make molecule-test-all "ALL scenarios passed" 33/33; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" <COMMIT_HASH>
+- [x] W13.1 — 5 workflow-pipeline roles + molecule scenarios + MIN_MOLECULE_SCENARIOS 28→33 | evidence: make molecule-test-all "ALL scenarios passed" 33/33; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" 2a8f97b
