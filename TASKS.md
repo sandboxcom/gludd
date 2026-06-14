@@ -375,3 +375,18 @@ Roles still needing a `role_<name>` scenario (12): agent_task,
 audit_dependencies, audit_security, debug_failure, dependency_update,
 document_change, refactor_code, report_audit, report_metrics, report_status,
 triage_issue, write_tests.
+
+W10.6 tick below will be added after gate+commit (requires real commit hash).
+  Per-role verify details:
+  - role_report_status (port 8782): gludd_facts → health classification → JSON+md artifacts; asserts role=='report_status' status=='completed'
+  - role_report_metrics (port 8783): gludd_facts → throughput=medium (25 runs) → JSON+md artifacts; asserts throughput_tier=='medium'
+  - role_report_audit (port 8784): gludd_facts → no sub-reports → no_data path → JSON+md; asserts status=='no_data'
+  - role_audit_security (port 8785): gludd_facts + gludd_agent_run → audit_security_report.json+md; asserts report non-empty
+  - role_audit_dependencies (port 8786): gludd_facts + gludd_agent_run → audit_dependencies_report.json+md; asserts ecosystem=='python'
+  - role_triage_issue (port 8787): gludd_agent_run + 2x gludd_message → triage_issue_result.json; asserts status=='triaged'
+  - role_write_tests (port 8788): gludd_agent_run (test_run_cmd empty → skip run) → write_tests_result.json; asserts agent_excerpt non-empty
+  - role_refactor_code (port 8789): throwaway git repo + gludd_worktree + gludd_agent_run + gludd_git → refactor_code_result.json; asserts status=='success'
+  - role_debug_failure (port 8790): gludd_agent_run + gludd_message diagnosis send → debug_failure_result.json; asserts status=='diagnosed'
+  - role_document_change (port 8791): gludd_agent_run (write_to_repo=false) → document_change_result.json; asserts documentation non-empty
+  - role_dependency_update (port 8792): gludd_agent_run analysis-only → dependency_update_result.json; asserts status=='analyzed'
+  - role_agent_task (port 8793): full lifecycle: gludd_db todo_get + gludd_worktree + gludd_agent_run + quality_gate + gludd_git commit + gludd_db todo_done → agent_task_result.json; asserts status=='success' commit_sha defined

@@ -1,0 +1,15 @@
+---
+- name: Converge - run report_metrics role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}"
+  tasks:
+    - name: Invoke report_metrics
+      ansible.builtin.include_role:
+        name: general_ludd.agent.report_metrics
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-report-metrics-{{ mock_port }}"

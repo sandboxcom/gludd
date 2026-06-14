@@ -1,0 +1,17 @@
+---
+- name: Converge - run audit_dependencies role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8786', true) }}"
+  tasks:
+    - name: Invoke audit_dependencies
+      ansible.builtin.include_role:
+        name: general_ludd.agent.audit_dependencies
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        dep_scan_path: "/tmp"
+        dep_ecosystem: "python"
+        artifact_dir: "/tmp/gludd-audit-dependencies-{{ mock_port }}"

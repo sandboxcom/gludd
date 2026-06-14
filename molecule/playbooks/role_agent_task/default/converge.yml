@@ -1,0 +1,25 @@
+---
+- name: Converge - run agent_task role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8793', true) }}"
+    mock_repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8793', true) }}"
+  tasks:
+    - name: Invoke agent_task
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_task
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        todo_id: "MOCK-TASK-1"
+        work_type: "code"
+        repo_path: "{{ mock_repo_path }}"
+        worktree_base: "/tmp/gludd-worktrees"
+        worktree_branch: "auto/MOCK-TASK-1"
+        worktree_path: "/tmp/gludd-worktrees/MOCK-TASK-1"
+        # Use 'true' (always exits 0) as quality gate — throwaway repo has no make targets
+        quality_gate_cmd: "true"
+        artifact_dir: "/tmp/gludd-agent-task-{{ mock_port }}"
+        enable_git_push: false

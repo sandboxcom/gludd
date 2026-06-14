@@ -1,0 +1,24 @@
+---
+- name: Converge - run refactor_code role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}"
+    mock_repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}"
+  tasks:
+    - name: Invoke refactor_code
+      ansible.builtin.include_role:
+        name: general_ludd.agent.refactor_code
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        refactor_target: "src/util.py"
+        refactor_goal: "improve readability and remove inline comments"
+        repo_path: "{{ mock_repo_path }}"
+        worktree_base: "/tmp/gludd-worktrees"
+        worktree_branch: "auto/refactor/MOCK-REFACTOR-1"
+        worktree_path: "/tmp/gludd-worktrees/refactor/MOCK-REFACTOR-1"  # pragma: allowlist secret
+        todo_id: "MOCK-REFACTOR-1"
+        artifact_dir: "/tmp/gludd-refactor-code-{{ mock_port }}"
+        enable_git_push: false

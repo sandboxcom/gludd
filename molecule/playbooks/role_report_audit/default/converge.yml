@@ -1,0 +1,17 @@
+---
+- name: Converge - run report_audit role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8784', true) }}"
+  tasks:
+    - name: Invoke report_audit (no sub-reports — exercises the no_data path)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.report_audit
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-report-audit-{{ mock_port }}"
+        audit_security_artifact: ""
+        audit_dependencies_artifact: ""

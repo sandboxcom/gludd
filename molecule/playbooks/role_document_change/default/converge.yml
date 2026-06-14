@@ -1,0 +1,20 @@
+---
+- name: Converge - run document_change role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8791', true) }}"
+  tasks:
+    - name: Invoke document_change (artifact-only; write_to_repo=false)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.document_change
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        change_summary: "Added calculate() function to src/util.py"
+        doc_target: "src/util.py"
+        doc_type: "inline"
+        doc_format: "markdown"
+        write_to_repo: false
+        artifact_dir: "/tmp/gludd-document-change-{{ mock_port }}"

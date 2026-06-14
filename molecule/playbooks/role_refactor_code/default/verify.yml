@@ -1,0 +1,57 @@
+---
+- name: Verify - refactor_code wrote its result artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}.pid"
+    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}"
+    artifact: "/tmp/gludd-refactor-code-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8789', true) }}/refactor_code_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'refactor_code'
+          - result.status == 'success'
+          - result.refactor_target is defined
+          - result.facts_snapshot is defined
+          - result.agent_excerpt is defined
+        fail_msg: "refactor_code artifact wrong: {{ result }}"
+        success_msg: "refactor_code ran end-to-end; target={{ result.refactor_target }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove throwaway repo + worktrees
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_path }}"
+        - "/tmp/gludd-worktrees/refactor/MOCK-REFACTOR-1"
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-refactor-code-{{ mock_port }}"
+        state: absent
+      failed_when: false

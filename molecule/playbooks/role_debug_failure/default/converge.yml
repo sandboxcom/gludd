@@ -1,0 +1,19 @@
+---
+- name: Converge - run debug_failure role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8790', true) }}"
+  tasks:
+    - name: Invoke debug_failure with a mock failure scenario
+      ansible.builtin.include_role:
+        name: general_ludd.agent.debug_failure
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        failure_description: "AssertionError in test_calculate: expected 4 got 5"
+        failure_output: "FAILED tests/test_util.py::test_calculate - AssertionError: assert 5 == 4"
+        todo_id: "MOCK-BUG-99"
+        debug_handoff_recipient: "implement_change"
+        artifact_dir: "/tmp/gludd-debug-failure-{{ mock_port }}"

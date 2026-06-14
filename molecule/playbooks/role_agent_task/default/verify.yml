@@ -1,0 +1,58 @@
+---
+- name: Verify - agent_task completed the full lifecycle and wrote its artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8793', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8793', true) }}.pid"
+    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8793', true) }}"
+    artifact: "/tmp/gludd-agent-task-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8793', true) }}/agent_task_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields (full lifecycle completed)
+      ansible.builtin.assert:
+        that:
+          - result.todo_id == 'MOCK-TASK-1'
+          - result.status == 'success'
+          - result.work_type == 'code'
+          - result.answer_excerpt is defined
+          # commit sha present — git commit happened
+          - result.commit_sha is defined
+        fail_msg: "agent_task artifact wrong: {{ result }}"
+        success_msg: "agent_task full lifecycle completed; todo={{ result.todo_id }} status={{ result.status }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove throwaway repo + worktrees
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_path }}"
+        - "/tmp/gludd-worktrees/MOCK-TASK-1"
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-agent-task-{{ mock_port }}"
+        state: absent
+      failed_when: false

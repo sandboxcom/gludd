@@ -1,0 +1,19 @@
+---
+- name: Converge - run triage_issue role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8787', true) }}"
+  tasks:
+    - name: Invoke triage_issue with a mock inbound issue
+      ansible.builtin.include_role:
+        name: general_ludd.agent.triage_issue
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        issue_id: "MOCK-ISSUE-42"
+        issue_title: "Mock test failure in CI"
+        issue_body: "The test suite fails on the mock runner with exit code 1. Need investigation."
+        triage_handoff_recipient: "implement_change"
+        artifact_dir: "/tmp/gludd-triage-issue-{{ mock_port }}"

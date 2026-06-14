@@ -1,0 +1,19 @@
+---
+- name: Converge - run write_tests role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8788', true) }}"
+  tasks:
+    - name: Invoke write_tests (test_run_cmd empty — skips actual test execution)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.write_tests
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        test_subject: "the mock_util.calculate() function"
+        test_framework: "pytest"
+        test_style: "unit"
+        test_run_cmd: ""
+        artifact_dir: "/tmp/gludd-write-tests-{{ mock_port }}"

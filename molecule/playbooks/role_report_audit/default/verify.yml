@@ -1,0 +1,55 @@
+---
+- name: Verify - report_audit wrote its consolidated report artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8784', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8784', true) }}.pid"
+    artifact: "/tmp/gludd-report-audit-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8784', true) }}/report_audit.json"
+    artifact_md: "/tmp/gludd-report-audit-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8784', true) }}/report_audit.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'report_audit'
+          - result.status is defined
+          - result.summary is defined
+          - result.system_snapshot is defined
+          # No sub-reports were passed — should be no_data path
+          - result.status == 'no_data'
+        fail_msg: "report_audit artifact wrong: {{ result }}"
+        success_msg: "report_audit ran end-to-end against mock; status={{ result.status }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-report-audit-{{ mock_port }}"
+        state: absent
+      failed_when: false

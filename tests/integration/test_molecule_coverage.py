@@ -65,20 +65,20 @@ _NOT_YET_COVERED_MODULES: set[str] = set()
 #   gludd_worktree    -> test_gludd_worktree    (port 8780, real git worktree present+absent)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
-_NOT_YET_COVERED_ROLES = {
-    "agent_task",
-    "audit_dependencies",
-    "audit_security",
-    "debug_failure",
-    "dependency_update",
-    "document_change",
-    "refactor_code",
-    "report_audit",
-    "report_metrics",
-    "report_status",
-    "triage_issue",
-    "write_tests",
-}
+_NOT_YET_COVERED_ROLES: set[str] = set()
+# All roles now have molecule scenarios (W10 role-coverage complete):
+#   agent_task         -> role_agent_task         (port 8793, full lifecycle: todo_get/worktree/agent/commit/todo_done)
+#   audit_dependencies -> role_audit_dependencies (port 8786, gludd_facts+gludd_agent_run -> artifact)
+#   audit_security     -> role_audit_security     (port 8785, gludd_facts+gludd_agent_run -> artifact)
+#   debug_failure      -> role_debug_failure      (port 8790, gludd_agent_run+gludd_message -> diagnosis artifact)
+#   dependency_update  -> role_dependency_update  (port 8792, gludd_agent_run analysis-only -> artifact)
+#   document_change    -> role_document_change    (port 8791, gludd_agent_run artifact-only write_to_repo=false)
+#   refactor_code      -> role_refactor_code      (port 8789, worktree+gludd_agent_run+gludd_git -> artifact)
+#   report_audit       -> role_report_audit       (port 8784, gludd_facts consolidation no_data path)
+#   report_metrics     -> role_report_metrics     (port 8783, gludd_facts -> metrics artifact)
+#   report_status      -> role_report_status      (port 8782, gludd_facts -> status artifact)
+#   triage_issue       -> role_triage_issue       (port 8787, gludd_agent_run+gludd_message -> triage artifact)
+#   write_tests        -> role_write_tests        (port 8788, gludd_agent_run test_run_cmd empty -> artifact)
 
 
 class TestMoleculeHarnessExists:

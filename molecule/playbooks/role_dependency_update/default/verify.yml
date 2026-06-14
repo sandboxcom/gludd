@@ -1,0 +1,49 @@
+---
+- name: Verify - dependency_update wrote its analysis artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8792', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8792', true) }}.pid"
+    artifact: "/tmp/gludd-dependency-update-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8792', true) }}/dependency_update_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'dependency_update'
+          - result.status == 'analyzed'
+          - result.dep_ecosystem == 'python'
+          - result.apply_updates == false
+          - result.facts_snapshot is defined
+          - result.analysis is defined
+          - result.analysis | length > 0
+        fail_msg: "dependency_update artifact wrong: {{ result }}"
+        success_msg: "dependency_update ran end-to-end; ecosystem={{ result.dep_ecosystem }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-dependency-update-{{ mock_port }}"
+        state: absent
+      failed_when: false

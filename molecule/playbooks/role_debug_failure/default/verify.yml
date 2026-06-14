@@ -1,0 +1,49 @@
+---
+- name: Verify - debug_failure wrote its diagnosis artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8790', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8790', true) }}.pid"
+    artifact: "/tmp/gludd-debug-failure-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8790', true) }}/debug_failure_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'debug_failure'
+          - result.status == 'diagnosed'
+          - result.failure_description is defined
+          - result.handoff_recipient == 'implement_change'
+          - result.facts_snapshot is defined
+          - result.diagnosis is defined
+          - result.diagnosis | length > 0
+        fail_msg: "debug_failure artifact wrong: {{ result }}"
+        success_msg: "debug_failure ran end-to-end; status={{ result.status }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-debug-failure-{{ mock_port }}"
+        state: absent
+      failed_when: false

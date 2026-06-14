@@ -1,0 +1,50 @@
+---
+- name: Verify - triage_issue wrote its result artifact and sent a message
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8787', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8787', true) }}.pid"
+    artifact: "/tmp/gludd-triage-issue-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8787', true) }}/triage_issue_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'triage_issue'
+          - result.status == 'triaged'
+          - result.issue_id == 'MOCK-ISSUE-42'
+          - result.handoff_recipient == 'implement_change'
+          - result.facts_snapshot is defined
+          - result.plan_excerpt is defined
+          # mock gludd_agent_run returns text via POST /admin/models/call
+          - result.plan_excerpt | length > 0
+        fail_msg: "triage_issue artifact wrong: {{ result }}"
+        success_msg: "triage_issue ran end-to-end; issue={{ result.issue_id }} status={{ result.status }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-triage-issue-{{ mock_port }}"
+        state: absent
+      failed_when: false

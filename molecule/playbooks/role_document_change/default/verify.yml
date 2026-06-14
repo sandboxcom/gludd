@@ -1,0 +1,49 @@
+---
+- name: Verify - document_change wrote its result artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8791', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8791', true) }}.pid"
+    artifact: "/tmp/gludd-document-change-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8791', true) }}/document_change_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'document_change'
+          - result.status == 'success'
+          - result.doc_type == 'inline'
+          - result.doc_format == 'markdown'
+          - result.documentation is defined
+          - result.documentation | length > 0
+          - result.facts_snapshot is defined
+        fail_msg: "document_change artifact wrong: {{ result }}"
+        success_msg: "document_change ran end-to-end; doc_type={{ result.doc_type }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-document-change-{{ mock_port }}"
+        state: absent
+      failed_when: false

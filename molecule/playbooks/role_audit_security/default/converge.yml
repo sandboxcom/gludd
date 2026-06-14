@@ -1,0 +1,19 @@
+---
+- name: Converge - run audit_security role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8785', true) }}"
+  tasks:
+    - name: Invoke audit_security
+      ansible.builtin.include_role:
+        name: general_ludd.agent.audit_security
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        scan_target: "/tmp"
+        security_focus_areas:
+          - "hardcoded secrets"
+          - "injection vulnerabilities"
+        artifact_dir: "/tmp/gludd-audit-security-{{ mock_port }}"

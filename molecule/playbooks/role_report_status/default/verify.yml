@@ -1,0 +1,57 @@
+---
+- name: Verify - report_status wrote its report artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8782', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8782', true) }}.pid"
+    artifact: "/tmp/gludd-report-status-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8782', true) }}/report_status.json"
+    artifact_md: "/tmp/gludd-report-status-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8782', true) }}/report_status.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'report_status'
+          - result.status == 'completed'
+          - result.system_health is defined
+          - result.history is defined
+          - result.todos is defined
+          # Mock returns success_rate=0.92 (fraction <1.0); role sees it as <50% -> 'critical'
+          - result.system_health in ['healthy', 'degraded', 'critical', 'unknown']
+        fail_msg: "report_status artifact wrong: {{ result }}"
+        success_msg: "report_status ran end-to-end against mock daemon; health={{ result.system_health }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-report-status-{{ mock_port }}"
+        state: absent
+      failed_when: false

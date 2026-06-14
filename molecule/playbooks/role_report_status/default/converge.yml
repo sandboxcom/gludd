@@ -1,0 +1,16 @@
+---
+# Run the REAL report_status role against the mock daemon.
+- name: Converge - run report_status role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8782', true) }}"
+  tasks:
+    - name: Invoke report_status
+      ansible.builtin.include_role:
+        name: general_ludd.agent.report_status
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-report-status-{{ mock_port }}"

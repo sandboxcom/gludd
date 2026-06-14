@@ -1,0 +1,57 @@
+---
+- name: Verify - report_metrics wrote its report artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}.pid"
+    artifact: "/tmp/gludd-report-metrics-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}/report_metrics.json"
+    artifact_md: "/tmp/gludd-report-metrics-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8783', true) }}/report_metrics.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'report_metrics'
+          - result.status == 'completed'
+          - result.throughput_tier is defined
+          - result.model_usage is defined
+          - result.success_failure is defined
+          - result.queue_metrics is defined
+          # mock history.total_runs = 25 -> medium tier
+          - result.throughput_tier == 'medium'
+        fail_msg: "report_metrics artifact wrong: {{ result }}"
+        success_msg: "report_metrics ran end-to-end; throughput={{ result.throughput_tier }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-report-metrics-{{ mock_port }}"
+        state: absent
+      failed_when: false

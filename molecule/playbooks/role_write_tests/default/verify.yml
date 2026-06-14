@@ -1,0 +1,48 @@
+---
+- name: Verify - write_tests wrote its result artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8788', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8788', true) }}.pid"
+    artifact: "/tmp/gludd-write-tests-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8788', true) }}/write_tests_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'write_tests'
+          - result.status in ['success', 'tests_failed']
+          - result.test_subject is defined
+          - result.facts_snapshot is defined
+          - result.agent_excerpt is defined
+          - result.agent_excerpt | length > 0
+        fail_msg: "write_tests artifact wrong: {{ result }}"
+        success_msg: "write_tests ran end-to-end; status={{ result.status }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-write-tests-{{ mock_port }}"
+        state: absent
+      failed_when: false
