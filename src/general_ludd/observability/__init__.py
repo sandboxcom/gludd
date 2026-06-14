@@ -6,6 +6,7 @@ __all__ = (
     "ExecutionTrace",
     "ModelComparison",
     "OTelBridge",
+    "RecentTracesBuffer",
     "compute_scores_from_trace",
 )
 
@@ -15,4 +16,5 @@ from general_ludd.observability.recorder import (
     AutoBenchmarkRecorder,
     compute_scores_from_trace,
 )
+from general_ludd.observability.trace_store import RecentTracesBuffer
 from general_ludd.observability.tracer import ExecutionSpan, ExecutionTrace

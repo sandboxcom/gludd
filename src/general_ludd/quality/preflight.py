@@ -101,8 +101,11 @@ def check_playbooks() -> dict[str, Any]:
 # role_audit_security, role_debug_failure, role_dependency_update,
 # role_document_change, role_refactor_code, role_report_audit,
 # role_report_metrics, role_report_status, role_triage_issue, role_write_tests).
+# Raised 26 -> 28 once the observability fact modules landed (W12: the
+# gludd_metrics -> test_gludd_metrics and gludd_traces -> test_gludd_traces
+# scenarios expose /api/metrics + /api/traces as Ansible dynamic facts).
 # This only ratchets UP as more role/module scenarios are added — never weaken.
-MIN_MOLECULE_SCENARIOS = 26
+MIN_MOLECULE_SCENARIOS = 28
 
 
 def check_molecule_scenarios() -> dict[str, Any]:

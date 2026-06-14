@@ -32,7 +32,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-        git-tracked-keys git-ls-tracked git-history-file dist-path-check
+        git-tracked-keys git-ls-tracked git-history-file dist-path-check \
+        molecule-clean
 
 help:
 	@echo "Usage: make [target]"
@@ -311,6 +312,17 @@ molecule-test-all:
 	echo ""; echo "PASSED:$$PASSED"; \
 	if [ -n "$$FAILED" ]; then echo "FAILED:$$FAILED"; exit 1; fi; \
 	echo "=== molecule-test-all: ALL scenarios passed ==="
+
+molecule-clean:
+	@echo "Removing stray molecule/<scenario> runtime dirs (any dir directly under molecule/ that is NOT playbooks, roles, internal_tools, mock_daemon, library)..."
+	@for d in molecule/*/; do \
+		s=$$(basename "$$d"); \
+		case "$$s" in \
+			playbooks|roles|internal_tools|mock_daemon|library) ;; \
+			*) echo "  Removing stray: $$d"; rm -rf "$$d" ;; \
+		esac; \
+	done
+	@echo "molecule-clean done"
 
 molecule-test:
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi

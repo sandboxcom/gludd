@@ -1,0 +1,38 @@
+---
+- name: Verify - gludd_traces injected the mock traces snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8795', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8795', true) }}.pid"
+  tasks:
+    - name: Load persisted traces
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-traces.json"
+      register: traces_raw
+
+    - name: Parse traces
+      ansible.builtin.set_fact:
+        gludd_traces: "{{ traces_raw.content | b64decode | from_json }}"
+
+    - name: Assert traces snapshot is populated
+      ansible.builtin.assert:
+        that:
+          - gludd_traces.count | int == 1
+          - gludd_traces.total_recorded | int == 1
+          - gludd_traces.recent | length == 1
+          - gludd_traces.recent[0].trace_id is defined
+          - gludd_traces.recent[0].span_count | int == 2
+          - gludd_traces.recent[0].spans | length == 2
+          - gludd_traces.by_phase.generate is defined
+          - gludd_traces.by_phase.generate.span_count | int == 1
+          - gludd_traces.otel_exporter_status == "disabled"
+        fail_msg: "gludd_traces snapshot incomplete: {{ gludd_traces }}"
+        success_msg: "gludd_traces injected recent/by_phase/otel status from mock"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

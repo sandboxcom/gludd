@@ -1,0 +1,37 @@
+---
+- name: Verify - gludd_metrics injected the mock metrics snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}.pid"
+  tasks:
+    - name: Load persisted metrics
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-metrics.json"
+      register: metrics_raw
+
+    - name: Parse metrics
+      ansible.builtin.set_fact:
+        gludd_metrics: "{{ metrics_raw.content | b64decode | from_json }}"
+
+    - name: Assert metrics snapshot is populated
+      ansible.builtin.assert:
+        that:
+          - gludd_metrics.total_agents is defined
+          - gludd_metrics.running_agents | int == 1
+          - gludd_metrics.global_model_usage is defined
+          - gludd_metrics.global_model_usage['mock-profile'].total_calls | int == 3
+          - gludd_metrics.cost_by_project is defined
+          - gludd_metrics.cost_by_project['mockproj'] is defined
+          - gludd_metrics.benchmark_rankings | length >= 1
+          - gludd_metrics.benchmark_rankings[0].composite_score is defined
+        fail_msg: "gludd_metrics snapshot incomplete: {{ gludd_metrics }}"
+        success_msg: "gludd_metrics injected agents/usage/cost/benchmark_rankings from mock"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

@@ -558,6 +558,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         benchmark_recorder = AutoBenchmarkRecorder(
             benchmark_repo=BenchmarkRepository(session_factory=session_factory),
+            trace_buffer=getattr(app.state, "_recent_traces", None),
         )
         event_loop._benchmark_recorder = benchmark_recorder
 
@@ -673,6 +674,9 @@ def _get_or_create_extended_subsystems(
 ) -> dict[str, Any]:
     if not hasattr(app.state, "_metrics_collector") or app.state._metrics_collector is None:
         app.state._metrics_collector = MetricsCollector()
+    if not hasattr(app.state, "_recent_traces") or app.state._recent_traces is None:
+        from general_ludd.observability.trace_store import RecentTracesBuffer
+        app.state._recent_traces = RecentTracesBuffer()
     if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
         startup_cfg = app.state._startup_config if hasattr(app.state, "_startup_config") else {}
         app.state._project_manager = seed_from_config(startup_cfg)

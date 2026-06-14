@@ -1,0 +1,24 @@
+---
+# Exercise the REAL gludd_traces module against the mock daemon.
+- name: Converge - load traces from the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8795', true) }}"
+  tasks:
+    - name: Call gludd_traces against the mock daemon
+      general_ludd.agent.gludd_traces:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        limit: 10
+      register: traces_result
+
+    - name: Persist the injected gludd_traces facts for verify
+      ansible.builtin.copy:
+        content: "{{ ansible_facts['gludd_traces'] | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-traces.json"
+        mode: "0644"
+
+    - name: Show injected traces facts
+      ansible.builtin.debug:
+        var: ansible_facts['gludd_traces']

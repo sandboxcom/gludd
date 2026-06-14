@@ -138,6 +138,8 @@ class TestCollectionStructure:
         "gludd_agent_run",
         "gludd_facts",
         "gludd_message",
+        "gludd_metrics",
+        "gludd_traces",
     ])
     def test_module_file_exists(self, module_name: str):
         module_path = self.COLLECTION_DIR / "plugins" / "modules" / f"{module_name}.py"
@@ -278,6 +280,75 @@ class TestFactsAndMessageModules:
         content = self._read_module("gludd_message")
         assert 'choices=["send", "receive", "ack"]' in content
         assert '"gludd_inbox"' in content
+
+
+class TestMetricsAndTracesModules:
+    """Observability fact modules (gludd_metrics, gludd_traces).
+
+    These inject ``ansible_facts.gludd_metrics`` / ``ansible_facts.gludd_traces``
+    from the daemon's read-only /api/metrics and /api/traces endpoints so a
+    playbook can branch on live cost/usage/benchmark and trace data.
+    """
+
+    MODULES_DIR = (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent"
+        / "plugins" / "modules"
+    )
+
+    def _read_module(self, name: str) -> str:
+        path = self.MODULES_DIR / f"{name}.py"
+        assert path.is_file(), f"{name}.py missing"
+        return path.read_text()
+
+    @pytest.mark.parametrize("module_name", ["gludd_metrics", "gludd_traces"])
+    def test_module_exists_and_importable(self, module_name: str):
+        import importlib.util
+
+        path = self.MODULES_DIR / f"{module_name}.py"
+        assert path.is_file(), f"{module_name}.py missing"
+        spec = importlib.util.spec_from_file_location(module_name, str(path))
+        assert spec is not None and spec.loader is not None
+        mod = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(mod)
+        assert hasattr(mod, "main")
+
+    @pytest.mark.parametrize("module_name", ["gludd_metrics", "gludd_traces"])
+    def test_has_doc_blocks(self, module_name: str):
+        content = self._read_module(module_name)
+        assert "DOCUMENTATION:" in content
+        assert "EXAMPLES:" in content
+        assert "RETURN:" in content
+
+    @pytest.mark.parametrize("module_name", ["gludd_metrics", "gludd_traces"])
+    def test_argument_spec_and_check_mode(self, module_name: str):
+        content = self._read_module(module_name)
+        assert "argument_spec=dict(" in content
+        assert "supports_check_mode=True" in content
+
+    @pytest.mark.parametrize("module_name", ["gludd_metrics", "gludd_traces"])
+    def test_psk_no_log(self, module_name: str):
+        content = self._read_module(module_name)
+        assert 'psk=dict(type="str", default="", no_log=True)' in content
+
+    def test_metrics_returns_ansible_facts(self):
+        content = self._read_module("gludd_metrics")
+        assert '"ansible_facts": {"gludd_metrics"' in content
+        assert "/api/metrics" in content
+
+    def test_traces_returns_ansible_facts(self):
+        content = self._read_module("gludd_traces")
+        assert '"ansible_facts": {"gludd_traces"' in content
+        assert "/api/traces" in content
+
+    def test_traces_supports_filters(self):
+        content = self._read_module("gludd_traces")
+        assert 'todo_id=dict(type="str"' in content
+        assert 'limit=dict(type="int"' in content
+
+    def test_metrics_supports_filters(self):
+        content = self._read_module("gludd_metrics")
+        assert 'agent_id=dict(type="str"' in content
+        assert 'project_id=dict(type="str"' in content
 
 
 class TestSkillRenderer:

@@ -12,6 +12,8 @@ shape matches what each module parses:
 
   GET  /healthz                       -> 200 {"status":"ok"}                (gludd_ping)
   GET  /api/facts                     -> 200 work/todos/models/history/...  (gludd_facts)
+  GET  /api/metrics                   -> 200 agents/usage/cost/rankings     (gludd_metrics)
+  GET  /api/traces                    -> 200 recent/by_phase/otel status    (gludd_traces)
   GET  /api/messages                  -> 200 {"messages":[...]}             (gludd_message receive)
   POST /api/messages                  -> 201 created message                (gludd_message send)
   POST /api/messages/<id>/ack         -> 200 {"acked":true}                 (gludd_message ack)
@@ -41,6 +43,67 @@ from urllib.parse import urlparse
 # Canned responses (shapes mirror what each module's main() parses)
 # ---------------------------------------------------------------------------
 
+# Metrics + traces sections shaped like the real /api/metrics + /api/traces
+# (and embedded in /api/facts as gludd.metrics / gludd.traces).
+METRICS_SNAPSHOT = {
+    "agents": [
+        {
+            "agent_id": "agent-mock-1",
+            "agent_name": "coder",
+            "status": "running",
+            "project": "mockproj",
+            "total_tokens": 440,
+            "total_cost_usd": 0.0012,
+        },
+    ],
+    "total_agents": 1,
+    "running_agents": 1,
+    "global_model_usage": {
+        "mock-profile": {
+            "total_calls": 3,
+            "success_rate": 0.6666666666666666,
+            "total_cost_usd": 0.0012,
+        },
+    },
+    "cost_by_project": {"mockproj": 0.0012},
+    "benchmark_rankings": [
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "default",
+            "task_type": "code",
+            "composite_score": 0.81,
+            "sample_count": 5,
+        },
+    ],
+}
+
+TRACES_SNAPSHOT = {
+    "count": 1,
+    "total_recorded": 1,
+    "recent": [
+        {
+            "trace_id": "trace-mock0001",
+            "todo_id": "TODO-001",
+            "work_type": "code",
+            "total_cost_usd": 0.0026,
+            "total_tokens": 190,
+            "success_rate": 1.0,
+            "span_count": 2,
+            "spans": [
+                {"span_id": "span-a", "phase": "plan", "status": "success",
+                 "output_tokens": 40, "cost_usd": 0.0005},
+                {"span_id": "span-b", "phase": "generate", "status": "success",
+                 "output_tokens": 150, "cost_usd": 0.0021},
+            ],
+        },
+    ],
+    "by_phase": {
+        "plan": {"span_count": 1, "total_cost_usd": 0.0005, "total_tokens": 40, "success_count": 1},
+        "generate": {"span_count": 1, "total_cost_usd": 0.0021, "total_tokens": 150, "success_count": 1},
+    },
+    "otel_exporter_status": "disabled",
+}
+
 FACTS_SNAPSHOT = {
     "work": {
         "active_jobs": 1,
@@ -67,6 +130,8 @@ FACTS_SNAPSHOT = {
         "unread": 0,
         "inbox": [],
     },
+    "metrics": METRICS_SNAPSHOT,
+    "traces": TRACES_SNAPSHOT,
 }
 
 
@@ -130,6 +195,10 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"status": "ok"})
         elif path == "/api/facts":
             self._send_json(200, dict(FACTS_SNAPSHOT))
+        elif path == "/api/metrics":
+            self._send_json(200, dict(METRICS_SNAPSHOT))
+        elif path == "/api/traces":
+            self._send_json(200, dict(TRACES_SNAPSHOT))
         elif path == "/api/messages":
             self._send_json(200, {"messages": [
                 {"id": "MSG-MOCK-IN-1", "sender": "planner", "topic": "standup", "status": "unread"},

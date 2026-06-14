@@ -25,8 +25,15 @@
           - gludd_facts.history is defined
           - gludd_facts.todos.backlog_size | int == 3
           - gludd_facts.history.success_rate is defined
+          - gludd_facts.metrics is defined
+          - gludd_facts.traces is defined
+          - gludd_facts.metrics.running_agents | int == 1
+          - gludd_facts.metrics.global_model_usage is defined
+          - gludd_facts.traces.count | int == 1
+          - gludd_facts.traces.by_phase.generate is defined
+          - gludd_facts.traces.otel_exporter_status == "disabled"
         fail_msg: "gludd_facts snapshot incomplete: {{ gludd_facts }}"
-        success_msg: "gludd_facts injected work/todos/models/history from mock"
+        success_msg: "gludd_facts injected work/todos/models/history/metrics/traces from mock"
 
     - name: Stop mock daemon
       ansible.builtin.shell:

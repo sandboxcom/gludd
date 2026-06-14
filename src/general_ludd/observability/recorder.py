@@ -9,9 +9,12 @@ pipeline (task completion → benchmark write).
 from __future__ import annotations
 
 import logging
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 from general_ludd.observability.tracer import ExecutionTrace
+
+if TYPE_CHECKING:
+    from general_ludd.observability.trace_store import RecentTracesBuffer
 
 logger = logging.getLogger(__name__)
 
@@ -36,8 +39,13 @@ def compute_scores_from_trace(trace: ExecutionTrace, success: bool) -> dict[str,
 class AutoBenchmarkRecorder:
     """Records benchmark results automatically from execution traces."""
 
-    def __init__(self, benchmark_repo: Any | None = None) -> None:
+    def __init__(
+        self,
+        benchmark_repo: Any | None = None,
+        trace_buffer: RecentTracesBuffer | None = None,
+    ) -> None:
         self._repo = benchmark_repo
+        self._trace_buffer = trace_buffer
 
     async def record_from_trace(
         self,
@@ -45,7 +53,15 @@ class AutoBenchmarkRecorder:
         success: bool = True,
         test_results: dict[str, int] | None = None,
     ) -> None:
-        """Record a benchmark result from a completed execution trace."""
+        """Record a benchmark result from a completed execution trace.
+
+        Also retains the trace in the bounded recent-traces buffer (when one is
+        configured) so it is queryable as an Ansible dynamic fact. The buffer
+        append is unconditional on a populated trace — even when no benchmark
+        repo is wired — so /api/traces reflects genuinely-captured telemetry.
+        """
+        if trace.spans and self._trace_buffer is not None:
+            self._trace_buffer.record(trace)
         if self._repo is None:
             return
         if not trace.spans:
