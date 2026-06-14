@@ -93,12 +93,23 @@ def check_playbooks() -> dict[str, Any]:
     return {"passed": len(playbooks) > 0, "found": playbooks, "count": len(playbooks)}
 
 
+# Floor for molecule coverage. Raised from 1 -> 6 once the W10 mock-daemon
+# harness landed (noop, prompt_eval, runtime_validate, test_gludd_ping,
+# test_gludd_facts, role_implement_change). This only ratchets UP as more
+# role/module scenarios are added — never weaken it.
+MIN_MOLECULE_SCENARIOS = 6
+
+
 def check_molecule_scenarios() -> dict[str, Any]:
     mol_dir = REPO_ROOT / "molecule" / "playbooks"
     if not mol_dir.is_dir():
         return {"passed": False, "scenario_count": 0}
     scenarios = sorted([d.name for d in mol_dir.iterdir() if d.is_dir()])
-    return {"passed": len(scenarios) >= 1, "scenario_count": len(scenarios), "scenarios": scenarios}
+    return {
+        "passed": len(scenarios) >= MIN_MOLECULE_SCENARIOS,
+        "scenario_count": len(scenarios),
+        "scenarios": scenarios,
+    }
 
 
 def check_filestore() -> dict[str, Any]:

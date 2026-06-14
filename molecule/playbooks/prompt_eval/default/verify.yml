@@ -3,7 +3,17 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    templates_dir: "{{ lookup('env', 'PWD') }}/templates/prompts"
+    venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
+    files_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
   tasks:
+    - name: Re-compile all templates (verify pass)
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/compile_templates.py {{ templates_dir }}"
+      register: template_compile
+      changed_when: false
+
     - name: Assert templates compiled successfully
       ansible.builtin.assert:
         that:
@@ -11,6 +21,12 @@
           - "'FAIL' not in template_compile.stdout"
         fail_msg: "Template compilation failed: {{ template_compile.stdout }}"
         success_msg: "All templates compiled successfully"
+
+    - name: Re-render all templates (verify pass)
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/render_templates.py {{ templates_dir }}"
+      register: template_render
+      changed_when: false
 
     - name: Assert templates rendered successfully
       ansible.builtin.assert:

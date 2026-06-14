@@ -1,0 +1,23 @@
+---
+# Exercise the REAL gludd_ping module against the mock daemon.
+- name: Converge - ping the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8771', true) }}"
+  tasks:
+    - name: Call gludd_ping against the mock daemon
+      general_ludd.agent.gludd_ping:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: ping_result
+
+    - name: Persist ping result for verify
+      ansible.builtin.copy:
+        content: "{{ ping_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-ping.json"
+        mode: "0644"
+
+    - name: Show ping result
+      ansible.builtin.debug:
+        var: ping_result

@@ -185,14 +185,19 @@ class TestCheckPlaybooks:
 
 class TestCheckMoleculeScenarios:
     def test_scenarios_present(self, tmp_path):
-        from general_ludd.quality.preflight import check_molecule_scenarios
+        from general_ludd.quality.preflight import (
+            MIN_MOLECULE_SCENARIOS,
+            check_molecule_scenarios,
+        )
 
-        mol_dir = tmp_path / "molecule" / "playbooks" / "default"
-        mol_dir.mkdir(parents=True)
+        base = tmp_path / "molecule" / "playbooks"
+        # Create at least the floor number of scenario dirs so passed is True.
+        for i in range(MIN_MOLECULE_SCENARIOS):
+            (base / f"scenario_{i}").mkdir(parents=True)
         with patch("general_ludd.quality.preflight.REPO_ROOT", tmp_path):
             result = check_molecule_scenarios()
             assert result["passed"] is True
-            assert result["scenario_count"] >= 1
+            assert result["scenario_count"] >= MIN_MOLECULE_SCENARIOS
 
     def test_molecule_dir_missing(self, tmp_path):
         from general_ludd.quality.preflight import check_molecule_scenarios

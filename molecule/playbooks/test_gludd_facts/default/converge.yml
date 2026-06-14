@@ -1,0 +1,23 @@
+---
+# Exercise the REAL gludd_facts module against the mock daemon.
+- name: Converge - load facts from the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8772', true) }}"
+  tasks:
+    - name: Call gludd_facts against the mock daemon
+      general_ludd.agent.gludd_facts:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: facts_result
+
+    - name: Persist the injected gludd facts for verify
+      ansible.builtin.copy:
+        content: "{{ ansible_facts['gludd'] | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-facts.json"
+        mode: "0644"
+
+    - name: Show injected facts
+      ansible.builtin.debug:
+        var: ansible_facts['gludd']

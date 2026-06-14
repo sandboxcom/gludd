@@ -1,0 +1,26 @@
+---
+# Run the REAL implement_change role from the collection against the mock daemon
+# and the throwaway git repo. enable_git_push stays false (no push). The role's
+# gludd_facts/gludd_message/gludd_agent_run calls hit the mock over HTTP; its
+# gludd_worktree/gludd_git calls run real git on the throwaway repo.
+- name: Converge - run implement_change role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}"
+    mock_repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}"
+  tasks:
+    - name: Invoke implement_change
+      ansible.builtin.include_role:
+        name: general_ludd.agent.implement_change
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        todo_id: "MOCK-TODO-1"
+        change_description: "Add a hello function to the mock repo"
+        repo_path: "{{ mock_repo_path }}"
+        worktree_base: "/tmp/gludd-worktrees"
+        artifact_dir: "/tmp/gludd-implement-change-{{ mock_port }}"
+        enable_git_push: false
+        agent_max_iterations: 1

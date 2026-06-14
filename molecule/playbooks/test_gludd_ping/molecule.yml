@@ -1,0 +1,17 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    # Resolve the in-repo collection (general_ludd.agent.*) and the mock daemon.
+    # ${MOLECULE_PROJECT_DIRECTORY} is the repo root molecule runs from.
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8771"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible

@@ -1,0 +1,15 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8772"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible

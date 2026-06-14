@@ -1,0 +1,55 @@
+---
+# Role scenario prepare: start the mock daemon AND build a throwaway git repo
+# so the role's REAL worktree/git ops (general_ludd.git_automation) run for real
+# against a disposable local repo. Only the daemon is mocked.
+- name: Prepare - mock daemon + throwaway git repo
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}.pid"
+    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Remove any stale throwaway repo + worktrees
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_path }}"
+        - "/tmp/gludd-worktrees/implement/MOCK-TODO-1"
+
+    - name: Create throwaway git repo with an initial commit
+      ansible.builtin.shell:
+        cmd: |
+          set -e
+          mkdir -p "{{ repo_path }}"
+          cd "{{ repo_path }}"
+          git init -q
+          git config user.email "mock@molecule.local"
+          git config user.name "Molecule Mock"
+          git config commit.gpgsign false
+          echo "seed" > README.md
+          git add README.md
+          git commit -q -m "seed commit"
+      changed_when: true

@@ -21,7 +21,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-branch git-checkout git-merge git-staged \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
-		molecule-version molecule-test \
+		molecule-version molecule-test molecule-test-all \
+		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
@@ -282,13 +283,42 @@ playbook-list:
 molecule-version:
 	@$(UV) run molecule --version
 
+# List collection roles + gludd_* modules (coverage enumeration helper)
+collection-roles:
+	@ls -1 collections/ansible_collections/general_ludd/agent/roles 2>/dev/null || echo "No roles found"
+
+collection-modules:
+	@ls -1 collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_*.py 2>/dev/null || echo "No modules found"
+
+molecule-scenarios:
+	@ls -1 molecule/playbooks 2>/dev/null || echo "No scenarios found"
+
+# Run EVERY scenario under molecule/playbooks/ in sequence; fail if any fail.
+# Per-scenario output goes to /tmp/gludd-molecule-<name>.log; a PASS/FAIL
+# summary is printed at the end (and on failure exits non-zero).
+molecule-test-all:
+	@echo "=== molecule-test-all: running every scenario under molecule/playbooks/ ==="
+	@FAILED=""; PASSED=""; \
+	for d in molecule/playbooks/*/; do \
+		s=$$(basename "$$d"); \
+		echo "--- running scenario: $$s (log: /tmp/gludd-molecule-$$s.log) ---"; \
+		if $(MAKE) --no-print-directory molecule-test SCENARIO="$$s" > "/tmp/gludd-molecule-$$s.log" 2>&1; then \
+			PASSED="$$PASSED $$s"; echo "    PASS $$s"; \
+		else \
+			FAILED="$$FAILED $$s"; echo "    FAIL $$s (see /tmp/gludd-molecule-$$s.log)"; \
+		fi; \
+	done; \
+	echo ""; echo "PASSED:$$PASSED"; \
+	if [ -n "$$FAILED" ]; then echo "FAILED:$$FAILED"; exit 1; fi; \
+	echo "=== molecule-test-all: ALL scenarios passed ==="
+
 molecule-test:
 	@if [ -z "$(SCENARIO)" ]; then echo "Usage: make molecule-test SCENARIO=noop|prompt_eval|runtime_validate"; exit 1; fi
 	@echo "Running molecule scenario: $(SCENARIO)"
-	@cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default" 2>/dev/null; \
-	mkdir -p "molecule/$(SCENARIO)/default"; \
+	@rm -rf "molecule/$(SCENARIO)"; \
+	mkdir -p "molecule/$(SCENARIO)"; \
 	cp "molecule/playbooks/$(SCENARIO)/molecule.yml" "molecule/$(SCENARIO)/"; \
-	cp "molecule/playbooks/$(SCENARIO)/default"/*.yml "molecule/$(SCENARIO)/default/" 2>/dev/null; \
+	cp -r "molecule/playbooks/$(SCENARIO)/default" "molecule/$(SCENARIO)/default"; \
 	$(UV) run molecule test -s "$(SCENARIO)"; \
 	EXIT_CODE=$$?; \
 	rm -rf "molecule/$(SCENARIO)"; \

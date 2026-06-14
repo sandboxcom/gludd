@@ -5,87 +5,16 @@
   gather_facts: true
   vars:
     project_src: "{{ lookup('env', 'PWD') }}/src"
+    venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
+    files_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
   tasks:
-    - name: Verify Python can import worker app factory
-      ansible.builtin.script:
-        cmd: |
-          import sys
-          sys.path.insert(0, "{{ project_src }}")
-          try:
-              from general_ludd.worker.app import create_app
-              app = create_app()
-              print("WORKER OK: app factory created")
-          except Exception as e:
-              print(f"WORKER FAIL: {e}")
-              sys.exit(1)
-      register: worker_import
+    - name: Run runtime component checks
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/check_runtime.py {{ project_src }} {{ lookup('env', 'PWD') }}"
+      register: runtime_check
+      changed_when: false
+      failed_when: runtime_check.rc != 0
 
-    - name: Verify event loop imports correctly
-      ansible.builtin.script:
-        cmd: |
-          import sys
-          sys.path.insert(0, "{{ project_src }}")
-          try:
-              from general_ludd.event_loop.loop import EventLoop
-              loop = EventLoop()
-              print("EVENT_LOOP OK: instance created")
-          except Exception as e:
-              print(f"EVENT_LOOP FAIL: {e}")
-              sys.exit(1)
-      register: loop_import
-
-    - name: Verify Ansible runner adapters work
-      ansible.builtin.script:
-        cmd: |
-          import sys
-          sys.path.insert(0, "{{ project_src }}")
-          try:
-              from general_ludd.ansible.runner import AnsibleRunnerAdapter
-              runner = AnsibleRunnerAdapter()
-              dirs = runner.prepare_job_dirs("test-molecule-job")
-              print(f"RUNNER OK: dirs={list(dirs.keys())}")
-          except Exception as e:
-              print(f"RUNNER FAIL: {e}")
-              sys.exit(1)
-      register: runner_import
-
-    - name: Verify CoreAnsibleRunner runs noop playbook
-      ansible.builtin.script:
-        cmd: |
-          import sys, os
-          sys.path.insert(0, "{{ project_src }}")
-          try:
-              from general_ludd.ansible.core_runner import CoreAnsibleRunner
-              playbook = os.path.join(os.getcwd(), "playbooks", "noop.yml")
-              runner = CoreAnsibleRunner()
-              result = runner.run_playbook(playbook)
-              print(f"CORE_RUNNER OK: status={result.status} rc={result.rc}")
-              if result.rc != 0:
-                  print(f"Events: {result.events}")
-                  sys.exit(1)
-          except Exception as e:
-              print(f"CORE_RUNNER FAIL: {e}")
-              import traceback
-              traceback.print_exc()
-              sys.exit(1)
-      register: core_runner
-
-    - name: Verify gunicorn config is valid
-      ansible.builtin.script:
-        cmd: |
-          import sys
-          sys.path.insert(0, "{{ project_src }}")
-          try:
-              from general_ludd.worker.gunicorn_conf import (
-                  bind, workers, timeout, loglevel, max_requests,
-                  on_reload, post_fork, pre_exec,
-              )
-              assert isinstance(workers, int), f"workers should be int, got {type(workers)}"
-              assert isinstance(timeout, int), f"timeout should be int, got {type(timeout)}"
-              assert isinstance(max_requests, int), f"max_requests should be int, got {type(max_requests)}"
-              assert bind is not None
-              print(f"GUNICORN OK: workers={workers} timeout={timeout} bind={bind}")
-          except Exception as e:
-              print(f"GUNICORN FAIL: {e}")
-              sys.exit(1)
-      register: gunicorn_conf
+    - name: Show runtime check output
+      ansible.builtin.debug:
+        var: runtime_check.stdout_lines

@@ -3,43 +3,26 @@
   hosts: localhost
   connection: local
   gather_facts: false
+  vars:
+    project_src: "{{ lookup('env', 'PWD') }}/src"
+    venv_python: "{{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3"
+    files_dir: "{{ lookup('env', 'MOLECULE_SCENARIO_DIRECTORY') | default(playbook_dir, true) }}"
   tasks:
-    - name: Assert worker import succeeded
-      ansible.builtin.assert:
-        that:
-          - worker_import.rc == 0
-          - "'WORKER OK' in worker_import.stdout"
-        fail_msg: "Worker import failed: {{ worker_import.stdout }}"
-        success_msg: "Worker app factory OK"
+    - name: Re-run runtime component checks (verify pass)
+      ansible.builtin.command:
+        cmd: "{{ venv_python }} {{ files_dir }}/default/files/check_runtime.py {{ project_src }} {{ lookup('env', 'PWD') }}"
+      register: runtime_check
+      changed_when: false
 
-    - name: Assert event loop import succeeded
+    - name: Assert all runtime components validated
       ansible.builtin.assert:
         that:
-          - loop_import.rc == 0
-          - "'EVENT_LOOP OK' in loop_import.stdout"
-        fail_msg: "EventLoop import failed: {{ loop_import.stdout }}"
-        success_msg: "EventLoop import OK"
-
-    - name: Assert runner adapter succeeded
-      ansible.builtin.assert:
-        that:
-          - runner_import.rc == 0
-          - "'RUNNER OK' in runner_import.stdout"
-        fail_msg: "Runner import failed: {{ runner_import.stdout }}"
-        success_msg: "AnsibleRunnerAdapter OK"
-
-    - name: Assert core runner succeeded
-      ansible.builtin.assert:
-        that:
-          - core_runner.rc == 0
-          - "'CORE_RUNNER OK' in core_runner.stdout"
-        fail_msg: "CoreAnsibleRunner failed: {{ core_runner.stdout }}"
-        success_msg: "CoreAnsibleRunner OK"
-
-    - name: Assert gunicorn config valid
-      ansible.builtin.assert:
-        that:
-          - gunicorn_conf.rc == 0
-          - "'GUNICORN OK' in gunicorn_conf.stdout"
-        fail_msg: "Gunicorn config failed: {{ gunicorn_conf.stdout }}"
-        success_msg: "Gunicorn config OK"
+          - runtime_check.rc == 0
+          - "'WORKER OK' in runtime_check.stdout"
+          - "'EVENT_LOOP OK' in runtime_check.stdout"
+          - "'RUNNER OK' in runtime_check.stdout"
+          - "'CORE_RUNNER OK' in runtime_check.stdout"
+          - "'GUNICORN OK' in runtime_check.stdout"
+          - "'ALL_RUNTIME_CHECKS OK' in runtime_check.stdout"
+        fail_msg: "Runtime validation failed: {{ runtime_check.stdout }}"
+        success_msg: "All runtime components validated (worker/loop/runner/core/gunicorn)"

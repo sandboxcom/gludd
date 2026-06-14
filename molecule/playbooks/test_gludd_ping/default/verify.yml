@@ -1,0 +1,33 @@
+---
+- name: Verify - gludd_ping reached the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8771', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8771', true) }}.pid"
+  tasks:
+    - name: Load persisted ping result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-ping.json"
+      register: ping_raw
+
+    - name: Parse ping result
+      ansible.builtin.set_fact:
+        ping: "{{ ping_raw.content | b64decode | from_json }}"
+
+    - name: Assert daemon was reachable and module returned pong
+      ansible.builtin.assert:
+        that:
+          - ping.pong | bool
+          - ping.daemon_reachable | bool
+          - "'127.0.0.1:' + mock_port in ping.daemon_url"
+        fail_msg: "gludd_ping did not confirm reachability: {{ ping }}"
+        success_msg: "gludd_ping reached mock daemon and returned pong"
+
+    # ---- always clean up the mock daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

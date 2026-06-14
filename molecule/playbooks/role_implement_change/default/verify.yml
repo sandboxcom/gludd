@@ -1,0 +1,52 @@
+---
+- name: Verify - implement_change wrote its result artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}.pid"
+    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}"
+    artifact: "/tmp/gludd-implement-change-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8773', true) }}/implement_change_result.json"
+  tasks:
+    - name: Assert result artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load result artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse result artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert the role followed the facts-driven success path
+      ansible.builtin.assert:
+        that:
+          - result.role == 'implement_change'
+          - result.status == 'success'
+          - result.todo_id == 'MOCK-TODO-1'
+          - result.facts_snapshot is defined
+          - result.facts_snapshot.backlog_size | int == 3
+        fail_msg: "implement_change artifact wrong: {{ result }}"
+        success_msg: "implement_change ran end-to-end against mock daemon + real git"
+
+    # ---- cleanup: stop daemon + remove throwaway repo/worktrees ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove throwaway repo + worktrees
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_path }}"
+        - "/tmp/gludd-worktrees/implement/MOCK-TODO-1"
+      failed_when: false

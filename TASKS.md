@@ -340,3 +340,31 @@ Disposition counts: **wired 29 / removed 0 / exempt 0**. No class left unresolve
    UserConfig + a loader that builds `MCPClient`, pass it into `EventLoop`.
 
 - [x] W3.9 — MCP DEFER rationale recorded; code honestly fences MCP (no silent success), EventLoop already threads a supplied registry/client; config source deferred | evidence: tests/unit/test_mcp_wiring.py passing (registry→budget_context only when supplied; None→[]); src/general_ludd/daemon.py mcp_client=None explicit 6915362
+
+## Phase W10 — molecule mock harness + honest coverage (2026-06-14)
+
+Reusable mock daemon (stdlib `http.server`, 127.0.0.1) at
+`molecule/mock_daemon/server.py` returns canned JSON for every endpoint the
+`gludd_*` modules hit (/healthz, /api/facts, GET+POST /api/messages, ack,
+/admin/models/call, /api/todos/{id} GET+PATCH, /api/resource-preferences). The
+REAL modules/roles execute unchanged and hit the mock over HTTP — only the
+daemon (and external network) is mocked, so module/role logic is genuinely
+exercised. New-scenario pattern is mechanical: `molecule/playbooks/<name>/`
+with `molecule.yml` (env: ANSIBLE_COLLECTIONS_PATH=${MOLECULE_PROJECT_DIRECTORY}/collections,
+GLUDD_MOCK_PORT=<port>) + `default/{prepare,converge,verify}.yml`
+(prepare launches the mock daemon, verify stops it).
+
+- [x] W10.1 — viability proven: molecule 26.4.0 runs GREEN here on the `default` (localhost) driver; mock-daemon harness chosen over a library/ stub so MODULE scenarios hit a real HTTP endpoint (honest coverage) | evidence: make molecule-test SCENARIO=noop "Executed: Successful"; molecule/mock_daemon/server.py created e865e31
+- [x] W10.2 — 3 exemplar scenarios run green: test_gludd_ping (module → /healthz), test_gludd_facts (module → /api/facts work/todos/models/history), role_implement_change (REAL implement_change role: facts/message/agent_run hit mock over HTTP, worktree/git run real git on a throwaway repo, success artifact asserts backlog_size=3 from mock) | evidence: make molecule-test SCENARIO=test_gludd_ping / test_gludd_facts / role_implement_change all "Executed: Successful"; molecule/playbooks/{test_gludd_ping,test_gludd_facts,role_implement_change}/ e865e31
+- [x] W10.3 — suite wiring: Makefile molecule-test-all loops every molecule/playbooks/ scenario and fails if any fail; CI molecule job (hash-pinned, localhost driver) added to .github/workflows/build.yml; two stale pre-existing scenarios (prompt_eval, runtime_validate) repaired (ansible.builtin.script inline-Python → command on committed files/ scripts; stale gunicorn/job_id assertions corrected) | evidence: make molecule-test-all "ALL scenarios passed" (noop prompt_eval role_implement_change runtime_validate test_gludd_facts test_gludd_ping); .github/workflows/build.yml molecule job; Makefile molecule-test-all e865e31
+- [x] W10.4 — coverage gate + checklist: tests/integration/test_molecule_coverage.py asserts mock daemon + 3 exemplars present and partitions the full role/module inventory into covered vs a shrinking _NOT_YET_COVERED checklist (adding a scenario without ticking it off fails the test); preflight MIN_MOLECULE_SCENARIOS raised 1→6 (ratchets up only) | evidence: make test-specific TESTFILE='tests/integration/test_molecule_coverage.py' "7 passed"; src/general_ludd/quality/preflight.py MIN_MOLECULE_SCENARIOS=6 e865e31
+
+### W10 remaining coverage checklist (the TODO for later passes)
+Modules still needing a focused `test_gludd_<x>` scenario (8): gludd_agent_run,
+gludd_db, gludd_git, gludd_mcp_tool, gludd_message, gludd_model_call,
+gludd_skill, gludd_worktree (agent_run/git/message/worktree are exercised
+indirectly by role_implement_change; add focused module scenarios next).
+Roles still needing a `role_<name>` scenario (12): agent_task,
+audit_dependencies, audit_security, debug_failure, dependency_update,
+document_change, refactor_code, report_audit, report_metrics, report_status,
+triage_issue, write_tests.

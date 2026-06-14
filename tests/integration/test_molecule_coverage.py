@@ -1,0 +1,161 @@
+"""W10 molecule coverage gate.
+
+This is the COVERAGE checklist that later passes must satisfy: every role under
+the collection roles dir AND every ``gludd_*`` module must eventually have a
+matching molecule scenario directory under ``molecule/playbooks/``.
+
+Strategy so the gate is GREEN now but becomes a shrinking checklist:
+  - Roles/modules that DO have a scenario are asserted present.
+  - Roles/modules not yet covered are listed in ``_NOT_YET_COVERED_*`` with a
+    TODO. The test asserts those sets exactly partition the inventory, so:
+      * adding a scenario without removing its name here -> test fails (forces
+        you to tick it off the checklist), and
+      * deleting a covered scenario -> test fails (regression guard).
+  - The mock-daemon harness and the three exemplar scenarios are asserted
+    present so the reusable pattern cannot silently rot.
+
+Naming convention enforced:
+  - module ``gludd_<x>`` -> scenario ``molecule/playbooks/test_gludd_<x>``
+  - role ``<name>``      -> scenario ``molecule/playbooks/role_<name>``
+"""
+
+from __future__ import annotations
+
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.parent
+ROLES_DIR = ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles"
+MODULES_DIR = ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "plugins" / "modules"
+SCENARIOS_DIR = ROOT / "molecule" / "playbooks"
+MOCK_DAEMON = ROOT / "molecule" / "mock_daemon" / "server.py"
+
+
+def _module_names() -> set[str]:
+    return {p.stem for p in MODULES_DIR.glob("gludd_*.py")}
+
+
+def _role_names() -> set[str]:
+    return {p.name for p in ROLES_DIR.iterdir() if p.is_dir()}
+
+
+def _scenario_names() -> set[str]:
+    return {p.name for p in SCENARIOS_DIR.iterdir() if p.is_dir()}
+
+
+def _module_scenario(module: str) -> str:
+    return f"test_{module}"
+
+
+def _role_scenario(role: str) -> str:
+    return f"role_{role}"
+
+
+# --- The shrinking checklist -------------------------------------------------
+# Modules that DO NOT yet have a test_<module> molecule scenario.
+# Remove a name here the moment you add its scenario (see test below).
+_NOT_YET_COVERED_MODULES = {
+    "gludd_agent_run",   # TODO: covered indirectly by role_implement_change; add a focused scenario
+    "gludd_db",          # TODO: scenario test_gludd_db (todo_get/update/resource_preference)
+    "gludd_git",         # TODO: covered indirectly by role_implement_change; add a focused scenario
+    "gludd_mcp_tool",    # TODO: scenario test_gludd_mcp_tool (asserts not_implemented=true)
+    "gludd_message",     # TODO: covered indirectly by role_implement_change; add a focused scenario
+    "gludd_model_call",  # TODO: scenario test_gludd_model_call (POST /admin/models/call)
+    "gludd_skill",       # TODO: scenario test_gludd_skill (render a skill body)
+    "gludd_worktree",    # TODO: covered indirectly by role_implement_change; add a focused scenario
+}
+
+# Roles that DO NOT yet have a role_<name> molecule scenario.
+_NOT_YET_COVERED_ROLES = {
+    "agent_task",
+    "audit_dependencies",
+    "audit_security",
+    "debug_failure",
+    "dependency_update",
+    "document_change",
+    "refactor_code",
+    "report_audit",
+    "report_metrics",
+    "report_status",
+    "triage_issue",
+    "write_tests",
+}
+
+
+class TestMoleculeHarnessExists:
+    def test_mock_daemon_server_present(self):
+        assert MOCK_DAEMON.is_file(), f"missing reusable mock daemon at {MOCK_DAEMON}"
+
+    def test_exemplar_scenarios_present(self):
+        scenarios = _scenario_names()
+        for exemplar in ("test_gludd_ping", "test_gludd_facts", "role_implement_change"):
+            assert exemplar in scenarios, f"exemplar scenario missing: {exemplar}"
+            mol = SCENARIOS_DIR / exemplar / "molecule.yml"
+            conv = SCENARIOS_DIR / exemplar / "default" / "converge.yml"
+            ver = SCENARIOS_DIR / exemplar / "default" / "verify.yml"
+            assert mol.is_file(), f"{exemplar}: molecule.yml missing"
+            assert conv.is_file(), f"{exemplar}: default/converge.yml missing"
+            assert ver.is_file(), f"{exemplar}: default/verify.yml missing"
+
+    def test_module_scenarios_start_the_mock_daemon(self):
+        # Module scenarios must hit a real (mock) HTTP endpoint — they must ship
+        # a prepare.yml that launches the mock daemon. (Honest coverage rule.)
+        for exemplar in ("test_gludd_ping", "test_gludd_facts"):
+            prep = SCENARIOS_DIR / exemplar / "default" / "prepare.yml"
+            assert prep.is_file(), f"{exemplar}: module scenario must have prepare.yml"
+            assert "mock_daemon/server.py" in prep.read_text(), (
+                f"{exemplar}: prepare.yml must launch the mock daemon"
+            )
+
+
+class TestModuleCoverageChecklist:
+    def test_inventory_partition_is_exact(self):
+        """Covered + not-yet-covered must exactly equal the module inventory.
+
+        This forces the checklist to stay honest: you cannot add a scenario
+        without ticking the module off ``_NOT_YET_COVERED_MODULES``, and you
+        cannot delete a scenario for a 'covered' module without it reappearing.
+        """
+        modules = _module_names()
+        scenarios = _scenario_names()
+        covered = {m for m in modules if _module_scenario(m) in scenarios}
+        not_covered = modules - covered
+
+        # Every not-yet-covered module must be in the declared checklist.
+        undeclared = not_covered - _NOT_YET_COVERED_MODULES
+        assert not undeclared, (
+            f"modules with no scenario and not on the checklist: {sorted(undeclared)}"
+        )
+        # Every checklist entry must really be uncovered (tick it off when added).
+        stale = _NOT_YET_COVERED_MODULES - not_covered
+        assert not stale, (
+            f"checklist lists modules that now HAVE a scenario — remove them: {sorted(stale)}"
+        )
+
+    def test_at_least_two_module_scenarios_exist(self):
+        modules = _module_names()
+        scenarios = _scenario_names()
+        covered = {m for m in modules if _module_scenario(m) in scenarios}
+        assert len(covered) >= 2, f"expected >= 2 module scenarios, have {sorted(covered)}"
+
+
+class TestRoleCoverageChecklist:
+    def test_inventory_partition_is_exact(self):
+        roles = _role_names()
+        scenarios = _scenario_names()
+        covered = {r for r in roles if _role_scenario(r) in scenarios}
+        not_covered = roles - covered
+
+        undeclared = not_covered - _NOT_YET_COVERED_ROLES
+        assert not undeclared, (
+            f"roles with no scenario and not on the checklist: {sorted(undeclared)}"
+        )
+        stale = _NOT_YET_COVERED_ROLES - not_covered
+        assert not stale, (
+            f"checklist lists roles that now HAVE a scenario — remove them: {sorted(stale)}"
+        )
+
+    def test_at_least_one_role_scenario_exists(self):
+        roles = _role_names()
+        scenarios = _scenario_names()
+        covered = {r for r in roles if _role_scenario(r) in scenarios}
+        assert len(covered) >= 1, f"expected >= 1 role scenario, have {sorted(covered)}"

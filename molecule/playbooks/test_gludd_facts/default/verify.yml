@@ -1,0 +1,35 @@
+---
+- name: Verify - gludd_facts injected the mock snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8772', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8772', true) }}.pid"
+  tasks:
+    - name: Load persisted facts
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-facts.json"
+      register: facts_raw
+
+    - name: Parse facts
+      ansible.builtin.set_fact:
+        gludd_facts: "{{ facts_raw.content | b64decode | from_json }}"
+
+    - name: Assert all expected fact sections are present
+      ansible.builtin.assert:
+        that:
+          - gludd_facts.work is defined
+          - gludd_facts.todos is defined
+          - gludd_facts.models is defined
+          - gludd_facts.history is defined
+          - gludd_facts.todos.backlog_size | int == 3
+          - gludd_facts.history.success_rate is defined
+        fail_msg: "gludd_facts snapshot incomplete: {{ gludd_facts }}"
+        success_msg: "gludd_facts injected work/todos/models/history from mock"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
