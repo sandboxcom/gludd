@@ -309,7 +309,7 @@ dead new classes; `make audit-findings` lists them).
 | DependencyManager | wired | `routers/maintenance.py GET /admin/deps/outdated` |
 | QualityGateChecker | wired | `routers/maintenance.py POST /admin/quality/check` |
 | GitHubIssueIngestor | wired | `routers/maintenance.py POST /admin/issues/poll` |
-| AnsibleTemplater | wired | `routers/ansible.py POST /admin/ansible/render` |
+| AnsibleTemplater | wired | `routers/ansible.py POST /admin/ansible/render`; behavioral TDD proof: `tests/unit/test_completion_audit_wiring.py::TestAnsibleTemplaterWiring` (2 tests: render with extra_vars resolves Jinja2 expression; render with no extra_vars passes through) |
 | LangGraphGateway | wired | `agents/capabilities.py::AgentCapabilities.make_graph_gateway` |
 | PromptScoringEngine | wired | `agents/capabilities.py::AgentCapabilities.make_graph_gateway` (scoring engine for LangGraphGateway) |
 | ContainerBuilder | wired | `runtime/release_orchestrator.py::build_and_validate_release`; `make release-validate` |
@@ -319,6 +319,7 @@ dead new classes; `make audit-findings` lists them).
 Disposition counts: **wired 29 / removed 0 / exempt 0**. No class left unresolved.
 
 - [x] W9.1 — completion_audit 83.0%→100.0%: 29 classes wired into real call paths (per-class table above), each with a TDD proof in tests/unit/test_completion_audit_wiring.py | evidence: tests/unit/test_completion_audit_wiring.py 26 passed; make preflight completion_audit PASS 100.0% 0 findings; make gate "ALL PASSED" lint 0 typecheck 0 collect 0 test 0 smoke PASS 6915362
+- [x] W9.1-AnsibleTemplater — behavioral TDD proof added: TestAnsibleTemplaterWiring (2 tests via router POST /admin/ansible/render with monkeypatched CoreAnsibleRunner); wiring confirmed already genuine (not superficial) | evidence: tests/unit/test_completion_audit_wiring.py::TestAnsibleTemplaterWiring 2 passed; make validate "Full validation passed" lint 0 ansible-syntax PASS typecheck 0 test PASS smoke PASS audit-evidence PASS 5a232c3
 
 ## Phase W3.9 — MCP wiring decision (final, 2026-06-13)
 

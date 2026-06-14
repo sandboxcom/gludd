@@ -512,6 +512,54 @@ class TestSlurmConnectionErrorWiring:
             adapter.submit("echo hi")
 
 
+class TestAnsibleTemplaterWiring:
+    """AnsibleTemplater is instantiated and called by the ansible router POST endpoint."""
+
+    def _client(self, monkeypatch):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.routers.ansible import register
+
+        # Patch CoreAnsibleRunner.render_template so the test does not require
+        # ansible-core to be installed in the test environment.  The assertion
+        # that matters is that AnsibleTemplater.render() is called on the live
+        # router path — not that ansible-core's Templar produces a specific
+        # result.
+        monkeypatch.setattr(
+            "general_ludd.ansible.core_runner.CoreAnsibleRunner.render_template",
+            lambda self, template_str, variables=None: template_str.replace(
+                "{{ greeting }}", variables.get("greeting", "") if variables else ""
+            ),
+        )
+
+        app = FastAPI()
+        register(app, {})
+        return TestClient(app)
+
+    def test_render_endpoint_uses_ansible_templater(self, monkeypatch):
+        """POST /admin/ansible/render instantiates AnsibleTemplater and calls render()."""
+        client = self._client(monkeypatch)
+        resp = client.post(
+            "/admin/ansible/render",
+            json={"template": "Hello {{ greeting }}!", "extra_vars": {"greeting": "world"}},
+        )
+        assert resp.status_code == 200
+        body = resp.json()
+        assert "rendered" in body
+        assert body["rendered"] == "Hello world!"
+
+    def test_render_endpoint_with_no_extra_vars(self, monkeypatch):
+        """render() is called even when extra_vars is absent — template passes through."""
+        client = self._client(monkeypatch)
+        resp = client.post(
+            "/admin/ansible/render",
+            json={"template": "plain text"},
+        )
+        assert resp.status_code == 200
+        assert resp.json()["rendered"] == "plain text"
+
+
 class TestAuditEventTypeWiring:
     """AuditEventType drives the AuditEventRepository convenience recorder."""
 
