@@ -1,0 +1,37 @@
+---
+# Run the REAL sbom_generate role with enable_syft=false.
+# The role parses the sbom_output_override CycloneDX JSON and extracts
+# component_count + top_deps — this exercises real JSON parsing + artifact logic.
+- name: Converge - run sbom_generate role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8813', true) }}"
+  tasks:
+    - name: Invoke sbom_generate (enable_syft=false; uses default sbom_output_override)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.sbom_generate
+      vars:
+        artifact_dir: "/tmp/gludd-sbom-generate-{{ mock_port }}"
+        target_path: "."
+        sbom_format: "cyclonedx-json"
+        enable_syft: false
+        # Use a richer CycloneDX doc with 5 known components to verify count
+        sbom_output_override: >-
+          {
+            "bomFormat": "CycloneDX",
+            "specVersion": "1.4",
+            "version": 1,
+            "metadata": {
+              "timestamp": "2026-06-14T00:00:00Z",
+              "component": {"type": "application", "name": "test-app", "version": "1.0.0"}
+            },
+            "components": [
+              {"type": "library", "name": "fastapi", "version": "0.115.0", "purl": "pkg:pypi/fastapi@0.115.0"},
+              {"type": "library", "name": "sqlalchemy", "version": "2.0.36", "purl": "pkg:pypi/sqlalchemy@2.0.36"},
+              {"type": "library", "name": "pydantic", "version": "2.9.2", "purl": "pkg:pypi/pydantic@2.9.2"},
+              {"type": "library", "name": "httpx", "version": "0.28.0", "purl": "pkg:pypi/httpx@0.28.0"},
+              {"type": "library", "name": "tenacity", "version": "9.0.0", "purl": "pkg:pypi/tenacity@9.0.0"}
+            ]
+          }

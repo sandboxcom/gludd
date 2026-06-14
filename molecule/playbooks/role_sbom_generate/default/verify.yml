@@ -1,0 +1,73 @@
+---
+- name: Verify - sbom_generate produced valid CycloneDX artifacts with correct component count
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8813', true) }}"
+    artifact: "/tmp/gludd-sbom-generate-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8813', true) }}/sbom_generate.json"
+    sbom_artifact: "/tmp/gludd-sbom-generate-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8813', true) }}/sbom.cyclonedx.json"
+    artifact_md: "/tmp/gludd-sbom-generate-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8813', true) }}/sbom_generate.md"
+  tasks:
+    - name: Assert summary JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load summary JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse summary JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'sbom_generate'
+          - result.status == 'completed'
+        fail_msg: "sbom_generate artifact wrong: {{ result }}"
+
+    - name: Assert component count matches seeded override (5 components)
+      ansible.builtin.assert:
+        that:
+          - result.component_count | int == 5
+        fail_msg: "Expected 5 components from seeded SBOM, got {{ result.component_count }}"
+        success_msg: "component_count={{ result.component_count }}"
+
+    - name: Assert top_deps list populated
+      ansible.builtin.assert:
+        that:
+          - result.top_deps is defined
+          - result.top_deps | length >= 1
+          - "'fastapi' in result.top_deps"
+        fail_msg: "top_deps missing or empty: {{ result.top_deps | default([]) }}"
+        success_msg: "top_deps={{ result.top_deps }}"
+
+    - name: Assert target_name extracted correctly
+      ansible.builtin.assert:
+        that:
+          - result.target_name == 'test-app'
+        fail_msg: "Expected target_name=test-app, got={{ result.target_name }}"
+
+    - name: Assert CycloneDX SBOM artifact exists
+      ansible.builtin.stat:
+        path: "{{ sbom_artifact }}"
+      register: sbom_art
+      failed_when: not sbom_art.stat.exists
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-sbom-generate-{{ mock_port }}"
+        state: absent
+      failed_when: false

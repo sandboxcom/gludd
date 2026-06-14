@@ -1,0 +1,11 @@
+---
+# sbom_generate prepare: no daemon or syft needed.
+# Tests the sbom_output_override path (enable_syft=false).
+- name: Prepare - no-op for sbom_generate (uses sbom_output_override)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No-op prepare (sbom_generate uses sbom_output_override; no syft install needed)
+      ansible.builtin.debug:
+        msg: "sbom_generate scenario: enable_syft=false; using sbom_output_override."

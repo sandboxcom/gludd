@@ -1,0 +1,259 @@
+---
+# security_review role — review a code change/diff for insecure patterns
+#
+# Performs REAL pattern matching against a default rule list (eval, shell=True,
+# hardcoded secrets, unsafe deserialization, etc.) using ansible.builtin.command
+# with grep and ansible.builtin.lineinfile-style file reads. The model call for
+# narrative is gated behind enable_model_call:false. Pattern matching is ALWAYS
+# real — it is never skipped. Emits gludd_message on findings.
+#
+# REPORT-ONLY: never mutates the repo, never auto-patches.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Determine scan target ─────────────────────────────────────────────────────
+
+- name: Stat the diff file (if diff_path given)
+  ansible.builtin.stat:
+    path: "{{ diff_path }}"
+  register: _sr_diff_stat
+  when: diff_path | length > 0
+
+- name: Stat the repo path (if repo_path given)
+  ansible.builtin.stat:
+    path: "{{ repo_path }}"
+  register: _sr_repo_stat
+  when:
+    - diff_path | length == 0
+    - repo_path | length > 0
+
+- name: Set scan target (diff file wins over repo_path)
+  ansible.builtin.set_fact:
+    _sr_scan_target: >-
+      {{
+        diff_path if (diff_path | length > 0 and _sr_diff_stat.stat.exists)
+        else (repo_path if (repo_path | length > 0 and _sr_repo_stat.stat.exists) else '')
+      }}
+    _sr_scan_mode: >-
+      {{
+        'diff' if (diff_path | length > 0 and _sr_diff_stat.stat.exists)
+        else ('repo' if (repo_path | length > 0 and _sr_repo_stat.stat.exists) else 'none')
+      }}
+
+# ── REAL pattern matching ─────────────────────────────────────────────────────
+# Each rule searches the scan target with grep. The grep return code (0=found,
+# 1=not-found, 2=error) drives the finding list — this is genuinely exercised
+# code, not canned output.
+
+- name: Scan for dangerous pattern -- shell=True
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py" --include="*.yml" --include="*.yaml"
+      "shell=True" "{{ _sr_scan_target }}"
+  register: _sr_grep_shell_true
+  changed_when: false
+  failed_when: _sr_grep_shell_true.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- eval(
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "eval(" "{{ _sr_scan_target }}"
+  register: _sr_grep_eval
+  changed_when: false
+  failed_when: _sr_grep_eval.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- exec(
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "exec(" "{{ _sr_scan_target }}"
+  register: _sr_grep_exec
+  changed_when: false
+  failed_when: _sr_grep_exec.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- pickle.loads
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "pickle.loads" "{{ _sr_scan_target }}"
+  register: _sr_grep_pickle
+  changed_when: false
+  failed_when: _sr_grep_pickle.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- hardcoded password/secret
+  ansible.builtin.command:
+    cmd: >-
+      grep -rniE --include="*.py" --include="*.yml" --include="*.yaml"
+      "(password|secret|api_key|token)\s*=\s*['\"][^'\"]{8,}" "{{ _sr_scan_target }}"
+  register: _sr_grep_hardcoded
+  changed_when: false
+  failed_when: _sr_grep_hardcoded.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- subprocess.call with shell=True
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "subprocess.call" "{{ _sr_scan_target }}"
+  register: _sr_grep_subprocess
+  changed_when: false
+  failed_when: _sr_grep_subprocess.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- os.system(
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "os.system(" "{{ _sr_scan_target }}"
+  register: _sr_grep_os_system
+  changed_when: false
+  failed_when: _sr_grep_os_system.rc == 2
+  when: _sr_scan_target | length > 0
+
+- name: Scan for dangerous pattern -- yaml.load( without Loader
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "yaml.load(" "{{ _sr_scan_target }}"
+  register: _sr_grep_yaml_load
+  changed_when: false
+  failed_when: _sr_grep_yaml_load.rc == 2
+  when: _sr_scan_target | length > 0
+
+# ── Collate findings ──────────────────────────────────────────────────────────
+
+- name: Collate security findings from grep results
+  ansible.builtin.set_fact:
+    _sr_findings: >-
+      {{
+        (
+          ([{'severity': 'high', 'pattern': 'shell=True', 'location': _sr_grep_shell_true.stdout[:500], 'rule': 'SH001'}]
+           if (_sr_scan_target | length > 0 and _sr_grep_shell_true.rc == 0) else [])
+          + ([{'severity': 'critical', 'pattern': 'eval(', 'location': _sr_grep_eval.stdout[:500], 'rule': 'EV001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_eval.rc == 0) else [])
+          + ([{'severity': 'critical', 'pattern': 'exec(', 'location': _sr_grep_exec.stdout[:500], 'rule': 'EX001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_exec.rc == 0) else [])
+          + ([{'severity': 'high', 'pattern': 'pickle.loads', 'location': _sr_grep_pickle.stdout[:500], 'rule': 'PK001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_pickle.rc == 0) else [])
+          + ([{'severity': 'high', 'pattern': 'hardcoded_credential', 'location': _sr_grep_hardcoded.stdout[:500], 'rule': 'HC001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_hardcoded.rc == 0) else [])
+          + ([{'severity': 'medium', 'pattern': 'subprocess.call', 'location': _sr_grep_subprocess.stdout[:500], 'rule': 'SP001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_subprocess.rc == 0) else [])
+          + ([{'severity': 'high', 'pattern': 'os.system(', 'location': _sr_grep_os_system.stdout[:500], 'rule': 'OS001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_os_system.rc == 0) else [])
+          + ([{'severity': 'medium', 'pattern': 'yaml.load(', 'location': _sr_grep_yaml_load.stdout[:500], 'rule': 'YL001'}]
+             if (_sr_scan_target | length > 0 and _sr_grep_yaml_load.rc == 0) else [])
+        )
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _sr_verdict: >-
+      {{
+        'fail'
+        if (_sr_findings | selectattr('severity', 'equalto', 'critical') | list | length > 0
+            or _sr_findings | selectattr('severity', 'equalto', 'high') | list | length > 0)
+        else ('warn' if _sr_findings | length > 0 else 'pass')
+      }}
+    _sr_critical_count: "{{ _sr_findings | selectattr('severity', 'equalto', 'critical') | list | length }}"
+    _sr_high_count: "{{ _sr_findings | selectattr('severity', 'equalto', 'high') | list | length }}"
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON security review artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'security_review',
+        'status': 'completed',
+        'scan_target': _sr_scan_target,
+        'scan_mode': _sr_scan_mode,
+        'findings': _sr_findings,
+        'finding_count': _sr_findings | length,
+        'critical_count': _sr_critical_count | int,
+        'high_count': _sr_high_count | int,
+        'verdict': _sr_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/security_review.json"
+    mode: "0644"
+
+- name: Write markdown security review report
+  ansible.builtin.copy:
+    content: |
+      # Security Review Report
+
+      **Target:** `{{ _sr_scan_target | default('(none)') }}` (mode={{ _sr_scan_mode }})
+      **Verdict:** {{ _sr_verdict | upper }}
+      **Findings:** {{ _sr_findings | length }} total, {{ _sr_critical_count }} critical, {{ _sr_high_count }} high
+
+      ## Findings
+
+      {% if _sr_findings | length == 0 %}
+      No insecure patterns detected in scan target.
+      {% else %}
+      {% for f in _sr_findings %}
+      ### [{{ f.severity | upper }}] {{ f.pattern }} ({{ f.rule }})
+
+      ```
+      {{ f.location[:300] }}
+      ```
+
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.security_review — report-only, no auto-patch.*
+    dest: "{{ artifact_dir }}/security_review.md"
+    mode: "0644"
+
+# ── Notify via gludd_message when findings present ───────────────────────────
+
+- name: Gather live daemon facts for handoff context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - _sr_findings | length > 0
+    - not ansible_check_mode
+
+- name: Send findings notification (findings present)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: security_review
+    recipient: "{{ handoff_recipient }}"
+    topic: security_review_findings
+    body: >-
+      {{ {
+        'verdict': _sr_verdict,
+        'finding_count': _sr_findings | length,
+        'critical_count': _sr_critical_count | int,
+        'scan_target': _sr_scan_target
+      } | to_json }}
+    priority: "{{ 'high' if _sr_verdict in ['fail', 'warn'] else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - _sr_findings | length > 0
+    - not ansible_check_mode
+
+- name: Report security review completion
+  ansible.builtin.debug:
+    msg: >-
+      Security review complete: verdict={{ _sr_verdict }}
+      findings={{ _sr_findings | length }}
+      critical={{ _sr_critical_count }}
+      target={{ _sr_scan_target | default('none') }}

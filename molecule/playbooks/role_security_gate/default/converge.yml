@@ -1,0 +1,47 @@
+---
+# Run security_gate twice: once with all-pass inputs, once with fail inputs.
+- name: Converge (pass path) - security_gate with all checks passing
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}"
+  tasks:
+    - name: Invoke security_gate with all-pass results
+      ansible.builtin.include_role:
+        name: general_ludd.agent.security_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-security-gate-{{ mock_port }}-pass"
+        results_dir: "/tmp/gludd-sg-results-pass-{{ mock_port }}"
+        required_checks:
+          - "secret_scan"
+          - "security_review"
+          - "sbom_generate"
+          - "supply_chain_verify"
+        block_on_severity: "high"
+        handoff_recipient: ""
+
+- name: Converge (fail path) - security_gate with failing checks
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}"
+  tasks:
+    - name: Invoke security_gate with fail results (high-severity finding + verdict=fail checks)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.security_gate
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-security-gate-{{ mock_port }}-fail"
+        results_dir: "/tmp/gludd-sg-results-fail-{{ mock_port }}"
+        required_checks:
+          - "secret_scan"
+          - "security_review"
+          - "sbom_generate"
+          - "supply_chain_verify"
+        block_on_severity: "high"
+        handoff_recipient: ""

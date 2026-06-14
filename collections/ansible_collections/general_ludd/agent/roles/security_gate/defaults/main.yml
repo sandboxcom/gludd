@@ -1,0 +1,31 @@
+---
+# security_gate role defaults — FAIL-CLOSED, REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-security-gate"
+
+# Directory containing per-check result JSON files.
+# Each required check must have a <check>.json file present.
+results_dir: "/tmp/gludd-security-results"
+
+# List of check names that MUST be present and passing.
+# A missing file or verdict=fail in any required check → gate_passed=false.
+required_checks:
+  - "secret_scan"
+  - "security_review"
+  - "sbom_generate"
+  - "supply_chain_verify"
+
+# Block the gate if any finding has severity >= this value.
+# Options: info, low, medium, high, critical
+block_on_severity: "high"
+
+# Message handoff: recipient role/agent to notify on block (empty = no message)
+handoff_recipient: ""
+
+# Destructive ops guard — report-only
+enable_git_push: false

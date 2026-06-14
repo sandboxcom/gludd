@@ -1,0 +1,11 @@
+---
+# secret_scan prepare: no daemon or external tool needed.
+# Tests the canned-JSON path (enable_scan=false) so no detect-secrets/gitleaks install required.
+- name: Prepare - no-op for secret_scan (uses scan_output_override)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No-op prepare (secret_scan uses scan_output_override; no daemon needed)
+      ansible.builtin.debug:
+        msg: "secret_scan scenario: enable_scan=false; using scan_output_override. No daemon required."

@@ -1,0 +1,42 @@
+---
+# sbom_generate role defaults — REPORT-ONLY
+
+# Artifact output
+artifact_dir: "/tmp/gludd-sbom-generate"
+
+# Target path for SBOM generation (directory, image, or file)
+target_path: "."
+
+# SBOM format (cyclonedx only for now; syft supports others)
+sbom_format: "cyclonedx-json"
+
+# SAFE-BY-DEFAULT: do NOT run syft unless explicitly enabled.
+# Set enable_syft: true to invoke syft for real SBOM generation.
+enable_syft: false
+
+# When enable_syft=false (or check_mode), use this pre-canned CycloneDX doc.
+# This is a minimal valid CycloneDX 1.4 document with representative components.
+sbom_output_override: >-
+  {
+    "bomFormat": "CycloneDX",
+    "specVersion": "1.4",
+    "version": 1,
+    "metadata": {
+      "timestamp": "2026-06-14T00:00:00Z",
+      "component": {"type": "application", "name": "general-ludd-agent", "version": "0.1.0"}
+    },
+    "components": [
+      {"type": "library", "name": "fastapi", "version": "0.115.0", "purl": "pkg:pypi/fastapi@0.115.0"},
+      {"type": "library", "name": "sqlalchemy", "version": "2.0.36", "purl": "pkg:pypi/sqlalchemy@2.0.36"},
+      {"type": "library", "name": "pydantic", "version": "2.9.2", "purl": "pkg:pypi/pydantic@2.9.2"},
+      {"type": "library", "name": "httpx", "version": "0.28.0", "purl": "pkg:pypi/httpx@0.28.0"},
+      {"type": "library", "name": "tenacity", "version": "9.0.0", "purl": "pkg:pypi/tenacity@9.0.0"}
+    ]
+  }
+
+# Daemon connectivity (not needed for pure SBOM generation — kept for consistency)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard — report-only
+enable_git_push: false

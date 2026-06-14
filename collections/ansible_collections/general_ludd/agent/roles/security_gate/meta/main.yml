@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: security_gate
+  author: Agentic Harness Agent
+  description: >
+    Composing fail-closed security gate. Ingests per-check result JSONs
+    (sast, secrets, deps, sbom, signing) from results_dir. Passes ONLY if all
+    required checks are present AND no finding >= block_on_severity AND no
+    check has verdict=fail. Mirrors gate_triage decision logic. Emits
+    gludd_message priority=high on block. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: security_review
+  author: Agentic Harness Agent
+  description: >
+    Reviews a code change or diff for insecure patterns (eval, shell=True,
+    hardcoded secrets, unsafe deserialization, os.system, yaml.load, etc.).
+    Pattern matching is REAL (genuine grep on target). Model call for narrative
+    is gated behind enable_model_call:false. Emits gludd_message on findings.
+    NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,72 @@
+---
+- name: Verify - supply_chain_verify flips verdict correctly (fail-closed)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8814', true) }}"
+    artifact_fail: "/tmp/gludd-scv-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8814', true) }}-fail/supply_chain_verify.json"
+    artifact_pass: "/tmp/gludd-scv-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8814', true) }}-pass/supply_chain_verify.json"
+  tasks:
+    # ---- FAIL path (unsigned artifact → fail-closed) ----
+    - name: Assert fail-path artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_fail }}"
+      register: art_fail
+      failed_when: not art_fail.stat.exists
+
+    - name: Load fail-path artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_fail }}"
+      register: raw_fail
+
+    - name: Parse fail-path artifact
+      ansible.builtin.set_fact:
+        result_fail: "{{ raw_fail.content | b64decode | from_json }}"
+
+    - name: Assert fail-closed - unsigned artifact yields verdict=fail
+      ansible.builtin.assert:
+        that:
+          - result_fail.role == 'supply_chain_verify'
+          - result_fail.verdict == 'fail'
+          - result_fail.signature_valid == false
+        fail_msg: "Expected verdict=fail for unsigned artifact. Got: {{ result_fail }}"
+        success_msg: "Fail-closed: unsigned artifact → verdict=fail, signature_valid=false"
+
+    # ---- PASS path (signed artifact, require_slsa=false) ----
+    - name: Assert pass-path artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_pass }}"
+      register: art_pass
+      failed_when: not art_pass.stat.exists
+
+    - name: Load pass-path artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_pass }}"
+      register: raw_pass
+
+    - name: Parse pass-path artifact
+      ansible.builtin.set_fact:
+        result_pass: "{{ raw_pass.content | b64decode | from_json }}"
+
+    - name: Assert pass path - signed artifact with no SLSA required yields verdict=pass
+      ansible.builtin.assert:
+        that:
+          - result_pass.role == 'supply_chain_verify'
+          - result_pass.verdict == 'pass'
+          - result_pass.signature_valid == true
+        fail_msg: "Expected verdict=pass for signed artifact. Got: {{ result_pass }}"
+        success_msg: "Pass path: signed artifact → verdict=pass, signature_valid=true"
+
+    # ---- cleanup ----
+    - name: Remove fail artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-scv-{{ mock_port }}-fail"
+        state: absent
+      failed_when: false
+
+    - name: Remove pass artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-scv-{{ mock_port }}-pass"
+        state: absent
+      failed_when: false

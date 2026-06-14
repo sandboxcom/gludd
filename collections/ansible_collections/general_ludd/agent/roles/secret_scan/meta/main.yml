@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: secret_scan
+  author: Agentic Harness Agent
+  description: >
+    Wraps detect-secrets/gitleaks for secret scanning. Report-only. Heavy scan
+    tool gated behind enable_scan:false; scan_output_override supplies canned
+    JSON for molecule testing. no_log enforced on all tasks that touch raw
+    output. Artifact exposes findings count and affected filenames only — never
+    secret values. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

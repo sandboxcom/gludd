@@ -1,0 +1,22 @@
+---
+# Run the REAL security_review role against the seeded bad code fixture.
+# Pattern matching is real (genuine grep) — no mock daemon needed for this role.
+# We scan the fixture dir which contains shell=True → expect finding.
+- name: Converge - run security_review role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8811', true) }}"
+  tasks:
+    - name: Invoke security_review against fixture dir (has shell=True)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.security_review
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-security-review-{{ mock_port }}"
+        diff_path: ""
+        repo_path: "/tmp/gludd-security-review-fixture-{{ mock_port }}"
+        enable_model_call: false
+        handoff_recipient: ""

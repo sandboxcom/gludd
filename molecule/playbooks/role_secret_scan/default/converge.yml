@@ -1,0 +1,53 @@
+---
+# Run the REAL secret_scan role with enable_scan=false.
+# Two plays: one with a clean override (0 findings → pass) and one with a
+# findings override (1 finding → fail), exercising both decision paths.
+- name: Converge (pass path) - secret_scan with zero findings
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8812', true) }}"
+  tasks:
+    - name: Run secret_scan with clean override (0 findings → verdict=pass)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.secret_scan
+      vars:
+        artifact_dir: "/tmp/gludd-secret-scan-{{ mock_port }}-pass"
+        repo_path: "."
+        scan_tool: "detect-secrets"
+        enable_scan: false
+        scan_output_override: >-
+          {
+            "version": "1.4.0",
+            "plugins_used": [{"name": "HexHighEntropyString"}],
+            "results": {},
+            "filters_used": []
+          }
+
+- name: Converge (fail path) - secret_scan with findings in override
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8812', true) }}"
+  tasks:
+    - name: Run secret_scan with findings override (1 finding → verdict=fail)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.secret_scan
+      vars:
+        artifact_dir: "/tmp/gludd-secret-scan-{{ mock_port }}-fail"
+        repo_path: "."
+        scan_tool: "detect-secrets"
+        enable_scan: false
+        scan_output_override: >-
+          {
+            "version": "1.4.0",
+            "plugins_used": [{"name": "KeywordDetector"}],
+            "results": {
+              "src/config.py": [
+                {"type": "KeywordDetector", "filename": "src/config.py", "line_number": 5, "hashed_secret": "abc123"}
+              ]
+            },
+            "filters_used": []
+          }

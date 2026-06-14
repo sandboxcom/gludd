@@ -1,0 +1,328 @@
+---
+# security_gate role — COMPOSING FAIL-CLOSED gate
+#
+# Ingests per-check result JSONs (sast, secrets, deps, sbom, signing) from
+# results_dir. Passes ONLY if:
+#   1. All required_checks have a result file present in results_dir.
+#   2. No finding has severity >= block_on_severity.
+# Mirrors gate_triage decision logic. Emits gludd_message priority=high on block.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Load per-check result files ───────────────────────────────────────────────
+
+- name: Stat each required check result file
+  ansible.builtin.stat:
+    path: "{{ results_dir }}/{{ item }}.json"
+  register: _sg_check_stats
+  loop: "{{ required_checks }}"
+  loop_control:
+    label: "{{ item }}"
+
+- name: Load present check result files
+  ansible.builtin.slurp:
+    src: "{{ results_dir }}/{{ item }}.json"
+  register: _sg_check_raws
+  loop: "{{ required_checks }}"
+  loop_control:
+    label: "{{ item }}"
+
+# ── Evaluate each check result ────────────────────────────────────────────────
+
+- name: Build per-check evaluation
+  ansible.builtin.set_fact:
+    _sg_check_results: >-
+      {{
+        _sg_check_results | default([])
+        + [{
+          'check': item.item,
+          'file_present': (
+            _sg_check_stats.results
+            | selectattr('item', 'equalto', item.item)
+            | map(attribute='stat')
+            | map(attribute='exists')
+            | first | default(false)
+          ),
+          'raw_content': item.content | b64decode,
+          'parsed': item.content | b64decode | from_json
+        }]
+      }}
+  loop: "{{ _sg_check_raws.results }}"
+  loop_control:
+    label: "{{ item.item }}"
+
+# ── Detect missing checks (fail-closed) ──────────────────────────────────────
+
+- name: Identify missing required checks
+  ansible.builtin.set_fact:
+    _sg_missing_checks: >-
+      {{
+        _sg_check_results
+        | selectattr('file_present', 'equalto', false)
+        | map(attribute='check')
+        | list
+      }}
+
+# ── Detect blocking findings across all present checks ────────────────────────
+
+- name: Set severity rank map
+  ansible.builtin.set_fact:
+    _sg_severity_rank:
+      "info": 0
+      "low": 1
+      "medium": 2
+      "high": 3
+      "critical": 4
+
+- name: Determine block severity threshold rank
+  ansible.builtin.set_fact:
+    _sg_block_rank: "{{ _sg_severity_rank[block_on_severity] | default(3) | int }}"
+
+- name: Extract blocking findings from each check result
+  ansible.builtin.set_fact:
+    _sg_blocking_findings: >-
+      {{
+        _sg_blocking_findings | default([])
+        + (
+          item.parsed.findings | default([])
+          | selectattr('severity', 'defined')
+          | selectattr('severity', 'in', _sg_severity_rank.keys() | list)
+          | list
+          | map('combine', {'source_check': item.check})
+          | list
+        )
+        | selectattr('severity', 'defined')
+        | list
+      }}
+  loop: "{{ _sg_check_results | selectattr('file_present') | list }}"
+  loop_control:
+    label: "{{ item.check }}"
+  when: item.parsed.findings is defined
+
+- name: Initialize empty blocking findings (no findings key in any check)
+  ansible.builtin.set_fact:
+    _sg_blocking_findings: []
+  when: _sg_blocking_findings is not defined
+
+# ── Filter findings by block threshold ───────────────────────────────────────
+
+- name: Filter to only blocking-severity findings
+  ansible.builtin.set_fact:
+    _sg_blocking_findings_filtered: >-
+      {{
+        _sg_blocking_findings
+        | selectattr('severity', 'defined')
+        | selectattr('severity', 'in', _sg_severity_rank.keys() | list)
+        | list
+      }}
+
+- name: Apply severity threshold filter
+  ansible.builtin.set_fact:
+    _sg_actual_blockers: >-
+      {{
+        _sg_blocking_findings_filtered
+        | selectattr('severity', 'in',
+            _sg_severity_rank.keys()
+            | select('ne', 'info')
+            | select('ne', 'low')
+            | list
+            + (['medium'] if (_sg_block_rank | int) <= 2 else [])
+          )
+        | list
+      }}
+
+# ── Also check per-check verdict fields (for secret_scan, supply_chain_verify, etc.) ──
+
+- name: Collect failing check verdicts
+  ansible.builtin.set_fact:
+    _sg_verdict_failures: >-
+      {{
+        _sg_check_results
+        | selectattr('file_present')
+        | selectattr('parsed.verdict', 'defined')
+        | selectattr('parsed.verdict', 'equalto', 'fail')
+        | map(attribute='check')
+        | list
+      }}
+
+- name: Collect checks with gate_passed=false
+  ansible.builtin.set_fact:
+    _sg_gate_failed_checks: >-
+      {{
+        _sg_check_results
+        | selectattr('file_present')
+        | selectattr('parsed.gate_passed', 'defined')
+        | selectattr('parsed.gate_passed', 'equalto', false)
+        | map(attribute='check')
+        | list
+      }}
+
+# ── FAIL-CLOSED gate decision ─────────────────────────────────────────────────
+
+- name: Determine gate_passed (fail-closed)
+  ansible.builtin.set_fact:
+    _sg_gate_passed: >-
+      {{
+        (_sg_missing_checks | length == 0)
+        and (_sg_actual_blockers | length == 0)
+        and (_sg_verdict_failures | length == 0)
+        and (_sg_gate_failed_checks | length == 0)
+      }}
+    _sg_next_action: >-
+      {{
+        'PASS'
+        if (
+          (_sg_missing_checks | length == 0)
+          and (_sg_actual_blockers | length == 0)
+          and (_sg_verdict_failures | length == 0)
+          and (_sg_gate_failed_checks | length == 0)
+        )
+        else 'BLOCK'
+      }}
+
+- name: Build per-check summary
+  ansible.builtin.set_fact:
+    _sg_check_summary: >-
+      {{
+        _sg_check_results | map('combine', {
+          'gate_check_passed': (
+            item.file_present
+            and (item.parsed.verdict | default('pass')) != 'fail'
+            and (item.parsed.gate_passed | default(true)) != false
+          )
+        }) | list
+      }}
+  loop: "{{ _sg_check_results }}"
+  loop_control:
+    label: "{{ item.check }}"
+
+- name: Initialize check summary (fallback)
+  ansible.builtin.set_fact:
+    _sg_check_summary: "{{ _sg_check_results }}"
+  when: _sg_check_summary is not defined
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON security gate artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'security_gate',
+        'status': 'completed',
+        'results_dir': results_dir,
+        'required_checks': required_checks,
+        'missing_checks': _sg_missing_checks,
+        'blocking_findings': _sg_actual_blockers,
+        'verdict_failures': _sg_verdict_failures,
+        'gate_failed_checks': _sg_gate_failed_checks,
+        'block_on_severity': block_on_severity,
+        'gate_passed': _sg_gate_passed | bool,
+        'next_action': _sg_next_action,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int,
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/security_gate.json"
+    mode: "0644"
+
+- name: Write markdown security gate report
+  ansible.builtin.copy:
+    content: |
+      # Security Gate Report
+
+      **Results dir:** `{{ results_dir }}`
+      **Gate passed:** {{ _sg_gate_passed }}
+      **Next action:** {{ _sg_next_action }}
+      **Block on severity:** {{ block_on_severity }}
+
+      ## Check Results
+
+      | Check | File Present | Gate Pass |
+      |-------|-------------|-----------|
+      {% for r in _sg_check_results %}
+      | {{ r.check }} | {{ r.file_present }} | {{ r.file_present and (r.parsed.verdict | default('pass')) != 'fail' and (r.parsed.gate_passed | default(true)) != false }} |
+      {% endfor %}
+
+      ## Issues
+
+      {% if _sg_missing_checks | length > 0 %}
+      ### Missing Required Checks
+
+      {% for m in _sg_missing_checks %}
+      - MISSING: `{{ m }}`
+      {% endfor %}
+      {% endif %}
+
+      {% if _sg_actual_blockers | length > 0 %}
+      ### Blocking Findings
+
+      {% for f in _sg_actual_blockers %}
+      - [{{ f.severity | upper }}] {{ f.pattern | default(f.description | default('finding')) }} (from {{ f.source_check | default('unknown') }})
+      {% endfor %}
+      {% endif %}
+
+      {% if _sg_verdict_failures | length > 0 %}
+      ### Checks with verdict=fail
+
+      {% for v in _sg_verdict_failures %}
+      - {{ v }}
+      {% endfor %}
+      {% endif %}
+
+      {% if _sg_gate_passed %}
+      **ALL SECURITY CHECKS PASSED** — safe to proceed.
+      {% else %}
+      **SECURITY GATE BLOCKED** — resolve issues above before proceeding.
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.security_gate — fail-closed, report-only.*
+    dest: "{{ artifact_dir }}/security_gate.md"
+    mode: "0644"
+
+# ── Emit gludd_message priority=high on block ─────────────────────────────────
+
+- name: Send block notification (gate failed)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: security_gate
+    recipient: "{{ handoff_recipient }}"
+    topic: security_gate_blocked
+    body: >-
+      {{ {
+        'gate_passed': false,
+        'next_action': 'BLOCK',
+        'missing_checks': _sg_missing_checks,
+        'blocking_finding_count': _sg_actual_blockers | length,
+        'verdict_failures': _sg_verdict_failures
+      } | to_json }}
+    priority: "high"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not (_sg_gate_passed | bool)
+    - not ansible_check_mode
+
+- name: Report security gate completion
+  ansible.builtin.debug:
+    msg: >-
+      Security gate: passed={{ _sg_gate_passed }}
+      next_action={{ _sg_next_action }}
+      missing={{ _sg_missing_checks | length }}
+      blockers={{ _sg_actual_blockers | length }}

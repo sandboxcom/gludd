@@ -1,0 +1,32 @@
+---
+# security_review prepare: seed a Python file with a known bad pattern (shell=True)
+# so the REAL grep-based pattern matching genuinely detects a finding.
+# No mock daemon needed — security_review pattern matching is pure-ansible (grep).
+- name: Prepare - seed bad code fixture for security_review
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8811', true) }}"
+  tasks:
+    - name: Create fixture directory
+      ansible.builtin.file:
+        path: "/tmp/gludd-security-review-fixture-{{ mock_port }}"
+        state: directory
+        mode: "0755"
+
+    - name: Seed Python file with shell=True (known bad pattern)
+      ansible.builtin.copy:
+        content: |
+          """Fixture with known insecure patterns for security_review testing."""
+          import subprocess
+
+          def run_command(user_input):
+              # BAD: shell=True with user input
+              result = subprocess.run(user_input, shell=True, capture_output=True)
+              return result.stdout
+
+          def get_data():
+              return "safe function"
+        dest: "/tmp/gludd-security-review-fixture-{{ mock_port }}/bad_code.py"
+        mode: "0644"

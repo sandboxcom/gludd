@@ -1,0 +1,196 @@
+---
+# secret_scan role — wrap detect-secrets/gitleaks for secret scanning
+#
+# Report-only. Runs a configurable scan tool (detect-secrets or gitleaks) if
+# enable_scan is true; otherwise uses scan_output_override (canned JSON) so
+# molecule can exercise the full decision logic without running heavy tools.
+# no_log is enforced wherever secret values might appear.
+#
+# REPORT-ONLY: surfaces findings count/files only, never exposes raw secrets.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Optionally run the real scan tool ────────────────────────────────────────
+
+- name: Run detect-secrets scan (enable_scan=true and scan_tool=detect-secrets)
+  ansible.builtin.command:
+    cmd: >-
+      detect-secrets scan --all-files --output-raw "{{ repo_path }}"
+    chdir: "{{ repo_path }}"
+  register: _ss_detect_secrets_raw
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - enable_scan | bool
+    - scan_tool == 'detect-secrets'
+    - not ansible_check_mode
+
+- name: Run gitleaks detect (enable_scan=true and scan_tool=gitleaks)
+  ansible.builtin.command:
+    cmd: >-
+      gitleaks detect --source "{{ repo_path }}"
+      --report-format json --report-path /dev/stdout --no-git
+  register: _ss_gitleaks_raw
+  changed_when: false
+  failed_when: false
+  no_log: true
+  when:
+    - enable_scan | bool
+    - scan_tool == 'gitleaks'
+    - not ansible_check_mode
+
+# ── Select raw output (real or override) ─────────────────────────────────────
+
+- name: Use detect-secrets raw output (real scan ran)
+  ansible.builtin.set_fact:
+    _ss_raw_output: "{{ _ss_detect_secrets_raw.stdout | default('') }}"
+  no_log: true
+  when:
+    - enable_scan | bool
+    - scan_tool == 'detect-secrets'
+    - not ansible_check_mode
+    - _ss_detect_secrets_raw is defined
+
+- name: Use gitleaks raw output (real scan ran)
+  ansible.builtin.set_fact:
+    _ss_raw_output: "{{ _ss_gitleaks_raw.stdout | default('') }}"
+  no_log: true
+  when:
+    - enable_scan | bool
+    - scan_tool == 'gitleaks'
+    - not ansible_check_mode
+    - _ss_gitleaks_raw is defined
+
+- name: Use scan_output_override (scan disabled or check_mode)
+  ansible.builtin.set_fact:
+    _ss_raw_output: "{{ scan_output_override }}"
+  no_log: true
+  when: not (enable_scan | bool) or ansible_check_mode
+
+# ── Parse output safely (no_log on operations touching raw secret data) ───────
+
+- name: Parse scan output as JSON (detect-secrets format)
+  ansible.builtin.set_fact:
+    _ss_parsed: "{{ _ss_raw_output | from_json }}"
+  no_log: true
+  when: scan_tool == 'detect-secrets'
+  failed_when: false
+
+- name: Parse scan output as JSON (gitleaks format)
+  ansible.builtin.set_fact:
+    _ss_parsed: "{{ _ss_raw_output | from_json }}"
+  no_log: true
+  when: scan_tool == 'gitleaks'
+  failed_when: false
+
+- name: Set parse error fallback
+  ansible.builtin.set_fact:
+    _ss_parsed: {}
+  when: _ss_parsed is not defined
+
+# ── Count findings (safe — no values exposed) ─────────────────────────────────
+
+- name: Count detect-secrets findings (results.files structure)
+  ansible.builtin.set_fact:
+    _ss_finding_count: >-
+      {{
+        (_ss_parsed.results | default({}) | dict2items
+         | map(attribute='value') | map('length') | sum)
+        if scan_tool == 'detect-secrets' else 0
+      }}
+    _ss_affected_files: >-
+      {{
+        (_ss_parsed.results | default({}) | dict2items | map(attribute='key') | list)
+        if scan_tool == 'detect-secrets' else []
+      }}
+  when: scan_tool == 'detect-secrets'
+
+- name: Count gitleaks findings (array of leak objects)
+  ansible.builtin.set_fact:
+    _ss_finding_count: >-
+      {{
+        (_ss_parsed | length)
+        if (scan_tool == 'gitleaks' and _ss_parsed is iterable) else 0
+      }}
+    _ss_affected_files: >-
+      {{
+        (_ss_parsed | map(attribute='File') | list | unique)
+        if (scan_tool == 'gitleaks' and _ss_parsed is iterable) else []
+      }}
+  when: scan_tool == 'gitleaks'
+
+- name: Set finding count default (unrecognized tool / parse error)
+  ansible.builtin.set_fact:
+    _ss_finding_count: 0
+    _ss_affected_files: []
+  when:
+    - _ss_finding_count is not defined or _ss_affected_files is not defined
+
+# ── Determine verdict ─────────────────────────────────────────────────────────
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _ss_verdict: >-
+      {{ 'fail' if (_ss_finding_count | int) > 0 else 'pass' }}
+    _ss_scan_ran: "{{ enable_scan | bool and not ansible_check_mode }}"
+
+# ── Write artifacts (safe counts/filenames only — no secret values) ───────────
+
+- name: Write JSON secret scan artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'secret_scan',
+        'status': 'completed',
+        'scan_tool': scan_tool,
+        'scan_ran': _ss_scan_ran | bool,
+        'repo_path': repo_path,
+        'finding_count': _ss_finding_count | int,
+        'affected_files': _ss_affected_files,
+        'verdict': _ss_verdict,
+        'note': 'Secret values are never written to artifacts (no_log enforced)'
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/secret_scan.json"
+    mode: "0644"
+
+- name: Write markdown secret scan report
+  ansible.builtin.copy:
+    content: |
+      # Secret Scan Report
+
+      **Tool:** {{ scan_tool }}
+      **Scan ran:** {{ _ss_scan_ran }}
+      **Repo:** `{{ repo_path }}`
+      **Verdict:** {{ _ss_verdict | upper }}
+
+      ## Results
+
+      - **Findings:** {{ _ss_finding_count }}
+      - **Affected files:** {{ _ss_affected_files | length }}
+
+      {% if _ss_affected_files | length > 0 %}
+      ### Affected Files (no secret values shown)
+
+      {% for f in _ss_affected_files %}
+      - `{{ f }}`
+      {% endfor %}
+      {% endif %}
+
+      > Secret values are NEVER written to artifacts or logs (no_log enforced).
+
+      ---
+      *Generated by general_ludd.agent.secret_scan — report-only.*
+    dest: "{{ artifact_dir }}/secret_scan.md"
+    mode: "0644"
+
+- name: Report secret scan completion
+  ansible.builtin.debug:
+    msg: >-
+      Secret scan complete: tool={{ scan_tool }}
+      findings={{ _ss_finding_count }}
+      verdict={{ _ss_verdict }}

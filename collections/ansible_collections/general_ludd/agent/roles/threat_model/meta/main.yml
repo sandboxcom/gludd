@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: threat_model
+  author: Agentic Harness Agent
+  description: >
+    STRIDE threat enumeration over a design document + live attack surface from
+    gludd_facts (queues, MCP tools, traces). Enumerates Spoofing, Tampering,
+    Repudiation, Information Disclosure, Denial of Service, and Elevation of
+    Privilege threats per asset. Optionally calls a model for narrative drafting
+    (gated behind enable_model_call:false). NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

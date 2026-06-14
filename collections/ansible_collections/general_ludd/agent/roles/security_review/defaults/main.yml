@@ -1,0 +1,61 @@
+---
+# security_review role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-security-review"
+
+# Scan target: provide either a diff file or a repo path.
+# diff_path takes precedence over repo_path when both are given.
+diff_path: ""
+repo_path: "."
+
+# Pattern rules to apply. The default list is always applied;
+# additional rules can be added by extending this list in a playbook.
+# Each entry is informational only — actual grep patterns are hardcoded
+# in the tasks for correctness.
+pattern_rules:
+  - id: "SH001"
+    pattern: "shell=True"
+    severity: "high"
+    description: "shell=True in subprocess/ansible enables shell injection"
+  - id: "EV001"
+    pattern: "eval("
+    severity: "critical"
+    description: "eval() executes arbitrary code from string input"
+  - id: "EX001"
+    pattern: "exec("
+    severity: "critical"
+    description: "exec() executes arbitrary code from string input"
+  - id: "PK001"
+    pattern: "pickle.loads"
+    severity: "high"
+    description: "pickle.loads on untrusted data leads to remote code execution"
+  - id: "HC001"
+    pattern: "hardcoded_credential"
+    severity: "high"
+    description: "Hardcoded password/secret/token/api_key in source"
+  - id: "SP001"
+    pattern: "subprocess.call"
+    severity: "medium"
+    description: "subprocess.call should be reviewed for shell injection"
+  - id: "OS001"
+    pattern: "os.system("
+    severity: "high"
+    description: "os.system() passes command to shell, enabling injection"
+  - id: "YL001"
+    pattern: "yaml.load("
+    severity: "medium"
+    description: "yaml.load without Loader allows arbitrary Python execution"
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# Message handoff: recipient role/agent to notify when findings are present
+handoff_recipient: ""
+
+# Destructive ops guard — report-only
+enable_git_push: false

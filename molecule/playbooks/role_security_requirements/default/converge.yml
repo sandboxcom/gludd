@@ -1,0 +1,22 @@
+---
+# Run the REAL security_requirements role against the mock daemon.
+# Uses story_id='TODO-001' so gludd_db todo_get hits the mock's /api/todos/TODO-001.
+# enable_model_call=false; write_back=false (safe defaults).
+- name: Converge - run security_requirements role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8815', true) }}"
+  tasks:
+    - name: Invoke security_requirements with story_id (gludd_db hit mock)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.security_requirements
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-security-requirements-{{ mock_port }}"
+        story_id: "TODO-001"
+        story_text: ""
+        enable_model_call: false
+        write_back: false

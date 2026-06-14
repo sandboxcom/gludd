@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: security_requirements
+  author: Agentic Harness Agent
+  description: >
+    Derives security acceptance criteria (authn/authz, input validation, secrets
+    handling, logging) for a story. Fetches story via gludd_db (todo_get).
+    Optional model call for augmentation gated behind enable_model_call:false.
+    Optional write-back gated behind write_back:false. REPORT-ONLY by default.
+    NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

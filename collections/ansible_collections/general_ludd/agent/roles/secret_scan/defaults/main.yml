@@ -1,0 +1,32 @@
+---
+# secret_scan role defaults — REPORT-ONLY
+
+# Daemon connectivity (not used for scanning — role is standalone)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-secret-scan"
+
+# Repo path to scan
+repo_path: "."
+
+# Scan tool: 'detect-secrets' or 'gitleaks'
+scan_tool: "detect-secrets"
+
+# SAFE-BY-DEFAULT: do NOT run the real scan tool unless explicitly enabled.
+# Set enable_scan: true to invoke detect-secrets/gitleaks.
+enable_scan: false
+
+# When enable_scan=false (or check_mode), use this pre-canned output.
+# Default: detect-secrets output with zero findings (clean result).
+scan_output_override: >-
+  {
+    "version": "1.4.0",
+    "plugins_used": [{"name": "HexHighEntropyString"}, {"name": "KeywordDetector"}],
+    "results": {},
+    "filters_used": []
+  }
+
+# Destructive ops guard — report-only
+enable_git_push: false

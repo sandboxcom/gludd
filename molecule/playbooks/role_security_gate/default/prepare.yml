@@ -1,0 +1,150 @@
+---
+# security_gate prepare: start mock daemon + seed per-check result JSON files
+# for BOTH an all-pass case and a fail case.
+- name: Prepare - mock daemon + per-check result fixtures for security_gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}.pid"
+    pass_results_dir: "/tmp/gludd-sg-results-pass-{{ mock_port }}"
+    fail_results_dir: "/tmp/gludd-sg-results-fail-{{ mock_port }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    # ---- Seed all-pass result files ----
+    - name: Create pass results dir
+      ansible.builtin.file:
+        path: "{{ pass_results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Seed pass secret_scan result (0 findings, verdict=pass)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "secret_scan",
+            "status": "completed",
+            "finding_count": 0,
+            "affected_files": [],
+            "verdict": "pass"
+          }
+        dest: "{{ pass_results_dir }}/secret_scan.json"
+        mode: "0644"
+
+    - name: Seed pass security_review result (0 findings, verdict=pass)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "security_review",
+            "status": "completed",
+            "findings": [],
+            "finding_count": 0,
+            "verdict": "pass"
+          }
+        dest: "{{ pass_results_dir }}/security_review.json"
+        mode: "0644"
+
+    - name: Seed pass sbom_generate result (5 components, no verdict field)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "sbom_generate",
+            "status": "completed",
+            "component_count": 5,
+            "top_deps": ["fastapi", "pydantic"]
+          }
+        dest: "{{ pass_results_dir }}/sbom_generate.json"
+        mode: "0644"
+
+    - name: Seed pass supply_chain_verify result (signature valid, verdict=pass)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "supply_chain_verify",
+            "status": "completed",
+            "signature_valid": true,
+            "attestation_present": false,
+            "slsa_level": "0",
+            "verdict": "pass"
+          }
+        dest: "{{ pass_results_dir }}/supply_chain_verify.json"
+        mode: "0644"
+
+    # ---- Seed fail result files (has a high-severity finding) ----
+    - name: Create fail results dir
+      ansible.builtin.file:
+        path: "{{ fail_results_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Seed fail secret_scan result (1 finding, verdict=fail)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "secret_scan",
+            "status": "completed",
+            "finding_count": 1,
+            "affected_files": ["src/config.py"],
+            "verdict": "fail"
+          }
+        dest: "{{ fail_results_dir }}/secret_scan.json"
+        mode: "0644"
+
+    - name: Seed fail security_review result (high-severity finding, verdict=fail)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "security_review",
+            "status": "completed",
+            "findings": [
+              {"severity": "high", "pattern": "shell=True", "rule": "SH001", "location": "src/runner.py:42"}
+            ],
+            "finding_count": 1,
+            "verdict": "fail"
+          }
+        dest: "{{ fail_results_dir }}/security_review.json"
+        mode: "0644"
+
+    - name: Seed fail sbom_generate result (OK - no issues)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "sbom_generate",
+            "status": "completed",
+            "component_count": 3,
+            "top_deps": ["fastapi"]
+          }
+        dest: "{{ fail_results_dir }}/sbom_generate.json"
+        mode: "0644"
+
+    - name: Seed fail supply_chain_verify result (verdict=fail)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "supply_chain_verify",
+            "status": "completed",
+            "signature_valid": false,
+            "verdict": "fail"
+          }
+        dest: "{{ fail_results_dir }}/supply_chain_verify.json"
+        mode: "0644"

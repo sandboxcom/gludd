@@ -1,0 +1,100 @@
+---
+- name: Verify - security_gate correctly passes and blocks based on check results
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}.pid"
+    artifact_pass: "/tmp/gludd-security-gate-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}-pass/security_gate.json"
+    artifact_fail: "/tmp/gludd-security-gate-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8816', true) }}-fail/security_gate.json"
+  tasks:
+    # ---- PASS path ----
+    - name: Assert pass-path artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_pass }}"
+      register: art_pass
+      failed_when: not art_pass.stat.exists
+
+    - name: Load pass-path artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_pass }}"
+      register: raw_pass
+
+    - name: Parse pass-path artifact
+      ansible.builtin.set_fact:
+        result_pass: "{{ raw_pass.content | b64decode | from_json }}"
+
+    - name: Assert all-pass gate result has gate_passed=true and next_action=PASS
+      ansible.builtin.assert:
+        that:
+          - result_pass.role == 'security_gate'
+          - result_pass.gate_passed == true
+          - result_pass.next_action == 'PASS'
+          - result_pass.missing_checks | length == 0
+        fail_msg: "Expected gate_passed=true for all-pass inputs. Got: {{ result_pass }}"
+        success_msg: "All-pass gate: gate_passed=true, next_action=PASS"
+
+    # ---- FAIL path ----
+    - name: Assert fail-path artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_fail }}"
+      register: art_fail
+      failed_when: not art_fail.stat.exists
+
+    - name: Load fail-path artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_fail }}"
+      register: raw_fail
+
+    - name: Parse fail-path artifact
+      ansible.builtin.set_fact:
+        result_fail: "{{ raw_fail.content | b64decode | from_json }}"
+
+    - name: Assert fail gate result has gate_passed=false and next_action=BLOCK
+      ansible.builtin.assert:
+        that:
+          - result_fail.role == 'security_gate'
+          - result_fail.gate_passed == false
+          - result_fail.next_action == 'BLOCK'
+        fail_msg: "Expected gate_passed=false for fail inputs. Got: {{ result_fail }}"
+        success_msg: "Fail gate: gate_passed=false, next_action=BLOCK"
+
+    - name: Assert fail gate detected verdict failures (fail-closed detection)
+      ansible.builtin.assert:
+        that:
+          - result_fail.verdict_failures is defined
+          - result_fail.verdict_failures | length >= 1
+        fail_msg: "Expected verdict_failures >= 1. Got: {{ result_fail.verdict_failures | default([]) }}"
+        success_msg: "verdict_failures={{ result_fail.verdict_failures }}"
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove pass artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-security-gate-{{ mock_port }}-pass"
+        state: absent
+      failed_when: false
+
+    - name: Remove fail artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-security-gate-{{ mock_port }}-fail"
+        state: absent
+      failed_when: false
+
+    - name: Remove pass results dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-sg-results-pass-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove fail results dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-sg-results-fail-{{ mock_port }}"
+        state: absent
+      failed_when: false

@@ -1,0 +1,10 @@
+---
+# supply_chain_verify prepare: no cosign install needed (uses overrides).
+- name: Prepare - no-op for supply_chain_verify (uses cosign/slsa output overrides)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks:
+    - name: No-op prepare (supply_chain_verify uses output overrides; no cosign needed)
+      ansible.builtin.debug:
+        msg: "supply_chain_verify scenario: enable_cosign=false; using cosign_output_override."

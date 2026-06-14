@@ -1,0 +1,19 @@
+---
+# Run the REAL threat_model role against the mock daemon + seeded design doc.
+- name: Converge - run threat_model role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}"
+  tasks:
+    - name: Invoke threat_model (enable_model_call=false; design doc seeded in prepare)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.threat_model
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-threat-model-{{ mock_port }}"
+        system_name: "test-system"
+        design_path: "/tmp/gludd-threat-model-design-{{ mock_port }}.md"
+        enable_model_call: false

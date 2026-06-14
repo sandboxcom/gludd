@@ -1,0 +1,25 @@
+---
+# threat_model role defaults — REPORT-ONLY
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-threat-model"
+
+# System under threat modeling
+system_name: "general-ludd-agent"
+
+# Path to the design document to analyze
+design_path: "docs/design.md"
+
+# Model profile for narrative drafting (empty = daemon default)
+model_profile: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+# Set enable_model_call: true to invoke gludd_model_call for threat narratives.
+enable_model_call: false
+
+# Destructive ops guard — threat model is report-only
+enable_git_push: false

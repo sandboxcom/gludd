@@ -1,0 +1,216 @@
+---
+# supply_chain_verify role — cosign verify signatures/provenance + SLSA attestation
+#
+# FAIL-CLOSED: missing or invalid signature → verdict=fail
+# Missing SLSA attestation when require_slsa=true → verdict=fail
+#
+# Runs cosign when enable_cosign=true; otherwise uses cosign_output_override
+# (canned JSON) so molecule can exercise both the pass and fail paths without
+# installing cosign.
+#
+# REPORT-ONLY: never mutates the repo or registry.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Optionally run cosign verify ─────────────────────────────────────────────
+
+- name: Run cosign verify (enable_cosign=true only; skipped in check_mode)
+  ansible.builtin.command:
+    cmd: >-
+      cosign verify
+      --certificate-identity "{{ expected_identity }}"
+      --certificate-oidc-issuer "{{ expected_oidc_issuer }}"
+      --output json
+      "{{ artifact_ref }}"
+  register: _scv_cosign_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_cosign | bool
+    - not ansible_check_mode
+
+- name: Run cosign verify-attestation for SLSA (enable_cosign=true + require_slsa=true)
+  ansible.builtin.command:
+    cmd: >-
+      cosign verify-attestation
+      --certificate-identity "{{ expected_identity }}"
+      --certificate-oidc-issuer "{{ expected_oidc_issuer }}"
+      --type slsaprovenance
+      --output json
+      "{{ artifact_ref }}"
+  register: _scv_slsa_verify
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_cosign | bool
+    - require_slsa | bool
+    - not ansible_check_mode
+
+# ── Select output (real cosign or override) ───────────────────────────────────
+
+- name: Use real cosign verify output
+  ansible.builtin.set_fact:
+    _scv_verify_output: "{{ _scv_cosign_verify.stdout | default('') }}"
+    _scv_verify_rc: "{{ _scv_cosign_verify.rc | default(1) | int }}"
+    _scv_slsa_output: >-
+      {{
+        _scv_slsa_verify.stdout | default('')
+        if (require_slsa | bool and _scv_slsa_verify is defined)
+        else ''
+      }}
+    _scv_slsa_rc: >-
+      {{
+        _scv_slsa_verify.rc | default(1) | int
+        if (require_slsa | bool and _scv_slsa_verify is defined)
+        else 1
+      }}
+  when:
+    - enable_cosign | bool
+    - not ansible_check_mode
+
+- name: Use cosign_output_override (cosign disabled or check_mode)
+  ansible.builtin.set_fact:
+    _scv_verify_output: "{{ cosign_output_override }}"
+    _scv_verify_rc: "{{ cosign_output_override_rc | int }}"
+    _scv_slsa_output: "{{ slsa_output_override }}"
+    _scv_slsa_rc: "{{ slsa_output_override_rc | int }}"
+  when: not (enable_cosign | bool) or ansible_check_mode
+
+# ── FAIL-CLOSED signature validation ─────────────────────────────────────────
+# A non-zero rc OR empty output → signature_valid=false → verdict=fail.
+
+- name: Determine signature validity (fail-closed)
+  ansible.builtin.set_fact:
+    _scv_signature_valid: >-
+      {{
+        true
+        if (_scv_verify_rc | int == 0 and _scv_verify_output | length > 0)
+        else false
+      }}
+
+# ── Parse SLSA attestation presence ──────────────────────────────────────────
+
+- name: Determine SLSA attestation presence (fail-closed when require_slsa=true)
+  ansible.builtin.set_fact:
+    _scv_attestation_present: >-
+      {{
+        true
+        if (_scv_slsa_rc | int == 0 and _scv_slsa_output | length > 0)
+        else false
+      }}
+
+# ── Determine SLSA level from attestation ────────────────────────────────────
+
+- name: Parse SLSA attestation JSON to extract level
+  ansible.builtin.set_fact:
+    _scv_slsa_parsed: "{{ _scv_slsa_output | from_json }}"
+  failed_when: false
+  when:
+    - _scv_attestation_present | bool
+    - _scv_slsa_output | length > 0
+
+- name: Extract SLSA level from attestation
+  ansible.builtin.set_fact:
+    _scv_slsa_level: >-
+      {{
+        _scv_slsa_parsed.payload.predicate.buildDefinition.buildType
+        | regex_search('slsa[_-]?([0-9]+)', '\\1')
+        | first | default('0')
+        if (_scv_slsa_parsed is defined and _scv_slsa_parsed.payload is defined)
+        else slsa_level_override
+      }}
+  when: _scv_attestation_present | bool
+  failed_when: false
+
+- name: Set SLSA level defaults (no attestation)
+  ansible.builtin.set_fact:
+    _scv_slsa_level: "0"
+    _scv_slsa_parsed: {}
+  when: not (_scv_attestation_present | bool) or _scv_slsa_level is not defined
+
+# ── FAIL-CLOSED verdict ───────────────────────────────────────────────────────
+
+- name: Determine verdict (fail-closed)
+  ansible.builtin.set_fact:
+    _scv_verdict: >-
+      {{
+        'fail'
+        if (
+          not (_scv_signature_valid | bool)
+          or (require_slsa | bool and not (_scv_attestation_present | bool))
+        )
+        else 'pass'
+      }}
+    _scv_failure_reason: >-
+      {{
+        'signature_invalid_or_missing'
+        if not (_scv_signature_valid | bool)
+        else (
+          'slsa_attestation_missing'
+          if (require_slsa | bool and not (_scv_attestation_present | bool))
+          else ''
+        )
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON supply chain verification artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'supply_chain_verify',
+        'status': 'completed',
+        'artifact_ref': artifact_ref,
+        'expected_identity': expected_identity,
+        'cosign_ran': enable_cosign | bool and not ansible_check_mode,
+        'signature_valid': _scv_signature_valid | bool,
+        'attestation_present': _scv_attestation_present | bool,
+        'slsa_level': _scv_slsa_level | string,
+        'verdict': _scv_verdict,
+        'failure_reason': _scv_failure_reason,
+        'require_slsa': require_slsa | bool
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/supply_chain_verify.json"
+    mode: "0644"
+
+- name: Write markdown supply chain verification report
+  ansible.builtin.copy:
+    content: |
+      # Supply Chain Verification Report
+
+      **Artifact:** `{{ artifact_ref }}`
+      **Expected identity:** `{{ expected_identity }}`
+      **Cosign ran:** {{ enable_cosign | bool and not ansible_check_mode }}
+      **Verdict:** {{ _scv_verdict | upper }}
+
+      ## Results
+
+      | Check | Result |
+      |-------|--------|
+      | Signature valid | {{ _scv_signature_valid }} |
+      | SLSA attestation present | {{ _scv_attestation_present }} |
+      | SLSA level | {{ _scv_slsa_level }} |
+      | require_slsa | {{ require_slsa }} |
+
+      {% if _scv_failure_reason | length > 0 %}
+      ## Failure Reason
+
+      **{{ _scv_failure_reason }}** — supply chain verification FAILED (fail-closed).
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.supply_chain_verify — fail-closed, report-only.*
+    dest: "{{ artifact_dir }}/supply_chain_verify.md"
+    mode: "0644"
+
+- name: Report verification completion
+  ansible.builtin.debug:
+    msg: >-
+      Supply chain verify: artifact={{ artifact_ref }}
+      sig_valid={{ _scv_signature_valid }}
+      slsa={{ _scv_attestation_present }}
+      verdict={{ _scv_verdict }}

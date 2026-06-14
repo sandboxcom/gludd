@@ -1,0 +1,250 @@
+---
+# security_requirements role — derive security acceptance criteria for a story
+#
+# Fetches a story from gludd_db (todo_get) and derives security acceptance
+# criteria across authn/authz, input validation, secrets handling, and logging.
+# Optionally uses gludd_model_call to generate additional criteria (gated behind
+# enable_model_call:false). Optionally writes criteria back to the story
+# (gated behind write_back:false). REPORT-ONLY by default.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Fetch story from gludd_db ─────────────────────────────────────────────────
+
+- name: Fetch story from todo store (story_id given)
+  general_ludd.agent.gludd_db:
+    op: todo_get
+    todo_id: "{{ story_id }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _req_story_fetch
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - story_id | length > 0
+    - not ansible_check_mode
+
+- name: Set story text from fetched record (todo found)
+  ansible.builtin.set_fact:
+    _req_story_text_effective: >-
+      {{
+        (_req_story_fetch.ansible_facts.gludd_todo.title | default(''))
+        + ' '
+        + (_req_story_fetch.ansible_facts.gludd_todo.description | default(''))
+        | trim
+      }}
+    _req_story_id_effective: "{{ story_id }}"
+  when:
+    - story_id | length > 0
+    - not ansible_check_mode
+    - _req_story_fetch is defined
+    - "'ansible_facts' in _req_story_fetch"
+
+- name: Set story text from story_text var (no story_id or check_mode)
+  ansible.builtin.set_fact:
+    _req_story_text_effective: "{{ story_text }}"
+    _req_story_id_effective: "{{ story_id | default('inline') }}"
+  when: >
+    _req_story_text_effective is not defined
+
+# ── Derive baseline security criteria (pure Ansible logic) ────────────────────
+
+- name: Derive authn/authz criteria
+  ansible.builtin.set_fact:
+    _req_authn_criteria:
+      - id: "SEC-AUTH-1"
+        category: "authn_authz"
+        criterion: "All API endpoints require PSK Bearer token authentication"
+        rationale: "Prevents unauthorized access to daemon operations"
+        testable: true
+      - id: "SEC-AUTH-2"
+        category: "authn_authz"
+        criterion: "Unauthenticated requests receive HTTP 401 with no information leakage"
+        rationale: "Fail-closed auth gate"
+        testable: true
+      - id: "SEC-AUTH-3"
+        category: "authn_authz"
+        criterion: "Agent roles enforce enable_git_push=false by default; any push requires explicit opt-in"
+        rationale: "Prevents accidental write to repository"
+        testable: true
+
+- name: Derive input validation criteria
+  ansible.builtin.set_fact:
+    _req_input_criteria:
+      - id: "SEC-INP-1"
+        category: "input_validation"
+        criterion: "All external inputs are validated against a schema before processing"
+        rationale: "Prevents injection and unexpected behavior"
+        testable: true
+      - id: "SEC-INP-2"
+        category: "input_validation"
+        criterion: "No shell=True used with user-controlled data in subprocess calls"
+        rationale: "Prevents command injection"
+        testable: true
+      - id: "SEC-INP-3"
+        category: "input_validation"
+        criterion: "Playbook extra_vars are sanitized; no eval/exec on dynamic content"
+        rationale: "Prevents code injection via Ansible variable substitution"
+        testable: true
+
+- name: Derive secrets handling criteria
+  ansible.builtin.set_fact:
+    _req_secrets_criteria:
+      - id: "SEC-SEC-1"
+        category: "secrets_handling"
+        criterion: "PSK values use no_log:true in all Ansible tasks that reference them"
+        rationale: "Prevents PSK from appearing in Ansible logs or artifact output"
+        testable: true
+      - id: "SEC-SEC-2"
+        category: "secrets_handling"
+        criterion: "No secrets hardcoded in playbooks or role defaults"
+        rationale: "Secrets must come from environment variables or vault"
+        testable: true
+      - id: "SEC-SEC-3"
+        category: "secrets_handling"
+        criterion: "Secret scan (detect-secrets/gitleaks) runs in CI before merge"
+        rationale: "Catches accidental credential commits"
+        testable: true
+
+- name: Derive logging criteria
+  ansible.builtin.set_fact:
+    _req_logging_criteria:
+      - id: "SEC-LOG-1"
+        category: "logging"
+        criterion: "All security-relevant events (auth failures, rejected ops) are logged with timestamp and context"
+        rationale: "Enables incident response and audit"
+        testable: true
+      - id: "SEC-LOG-2"
+        category: "logging"
+        criterion: "Log entries do not contain secret values (PSK, tokens, credentials)"
+        rationale: "Prevents credential exposure in log aggregators"
+        testable: true
+      - id: "SEC-LOG-3"
+        category: "logging"
+        criterion: "Audit trail links every model call to a todo_id and agent identity"
+        rationale: "Enables attribution and repudiation prevention"
+        testable: true
+
+# ── Optionally augment criteria via model call ────────────────────────────────
+
+- name: Augment criteria via model call (enable_model_call=true only)
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a security architect. Given this story, list 3 additional
+      security acceptance criteria not already covered by standard
+      authn/authz, input validation, secrets handling, and logging checks.
+      Format each as a bullet point starting with "MUST:".
+
+      Story: {{ _req_story_text_effective[:2000] }}
+    model_profile: "{{ model_profile | default('') }}"
+  register: _req_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Parse model-generated criteria into list
+  ansible.builtin.set_fact:
+    _req_model_criteria: >-
+      {{
+        _req_model_result.answer
+        | default('')
+        | regex_findall('MUST:[^\n]+')
+        | map('trim')
+        | list
+      }}
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _req_model_result is defined
+
+- name: Set empty model criteria (model call disabled or check_mode)
+  ansible.builtin.set_fact:
+    _req_model_criteria: []
+  when: not (enable_model_call | bool) or ansible_check_mode or _req_model_criteria is not defined
+
+# ── Aggregate all criteria ────────────────────────────────────────────────────
+
+- name: Aggregate all security criteria
+  ansible.builtin.set_fact:
+    _req_all_criteria: >-
+      {{
+        _req_authn_criteria
+        + _req_input_criteria
+        + _req_secrets_criteria
+        + _req_logging_criteria
+      }}
+
+# ── Optionally write back to story ────────────────────────────────────────────
+
+- name: Write security criteria back to story (write_back=true only)
+  general_ludd.agent.gludd_db:
+    op: todo_update_status
+    todo_id: "{{ _req_story_id_effective }}"
+    status: "backlog"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - write_back | bool
+    - _req_story_id_effective != 'inline'
+    - not ansible_check_mode
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON security requirements artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'security_requirements',
+        'status': 'completed',
+        'story_id': _req_story_id_effective,
+        'criteria': _req_all_criteria,
+        'model_criteria': _req_model_criteria,
+        'criteria_count': _req_all_criteria | length,
+        'model_call_used': enable_model_call | bool and not ansible_check_mode,
+        'write_back': write_back | bool
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/security_requirements.json"
+    mode: "0644"
+
+- name: Write markdown security requirements report
+  ansible.builtin.copy:
+    content: |
+      # Security Requirements: {{ _req_story_id_effective }}
+
+      **Story text:** {{ _req_story_text_effective[:200] }}...
+      **Criteria count:** {{ _req_all_criteria | length }}
+      **Write-back:** {{ write_back }}
+
+      ## Security Acceptance Criteria
+
+      {% for c in _req_all_criteria %}
+      - **[{{ c.id }}]** ({{ c.category }}) {{ c.criterion }}
+        - *Rationale:* {{ c.rationale }}
+      {% endfor %}
+
+      {% if _req_model_criteria | length > 0 %}
+      ## Additional Model-Generated Criteria
+
+      {% for mc in _req_model_criteria %}
+      - {{ mc }}
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.security_requirements — report-only by default.*
+    dest: "{{ artifact_dir }}/security_requirements.md"
+    mode: "0644"
+
+- name: Report security requirements completion
+  ansible.builtin.debug:
+    msg: >-
+      Security requirements complete: story={{ _req_story_id_effective }}
+      criteria={{ _req_all_criteria | length }}
+      write_back={{ write_back }}

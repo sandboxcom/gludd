@@ -1,0 +1,52 @@
+---
+# threat_model prepare: start mock daemon + seed a design doc fixture
+- name: Prepare - mock daemon + design doc for threat_model
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}.pid"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Seed a design doc fixture for the role to read
+      ansible.builtin.copy:
+        content: |
+          # System Design: general-ludd-agent
+
+          ## Components
+
+          - Daemon API (FastAPI, PSK auth)
+          - Worker (Ansible Runner, playbook execution)
+          - Model Gateway (LLM inference, multi-provider)
+          - Message Queue (agent coordination)
+          - Todo Store (SQLite, task backlog)
+
+          ## Data Flows
+
+          1. User → /api/todos → Todo Store
+          2. EventLoop → Todo claim → Worker
+          3. Worker → Model Gateway → completion
+          4. Worker → git commit → PR delivery
+          5. Agent → gludd_message → coordination
+        dest: "/tmp/gludd-threat-model-design-{{ mock_port }}.md"
+        mode: "0644"

@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: sbom_generate
+  author: Agentic Harness Agent
+  description: >
+    Produces a CycloneDX SBOM using syft. The heavy syft binary is gated behind
+    enable_syft:false; sbom_output_override supplies a minimal valid CycloneDX
+    document for molecule testing. Extracts component count and top deps from the
+    parsed JSON. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

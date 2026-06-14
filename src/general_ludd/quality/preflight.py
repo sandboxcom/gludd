@@ -107,8 +107,12 @@ def check_playbooks() -> dict[str, Any]:
 # Raised 28 -> 33 once the 5 workflow-pipeline roles landed (W13:
 # role_gate_triage, role_ci_pipeline_repair, role_flaky_quarantine,
 # role_release_build, role_validate_and_push — ports 8800-8804).
+# Raised 33 -> 40 once the 7 secure-SDLC roles landed (W14:
+# role_threat_model (8810), role_security_review (8811), role_secret_scan (8812),
+# role_sbom_generate (8813), role_supply_chain_verify (8814),
+# role_security_requirements (8815), role_security_gate (8816)).
 # This only ratchets UP as more role/module scenarios are added — never weaken.
-MIN_MOLECULE_SCENARIOS = 33
+MIN_MOLECULE_SCENARIOS = 40
 
 
 def check_molecule_scenarios() -> dict[str, Any]:

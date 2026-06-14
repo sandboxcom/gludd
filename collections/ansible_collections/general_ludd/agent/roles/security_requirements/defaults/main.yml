@@ -1,0 +1,26 @@
+---
+# security_requirements role defaults — REPORT-ONLY by default
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-security-requirements"
+
+# Story to derive criteria for. Provide story_id to fetch from gludd_db,
+# or story_text for an inline story. story_id takes precedence.
+story_id: ""
+story_text: "As a developer, I want to build a secure agent that handles user data safely."
+
+# Model profile for criteria augmentation (empty = daemon default)
+model_profile: ""
+
+# SAFE-BY-DEFAULT: do NOT call a model unless explicitly enabled.
+enable_model_call: false
+
+# SAFE-BY-DEFAULT: do NOT write back to the story unless explicitly enabled.
+write_back: false
+
+# Destructive ops guard — report-only by default
+enable_git_push: false

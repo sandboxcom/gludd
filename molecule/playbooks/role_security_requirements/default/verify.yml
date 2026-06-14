@@ -1,0 +1,77 @@
+---
+- name: Verify - security_requirements derived criteria and wrote artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8815', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8815', true) }}.pid"
+    artifact: "/tmp/gludd-security-requirements-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8815', true) }}/security_requirements.json"
+    artifact_md: "/tmp/gludd-security-requirements-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8815', true) }}/security_requirements.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'security_requirements'
+          - result.status == 'completed'
+        fail_msg: "security_requirements artifact wrong: {{ result }}"
+
+    - name: Assert story_id was fetched from mock daemon
+      ansible.builtin.assert:
+        that:
+          - result.story_id == 'TODO-001'
+        fail_msg: "Expected story_id=TODO-001, got={{ result.story_id }}"
+        success_msg: "story_id={{ result.story_id }} fetched from mock"
+
+    - name: Assert all 4 categories of criteria are present
+      ansible.builtin.assert:
+        that:
+          - result.criteria is defined
+          - result.criteria | length >= 12
+          - result.criteria | selectattr('category', 'equalto', 'authn_authz') | list | length >= 3
+          - result.criteria | selectattr('category', 'equalto', 'input_validation') | list | length >= 3
+          - result.criteria | selectattr('category', 'equalto', 'secrets_handling') | list | length >= 3
+          - result.criteria | selectattr('category', 'equalto', 'logging') | list | length >= 3
+        fail_msg: "Expected >=12 criteria across all 4 categories. Got: {{ result.criteria | length }}"
+        success_msg: "criteria_count={{ result.criteria | length }} across 4 categories"
+
+    - name: Assert write_back is false (safe default)
+      ansible.builtin.assert:
+        that:
+          - result.write_back == false
+        fail_msg: "write_back should be false by default"
+        success_msg: "write_back=false confirmed"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-security-requirements-{{ mock_port }}"
+        state: absent
+      failed_when: false

@@ -1,0 +1,45 @@
+---
+# Run supply_chain_verify with BOTH a fail path (default: empty/rc=1) and a pass path.
+# The default defaults (empty override, rc=1) exercise the fail-closed verdict=fail path.
+# The second invocation uses a non-empty override (rc=0) to exercise the pass path.
+- name: Converge (fail path) - supply_chain_verify with missing signature
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8814', true) }}"
+  tasks:
+    - name: Run supply_chain_verify with empty/rc=1 override (unsigned → verdict=fail)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.supply_chain_verify
+      vars:
+        artifact_dir: "/tmp/gludd-scv-{{ mock_port }}-fail"
+        artifact_ref: "ghcr.io/test/app:unsigned"
+        expected_identity: "https://github.com/test/app/.github/workflows/release.yml@refs/heads/main"
+        enable_cosign: false
+        cosign_output_override: ""
+        cosign_output_override_rc: 1
+        require_slsa: true
+        slsa_output_override: ""
+        slsa_output_override_rc: 1
+
+- name: Converge (pass path) - supply_chain_verify with valid signature
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8814', true) }}"
+  tasks:
+    - name: Run supply_chain_verify with valid override (signed + SLSA → verdict=pass)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.supply_chain_verify
+      vars:
+        artifact_dir: "/tmp/gludd-scv-{{ mock_port }}-pass"
+        artifact_ref: "ghcr.io/test/app:signed"
+        expected_identity: "https://github.com/test/app/.github/workflows/release.yml@refs/heads/main"
+        enable_cosign: false
+        cosign_output_override: '[{"critical":{"identity":{"docker-reference":"ghcr.io/test/app"}}}]'
+        cosign_output_override_rc: 0
+        require_slsa: false
+        slsa_output_override: ""
+        slsa_output_override_rc: 1

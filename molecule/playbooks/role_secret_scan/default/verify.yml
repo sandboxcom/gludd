@@ -1,0 +1,82 @@
+---
+- name: Verify - secret_scan verdict switches correctly between pass and fail paths
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8812', true) }}"
+    artifact_pass: "/tmp/gludd-secret-scan-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8812', true) }}-pass/secret_scan.json"
+    artifact_fail: "/tmp/gludd-secret-scan-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8812', true) }}-fail/secret_scan.json"
+  tasks:
+    # ---- PASS path ----
+    - name: Assert pass-path JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_pass }}"
+      register: art_pass
+      failed_when: not art_pass.stat.exists
+
+    - name: Load pass-path artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_pass }}"
+      register: raw_pass
+
+    - name: Parse pass-path artifact
+      ansible.builtin.set_fact:
+        result_pass: "{{ raw_pass.content | b64decode | from_json }}"
+
+    - name: Assert pass-path verdict=pass with 0 findings
+      ansible.builtin.assert:
+        that:
+          - result_pass.role == 'secret_scan'
+          - result_pass.status == 'completed'
+          - result_pass.verdict == 'pass'
+          - result_pass.finding_count | int == 0
+        fail_msg: "Pass path should have verdict=pass, 0 findings. Got: {{ result_pass }}"
+        success_msg: "Pass path: verdict=pass, finding_count=0"
+
+    # ---- FAIL path ----
+    - name: Assert fail-path JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_fail }}"
+      register: art_fail
+      failed_when: not art_fail.stat.exists
+
+    - name: Load fail-path artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_fail }}"
+      register: raw_fail
+
+    - name: Parse fail-path artifact
+      ansible.builtin.set_fact:
+        result_fail: "{{ raw_fail.content | b64decode | from_json }}"
+
+    - name: Assert fail-path verdict=fail with 1 finding
+      ansible.builtin.assert:
+        that:
+          - result_fail.role == 'secret_scan'
+          - result_fail.verdict == 'fail'
+          - result_fail.finding_count | int >= 1
+          - result_fail.affected_files | length >= 1
+        fail_msg: "Fail path should have verdict=fail, >=1 finding. Got: {{ result_fail }}"
+        success_msg: "Fail path: verdict=fail, finding_count={{ result_fail.finding_count }}"
+
+    - name: Assert no secret values in either artifact
+      ansible.builtin.assert:
+        that:
+          - "'hashed_secret' not in (raw_pass.content | b64decode)"
+          - result_fail.note is defined
+        fail_msg: "Artifact must not expose raw secret values"
+        success_msg: "Secret values not exposed in artifacts"
+
+    # ---- cleanup ----
+    - name: Remove pass artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-secret-scan-{{ mock_port }}-pass"
+        state: absent
+      failed_when: false
+
+    - name: Remove fail artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-secret-scan-{{ mock_port }}-fail"
+        state: absent
+      failed_when: false

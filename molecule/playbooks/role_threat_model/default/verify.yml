@@ -1,0 +1,97 @@
+---
+- name: Verify - threat_model wrote threat model artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}.pid"
+    artifact: "/tmp/gludd-threat-model-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}/threat_model.json"
+    artifact_md: "/tmp/gludd-threat-model-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8810', true) }}/threat_model.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields — role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'threat_model'
+          - result.status == 'completed'
+          - result.system_name == 'test-system'
+        fail_msg: "threat_model artifact wrong: {{ result }}"
+
+    - name: Assert STRIDE categories present in output
+      ansible.builtin.assert:
+        that:
+          - result.stride is defined
+          - result.stride.spoofing is defined
+          - result.stride.tampering is defined
+          - result.stride.repudiation is defined
+          - result.stride.information_disclosure is defined
+          - result.stride.denial_of_service is defined
+          - result.stride.elevation_of_privilege is defined
+        fail_msg: "STRIDE categories missing from threat_model artifact: {{ result.stride | default({}) }}"
+        success_msg: "All 6 STRIDE categories present"
+
+    - name: Assert threat count is meaningful
+      ansible.builtin.assert:
+        that:
+          - result.threat_count | int >= 6
+        fail_msg: "Expected >= 6 threats (one per STRIDE), got {{ result.threat_count }}"
+        success_msg: "threat_count={{ result.threat_count }} threats enumerated"
+
+    - name: Assert asset list populated
+      ansible.builtin.assert:
+        that:
+          - result.assets is defined
+          - result.assets | length >= 1
+        fail_msg: "Asset list empty or missing"
+
+    - name: Assert attack surface captured from live facts
+      ansible.builtin.assert:
+        that:
+          - result.surface is defined
+        fail_msg: "Attack surface missing from artifact"
+
+    - name: Assert design doc was found (seeded in prepare)
+      ansible.builtin.assert:
+        that:
+          - result.design_present == true
+        fail_msg: "design_present should be true — seeded in prepare"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-threat-model-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove design doc fixture
+      ansible.builtin.file:
+        path: "/tmp/gludd-threat-model-design-{{ mock_port }}.md"
+        state: absent
+      failed_when: false

@@ -1,0 +1,39 @@
+---
+# supply_chain_verify role defaults — FAIL-CLOSED, REPORT-ONLY
+
+# Daemon connectivity (not needed for cosign — kept for consistency)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-supply-chain-verify"
+
+# Artifact reference to verify (image URI, file path, etc.)
+artifact_ref: ""
+
+# Expected signing identity (Fulcio certificate Subject)
+expected_identity: ""
+
+# Expected OIDC issuer for keyless signing
+expected_oidc_issuer: "https://token.actions.githubusercontent.com"
+
+# FAIL-CLOSED: missing/invalid signature → verdict=fail
+# SAFE-BY-DEFAULT: do NOT run cosign unless explicitly enabled.
+enable_cosign: false
+
+# When enable_cosign=false (or check_mode), use these pre-canned outputs.
+# Default: unsigned artifact (rc=1, empty output) → verdict=fail (fail-closed).
+cosign_output_override: ""
+cosign_output_override_rc: 1
+
+# SLSA attestation settings
+require_slsa: true
+
+slsa_output_override: ""
+slsa_output_override_rc: 1
+
+# When the SLSA level cannot be parsed from the attestation, use this.
+slsa_level_override: "0"
+
+# Destructive ops guard — report-only
+enable_git_push: false

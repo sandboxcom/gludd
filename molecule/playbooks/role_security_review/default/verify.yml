@@ -1,0 +1,68 @@
+---
+- name: Verify - security_review found the seeded shell=True finding
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8811', true) }}"
+    artifact: "/tmp/gludd-security-review-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8811', true) }}/security_review.json"
+    artifact_md: "/tmp/gludd-security-review-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8811', true) }}/security_review.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact role identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'security_review'
+          - result.status == 'completed'
+        fail_msg: "security_review artifact wrong: {{ result }}"
+
+    - name: Assert real pattern matching found shell=True finding
+      ansible.builtin.assert:
+        that:
+          - result.findings is defined
+          - result.findings | length >= 1
+          - result.findings | selectattr('pattern', 'equalto', 'shell=True') | list | length >= 1
+        fail_msg: >-
+          Expected at least 1 finding with pattern=shell=True from real grep scan.
+          Got: {{ result.findings }}
+        success_msg: "Real grep found shell=True: finding_count={{ result.finding_count }}"
+
+    - name: Assert verdict is fail (high-severity finding present)
+      ansible.builtin.assert:
+        that:
+          - result.verdict in ['fail', 'warn']
+        fail_msg: "Expected verdict=fail or warn due to shell=True, got={{ result.verdict }}"
+        success_msg: "verdict={{ result.verdict }} correctly reflects shell=True finding"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-security-review-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove fixture dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-security-review-fixture-{{ mock_port }}"
+        state: absent
+      failed_when: false

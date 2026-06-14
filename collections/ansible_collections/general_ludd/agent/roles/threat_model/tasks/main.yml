@@ -1,0 +1,359 @@
+---
+# threat_model role — STRIDE threat enumeration over a design doc + live attack surface
+#
+# Reads a design document (design_path), gathers live facts (queues, MCP tools,
+# traces), and emits per-STRIDE-category threats plus an asset list and surface
+# summary. Optionally calls a model to draft threat narratives (gated behind
+# enable_model_call:false). REPORT-ONLY: never mutates the repo.
+#
+# STRIDE categories: Spoofing, Tampering, Repudiation, Information Disclosure,
+# Denial of Service, Elevation of Privilege.
+
+- name: Gather live daemon facts (queues, MCP tools, traces, messages)
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Read design document ──────────────────────────────────────────────────────
+
+- name: Check design document exists
+  ansible.builtin.stat:
+    path: "{{ design_path }}"
+  register: _tm_design_stat
+
+- name: Load design document content
+  ansible.builtin.slurp:
+    src: "{{ design_path }}"
+  register: _tm_design_raw
+  when: _tm_design_stat.stat.exists
+
+- name: Set design content (file found)
+  ansible.builtin.set_fact:
+    _tm_design_content: "{{ _tm_design_raw.content | b64decode }}"
+  when: _tm_design_stat.stat.exists
+
+- name: Set design content (file missing — use placeholder)
+  ansible.builtin.set_fact:
+    _tm_design_content: "[design document not found at {{ design_path }}]"
+  when: not _tm_design_stat.stat.exists
+
+# ── Derive live attack surface from facts ─────────────────────────────────────
+
+- name: Derive attack surface from live facts
+  ansible.builtin.set_fact:
+    _tm_queue_names: >-
+      {{
+        live_facts.ansible_facts.gludd.work.queues.keys() | list
+        if live_facts.ansible_facts.gludd.work.queues is defined
+        else []
+      }}
+    _tm_active_jobs: "{{ live_facts.ansible_facts.gludd.work.active_jobs | default(0) | int }}"
+    _tm_backlog: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _tm_trace_count: "{{ live_facts.ansible_facts.gludd.traces.count | default(0) | int }}"
+    _tm_model_profiles: >-
+      {{
+        live_facts.ansible_facts.gludd.models.available | default([])
+      }}
+
+# ── Build asset list from design + surface ───────────────────────────────────
+
+- name: Build asset list
+  ansible.builtin.set_fact:
+    _tm_assets:
+      - name: "{{ system_name }} message queues"
+        type: "data_store"
+        details: "queues={{ _tm_queue_names | join(', ') }} active_jobs={{ _tm_active_jobs }}"
+      - name: "{{ system_name }} todo/backlog"
+        type: "data_store"
+        details: "backlog_size={{ _tm_backlog }}"
+      - name: "{{ system_name }} model inference"
+        type: "process"
+        details: "profiles={{ _tm_model_profiles | join(', ') }}"
+      - name: "{{ system_name }} execution traces"
+        type: "data_store"
+        details: "trace_count={{ _tm_trace_count }}"
+      - name: "{{ system_name }} daemon API"
+        type: "external_interface"
+        details: "PSK-authenticated HTTP; psk_required={{ psk | length > 0 }}"
+      - name: "design: {{ design_path | basename }}"
+        type: "document"
+        details: "design_present={{ _tm_design_stat.stat.exists }}"
+
+# ── STRIDE threat enumeration — pure Ansible logic, no external tools ─────────
+
+- name: Enumerate Spoofing threats
+  ansible.builtin.set_fact:
+    _tm_spoofing_threats:
+      - id: "S1"
+        description: "An attacker forges a PSK token to impersonate an authorized agent calling the daemon API"
+        asset: "{{ system_name }} daemon API"
+        severity: "high"
+        mitigations: ["Enforce PSK validation on all /api/* and /admin/* endpoints", "Use a sufficiently random PSK (>=32 bytes)"]
+      - id: "S2"
+        description: "Malicious playbook impersonates a legitimate agent sender in gludd_message to hijack task assignment"
+        asset: "{{ system_name }} message queues"
+        severity: "medium"
+        mitigations: ["Validate sender identity server-side", "Authenticate all message senders via PSK"]
+      - id: "S3"
+        description: "A forged model profile ID routes inference to an untrusted model provider"
+        asset: "{{ system_name }} model inference"
+        severity: "medium"
+        mitigations: ["Allowlist model profile IDs in daemon config", "Validate profile_id against registered profiles"]
+
+- name: Enumerate Tampering threats
+  ansible.builtin.set_fact:
+    _tm_tampering_threats:
+      - id: "T1"
+        description: "An attacker modifies a task body in the todo store to inject malicious instructions into agent context"
+        asset: "{{ system_name }} todo/backlog"
+        severity: "high"
+        mitigations: ["Validate todo content schema server-side", "Store HMAC of todo body; verify before dispatch"]
+      - id: "T2"
+        description: "Execution trace data is tampered to falsify benchmark scores, corrupting model routing decisions"
+        asset: "{{ system_name }} execution traces"
+        severity: "medium"
+        mitigations: ["Use append-only trace store", "HMAC trace entries at write time"]
+      - id: "T3"
+        description: "Design document at {{ design_path }} is modified between threat-model run and implementation"
+        asset: "design: {{ design_path | basename }}"
+        severity: "medium"
+        mitigations: ["Pin design doc to a git SHA before modeling", "Re-run threat_model after any design change"]
+
+- name: Enumerate Repudiation threats
+  ansible.builtin.set_fact:
+    _tm_repudiation_threats:
+      - id: "R1"
+        description: "An agent denies having submitted a destructive todo or message — no audit trail links the agent identity to the action"
+        asset: "{{ system_name }} message queues"
+        severity: "medium"
+        mitigations: ["Persist sender + timestamp on every message", "Write audit log entries on todo create/update"]
+      - id: "R2"
+        description: "Model inference call is made but denied — no per-call attribution to an agent or todo"
+        asset: "{{ system_name }} model inference"
+        severity: "low"
+        mitigations: ["Record todo_id + agent_id on every model call in traces", "Tie trace spans to sender identity"]
+
+- name: Enumerate Information Disclosure threats
+  ansible.builtin.set_fact:
+    _tm_info_disclosure_threats:
+      - id: "I1"
+        description: "PSK leaks via log output when no_log is not set on gludd_* module tasks"
+        asset: "{{ system_name }} daemon API"
+        severity: "high"
+        mitigations: ["Enforce no_log on all tasks that pass psk", "Audit all role tasks for psk in vars"]
+      - id: "I2"
+        description: "Execution traces contain prompt/completion text that includes sensitive data from design documents"
+        asset: "{{ system_name }} execution traces"
+        severity: "medium"
+        mitigations: ["Redact secret patterns from trace bodies before storage", "Limit trace retention (RecentTracesBuffer bounded)"]
+      - id: "I3"
+        description: "Queue contents expose internal project work state to any agent that can call gludd_facts"
+        asset: "{{ system_name }} message queues"
+        severity: "low"
+        mitigations: ["Scope facts API to authorized callers only", "Return per-recipient inbox, not global queue dump"]
+
+- name: Enumerate Denial of Service threats
+  ansible.builtin.set_fact:
+    _tm_dos_threats:
+      - id: "D1"
+        description: "Backlog flood: an attacker sends unlimited todos to exhaust queue capacity and block legitimate work"
+        asset: "{{ system_name }} todo/backlog"
+        severity: "high"
+        mitigations: ["Enforce per-project backlog size cap", "Rate-limit POST /api/todos by IP or token"]
+      - id: "D2"
+        description: "Model call storm: attacker triggers many concurrent model inference jobs to exhaust budget"
+        asset: "{{ system_name }} model inference"
+        severity: "medium"
+        mitigations: ["Enforce per-todo and daily budget caps", "Limit concurrent active_jobs via lease mechanism"]
+      - id: "D3"
+        description: "Trace buffer OOM: high-frequency trace emission fills RecentTracesBuffer and starves GC"
+        asset: "{{ system_name }} execution traces"
+        severity: "low"
+        mitigations: ["Keep RecentTracesBuffer bounded (maxlen configurable)", "Monitor buffer size via /api/traces"]
+
+- name: Enumerate Elevation of Privilege threats
+  ansible.builtin.set_fact:
+    _tm_elevation_threats:
+      - id: "E1"
+        description: "An agent role with read-only intent uses enable_git_push=true to push code without review"
+        asset: "{{ system_name }} daemon API"
+        severity: "high"
+        mitigations: ["Default enable_git_push=false in every role", "Gate any git push behind a separate approval step"]
+      - id: "E2"
+        description: "A worker job escapes its worktree by using shell=True with user-controlled input, gaining host filesystem access"
+        asset: "{{ system_name }} todo/backlog"
+        severity: "critical"
+        mitigations: ["Ban shell=True with dynamic input in all playbook tasks", "Sandbox worktree dirs (no write outside worktree)"]
+      - id: "E3"
+        description: "An unauthenticated caller accesses /admin/models/call to invoke model inference without a budget check"
+        asset: "{{ system_name }} model inference"
+        severity: "high"
+        mitigations: ["Require PSK Bearer token on /admin/* endpoints", "Enforce budget check before every model call"]
+
+# ── Optionally call a model for threat narrative drafting ─────────────────────
+
+- name: Draft threat model narrative via model call (enable_model_call=true only)
+  general_ludd.agent.gludd_model_call:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    prompt: >-
+      You are a security architect. Given this system design and attack surface,
+      write a 200-word executive summary of the most critical STRIDE threats.
+
+      System: {{ system_name }}
+      Design excerpt: {{ _tm_design_content[:2000] }}
+      Assets: {{ _tm_assets | map(attribute='name') | list | join(', ') }}
+      Critical threats: E2 (shell=True elevation), E1 (git push), I1 (PSK leak), D1 (backlog flood)
+    model_profile: "{{ model_profile | default('') }}"
+  register: _tm_model_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+
+- name: Set narrative from model call
+  ansible.builtin.set_fact:
+    _tm_narrative: "{{ _tm_model_result.answer | default('') }}"
+  when:
+    - enable_model_call | bool
+    - not ansible_check_mode
+    - _tm_model_result is defined
+
+- name: Set narrative fallback (model call disabled or check_mode)
+  ansible.builtin.set_fact:
+    _tm_narrative: >-
+      [model_call disabled — set enable_model_call:true to generate narrative]
+      Key STRIDE threats: E2 shell=True elevation (critical), E1 git push without approval (high),
+      I1 PSK leak via logs (high), D1 backlog flood (high). See threat list for full enumeration.
+  when: not (enable_model_call | bool) or ansible_check_mode
+
+# ── Aggregate all threats ─────────────────────────────────────────────────────
+
+- name: Aggregate all STRIDE threats
+  ansible.builtin.set_fact:
+    _tm_all_threats: >-
+      {{
+        _tm_spoofing_threats
+        + _tm_tampering_threats
+        + _tm_repudiation_threats
+        + _tm_info_disclosure_threats
+        + _tm_dos_threats
+        + _tm_elevation_threats
+      }}
+    _tm_critical_count: >-
+      {{
+        (
+          _tm_spoofing_threats
+          + _tm_tampering_threats
+          + _tm_repudiation_threats
+          + _tm_info_disclosure_threats
+          + _tm_dos_threats
+          + _tm_elevation_threats
+        ) | selectattr('severity', 'equalto', 'critical') | list | length
+      }}
+    _tm_high_count: >-
+      {{
+        (
+          _tm_spoofing_threats
+          + _tm_tampering_threats
+          + _tm_repudiation_threats
+          + _tm_info_disclosure_threats
+          + _tm_dos_threats
+          + _tm_elevation_threats
+        ) | selectattr('severity', 'equalto', 'high') | list | length
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON threat model artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'threat_model',
+        'status': 'completed',
+        'system_name': system_name,
+        'design_path': design_path,
+        'design_present': _tm_design_stat.stat.exists,
+        'assets': _tm_assets,
+        'surface': {
+          'queues': _tm_queue_names,
+          'active_jobs': _tm_active_jobs | int,
+          'backlog_size': _tm_backlog | int,
+          'trace_count': _tm_trace_count | int,
+          'model_profiles': _tm_model_profiles
+        },
+        'stride': {
+          'spoofing': _tm_spoofing_threats,
+          'tampering': _tm_tampering_threats,
+          'repudiation': _tm_repudiation_threats,
+          'information_disclosure': _tm_info_disclosure_threats,
+          'denial_of_service': _tm_dos_threats,
+          'elevation_of_privilege': _tm_elevation_threats
+        },
+        'threats': _tm_all_threats,
+        'threat_count': _tm_all_threats | length,
+        'critical_count': _tm_critical_count | int,
+        'high_count': _tm_high_count | int,
+        'narrative': _tm_narrative,
+        'model_call_used': enable_model_call | bool and not ansible_check_mode
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/threat_model.json"
+    mode: "0644"
+
+- name: Write markdown threat model report
+  ansible.builtin.copy:
+    content: |
+      # Threat Model: {{ system_name }}
+
+      **Design:** `{{ design_path }}` (present={{ _tm_design_stat.stat.exists }})
+      **Threats found:** {{ _tm_all_threats | length }} total, {{ _tm_critical_count }} critical, {{ _tm_high_count }} high
+
+      ## Attack Surface (from live gludd_facts)
+
+      - Queues: {{ _tm_queue_names | join(', ') | default('none') }}
+      - Active jobs: {{ _tm_active_jobs }}
+      - Backlog size: {{ _tm_backlog }}
+      - Execution traces: {{ _tm_trace_count }}
+      - Model profiles: {{ _tm_model_profiles | join(', ') | default('none') }}
+
+      ## Assets
+
+      {% for asset in _tm_assets %}
+      - **{{ asset.name }}** ({{ asset.type }}): {{ asset.details }}
+      {% endfor %}
+
+      ## STRIDE Threat Enumeration
+
+      {% for threat in _tm_all_threats %}
+      ### {{ threat.id }}: {{ threat.description[:80] }}...
+
+      - **Severity:** {{ threat.severity | upper }}
+      - **Asset:** {{ threat.asset }}
+      - **Mitigations:** {{ threat.mitigations | join('; ') }}
+
+      {% endfor %}
+
+      ## Executive Summary
+
+      {{ _tm_narrative }}
+
+      ---
+      *Generated by general_ludd.agent.threat_model — report-only, no repo mutations.*
+    dest: "{{ artifact_dir }}/threat_model.md"
+    mode: "0644"
+
+- name: Report threat model completion
+  ansible.builtin.debug:
+    msg: >-
+      Threat model complete: system={{ system_name }}
+      threats={{ _tm_all_threats | length }}
+      critical={{ _tm_critical_count }}
+      high={{ _tm_high_count }}
