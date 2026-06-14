@@ -410,3 +410,17 @@ Trace store decision: execution traces are produced in-process (timing/tokens/co
 Goal: codify the 5 recurring pipeline-maintenance workflows as facts-driven, safe-by-default Ansible roles with molecule scenarios; bring total molecule scenarios 28→33.
 
 - [x] W13.1 — 5 workflow-pipeline roles + molecule scenarios + MIN_MOLECULE_SCENARIOS 28→33 | evidence: make molecule-test-all "ALL scenarios passed" 33/33; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" 2a8f97b
+
+## Phase W14 — Secure-SDLC roles (2026-06-14)
+
+Goal: 7 secure-SDLC Ansible roles composing, fail-closed, molecule-tested; total scenarios 33->40.
+
+- [x] W14.1 — 7 secure-SDLC roles + 7 molecule scenarios (ports 8810-8816) + MIN_MOLECULE_SCENARIOS 33->40 | evidence: make molecule-test-all "ALL scenarios passed" 40/40; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" 9629e20
+  Per-role summary:
+  - threat_model (port 8810): gludd_facts + design doc stat/slurp -> STRIDE 17 threats (6 categories); enable_model_call=false; optional gludd_model_call narrative; JSON+MD artifacts
+  - security_review (port 8811): REAL grep-based pattern matching (shell=True, eval, exec, pickle.loads, hardcoded secrets, os.system, yaml.load, subprocess); gludd_facts + gludd_message handoff; enable_model_call=false
+  - secret_scan (port 8812): wraps detect-secrets/gitleaks; enable_scan=false + scan_output_override; no_log on ALL raw output tasks; verdict=fail if findings>0
+  - sbom_generate (port 8813): CycloneDX SBOM via syft; enable_syft=false + sbom_output_override (minimal valid CycloneDX 1.4 with 5 known components); component_count+top_deps+target_name extracted
+  - supply_chain_verify (port 8814): cosign verify; FAIL-CLOSED (missing/invalid sig -> verdict=fail); cosign_output_override_rc=1 by default; enable_cosign=false + overrides
+  - security_requirements (port 8815): derives 12 criteria across 4 categories (authn_authz, input_validation, secrets_handling, logging); gludd_db todo_get (story_id); enable_model_call=false; write_back=false
+  - security_gate (port 8816): composing fail-closed gate: stat+slurp per-check JSONs from results_dir; detects missing checks; collects blocking findings (severity rank map); gate_passed=ALL present AND no blockers AND no verdict failures; gludd_message priority=high on block
