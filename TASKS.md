@@ -424,3 +424,19 @@ Goal: 7 secure-SDLC Ansible roles composing, fail-closed, molecule-tested; total
   - supply_chain_verify (port 8814): cosign verify; FAIL-CLOSED (missing/invalid sig -> verdict=fail); cosign_output_override_rc=1 by default; enable_cosign=false + overrides
   - security_requirements (port 8815): derives 12 criteria across 4 categories (authn_authz, input_validation, secrets_handling, logging); gludd_db todo_get (story_id); enable_model_call=false; write_back=false
   - security_gate (port 8816): composing fail-closed gate: stat+slurp per-check JSONs from results_dir; detects missing checks; collects blocking findings (severity rank map); gate_passed=ALL present AND no blockers AND no verdict failures; gludd_message priority=high on block
+
+## Phase W15 — Agile/sprint roles (2026-06-14)
+
+Goal: 9 agile/sprint Ansible roles with real computation (Fibonacci points, capacity-fit, velocity trend); total scenarios 40->49.
+
+- [x] W15.1 — 9 agile/sprint roles + 9 molecule scenarios (ports 8817-8825) + MIN_MOLECULE_SCENARIOS 40->49 | evidence: make molecule-test-all "ALL scenarios passed" 49/49; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" 8b252e1
+  Per-role summary:
+  - story_create (port 8817): request_text -> structured user story ("As a...") + acceptance_criteria[]; enable_model_call=false template fallback; optional write_back creates todo
+  - estimate_story (port 8818): Fibonacci points (1/2/3/5/8/13/21) from complexity heuristics (word count + integration/security/test keywords) + historical velocity (facts.history); REAL computation points=5 for seeded story
+  - backlog_groom (port 8819): prioritize/estimate/split backlog todos; flag oversized (>max_split_points=8) + under-specified (title ≤15 chars); ranked[], split_candidates[], actions[]; todos bracket-notation fix (items dict method conflict)
+  - sprint_plan (port 8820): select backlog todos into sprint by capacity vs velocity; REAL capacity-fit math; selected[], total_points (≤ capacity=10), spillover[]; capacity from sprint_capacity var or velocity proxy (total_runs*success_rate)
+  - standup_report (port 8821): yesterday/today/blockers from facts (work/history) + gludd_message receive; mock /api/messages seeds MSG-MOCK-IN-1 blocker -> surfaces in blockers[]; done=2, in_progress=3, blockers=1
+  - sprint_board_report (port 8822): board state grouped by status (todo/in_progress/review/done); COMPOSES report_status data; counts.todo=5 (2 items + backlog_size=3 seeded)
+  - velocity_report (port 8823): points/throughput over window=5 sprints from total_runs=25; COMPOSES report_metrics; points_per_sprint[5 entries], avg=4.8, trend=improving; Jinja2 max-filter fix (no max(1) arg form)
+  - sprint_review (port 8824): completed-work demo summary from history + traces; completed=4, highlights=1, demo_notes=2 from seeded by_phase data
+  - retrospective (port 8825): well=4 ill=3 actions=4 (all always non-empty for seeded data); inbox_messages=1 (MSG-MOCK-IN-1); narrative fallback when enable_model_call=false
