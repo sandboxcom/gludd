@@ -376,7 +376,7 @@ audit_dependencies, audit_security, debug_failure, dependency_update,
 document_change, refactor_code, report_audit, report_metrics, report_status,
 triage_issue, write_tests.
 
-W10.6 tick below will be added after gate+commit (requires real commit hash).
+- [x] W10.6 — all 12 role molecule scenarios GREEN (26/26); _NOT_YET_COVERED_ROLES emptied; MIN_MOLECULE_SCENARIOS 14->26 | evidence: make molecule-test-all "ALL scenarios passed" (26 scenarios); make test-specific TESTFILE='tests/integration/test_molecule_coverage.py' "7 passed"; make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS" 41889e6
   Per-role verify details:
   - role_report_status (port 8782): gludd_facts → health classification → JSON+md artifacts; asserts role=='report_status' status=='completed'
   - role_report_metrics (port 8783): gludd_facts → throughput=medium (25 runs) → JSON+md artifacts; asserts throughput_tier=='medium'
