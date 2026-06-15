@@ -1,0 +1,77 @@
+---
+- name: Verify - gludd_schedule returned the mock schedule snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8836', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8836', true) }}.pid"
+  tasks:
+    - name: Load persisted schedule result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-schedule.json"
+      register: schedule_raw
+
+    - name: Parse schedule result
+      ansible.builtin.set_fact:
+        schedule_result: "{{ schedule_raw.content | b64decode | from_json }}"
+
+    - name: Assert schedule result shape
+      ansible.builtin.assert:
+        that:
+          - schedule_result.batches is defined
+          - schedule_result.batches is iterable
+          - schedule_result.item_count is defined
+          - schedule_result.item_count | int == 4
+          - schedule_result.batch_count is defined
+          - schedule_result.batch_count | int >= 1
+          - schedule_result.ansible_facts.gludd_schedule is defined
+          - schedule_result.ansible_facts.gludd_schedule == schedule_result.batches
+          - schedule_result.changed == false
+        fail_msg: "gludd_schedule result incomplete: {{ schedule_result }}"
+        success_msg: >-
+          gludd_schedule returned {{ schedule_result.batch_count }} batches
+          for {{ schedule_result.item_count }} items
+
+    - name: Assert all submitted item ids appear in the batches
+      ansible.builtin.assert:
+        that:
+          - schedule_result.batches | flatten | sort == ['TASK-A', 'TASK-B', 'TASK-C', 'TASK-D'] | sort
+        fail_msg: "Not all item ids present in batches: {{ schedule_result.batches | flatten }}"
+        success_msg: "All 4 item ids are present in the batches"
+
+    - name: Find batch index for TASK-A
+      ansible.builtin.set_fact:
+        _task_a_batch: >-
+          {{ schedule_result.batches
+             | map('list')
+             | zip(range(0, schedule_result.batches | length))
+             | selectattr(0, 'contains', 'TASK-A')
+             | map(attribute=1)
+             | list | first | default(-1) | int }}
+
+    - name: Find batch index for TASK-C
+      ansible.builtin.set_fact:
+        _task_c_batch: >-
+          {{ schedule_result.batches
+             | map('list')
+             | zip(range(0, schedule_result.batches | length))
+             | selectattr(0, 'contains', 'TASK-C')
+             | map(attribute=1)
+             | list | first | default(-1) | int }}
+
+    - name: Assert dependency ordering (TASK-C must be in a later batch than TASK-A)
+      ansible.builtin.assert:
+        that:
+          - _task_a_batch | int < _task_c_batch | int
+        fail_msg: >-
+          TASK-C (batch {{ _task_c_batch }}) should be after TASK-A (batch {{ _task_a_batch }})
+        success_msg: >-
+          Dependency ordering verified: TASK-A in batch {{ _task_a_batch }},
+          TASK-C in batch {{ _task_c_batch }}
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

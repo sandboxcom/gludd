@@ -1,0 +1,40 @@
+---
+# Exercise the REAL gludd_schedule module against the mock daemon.
+- name: Converge - exercise gludd_schedule against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8836', true) }}"
+  tasks:
+    - name: Schedule work items (parallel + serial mix)
+      general_ludd.agent.gludd_schedule:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        items:
+          - id: "TASK-A"
+            resources: ["db"]
+            depends_on: []
+            is_greenfield: false
+          - id: "TASK-B"
+            resources: ["cache"]
+            depends_on: []
+            is_greenfield: false
+          - id: "TASK-C"
+            resources: ["db"]
+            depends_on: ["TASK-A"]
+            is_greenfield: false
+          - id: "TASK-D"
+            resources: []
+            depends_on: []
+            is_greenfield: true
+      register: schedule_result
+
+    - name: Persist the schedule result for verify
+      ansible.builtin.copy:
+        content: "{{ schedule_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-schedule.json"
+        mode: "0644"
+
+    - name: Show schedule result
+      ansible.builtin.debug:
+        var: schedule_result

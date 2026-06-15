@@ -1,0 +1,32 @@
+---
+- name: Converge - run parallel_planner role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8837', true) }}"
+  tasks:
+    - name: Invoke parallel_planner with a mixed work-item set
+      ansible.builtin.include_role:
+        name: general_ludd.agent.parallel_planner
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-parallel-planner-{{ mock_port }}"
+        work_items:
+          - id: "ITEM-1"
+            resources: ["fs"]
+            depends_on: []
+            is_greenfield: false
+          - id: "ITEM-2"
+            resources: ["net"]
+            depends_on: []
+            is_greenfield: false
+          - id: "ITEM-3"
+            resources: ["fs"]
+            depends_on: ["ITEM-1"]
+            is_greenfield: false
+          - id: "ITEM-4"
+            resources: []
+            depends_on: []
+            is_greenfield: true

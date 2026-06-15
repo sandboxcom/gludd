@@ -63,6 +63,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {"gludd_introspect", "gludd_abtest", "gludd
 #   gludd_mcp_tool    -> test_gludd_mcp_tool    (port 8778, honest not_implemented W3.9 fence)
 #   gludd_message     -> test_gludd_message     (port 8774, send/receive/ack)
 #   gludd_model_call  -> test_gludd_model_call  (port 8775, POST /admin/models/call)
+#   gludd_schedule    -> test_gludd_schedule    (port 8836, POST /api/schedule concurrency batches)
 #   gludd_skill       -> test_gludd_skill       (port 8777, local skill render with Jinja2)
 #   gludd_worktree    -> test_gludd_worktree    (port 8780, real git worktree present+absent)
 
@@ -101,6 +102,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {"self_improve_propose"}
 #   supply_chain_verify   -> role_supply_chain_verify   (8814, fail-closed: unsigned->fail)
 #   threat_model          -> role_threat_model          (8810, gludd_facts+design -> STRIDE 17)
 #   triage_issue          -> role_triage_issue          (8787, agent_run+gludd_message -> triage)
+#   parallel_planner      -> role_parallel_planner      (8837, POST /api/schedule -> execution plan artifact)
 #   validate_and_push     -> role_validate_and_push     (8804, override-pass, no push)
 #   velocity_report       -> role_velocity_report       (8823, gludd_metrics+history -> points_per_sprint/trend)
 #   write_tests           -> role_write_tests           (8788, agent_run test_run_cmd -> artifact)

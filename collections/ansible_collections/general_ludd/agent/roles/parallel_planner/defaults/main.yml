@@ -1,0 +1,16 @@
+---
+# parallel_planner role defaults — compute a concurrency-safe execution plan
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Work items to schedule.  A list of dicts each with:
+#   id            (str, required)   — unique work-item identifier
+#   resources     (list[str], [])   — exclusive resources required
+#   depends_on    (list[str], [])   — ids that must complete first
+#   is_greenfield (bool, false)     — no shared-resource conflicts
+work_items: []
+
+# Artifact output
+artifact_dir: "/tmp/gludd-parallel-planner"
