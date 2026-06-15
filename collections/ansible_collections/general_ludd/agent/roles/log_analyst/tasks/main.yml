@@ -1,0 +1,340 @@
+---
+# log_analyst role — analyse logs/traces for anomalies
+#
+# Detects:
+#   1. Error-line density — (lines matching ERROR|CRITICAL|FATAL) / total_lines
+#      fires anomaly when density > error_rate_threshold
+#   2. Phase failure rate — phases in traces.by_phase with success_count < span_count
+#      fires anomaly when phase failure fraction > error_rate_threshold
+#   3. Cost outlier — per-phase cost_usd far above mean (> cost_outlier_factor * mean)
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for log analysis
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Log file analysis ─────────────────────────────────────────────────────────
+
+- name: Find log files matching log_source glob
+  ansible.builtin.find:
+    paths: "{{ log_source | dirname }}"
+    patterns: "{{ log_source | basename }}"
+    recurse: false
+  register: _la_found_files
+
+- name: Slurp each log file
+  ansible.builtin.slurp:
+    src: "{{ item.path }}"
+  register: _la_slurped_logs
+  loop: "{{ _la_found_files.files }}"
+  loop_control:
+    label: "{{ item.path }}"
+  when: _la_found_files.files | length > 0
+
+# ── Compute error-line density per file ──────────────────────────────────────
+
+- name: Compute per-file error density
+  ansible.builtin.set_fact:
+    _la_file_densities: >-
+      {{
+        _la_file_densities | default([])
+        + [{
+          'path': item.source,
+          'total_lines': (item.content | b64decode).splitlines() | length,
+          'error_lines': (item.content | b64decode).splitlines()
+            | select('search', '(?i)(ERROR|CRITICAL|FATAL|EXCEPTION|Traceback)')
+            | list | length,
+          'density': (
+            ((item.content | b64decode).splitlines()
+              | select('search', '(?i)(ERROR|CRITICAL|FATAL|EXCEPTION|Traceback)')
+              | list | length | float)
+            / ([((item.content | b64decode).splitlines() | length), 1] | max | float)
+          )
+        }]
+      }}
+  loop: "{{ _la_slurped_logs.results | default([]) }}"
+  loop_control:
+    label: "{{ item.source | default('') }}"
+  when:
+    - _la_slurped_logs is defined
+    - _la_slurped_logs.results is defined
+
+- name: Initialize file densities (no log files found)
+  ansible.builtin.set_fact:
+    _la_file_densities: []
+  when: _la_file_densities is not defined
+
+# ── Build log-error anomalies ─────────────────────────────────────────────────
+
+- name: Build error-density anomalies from log files
+  ansible.builtin.set_fact:
+    _la_log_anomalies: >-
+      {{
+        _la_file_densities
+        | selectattr('density', 'gt', error_rate_threshold | float)
+        | map('combine', {'type': 'error_density', 'severity': 'high'})
+        | map('combine', {
+            'signal': 'error_line_density_exceeded',
+            'evidence': 'density=' ~ (item.density | round(3) | string)
+              ~ ' threshold=' ~ (error_rate_threshold | string)
+              ~ ' file=' ~ (item.path | string)
+          })
+        | list
+      }}
+  loop: "{{ _la_file_densities }}"
+  loop_control:
+    label: "{{ item.path | default('') }}"
+  when: _la_file_densities | length > 0
+
+- name: Initialize log anomalies (no files)
+  ansible.builtin.set_fact:
+    _la_log_anomalies: []
+  when: _la_log_anomalies is not defined
+
+# ── Rebuild log anomalies cleanly (Jinja2 list comprehension approach) ────────
+
+- name: Rebuild log anomalies from file densities
+  ansible.builtin.set_fact:
+    _la_log_anomalies: >-
+      {{
+        _la_file_densities
+        | selectattr('density', 'gt', error_rate_threshold | float)
+        | list
+        | map('combine', {
+            'type': 'error_density',
+            'signal': 'error_line_density_exceeded',
+            'severity': 'high'
+          })
+        | list
+      }}
+
+# ── Phase failure-rate anomalies ──────────────────────────────────────────────
+
+- name: Extract phase data from traces
+  ansible.builtin.set_fact:
+    _la_by_phase: "{{ live_facts.ansible_facts.gludd.traces.by_phase | default({}) }}"
+
+- name: Build phase anomalies from traces.by_phase
+  ansible.builtin.set_fact:
+    _la_phase_anomalies: >-
+      {{
+        _la_by_phase.items()
+        | list
+        | map('first')
+        | zip(_la_by_phase.items() | map('last'))
+        | list
+      }}
+  when: _la_by_phase | length > 0
+
+- name: Build phase failure anomaly list
+  ansible.builtin.set_fact:
+    _la_phase_failure_anomalies: >-
+      {{
+        (
+          _la_by_phase | dict2items
+          | map(attribute='value')
+          | list
+          | zip(_la_by_phase | dict2items | map(attribute='key') | list)
+          | list
+        )
+      }}
+
+# Use a cleaner approach: iterate with a loop and set_fact accumulate
+
+- name: Initialize phase failure anomalies
+  ansible.builtin.set_fact:
+    _la_phase_failure_anomalies: []
+
+- name: Accumulate phase failure anomalies
+  ansible.builtin.set_fact:
+    _la_phase_failure_anomalies: >-
+      {{
+        _la_phase_failure_anomalies
+        + (
+          [{
+            'type': 'phase_failure_rate',
+            'signal': 'phase_failure_rate_exceeded',
+            'severity': 'medium',
+            'path': item.key,
+            'total_lines': item.value.span_count | default(0) | int,
+            'error_lines': (item.value.span_count | default(0) | int)
+              - (item.value.success_count | default(0) | int),
+            'density': (
+              ((item.value.span_count | default(0) | int)
+                - (item.value.success_count | default(0) | int)) | float
+              / ([item.value.span_count | default(1) | int, 1] | max | float)
+            ),
+            'evidence': 'phase=' ~ item.key
+              ~ ' span_count=' ~ (item.value.span_count | default(0) | string)
+              ~ ' success_count=' ~ (item.value.success_count | default(0) | string)
+              ~ ' failure_rate=' ~ (
+                (((item.value.span_count | default(0) | int)
+                  - (item.value.success_count | default(0) | int)) | float
+                / ([item.value.span_count | default(1) | int, 1] | max | float)) | round(3) | string
+              )
+          }]
+          if (
+            (item.value.span_count | default(0) | int) > 0
+            and (
+              (((item.value.span_count | default(0) | int)
+                - (item.value.success_count | default(0) | int)) | float)
+              / ([item.value.span_count | default(1) | int, 1] | max | float)
+            ) > (error_rate_threshold | float)
+          )
+          else []
+        )
+      }}
+  loop: "{{ _la_by_phase | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: _la_by_phase | length > 0
+
+# ── Cost outlier anomalies ────────────────────────────────────────────────────
+
+- name: Extract cost per phase for outlier detection
+  ansible.builtin.set_fact:
+    _la_phase_costs: >-
+      {{
+        _la_by_phase | dict2items
+        | map(attribute='value')
+        | selectattr('total_cost_usd', 'defined')
+        | map(attribute='total_cost_usd')
+        | map('float')
+        | list
+      }}
+
+- name: Compute mean phase cost
+  ansible.builtin.set_fact:
+    _la_mean_cost: >-
+      {{
+        (_la_phase_costs | sum | float) / ([_la_phase_costs | length, 1] | max | float)
+        if _la_phase_costs | length > 0
+        else 0.0
+      }}
+
+- name: Initialize cost outlier anomalies
+  ansible.builtin.set_fact:
+    _la_cost_anomalies: []
+
+- name: Accumulate cost outlier anomalies
+  ansible.builtin.set_fact:
+    _la_cost_anomalies: >-
+      {{
+        _la_cost_anomalies
+        + (
+          [{
+            'type': 'cost_outlier',
+            'signal': 'phase_cost_outlier',
+            'severity': 'medium',
+            'path': item.key,
+            'total_lines': item.value.span_count | default(0) | int,
+            'error_lines': 0,
+            'density': (item.value.total_cost_usd | default(0) | float) / ([_la_mean_cost | float, 0.0001] | max | float),
+            'evidence': 'phase=' ~ item.key
+              ~ ' cost_usd=' ~ (item.value.total_cost_usd | default(0) | string)
+              ~ ' mean_cost_usd=' ~ (_la_mean_cost | round(6) | string)
+              ~ ' factor=' ~ ((item.value.total_cost_usd | default(0) | float)
+                / ([_la_mean_cost | float, 0.0001] | max | float) | round(2) | string)
+          }]
+          if (
+            (item.value.total_cost_usd is defined)
+            and (_la_mean_cost | float > 0)
+            and (
+              (item.value.total_cost_usd | float)
+              > (cost_outlier_factor | float) * (_la_mean_cost | float)
+            )
+          )
+          else []
+        )
+      }}
+  loop: "{{ _la_by_phase | dict2items }}"
+  loop_control:
+    label: "{{ item.key }}"
+  when: _la_by_phase | length > 0
+
+# ── Combine all anomalies ─────────────────────────────────────────────────────
+
+- name: Combine all anomaly lists
+  ansible.builtin.set_fact:
+    _la_all_anomalies: >-
+      {{
+        _la_log_anomalies
+        + _la_phase_failure_anomalies
+        + _la_cost_anomalies
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _la_verdict: "{{ 'anomalies_detected' if _la_all_anomalies | length > 0 else 'clean' }}"
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON log analysis artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'log_analyst',
+        'status': 'completed',
+        'log_source': log_source,
+        'error_rate_threshold': error_rate_threshold,
+        'files_analysed': _la_file_densities | length,
+        'anomalies': _la_all_anomalies,
+        'anomaly_count': _la_all_anomalies | length,
+        'verdict': _la_verdict,
+        'phase_data': _la_by_phase
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/log_analyst.json"
+    mode: "0644"
+
+- name: Write markdown log analysis report
+  ansible.builtin.copy:
+    content: |
+      # Log Analysis Report
+
+      **Verdict:** {{ _la_verdict | upper }}
+      **Log source:** `{{ log_source }}`
+      **Error rate threshold:** {{ error_rate_threshold }}
+      **Files analysed:** {{ _la_file_densities | length }}
+      **Anomalies detected:** {{ _la_all_anomalies | length }}
+
+      ## Anomalies
+
+      {% if _la_all_anomalies | length == 0 %}
+      *No anomalies detected.*
+      {% else %}
+      {% for a in _la_all_anomalies %}
+      - [{{ a.severity | upper }}] {{ a.type }}: {{ a.signal }}
+        Evidence: {{ a.evidence | default('') }}
+      {% endfor %}
+      {% endif %}
+
+      ## Phase Trace Summary
+
+      {% if _la_by_phase | length == 0 %}
+      *No phase trace data available.*
+      {% else %}
+      | Phase | Spans | Success | Cost USD |
+      |-------|-------|---------|----------|
+      {% for phase, data in _la_by_phase.items() %}
+      | {{ phase }} | {{ data.span_count | default(0) }} | {{ data.success_count | default(0) }} | {{ data.total_cost_usd | default(0) }} |
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.log_analyst — report-only, no repo mutations.*
+    dest: "{{ artifact_dir }}/log_analyst.md"
+    mode: "0644"
+
+- name: Report log analysis completion
+  ansible.builtin.debug:
+    msg: "Log analysis complete: verdict={{ _la_verdict }} anomalies={{ _la_all_anomalies | length }}"

@@ -1,0 +1,17 @@
+---
+# Run the REAL dead_code_auditor role against the fake completion-audit fixture.
+# No mock daemon is needed — the role only reads files, no daemon calls.
+- name: Converge - run dead_code_auditor role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8847', true) }}"
+  tasks:
+    - name: Invoke dead_code_auditor
+      ansible.builtin.include_role:
+        name: general_ludd.agent.dead_code_auditor
+      vars:
+        artifact_dir: "/tmp/gludd-dead-code-auditor-{{ mock_port }}"
+        completion_audit_artifact: "/tmp/gludd-dca-fixture-{{ mock_port }}/completion_audit.json"
+        enable_vulture: false

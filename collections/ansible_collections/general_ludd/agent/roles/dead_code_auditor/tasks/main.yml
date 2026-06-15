@@ -1,0 +1,183 @@
+---
+# dead_code_auditor role — surface unreferenced code from completion audit
+#
+# COMPOSITION APPROACH: slurps the completion_audit_artifact (produced by
+# another role) and surfaces its unreferenced/uncovered entries. Does NOT
+# rescan the codebase. This keeps concerns separated and avoids duplicate
+# analysis work.
+#
+# Optional vulture integration: when enable_vulture=true, runs vulture command
+# or reads vulture_output_override file to supplement the audit artifact.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Load completion audit artifact ───────────────────────────────────────────
+
+- name: Fail if completion_audit_artifact not specified
+  ansible.builtin.fail:
+    msg: "dead_code_auditor requires completion_audit_artifact to be set (path to completion audit JSON)"
+  when: completion_audit_artifact | length == 0
+
+- name: Slurp completion audit artifact
+  ansible.builtin.slurp:
+    src: "{{ completion_audit_artifact }}"
+  register: _dca_raw
+
+- name: Parse completion audit artifact
+  ansible.builtin.set_fact:
+    _dca_audit_data: "{{ _dca_raw.content | b64decode | from_json }}"
+
+# ── Extract unreferenced entries from audit artifact ──────────────────────────
+
+- name: Extract unreferenced entries (completion_audit source)
+  ansible.builtin.set_fact:
+    _dca_from_audit: >-
+      {{
+        (_dca_audit_data.unreferenced | default([]))
+        + (_dca_audit_data.uncovered | default([]))
+        + (_dca_audit_data.dead_code | default([]))
+        + (_dca_audit_data.unused | default([]))
+      }}
+
+- name: Annotate entries with source=completion_audit
+  ansible.builtin.set_fact:
+    _dca_audit_entries: >-
+      {{
+        _dca_from_audit
+        | map('combine', {'source': 'completion_audit'})
+        | list
+      }}
+
+# ── Optional vulture integration ──────────────────────────────────────────────
+
+- name: Initialize vulture entries
+  ansible.builtin.set_fact:
+    _dca_vulture_entries: []
+
+- name: Read vulture output override file (if provided)
+  ansible.builtin.slurp:
+    src: "{{ vulture_output_override }}"
+  register: _dca_vulture_raw
+  when:
+    - enable_vulture | bool
+    - vulture_output_override | length > 0
+
+- name: Parse vulture override entries
+  ansible.builtin.set_fact:
+    _dca_vulture_entries: >-
+      {{
+        (_dca_vulture_raw.content | b64decode | from_json).unreferenced
+        | default([])
+        | map('combine', {'source': 'vulture'})
+        | list
+      }}
+  when:
+    - enable_vulture | bool
+    - vulture_output_override | length > 0
+    - _dca_vulture_raw is defined
+    - _dca_vulture_raw.content is defined
+
+- name: Run vulture command (enable_vulture=true, no override file)
+  ansible.builtin.command:
+    cmd: "vulture ."
+  register: _dca_vulture_cmd
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_vulture | bool
+    - vulture_output_override | length == 0
+
+- name: Parse vulture command output into entries
+  ansible.builtin.set_fact:
+    _dca_vulture_entries: >-
+      {{
+        (_dca_vulture_cmd.stdout_lines | default([]))
+        | reject('equalto', '')
+        | map('regex_replace', '^(.*)$', '{"name": "\\1", "source": "vulture"}')
+        | map('from_json')
+        | list
+      }}
+  when:
+    - enable_vulture | bool
+    - vulture_output_override | length == 0
+    - _dca_vulture_cmd is defined
+    - _dca_vulture_cmd.stdout_lines is defined
+
+# ── Combine all unreferenced entries ─────────────────────────────────────────
+
+- name: Combine audit + vulture entries
+  ansible.builtin.set_fact:
+    _dca_unreferenced: "{{ _dca_audit_entries + _dca_vulture_entries }}"
+
+- name: Determine source label
+  ansible.builtin.set_fact:
+    _dca_source_label: >-
+      {{
+        'completion_audit+vulture' if (_dca_vulture_entries | length > 0)
+        else 'completion_audit'
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _dca_verdict: "{{ 'unreferenced_found' if _dca_unreferenced | length > 0 else 'clean' }}"
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON dead code audit artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'dead_code_auditor',
+        'status': 'completed',
+        'completion_audit_artifact': completion_audit_artifact,
+        'enable_vulture': enable_vulture | bool,
+        'source': _dca_source_label,
+        'unreferenced': _dca_unreferenced,
+        'unreferenced_count': _dca_unreferenced | length,
+        'audit_entries_count': _dca_audit_entries | length,
+        'vulture_entries_count': _dca_vulture_entries | length,
+        'verdict': _dca_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/dead_code_auditor.json"
+    mode: "0644"
+
+- name: Write markdown dead code audit report
+  ansible.builtin.copy:
+    content: |
+      # Dead Code Audit Report
+
+      **Verdict:** {{ _dca_verdict | upper }}
+      **Source:** {{ _dca_source_label }}
+      **Completion audit artifact:** `{{ completion_audit_artifact }}`
+      **Vulture enabled:** {{ enable_vulture }}
+      **Unreferenced entries:** {{ _dca_unreferenced | length }}
+
+      ## Unreferenced Code Entries
+
+      {% if _dca_unreferenced | length == 0 %}
+      *No unreferenced code found.*
+      {% else %}
+      | Name | Kind | File | Source |
+      |------|------|------|--------|
+      {% for entry in _dca_unreferenced %}
+      | {{ entry.name | default('?') }} | {{ entry.kind | default('?') }} | {{ entry.file | default('?') }} | {{ entry.source | default('?') }} |
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.dead_code_auditor — composition only, no repo mutations.*
+    dest: "{{ artifact_dir }}/dead_code_auditor.md"
+    mode: "0644"
+
+- name: Report dead code audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Dead code audit complete: verdict={{ _dca_verdict }}
+      unreferenced={{ _dca_unreferenced | length }}
+      source={{ _dca_source_label }}

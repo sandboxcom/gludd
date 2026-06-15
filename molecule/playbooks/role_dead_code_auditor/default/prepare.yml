@@ -1,0 +1,53 @@
+---
+# dead_code_auditor prepare: write a fake completion-audit JSON with unreferenced entries
+# NOTE: No mock daemon needed — dead_code_auditor does NOT call gludd_facts.
+#       It only slurps the completion_audit_artifact.
+- name: Prepare - fixture completion-audit for dead_code_auditor
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8847', true) }}"
+    fixture_dir: "/tmp/gludd-dca-fixture-{{ mock_port }}"
+  tasks:
+    - name: Create fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write fake completion-audit artifact with unreferenced entries
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "completion_audit",
+            "status": "completed",
+            "verdict": "issues_found",
+            "unreferenced": [
+              {
+                "name": "old_helper_function",
+                "kind": "function",
+                "file": "src/general_ludd/utils/helpers.py",
+                "line": 42
+              },
+              {
+                "name": "DeprecatedMixin",
+                "kind": "class",
+                "file": "src/general_ludd/models/deprecated.py",
+                "line": 7
+              }
+            ],
+            "uncovered": [
+              {
+                "name": "_internal_legacy_method",
+                "kind": "method",
+                "file": "src/general_ludd/core/legacy.py",
+                "line": 88
+              }
+            ],
+            "total_checked": 150,
+            "unreferenced_count": 2,
+            "uncovered_count": 1
+          }
+        dest: "{{ fixture_dir }}/completion_audit.json"
+        mode: "0644"

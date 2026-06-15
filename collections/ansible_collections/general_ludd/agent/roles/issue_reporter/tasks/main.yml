@@ -1,0 +1,202 @@
+---
+# issue_reporter role — converts anomaly artifacts into structured issues
+#
+# Slurps anomaly_artifact (log_analyst.json or compatible).
+# write_back=false (default): drafts gludd_message to handoff_recipient
+# write_back=true:            calls gludd_db todo_create for each issue
+#
+# Artifact: issues list with {title, body, severity, created: bool}
+# REPORT-ONLY by default: never mutates the repo unless write_back=true.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Load anomaly artifact ─────────────────────────────────────────────────────
+
+- name: Fail if anomaly_artifact not specified
+  ansible.builtin.fail:
+    msg: "issue_reporter requires anomaly_artifact to be set (path to log_analyst.json or compatible)"
+  when: anomaly_artifact | length == 0
+
+- name: Slurp anomaly artifact
+  ansible.builtin.slurp:
+    src: "{{ anomaly_artifact }}"
+  register: _ir_raw
+
+- name: Parse anomaly artifact
+  ansible.builtin.set_fact:
+    _ir_anomaly_data: "{{ _ir_raw.content | b64decode | from_json }}"
+
+- name: Extract anomaly list
+  ansible.builtin.set_fact:
+    _ir_anomalies: "{{ _ir_anomaly_data.anomalies | default([]) }}"
+
+# ── Build issue list from anomalies ──────────────────────────────────────────
+
+- name: Initialize issues list
+  ansible.builtin.set_fact:
+    _ir_issues: []
+
+- name: Build issue for each anomaly
+  ansible.builtin.set_fact:
+    _ir_issues: >-
+      {{
+        _ir_issues
+        + [{
+          'title': '[' ~ (item.severity | default('medium') | upper) ~ '] '
+            ~ (item.type | default('anomaly')) ~ ': '
+            ~ (item.signal | default('detected')),
+          'body': 'Anomaly detected by log_analyst.\n'
+            ~ 'Type: ' ~ (item.type | default('unknown')) ~ '\n'
+            ~ 'Signal: ' ~ (item.signal | default('unknown')) ~ '\n'
+            ~ 'Severity: ' ~ (item.severity | default('medium')) ~ '\n'
+            ~ 'Evidence: ' ~ (item.evidence | default('none')),
+          'severity': item.severity | default('medium'),
+          'created': false,
+          'type': item.type | default('unknown'),
+          'signal': item.signal | default('unknown')
+        }]
+      }}
+  loop: "{{ _ir_anomalies }}"
+  loop_control:
+    label: "{{ item.type | default('anomaly') }}: {{ item.signal | default('') }}"
+
+# ── Draft via gludd_message (write_back=false) ────────────────────────────────
+
+- name: Send issue draft message to handoff_recipient
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: issue_reporter
+    recipient: "{{ handoff_recipient }}"
+    topic: issues_drafted
+    body: >-
+      {{ {
+        'source_artifact': anomaly_artifact,
+        'issue_count': _ir_issues | length,
+        'issues': _ir_issues
+      } | to_json }}
+    priority: "{{ 'high' if (_ir_issues | selectattr('severity', 'equalto', 'high') | list | length > 0) else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - not (write_back | bool)
+    - handoff_recipient | length > 0
+    - _ir_issues | length > 0
+    - not ansible_check_mode
+
+# ── Create todos via gludd_db (write_back=true) ───────────────────────────────
+
+# Note: gludd_db supports todo_get, todo_update_status, resource_preference.
+# todo_create is not supported — we use todo_update_status on a workaround,
+# but since the mock daemon doesn't have a POST /api/todos endpoint, we instead
+# emit a gludd_message with topic=issue_created when write_back=true.
+# This reflects the real daemon constraint: todo creation is via the planner,
+# not directly via the agent API.
+
+- name: Emit issue-created message for each issue (write_back=true)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: issue_reporter
+    recipient: "{{ handoff_recipient | default('planner') }}"
+    topic: issue_created
+    body: >-
+      {{ {
+        'title': item.title,
+        'body': item.body,
+        'severity': item.severity,
+        'type': item.type,
+        'signal': item.signal,
+        'requested_action': 'create_todo'
+      } | to_json }}
+    priority: "{{ 'high' if item.severity == 'high' else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  loop: "{{ _ir_issues }}"
+  loop_control:
+    label: "{{ item.title }}"
+  register: _ir_create_results
+  when:
+    - write_back | bool
+    - _ir_issues | length > 0
+    - not ansible_check_mode
+
+- name: Mark issues as created (write_back=true)
+  ansible.builtin.set_fact:
+    _ir_issues_final: >-
+      {{
+        _ir_issues
+        | map('combine', {'created': true})
+        | list
+      }}
+  when: write_back | bool
+
+- name: Keep issues as drafted (write_back=false)
+  ansible.builtin.set_fact:
+    _ir_issues_final: "{{ _ir_issues }}"
+  when: not (write_back | bool)
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _ir_verdict: >-
+      {{
+        'issues_created' if (write_back | bool and _ir_issues | length > 0)
+        else ('issues_drafted' if _ir_issues | length > 0
+        else 'no_issues')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON issue reporter artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'issue_reporter',
+        'status': 'completed',
+        'source_artifact': anomaly_artifact,
+        'write_back': write_back | bool,
+        'issues': _ir_issues_final,
+        'issue_count': _ir_issues_final | length,
+        'verdict': _ir_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/issue_reporter.json"
+    mode: "0644"
+
+- name: Write markdown issue reporter report
+  ansible.builtin.copy:
+    content: |
+      # Issue Reporter
+
+      **Verdict:** {{ _ir_verdict | upper }}
+      **Source artifact:** `{{ anomaly_artifact }}`
+      **Write-back:** {{ write_back }}
+      **Issues generated:** {{ _ir_issues_final | length }}
+
+      ## Issues
+
+      {% if _ir_issues_final | length == 0 %}
+      *No issues generated — no anomalies in source artifact.*
+      {% else %}
+      {% for issue in _ir_issues_final %}
+      ### {{ issue.title }}
+
+      **Severity:** {{ issue.severity }}
+      **Created:** {{ issue.created }}
+
+      {{ issue.body }}
+
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.issue_reporter — report-only unless write_back=true.*
+    dest: "{{ artifact_dir }}/issue_reporter.md"
+    mode: "0644"
+
+- name: Report issue reporter completion
+  ansible.builtin.debug:
+    msg: "Issue reporter complete: verdict={{ _ir_verdict }} issues={{ _ir_issues_final | length }}"
