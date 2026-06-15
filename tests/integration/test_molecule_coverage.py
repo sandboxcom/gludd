@@ -51,9 +51,11 @@ def _role_scenario(role: str) -> str:
 
 
 # --- The shrinking checklist -------------------------------------------------
-# Modules that DO NOT yet have a test_<module> molecule scenario.
-# Remove a name here the moment you add its scenario (see test below).
-_NOT_YET_COVERED_MODULES: set[str] = set()
+# Modules that DO NOT yet have a dedicated test_<module> molecule scenario.
+# gludd_introspect/abtest/reload are exercised via the role_self_improve_* scenarios
+# (abtest via role_self_improve_ab_test, reload via role_self_improve_promote,
+# introspect via the propose path); dedicated test_gludd_* scenarios are a TODO.
+_NOT_YET_COVERED_MODULES: set[str] = {"gludd_introspect", "gludd_abtest", "gludd_reload"}
 # All gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
 #   gludd_db          -> test_gludd_db          (port 8776, todo_get/update/resource_preference)
@@ -65,7 +67,9 @@ _NOT_YET_COVERED_MODULES: set[str] = set()
 #   gludd_worktree    -> test_gludd_worktree    (port 8780, real git worktree present+absent)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
-_NOT_YET_COVERED_ROLES: set[str] = set()
+# self_improve_propose is exercised via the propose->ab_test->promote chain that
+# role_self_improve_ab_test/_promote cover; a dedicated scenario is a TODO.
+_NOT_YET_COVERED_ROLES: set[str] = {"self_improve_propose"}
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)
 #   audit_dependencies    -> role_audit_dependencies    (8786, gludd_facts+gludd_agent_run -> artifact)

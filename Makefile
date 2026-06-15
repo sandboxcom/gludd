@@ -717,39 +717,9 @@ git-commit:
 	@echo "Gate fresh and green. Committing..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
-# Same gate-fresh-and-green guard as git-commit, but skips git's own pre-commit
-# hook (--no-verify). Use when the pre-commit hook environment cannot be built
-# in this sandbox (e.g. its pip step targets a private index that returns 401);
-# the Makefile gate above already validated lint/type/collect/test/smoke.
-git-commit-noverify:
-	@if [ -z "$(MSG)" ]; then echo "Usage: make git-commit-noverify MSG='message'"; exit 1; fi
-	@echo "Running pre-commit collection check..."
-	@$(MAKE) --no-print-directory collect-check
-	@echo "Collection OK. Checking gate status..."
-	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
-	@for check in lint typecheck collect test smoke; do \
-		if ! grep -q "^$${check} PASS" .gate-status; then \
-			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
-		fi; \
-	done
-	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
-	NOW=$$(date +%s); \
-	AGE=$$((NOW - EPOCH)); \
-	if [ $$AGE -gt 1800 ]; then \
-		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
-	fi
-	@echo "Gate fresh and green. Committing (--no-verify)..."
-	@git diff --cached --quiet && echo "Nothing to commit" || git commit --no-verify -m "$(MSG)"
-
 repo-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
-
-# Like repo-commit but skips pre-commit hook env install (use when the hook
-# virtualenv can't be rebuilt, e.g. private pip index 401 in CodeArtifact).
-repo-commit-skip-hooks:
-	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit-skip-hooks MSG='message'"; exit 1; fi
-	@git diff --cached --quiet && echo "Nothing to commit" || SKIP=all git commit --no-verify -m "$(MSG)"
 
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
