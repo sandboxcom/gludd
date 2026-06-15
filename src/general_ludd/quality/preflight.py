@@ -17,8 +17,8 @@ logger = logging.getLogger(__name__)
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
 
 
-def check_coverage(threshold: float = 85.0) -> dict[str, Any]:
-    coverage_xml = REPO_ROOT / "coverage.xml"
+def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) -> dict[str, Any]:
+    coverage_xml = coverage_xml if coverage_xml is not None else REPO_ROOT / "coverage.xml"
     passed = False
     coverage_pct = 0.0
     if coverage_xml.exists():

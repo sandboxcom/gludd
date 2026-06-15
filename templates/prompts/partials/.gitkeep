@@ -1,0 +1,4 @@
+# Keeps templates/prompts/partials/ tracked in git (git does not track empty
+# dirs). CI does not run `make setup-dirs`, so without a tracked file here the
+# dir is absent in a fresh checkout and tests/e2e/test_obj01_skeleton.py
+# ::test_config_directories_exist fails ("Missing directory").

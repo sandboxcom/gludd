@@ -8,18 +8,26 @@ REPO_ROOT = Path(__file__).parent.parent.parent
 
 
 class TestPreflightQualityGate:
-    def test_check_coverage_above_threshold(self):
+    def test_check_coverage_above_threshold(self, tmp_path):
         from general_ludd.quality.preflight import check_coverage
 
-        result = check_coverage(threshold=10.0)
+        # Deterministic: supply a known coverage.xml rather than relying on an
+        # ambient one. CI's fresh checkout has no coverage.xml when this unit
+        # test runs mid-suite (pytest-cov writes it at the end), which made this
+        # test pass locally (stale file) but fail in CI.
+        cov = tmp_path / "coverage.xml"
+        cov.write_text('<?xml version="1.0" ?><coverage line-rate="0.9"></coverage>')
+        result = check_coverage(threshold=10.0, coverage_xml=cov)
         assert result["passed"] is True
         assert result["threshold"] == 10.0
-        assert "coverage_pct" in result
+        assert result["coverage_pct"] == 90.0
 
-    def test_check_coverage_below_threshold_fails(self):
+    def test_check_coverage_below_threshold_fails(self, tmp_path):
         from general_ludd.quality.preflight import check_coverage
 
-        result = check_coverage(threshold=99.9)
+        cov = tmp_path / "coverage.xml"
+        cov.write_text('<?xml version="1.0" ?><coverage line-rate="0.5"></coverage>')
+        result = check_coverage(threshold=99.9, coverage_xml=cov)
         assert result["passed"] is False
 
     def test_check_lint_passes(self):
