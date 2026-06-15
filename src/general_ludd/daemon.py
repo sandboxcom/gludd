@@ -886,6 +886,7 @@ def create_daemon_app(
 
     # Lazy to avoid circular import: routers/*.py import from daemon at module level
     from general_ludd.routers import (
+        accounting,
         ansible,
         benchmark,
         compute,
@@ -909,6 +910,7 @@ def create_daemon_app(
 
     todos.register(app, _daemon_state)
     messages.register(app, _daemon_state)
+    accounting.register(app, _daemon_state)
     facts.register(app, _daemon_state)
     models.register(app, _daemon_state)
     benchmark.register(app, _daemon_state)

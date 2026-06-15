@@ -17,6 +17,7 @@ from general_ludd.db.models import (
     ProjectModel,
     PromptProfileModel,
     QueueModel,
+    RoleRunModel,
     TaskReturnModel,
     TodoEventModel,
     TodoModel,
@@ -724,3 +725,41 @@ class AgentMessageRepository:
         if created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
         return (now - created).total_seconds() > row.ttl_seconds
+
+
+class RoleRunRepository:
+    """Persistence for per-project role-run records.
+
+    Each row records that a named role executed once for a given project.
+    ``count_by_role`` returns the {role: run_count} map used by the
+    accounting ledger.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record(self, project_id: str | None, role: str) -> RoleRunModel:
+        """Insert a single role-run record."""
+        row = RoleRunModel(project_id=project_id, role=role)
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def count_by_role(self, project_id: str | None = None) -> dict[str, int]:
+        """Return {role: count} for the given project_id (or all if None)."""
+        stmt = select(RoleRunModel)
+        if project_id is not None:
+            stmt = stmt.where(RoleRunModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        rows = list(result.scalars().all())
+        counts: dict[str, int] = {}
+        for row in rows:
+            counts[row.role] = counts.get(row.role, 0) + 1
+        return counts
+
+    async def list_all(self, project_id: str | None = None) -> list[RoleRunModel]:
+        stmt = select(RoleRunModel)
+        if project_id is not None:
+            stmt = stmt.where(RoleRunModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
