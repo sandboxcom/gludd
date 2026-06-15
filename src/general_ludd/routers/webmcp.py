@@ -50,6 +50,7 @@ _FACTS_FACETS = [
     "spend",
     "accounting",
     "schedule",
+    "coordination",
     "project_id",
 ]
 

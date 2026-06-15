@@ -110,7 +110,10 @@ class TestFullPipelineE2E:
 
             loop = EventLoop(session=factory, daemon_state={})
 
-            async def patched_dispatch(todo_item):
+            async def patched_dispatch(todo_item, **_kwargs):
+                # Accept _variable_repo_override/_task_return_repo_override/_session_override
+                # injected by _dispatch_execute_job_isolated on the concurrent path.
+                task_return_repo = _kwargs.get("_task_return_repo_override") or loop._task_return_repo
                 job = JobSpec(
                     job_id=f"EXEC-{todo_item.todo_id}",
                     todo_id=todo_item.todo_id,
@@ -120,8 +123,8 @@ class TestFullPipelineE2E:
                     prompt_text=todo_item.title,
                 )
                 result = engine_exec.execute(job)
-                if loop._task_return_repo is not None:
-                    await loop._task_return_repo.create(data={
+                if task_return_repo is not None:
+                    await task_return_repo.create(data={
                         "return_id": result.return_id,
                         "todo_id": result.todo_id,
                         "job_id": result.job_id,
