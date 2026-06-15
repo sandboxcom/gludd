@@ -408,6 +408,15 @@ molecule-test:
 git-status:
 	@git status --short || echo "Not a git repo"
 
+# Read-only diagnostic: current branch/HEAD, where master points, and the
+# worktree layout — to untangle which tree the shell is actually on.
+git-where:
+	@echo "--- cwd ---"; pwd
+	@echo "--- HEAD ---"; git rev-parse --abbrev-ref HEAD; git rev-parse --short HEAD
+	@echo "--- master ---"; git rev-parse --short master 2>/dev/null || echo "no master ref"
+	@echo "--- branches ---"; git branch -vv
+	@echo "--- worktrees ---"; git worktree list
+
 repo-status:
 	@git status --short || echo "Not a git repo"
 
@@ -493,6 +502,13 @@ git-add:
 
 git-add-all:
 	@git add -A
+
+# Resolve a conflicted file to HEAD's (--ours) version and stage it — for merges
+# where git badly interleaved two independent additions; we re-apply the incoming
+# side cleanly by hand afterward.
+git-resolve-ours:
+	@[ -n "$(FILES)" ] || { echo "Usage: make git-resolve-ours FILES='path'"; exit 1; }
+	@git checkout --ours -- $(FILES) && git add $(FILES) && echo "resolved (ours): $(FILES)"
 
 repo-add-all:
 	@git add -A
@@ -676,6 +692,21 @@ gh-tags:
 gh-action-node:
 	@if [ -z "$(REPO)" ] || [ -z "$(TAG)" ]; then echo "Usage: make gh-action-node REPO=owner/name TAG=vX"; exit 1; fi
 	@echo "$(REPO)@$(TAG):"; curl -s "https://raw.githubusercontent.com/$(REPO)/$(TAG)/action.yml" | grep -i 'using:' || echo "  (no using: line / not found)"
+
+# Discover the CI run for the current git HEAD (waiting if it hasn't registered
+# yet — the unauthenticated runs list is cached ~60s), then watch it to its
+# RUN-LEVEL conclusion. One self-contained "push and watch" command.
+ci-watch-head:
+	@SHORT=$$(git rev-parse --short=7 HEAD); \
+	echo "Watching CI for HEAD $$SHORT ..."; \
+	RUNID=""; \
+	for i in $$(seq 1 40); do \
+		RUNID=$$(curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/sandboxcom/gludd/actions/runs?per_page=10" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); runs=[r for r in d.get('workflow_runs',[]) if r['head_sha'].startswith('$$SHORT')]; print(runs[0]['id'] if runs else '')" 2>/dev/null); \
+		if [ -n "$$RUNID" ]; then echo "found run $$RUNID for $$SHORT"; break; fi; \
+		echo "$$(date +%H:%M:%S) [waiting] run for $$SHORT not registered yet ..."; sleep 15; \
+	done; \
+	[ -n "$$RUNID" ] || { echo "no run appeared for $$SHORT"; exit 1; }; \
+	$(MAKE) --no-print-directory ci-wait-anon RUN=$$RUNID
 
 ci-checkrun-anno:
 	@if [ -z "$(CHECK)" ]; then echo "Usage: make ci-checkrun-anno CHECK=<check-run-id>"; exit 1; fi
