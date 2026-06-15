@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: cost_optimization_auditor
+  author: Agentic Harness Agent
+  description: >
+    Analyzes model/token/compute costs from gludd.metrics and gludd.traces.
+    Performs real arithmetic: cost per phase, low-score/high-cost profiles.
+    Emits ranked savings recommendations. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

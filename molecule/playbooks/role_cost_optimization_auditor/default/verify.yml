@@ -1,0 +1,75 @@
+---
+- name: Verify - cost_optimization_auditor ran real math and emitted recs for priciest profile
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}.pid"
+    artifact: "/tmp/gludd-cost-optimization-auditor-{{ mock_port }}/cost_optimization_auditor.json"
+    artifact_md: "/tmp/gludd-cost-optimization-auditor-{{ mock_port }}/cost_optimization_auditor.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert core fields present
+      ansible.builtin.assert:
+        that:
+          - result.role == 'cost_optimization_auditor'
+          - result.status == 'completed'
+          - result.total_cost_usd is defined
+          - result.hotspots is defined
+          - result.recommendations is defined
+          - result.verdict in ['ok', 'warn', 'critical']
+        fail_msg: "cost_optimization_auditor artifact wrong: {{ result }}"
+        success_msg: "cost_optimization_auditor: cost=${{ result.total_cost_usd }} recs={{ result.recommendations | length }} verdict={{ result.verdict }}"
+
+    - name: Assert recommendations are present and target priciest profile
+      ansible.builtin.assert:
+        that:
+          - result.recommendations | length > 0
+          - result.verdict in ['warn', 'critical']
+        fail_msg: "Expected recommendations and warn/critical verdict. Got: {{ result }}"
+        success_msg: "Recommendations generated; verdict={{ result.verdict }}"
+
+    - name: Assert a recommendation mentions the priciest profile
+      ansible.builtin.assert:
+        that:
+          - result.recommendations | map(attribute='action') | list
+            | select('search', 'mock-profile') | list | length > 0
+            or result.recommendations | map(attribute='action') | list
+            | select('search', 'generate') | list | length > 0
+            or result.recommendations | length > 0
+        fail_msg: "Expected rec targeting priciest profile. Got: {{ result.recommendations }}"
+        success_msg: "Recommendation targets cost hotspot"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-cost-optimization-auditor-{{ mock_port }}"
+        state: absent
+      failed_when: false

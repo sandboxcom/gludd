@@ -1,0 +1,15 @@
+---
+# ui_ux_analyst prepare: no daemon needed (pure CLI help override mode)
+# Just ensure artifact dir is clean
+- name: Prepare - clean artifact dir for ui_ux_analyst
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8836', true) }}"
+  tasks:
+    - name: Ensure previous artifact is absent
+      ansible.builtin.file:
+        path: "/tmp/gludd-ui-ux-analyst-{{ mock_port }}"
+        state: absent
+      failed_when: false

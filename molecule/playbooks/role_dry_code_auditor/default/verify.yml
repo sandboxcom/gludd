@@ -1,0 +1,59 @@
+---
+- name: Verify - dry_code_auditor emitted correct artifacts from canned jscpd data
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8832', true) }}"
+    artifact: "/tmp/gludd-dry-code-auditor-{{ mock_port }}/dry_code_auditor.json"
+    artifact_md: "/tmp/gludd-dry-code-auditor-{{ mock_port }}/dry_code_auditor.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert core fields present
+      ansible.builtin.assert:
+        that:
+          - result.role == 'dry_code_auditor'
+          - result.status == 'completed'
+          - result.duplicates is defined
+          - result.extraction_suggestions is defined
+          - result.duplication_pct is defined
+          - result.verdict in ['pass', 'warn', 'fail']
+        fail_msg: "dry_code_auditor artifact wrong: {{ result }}"
+        success_msg: "dry_code_auditor: duplication={{ result.duplication_pct }}% clones={{ result.duplicates | length }} verdict={{ result.verdict }}"
+
+    - name: Assert canned data parsed correctly (1 clone pair, 18.5%, verdict=fail)
+      ansible.builtin.assert:
+        that:
+          - result.duplicates | length == 1
+          - result.duplication_pct == 18.5
+          - result.verdict == 'fail'
+          - result.extraction_suggestions | length == 1
+        fail_msg: "Expected 1 clone, 18.5%, verdict=fail. Got: {{ result }}"
+        success_msg: "Clone pair parsed correctly; duplication=18.5% verdict=fail"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-dry-code-auditor-{{ mock_port }}"
+        state: absent
+      failed_when: false

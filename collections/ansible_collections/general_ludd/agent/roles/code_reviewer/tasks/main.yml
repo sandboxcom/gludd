@@ -1,0 +1,211 @@
+---
+# code_reviewer role — structured correctness/style/risk review of a diff
+#
+# NOT a security review — focuses on correctness, style, and maintainability.
+# Real heuristics via grep: bare except:, print(, # type: ignore, oversized
+# hunks (>300 lines), TODO comments.
+# Model narrative is gated behind enable_model_call:false.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Determine scan target ─────────────────────────────────────────────────────
+
+- name: Stat diff file (if provided)
+  ansible.builtin.stat:
+    path: "{{ diff_path }}"
+  register: _cr_diff_stat
+  when: diff_path | length > 0
+
+- name: Stat repo path (if no diff)
+  ansible.builtin.stat:
+    path: "{{ repo_path }}"
+  register: _cr_repo_stat
+  when:
+    - diff_path | length == 0
+    - repo_path | length > 0
+
+- name: Set scan target
+  ansible.builtin.set_fact:
+    _cr_scan_target: >-
+      {{
+        diff_path if (diff_path | length > 0 and (_cr_diff_stat.stat.exists | default(false)))
+        else (repo_path if (repo_path | length > 0 and (_cr_repo_stat.stat.exists | default(false))) else '')
+      }}
+    _cr_scan_mode: >-
+      {{
+        'diff' if (diff_path | length > 0 and (_cr_diff_stat.stat.exists | default(false)))
+        else ('repo' if (repo_path | length > 0 and (_cr_repo_stat.stat.exists | default(false))) else 'none')
+      }}
+
+# ── REAL heuristic checks via grep ───────────────────────────────────────────
+
+- name: Check for bare except clauses
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py" "except:" "{{ _cr_scan_target }}"
+  register: _cr_bare_except
+  changed_when: false
+  failed_when: _cr_bare_except.rc == 2
+  when: _cr_scan_target | length > 0
+
+- name: Check for debug print statements
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py" "^\s*print(" "{{ _cr_scan_target }}"
+  register: _cr_print_stmt
+  changed_when: false
+  failed_when: _cr_print_stmt.rc == 2
+  when: _cr_scan_target | length > 0
+
+- name: Check for type ignore comments
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py" "# type: ignore" "{{ _cr_scan_target }}"
+  register: _cr_type_ignore
+  changed_when: false
+  failed_when: _cr_type_ignore.rc == 2
+  when: _cr_scan_target | length > 0
+
+- name: Check for TODO comments
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py" --include="*.yml" --include="*.yaml"
+      "TODO\|FIXME\|HACK\|XXX" "{{ _cr_scan_target }}"
+  register: _cr_todos
+  changed_when: false
+  failed_when: _cr_todos.rc == 2
+  when: _cr_scan_target | length > 0
+
+- name: Count diff hunk size (if diff mode)
+  ansible.builtin.command:
+    cmd: >-
+      grep -c "^[+-]" "{{ _cr_scan_target }}"
+  register: _cr_hunk_lines
+  changed_when: false
+  failed_when: _cr_hunk_lines.rc == 2
+  when:
+    - _cr_scan_target | length > 0
+    - _cr_scan_mode == 'diff'
+
+# ── Collate findings ──────────────────────────────────────────────────────────
+
+- name: Collate code review findings
+  ansible.builtin.set_fact:
+    _cr_findings: >-
+      {{
+        (
+          ([{'category': 'correctness', 'severity': 'high', 'rule': 'CR001',
+             'location': _cr_bare_except.stdout[:500],
+             'description': 'Bare except: catches all exceptions including SystemExit/KeyboardInterrupt'}]
+           if (_cr_scan_target | length > 0 and _cr_bare_except.rc == 0) else [])
+          + ([{'category': 'style', 'severity': 'medium', 'rule': 'CR002',
+               'location': _cr_print_stmt.stdout[:500],
+               'description': 'Debug print() statements left in code — use logging'}]
+             if (_cr_scan_target | length > 0 and _cr_print_stmt.rc == 0) else [])
+          + ([{'category': 'style', 'severity': 'low', 'rule': 'CR003',
+               'location': _cr_type_ignore.stdout[:500],
+               'description': '# type: ignore suppresses type checking — address root cause'}]
+             if (_cr_scan_target | length > 0 and _cr_type_ignore.rc == 0) else [])
+          + ([{'category': 'maintainability', 'severity': 'low', 'rule': 'CR004',
+               'location': _cr_todos.stdout[:500],
+               'description': 'TODO/FIXME/HACK comments indicate unfinished work'}]
+             if (_cr_scan_target | length > 0 and _cr_todos.rc == 0) else [])
+          + ([{'category': 'risk', 'severity': 'medium', 'rule': 'CR005',
+               'location': 'diff',
+               'description': 'Oversized diff hunk (>' + (_cr_hunk_lines.stdout | default('0') | string) + ' lines) — consider splitting'}]
+             if (_cr_scan_target | length > 0 and _cr_scan_mode == 'diff'
+                and (_cr_hunk_lines.stdout | default('0') | int) > 300) else [])
+        )
+      }}
+
+- name: Incorporate model output override (when model disabled)
+  ansible.builtin.set_fact:
+    _cr_model_narrative: "{{ model_output_override }}"
+  when:
+    - not enable_model_call | bool
+    - model_output_override | length > 0
+
+- name: Set empty model narrative (no override)
+  ansible.builtin.set_fact:
+    _cr_model_narrative: ""
+  when:
+    - not enable_model_call | bool
+    - model_output_override | length == 0
+
+- name: Determine verdict from findings
+  ansible.builtin.set_fact:
+    _cr_verdict: >-
+      {{
+        'request_changes'
+        if (_cr_findings | selectattr('severity', 'equalto', 'high') | list | length > 0)
+        else ('comment'
+          if (_cr_findings | length > 0)
+          else 'approve')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON code review artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'code_reviewer',
+        'status': 'completed',
+        'scan_target': _cr_scan_target,
+        'scan_mode': _cr_scan_mode,
+        'findings': _cr_findings,
+        'finding_count': _cr_findings | length,
+        'model_narrative': _cr_model_narrative,
+        'verdict': _cr_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/code_reviewer.json"
+    mode: "0644"
+
+- name: Write markdown code review report
+  ansible.builtin.copy:
+    content: |
+      # Code Review Report
+
+      **Target:** `{{ _cr_scan_target | default('(none)') }}` (mode={{ _cr_scan_mode }})
+      **Verdict:** {{ _cr_verdict | upper }}
+      **Findings:** {{ _cr_findings | length }} total
+
+      ## Findings
+
+      {% if _cr_findings | length == 0 %}
+      No style/correctness issues detected.
+      {% else %}
+      {% for f in _cr_findings %}
+      ### [{{ f.severity | upper }}] {{ f.rule }} — {{ f.category }}
+
+      **Description:** {{ f.description }}
+      ```
+      {{ f.location[:300] }}
+      ```
+
+      {% endfor %}
+      {% endif %}
+
+      {% if _cr_model_narrative | length > 0 %}
+      ## Model Narrative
+
+      {{ _cr_model_narrative }}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.code_reviewer — report-only, no auto-patch.*
+    dest: "{{ artifact_dir }}/code_reviewer.md"
+    mode: "0644"
+
+- name: Report code review completion
+  ansible.builtin.debug:
+    msg: >-
+      Code review complete: verdict={{ _cr_verdict }}
+      findings={{ _cr_findings | length }}
+      target={{ _cr_scan_target | default('none') }}

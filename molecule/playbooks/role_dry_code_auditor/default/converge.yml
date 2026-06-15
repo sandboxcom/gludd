@@ -1,0 +1,46 @@
+---
+# Converge: run dry_code_auditor with canned jscpd JSON containing one clone pair
+# Expected: 1 duplicate, duplication_pct=18.5, verdict=fail
+- name: Converge - run dry_code_auditor role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8832', true) }}"
+  tasks:
+    - name: Invoke dry_code_auditor
+      ansible.builtin.include_role:
+        name: general_ludd.agent.dry_code_auditor
+      vars:
+        scan_path: "/tmp"
+        min_tokens: 50
+        enable_jscpd: false
+        jscpd_output_override: >-
+          {
+            "statistics": {
+              "total": {
+                "percentage": 18.5,
+                "lines": 120,
+                "tokens": 480
+              }
+            },
+            "duplicates": [
+              {
+                "format": "python",
+                "lines": 42,
+                "tokens": 210,
+                "firstFile": {
+                  "name": "src/agent/runner.py",
+                  "start": 10,
+                  "end": 52
+                },
+                "secondFile": {
+                  "name": "src/agent/executor.py",
+                  "start": 25,
+                  "end": 67
+                },
+                "fragment": "def execute(task, ctx):\\n    result = ctx.run(task)\\n    ..."
+              }
+            ]
+          }
+        artifact_dir: "/tmp/gludd-dry-code-auditor-{{ mock_port }}"

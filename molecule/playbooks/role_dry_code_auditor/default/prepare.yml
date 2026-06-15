@@ -1,0 +1,15 @@
+---
+# dry_code_auditor prepare: no daemon needed (pure override mode)
+# Just ensure the artifact dir is clean
+- name: Prepare - clean artifact dir for dry_code_auditor
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8832', true) }}"
+  tasks:
+    - name: Ensure previous artifact is absent
+      ansible.builtin.file:
+        path: "/tmp/gludd-dry-code-auditor-{{ mock_port }}"
+        state: absent
+      failed_when: false

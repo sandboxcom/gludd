@@ -1,0 +1,24 @@
+---
+# dry_code_auditor role defaults — REPORT-ONLY
+
+# Scan path
+scan_path: "."
+
+# Minimum token count for clone detection
+min_tokens: 50
+
+# jscpd gate
+enable_jscpd: false
+# Canned jscpd JSON output (for testing without real jscpd)
+jscpd_output_override: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-dry-code-auditor"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false
+apply_changes: false

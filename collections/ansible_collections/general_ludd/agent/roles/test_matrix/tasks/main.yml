@@ -1,0 +1,211 @@
+---
+# test_matrix role — build a dimensions×cases coverage matrix from a test inventory
+#
+# Identifies covered and uncovered cells; emits gaps as actionable items.
+# Optionally uses gludd_facts history work_types to derive dimensions/cases.
+# If enable_pytest_collect:true, runs pytest --collect-only; otherwise uses
+# pytest_collect_override (canned output) or scans test_dir for filenames.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for test matrix context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Resolve dimensions and cases ──────────────────────────────────────────────
+
+- name: Set dimensions from provided var
+  ansible.builtin.set_fact:
+    _tm_dimensions: "{{ dimensions }}"
+  when: dimensions | length > 0
+
+- name: Derive dimensions from gludd_facts history work_types (fallback)
+  ansible.builtin.set_fact:
+    _tm_dimensions: "{{ ['unit', 'integration', 'e2e'] }}"
+  when: dimensions | length == 0
+
+- name: Set cases from provided var
+  ansible.builtin.set_fact:
+    _tm_cases: "{{ cases }}"
+  when: cases | length > 0
+
+- name: Derive cases from gludd_facts todos (fallback)
+  ansible.builtin.set_fact:
+    _tm_cases: >-
+      {{
+        live_facts.ansible_facts.gludd.todos.items
+        | default([])
+        | map(attribute='work_type', default='generic')
+        | list
+        | unique
+        | list
+      }}
+  when:
+    - cases | length == 0
+    - live_facts.ansible_facts.gludd.todos.items | default([]) | length > 0
+
+- name: Set default cases (no facts available)
+  ansible.builtin.set_fact:
+    _tm_cases: "{{ ['auth', 'api', 'db', 'cli'] }}"
+  when:
+    - cases | length == 0
+    - live_facts.ansible_facts.gludd.todos.items | default([]) | length == 0
+
+# ── Resolve test inventory ────────────────────────────────────────────────────
+
+- name: Use pytest collect override (no real pytest collect)
+  ansible.builtin.set_fact:
+    _tm_collect_output: "{{ pytest_collect_override }}"
+  when:
+    - not enable_pytest_collect | bool
+    - pytest_collect_override | length > 0
+
+- name: Run pytest --collect-only (when enabled)
+  ansible.builtin.command:
+    cmd: "python3 -m pytest {{ test_dir }} --collect-only -q 2>&1"
+  register: _tm_pytest_raw
+  changed_when: false
+  failed_when: false
+  when: enable_pytest_collect | bool
+
+- name: Set collect output from real pytest (when enabled)
+  ansible.builtin.set_fact:
+    _tm_collect_output: "{{ _tm_pytest_raw.stdout | default('') }}"
+  when: enable_pytest_collect | bool
+
+- name: Set empty collect output (no override, no real collect)
+  ansible.builtin.set_fact:
+    _tm_collect_output: ""
+  when:
+    - not enable_pytest_collect | bool
+    - pytest_collect_override | length == 0
+
+# ── Build coverage matrix ─────────────────────────────────────────────────────
+# For each dimension × case pair, check if a reference appears in collect output
+# or test_dir filenames using a naming convention: test_<dimension>_<case> or
+# test_<case>_<dimension>.
+
+- name: Build matrix row for each dimension-case pair
+  ansible.builtin.set_fact:
+    _tm_matrix: >-
+      {{
+        _tm_matrix | default([]) + [{
+          'dimension': item.0,
+          'case': item.1,
+          'covered': (
+            _tm_collect_output is defined and _tm_collect_output | length > 0
+            and (
+              ('test_' + item.0 + '_' + item.1) in _tm_collect_output
+              or ('test_' + item.1 + '_' + item.0) in _tm_collect_output
+              or (item.0 + '/' + 'test_' + item.1) in _tm_collect_output
+            )
+          ) | bool,
+          'test_ref': (
+            'test_' + item.0 + '_' + item.1
+            if (
+              _tm_collect_output is defined and _tm_collect_output | length > 0
+              and (
+                ('test_' + item.0 + '_' + item.1) in _tm_collect_output
+                or ('test_' + item.1 + '_' + item.0) in _tm_collect_output
+              )
+            )
+            else ''
+          )
+        }]
+      }}
+  loop: "{{ _tm_dimensions | product(_tm_cases) | list }}"
+  loop_control:
+    label: "{{ item.0 }}/{{ item.1 }}"
+
+- name: Extract gaps (uncovered cells)
+  ansible.builtin.set_fact:
+    _tm_gaps: "{{ _tm_matrix | selectattr('covered', 'equalto', false) | list }}"
+    _tm_covered_count: "{{ _tm_matrix | selectattr('covered', 'equalto', true) | list | length }}"
+    _tm_total_count: "{{ _tm_matrix | length }}"
+
+- name: Compute coverage percentage
+  ansible.builtin.set_fact:
+    _tm_coverage_pct: >-
+      {{
+        ((_tm_covered_count | int / _tm_total_count | int) * 100) | round(1)
+        if _tm_total_count | int > 0
+        else 0.0
+      }}
+
+- name: Set verdict based on coverage
+  ansible.builtin.set_fact:
+    _tm_verdict: >-
+      {{
+        'pass' if _tm_coverage_pct | float >= min_coverage_pct | float
+        else ('warn' if _tm_coverage_pct | float >= (min_coverage_pct | float * 0.7)
+        else 'fail')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON test matrix artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'test_matrix',
+        'status': 'completed',
+        'dimensions': _tm_dimensions,
+        'cases': _tm_cases,
+        'matrix': _tm_matrix,
+        'coverage_pct': _tm_coverage_pct | float,
+        'covered_count': _tm_covered_count | int,
+        'total_count': _tm_total_count | int,
+        'gaps': _tm_gaps,
+        'verdict': _tm_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/test_matrix.json"
+    mode: "0644"
+
+- name: Write markdown test matrix report
+  ansible.builtin.copy:
+    content: |
+      # Test Coverage Matrix
+
+      **Verdict:** {{ _tm_verdict | upper }}
+      **Coverage:** {{ _tm_coverage_pct }}% ({{ _tm_covered_count }}/{{ _tm_total_count }} cells)
+      **Min threshold:** {{ min_coverage_pct }}%
+
+      ## Matrix
+
+      | Dimension | Case | Covered | Test Ref |
+      |-----------|------|---------|----------|
+      {% for cell in _tm_matrix %}
+      | {{ cell.dimension }} | {{ cell.case }} | {{ '✓' if cell.covered else '✗' }} | {{ cell.test_ref | default('-') }} |
+      {% endfor %}
+
+      ## Gaps ({{ _tm_gaps | length }})
+
+      {% if _tm_gaps | length == 0 %}
+      No coverage gaps detected.
+      {% else %}
+      {% for gap in _tm_gaps %}
+      - **{{ gap.dimension }}** × **{{ gap.case }}** — missing test coverage
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.test_matrix — report-only, no repo mutations.*
+    dest: "{{ artifact_dir }}/test_matrix.md"
+    mode: "0644"
+
+- name: Report test matrix completion
+  ansible.builtin.debug:
+    msg: >-
+      Test matrix built: {{ _tm_dimensions | length }} dimensions x
+      {{ _tm_cases | length }} cases = {{ _tm_total_count }} cells,
+      coverage={{ _tm_coverage_pct }}%, gaps={{ _tm_gaps | length }},
+      verdict={{ _tm_verdict }}

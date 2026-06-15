@@ -1,0 +1,80 @@
+---
+- name: Verify - enhancement_auditor produced heuristic proposals from failure signals
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}.pid"
+    artifact: "/tmp/gludd-enhancement-auditor-{{ mock_port }}/enhancement_auditor.json"
+    artifact_md: "/tmp/gludd-enhancement-auditor-{{ mock_port }}/enhancement_auditor.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert core fields present
+      ansible.builtin.assert:
+        that:
+          - result.role == 'enhancement_auditor'
+          - result.status == 'completed'
+          - result.proposals is defined
+          - result.signals is defined
+          - result.verdict in ['has_proposals', 'no_proposals']
+        fail_msg: "enhancement_auditor artifact wrong: {{ result }}"
+        success_msg: "enhancement_auditor: proposals={{ result.proposals | length }} verdict={{ result.verdict }}"
+
+    - name: Assert proposals were generated from failure signals
+      ansible.builtin.assert:
+        that:
+          - result.proposals | length > 0
+          - result.verdict == 'has_proposals'
+        fail_msg: "Expected proposals from failure signals. Got: {{ result }}"
+        success_msg: "Heuristic proposals generated from failure signals"
+
+    - name: Assert proposals have required fields
+      ansible.builtin.assert:
+        that:
+          - result.proposals | map(attribute='title') | list | length > 0
+          - result.proposals | map(attribute='score') | list | length > 0
+          - result.proposals | map(attribute='impact') | list | length > 0
+        fail_msg: "Proposals missing required fields: {{ result.proposals }}"
+        success_msg: "Proposals have title/score/impact fields"
+
+    - name: Assert at least one proposal targets failure signal (failures=2 in mock)
+      ansible.builtin.assert:
+        that:
+          - result.proposals | map(attribute='signal') | list
+            | select('search', 'fail|token|general') | list | length > 0
+        fail_msg: "Expected failure-signal proposals. Got: {{ result.proposals }}"
+        success_msg: "Failure-signal proposals present"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-enhancement-auditor-{{ mock_port }}"
+        state: absent
+      failed_when: false

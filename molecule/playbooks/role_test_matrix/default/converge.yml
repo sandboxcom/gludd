@@ -1,0 +1,31 @@
+---
+# Converge: run test_matrix with a seeded pytest_collect_override
+# that covers unit/auth and unit/api but NOT integration/auth or integration/api.
+# Expected: 2 covered, 2 gaps, coverage_pct=50.0, verdict=fail (below 70%).
+- name: Converge - run test_matrix role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8830', true) }}"
+  tasks:
+    - name: Invoke test_matrix
+      ansible.builtin.include_role:
+        name: general_ludd.agent.test_matrix
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-test-matrix-{{ mock_port }}"
+        dimensions:
+          - unit
+          - integration
+        cases:
+          - auth
+          - api
+        min_coverage_pct: 70.0
+        enable_pytest_collect: false
+        # Canned output covering unit/auth and unit/api only
+        pytest_collect_override: |
+          tests/unit/test_unit_auth.py::test_login PASSED
+          tests/unit/test_unit_api.py::test_endpoint PASSED
+          2 tests collected
