@@ -424,6 +424,23 @@ class SpendRecordModel(Base):
     )
 
 
+class RoleRunModel(Base):
+    """Records each time a role runs for a project.  Used by the accounting ledger."""
+
+    __tablename__ = "role_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
+    role: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        Index("ix_role_runs_project_role", "project_id", "role"),
+    )
+
+
 class BenchmarkResultModel(Base):
     __tablename__ = "benchmark_results"
 

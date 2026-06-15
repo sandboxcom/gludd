@@ -34,6 +34,7 @@ from general_ludd.db.repository import (
     TaskReturnRepository,
     TodoRepository,
 )
+from general_ludd.routers.accounting import _build_accountant as _build_accounting_accountant
 
 logger = logging.getLogger(__name__)
 
@@ -253,6 +254,31 @@ def _spend_facet(app: FastAPI) -> dict[str, Any]:
         "remaining_usd": limiter.remaining(),
         "window_seconds": limiter._window_seconds,
     }
+async def _accounting_facet(
+    app: FastAPI,
+    project_id: str | None = None,
+) -> dict[str, Any]:
+    """Per-project accounting snapshot(s) for playbook consumption.
+
+    When ``project_id`` is supplied, returns a single-project result under
+    ``{"project": <snapshot>}``.  Otherwise returns all active projects
+    under ``{"projects": [<snapshot>, ...]}``.
+
+    Reuses the Accountant from routers/accounting — no stat logic is
+    duplicated.
+    """
+    try:
+        accountant = await _build_accounting_accountant(app)
+        if project_id is not None:
+            result = accountant.account_for(project_id)
+            from dataclasses import asdict
+            return {"project": asdict(result)}
+        results = accountant.account_all()
+        from dataclasses import asdict
+        return {"projects": [asdict(r) for r in results]}
+    except Exception as exc:
+        logger.debug("accounting facet unavailable: %s", exc)
+        return {"projects": [], "error": str(exc)}
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -291,6 +317,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "features": await _features_facet(app, project_id=project_id),
             "dispatch": dispatch,
             "spend": _spend_facet(app),
+            "accounting": await _accounting_facet(app, project_id=project_id),
             "project_id": project_id,
         }
 

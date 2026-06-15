@@ -1,0 +1,84 @@
+"""Unit tests for RoleRunRepository using in-memory aiosqlite.
+
+Verifies record() persists a row and count_by_role() returns correct counts.
+"""
+
+from __future__ import annotations
+
+import pytest_asyncio
+from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+
+from general_ludd.db.models import Base
+from general_ludd.db.repository import RoleRunRepository
+
+
+@pytest_asyncio.fixture
+async def session():
+    """In-memory SQLite engine with all tables created; disposed in finally."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+
+        factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
+        async with factory() as s:
+            yield s
+    finally:
+        await engine.dispose()
+
+
+class TestRoleRunRepositoryRecord:
+    async def test_record_inserts_row(self, session):
+        repo = RoleRunRepository(session)
+        row = await repo.record(project_id="p1", role="coder")
+        await session.flush()
+        assert row.id is not None
+        assert row.project_id == "p1"
+        assert row.role == "coder"
+
+    async def test_record_multiple_rows(self, session):
+        repo = RoleRunRepository(session)
+        await repo.record(project_id="p1", role="coder")
+        await repo.record(project_id="p1", role="coder")
+        await repo.record(project_id="p1", role="reviewer")
+        rows = await repo.list_all(project_id="p1")
+        assert len(rows) == 3
+
+    async def test_record_null_project_id(self, session):
+        repo = RoleRunRepository(session)
+        row = await repo.record(project_id=None, role="tester")
+        await session.flush()
+        assert row.project_id is None
+
+
+class TestRoleRunRepositoryCountByRole:
+    async def test_count_by_role_correct_counts(self, session):
+        repo = RoleRunRepository(session)
+        await repo.record("p1", "coder")
+        await repo.record("p1", "coder")
+        await repo.record("p1", "reviewer")
+        counts = await repo.count_by_role("p1")
+        assert counts == {"coder": 2, "reviewer": 1}
+
+    async def test_count_by_role_empty_project(self, session):
+        repo = RoleRunRepository(session)
+        counts = await repo.count_by_role("nonexistent")
+        assert counts == {}
+
+    async def test_count_by_role_filters_by_project(self, session):
+        repo = RoleRunRepository(session)
+        await repo.record("p1", "alpha")
+        await repo.record("p2", "beta")
+        counts_p1 = await repo.count_by_role("p1")
+        counts_p2 = await repo.count_by_role("p2")
+        assert counts_p1 == {"alpha": 1}
+        assert counts_p2 == {"beta": 1}
+
+    async def test_count_by_role_all_projects_when_none(self, session):
+        repo = RoleRunRepository(session)
+        await repo.record("p1", "alpha")
+        await repo.record("p2", "alpha")
+        await repo.record("p2", "beta")
+        counts = await repo.count_by_role(None)
+        assert counts["alpha"] == 2
+        assert counts["beta"] == 1
