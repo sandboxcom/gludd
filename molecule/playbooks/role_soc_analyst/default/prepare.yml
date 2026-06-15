@@ -1,0 +1,95 @@
+---
+# soc_analyst prepare: start mock daemon + write a fake security_review.json
+# with one critical finding. The mock daemon handles POST /api/messages → 201.
+- name: Prepare - mock daemon + security finding fixture for soc_analyst
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8849', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8849', true) }}.pid"
+    fixture_dir: "/tmp/gludd-soc-fixtures-{{ mock_port }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Create fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_dir }}"
+        state: directory
+        mode: "0755"
+
+    # ---- Seed security_review.json with one critical finding ----
+    - name: Seed security_review.json (1 critical finding — OS command injection)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "security_review",
+            "status": "completed",
+            "findings": [
+              {
+                "severity": "critical",
+                "rule": "OS_CMD_INJECTION",
+                "pattern": "subprocess.run.*shell=True",
+                "location": "src/runner.py:42",
+                "description": "OS command injection via shell=True with user input"
+              }
+            ],
+            "finding_count": 1,
+            "verdict": "fail"
+          }
+        dest: "{{ fixture_dir }}/security_review.json"
+        mode: "0644"
+
+    # ---- Seed secret_scan.json with one high finding ----
+    - name: Seed secret_scan.json (1 high finding — hardcoded API key)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "secret_scan",
+            "status": "completed",
+            "findings": [
+              {
+                "severity": "high",
+                "rule": "HARDCODED_SECRET",
+                "pattern": "api_key=.*[A-Za-z0-9]{32}",
+                "location": "src/config.py:17",
+                "description": "Hardcoded API key detected"
+              }
+            ],
+            "finding_count": 1,
+            "verdict": "fail"
+          }
+        dest: "{{ fixture_dir }}/secret_scan.json"
+        mode: "0644"
+
+    # ---- Seed clean_scan.json with no findings (to verify clean path) ----
+    - name: Seed clean_scan.json (0 findings)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "audit_security",
+            "status": "completed",
+            "findings": [],
+            "finding_count": 0,
+            "verdict": "pass"
+          }
+        dest: "{{ fixture_dir }}/clean_scan.json"
+        mode: "0644"

@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: soc_analyst
+  author: Agentic Harness Agent
+  description: >
+    Security Operations triage role. Slurps finding artifacts (security_review,
+    secret_scan, audit_security JSON), correlates and deduplicates findings by
+    rule/file grouping, escalates by count, and produces prioritized incident
+    list with recommended actions. Emits gludd_message priority=high when
+    incidents are present. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
