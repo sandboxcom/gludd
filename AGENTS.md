@@ -496,3 +496,14 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 This is enforced by:
 - This AGENTS.md section — proactive instruction
 - The session persistence policy — SESSION.md tracks known gaps
+
+## Multitasking / Blockers
+
+**Core rule:** work is SERIAL only if it mutates the shared `master` working tree or
+competes for the one gate/commit/push slot. Everything else is PARALLEL — fan it out to
+an isolated git worktree. True blockers: merging to master, running `make gate`/commit/push,
+resolving conflicts in `daemon.py`/`routers/facts.py`/`db/models.py`/`db/repository.py`.
+False blockers (parallelize, do NOT wait): independent features, additive new files,
+CI observation, research/planning. Before ever "waiting," apply the decision checklist:
+(a) mutates shared master tree now? (b) needs gate/commit/push now? (c) depends on
+unmerged code? All NO → not a blocker, spin a worktree agent. Full policy: `docs/ORCHESTRATION.md`.
