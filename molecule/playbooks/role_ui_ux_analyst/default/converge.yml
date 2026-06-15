@@ -1,0 +1,34 @@
+---
+# Converge: run ui_ux_analyst with canned CLI help that has both "run" and "start"
+# verbs (triggering UX002 inconsistent verb finding) and no --help mention
+# to trigger UX001.
+# Expected: heuristics includes UX002 (inconsistent verbs), score < 100, verdict != 'good'
+- name: Converge - run ui_ux_analyst role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8836', true) }}"
+  tasks:
+    - name: Invoke ui_ux_analyst
+      ansible.builtin.include_role:
+        name: general_ludd.agent.ui_ux_analyst
+      vars:
+        enable_help_capture: false
+        # Canned CLI help: has 'run' and 'start' (inconsistent verbs → UX002)
+        # Does NOT contain '--help' (→ UX001)
+        cli_help_override: |
+          Usage: gludd [OPTIONS] COMMAND
+
+          Commands:
+            run       Run an agent task
+            start     Start the daemon
+            stop      Stop the daemon
+            status    Show system status
+
+          Options:
+            --verbose           Enable verbose output
+            --config-file PATH  Path to configuration file
+        tui_source: ""
+        api_spec_path: ""
+        artifact_dir: "/tmp/gludd-ui-ux-analyst-{{ mock_port }}"

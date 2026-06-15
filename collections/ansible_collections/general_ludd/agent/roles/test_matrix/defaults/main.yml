@@ -1,0 +1,26 @@
+---
+# test_matrix role defaults — REPORT-ONLY
+
+# Test inventory directory
+test_dir: "tests"
+
+# Coverage dimensions and cases (derived from gludd_facts history work_types if empty)
+dimensions: []
+cases: []
+
+# Minimum tokens for clone detection heuristic
+min_coverage_pct: 70.0
+
+# Enable pytest collection (gated)
+enable_pytest_collect: false
+pytest_collect_override: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-test-matrix"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false

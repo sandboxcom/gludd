@@ -1,0 +1,30 @@
+---
+# code_reviewer prepare: seed a Python file with a bare except clause
+# so the REAL grep-based heuristic genuinely detects a finding → verdict=request_changes.
+- name: Prepare - seed bad code fixture for code_reviewer
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8831', true) }}"
+  tasks:
+    - name: Create fixture directory
+      ansible.builtin.file:
+        path: "/tmp/gludd-code-reviewer-fixture-{{ mock_port }}"
+        state: directory
+        mode: "0755"
+
+    - name: Seed Python file with bare except (known bad pattern)
+      ansible.builtin.copy:
+        content: |
+          """Fixture with known style/correctness issues for code_reviewer testing."""
+
+          def process_data(data):
+              try:
+                  result = data["key"]
+                  print(result)  # debug print left in
+                  return result
+              except:  # bare except — CR001
+                  pass  # silently swallows all exceptions
+        dest: "/tmp/gludd-code-reviewer-fixture-{{ mock_port }}/bad_code.py"
+        mode: "0644"

@@ -1,0 +1,209 @@
+---
+# enhancement_auditor role — propose ranked enhancements
+#
+# Uses gludd_facts history failure signals to generate heuristic proposals.
+# Heuristic fallback when model is off:
+#   - Low success_rate → reliability enhancement
+#   - High backlog → throughput/prioritization enhancement
+#   - High failure count → observability/alerting enhancement
+#   - High token usage → cost optimization enhancement
+# Proposals ranked by score (impact * 10 / effort).
+# Model proposals override heuristics when enable_model_call:true.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for enhancement signals
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract signals from live facts ──────────────────────────────────────────
+
+- name: Extract enhancement signal metrics
+  ansible.builtin.set_fact:
+    _ea_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default(1.0) | float }}"
+    _ea_total_runs: "{{ live_facts.ansible_facts.gludd.history.total_runs | default(0) | int }}"
+    _ea_failures: "{{ live_facts.ansible_facts.gludd.history.failures | default(0) | int }}"
+    _ea_backlog: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+    _ea_total_tokens: "{{ live_facts.ansible_facts.gludd.metrics.agents | default([]) | map(attribute='total_tokens', default=0) | sum | int }}"
+    _ea_total_cost: "{{ live_facts.ansible_facts.gludd.metrics.agents | default([]) | map(attribute='total_cost_usd', default=0) | sum | float }}"
+
+# ── Generate heuristic proposals from signals ─────────────────────────────────
+
+- name: Build heuristic enhancement proposals
+  ansible.builtin.set_fact:
+    _ea_heuristic_proposals: >-
+      {{
+        (
+          ([{
+            'title': 'Improve reliability — add retry logic and circuit-breaker patterns',
+            'rationale': 'Success rate is ' + (_ea_success_rate | float * 100) | round(1) | string + '% (<80%)',
+            'impact': 9,
+            'effort': 3,
+            'score': (9 * 10 / 3) | round(1),
+            'signal': 'low_success_rate'
+          }] if _ea_success_rate | float < 0.8 else [])
+          + ([{
+            'title': 'Accelerate backlog throughput — parallel task execution',
+            'rationale': 'Backlog of ' + _ea_backlog | string + ' items risks delay',
+            'impact': 7,
+            'effort': 4,
+            'score': (7 * 10 / 4) | round(1),
+            'signal': 'high_backlog'
+          }] if _ea_backlog | int > 5 else [])
+          + ([{
+            'title': 'Add structured failure alerting and root-cause labeling',
+            'rationale': _ea_failures | string + ' failures detected without automated escalation',
+            'impact': 8,
+            'effort': 2,
+            'score': (8 * 10 / 2) | round(1),
+            'signal': 'high_failure_count'
+          }] if _ea_failures | int > 0 else [])
+          + ([{
+            'title': 'Optimize token usage — enable prompt caching for repeated contexts',
+            'rationale': 'Total token usage ' + _ea_total_tokens | string + ' — caching can reduce cost by 20-40%',
+            'impact': 6,
+            'effort': 2,
+            'score': (6 * 10 / 2) | round(1),
+            'signal': 'high_token_usage'
+          }] if _ea_total_tokens | int > 100 else [])
+          + ([{
+            'title': 'Implement adaptive model selection based on task complexity',
+            'rationale': 'Fixed model profile for all tasks wastes cost on simple tasks',
+            'impact': 7,
+            'effort': 5,
+            'score': (7 * 10 / 5) | round(1),
+            'signal': 'general_optimization'
+          }])
+        )
+        | sort(attribute='score', reverse=true)
+        | list
+      }}
+
+# ── Apply max_proposals cap ───────────────────────────────────────────────────
+
+- name: Apply model output override (when provided and model off)
+  ansible.builtin.set_fact:
+    _ea_proposals: "{{ (model_output_override | from_json)[:max_proposals | int] }}"
+  when:
+    - not enable_model_call | bool
+    - model_output_override | length > 0
+
+- name: Use heuristic proposals (no model, no override)
+  ansible.builtin.set_fact:
+    _ea_proposals: "{{ _ea_heuristic_proposals[:max_proposals | int] }}"
+  when:
+    - not enable_model_call | bool
+    - model_output_override | length == 0
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _ea_verdict: >-
+      {{
+        'has_proposals' if _ea_proposals | length > 0
+        else 'no_proposals'
+      }}
+
+# ── Send handoff notification (if recipient set) ──────────────────────────────
+
+- name: Gather facts for handoff (if recipient set)
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts_handoff
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+- name: Send enhancement proposals to handoff recipient
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: enhancement_auditor
+    recipient: "{{ handoff_recipient }}"
+    topic: enhancement_proposals
+    body: >-
+      {{ {
+        'target_area': target_area,
+        'proposal_count': _ea_proposals | length,
+        'top_proposal': _ea_proposals[0].title if _ea_proposals | length > 0 else 'none'
+      } | to_json }}
+    priority: normal
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - not ansible_check_mode
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON enhancement audit artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'enhancement_auditor',
+        'status': 'completed',
+        'target_area': target_area,
+        'proposals': _ea_proposals,
+        'proposal_count': _ea_proposals | length,
+        'signals': {
+          'success_rate': _ea_success_rate | float,
+          'failures': _ea_failures | int,
+          'backlog': _ea_backlog | int,
+          'total_tokens': _ea_total_tokens | int
+        },
+        'verdict': _ea_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/enhancement_auditor.json"
+    mode: "0644"
+
+- name: Write markdown enhancement audit report
+  ansible.builtin.copy:
+    content: |
+      # Enhancement Audit Report
+
+      **Target Area:** {{ target_area }}
+      **Verdict:** {{ _ea_verdict | upper }}
+      **Proposals:** {{ _ea_proposals | length }} (max={{ max_proposals }})
+
+      ## Signals
+
+      - Success rate: {{ (_ea_success_rate | float * 100) | round(1) }}%
+      - Failures: {{ _ea_failures }}
+      - Backlog: {{ _ea_backlog }} items
+      - Total tokens: {{ _ea_total_tokens }}
+
+      ## Enhancement Proposals (ranked by score)
+
+      {% if _ea_proposals | length == 0 %}
+      No enhancement proposals generated.
+      {% else %}
+      {% for p in _ea_proposals %}
+      ### {{ loop.index }}. {{ p.title }} (score={{ p.score }})
+
+      **Rationale:** {{ p.rationale }}
+      **Impact:** {{ p.impact }}/10 | **Effort:** {{ p.effort }}/10
+
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.enhancement_auditor — report-only.*
+    dest: "{{ artifact_dir }}/enhancement_auditor.md"
+    mode: "0644"
+
+- name: Report enhancement audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Enhancement audit complete: proposals={{ _ea_proposals | length }}
+      target={{ target_area }}
+      verdict={{ _ea_verdict }}

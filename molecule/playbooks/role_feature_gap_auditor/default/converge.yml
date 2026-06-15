@@ -1,0 +1,21 @@
+---
+# Converge: run feature_gap_auditor with spec (3 features) + inventory (2 features)
+# Expected: gaps=1 (export to CSV), coverage_pct=66.7%, verdict=warn
+- name: Converge - run feature_gap_auditor role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8834', true) }}"
+    fixture_dir: "/tmp/gludd-feature-gap-fixture-{{ mock_port }}"
+  tasks:
+    - name: Invoke feature_gap_auditor
+      ansible.builtin.include_role:
+        name: general_ludd.agent.feature_gap_auditor
+      vars:
+        spec_paths:
+          - "{{ fixture_dir }}/spec.md"
+        impl_inventory_path: "{{ fixture_dir }}/impl_inventory.txt"
+        enable_model_call: false
+        model_output_override: ""
+        artifact_dir: "/tmp/gludd-feature-gap-auditor-{{ mock_port }}"

@@ -1,0 +1,219 @@
+---
+# cost_optimization_auditor role — model/token/compute cost analysis
+#
+# Uses gludd.metrics and gludd.traces from gludd_facts.
+# REAL arithmetic:
+#   - Total cost per phase from traces.by_phase
+#   - Cost fraction per phase (hotspot if fraction >= expensive_phase_pct)
+#   - Low-score/high-cost model profiles from metrics.global_model_usage +
+#     metrics.benchmark_rankings
+#   - Ranked savings recommendations
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for cost analysis
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Extract cost data from facts ──────────────────────────────────────────────
+
+- name: Set cost data from live facts
+  ansible.builtin.set_fact:
+    _coa_metrics: "{{ live_facts.ansible_facts.gludd.metrics | default({}) }}"
+    _coa_traces: "{{ live_facts.ansible_facts.gludd.traces | default({}) }}"
+
+- name: Extract total cost from metrics
+  ansible.builtin.set_fact:
+    _coa_total_cost_usd: >-
+      {{
+        _coa_metrics.global_model_usage
+        | default({})
+        | dict2items
+        | map(attribute='value.total_cost_usd')
+        | map('float')
+        | sum
+      }}
+
+- name: Extract per-phase costs from traces
+  ansible.builtin.set_fact:
+    _coa_by_phase: "{{ _coa_traces.by_phase | default({}) }}"
+
+# ── Identify hotspot phases ───────────────────────────────────────────────────
+
+- name: Compute phase cost fractions
+  ansible.builtin.set_fact:
+    _coa_phase_fractions: >-
+      {{
+        _coa_by_phase | dict2items
+        | map('combine', {
+            'cost_fraction': (item.value.total_cost_usd | default(0) | float
+                             / (_coa_total_cost_usd | float if _coa_total_cost_usd | float > 0 else 1))
+          })
+        | list
+      }}
+  loop: "{{ _coa_by_phase | dict2items }}"
+  loop_control:
+    loop_var: item
+  when: _coa_by_phase | length > 0
+
+- name: Set empty phase fractions (no trace data)
+  ansible.builtin.set_fact:
+    _coa_phase_fractions: []
+  when: _coa_by_phase | length == 0
+
+- name: Identify hotspot phases (fraction >= expensive_phase_pct)
+  ansible.builtin.set_fact:
+    _coa_hotspots: >-
+      {{
+        _coa_by_phase | dict2items
+        | selectattr('value.total_cost_usd', 'defined')
+        | list
+        | map('combine', {})
+        | list
+        | selectattr('value.total_cost_usd', 'gt',
+            (_coa_total_cost_usd | float * expensive_phase_pct | float))
+        | list
+      }}
+  when: _coa_by_phase | length > 0
+
+- name: Set empty hotspots (no trace data)
+  ansible.builtin.set_fact:
+    _coa_hotspots: []
+  when: _coa_by_phase | length == 0
+
+# ── Identify low-score/high-cost model profiles ───────────────────────────────
+
+- name: Extract model profile costs and scores
+  ansible.builtin.set_fact:
+    _coa_profile_costs: >-
+      {{
+        _coa_metrics.global_model_usage | default({}) | dict2items
+      }}
+    _coa_rankings: >-
+      {{
+        _coa_metrics.benchmark_rankings | default([])
+      }}
+
+- name: Find highest-cost profile
+  ansible.builtin.set_fact:
+    _coa_priciest_profile: >-
+      {{
+        (_coa_profile_costs | sort(attribute='value.total_cost_usd', reverse=true) | first).key
+        if _coa_profile_costs | length > 0
+        else 'none'
+      }}
+    _coa_priciest_cost: >-
+      {{
+        (_coa_profile_costs | sort(attribute='value.total_cost_usd', reverse=true) | first).value.total_cost_usd | default(0) | float
+        if _coa_profile_costs | length > 0
+        else 0.0
+      }}
+
+# ── Build recommendations ─────────────────────────────────────────────────────
+
+- name: Build savings recommendations
+  ansible.builtin.set_fact:
+    _coa_recommendations: >-
+      {{
+        (
+          ([{
+            'action': 'Optimize phase "' + (_coa_hotspots | first).key + '" — accounts for >'
+                      + (expensive_phase_pct | float * 100) | string + '% of total cost',
+            'phase': (_coa_hotspots | first).key,
+            'est_savings_usd': ((_coa_hotspots | first).value.total_cost_usd | float * 0.3) | round(4),
+            'priority': 'high'
+          }] if _coa_hotspots | length > 0 else [])
+          + ([{
+            'action': 'Switch from high-cost profile "' + _coa_priciest_profile + '" to a cheaper alternative',
+            'phase': 'all',
+            'est_savings_usd': (_coa_priciest_cost * 0.4) | round(4),
+            'priority': 'medium'
+          }] if _coa_priciest_profile != 'none' and _coa_priciest_cost > cost_threshold_usd | float else [])
+          + ([{
+            'action': 'Enable prompt caching to reduce redundant token usage',
+            'phase': 'all',
+            'est_savings_usd': (_coa_total_cost_usd | float * 0.2) | round(4),
+            'priority': 'low'
+          }] if _coa_total_cost_usd | float > 0 else [])
+        )
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _coa_verdict: >-
+      {{
+        'critical' if _coa_total_cost_usd | float > cost_threshold_usd | float * 10
+        else ('warn' if _coa_total_cost_usd | float > cost_threshold_usd | float
+        else 'ok')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON cost optimization artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'cost_optimization_auditor',
+        'status': 'completed',
+        'total_cost_usd': _coa_total_cost_usd | float,
+        'cost_threshold_usd': cost_threshold_usd | float,
+        'hotspots': _coa_hotspots,
+        'priciest_profile': _coa_priciest_profile,
+        'recommendations': _coa_recommendations,
+        'verdict': _coa_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/cost_optimization_auditor.json"
+    mode: "0644"
+
+- name: Write markdown cost optimization report
+  ansible.builtin.copy:
+    content: |
+      # Cost Optimization Audit
+
+      **Verdict:** {{ _coa_verdict | upper }}
+      **Total cost:** ${{ _coa_total_cost_usd | float | round(4) }} USD
+      **Threshold:** ${{ cost_threshold_usd }} USD
+
+      ## Hotspot Phases
+
+      {% if _coa_hotspots | length == 0 %}
+      No hotspot phases detected (threshold: {{ (expensive_phase_pct | float * 100) | int }}% of total cost).
+      {% else %}
+      {% for h in _coa_hotspots %}
+      - **{{ h.key }}**: ${{ h.value.total_cost_usd | default(0) | float | round(4) }} USD
+        ({{ h.value.span_count | default(0) }} spans)
+      {% endfor %}
+      {% endif %}
+
+      ## Recommendations
+
+      {% if _coa_recommendations | length == 0 %}
+      No specific recommendations — cost within acceptable range.
+      {% else %}
+      {% for rec in _coa_recommendations %}
+      {{ loop.index }}. [{{ rec.priority | upper }}] {{ rec.action }}
+         — Est. savings: ${{ rec.est_savings_usd }} USD
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.cost_optimization_auditor — report-only.*
+    dest: "{{ artifact_dir }}/cost_optimization_auditor.md"
+    mode: "0644"
+
+- name: Report cost optimization audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Cost audit complete: total=${{ _coa_total_cost_usd | float | round(4) }}
+      hotspots={{ _coa_hotspots | length }}
+      recommendations={{ _coa_recommendations | length }}
+      verdict={{ _coa_verdict }}

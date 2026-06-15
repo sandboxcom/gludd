@@ -1,0 +1,21 @@
+---
+# code_reviewer role defaults — REPORT-ONLY (NOT security — correctness/style/risk)
+
+# Scan target: diff file takes priority over repo_path
+diff_path: ""
+repo_path: "."
+
+# Model call gate
+enable_model_call: false
+model_output_override: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-code-reviewer"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false
+apply_changes: false

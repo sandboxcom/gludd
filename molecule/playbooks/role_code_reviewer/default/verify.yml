@@ -1,0 +1,62 @@
+---
+- name: Verify - code_reviewer detected bare except and emitted request_changes verdict
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8831', true) }}"
+    artifact: "/tmp/gludd-code-reviewer-{{ mock_port }}/code_reviewer.json"
+    artifact_md: "/tmp/gludd-code-reviewer-{{ mock_port }}/code_reviewer.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'code_reviewer'
+          - result.status == 'completed'
+          - result.findings is defined
+          - result.verdict in ['approve', 'comment', 'request_changes']
+        fail_msg: "code_reviewer artifact wrong: {{ result }}"
+        success_msg: "code_reviewer: findings={{ result.findings | length }} verdict={{ result.verdict }}"
+
+    - name: Assert bare except finding detected and verdict is request_changes
+      ansible.builtin.assert:
+        that:
+          - result.findings | length > 0
+          - result.findings | selectattr('rule', 'equalto', 'CR001') | list | length > 0
+          - result.verdict == 'request_changes'
+        fail_msg: "Expected CR001 finding + request_changes verdict. Got: {{ result }}"
+        success_msg: "Bare except correctly detected; verdict=request_changes"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove fixture directory
+      ansible.builtin.file:
+        path: "/tmp/gludd-code-reviewer-fixture-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-code-reviewer-{{ mock_port }}"
+        state: absent
+      failed_when: false

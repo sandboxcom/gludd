@@ -1,0 +1,23 @@
+---
+# feature_gap_auditor role defaults — REPORT-ONLY
+
+# Spec files (globs or paths to spec/feature docs)
+spec_paths: []
+
+# Implementation inventory path (file listing implemented features, one per line)
+impl_inventory_path: ""
+
+# Model call gate
+enable_model_call: false
+model_output_override: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-feature-gap-auditor"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false
+apply_changes: false

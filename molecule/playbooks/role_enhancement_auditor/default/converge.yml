@@ -1,0 +1,22 @@
+---
+# Converge: run enhancement_auditor against mock daemon (heuristic mode)
+# Mock: failures=2, tokens=440 → expects at least failure-alerting + token-optimization proposals
+- name: Converge - run enhancement_auditor role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}"
+  tasks:
+    - name: Invoke enhancement_auditor
+      ansible.builtin.include_role:
+        name: general_ludd.agent.enhancement_auditor
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        target_area: "agent-reliability"
+        max_proposals: 5
+        enable_model_call: false
+        model_output_override: ""
+        handoff_recipient: ""
+        artifact_dir: "/tmp/gludd-enhancement-auditor-{{ mock_port }}"

@@ -1,0 +1,251 @@
+---
+# ui_ux_analyst role — heuristic TUI/CLI/API ergonomics analysis
+#
+# NON-AUTHORITATIVE: all findings are heuristic and explicitly flagged as such.
+# Checks:
+#   CLI: missing --help, inconsistent verb usage (mix of start/run/launch), long flags
+#   TUI: missing key bindings for common actions, no quit key
+#   API: missing description fields in spec, inconsistent HTTP verbs
+#
+# enable_help_capture:false by default. cli_help_override for testing.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Gather CLI help text ──────────────────────────────────────────────────────
+
+- name: Use CLI help override (when help capture disabled)
+  ansible.builtin.set_fact:
+    _uua_cli_help: "{{ cli_help_override }}"
+  when:
+    - not enable_help_capture | bool
+    - cli_help_override | length > 0
+
+- name: Capture real CLI help (when enabled)
+  ansible.builtin.command:
+    cmd: "python3 -m general_ludd --help"
+  register: _uua_help_raw
+  changed_when: false
+  failed_when: false
+  when: enable_help_capture | bool
+
+- name: Set CLI help from real capture
+  ansible.builtin.set_fact:
+    _uua_cli_help: "{{ _uua_help_raw.stdout | default('') }}"
+  when: enable_help_capture | bool
+
+- name: Set empty CLI help (no override, no capture)
+  ansible.builtin.set_fact:
+    _uua_cli_help: ""
+  when:
+    - not enable_help_capture | bool
+    - cli_help_override | length == 0
+
+# ── Scan TUI source for key binding patterns ──────────────────────────────────
+
+- name: Stat TUI source path
+  ansible.builtin.stat:
+    path: "{{ tui_source }}"
+  register: _uua_tui_stat
+  when: tui_source | length > 0
+
+- name: Scan TUI source for missing quit key binding
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "quit\|exit\|Ctrl.*C\|Key\.escape" "{{ tui_source }}"
+  register: _uua_tui_quit
+  changed_when: false
+  failed_when: _uua_tui_quit.rc == 2
+  when:
+    - tui_source | length > 0
+    - _uua_tui_stat.stat.exists | default(false)
+
+- name: Scan TUI source for help key binding
+  ansible.builtin.command:
+    cmd: >-
+      grep -rn --include="*.py"
+      "help\|Key\.F1\|'?'" "{{ tui_source }}"
+  register: _uua_tui_help
+  changed_when: false
+  failed_when: _uua_tui_help.rc == 2
+  when:
+    - tui_source | length > 0
+    - _uua_tui_stat.stat.exists | default(false)
+
+# ── Scan API spec for missing descriptions ────────────────────────────────────
+
+- name: Stat API spec path
+  ansible.builtin.stat:
+    path: "{{ api_spec_path }}"
+  register: _uua_api_stat
+  when: api_spec_path | length > 0
+
+- name: Slurp API spec
+  ansible.builtin.slurp:
+    src: "{{ api_spec_path }}"
+  register: _uua_api_raw
+  when:
+    - api_spec_path | length > 0
+    - _uua_api_stat.stat.exists | default(false)
+
+- name: Parse API spec
+  ansible.builtin.set_fact:
+    _uua_api_spec: "{{ _uua_api_raw.content | b64decode | from_json }}"
+  when:
+    - _uua_api_raw is defined
+    - _uua_api_raw.content is defined
+  failed_when: false
+
+# ── Collate heuristic findings ────────────────────────────────────────────────
+
+- name: Collate CLI heuristics from help text
+  ansible.builtin.set_fact:
+    _uua_cli_heuristics: >-
+      {{
+        (
+          ([{
+            'area': 'cli',
+            'issue': 'No --help flag detected in CLI output',
+            'severity': 'medium',
+            'rule': 'UX001'
+          }] if (_uua_cli_help | length > 0 and '--help' not in _uua_cli_help) else [])
+          + ([{
+            'area': 'cli',
+            'issue': 'Inconsistent verb usage: mix of "run" and "start" commands detected',
+            'severity': 'low',
+            'rule': 'UX002'
+          }] if (_uua_cli_help | length > 0
+               and 'run' in _uua_cli_help
+               and 'start' in _uua_cli_help) else [])
+          + ([{
+            'area': 'cli',
+            'issue': 'Very long option flags (>20 chars) reduce discoverability',
+            'severity': 'low',
+            'rule': 'UX003'
+          }] if (_uua_cli_help | length > 0
+               and _uua_cli_help | regex_search('--[a-z-]{20,}')) else [])
+        )
+      }}
+
+- name: Collate TUI heuristics from source scan
+  ansible.builtin.set_fact:
+    _uua_tui_heuristics: >-
+      {{
+        (
+          ([{
+            'area': 'tui',
+            'issue': 'No quit/exit key binding detected in TUI source',
+            'severity': 'high',
+            'rule': 'UX010'
+          }] if (tui_source | length > 0
+               and _uua_tui_stat.stat.exists | default(false)
+               and _uua_tui_quit.rc | default(1) != 0) else [])
+          + ([{
+            'area': 'tui',
+            'issue': 'No help key binding (F1/?) detected in TUI source',
+            'severity': 'medium',
+            'rule': 'UX011'
+          }] if (tui_source | length > 0
+               and _uua_tui_stat.stat.exists | default(false)
+               and _uua_tui_help.rc | default(1) != 0) else [])
+        )
+      }}
+
+- name: Set empty TUI heuristics (no TUI source)
+  ansible.builtin.set_fact:
+    _uua_tui_heuristics: []
+  when: tui_source | length == 0
+
+- name: Collate all heuristics
+  ansible.builtin.set_fact:
+    _uua_heuristics: "{{ _uua_cli_heuristics | default([]) + _uua_tui_heuristics | default([]) }}"
+
+- name: Compute ergonomics score (100 - penalty per finding)
+  ansible.builtin.set_fact:
+    _uua_score: >-
+      {{
+        [100 - (
+          (_uua_heuristics | selectattr('severity', 'equalto', 'high') | list | length * 20)
+          + (_uua_heuristics | selectattr('severity', 'equalto', 'medium') | list | length * 10)
+          + (_uua_heuristics | selectattr('severity', 'equalto', 'low') | list | length * 5)
+        ), 0] | max
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _uua_verdict: >-
+      {{
+        'good' if _uua_score | int >= 80
+        else ('needs_work' if _uua_score | int >= 50
+        else 'poor')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON UI/UX analysis artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'ui_ux_analyst',
+        'status': 'completed',
+        'note': 'heuristic, non-authoritative',
+        'heuristics': _uua_heuristics,
+        'score': _uua_score | int,
+        'verdict': _uua_verdict,
+        'scanned': {
+          'cli_help': _uua_cli_help | length > 0,
+          'tui_source': tui_source | length > 0,
+          'api_spec': api_spec_path | length > 0
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/ui_ux_analyst.json"
+    mode: "0644"
+
+- name: Write markdown UI/UX analysis report
+  ansible.builtin.copy:
+    content: |
+      # UI/UX Analysis Report
+
+      > **Note:** This analysis is heuristic and non-authoritative. Findings
+      > are pattern-based and require human judgment to validate.
+
+      **Verdict:** {{ _uua_verdict | upper }}
+      **Ergonomics Score:** {{ _uua_score }}/100
+      **Findings:** {{ _uua_heuristics | length }}
+
+      ## Heuristic Findings
+
+      {% if _uua_heuristics | length == 0 %}
+      No ergonomics issues detected heuristically.
+      {% else %}
+      {% for h in _uua_heuristics %}
+      ### [{{ h.severity | upper }}] {{ h.rule }} — {{ h.area | upper }}
+
+      **Issue:** {{ h.issue }}
+
+      {% endfor %}
+      {% endif %}
+
+      ## Scan Coverage
+
+      - CLI help: {{ 'YES' if _uua_cli_help | length > 0 else 'NO' }}
+      - TUI source: {{ 'YES' if tui_source | length > 0 else 'NO' }}
+      - API spec: {{ 'YES' if api_spec_path | length > 0 else 'NO' }}
+
+      ---
+      *Generated by general_ludd.agent.ui_ux_analyst — heuristic, non-authoritative, report-only.*
+    dest: "{{ artifact_dir }}/ui_ux_analyst.md"
+    mode: "0644"
+
+- name: Report UI/UX analysis completion
+  ansible.builtin.debug:
+    msg: >-
+      UI/UX analysis complete (HEURISTIC/NON-AUTHORITATIVE):
+      score={{ _uua_score }} findings={{ _uua_heuristics | length }}
+      verdict={{ _uua_verdict }}

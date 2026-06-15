@@ -1,0 +1,74 @@
+---
+- name: Verify - feature_gap_auditor found 1 gap from 3-feature spec + 2-feature inventory
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8834', true) }}"
+    fixture_dir: "/tmp/gludd-feature-gap-fixture-{{ mock_port }}"
+    artifact: "/tmp/gludd-feature-gap-auditor-{{ mock_port }}/feature_gap_auditor.json"
+    artifact_md: "/tmp/gludd-feature-gap-auditor-{{ mock_port }}/feature_gap_auditor.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert core fields present
+      ansible.builtin.assert:
+        that:
+          - result.role == 'feature_gap_auditor'
+          - result.status == 'completed'
+          - result.intended is defined
+          - result.implemented is defined
+          - result.gaps is defined
+          - result.coverage_pct is defined
+          - result.verdict in ['pass', 'warn', 'fail']
+        fail_msg: "feature_gap_auditor artifact wrong: {{ result }}"
+        success_msg: "feature_gap_auditor: intended={{ result.intended | length }} gaps={{ result.gaps | length }}"
+
+    - name: Assert spec(3 features) + inventory(2) → gaps len 1
+      ansible.builtin.assert:
+        that:
+          - result.intended | length == 3
+          - result.implemented | length == 2
+          - result.gaps | length == 1
+          - result.verdict == 'warn'
+        fail_msg: "Expected 3 intended, 2 implemented, 1 gap, verdict=warn. Got: {{ result }}"
+        success_msg: "Feature gap correctly detected: 3-2=1 gap, verdict=warn"
+
+    - name: Assert missing feature is 'export to CSV'
+      ansible.builtin.assert:
+        that:
+          - "'export to CSV' in result.gaps"
+        fail_msg: "Expected 'export to CSV' in gaps. Got: {{ result.gaps }}"
+        success_msg: "Correct gap identified: 'export to CSV'"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-feature-gap-auditor-{{ mock_port }}"
+        state: absent
+      failed_when: false
