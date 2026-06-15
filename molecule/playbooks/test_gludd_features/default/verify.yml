@@ -1,0 +1,59 @@
+---
+- name: Verify - gludd_features returned the mock feature snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8826', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8826', true) }}.pid"
+  tasks:
+    - name: Load persisted feature list result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-features.json"
+      register: features_raw
+
+    - name: Parse feature list result
+      ansible.builtin.set_fact:
+        list_result: "{{ features_raw.content | b64decode | from_json }}"
+
+    - name: Assert feature list shape
+      ansible.builtin.assert:
+        that:
+          - list_result.features is defined
+          - list_result.total is defined
+          - list_result.total | int == 2
+          - list_result.features | length == 2
+          - list_result.ansible_facts.gludd_features is defined
+          - list_result.ansible_facts.gludd_features | length == 2
+          - list_result.features[0].id is defined
+          - list_result.features[0].name is defined
+          - list_result.features[0].status is defined
+          - list_result.features[0].category is defined
+        fail_msg: "gludd_features list result incomplete: {{ list_result }}"
+        success_msg: "gludd_features list returned {{ list_result.total }} features with expected shape"
+
+    - name: Load persisted verify result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-features-verify.json"
+      register: verify_raw
+
+    - name: Parse verify result
+      ansible.builtin.set_fact:
+        verify_result: "{{ verify_raw.content | b64decode | from_json }}"
+
+    - name: Assert verify result shape
+      ansible.builtin.assert:
+        that:
+          - verify_result.summary is defined
+          - verify_result.results is defined
+          - verify_result.summary.total | int == 2
+          - verify_result.results | length == 2
+          - verify_result.changed == true
+        fail_msg: "gludd_features verify result incomplete: {{ verify_result }}"
+        success_msg: "gludd_features verify ran; summary.total={{ verify_result.summary.total }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

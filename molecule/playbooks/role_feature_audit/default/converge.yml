@@ -1,0 +1,16 @@
+---
+- name: Converge - run feature_audit role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8827', true) }}"
+  tasks:
+    - name: Invoke feature_audit (run_verify=false — exercises the list-only path)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.feature_audit
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-feature-audit-{{ mock_port }}"
+        run_verify: false

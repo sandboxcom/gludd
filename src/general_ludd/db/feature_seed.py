@@ -290,19 +290,20 @@ FEATURE_SEED: list[dict[str, Any]] = [
         "name": "dogfood",
         "category": "self-verification",
         "description": (
-            "scripts/dogfood.py runs FeatureVerifier.verify_all against FEATURE_SEED "
-            "so gludd verifies its own features on every gate run."
+            "scripts/dogfood_features.py (make dogfood-features) runs FeatureVerifier "
+            "evidence checks against FEATURE_SEED so gludd verifies its own features. "
+            "scripts/dogfood.py exercises the full product spine (event-loop, git, review)."
         ),
         "acceptance_criteria": [
-            "scripts/dogfood.py exists",
-            "make dogfood target defined",
+            "scripts/dogfood_features.py exists",
+            "make dogfood-features target defined",
         ],
         "evidence": [
-            "file:scripts/dogfood.py::FeatureVerifier",
+            "file:scripts/dogfood_features.py::FeatureVerifier",
+            "file:scripts/dogfood.py::run_dogfood",
         ],
         "verifier_kind": "evidence",
-        # TODO(integration): dogfood script + make target are deferred
-        "status": "requested",
+        "status": "implemented",
         "requested_by": "engagement",
     },
     {
@@ -438,6 +439,32 @@ FEATURE_SEED: list[dict[str, Any]] = [
         ],
         "evidence": [
             "file:docs/profiles/README.md::profile",
+        ],
+        "verifier_kind": "evidence",
+        "status": "implemented",
+        "requested_by": "engagement",
+    },
+    {
+        "name": "feature_db_integration",
+        "category": "self-verification",
+        "description": (
+            "Feature database integration: gludd_features Ansible module + feature_audit role "
+            "+ molecule scenarios (test_gludd_features + role_feature_audit) "
+            "+ make dogfood-features self-check. Completes deferred items from feature/feature-db."
+        ),
+        "acceptance_criteria": [
+            "gludd_features module exists under plugins/modules/",
+            "feature_audit role exists under roles/",
+            "test_gludd_features molecule scenario exists",
+            "role_feature_audit molecule scenario exists",
+            "scripts/dogfood_features.py exists",
+        ],
+        "evidence": [
+            "module:gludd_features",
+            "role:feature_audit",
+            "molecule:test_gludd_features",
+            "molecule:role_feature_audit",
+            "file:scripts/dogfood_features.py::run_dogfood_features",
         ],
         "verifier_kind": "evidence",
         "status": "implemented",
