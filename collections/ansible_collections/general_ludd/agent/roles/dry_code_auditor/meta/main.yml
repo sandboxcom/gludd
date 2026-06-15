@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: dry_code_auditor
+  author: Agentic Harness Agent
+  description: >
+    Detects code duplication using jscpd output (real or canned override).
+    Reports clone pairs, extraction suggestions, and duplication percentage.
+    enable_jscpd:false by default; jscpd_output_override provides canned
+    JSON for testing. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

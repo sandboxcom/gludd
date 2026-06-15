@@ -1,0 +1,66 @@
+---
+# Verify the crash-isolation held:
+#   * the playbook process SURVIVED (marker file written after the role)
+#   * the mock daemon is still alive (GET /healthz)
+#   * ab_verdict.promote == false and b.crashed == true
+- name: Verify - parent survived a crashing candidate; promote refused
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}.pid"
+    verdict_path: "/tmp/gludd-self-improve-ab/ab_verdict.json"
+    marker: "/tmp/gludd-ab-parent-alive.marker"
+  tasks:
+    - name: Assert parent-liveness marker exists (play survived the crash)
+      ansible.builtin.stat:
+        path: "{{ marker }}"
+      register: marker_stat
+      failed_when: not marker_stat.stat.exists
+
+    - name: Probe the still-running mock daemon /healthz (parent-stack alive)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: post_health
+      failed_when: post_health.status != 200
+
+    - name: Load ab_verdict artifact
+      ansible.builtin.slurp:
+        src: "{{ verdict_path }}"
+      register: verdict_raw
+
+    - name: Parse ab_verdict
+      ansible.builtin.set_fact:
+        verdict: "{{ verdict_raw.content | b64decode | from_json }}"
+
+    - name: Assert fail-closed crash isolation
+      ansible.builtin.assert:
+        that:
+          - verdict.promote == false
+          - verdict.b.crashed == true
+          - verdict.a.ok == true
+        fail_msg: "crash isolation FAILED: {{ verdict }}"
+        success_msg: >-
+          Crash isolation held: parent survived os._exit(139),
+          mock daemon healthz=200, promote=false, b.crashed=true.
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove scenario artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-self-improve-ab"
+        - "/tmp/gludd-ab-baseline"
+        - "/tmp/gludd-ab-crash-candidate"
+        - "/tmp/gludd-ab-parent-alive.marker"
+      failed_when: false

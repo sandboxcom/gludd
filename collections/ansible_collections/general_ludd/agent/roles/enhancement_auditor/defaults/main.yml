@@ -1,0 +1,26 @@
+---
+# enhancement_auditor role defaults — REPORT-ONLY
+
+# Target area for enhancement proposals
+target_area: "general"
+
+# Maximum number of proposals to emit
+max_proposals: 5
+
+# Model call gate
+enable_model_call: false
+model_output_override: ""
+
+# Handoff recipient for notification
+handoff_recipient: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-enhancement-auditor"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false
+apply_changes: false

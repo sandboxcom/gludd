@@ -1,0 +1,274 @@
+---
+# scrum_leader role — PURE COMPOSER over agile ceremony roles
+#
+# Includes each ceremony from the 'ceremonies' list in sequence, directing each
+# to write its artifact into {{artifact_dir}}/<ceremony>/. Then slurps all
+# sub-artifacts and consolidates into a combined sprint_plan_summary,
+# retro_summary, and a .md index linking all sub-artifacts.
+#
+# No new decision logic here — this role only wires includes and consolidates.
+# Sub-roles inherit write_back:false / enable_model_call:false (safe-by-default).
+# REPORT-ONLY: never mutates the repo.
+
+# ── Capture caller vars to avoid Jinja2 recursion in include_role ─────────────
+# When include_role passes vars like psk="{{ psk }}", the sub-role's no_log
+# evaluation causes a recursive template resolution. Snapshot values first.
+
+- name: Snapshot scrum_leader invocation vars to avoid include_role recursion
+  ansible.builtin.set_fact:
+    _sl_daemon_url: "{{ daemon_url }}"
+    _sl_psk: "{{ psk }}"
+    _sl_artifact_dir: "{{ artifact_dir }}"
+    _sl_sprint_name: "{{ sprint_name }}"
+    _sl_sprint_capacity: "{{ sprint_capacity | int }}"
+    _sl_write_back: "{{ write_back | bool }}"
+    _sl_enable_model_call: "{{ enable_model_call | bool }}"
+    _sl_max_split_points: "{{ max_split_points | int }}"
+
+- name: Create scrum_leader root artifact directory
+  ansible.builtin.file:
+    path: "{{ _sl_artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Run each ceremony role in sequence ─────────────────────────────────────────
+# Each ceremony gets its own sub-dir under artifact_dir.
+
+- name: Run backlog_groom ceremony (if in ceremonies list)
+  ansible.builtin.include_role:
+    name: general_ludd.agent.backlog_groom
+  vars:
+    daemon_url: "{{ _sl_daemon_url }}"
+    psk: "{{ _sl_psk }}"
+    artifact_dir: "{{ _sl_artifact_dir }}/backlog_groom"
+    write_back: "{{ _sl_write_back | bool }}"
+    max_split_points: "{{ _sl_max_split_points | int }}"
+    enable_git_push: false
+  when: "'backlog_groom' in ceremonies"
+
+- name: Run sprint_plan ceremony (if in ceremonies list)
+  ansible.builtin.include_role:
+    name: general_ludd.agent.sprint_plan
+  vars:
+    daemon_url: "{{ _sl_daemon_url }}"
+    psk: "{{ _sl_psk }}"
+    artifact_dir: "{{ _sl_artifact_dir }}/sprint_plan"
+    sprint_name: "{{ _sl_sprint_name }}"
+    sprint_capacity: "{{ _sl_sprint_capacity | int }}"
+    write_back: "{{ _sl_write_back | bool }}"
+    enable_git_push: false
+  when: "'sprint_plan' in ceremonies"
+
+- name: Run standup_report ceremony (if in ceremonies list)
+  ansible.builtin.include_role:
+    name: general_ludd.agent.standup_report
+  vars:
+    daemon_url: "{{ _sl_daemon_url }}"
+    psk: "{{ _sl_psk }}"
+    artifact_dir: "{{ _sl_artifact_dir }}/standup_report"
+    enable_git_push: false
+  when: "'standup_report' in ceremonies"
+
+- name: Run retrospective ceremony (if in ceremonies list)
+  ansible.builtin.include_role:
+    name: general_ludd.agent.retrospective
+  vars:
+    daemon_url: "{{ _sl_daemon_url }}"
+    psk: "{{ _sl_psk }}"
+    artifact_dir: "{{ _sl_artifact_dir }}/retrospective"
+    enable_model_call: "{{ _sl_enable_model_call | bool }}"
+    enable_git_push: false
+  when: "'retrospective' in ceremonies"
+
+# ── Slurp and consolidate sub-artifacts ───────────────────────────────────────
+
+- name: Read backlog_groom sub-artifact (if ceremony ran)
+  ansible.builtin.slurp:
+    src: "{{ _sl_artifact_dir }}/backlog_groom/backlog_groom.json"
+  register: _sl_backlog_raw
+  failed_when: false
+  when: "'backlog_groom' in ceremonies"
+
+- name: Read sprint_plan sub-artifact (if ceremony ran)
+  ansible.builtin.slurp:
+    src: "{{ _sl_artifact_dir }}/sprint_plan/sprint_plan.json"
+  register: _sl_sprint_raw
+  failed_when: false
+  when: "'sprint_plan' in ceremonies"
+
+- name: Read standup_report sub-artifact (if ceremony ran)
+  ansible.builtin.slurp:
+    src: "{{ _sl_artifact_dir }}/standup_report/standup_report.json"
+  register: _sl_standup_raw
+  failed_when: false
+  when: "'standup_report' in ceremonies"
+
+- name: Read retrospective sub-artifact (if ceremony ran)
+  ansible.builtin.slurp:
+    src: "{{ _sl_artifact_dir }}/retrospective/retrospective.json"
+  register: _sl_retro_raw
+  failed_when: false
+  when: "'retrospective' in ceremonies"
+
+# ── Parse sub-artifacts ────────────────────────────────────────────────────────
+
+- name: Parse backlog_groom artifact
+  ansible.builtin.set_fact:
+    _sl_backlog: >-
+      {{
+        (_sl_backlog_raw.content | b64decode | from_json)
+        if (_sl_backlog_raw is defined and _sl_backlog_raw.content is defined)
+        else {}
+      }}
+
+- name: Parse sprint_plan artifact
+  ansible.builtin.set_fact:
+    _sl_sprint: >-
+      {{
+        (_sl_sprint_raw.content | b64decode | from_json)
+        if (_sl_sprint_raw is defined and _sl_sprint_raw.content is defined)
+        else {}
+      }}
+
+- name: Parse standup_report artifact
+  ansible.builtin.set_fact:
+    _sl_standup: >-
+      {{
+        (_sl_standup_raw.content | b64decode | from_json)
+        if (_sl_standup_raw is defined and _sl_standup_raw.content is defined)
+        else {}
+      }}
+
+- name: Parse retrospective artifact
+  ansible.builtin.set_fact:
+    _sl_retro: >-
+      {{
+        (_sl_retro_raw.content | b64decode | from_json)
+        if (_sl_retro_raw is defined and _sl_retro_raw.content is defined)
+        else {}
+      }}
+
+# ── Build ceremonies_run list and summaries ────────────────────────────────────
+
+- name: Build ceremonies_run list
+  ansible.builtin.set_fact:
+    _sl_ceremonies_run: >-
+      {%- set ran = [] -%}
+      {%- if _sl_backlog != {} -%}{%- set _ = ran.append('backlog_groom') -%}{%- endif -%}
+      {%- if _sl_sprint != {} -%}{%- set _ = ran.append('sprint_plan') -%}{%- endif -%}
+      {%- if _sl_standup != {} -%}{%- set _ = ran.append('standup_report') -%}{%- endif -%}
+      {%- if _sl_retro != {} -%}{%- set _ = ran.append('retrospective') -%}{%- endif -%}
+      {{ ran }}
+
+- name: Build sprint_plan_summary from sprint artifact
+  ansible.builtin.set_fact:
+    _sl_sprint_plan_summary: >-
+      {{
+        {
+          'sprint_name': _sl_sprint.sprint_name | default(sprint_name),
+          'capacity': _sl_sprint.capacity | default(0),
+          'total_points': _sl_sprint.total_points | default(0),
+          'selected_count': _sl_sprint.selected | default([]) | length,
+          'spillover_count': _sl_sprint.spillover | default([]) | length
+        }
+        if _sl_sprint != {}
+        else {'sprint_name': _sl_sprint_name, 'note': 'sprint_plan ceremony not run'}
+      }}
+
+- name: Build retro_summary from retrospective artifact
+  ansible.builtin.set_fact:
+    _sl_retro_summary: >-
+      {{
+        {
+          'well_count': _sl_retro.well | default([]) | length,
+          'ill_count': _sl_retro.ill | default([]) | length,
+          'action_count': _sl_retro.actions | default([]) | length,
+          'narrative': _sl_retro.narrative | default('')
+        }
+        if _sl_retro != {}
+        else {'note': 'retrospective ceremony not run'}
+      }}
+
+- name: Determine overall verdict
+  ansible.builtin.set_fact:
+    _sl_verdict: >-
+      {{
+        'completed'
+        if (_sl_ceremonies_run | length == ceremonies | length)
+        else 'partial'
+      }}
+
+# ── Write consolidated artifacts ───────────────────────────────────────────────
+
+- name: Write consolidated JSON scrum_leader artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'scrum_leader',
+        'status': 'completed',
+        'sprint_name': _sl_sprint_name,
+        'ceremonies_requested': ceremonies,
+        'ceremonies_run': _sl_ceremonies_run,
+        'sprint_plan_summary': _sl_sprint_plan_summary,
+        'retro_summary': _sl_retro_summary,
+        'artifact_dir': _sl_artifact_dir,
+        'sub_artifacts': {
+          'backlog_groom': _sl_artifact_dir ~ '/backlog_groom/backlog_groom.json',
+          'sprint_plan': _sl_artifact_dir ~ '/sprint_plan/sprint_plan.json',
+          'standup_report': _sl_artifact_dir ~ '/standup_report/standup_report.json',
+          'retrospective': _sl_artifact_dir ~ '/retrospective/retrospective.json'
+        },
+        'verdict': _sl_verdict
+      } | to_nice_json }}
+    dest: "{{ _sl_artifact_dir }}/scrum_leader.json"
+    mode: "0644"
+
+- name: Write markdown sprint index linking all sub-artifacts
+  ansible.builtin.copy:
+    content: |
+      # Scrum Leader Sprint Index — {{ _sl_sprint_name }}
+
+      **Verdict:** {{ _sl_verdict | upper }}
+      **Ceremonies run:** {{ _sl_ceremonies_run | join(', ') }}
+
+      ## Sprint Plan Summary
+
+      {% if _sl_sprint != {} %}
+      - Sprint: {{ _sl_sprint_plan_summary.sprint_name }}
+      - Capacity: {{ _sl_sprint_plan_summary.capacity }}pt
+      - Selected: {{ _sl_sprint_plan_summary.selected_count }} items ({{ _sl_sprint_plan_summary.total_points }}pt)
+      - Spillover: {{ _sl_sprint_plan_summary.spillover_count }} items
+      {% else %}
+      *sprint_plan ceremony not run.*
+      {% endif %}
+
+      ## Retrospective Summary
+
+      {% if _sl_retro != {} %}
+      - What went well: {{ _sl_retro_summary.well_count }} items
+      - What went poorly: {{ _sl_retro_summary.ill_count }} items
+      - Actions planned: {{ _sl_retro_summary.action_count }} items
+      {% else %}
+      *retrospective ceremony not run.*
+      {% endif %}
+
+      ## Sub-Artifacts
+
+      | Ceremony | Artifact |
+      |----------|----------|
+      | backlog_groom | [backlog_groom.json]({{ _sl_artifact_dir }}/backlog_groom/backlog_groom.json) |
+      | sprint_plan | [sprint_plan.json]({{ _sl_artifact_dir }}/sprint_plan/sprint_plan.json) |
+      | standup_report | [standup_report.json]({{ _sl_artifact_dir }}/standup_report/standup_report.json) |
+      | retrospective | [retrospective.json]({{ _sl_artifact_dir }}/retrospective/retrospective.json) |
+
+      ---
+      *Generated by general_ludd.agent.scrum_leader — composition only, no decision logic, no repo mutations.*
+    dest: "{{ _sl_artifact_dir }}/scrum_leader.md"
+    mode: "0644"
+
+- name: Report scrum_leader completion
+  ansible.builtin.debug:
+    msg: >-
+      Scrum leader: sprint={{ _sl_sprint_name }}
+      ceremonies_run={{ _sl_ceremonies_run | join(',') }}
+      verdict={{ _sl_verdict }}

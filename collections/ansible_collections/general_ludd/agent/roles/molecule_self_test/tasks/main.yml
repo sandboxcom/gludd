@@ -1,0 +1,299 @@
+---
+# molecule_self_test role — gludd runs molecule on its own roles/collections,
+# reports pass/fail + coverage as a structured artifact + facts.
+#
+# SAFE-BY-DEFAULT: enable_run=false (the test/default path) consumes a
+# molecule_output_override canned result so all PARSING + reporting logic is
+# exercised without triggering a 40-min molecule run.
+#
+# Flow:
+#   1. Gather live daemon facts (gludd_facts) for system context.
+#   2. Enumerate available molecule scenarios (molecule/playbooks/ dirs).
+#   3. Enumerate roles and modules that HAVE scenario coverage.
+#   4. Optionally run molecule (enable_run=true only; skipped in check_mode).
+#   5. Parse pass/fail output into structured lists.
+#   6. Compute coverage: which roles/modules have scenarios vs which are missing.
+#   7. Determine verdict: PASS / PARTIAL / FAIL.
+#   8. Write JSON + MD artifact.
+#   9. Emit gludd_message on failures (when handoff_recipient is set).
+
+- name: Gather live daemon facts
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Enumerate scenario directories (molecule/playbooks/) ──────────────────
+
+- name: List molecule/playbooks directory
+  ansible.builtin.find:
+    paths: "{{ repo_path }}/molecule/playbooks"
+    file_type: directory
+    recurse: false
+  register: _mst_scenario_dirs
+
+- name: Build enumerated scenario list
+  ansible.builtin.set_fact:
+    _mst_all_scenarios: "{{ _mst_scenario_dirs.files | map(attribute='path') | map('basename') | sort | list }}"
+
+# ── Enumerate roles and compute coverage ──────────────────────────────────
+
+- name: List roles directory
+  ansible.builtin.find:
+    paths: "{{ repo_path }}/collections/ansible_collections/general_ludd/agent/roles"
+    file_type: directory
+    recurse: false
+  register: _mst_role_dirs
+
+- name: Build roles list
+  ansible.builtin.set_fact:
+    _mst_all_roles: "{{ _mst_role_dirs.files | map(attribute='path') | map('basename') | sort | list }}"
+
+- name: List modules directory
+  ansible.builtin.find:
+    paths: "{{ repo_path }}/collections/ansible_collections/general_ludd/agent/plugins/modules"
+    patterns: "gludd_*.py"
+    file_type: file
+    recurse: false
+  register: _mst_module_files
+
+- name: Build modules list (strip .py extension)
+  ansible.builtin.set_fact:
+    _mst_all_modules: >-
+      {{ _mst_module_files.files | map(attribute='path') | map('basename') | map('replace', '.py', '') | sort | list }}
+
+- name: Strip role_ prefix from scenarios to get coverage keys for roles
+  ansible.builtin.set_fact:
+    _mst_scenario_role_keys: "{{ _mst_all_scenarios | map('regex_replace', '^role_', '') | list }}"
+
+- name: Strip test_ prefix from scenarios to get coverage keys for modules
+  ansible.builtin.set_fact:
+    _mst_scenario_module_keys: "{{ _mst_all_scenarios | map('regex_replace', '^test_', '') | list }}"
+
+- name: Compute roles WITH molecule scenarios
+  ansible.builtin.set_fact:
+    _mst_roles_covered: "{{ _mst_all_roles | select('in', _mst_scenario_role_keys) | list }}"
+    _mst_roles_missing: "{{ _mst_all_roles | reject('in', _mst_scenario_role_keys) | list }}"
+
+- name: Compute modules WITH molecule scenarios
+  ansible.builtin.set_fact:
+    _mst_modules_covered: "{{ _mst_all_modules | select('in', _mst_scenario_module_keys) | list }}"
+    _mst_modules_missing: "{{ _mst_all_modules | reject('in', _mst_scenario_module_keys) | list }}"
+
+# ── Optionally run molecule (heavy op — gated behind enable_run) ──────────
+
+- name: Run molecule-test-all (enable_run=true; run_all=true; not check_mode)
+  ansible.builtin.command:
+    cmd: make molecule-test-all
+    chdir: "{{ repo_path }}"
+  register: _mst_run_all
+  changed_when: true
+  failed_when: false
+  when:
+    - enable_run | bool
+    - run_all | bool
+    - not ansible_check_mode
+
+- name: Run per-scenario molecule tests (enable_run=true; run_all=false; not check_mode)
+  ansible.builtin.command:
+    cmd: "make molecule-test SCENARIO={{ item }}"
+    chdir: "{{ repo_path }}"
+  loop: "{{ scenarios if scenarios | length > 0 else _mst_all_scenarios }}"
+  register: _mst_run_per
+  changed_when: true
+  failed_when: false
+  when:
+    - enable_run | bool
+    - not run_all | bool
+    - not ansible_check_mode
+
+# ── Resolve raw output to parse ───────────────────────────────────────────
+
+- name: Combine molecule-test-all stdout (run_all path)
+  ansible.builtin.set_fact:
+    _mst_raw_output: >-
+      {{ (_mst_run_all.stdout | default('')) + '\n' + (_mst_run_all.stderr | default(''))
+         if (enable_run | bool and run_all | bool and not ansible_check_mode)
+         else '' }}
+
+- name: Combine per-scenario stdout (per-scenario path)
+  ansible.builtin.set_fact:
+    _mst_per_scenario_output: >-
+      {%- set lines = [] -%}
+      {%- if enable_run | bool and not run_all | bool and not ansible_check_mode -%}
+        {%- for r in (_mst_run_per.results | default([])) -%}
+          {%- if r.rc | default(1) | int == 0 -%}
+            {%- set _ = lines.append('PASS ' + (r.item | default(''))) -%}
+          {%- else -%}
+            {%- set _ = lines.append('FAIL ' + (r.item | default(''))) -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {{ lines | join('\n') }}
+
+- name: Choose final raw output to parse
+  ansible.builtin.set_fact:
+    _mst_output_to_parse: >-
+      {%- if not (enable_run | bool) or ansible_check_mode -%}
+        {{ molecule_output_override }}
+      {%- elif run_all | bool -%}
+        {{ _mst_raw_output }}
+      {%- else -%}
+        {{ _mst_per_scenario_output }}
+      {%- endif -%}
+
+# ── Parse pass/fail from output ───────────────────────────────────────────
+
+- name: Parse PASS lines into passed list
+  ansible.builtin.set_fact:
+    _mst_passed: >-
+      {%- set result = [] -%}
+      {%- for line in _mst_output_to_parse.splitlines() -%}
+        {%- set stripped = line.strip() -%}
+        {%- if stripped.startswith('PASS ') -%}
+          {%- set scenario_name = stripped[5:].strip().split(' ')[0] -%}
+          {%- if scenario_name and 'scenarios passed' not in scenario_name -%}
+            {%- set _ = result.append(scenario_name) -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ result }}
+
+- name: Parse FAIL lines into failed list
+  ansible.builtin.set_fact:
+    _mst_failed: >-
+      {%- set result = [] -%}
+      {%- for line in _mst_output_to_parse.splitlines() -%}
+        {%- set stripped = line.strip() -%}
+        {%- if stripped.startswith('FAIL ') -%}
+          {%- set scenario_name = stripped[5:].strip().split(' ')[0] -%}
+          {%- if scenario_name -%}
+            {%- set _ = result.append(scenario_name) -%}
+          {%- endif -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ result }}
+
+# ── Determine verdict ──────────────────────────────────────────────────────
+
+- name: Determine overall verdict
+  ansible.builtin.set_fact:
+    _mst_verdict: >-
+      {%- if _mst_failed | length == 0 and _mst_passed | length > 0 -%}
+        PASS
+      {%- elif _mst_failed | length > 0 and _mst_passed | length > 0 -%}
+        PARTIAL
+      {%- elif _mst_failed | length > 0 -%}
+        FAIL
+      {%- else -%}
+        NO_DATA
+      {%- endif -%}
+
+# ── Write artifacts ────────────────────────────────────────────────────────
+
+- name: Write JSON molecule self-test artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'molecule_self_test',
+        'status': 'completed',
+        'enable_run': enable_run | bool,
+        'run_used_override': not (enable_run | bool) or ansible_check_mode,
+        'scenarios': _mst_all_scenarios,
+        'passed': _mst_passed,
+        'failed': _mst_failed,
+        'coverage': {
+          'roles_total': _mst_all_roles | length,
+          'roles_with_scenario': _mst_roles_covered | length,
+          'roles_missing': _mst_roles_missing,
+          'modules_total': _mst_all_modules | length,
+          'modules_with_scenario': _mst_modules_covered | length,
+          'modules_missing': _mst_modules_missing
+        },
+        'verdict': _mst_verdict,
+        'system_context': {
+          'backlog_size': live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int,
+          'total_runs': live_facts.ansible_facts.gludd.history.total_runs | default(0) | int
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/molecule_self_test.json"
+    mode: "0644"
+
+- name: Write markdown molecule self-test report
+  ansible.builtin.copy:
+    content: |
+      # Molecule Self-Test Report
+
+      **Verdict:** {{ _mst_verdict }}
+      **Molecule actually ran:** {{ enable_run | bool and not ansible_check_mode }}
+      **Passed:** {{ _mst_passed | length }} scenario(s)
+      **Failed:** {{ _mst_failed | length }} scenario(s)
+
+      ## Passed Scenarios
+
+      {% for s in _mst_passed %}
+      - {{ s }}
+      {% else %}
+      - (none)
+      {% endfor %}
+
+      ## Failed Scenarios
+
+      {% for s in _mst_failed %}
+      - {{ s }}
+      {% else %}
+      - (none)
+      {% endfor %}
+
+      ## Coverage Summary
+
+      **Roles:**
+      - Total: {{ _mst_all_roles | length }}
+      - With scenario: {{ _mst_roles_covered | length }}
+      - Missing scenario: {{ _mst_roles_missing | join(', ') or 'none' }}
+
+      **Modules:**
+      - Total: {{ _mst_all_modules | length }}
+      - With scenario: {{ _mst_modules_covered | length }}
+      - Missing scenario: {{ _mst_modules_missing | join(', ') or 'none' }}
+
+      ## All Enumerated Scenarios ({{ _mst_all_scenarios | length }})
+
+      {% for s in _mst_all_scenarios %}
+      - {{ s }}
+      {% endfor %}
+
+      ---
+      *Generated by general_ludd.agent.molecule_self_test*
+      *enable_run={{ enable_run }}; used override={{ not (enable_run | bool) or ansible_check_mode }}*
+    dest: "{{ artifact_dir }}/molecule_self_test.md"
+    mode: "0644"
+
+# ── Handoff via gludd_message when failures need attention ────────────────
+
+- name: Send failure handoff message (failed scenarios found)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: molecule_self_test
+    recipient: "{{ handoff_recipient }}"
+    topic: molecule_self_test_result
+    body: "{{ {'verdict': _mst_verdict, 'failed': _mst_failed, 'passed_count': _mst_passed | length, 'failed_count': _mst_failed | length} | to_json }}"
+    priority: "{{ 'high' if _mst_verdict != 'PASS' else 'normal' }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - _mst_verdict != 'PASS'
+    - not ansible_check_mode
+
+- name: Report molecule self-test completion
+  ansible.builtin.debug:
+    msg: "molecule_self_test complete: verdict={{ _mst_verdict }} passed={{ _mst_passed | length }} failed={{ _mst_failed | length }} scenarios={{ _mst_all_scenarios | length }}"

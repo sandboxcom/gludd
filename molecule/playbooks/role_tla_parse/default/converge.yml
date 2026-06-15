@@ -1,0 +1,23 @@
+---
+# Run the REAL tla_parse role with parse_output_override (enable_tla=false).
+# Exercises real parsing/classification logic via the canned SANY output.
+# The java shim in PATH is available but not invoked (enable_tla=false default).
+- name: Converge - run tla_parse role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+  environment:
+    PATH: "{{ shim_dir }}:{{ ansible_env.PATH }}"
+  tasks:
+    - name: Invoke tla_parse (override mode — real classification of canned SANY output)
+      ansible.builtin.include_role:
+        name: general_ludd.formal.tla_parse
+      vars:
+        spec_path: "/tmp/gludd-tla-parse-{{ mock_port }}/CounterSpec.tla"
+        tla_tools_jar: "{{ shim_dir }}/tla2tools.jar"
+        enable_tla: false
+        parse_output_override: "Parsing file CounterSpec.tla\nSemantic processing of module CounterSpec\nParsing completed. No errors."
+        artifact_dir: "/tmp/gludd-tla-parse-out-{{ mock_port }}"

@@ -1,0 +1,26 @@
+---
+# qa_analyst role defaults — REPORT-ONLY cross-cut quality verdict
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-qa-analyst"
+
+# Paths to sub-artifacts (empty = skip that source)
+test_matrix_artifact: ""    # path to test_matrix.json (tests by module/suite)
+coverage_artifact: ""        # path to coverage.json (coverage_pct per module)
+flaky_artifact: ""           # path to flaky.json (flaky_tests list)
+
+# Threshold: pass_rate below this → verdict=fail; above but with flaky → conditional
+pass_threshold: 0.8
+
+# Weights for composite QA score:
+#   score = (pass_weight * pass_rate) + (coverage_weight * coverage_pct/100) + (flaky_penalty * clamp(flaky_count,0,10)/10 * -1)
+pass_weight: 0.5
+coverage_weight: 0.3
+flaky_penalty: 0.2
+
+# Destructive ops guard — report-only
+enable_git_push: false

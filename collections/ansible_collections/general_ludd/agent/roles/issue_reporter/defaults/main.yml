@@ -1,0 +1,21 @@
+---
+# issue_reporter role defaults — converts anomaly artifacts into issues/todos
+
+# Path to the log_analyst (or other) anomaly artifact JSON
+anomaly_artifact: ""
+
+# When true, calls gludd_db to create todos; when false, uses gludd_message to draft
+write_back: false
+
+# Recipient for handoff messages (required when write_back=false)
+handoff_recipient: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-issue-reporter"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false

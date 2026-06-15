@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: dead_code_auditor
+  author: Agentic Harness Agent
+  description: >
+    Surfaces unreferenced code by COMPOSING an existing completion/coverage
+    audit artifact. Does NOT reimplement detection — slurps the artifact and
+    surfaces its unreferenced entries. Optionally also runs vulture (gated via
+    enable_vulture:false). Emits unreferenced[] list with source annotation.
+    NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

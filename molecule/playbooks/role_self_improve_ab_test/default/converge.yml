@@ -1,0 +1,31 @@
+---
+# Run the REAL self_improve_ab_test role against the CRASHING candidate.
+# The role MUST stay up: gludd_abtest runs the candidate in a fresh child, so
+# os._exit(139) is contained. After the role we write a marker file — if the
+# crash had propagated, this play would have died and the marker never written.
+- name: Converge - self_improve_ab_test with a crashing candidate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    sc_baseline_root: "/tmp/gludd-ab-baseline"
+    sc_candidate_root: "/tmp/gludd-ab-crash-candidate"
+  tasks:
+    - name: Invoke self_improve_ab_test (enabled) on the crashing candidate
+      ansible.builtin.include_role:
+        name: general_ludd.agent.self_improve_ab_test
+      vars:
+        self_improve_enabled: true
+        candidate_worktree: "{{ sc_candidate_root }}"
+        baseline_root: "{{ sc_baseline_root }}"
+        repo_root: "{{ sc_baseline_root }}"
+        target_module_import: "gludd_ab_target.leaf"
+        expect_attr: "VALUE"
+        artifact_dir: "/tmp/gludd-self-improve-ab"
+
+    # Parent-liveness proof: this task only runs if the play survived the crash.
+    - name: Write parent-liveness marker AFTER the role (proves parent survived)
+      ansible.builtin.copy:
+        content: "parent-alive-after-crashing-candidate\n"
+        dest: "/tmp/gludd-ab-parent-alive.marker"
+        mode: "0644"

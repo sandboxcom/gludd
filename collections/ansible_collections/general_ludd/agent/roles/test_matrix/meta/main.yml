@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: test_matrix
+  author: Agentic Harness Agent
+  description: >
+    Builds a dimensions x cases coverage matrix from a test inventory.
+    Identifies gaps (empty cells). Uses gludd_facts history work_types
+    when dimensions/cases not provided. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

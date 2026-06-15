@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: enhancement_auditor
+  author: Agentic Harness Agent
+  description: >
+    Proposes ranked enhancements based on gludd_facts history failure signals.
+    Heuristic fallback from history when model is off. Model call gated.
+    Emits proposals ranked by score (impact x effort inverse).
+    NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

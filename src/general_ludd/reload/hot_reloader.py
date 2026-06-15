@@ -1,8 +1,13 @@
 from __future__ import annotations
 
+import contextlib
 import enum
+import importlib
 import logging
+import os
+import sys
 import time
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
@@ -98,6 +103,144 @@ class HotReloader:
             logger.error("Reload failed: %s", exc)
             self._publish(ReloadFailedEvent(scope=scope.value, error=str(exc)))
             return ReloadResult(success=False, scope=scope.value, error=str(exc))
+
+    def reload_code_module(
+        self,
+        module_name: str,
+        candidate_source_path: str,
+        health_check: Callable[[], bool] | None = None,
+    ) -> ReloadResult:
+        """Hot-rotate a single leaf module's source over the live file.
+
+        Steps (fail-closed at every stage):
+          1. Resolve the live module and its on-disk ``__file__``. Only an
+             already-imported, file-backed module is eligible (a leaf with no
+             in-flight state — the caller is responsible for that contract).
+          2. Snapshot the live file bytes into a rollback buffer.
+          3. ``os.replace`` the candidate file over the live path (atomic on the
+             same filesystem) and ``importlib.reload`` the module.
+          4. Run the ``health_check`` gate (typically a ``/readyz`` poll that
+             returns False when ``app.state._degraded`` or a 503 is seen). If it
+             fails — or if the reload itself raised — restore the snapshot bytes,
+             reload again, and report ``rolled_back``.
+
+        On any failure the live module is left byte-for-byte as it started.
+        """
+        scope = "code_module"
+        details: dict[str, Any] = {"module": module_name}
+        self._publish(ReloadRequestedEvent(scope=scope))
+
+        module = sys.modules.get(module_name)
+        if module is None:
+            # Not yet imported in this process — try a plain import so a
+            # genuinely-importable module can still be rotated.
+            try:
+                module = importlib.import_module(module_name)
+            except Exception as exc:
+                return self._code_reload_failure(
+                    scope, details, f"module not importable: {exc}"
+                )
+
+        live_path_str = getattr(module, "__file__", None)
+        if not live_path_str:
+            return self._code_reload_failure(
+                scope, details, "module has no __file__ (not file-backed)"
+            )
+        live_path = Path(live_path_str)
+        details["live_path"] = str(live_path)
+
+        candidate = Path(candidate_source_path)
+        if not candidate.is_file():
+            return self._code_reload_failure(
+                scope, details, f"candidate source not found: {candidate}"
+            )
+
+        try:
+            original_bytes = live_path.read_bytes()
+        except OSError as exc:
+            return self._code_reload_failure(
+                scope, details, f"cannot read live module bytes: {exc}"
+            )
+
+        # Swap candidate over live path + reload.
+        try:
+            candidate_bytes = candidate.read_bytes()
+            # Write via a temp + os.replace for an atomic same-dir swap.
+            tmp_path = live_path.with_suffix(live_path.suffix + ".candidate.tmp")
+            tmp_path.write_bytes(candidate_bytes)
+            os.replace(tmp_path, live_path)
+            self._invalidate_source_cache(live_path)
+            importlib.reload(module)
+        except Exception as exc:
+            self._restore_module_bytes(module, live_path, original_bytes)
+            return self._code_reload_failure(
+                scope, details, f"reload failed: {exc}", rolled_back=True
+            )
+
+        # Health gate.
+        healthy = True
+        if health_check is not None:
+            try:
+                healthy = bool(health_check())
+            except Exception as exc:
+                logger.warning("health_check raised, treating as unhealthy: %s", exc)
+                healthy = False
+
+        if not healthy:
+            self._restore_module_bytes(module, live_path, original_bytes)
+            return self._code_reload_failure(
+                scope, details, "health gate failed after reload", rolled_back=True
+            )
+
+        self._publish(ReloadCompletedEvent(scope=scope))
+        details["rolled_back"] = False
+        return ReloadResult(success=True, scope=scope, details=details)
+
+    def _restore_module_bytes(
+        self, module: Any, live_path: Path, original_bytes: bytes
+    ) -> None:
+        """Restore the rollback buffer over the live path and reload the module
+        so the running interpreter reverts to the original code."""
+        try:
+            live_path.write_bytes(original_bytes)
+            self._invalidate_source_cache(live_path)
+            importlib.reload(module)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error("rollback failed for %s: %s", live_path, exc)
+
+    @staticmethod
+    def _invalidate_source_cache(live_path: Path) -> None:
+        """Force ``importlib.reload`` to recompile from the new source.
+
+        CPython trusts a cached ``.pyc`` when its stored source mtime matches the
+        source file's mtime; a hot swap that completes within the same clock
+        second can leave those equal, so reload would use the STALE bytecode.
+        We bump the source mtime forward and remove any cached ``.pyc`` so the
+        recompile is unavoidable, then invalidate the finder caches.
+        """
+        try:
+            st = live_path.stat()
+            os.utime(live_path, (st.st_atime, st.st_mtime + 1))
+        except OSError:
+            pass
+        cache = live_path.parent / "__pycache__"
+        if cache.is_dir():
+            stem = live_path.stem
+            for pyc in cache.glob(f"{stem}.*.pyc"):
+                with contextlib.suppress(OSError):
+                    pyc.unlink()
+        importlib.invalidate_caches()
+
+    def _code_reload_failure(
+        self,
+        scope: str,
+        details: dict[str, Any],
+        error: str,
+        rolled_back: bool = False,
+    ) -> ReloadResult:
+        details = {**details, "rolled_back": rolled_back}
+        self._publish(ReloadFailedEvent(scope=scope, error=error))
+        return ReloadResult(success=False, scope=scope, details=details, error=error)
 
     def get_last_state(self) -> _ReloadState:
         return self._last_state

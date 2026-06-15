@@ -1,0 +1,19 @@
+---
+# self_improve_promote defaults — SAFE BY DEFAULT.
+self_improve_enabled: false
+
+# Path to the ab_verdict.json produced by self_improve_ab_test.
+ab_verdict_path: "/tmp/gludd-self-improve-ab/ab_verdict.json"
+
+# Live leaf module to hot-rotate + the candidate source file to swap in.
+target_module_name: ""
+candidate_source_path: ""
+
+# Health gate endpoint polled after reload (a non-200 or degraded body =>
+# rollback). Empty => treated as healthy.
+health_url: ""
+health_timeout: 5.0
+
+# Artifact output.
+artifact_dir: "/tmp/gludd-self-improve-promote"
+promotion_result_path: "{{ artifact_dir }}/promotion_result.json"

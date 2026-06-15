@@ -1,0 +1,229 @@
+---
+# qa_analyst role — cross-cut quality verdict from tests/coverage/flaky data
+#
+# Slurps test_matrix_artifact, coverage_artifact, flaky_artifact + gludd_facts
+# history.success_rate. Computes a REAL weighted QA score:
+#   score = pass_weight * pass_rate
+#         + coverage_weight * (coverage_pct / 100)
+#         - flaky_penalty * clamp(flaky_count, 0, 10) / 10
+# Verdict: pass (score >= pass_threshold, flaky_count == 0),
+#          conditional (score >= pass_threshold but flaky_count > 0),
+#          fail (score < pass_threshold).
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for QA context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Slurp sub-artifacts ────────────────────────────────────────────────────────
+
+- name: Read test_matrix artifact (if present)
+  ansible.builtin.slurp:
+    src: "{{ test_matrix_artifact }}"
+  register: _qa_matrix_raw
+  failed_when: false
+  when: test_matrix_artifact | length > 0
+
+- name: Read coverage artifact (if present)
+  ansible.builtin.slurp:
+    src: "{{ coverage_artifact }}"
+  register: _qa_coverage_raw
+  failed_when: false
+  when: coverage_artifact | length > 0
+
+- name: Read flaky artifact (if present)
+  ansible.builtin.slurp:
+    src: "{{ flaky_artifact }}"
+  register: _qa_flaky_raw
+  failed_when: false
+  when: flaky_artifact | length > 0
+
+# ── Parse sub-artifacts ────────────────────────────────────────────────────────
+
+- name: Parse test_matrix artifact
+  ansible.builtin.set_fact:
+    _qa_matrix: >-
+      {{
+        (_qa_matrix_raw.content | b64decode | from_json)
+        if (_qa_matrix_raw is defined and _qa_matrix_raw.content is defined)
+        else {}
+      }}
+
+- name: Parse coverage artifact
+  ansible.builtin.set_fact:
+    _qa_coverage: >-
+      {{
+        (_qa_coverage_raw.content | b64decode | from_json)
+        if (_qa_coverage_raw is defined and _qa_coverage_raw.content is defined)
+        else {}
+      }}
+
+- name: Parse flaky artifact
+  ansible.builtin.set_fact:
+    _qa_flaky: >-
+      {{
+        (_qa_flaky_raw.content | b64decode | from_json)
+        if (_qa_flaky_raw is defined and _qa_flaky_raw.content is defined)
+        else {}
+      }}
+
+# ── Extract metrics from parsed artifacts ──────────────────────────────────────
+
+- name: Extract pass_rate from test_matrix (or fallback to daemon history)
+  ansible.builtin.set_fact:
+    _qa_pass_rate: >-
+      {{
+        _qa_matrix.pass_rate | default(
+          live_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+        ) | float
+      }}
+    _qa_total_tests: "{{ _qa_matrix.total_tests | default(0) | int }}"
+    _qa_failed_tests: "{{ _qa_matrix.failed_tests | default(0) | int }}"
+    _qa_matrix_gaps: "{{ _qa_matrix.gaps | default([]) | list }}"
+
+- name: Extract coverage_pct from coverage artifact
+  ansible.builtin.set_fact:
+    _qa_coverage_pct: >-
+      {{
+        _qa_coverage.coverage_pct | default(0) | float
+      }}
+
+- name: Extract flaky_count from flaky artifact
+  ansible.builtin.set_fact:
+    _qa_flaky_count: >-
+      {{
+        (_qa_flaky.flaky_tests | default([]) | length) | int
+      }}
+    _qa_flaky_tests: "{{ _qa_flaky.flaky_tests | default([]) | list }}"
+
+# ── Compute weighted QA score ─────────────────────────────────────────────────
+# score = pass_weight * pass_rate
+#       + coverage_weight * (coverage_pct / 100)
+#       - flaky_penalty * min(flaky_count, 10) / 10
+
+- name: Compute flaky penalty (clamped to 10 flaky tests max)
+  ansible.builtin.set_fact:
+    _qa_flaky_clamped: >-
+      {{ [_qa_flaky_count | int, 10] | min | int }}
+
+- name: Compute raw QA score (weighted sum)
+  ansible.builtin.set_fact:
+    _qa_score_raw: >-
+      {{
+        (pass_weight | float * _qa_pass_rate | float)
+        + (coverage_weight | float * (_qa_coverage_pct | float / 100.0))
+        - (flaky_penalty | float * (_qa_flaky_clamped | int | float / 10.0))
+      }}
+
+- name: Clamp QA score to [0.0, 1.0]
+  ansible.builtin.set_fact:
+    _qa_score: >-
+      {{ [[_qa_score_raw | float, 0.0] | max, 1.0] | min | float }}
+
+# ── Determine verdict ──────────────────────────────────────────────────────────
+# pass       : score >= threshold AND flaky_count == 0
+# conditional: score >= threshold BUT flaky_count > 0
+# fail       : score < threshold
+
+- name: Determine QA verdict
+  ansible.builtin.set_fact:
+    _qa_verdict: >-
+      {%- if _qa_score | float < pass_threshold | float -%}
+        fail
+      {%- elif _qa_flaky_count | int > 0 -%}
+        conditional
+      {%- else -%}
+        pass
+      {%- endif -%}
+
+# ── Write artifacts ────────────────────────────────────────────────────────────
+
+- name: Write JSON QA analyst artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'qa_analyst',
+        'status': 'completed',
+        'qa_score': _qa_score | float | round(4),
+        'coverage_pct': _qa_coverage_pct | float,
+        'flaky_count': _qa_flaky_count | int,
+        'flaky_tests': _qa_flaky_tests,
+        'matrix_gaps': _qa_matrix_gaps,
+        'pass_rate': _qa_pass_rate | float,
+        'total_tests': _qa_total_tests | int,
+        'failed_tests': _qa_failed_tests | int,
+        'verdict': _qa_verdict,
+        'weights': {
+          'pass_weight': pass_weight | float,
+          'coverage_weight': coverage_weight | float,
+          'flaky_penalty': flaky_penalty | float,
+          'pass_threshold': pass_threshold | float
+        },
+        'history_context': {
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0) | float
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/qa_analyst.json"
+    mode: "0644"
+
+- name: Write markdown QA analyst artifact
+  ansible.builtin.copy:
+    content: |
+      # QA Analyst Report
+
+      **QA Score:** {{ _qa_score | float | round(4) }}
+      **Verdict:** {{ _qa_verdict | upper }}
+      **Pass Rate:** {{ (_qa_pass_rate | float * 100) | round(1) }}%
+      **Coverage:** {{ _qa_coverage_pct }}%
+      **Flaky Tests:** {{ _qa_flaky_count }}
+
+      ## Score Breakdown
+
+      | Component | Weight | Value | Contribution |
+      |-----------|--------|-------|-------------|
+      | Pass rate | {{ pass_weight }} | {{ (_qa_pass_rate | float * 100) | round(1) }}% | {{ (pass_weight | float * _qa_pass_rate | float) | round(4) }} |
+      | Coverage  | {{ coverage_weight }} | {{ _qa_coverage_pct }}% | {{ (coverage_weight | float * (_qa_coverage_pct | float / 100)) | round(4) }} |
+      | Flaky penalty | -{{ flaky_penalty }} | {{ _qa_flaky_count }} tests | -{{ (flaky_penalty | float * _qa_flaky_clamped | int | float / 10) | round(4) }} |
+
+      ## Matrix Gaps
+
+      {% if _qa_matrix_gaps | length == 0 %}
+      No matrix gaps detected.
+      {% else %}
+      {% for gap in _qa_matrix_gaps %}
+      - {{ gap }}
+      {% endfor %}
+      {% endif %}
+
+      ## Flaky Tests
+
+      {% if _qa_flaky_tests | length == 0 %}
+      No flaky tests detected.
+      {% else %}
+      {% for t in _qa_flaky_tests %}
+      - {{ t.name | default(t | string) }}
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.qa_analyst — consolidation only, no repo mutations.*
+    dest: "{{ artifact_dir }}/qa_analyst.md"
+    mode: "0644"
+
+- name: Report QA analyst completion
+  ansible.builtin.debug:
+    msg: >-
+      QA analyst: score={{ _qa_score | float | round(4) }}
+      verdict={{ _qa_verdict }}
+      coverage={{ _qa_coverage_pct }}%
+      flaky={{ _qa_flaky_count }}
+      pass_rate={{ _qa_pass_rate | float | round(3) }}

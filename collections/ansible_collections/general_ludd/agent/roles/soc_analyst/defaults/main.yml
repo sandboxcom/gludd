@@ -1,0 +1,26 @@
+---
+# soc_analyst role defaults — REPORT-ONLY security triage
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-soc-analyst"
+
+# Paths to security finding artifact JSON files.
+# Each file is expected to have a 'findings' list with {severity, rule/pattern, location} items.
+finding_artifacts: []  # list of paths, e.g. ["/tmp/.../security_review.json", "/tmp/.../secret_scan.json"]
+
+# Severity floor: findings with severity below this are ignored in incident grouping.
+# Options: info, low, medium, high, critical
+severity_floor: "high"
+
+# Incident escalation: if 2+ findings share the same rule/file grouping, escalate incident severity.
+escalation_count_threshold: 2
+
+# Handoff recipient to notify when incidents are present (empty = no message)
+handoff_recipient: ""
+
+# Destructive ops guard — report-only
+enable_git_push: false

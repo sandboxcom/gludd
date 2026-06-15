@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: code_reviewer
+  author: Agentic Harness Agent
+  description: >
+    Structured correctness/style/risk review of a diff or repo (NOT security).
+    Real heuristic grep checks: bare except, print(, type: ignore, oversized
+    hunks, TODOs. Model call gated behind enable_model_call:false.
+    Verdict: approve|comment|request_changes. NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

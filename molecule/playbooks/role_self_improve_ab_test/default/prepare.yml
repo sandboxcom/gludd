@@ -1,0 +1,81 @@
+---
+# Prepare the DECISIVE crash-isolation scenario:
+#   * start the mock daemon (for the parent-liveness /healthz probe)
+#   * build a BASELINE candidate root whose target module imports cleanly
+#   * build a CRASHING candidate root whose target module does
+#       import os; os._exit(139)
+#     at IMPORT time — a REAL crashing subprocess, not a mock.
+- name: Prepare - crash candidate + mock daemon for self_improve_ab_test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8851', true) }}.pid"
+    baseline_root: "/tmp/gludd-ab-baseline"
+    candidate_root: "/tmp/gludd-ab-crash-candidate"
+    module_rel: "gludd_ab_target/leaf.py"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    # ---- baseline candidate root (A): imports cleanly ----
+    - name: Create baseline src package dir
+      ansible.builtin.file:
+        path: "{{ baseline_root }}/src/gludd_ab_target"
+        state: directory
+        mode: "0755"
+
+    - name: Baseline package __init__
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ baseline_root }}/src/gludd_ab_target/__init__.py"
+        mode: "0644"
+
+    - name: Baseline target module (clean import)
+      ansible.builtin.copy:
+        content: |
+          VALUE = "baseline-ok"
+        dest: "{{ baseline_root }}/src/{{ module_rel }}"
+        mode: "0644"
+
+    # ---- crashing candidate root (B): os._exit(139) at import ----
+    - name: Create candidate src package dir
+      ansible.builtin.file:
+        path: "{{ candidate_root }}/src/gludd_ab_target"
+        state: directory
+        mode: "0755"
+
+    - name: Candidate package __init__
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ candidate_root }}/src/gludd_ab_target/__init__.py"
+        mode: "0644"
+
+    - name: Candidate target module CRASHES the whole interpreter at import
+      ansible.builtin.copy:
+        content: |
+          import os
+          # Take down the whole process at IMPORT — this is the REAL crash the
+          # subprocess isolation must contain. If isolation were fake, this would
+          # kill the playbook process.
+          os._exit(139)
+        dest: "{{ candidate_root }}/src/{{ module_rel }}"
+        mode: "0644"

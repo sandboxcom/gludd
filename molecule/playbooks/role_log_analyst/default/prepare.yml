@@ -1,0 +1,53 @@
+---
+# log_analyst prepare: start mock daemon + write a fixture log file with error lines
+- name: Prepare - mock daemon + fixture log for log_analyst
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8845', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8845', true) }}.pid"
+    fixture_log_dir: "/tmp/gludd-log-analyst-fixture-{{ mock_port }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Create fixture log directory
+      ansible.builtin.file:
+        path: "{{ fixture_log_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write fixture log file with many ERROR lines (density > 0.1)
+      ansible.builtin.copy:
+        # 5 error lines out of 10 total = 0.5 density > 0.1 threshold
+        content: |
+          2026-06-14 10:00:01 INFO  agent started
+          2026-06-14 10:00:02 INFO  processing work item TODO-001
+          2026-06-14 10:00:03 ERROR failed to connect to upstream service: timeout
+          2026-06-14 10:00:04 ERROR retry attempt 1: timeout
+          2026-06-14 10:00:05 CRITICAL upstream service unreachable after 3 retries
+          2026-06-14 10:00:06 ERROR work item TODO-001 failed: upstream unavailable
+          2026-06-14 10:00:07 INFO  processing work item TODO-002
+          2026-06-14 10:00:08 ERROR TODO-002 preprocessing validation failed
+          2026-06-14 10:00:09 INFO  backoff before next attempt
+          2026-06-14 10:00:10 ERROR TODO-002 failed again: validation error
+        dest: "{{ fixture_log_dir }}/agent.log"
+        mode: "0644"

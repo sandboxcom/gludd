@@ -4,9 +4,10 @@
 
 Before installing General Ludd Agent, make sure you have:
 
-1. **SQLite** (default, zero-config) or **PostgreSQL 14+** for production
-2. **A model provider API key** (one of):
-   - Z.AI (GLM models)
+1. **Python 3.11+** and [uv](https://docs.astral.sh/uv/) (recommended)
+2. **SQLite** (default, zero-config — no server required)
+3. **A model provider API key** (one of):
+   - Z.AI (GLM models) — primary/default
    - OpenAI (GPT-4, etc.)
    - Anthropic (Claude)
    - OpenRouter (multi-provider gateway)
@@ -17,8 +18,8 @@ Before installing General Ludd Agent, make sure you have:
 ### From Tarball
 
 ```bash
-tar xzf general-ludd-agent-*.tar.gz
-cd general-ludd-agent-*/
+tar xzf gludd-*.tar.gz
+cd gludd-*/
 sudo ./install.sh
 ```
 
@@ -31,19 +32,20 @@ The installer:
 ### From Source
 
 ```bash
-git clone <repo-url>
-cd general-ludd-agent
-make init
+git clone https://github.com/sandboxcom/gludd.git
+cd gludd
+make init        # set up dirs + install deps
+make bootstrap   # init + lint + test + healthcheck
 ```
 
 ## Configuration
 
 ### Step 1: Set Your API Key
 
-Edit `/etc/general-ludd/env` and add your provider's API key:
+Edit `/etc/general-ludd/env` (or set env vars) for your provider:
 
 ```bash
-# For Z.AI
+# For Z.AI (default)
 ZAI_API_KEY=your-key-here
 ZAI_BASE_URL=https://open.bigmodel.cn/api/paas/v4
 
@@ -54,37 +56,21 @@ OPENAI_API_KEY=sk-your-key-here
 ANTHROPIC_API_KEY=sk-ant-your-key-here
 ```
 
-### Step 2: Configure the Database
+### Step 2: Database (SQLite — zero config)
 
-The default database is **SQLite** (zero-config, stored in
-`~/.local/share/general-ludd/gludd.db`). No setup needed.
-
-For production with PostgreSQL, edit `/etc/general-ludd/general-ludd.yml`:
-
-```yaml
-database:
-  url: postgresql://gludd:password@localhost:5432/gludd
-```
-
-Create the database:
-
-```bash
-sudo -u postgres createdb gludd
-sudo -u postgres createuser gludd
-sudo -u postgres psql -c "GRANT ALL PRIVILEGES ON DATABASE gludd TO gludd;"
-```
+The default database is **SQLite** stored in `~/.local/share/general-ludd/gludd.db`.
+No setup is required. The daemon is SQLite-only; any non-SQLite URL is refused at startup.
 
 ### Step 3: Select a Model Profile
 
-Model profiles are in `/etc/general-ludd/config/model_profiles/`. The default
-is `zai_coder`. To use a different provider, copy the example profile and edit it:
+Model profiles are in `config/model_profiles/`. The default is `zai_coder`. To use a
+different provider, copy the example profile and edit it:
 
 ```bash
-cp /etc/general-ludd/config/model_profiles/openai_example.yml \
-   /etc/general-ludd/config/model_profiles/openai.yml
+cp config/model_profiles/openai_example.yml ~/.config/general-ludd/model_profiles/openai.yml
 ```
 
-Then update `general-ludd.yml`:
+Then update `~/.config/general-ludd/general-ludd.yml`:
 
 ```yaml
 model_routing:
@@ -94,6 +80,12 @@ model_routing:
 ### Step 4: Start the Daemon
 
 ```bash
+uv run gludd daemon --port 8000
+```
+
+Or via systemd (tarball install):
+
+```bash
 sudo systemctl start general-ludd
 sudo systemctl status general-ludd
 ```
@@ -101,44 +93,75 @@ sudo systemctl status general-ludd
 Check health:
 
 ```bash
-gludd health
+uv run gludd health
+# or:  curl http://localhost:8000/healthz
 ```
 
 ## First Task
 
 ```bash
 # Add a coding task
-gludd add "Refactor the authentication module" --priority high
+uv run gludd todo add "Refactor the authentication module" --queue core
 
 # Watch it process
-gludd list
+uv run gludd todo list
 
 # Check a specific task
-gludd status <task-id>
+uv run gludd status <task-id>
 ```
 
 ## What Happens Next
 
-1. The daemon's event loop picks up the task
-2. It dispatches the task to the configured agent (default: `build`)
-3. The agent calls the AI model to generate a plan
-4. Ansible playbooks execute the plan
-5. Results are reviewed and returned
+1. The daemon's event loop picks up the task (claim phase)
+2. It dispatches the task to the Ansible runner (dispatch phase) with the appropriate model
+3. The Ansible runner invokes `general_ludd.agent` roles and modules against the AI model
+4. Results are reviewed with (optionally) a different model (review phase)
+5. The change is reconciled — approved, retried, or rejected (reconcile phase)
 
-## Next Steps
+## Checking Facts and Observability
 
-- Read `docs/configuration.md` for full config options
-- Read `docs/architecture.md` to understand how the system works
-- Explore `/etc/general-ludd/config/` for model profiles, agent definitions, etc.
+The daemon exposes a live facts snapshot that Ansible playbooks can consume:
+
+```bash
+# Full daemon state snapshot (work/todos/models/history/messages/metrics/traces)
+curl -H "X-PSK: $GLUDD_PSK" http://localhost:8000/api/facts
+
+# Metrics only
+curl -H "X-PSK: $GLUDD_PSK" http://localhost:8000/api/metrics
+
+# Recent execution traces
+curl -H "X-PSK: $GLUDD_PSK" http://localhost:8000/api/traces
+```
+
+In a playbook, use `gludd_facts` to branch on live data:
+
+```yaml
+- name: Load daemon facts
+  general_ludd.agent.gludd_facts:
+  # ansible_facts.gludd is now populated
+
+- name: Only proceed when there is backlog
+  ansible.builtin.debug:
+    msg: "Backlog: {{ gludd.todos.backlog_size }}"
+  when: gludd.todos.backlog_size | int > 0
+```
+
+## Dogfood
+
+Run the daemon on its own codebase:
+
+```bash
+make dogfood
+```
 
 ## Searching and Using MCP Servers
 
 ```bash
 # Search for MCP tools
-gludd mcp search filesystem
+uv run gludd mcp search filesystem
 
 # View server details
-gludd mcp info filesystem
+uv run gludd mcp info filesystem
 
 # Register in config/mcp_servers/ (see dist/README.md for full example)
 ```
@@ -147,18 +170,15 @@ gludd mcp info filesystem
 
 ```bash
 # Find a skill
-gludd skills search tdd
+uv run gludd skills search tdd
 
 # Install it locally
-gludd skills install tdd-discipline
+uv run gludd skills install tdd-discipline
 ```
 
-## Registering GPU Compute Endpoints
+## Next Steps
 
-```bash
-# Register a remote vLLM server
-gludd compute register --id my-gpu --url http://gpu:8000 --model llama-3
-
-# View all endpoints
-gludd compute endpoints
-```
+- Read `docs/configuration.md` for full config options
+- Read `docs/architecture.md` to understand how the system works
+- Explore `config/` for model profiles, agent definitions, etc.
+- Run `make help` to see all available make targets

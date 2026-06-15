@@ -1,0 +1,63 @@
+---
+# Run the REAL tla_check role twice:
+#   1. SUCCESS path: tlc_output_override = pass output → outcome=success → no failure
+#   2. VIOLATION path: tlc_output_override = violation output → outcome=invariant_violated
+#      → role will call ansible.builtin.fail, so we rescue it and verify
+#      the artifact was written with the correct outcome BEFORE the fail.
+#
+# Both paths exercise real stdout-marker parsing logic via the override mechanism.
+- name: Converge - run tla_check role (success + violation paths)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    specs_dir: "/tmp/gludd-tla-check-specs-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+  tasks:
+    # --- SUCCESS PATH ---
+    - name: Invoke tla_check (success path — override with TLC pass output)
+      ansible.builtin.include_role:
+        name: general_ludd.formal.tla_check
+      vars:
+        spec_path: "{{ specs_dir }}/CounterSpec.tla"
+        cfg_path: "{{ specs_dir }}/CounterSpec.cfg"
+        tla_tools_jar: "{{ shim_dir }}/tla2tools.jar"
+        enable_tla: false
+        tlc_output_override: "Model checking completed. No error has been found."
+        artifact_dir: "/tmp/gludd-tla-check-pass-{{ mock_port }}"
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+
+    # --- VIOLATION PATH ---
+    # The role will call ansible.builtin.fail on invariant_violated.
+    # We rescue this and record the rescued status so verify can check it.
+    - name: Invoke tla_check (violation path — override with TLC violation output)
+      block:
+        - name: Run tla_check with violation output
+          ansible.builtin.include_role:
+            name: general_ludd.formal.tla_check
+          vars:
+            spec_path: "{{ specs_dir }}/ViolationSpec.tla"
+            cfg_path: "{{ specs_dir }}/ViolationSpec.cfg"
+            tla_tools_jar: "{{ shim_dir }}/tla2tools.jar"
+            enable_tla: false
+            tlc_output_override: |
+              Error: Invariant NeverNegative is violated.
+              Error: The behavior up to this point is:
+              State 1: <Initial predicate>
+              /\ n = 0
+              State 2: <Next>
+              /\ n = -1
+            artifact_dir: "/tmp/gludd-tla-check-violation-{{ mock_port }}"
+            daemon_url: "http://127.0.0.1:{{ mock_port }}"
+            psk: ""
+            handoff_recipient: ""
+      rescue:
+        - name: Record that violation path correctly triggered fail (expected)
+          ansible.builtin.copy:
+            content: |
+              {"violation_path_failed_as_expected": true}
+            dest: "/tmp/gludd-tla-check-violation-{{ mock_port }}/violation_rescued.json"
+            mode: "0644"
+          failed_when: false

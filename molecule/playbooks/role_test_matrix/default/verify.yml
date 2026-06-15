@@ -1,0 +1,69 @@
+---
+- name: Verify - test_matrix wrote correct artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8830', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8830', true) }}.pid"
+    artifact: "/tmp/gludd-test-matrix-{{ mock_port }}/test_matrix.json"
+    artifact_md: "/tmp/gludd-test-matrix-{{ mock_port }}/test_matrix.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert core fields present
+      ansible.builtin.assert:
+        that:
+          - result.role == 'test_matrix'
+          - result.status == 'completed'
+          - result.dimensions | length == 2
+          - result.cases | length == 2
+          - result.matrix | length == 4
+          - result.total_count == 4
+          - result.gaps is defined
+          - result.verdict in ['pass', 'warn', 'fail']
+        fail_msg: "test_matrix artifact wrong: {{ result }}"
+        success_msg: "test_matrix: coverage={{ result.coverage_pct }}% gaps={{ result.gaps | length }} verdict={{ result.verdict }}"
+
+    - name: Assert coverage math is correct (2 covered of 4 = 50.0%)
+      ansible.builtin.assert:
+        that:
+          - result.covered_count == 2
+          - result.coverage_pct == 50.0
+          - result.gaps | length == 2
+          # 50% coverage vs 70% threshold: 50% >= 70%*0.7=49%, so verdict=warn (not fail)
+          - result.verdict == 'warn'
+        fail_msg: "Expected 2/4 covered (50%), 2 gaps, verdict=warn. Got: {{ result }}"
+        success_msg: "Coverage math correct: 2/4=50%, 2 gaps, verdict=warn"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-test-matrix-{{ mock_port }}"
+        state: absent
+      failed_when: false

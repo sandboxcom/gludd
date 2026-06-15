@@ -1,0 +1,18 @@
+---
+# Converge: run code_reviewer against fixture with bare except → verdict=request_changes
+- name: Converge - run code_reviewer role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8831', true) }}"
+  tasks:
+    - name: Invoke code_reviewer
+      ansible.builtin.include_role:
+        name: general_ludd.agent.code_reviewer
+      vars:
+        diff_path: ""
+        repo_path: "/tmp/gludd-code-reviewer-fixture-{{ mock_port }}"
+        enable_model_call: false
+        model_output_override: ""
+        artifact_dir: "/tmp/gludd-code-reviewer-{{ mock_port }}"

@@ -1,0 +1,21 @@
+---
+# self_improve_ab_test defaults — SAFE BY DEFAULT.
+self_improve_enabled: false
+
+# Candidate worktree root (its src holds the variant) + baseline.
+candidate_worktree: ""
+repo_root: "."
+baseline_root: "{{ repo_root }}"
+
+# Dotted module the workload imports from each src, and an optional attr to
+# assert present.
+target_module_import: ""
+expect_attr: ""
+
+# Crash-isolation bounds.
+ab_timeout: 60.0
+ab_mem_limit_mb: 512
+
+# Artifact output.
+artifact_dir: "/tmp/gludd-self-improve-ab"
+ab_verdict_path: "{{ artifact_dir }}/ab_verdict.json"

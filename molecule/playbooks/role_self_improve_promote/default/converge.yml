@@ -1,0 +1,28 @@
+---
+# Run self_improve_promote with a health_url that reports unhealthy (the mock
+# daemon has no /readyz route => 404 => degraded), so the post-promote health
+# gate fails and the reload is ROLLED BACK.
+- name: Converge - self_improve_promote with a degraded post-promote health gate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8853', true) }}"
+    live_root: "/tmp/gludd-promote-live"
+  tasks:
+    - name: Invoke self_improve_promote (enabled), degraded health => rollback
+      ansible.builtin.include_role:
+        name: general_ludd.agent.self_improve_promote
+      vars:
+        self_improve_enabled: true
+        ab_verdict_path: "/tmp/gludd-self-improve-promote/ab_verdict.json"
+        target_module_name: "gludd_promote_target.leaf"
+        candidate_source_path: "{{ live_root }}/candidate_leaf.py"
+        health_url: "http://127.0.0.1:{{ mock_port }}/readyz"
+        artifact_dir: "/tmp/gludd-self-improve-promote"
+
+    - name: Write parent-liveness marker AFTER the role
+      ansible.builtin.copy:
+        content: "promote-parent-alive\n"
+        dest: "/tmp/gludd-promote-parent-alive.marker"
+        mode: "0644"

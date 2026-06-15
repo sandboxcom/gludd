@@ -1,0 +1,20 @@
+---
+# Converge: run cost_optimization_auditor against mock daemon
+# Mock data: generate phase costs $0.0021 of $0.0026 total = 80.8% > 40% threshold
+# → generate is a hotspot; mock-profile is priciest; recommendations should target it
+- name: Converge - run cost_optimization_auditor role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}"
+  tasks:
+    - name: Invoke cost_optimization_auditor
+      ansible.builtin.include_role:
+        name: general_ludd.agent.cost_optimization_auditor
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        cost_threshold_usd: 0.001
+        expensive_phase_pct: 0.4
+        artifact_dir: "/tmp/gludd-cost-optimization-auditor-{{ mock_port }}"

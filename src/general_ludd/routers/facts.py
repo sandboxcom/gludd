@@ -23,6 +23,7 @@ PSK auth is applied by the daemon middleware (path is not public).
 from __future__ import annotations
 
 import logging
+import os
 from typing import Any
 
 from fastapi import FastAPI
@@ -156,6 +157,45 @@ def _traces_facet(
     return facet
 
 
+def _codebase_facet(
+    app: FastAPI,
+    recent_failures: dict[str, Any] | None = None,
+) -> dict[str, Any]:
+    """Best-effort codebase self-knowledge for the self-improvement pipeline.
+
+    Composed from genuinely-capturable signals via CodebaseIntrospector: git
+    churn, stdlib-ast complexity, parsed coverage.xml / .gate-status debt,
+    harness dead-code/missing-test findings, the live in-process trace buffer's
+    by-phase perf cost, and (when available) the DB task-return history passed
+    in as ``recent_failures``. Each facet is ``None`` when its source is absent
+    — nothing is fabricated. The repo root is read from
+    ``app.state._repo_root`` and falls back to the process cwd.
+    """
+    from general_ludd.code_intelligence.introspect import CodebaseIntrospector
+
+    repo_root = getattr(app.state, "_repo_root", None) or os.getcwd()
+    buffer = getattr(app.state, "_recent_traces", None)
+    try:
+        introspector = CodebaseIntrospector(
+            repo_root=str(repo_root),
+            traces_buffer=buffer,
+            recent_failures=recent_failures,
+        )
+        return introspector.snapshot()
+    except Exception as exc:  # pragma: no cover - defensive, fail soft
+        logger.debug("codebase facet unavailable: %s", exc)
+        return {
+            "churn": None,
+            "complexity": None,
+            "coverage": None,
+            "debt": None,
+            "dead_code": None,
+            "missing_tests": None,
+            "perf_cost": None,
+            "recent_failures": recent_failures,
+        }
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/api/facts")
     async def api_facts(project_id: str | None = None) -> dict[str, Any]:
@@ -184,6 +224,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "messages": messages,
             "metrics": await _metrics_facet(app, project_id=project_id),
             "traces": _traces_facet(app),
+            "codebase": _codebase_facet(app, recent_failures=history or None),
             "project_id": project_id,
         }
 

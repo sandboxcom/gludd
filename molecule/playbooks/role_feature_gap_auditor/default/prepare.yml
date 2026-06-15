@@ -1,0 +1,39 @@
+---
+# feature_gap_auditor prepare: seed spec (3 features) + inventory (2 features)
+# Expected: 1 gap (the third spec feature not in inventory)
+- name: Prepare - seed feature spec and inventory fixtures
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8834', true) }}"
+    fixture_dir: "/tmp/gludd-feature-gap-fixture-{{ mock_port }}"
+  tasks:
+    - name: Create fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Seed spec file with 3 features
+      ansible.builtin.copy:
+        content: |
+          # Feature Specification
+
+          ## Core Features
+
+          - user authentication
+          - dashboard view
+          - export to CSV
+
+          These features are required for MVP.
+        dest: "{{ fixture_dir }}/spec.md"
+        mode: "0644"
+
+    - name: Seed implementation inventory with 2 features
+      ansible.builtin.copy:
+        content: |
+          user authentication
+          dashboard view
+        dest: "{{ fixture_dir }}/impl_inventory.txt"
+        mode: "0644"

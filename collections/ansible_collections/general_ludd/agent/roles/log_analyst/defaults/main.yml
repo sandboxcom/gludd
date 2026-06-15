@@ -1,0 +1,18 @@
+---
+# log_analyst role defaults — REPORT-ONLY anomaly detection
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-log-analyst"
+
+# Log analysis config
+log_source: "/var/log/gludd/*.log"         # glob pattern for log files to analyse
+error_rate_threshold: 0.1                  # fraction: error lines / total lines above which anomaly fires
+cost_outlier_factor: 2.0                   # multiplier over mean cost/tokens triggers outlier anomaly
+latency_outlier_factor: 2.0               # future: reserved for latency outlier detection
+
+# Destructive ops guard — report-only
+enable_git_push: false

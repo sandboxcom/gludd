@@ -1,0 +1,25 @@
+---
+namespace: general_ludd
+name: formal
+version: 0.1.0
+readme: README.md
+description: >
+  Ansible collection for TLA+ formal-methods tasks in the general_ludd agentic
+  SDLC harness. Roles generate TLA+ specs from design descriptions, parse them
+  with SANY, check them with TLC, interpret counterexample traces, and translate
+  PlusCal. All heavy ops are gated behind enable_tla=false (default) so molecule
+  exercises real parsing/classification logic via Java shims without requiring
+  real TLA+ tooling. Design philosophy: model what should be IMPOSSIBLE, not
+  undesirable; TLA+ = state machines; bound the state space always.
+license:
+  - MIT
+authors:
+  - Agentic Harness Agent <agent@harness.local>
+tags:
+  - formal
+  - tla_plus
+  - model_checking
+  - verification
+  - sdlc
+dependencies:
+  general_ludd.agent: ">=0.1.0"

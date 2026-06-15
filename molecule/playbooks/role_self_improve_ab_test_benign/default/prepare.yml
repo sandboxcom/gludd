@@ -1,0 +1,49 @@
+---
+# Benign-candidate variant: candidate B imports cleanly and is within slack, so
+# the verdict must be promote:true.
+- name: Prepare - benign candidate for self_improve_ab_test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    baseline_root: "/tmp/gludd-abb-baseline"
+    candidate_root: "/tmp/gludd-abb-candidate"
+    module_rel: "gludd_abb_target/leaf.py"
+  tasks:
+    - name: Create baseline src package dir
+      ansible.builtin.file:
+        path: "{{ baseline_root }}/src/gludd_abb_target"
+        state: directory
+        mode: "0755"
+
+    - name: Baseline package __init__
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ baseline_root }}/src/gludd_abb_target/__init__.py"
+        mode: "0644"
+
+    - name: Baseline target module (clean import)
+      ansible.builtin.copy:
+        content: |
+          VALUE = "baseline"
+        dest: "{{ baseline_root }}/src/{{ module_rel }}"
+        mode: "0644"
+
+    - name: Create candidate src package dir
+      ansible.builtin.file:
+        path: "{{ candidate_root }}/src/gludd_abb_target"
+        state: directory
+        mode: "0755"
+
+    - name: Candidate package __init__
+      ansible.builtin.copy:
+        content: ""
+        dest: "{{ candidate_root }}/src/gludd_abb_target/__init__.py"
+        mode: "0644"
+
+    - name: Candidate target module (benign improvement, clean import)
+      ansible.builtin.copy:
+        content: |
+          VALUE = "candidate-improved"
+        dest: "{{ candidate_root }}/src/{{ module_rel }}"
+        mode: "0644"

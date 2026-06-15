@@ -1,0 +1,20 @@
+---
+# dead_code_auditor role defaults — surfaces unreferenced code by composing
+# an existing completion/coverage audit artifact (does NOT reimplement detection)
+
+# Path to the completion_audit artifact JSON (required)
+completion_audit_artifact: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-dead-code-auditor"
+
+# Vulture integration (optional)
+enable_vulture: false
+vulture_output_override: ""    # path to pre-generated vulture output file (skips command)
+
+# Daemon connectivity (for gludd_facts context)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard — report-only
+enable_git_push: false

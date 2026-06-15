@@ -1,0 +1,101 @@
+---
+# role_tla_parse prepare:
+#   1. Write a Java shim into /tmp/gludd-tla-java-shim-8841/java that intercepts
+#      tla2sany.SANY calls and echoes canned SANY success output.
+#   2. Write a fake .tla spec for the role to parse.
+#   3. Start the mock daemon (not needed by tla_parse but keeps the pattern consistent).
+#
+# The shim inspects $@ and echoes the correct canned output:
+#   - tla2sany.SANY → "Parsing completed. No errors."
+#   - java -version → version line to stderr (as Java does)
+#   Exits 0 in all cases (success path).
+- name: Prepare - java shim + fake spec + mock daemon for tla_parse
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}.pid"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    fake_spec: "/tmp/gludd-tla-parse-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}/CounterSpec.tla"
+  tasks:
+    - name: Create java shim directory
+      ansible.builtin.file:
+        path: "{{ shim_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write java shim script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          # Java shim for tla_parse molecule scenario
+          # Inspects args and echoes canned SANY/TLC/PlusCal output
+          ARGS="$*"
+          case "$ARGS" in
+            *tla2sany.SANY*)
+              echo "Parsing file CounterSpec.tla"
+              echo "Semantic processing of module CounterSpec"
+              echo "Parsing completed. No errors."
+              exit 0
+              ;;
+            *tlc2.TLC*)
+              echo "Model checking completed. No error has been found."
+              exit 0
+              ;;
+            *pcal.trans*)
+              echo "Translation completed."
+              exit 0
+              ;;
+            *-version*)
+              echo 'openjdk version "17.0.0" 2021-09-14' >&2
+              echo 'OpenJDK Runtime Environment (build 17.0.0+35)' >&2
+              exit 0
+              ;;
+            *)
+              echo "java shim: unrecognized args: $ARGS" >&2
+              exit 0
+              ;;
+          esac
+        dest: "{{ shim_dir }}/java"
+        mode: "0755"
+
+    - name: Create fake spec directory
+      ansible.builtin.file:
+        path: "{{ fake_spec | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write fake .tla spec
+      ansible.builtin.copy:
+        content: |
+          ---- MODULE CounterSpec ----
+          EXTENDS Integers
+          VARIABLES n
+          Init == n = 0
+          Next == n' = n + 1
+          Spec == Init /\ [][Next]_n
+          NeverNegative == n >= 0
+          ====
+        dest: "{{ fake_spec }}"
+        mode: "0644"
+
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5

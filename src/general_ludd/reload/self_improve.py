@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from typing import Any
 
+from general_ludd.reload.hot_reloader import HotReloader
 from general_ludd.reload.manager import ReloadManager, ReloadResult, ReloadType
 from general_ludd.validation.runner import ValidationResult, ValidationRunner
 
@@ -20,9 +22,25 @@ class ApplyResult:
 
 
 class SelfImprovementWorkflow:
-    def __init__(self) -> None:
+    def __init__(self, config_dir: str = "config") -> None:
         self._reload_manager = ReloadManager()
+        self._hot_reloader = HotReloader(config_dir=config_dir)
         self._todos: dict[str, dict[str, Any]] = {}
+        # Optional concrete hot-rotation target. When set, reload_if_needed
+        # performs a REAL os.replace + importlib.reload + health gate via the
+        # HotReloader instead of the in-memory manager bookkeeping.
+        self._code_target: tuple[str, str] | None = None
+        self._health_check: Callable[[], bool] | None = None
+
+    def set_code_target(
+        self,
+        module_name: str,
+        candidate_source_path: str,
+        health_check: Callable[[], bool] | None = None,
+    ) -> None:
+        """Arm a real leaf-module hot-rotation for the next reload_if_needed."""
+        self._code_target = (module_name, candidate_source_path)
+        self._health_check = health_check
 
     def create_improvement_todo(self, title: str, description: str) -> dict[str, Any]:
         todo_id = f"SI-{uuid.uuid4().hex[:8]}"
@@ -86,5 +104,28 @@ class SelfImprovementWorkflow:
                 status="pending",
                 message="Reload not needed — validation did not pass",
             )
+
+        # Real hot-rotation when a concrete leaf module + candidate are armed:
+        # os.replace the candidate over the live file, importlib.reload, then a
+        # health gate with auto-rollback. The verdict is mapped onto the
+        # manager-style ReloadResult the callers expect.
+        if self._code_target is not None:
+            module_name, candidate_path = self._code_target
+            verdict = self._hot_reloader.reload_code_module(
+                module_name=module_name,
+                candidate_source_path=candidate_path,
+                health_check=self._health_check,
+            )
+            status = "success" if verdict.success else "failed"
+            message = verdict.error or f"Hot-rotated {module_name}"
+            if not verdict.success and verdict.details.get("rolled_back"):
+                message = f"Reload rolled back: {verdict.error or 'health gate failed'}"
+            return ReloadResult(
+                reload_id=uuid.uuid4().hex[:12],
+                reload_type=ReloadType.WORKER_CODE,
+                status=status,
+                message=message,
+            )
+
         rr = self._reload_manager.request_reload(ReloadType.WORKER_CODE)
         return self._reload_manager.execute_reload(rr.reload_id)

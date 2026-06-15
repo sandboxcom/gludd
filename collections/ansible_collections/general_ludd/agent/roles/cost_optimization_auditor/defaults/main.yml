@@ -1,0 +1,19 @@
+---
+# cost_optimization_auditor role defaults — REPORT-ONLY
+
+# Cost threshold for flagging (USD)
+cost_threshold_usd: 0.01
+
+# Minimum fraction of total cost for a phase to be flagged as expensive
+expensive_phase_pct: 0.4
+
+# Artifact output
+artifact_dir: "/tmp/gludd-cost-optimization-auditor"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false
+apply_changes: false

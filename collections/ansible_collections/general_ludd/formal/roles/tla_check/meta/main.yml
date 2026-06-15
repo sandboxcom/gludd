@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: tla_check
+  author: Agentic Harness Agent
+  description: >
+    Run TLC model checker; classify outcome as success, invariant_violated,
+    deadlock, parse_error, or skipped. FAIL-CLOSED on violation/deadlock:
+    the role fails (ansible.builtin.fail) when an invariant is violated or
+    deadlock is detected. Sends gludd_message priority=high on violation.
+    Artifact: tla_check.json (outcome, violated_invariant, raw_trace).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

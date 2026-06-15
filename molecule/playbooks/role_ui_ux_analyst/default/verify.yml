@@ -1,0 +1,63 @@
+---
+- name: Verify - ui_ux_analyst detected heuristic CLI ergonomics issues
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8836', true) }}"
+    artifact: "/tmp/gludd-ui-ux-analyst-{{ mock_port }}/ui_ux_analyst.json"
+    artifact_md: "/tmp/gludd-ui-ux-analyst-{{ mock_port }}/ui_ux_analyst.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert core fields present
+      ansible.builtin.assert:
+        that:
+          - result.role == 'ui_ux_analyst'
+          - result.status == 'completed'
+          - result.note == 'heuristic, non-authoritative'
+          - result.heuristics is defined
+          - result.score is defined
+          - result.verdict in ['good', 'needs_work', 'poor']
+        fail_msg: "ui_ux_analyst artifact wrong: {{ result }}"
+        success_msg: "ui_ux_analyst: score={{ result.score }} findings={{ result.heuristics | length }} verdict={{ result.verdict }}"
+
+    - name: Assert inconsistent verb heuristic (UX002) was detected
+      ansible.builtin.assert:
+        that:
+          - result.heuristics | selectattr('rule', 'equalto', 'UX002') | list | length > 0
+        fail_msg: "Expected UX002 (inconsistent verbs) finding. Got: {{ result.heuristics }}"
+        success_msg: "UX002 inconsistent-verb heuristic detected correctly"
+
+    - name: Assert score is not perfect (findings reduce score)
+      ansible.builtin.assert:
+        that:
+          - result.score | int < 100
+        fail_msg: "Expected score < 100 due to heuristic findings. Got: {{ result.score }}"
+        success_msg: "Score correctly reduced by findings: {{ result.score }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-ui-ux-analyst-{{ mock_port }}"
+        state: absent
+      failed_when: false

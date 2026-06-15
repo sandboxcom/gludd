@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: ui_ux_analyst
+  author: Agentic Harness Agent
+  description: >
+    Heuristic TUI/CLI/API ergonomics analysis (non-authoritative, flagged as such).
+    Checks: missing help text, inconsistent verb usage, unbound key patterns.
+    enable_help_capture:false by default; cli_help_override for testing.
+    NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

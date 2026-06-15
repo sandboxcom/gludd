@@ -1,0 +1,189 @@
+---
+# feature_gap_auditor role — diff intended features vs implemented
+#
+# Reads spec_paths for intended features (lines starting with "- " or "* ").
+# Reads impl_inventory_path for implemented feature names (one per line).
+# Computes gap = intended - implemented.
+# Model analysis gated behind enable_model_call:false.
+#
+# REPORT-ONLY: never mutates the repo.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Read spec files ───────────────────────────────────────────────────────────
+
+- name: Read model output override (when model disabled and override provided)
+  ansible.builtin.set_fact:
+    _fga_model_narrative: "{{ model_output_override }}"
+  when:
+    - not enable_model_call | bool
+    - model_output_override | length > 0
+
+- name: Set empty model narrative (no override)
+  ansible.builtin.set_fact:
+    _fga_model_narrative: ""
+  when:
+    - not enable_model_call | bool
+    - model_output_override | length == 0
+
+# Read each spec file and extract feature lines (lines starting with - or *)
+- name: Slurp spec files
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: _fga_spec_slurps
+  loop: "{{ spec_paths }}"
+  failed_when: false
+
+- name: Extract intended features from spec files
+  ansible.builtin.set_fact:
+    _fga_intended: >-
+      {{
+        _fga_spec_slurps.results
+        | selectattr('content', 'defined')
+        | map(attribute='content')
+        | map('b64decode')
+        | join('\n')
+        | regex_findall('(?m)^[-*] +(.+)$')
+        | map('trim')
+        | list
+      }}
+
+# ── Read implementation inventory ─────────────────────────────────────────────
+
+- name: Stat implementation inventory
+  ansible.builtin.stat:
+    path: "{{ impl_inventory_path }}"
+  register: _fga_impl_stat
+  when: impl_inventory_path | length > 0
+
+- name: Slurp implementation inventory
+  ansible.builtin.slurp:
+    src: "{{ impl_inventory_path }}"
+  register: _fga_impl_slurp
+  when:
+    - impl_inventory_path | length > 0
+    - _fga_impl_stat.stat.exists | default(false)
+
+- name: Parse implementation inventory
+  ansible.builtin.set_fact:
+    _fga_implemented: >-
+      {{
+        (_fga_impl_slurp.content | default('') | b64decode)
+        | regex_findall('(?m)^(.+)$')
+        | map('trim')
+        | select('match', '.+')
+        | list
+      }}
+  when:
+    - impl_inventory_path | length > 0
+    - _fga_impl_slurp is defined
+    - _fga_impl_slurp.content is defined
+
+- name: Set empty implemented list (no inventory path)
+  ansible.builtin.set_fact:
+    _fga_implemented: []
+  when: >
+    impl_inventory_path | length == 0
+    or _fga_impl_slurp is not defined
+    or _fga_impl_slurp.content is not defined
+
+# ── Compute gaps ──────────────────────────────────────────────────────────────
+
+- name: Compute feature gaps (intended but not in implemented)
+  ansible.builtin.set_fact:
+    _fga_gaps: >-
+      {{
+        _fga_intended
+        | difference(_fga_implemented)
+        | list
+      }}
+
+- name: Compute coverage percentage
+  ansible.builtin.set_fact:
+    _fga_coverage_pct: >-
+      {{
+        (((_fga_intended | length - _fga_gaps | length) | float
+          / _fga_intended | length | float) * 100) | round(1)
+        if _fga_intended | length > 0
+        else 100.0
+      }}
+
+- name: Determine verdict
+  ansible.builtin.set_fact:
+    _fga_verdict: >-
+      {{
+        'pass' if _fga_gaps | length == 0
+        else ('warn' if _fga_coverage_pct | float >= 50.0
+        else 'fail')
+      }}
+
+# ── Write artifacts ───────────────────────────────────────────────────────────
+
+- name: Write JSON feature gap artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'feature_gap_auditor',
+        'status': 'completed',
+        'spec_paths': spec_paths,
+        'impl_inventory_path': impl_inventory_path,
+        'intended': _fga_intended,
+        'implemented': _fga_implemented,
+        'gaps': _fga_gaps,
+        'coverage_pct': _fga_coverage_pct | float,
+        'model_narrative': _fga_model_narrative,
+        'verdict': _fga_verdict
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/feature_gap_auditor.json"
+    mode: "0644"
+
+- name: Write markdown feature gap report
+  ansible.builtin.copy:
+    content: |
+      # Feature Gap Audit Report
+
+      **Verdict:** {{ _fga_verdict | upper }}
+      **Coverage:** {{ _fga_coverage_pct }}%
+      **Intended:** {{ _fga_intended | length }}
+      **Implemented:** {{ _fga_implemented | length }}
+      **Gaps:** {{ _fga_gaps | length }}
+
+      ## Gaps (Missing Implementation)
+
+      {% if _fga_gaps | length == 0 %}
+      All intended features are implemented.
+      {% else %}
+      {% for gap in _fga_gaps %}
+      - ❌ {{ gap }}
+      {% endfor %}
+      {% endif %}
+
+      ## Implemented Features
+
+      {% for impl in _fga_implemented %}
+      - ✓ {{ impl }}
+      {% endfor %}
+
+      {% if _fga_model_narrative | length > 0 %}
+      ## Analysis
+
+      {{ _fga_model_narrative }}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.feature_gap_auditor — report-only.*
+    dest: "{{ artifact_dir }}/feature_gap_auditor.md"
+    mode: "0644"
+
+- name: Report feature gap audit completion
+  ansible.builtin.debug:
+    msg: >-
+      Feature gap audit: intended={{ _fga_intended | length }}
+      implemented={{ _fga_implemented | length }}
+      gaps={{ _fga_gaps | length }}
+      coverage={{ _fga_coverage_pct }}%
+      verdict={{ _fga_verdict }}

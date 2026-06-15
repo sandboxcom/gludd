@@ -1,0 +1,91 @@
+---
+# Verify tla_trace_interpret parsed the canonical violation correctly:
+#   - invariant=NeverNegative
+#   - step_count=2
+#   - steps[0]: state_n=1, vars.n=0
+#   - steps[1]: state_n=2, vars.n=-1
+#   - tla_trace.md written
+- name: Verify - tla_trace_interpret parsed trace correctly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}.pid"
+    artifact: "/tmp/gludd-tla-trace-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}/tla_trace.json"
+    artifact_md: "/tmp/gludd-tla-trace-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}/tla_trace.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art_stat
+      failed_when: not art_stat.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert invariant extracted correctly
+      ansible.builtin.assert:
+        that:
+          - result.role == 'tla_trace_interpret'
+          - result.status == 'completed'
+          - result.invariant == 'NeverNegative'
+        fail_msg: "tla_trace_interpret invariant wrong: {{ result }}"
+        success_msg: "tla_trace_interpret extracted invariant={{ result.invariant }}"
+
+    - name: Assert step count is 2
+      ansible.builtin.assert:
+        that:
+          - result.step_count == 2
+          - result.steps | length == 2
+        fail_msg: "tla_trace_interpret step_count wrong: expected 2, got {{ result.step_count }}"
+        success_msg: "tla_trace_interpret extracted {{ result.step_count }} steps (correct)"
+
+    - name: Assert State 1 vars (n=0 initial state)
+      ansible.builtin.assert:
+        that:
+          - result.steps[0].state_n == 1
+          - result.steps[0].vars.n == '0'
+        fail_msg: "tla_trace_interpret State 1 wrong: {{ result.steps[0] }}"
+        success_msg: "tla_trace_interpret State 1 correct: n={{ result.steps[0].vars.n }}"
+
+    - name: Assert State 2 vars (n=-1 violation state)
+      ansible.builtin.assert:
+        that:
+          - result.steps[1].state_n == 2
+          - result.steps[1].vars.n == '-1'
+        fail_msg: "tla_trace_interpret State 2 wrong: {{ result.steps[1] }}"
+        success_msg: "tla_trace_interpret State 2 correct: n={{ result.steps[1].vars.n }} (the impossible state)"
+
+    - name: Assert narrative is present
+      ansible.builtin.assert:
+        that:
+          - result.narrative | length > 0
+          - "'NeverNegative' in result.narrative"
+        fail_msg: "tla_trace_interpret narrative missing or wrong"
+        success_msg: "tla_trace_interpret narrative generated mentioning invariant"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: md_stat
+      failed_when: not md_stat.stat.exists
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-tla-trace-{{ mock_port }}"
+        state: absent
+      failed_when: false

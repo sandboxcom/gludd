@@ -1,0 +1,25 @@
+---
+# ui_ux_analyst role defaults — REPORT-ONLY, heuristic/non-authoritative
+
+# TUI source path to scan for heuristics
+tui_source: ""
+
+# CLI help override (canned --help output for testing without running the CLI)
+cli_help_override: ""
+
+# API spec path (OpenAPI/JSON schema)
+api_spec_path: ""
+
+# Enable real --help capture (gated)
+enable_help_capture: false
+
+# Artifact output
+artifact_dir: "/tmp/gludd-ui-ux-analyst"
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Destructive ops guard
+enable_git_push: false
+apply_changes: false

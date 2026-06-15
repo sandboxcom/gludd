@@ -1,0 +1,64 @@
+---
+# Verify tla_parse classified canned SANY output correctly: parsed=true, errors=[].
+- name: Verify - tla_parse classified SANY output correctly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}.pid"
+    artifact: "/tmp/gludd-tla-parse-out-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}/tla_parse.json"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    fake_dir: "/tmp/gludd-tla-parse-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    out_dir: "/tmp/gludd-tla-parse-out-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art_stat
+      failed_when: not art_stat.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert tla_parse classified override output correctly
+      ansible.builtin.assert:
+        that:
+          - result.role == 'tla_parse'
+          - result.status == 'skipped'
+          - result.parsed | bool
+          - result.errors | length == 0
+          - result.parse_verdict == 'ok'
+        fail_msg: "tla_parse artifact wrong: {{ result }}"
+        success_msg: "tla_parse classified SANY output: parsed={{ result.parsed }} verdict={{ result.parse_verdict }}"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove shim directory
+      ansible.builtin.file:
+        path: "{{ shim_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove fake spec directory
+      ansible.builtin.file:
+        path: "{{ fake_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove artifact directory
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent
+      failed_when: false
