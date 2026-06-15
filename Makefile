@@ -27,7 +27,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         build-executable dist dist-clean bundle-binaries \
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
-        status-snapshot audit-evidence deps-audit \
+        status-snapshot audit-evidence deps-audit dogfood-features \
         skill-install skill-list bootstrap-skills scan-tool-usage \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
@@ -1165,6 +1165,9 @@ list-tests:
 
 dogfood:
 	@$(UV) run python scripts/dogfood.py
+
+dogfood-features:
+	@$(UV) run python scripts/dogfood_features.py
 
 audit-findings:
 	@$(UV) run python -c "from general_ludd.quality.preflight import run_completion_audit as a; r=a(); print('pct', r['completion_pct'], 'failed', r['failed_count']); [print(f['class_name'], f['file']) for f in r['findings']]"

@@ -21,6 +21,8 @@ shape matches what each module parses:
   GET  /api/todos/<id>                 -> 200 todo record                    (gludd_db todo_get)
   PATCH /api/todos/<id>               -> 200 {"status":..}                  (gludd_db todo_update_status)
   GET  /api/resource-preferences      -> 200 {"preference":..}              (gludd_db resource_preference)
+  GET  /api/features                  -> 200 {"features":[...],"total":N}    (gludd_features list)
+  POST /api/features/verify           -> 200 {"summary":{...},"results":[]}  (gludd_features verify)
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -135,6 +137,81 @@ FACTS_SNAPSHOT = {
 }
 
 
+FEATURES_SNAPSHOT = [
+    {
+        "id": "FEAT-0001",
+        "project_id": None,
+        "name": "facts_api_mq",
+        "description": "gludd_facts Ansible module exposes /api/facts as dynamic variables.",
+        "category": "api",
+        "status": "implemented",
+        "acceptance_criteria": ["gludd_facts module exists"],
+        "evidence": ["module:gludd_facts", "molecule:test_gludd_facts"],
+        "verifier_kind": "evidence",
+        "requested_by": "engagement",
+        "requested_at": "2026-01-01T00:00:00",
+        "verified_at": None,
+        "last_verify_detail": {},
+    },
+    {
+        "id": "FEAT-0002",
+        "project_id": None,
+        "name": "feature_db",
+        "description": "Feature database with FeatureModel, FeatureRepository, FeatureVerifier.",
+        "category": "self-verification",
+        "status": "implemented",
+        "acceptance_criteria": ["FeatureModel in DB schema"],
+        "evidence": ["file:src/general_ludd/db/models.py::FeatureModel"],
+        "verifier_kind": "evidence",
+        "requested_by": "engagement",
+        "requested_at": "2026-01-01T00:00:00",
+        "verified_at": None,
+        "last_verify_detail": {},
+    },
+]
+
+VERIFY_SUMMARY = {
+    "summary": {
+        "total": 2,
+        "verified_count": 0,
+        "implemented_count": 2,
+        "requested_count": 0,
+        "regressed_count": 0,
+    },
+    "results": [
+        {
+            "id": "FEAT-0001",
+            "name": "facts_api_mq",
+            "status": "implemented",
+            "verified_at": None,
+            "evidence_results": {
+                "all_met": False,
+                "met_count": 1,
+                "total_count": 2,
+                "per_ref": [
+                    {"ref": "module:gludd_facts", "met": True, "detail": "module found"},
+                    {"ref": "molecule:test_gludd_facts", "met": False, "detail": "scenario not found in mock"},
+                ],
+            },
+        },
+        {
+            "id": "FEAT-0002",
+            "name": "feature_db",
+            "status": "implemented",
+            "verified_at": None,
+            "evidence_results": {
+                "all_met": False,
+                "met_count": 1,
+                "total_count": 1,
+                "per_ref": [
+                    {"ref": "file:src/general_ludd/db/models.py::FeatureModel", "met": True, "detail": "symbol found"},
+                ],
+            },
+        },
+    ],
+}
+
+
 def _model_call_response(payload: dict) -> dict:
     return {
         "text": "[mock-daemon] applied the requested change.",
@@ -208,6 +285,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _todo_record(todo_id))
         elif path == "/api/resource-preferences":
             self._send_json(200, {"preference": "mock-profile", "value": "mock-profile"})
+        elif path == "/api/features":
+            self._send_json(200, {"features": list(FEATURES_SNAPSHOT), "total": len(FEATURES_SNAPSHOT), "filtered": False})
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -221,6 +300,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(201, _message_created(payload))
         elif path.startswith("/api/messages/") and path.endswith("/ack"):
             self._send_json(200, {"acked": True})
+        elif path == "/api/features/verify":
+            self._send_json(200, dict(VERIFY_SUMMARY))
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 

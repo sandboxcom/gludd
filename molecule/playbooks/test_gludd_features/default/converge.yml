@@ -1,0 +1,40 @@
+---
+# Exercise the REAL gludd_features module against the mock daemon.
+- name: Converge - exercise gludd_features against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8826', true) }}"
+  tasks:
+    - name: List all features (state=list)
+      general_ludd.agent.gludd_features:
+        state: list
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: list_result
+
+    - name: Persist the feature list for verify
+      ansible.builtin.copy:
+        content: "{{ list_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-features.json"
+        mode: "0644"
+
+    - name: Show feature list
+      ansible.builtin.debug:
+        var: list_result
+
+    - name: Trigger server-side verification (state=verify)
+      general_ludd.agent.gludd_features:
+        state: verify
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: verify_result
+
+    - name: Persist the verify result for verify
+      ansible.builtin.copy:
+        content: "{{ verify_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-features-verify.json"
+        mode: "0644"
+
+    - name: Show verify result
+      ansible.builtin.debug:
+        var: verify_result

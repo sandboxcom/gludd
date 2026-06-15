@@ -1,0 +1,16 @@
+---
+# feature_audit role defaults — audit the feature database via gludd_features
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-feature-audit"
+
+# Filter options (empty = fetch all)
+feature_status_filter: ""
+feature_category_filter: ""
+
+# Whether to trigger a server-side verify pass before auditing
+run_verify: false
