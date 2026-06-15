@@ -4,17 +4,18 @@ import contextlib
 import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
-import pytest
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.event_loop.loop import EventLoop
 
 
-@pytest.fixture
-def sqlite_session_factory():
+@pytest_asyncio.fixture
+async def sqlite_session_factory():
     engine = create_async_engine("sqlite+aiosqlite://", echo=False)
     factory = async_sessionmaker(engine, expire_on_commit=False)
-    return factory
+    yield factory
+    await engine.dispose()
 
 
 class TestEventLoopSessionPerTick:

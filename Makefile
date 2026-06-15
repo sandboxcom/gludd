@@ -231,8 +231,17 @@ gate:
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@printf "test " >> .gate-status
-	@$(UV) run python -m pytest tests/ $(_XD) -q > /tmp/gludd-test-gate.txt 2>&1; EXIT=$$?; \
-	if [ $$EXIT -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
+	@# --basetemp pins this run's pytest tmp root so a CONCURRENT pytest (another
+	@# gate, a stray worker) can no longer trigger pytest's keep-last-3 rotation and
+	@# delete this run's popen-gwN worker dirs out from under it — the root cause of
+	@# the "208 errors: FileNotFoundError popen-gwN" cascade. tee streams progress to
+	@# stdout (so a backgrounded gate is observable live, not a black box) AND to the
+	@# log; the rc file preserves pytest's true exit through the pipe (sh $$? after a
+	@# pipe is tee's, not pytest's).
+	@rm -rf /tmp/gludd-gate-basetemp; \
+	( $(UV) run python -m pytest tests/ $(_XD) -q --basetemp=/tmp/gludd-gate-basetemp; echo $$? > /tmp/gludd-gate-rc ) 2>&1 | tee /tmp/gludd-test-gate.txt; \
+	EXIT=$$(cat /tmp/gludd-gate-rc 2>/dev/null || echo 1); \
+	if [ "$$EXIT" -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
 		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
 	fi
 	@printf "smoke " >> .gate-status
@@ -245,6 +254,11 @@ gate:
 	@cat .gate-status
 	@if [ -f .gate-failed ]; then rm -f .gate-failed; exit 1; fi
 	@echo "Gate: ALL PASSED"
+
+# Process-hygiene check: list any running pytest/molecule/gate so we never launch
+# a second concurrent run that collides with an in-flight one (see gate --basetemp).
+ps-pytest:
+	@pgrep -fl 'pytest|molecule test|make gate' || echo "NONE running"
 
 test-integration:
 	@$(UV) run python -m pytest tests/integration/ $(_XD) -v

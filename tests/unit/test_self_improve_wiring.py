@@ -188,26 +188,29 @@ class TestEventLoopSelfImprovePhase:
         from general_ludd.self_improve.harness import SelfImprovementHarness
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        await ensure_tables(engine)
-        factory = create_async_session_factory(engine)
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
 
-        loop = EventLoop(session=factory, self_improve_interval=1, daemon_state={})
-        with patch.object(SelfImprovementHarness, "run_gap_analysis", return_value=[
-            {"type": "missing_tests", "file": "a.py", "severity": "high",
-             "message": "no tests"},
-        ]), patch.object(SelfImprovementHarness, "generate_fix_todos", return_value=[
-            {"title": "Add tests", "work_type": "test", "priority": "high"},
-        ]):
-            await loop.tick()
+            loop = EventLoop(session=factory, self_improve_interval=1, daemon_state={})
+            with patch.object(SelfImprovementHarness, "run_gap_analysis", return_value=[
+                {"type": "missing_tests", "file": "a.py", "severity": "high",
+                 "message": "no tests"},
+            ]), patch.object(SelfImprovementHarness, "generate_fix_todos", return_value=[
+                {"title": "Add tests", "work_type": "test", "priority": "high"},
+            ]):
+                await loop.tick()
 
-        async with factory() as session:
-            rows = await TodoRepository(session).list_all()
-            persisted = [r for r in rows if r.title == "Add tests"]
-            assert len(persisted) == 1
-            assert persisted[0].work_type == "self_improve"
-            assert persisted[0].status == TodoStatus.BACKLOG.value
-            # "high" maps to a high integer priority.
-            assert persisted[0].priority >= 10
+            async with factory() as session:
+                rows = await TodoRepository(session).list_all()
+                persisted = [r for r in rows if r.title == "Add tests"]
+                assert len(persisted) == 1
+                assert persisted[0].work_type == "self_improve"
+                assert persisted[0].status == TodoStatus.BACKLOG.value
+                # "high" maps to a high integer priority.
+                assert persisted[0].priority >= 10
+        finally:
+            await engine.dispose()
 
     @pytest.mark.asyncio
     async def test_phase_no_findings_no_crash(self):

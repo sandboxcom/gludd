@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from general_ludd.db.repository import TodoRepository
@@ -17,15 +18,19 @@ from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import TodoStatus
 
 
-async def _make_session_factory():
+@pytest_asyncio.fixture
+async def session_factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    await ensure_tables(engine)
-    return create_async_session_factory(engine)
+    try:
+        await ensure_tables(engine)
+        yield create_async_session_factory(engine)
+    finally:
+        await engine.dispose()
 
 
 class TestSelfImprovePersistence:
-    async def test_self_improve_writes_todos_to_db(self, monkeypatch):
-        factory = await _make_session_factory()
+    async def test_self_improve_writes_todos_to_db(self, session_factory, monkeypatch):
+        factory = session_factory
 
         # Stub the harness so the test does not depend on real repo gap analysis.
         fake_findings = [{"type": "missing_tests", "file": "x.py", "severity": "high",
@@ -61,8 +66,8 @@ class TestSelfImprovePersistence:
         # The harness's in-memory enqueue must NOT be the persistence path.
         fake_harness.enqueue_todos.assert_not_called()
 
-    async def test_self_improve_disabled_when_interval_zero(self):
-        factory = await _make_session_factory()
+    async def test_self_improve_disabled_when_interval_zero(self, session_factory):
+        factory = session_factory
         loop = EventLoop(session=factory, self_improve_interval=0)
         await loop.tick()
         async with factory() as session:

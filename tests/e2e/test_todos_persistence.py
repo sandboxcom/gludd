@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import pytest
+import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -10,34 +11,38 @@ from general_ludd.db.repository import TodoRepository
 from general_ludd.routers.todos import register
 
 
-async def _create_test_app() -> tuple[FastAPI, async_sessionmaker]:
+@pytest_asyncio.fixture
+async def test_app():
     engine = create_async_engine("sqlite+aiosqlite://", echo=False)
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
-    factory = async_sessionmaker(engine, expire_on_commit=False)
+    try:
+        async with engine.begin() as conn:
+            await conn.run_sync(Base.metadata.create_all)
+        factory = async_sessionmaker(engine, expire_on_commit=False)
 
-    from general_ludd.daemon import _daemon_state
-    _daemon_state["todos"] = []
+        from general_ludd.daemon import _daemon_state
+        _daemon_state["todos"] = []
 
-    app = FastAPI()
-    app.state._session_factory = factory
-    app.state._db_engine = engine
-    app.state._config_dir = None
-    app.state._startup_config = {}
-    app.state.log_level = "info"
-    app.state.tick_interval = 1.0
-    app.state.event_loop = None
-    app.state._templates_dir = None
-    app.state._playbooks_dir = None
+        app = FastAPI()
+        app.state._session_factory = factory
+        app.state._db_engine = engine
+        app.state._config_dir = None
+        app.state._startup_config = {}
+        app.state.log_level = "info"
+        app.state.tick_interval = 1.0
+        app.state.event_loop = None
+        app.state._templates_dir = None
+        app.state._playbooks_dir = None
 
-    register(app, _daemon_state)
-    return app, factory
+        register(app, _daemon_state)
+        yield app, factory
+    finally:
+        await engine.dispose()
 
 
 class TestTodosPersistence:
     @pytest.mark.asyncio
-    async def test_post_todo_persists_to_db(self):
-        app, factory = await _create_test_app()
+    async def test_post_todo_persists_to_db(self, test_app):
+        app, factory = test_app
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.post(
@@ -56,8 +61,8 @@ class TestTodosPersistence:
                 assert todo.queue == "core"
 
     @pytest.mark.asyncio
-    async def test_get_todos_reads_from_db(self):
-        app, factory = await _create_test_app()
+    async def test_get_todos_reads_from_db(self, test_app):
+        app, factory = test_app
         async with factory() as session:
             repo = TodoRepository(session)
             await repo.create(todo_data={
@@ -80,8 +85,8 @@ class TestTodosPersistence:
             assert any(t.get("todo_id") == "TODO-TEST1" for t in data)
 
     @pytest.mark.asyncio
-    async def test_get_todo_by_id_reads_from_db(self):
-        app, factory = await _create_test_app()
+    async def test_get_todo_by_id_reads_from_db(self, test_app):
+        app, factory = test_app
         async with factory() as session:
             repo = TodoRepository(session)
             await repo.create(todo_data={
@@ -104,16 +109,16 @@ class TestTodosPersistence:
             assert data["title"] == "Another test"
 
     @pytest.mark.asyncio
-    async def test_get_todo_not_found_returns_404(self):
-        app, _factory = await _create_test_app()
+    async def test_get_todo_not_found_returns_404(self, test_app):
+        app, _factory = test_app
         transport = ASGITransport(app=app)
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/todos/NONEXISTENT")
             assert resp.status_code == 404
 
     @pytest.mark.asyncio
-    async def test_posted_todo_is_claimable_by_event_loop(self):
-        app, factory = await _create_test_app()
+    async def test_posted_todo_is_claimable_by_event_loop(self, test_app):
+        app, factory = test_app
 
         from general_ludd.event_loop.loop import EventLoop
 
@@ -133,8 +138,8 @@ class TestTodosPersistence:
             assert claimed[0].title == "Claimable"
 
     @pytest.mark.asyncio
-    async def test_status_reads_from_db(self):
-        app, factory = await _create_test_app()
+    async def test_status_reads_from_db(self, test_app):
+        app, factory = test_app
         async with factory() as session:
             repo = TodoRepository(session)
             await repo.create(todo_data={

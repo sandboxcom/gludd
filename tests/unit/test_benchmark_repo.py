@@ -16,20 +16,21 @@ from general_ludd.db.repository import BenchmarkRepository, PromptProfileReposit
 
 
 @pytest.fixture
-def engine():
+async def engine():
     eng = create_async_engine("sqlite+aiosqlite:///:memory:")
-    return eng
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    yield eng
+    async with eng.begin() as conn:
+        await conn.run_sync(Base.metadata.drop_all)
+    await eng.dispose()
 
 
 @pytest.fixture
 async def session(engine):
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
     async with factory() as sess:
         yield sess
-    async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.drop_all)
 
 
 class TestPromptProfileRepository:

@@ -9,6 +9,7 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
 
 from general_ludd.db.repository import TaskReturnRepository, TodoRepository
@@ -21,10 +22,14 @@ from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.todo import TodoStatus
 
 
-async def _make_session_factory():
+@pytest_asyncio.fixture
+async def session_factory():
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-    await ensure_tables(engine)
-    return create_async_session_factory(engine)
+    try:
+        await ensure_tables(engine)
+        yield create_async_session_factory(engine)
+    finally:
+        await engine.dispose()
 
 
 async def _seed_todo_in_review(session, todo_id: str) -> int:
@@ -58,8 +63,8 @@ async def _seed_return(session, return_id: str, todo_id: str) -> None:
 
 
 class TestReviewerWiring:
-    async def test_success_decision_applied_to_todo(self):
-        factory = await _make_session_factory()
+    async def test_success_decision_applied_to_todo(self, session_factory):
+        factory = session_factory
         async with factory() as session:
             await _seed_todo_in_review(session, "TODO-REV-OK")
             await _seed_return(session, "RET-OK", "TODO-REV-OK")
@@ -84,8 +89,8 @@ class TestReviewerWiring:
             assert todo.status == TodoStatus.COMPLETE.value
         reviewer.review_return.assert_called()
 
-    async def test_review_failure_does_not_silently_complete(self):
-        factory = await _make_session_factory()
+    async def test_review_failure_does_not_silently_complete(self, session_factory):
+        factory = session_factory
         async with factory() as session:
             await _seed_todo_in_review(session, "TODO-REV-FAIL")
             await _seed_return(session, "RET-FAIL", "TODO-REV-FAIL")
@@ -111,8 +116,8 @@ class TestReviewerWiring:
             assert todo.status != TodoStatus.COMPLETE.value
             assert todo.status == TodoStatus.FAILED.value
 
-    async def test_reviewer_exception_escalates_never_completes(self):
-        factory = await _make_session_factory()
+    async def test_reviewer_exception_escalates_never_completes(self, session_factory):
+        factory = session_factory
         async with factory() as session:
             await _seed_todo_in_review(session, "TODO-REV-EXC")
             await _seed_return(session, "RET-EXC", "TODO-REV-EXC")

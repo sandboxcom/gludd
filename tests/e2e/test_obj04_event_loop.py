@@ -76,30 +76,33 @@ class TestEventLoopE2E:
         )
 
         engine = create_async_engine("sqlite+aiosqlite:///:memory:")
-        await ensure_tables(engine)
-        factory = create_async_session_factory(engine)
+        try:
+            await ensure_tables(engine)
+            factory = create_async_session_factory(engine)
 
-        async with factory() as session:
-            # One already-expired lease, one still valid.
-            session.add(
-                BucketLeaseModel(
-                    bucket_key="core",
-                    holder_id="worker-old",
-                    expires_at=datetime.now(UTC) - timedelta(seconds=10),
+            async with factory() as session:
+                # One already-expired lease, one still valid.
+                session.add(
+                    BucketLeaseModel(
+                        bucket_key="core",
+                        holder_id="worker-old",
+                        expires_at=datetime.now(UTC) - timedelta(seconds=10),
+                    )
                 )
-            )
-            await acquire_lease(session, "core", "worker-new", ttl_seconds=300)
-            await session.commit()
+                await acquire_lease(session, "core", "worker-new", ttl_seconds=300)
+                await session.commit()
 
-            reclaimed = await reclaim_expired_leases(session)
-            assert isinstance(reclaimed, int)
-            assert reclaimed == 1
+                reclaimed = await reclaim_expired_leases(session)
+                assert isinstance(reclaimed, int)
+                assert reclaimed == 1
 
-            remaining = (
-                (await session.execute(select(BucketLeaseModel))).scalars().all()
-            )
-            holders = {r.holder_id for r in remaining}
-            assert holders == {"worker-new"}
+                remaining = (
+                    (await session.execute(select(BucketLeaseModel))).scalars().all()
+                )
+                holders = {r.holder_id for r in remaining}
+                assert holders == {"worker-new"}
+        finally:
+            await engine.dispose()
 
     async def test_run_forever_stops_cleanly(self):
         loop = EventLoop(
