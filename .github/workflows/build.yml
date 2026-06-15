@@ -31,6 +31,9 @@ jobs:
     needs: version
     runs-on: ubuntu-latest
     strategy:
+      # Don't cancel the 3.12 leg when 3.11 fails (or vice-versa): we want both
+      # Python versions' results on every run, not just the first failure.
+      fail-fast: false
       matrix:
         python-version: ["3.11", "3.12"]
     steps:

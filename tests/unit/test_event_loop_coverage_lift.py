@@ -19,6 +19,9 @@ def _make_loop(**overrides):
     session.execute.return_value = db_result
     session.delete = AsyncMock()
     session.flush = AsyncMock()
+    # session.add is sync; AsyncMock leaks an unawaited coroutine that CI's
+    # serial ordering turned into an "Event loop is closed" failure on GC.
+    session.add = MagicMock()
     http_client = AsyncMock()
     todo_repo = AsyncMock()
     task_return_repo = AsyncMock()

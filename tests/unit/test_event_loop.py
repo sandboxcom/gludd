@@ -19,6 +19,11 @@ def _make_loop(**overrides):
     session.execute.return_value = db_result
     session.delete = AsyncMock()
     session.flush = AsyncMock()
+    # session.add is a SYNC SQLAlchemy method; AsyncMock would make it return a
+    # coroutine that is never awaited, leaking a "coroutine was never awaited"
+    # RuntimeWarning that, under CI's serial test ordering, surfaced as a hard
+    # "Event loop is closed" failure when GC'd during a later test's teardown.
+    session.add = MagicMock()
     http_client = AsyncMock()
     todo_repo = AsyncMock()
     task_return_repo = AsyncMock()

@@ -43,21 +43,9 @@ class EventBus:
             try:
                 result = callback(event)
                 if asyncio.iscoroutine(result):
-                    try:
-                        loop = asyncio.get_running_loop()
-                        task = loop.create_task(result)
-                        task.add_done_callback(self._background_tasks.discard)
-                        self._background_tasks.add(task)
-                    except RuntimeError:
-                        asyncio.run(result)
+                    self._dispatch_coro(result)
                 elif inspect.iscoroutinefunction(callback):
-                    try:
-                        loop = asyncio.get_running_loop()
-                        task = loop.create_task(callback(event))
-                        task.add_done_callback(self._background_tasks.discard)
-                        self._background_tasks.add(task)
-                    except RuntimeError:
-                        asyncio.run(callback(event))
+                    self._dispatch_coro(callback(event))
             except Exception as exc:
                 logger.warning("Event subscriber %s error: %s", sub_id, exc)
 
@@ -67,6 +55,46 @@ class EventBus:
                 self._history = self._history[-self._history_size:]
 
         return len(all_subs)
+
+    def _dispatch_coro(self, coro: Any) -> None:
+        """Run a coroutine produced by a subscriber callback.
+
+        If an event loop is currently running, the coroutine is scheduled as a
+        tracked background task on it. Otherwise (sync caller / test context) the
+        coroutine is run to completion on a fresh, dedicated event loop.
+
+        Using a fresh loop rather than ``asyncio.run`` avoids the
+        "RuntimeError: Event loop is closed" that ``asyncio.run`` can raise when
+        a *closed* loop has been left as the current loop by a prior caller (a
+        common situation under pytest-asyncio when tests interleave). The
+        coroutine is always consumed — even on failure — so no
+        "coroutine was never awaited" warning leaks into a later test.
+        """
+        try:
+            loop = asyncio.get_running_loop()
+        except RuntimeError:
+            loop = None
+
+        if loop is not None:
+            task = loop.create_task(coro)
+            task.add_done_callback(self._background_tasks.discard)
+            self._background_tasks.add(task)
+            return
+
+        # No running loop: drive the coroutine on a dedicated, isolated loop and
+        # restore whatever event-loop policy state existed before, so we never
+        # leave a closed loop behind for the next caller to trip over.
+        new_loop = asyncio.new_event_loop()
+        try:
+            new_loop.run_until_complete(coro)
+        finally:
+            try:
+                new_loop.close()
+            finally:
+                # Drop any reference to the (now closed) loop as the current one
+                # so subsequent asyncio.get_event_loop() calls create a fresh one
+                # instead of returning this closed loop.
+                asyncio.set_event_loop(None)
 
     def get_history(self) -> list[Event]:
         return list(self._history)

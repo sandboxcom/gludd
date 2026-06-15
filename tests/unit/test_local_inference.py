@@ -296,6 +296,10 @@ class TestStopServer:
         mock_proc = AsyncMock()
         mock_proc.returncode = None
         mock_proc.wait = AsyncMock()
+        # terminate()/kill() are SYNC subprocess methods; AsyncMock leaks an
+        # unawaited coroutine (CI serial-order -> "Event loop is closed").
+        mock_proc.terminate = MagicMock()
+        mock_proc.kill = MagicMock()
         server.process = mock_proc
         server.status = "running"
         server.pid = 12345
@@ -313,6 +317,8 @@ class TestStopServer:
         mock_proc = AsyncMock()
         mock_proc.returncode = None
         mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
+        mock_proc.terminate = MagicMock()
+        mock_proc.kill = MagicMock()
         server.process = mock_proc
         server.status = "running"
         await mgr.stop_server("local-0")
@@ -344,6 +350,8 @@ class TestStopAll:
             mock_proc = AsyncMock()
             mock_proc.returncode = None
             mock_proc.wait = AsyncMock()
+            mock_proc.terminate = MagicMock()
+            mock_proc.kill = MagicMock()
             s.process = mock_proc
             s.status = "running"
             s.pid = 12345
