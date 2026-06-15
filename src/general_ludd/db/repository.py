@@ -17,6 +17,7 @@ from general_ludd.db.models import (
     ProjectModel,
     PromptProfileModel,
     QueueModel,
+    SpendRecordModel,
     TaskReturnModel,
     TodoEventModel,
     TodoModel,
@@ -724,3 +725,93 @@ class AgentMessageRepository:
         if created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
         return (now - created).total_seconds() > row.ttl_seconds
+
+
+class SpendRepository:
+    """Persistence for rolling-window spend records.
+
+    Each row represents one spend event recorded by :class:`SpendLimiter`.
+    ``ts`` is an epoch float (e.g. from ``time.monotonic()`` or
+    ``time.time()``); the rolling-window math compares timestamps as plain
+    floats.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add(
+        self,
+        ts: float,
+        cost_usd: float,
+        kind: str,
+        project_id: str | None = None,
+        model: str | None = None,
+    ) -> SpendRecordModel:
+        """Persist a spend event and return the new row.
+
+        Args:
+            ts:         Epoch float timestamp of the event.
+            cost_usd:   Amount spent in USD.
+            kind:       Resource kind (e.g. ``"token"``, ``"infra"``).
+            project_id: Optional project scope.
+            model:      Optional model identifier.
+
+        Returns:
+            The newly created :class:`SpendRecordModel` instance.
+        """
+        row = SpendRecordModel(
+            ts=ts,
+            cost_usd=cost_usd,
+            kind=kind,
+            project_id=project_id,
+            model=model,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def list_since(
+        self,
+        since_epoch: float,
+        project_id: str | None = None,
+    ) -> list[SpendRecordModel]:
+        """Return all records with ``ts >= since_epoch``.
+
+        Args:
+            since_epoch: Lower bound for ``ts`` (inclusive).
+            project_id:  When set, restrict to records for this project.
+
+        Returns:
+            List of :class:`SpendRecordModel` rows ordered by ``ts`` ascending.
+        """
+        stmt = select(SpendRecordModel).where(SpendRecordModel.ts >= since_epoch)
+        if project_id is not None:
+            stmt = stmt.where(SpendRecordModel.project_id == project_id)
+        stmt = stmt.order_by(SpendRecordModel.ts.asc())
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def total_since(
+        self,
+        since_epoch: float,
+        project_id: str | None = None,
+    ) -> float:
+        """Sum of ``cost_usd`` for all records with ``ts >= since_epoch``.
+
+        Args:
+            since_epoch: Lower bound for ``ts`` (inclusive).
+            project_id:  When set, restrict to records for this project.
+
+        Returns:
+            Total spend in USD (0.0 when no matching records).
+        """
+        from sqlalchemy import func
+
+        stmt = select(func.sum(SpendRecordModel.cost_usd)).where(
+            SpendRecordModel.ts >= since_epoch
+        )
+        if project_id is not None:
+            stmt = stmt.where(SpendRecordModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        total: float | None = result.scalar_one_or_none()
+        return float(total) if total is not None else 0.0

@@ -903,6 +903,7 @@ def create_daemon_app(
         signing,
         skills,
         slurm,
+        spend,
         todos,
         worktree,
     )
@@ -926,5 +927,6 @@ def create_daemon_app(
     slurm.register(app, _daemon_state)
     self_improve.register(app, _daemon_state)
     maintenance.register(app, _daemon_state)
+    spend.register(app, _daemon_state)
 
     return app
