@@ -279,6 +279,26 @@ async def _accounting_facet(
     except Exception as exc:
         logger.debug("accounting facet unavailable: %s", exc)
         return {"projects": [], "error": str(exc)}
+def _schedule_facet(app: FastAPI) -> dict[str, Any]:
+    """Last computed schedule plan and in-flight batch summary.
+
+    Populated by POST /api/schedule; returns an empty placeholder when no plan
+    has been computed yet in this daemon lifetime.
+    """
+    last_plan = getattr(app.state, "_schedule_last_plan", None)
+    if last_plan is None:
+        return {
+            "last_plan": None,
+            "batch_count": 0,
+            "item_count": 0,
+        }
+    batches: list[list[str]] = last_plan.get("batches", [])
+    items: list[dict[str, object]] = last_plan.get("items", [])
+    return {
+        "last_plan": last_plan,
+        "batch_count": len(batches),
+        "item_count": len(items),
+    }
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -318,6 +338,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "dispatch": dispatch,
             "spend": _spend_facet(app),
             "accounting": await _accounting_facet(app, project_id=project_id),
+            "schedule": _schedule_facet(app),
             "project_id": project_id,
         }
 

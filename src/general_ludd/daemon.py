@@ -901,6 +901,7 @@ def create_daemon_app(
         projects,
         quantization,
         reload,
+        schedule,
         self_improve,
         signing,
         skills,
@@ -918,6 +919,7 @@ def create_daemon_app(
     accounting.register(app, _daemon_state)
     facts.register(app, _daemon_state)
     features.register(app, _daemon_state)
+    schedule.register(app, _daemon_state)
     models.register(app, _daemon_state)
     benchmark.register(app, _daemon_state)
     mcp.register(app, _daemon_state)
