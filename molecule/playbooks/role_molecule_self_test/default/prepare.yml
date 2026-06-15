@@ -1,0 +1,46 @@
+---
+# molecule_self_test prepare: start the mock daemon + write a canned
+# molecule_output_override file that the converge step reads as a variable.
+# The canned output contains 2 PASS lines and 1 FAIL line so the verify step
+# can assert the role correctly parsed passed=2, failed=1, verdict=PARTIAL.
+- name: Prepare - mock daemon + canned molecule output for molecule_self_test
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8855', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8855', true) }}.pid"
+    canned_override_path: "/tmp/gludd-mst-override-{{ mock_port }}.txt"
+
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Write canned molecule output override file
+      # Two PASSes + one FAIL — so verify can assert parsed values precisely.
+      # "PASS noop" and "PASS role_report_status" are genuine existing scenarios.
+      # "FAIL role_nonexistent" is a fake failure to exercise the FAIL path.
+      ansible.builtin.copy:
+        content: |
+          PASS noop
+          PASS role_report_status
+          FAIL role_nonexistent ... Error: scenario not found
+        dest: "{{ canned_override_path }}"
+        mode: "0644"

@@ -1,0 +1,39 @@
+---
+# molecule_self_test role defaults
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-molecule-self-test"
+
+# Repo path — where molecule/playbooks/ and Makefile live
+repo_path: "."
+
+# SAFE-BY-DEFAULT: do NOT actually run molecule unless explicitly enabled.
+# Set enable_run: true to actually invoke make molecule-test / molecule-test-all.
+enable_run: false
+
+# When enable_run=false (or check_mode), use this canned molecule output.
+# Format expected: one line per scenario with PASS or FAIL prefix, e.g.:
+#   PASS noop
+#   PASS role_report_status
+#   FAIL role_x ... Error detail
+# Optionally end with a summary line like "ALL scenarios passed" (treated as
+# additional PASS signal but not parsed for per-scenario names).
+molecule_output_override: |
+  PASS noop
+  PASS role_report_status
+  PASS test_gludd_ping
+
+# Specific scenarios to run when enable_run=true and run_all=false.
+# Empty list means run all (same as run_all=true).
+scenarios: []
+
+# When enable_run=true: run ALL scenarios (make molecule-test-all) instead of
+# per-scenario iterations over the `scenarios` list.
+run_all: false
+
+# Message handoff: recipient role/agent to notify on failures (empty = no send)
+handoff_recipient: ""
