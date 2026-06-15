@@ -907,6 +907,9 @@ def create_daemon_app(
         todos,
         worktree,
     )
+    from general_ludd.routers import (
+        dispatch as dispatch_router,
+    )
 
     todos.register(app, _daemon_state)
     messages.register(app, _daemon_state)
@@ -928,5 +931,17 @@ def create_daemon_app(
     slurm.register(app, _daemon_state)
     self_improve.register(app, _daemon_state)
     maintenance.register(app, _daemon_state)
+    # Dynamic dispatch router — handlers are stubs (not_implemented) until the
+    # event-loop integration wires real role/mcp/skill entry points.
+    # TODO(integration): replace stubs with real entry points once the
+    # event-loop turn handler calls DynamicDispatcher directly.
+    dispatch_router.register(
+        app,
+        _daemon_state,
+        role_handler=None,       # TODO(integration): wire to role runner
+        mcp_handler=None,        # TODO(integration): wire to MCPClient.call_tool
+        skill_handler=None,      # TODO(integration): wire to SkillRegistry
+        collection_handler=None, # TODO(integration): wire to collection loader
+    )
 
     return app

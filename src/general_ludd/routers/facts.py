@@ -253,6 +253,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 unread = await msg_repo.unread_counts(project_id=project_id)
                 messages = {"unread_by_recipient": unread, "total_unread": sum(unread.values())}
 
+        dispatch_facet_fn = getattr(app.state, "_dispatch_facet", None)
+        dispatch: dict[str, Any] = (
+            dispatch_facet_fn() if callable(dispatch_facet_fn) else {}
+        )
         return {
             "work": work,
             "todos": todos,
@@ -263,6 +267,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "traces": _traces_facet(app),
             "codebase": _codebase_facet(app, recent_failures=history or None),
             "features": await _features_facet(app, project_id=project_id),
+            "dispatch": dispatch,
             "project_id": project_id,
         }
 
