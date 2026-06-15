@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: molecule_self_test
+  author: Agentic Harness Agent
+  description: >
+    Enable gludd to run molecule tests on its own roles/collections from within
+    its agentic framework. Enumerates available scenarios and the roles/modules
+    they cover, optionally runs molecule (gated behind enable_run=false by
+    default), parses pass/fail results, emits a structured JSON+MD artifact with
+    coverage data, and sends a gludd_message handoff on failures.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

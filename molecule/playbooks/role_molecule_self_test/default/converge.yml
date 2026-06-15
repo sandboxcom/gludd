@@ -1,0 +1,35 @@
+---
+# Run the REAL molecule_self_test role against the mock daemon.
+# enable_run=false (default) so molecule never actually runs.
+# molecule_output_override is read from the canned file seeded in prepare.yml
+# so the role's PARSING + reporting logic is exercised with known values:
+#   PASS noop, PASS role_report_status, FAIL role_nonexistent
+# => parsed result: passed=[noop, role_report_status], failed=[role_nonexistent]
+#    verdict=PARTIAL
+- name: Converge - run molecule_self_test role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8855', true) }}"
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    canned_override_path: "/tmp/gludd-mst-override-{{ mock_port }}.txt"
+
+  tasks:
+    - name: Read canned override from prepare step
+      ansible.builtin.slurp:
+        src: "{{ canned_override_path }}"
+      register: _canned_raw
+
+    - name: Invoke molecule_self_test (no real run; uses canned override)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.molecule_self_test
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-molecule-self-test-{{ mock_port }}"
+        repo_path: "{{ project_dir }}"
+        enable_run: false
+        # Use the canned output seeded in prepare (PASS noop, PASS role_report_status, FAIL role_nonexistent)
+        molecule_output_override: "{{ _canned_raw.content | b64decode }}"
+        handoff_recipient: ""

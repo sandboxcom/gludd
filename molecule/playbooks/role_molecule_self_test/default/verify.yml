@@ -1,0 +1,121 @@
+---
+- name: Verify - molecule_self_test parsed canned output and computed correct coverage
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8855', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    artifact: "/tmp/gludd-molecule-self-test-{{ mock_port }}/molecule_self_test.json"
+    artifact_md: "/tmp/gludd-molecule-self-test-{{ mock_port }}/molecule_self_test.md"
+    canned_override_path: "/tmp/gludd-mst-override-{{ mock_port }}.txt"
+
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact structure and identity
+      ansible.builtin.assert:
+        that:
+          - result.role == 'molecule_self_test'
+          - result.status == 'completed'
+          # Role ran with enable_run=false so it used the override
+          - result.enable_run == false
+          - result.run_used_override == true
+          # Verdict for 2-PASS + 1-FAIL = PARTIAL
+          - result.verdict == 'PARTIAL'
+        fail_msg: "molecule_self_test artifact structure wrong: {{ result }}"
+        success_msg: "artifact structure OK: role={{ result.role }} status={{ result.status }}"
+
+    - name: Assert parsed PASS scenarios match canned override
+      ansible.builtin.assert:
+        that:
+          # Canned override has: PASS noop, PASS role_report_status, FAIL role_nonexistent
+          - "'noop' in result.passed"
+          - "'role_report_status' in result.passed"
+          - result.passed | length == 2
+        fail_msg: "passed list wrong — expected [noop, role_report_status], got: {{ result.passed }}"
+        success_msg: "passed list correct: {{ result.passed }}"
+
+    - name: Assert parsed FAIL scenarios match canned override
+      ansible.builtin.assert:
+        that:
+          - "'role_nonexistent' in result.failed"
+          - result.failed | length == 1
+        fail_msg: "failed list wrong — expected [role_nonexistent], got: {{ result.failed }}"
+        success_msg: "failed list correct: {{ result.failed }}"
+
+    - name: Assert scenarios list is non-empty (enumerated from real molecule/playbooks/)
+      ansible.builtin.assert:
+        that:
+          - result.scenarios is defined
+          - result.scenarios | length > 0
+          # role_molecule_self_test scenario itself should appear in enumeration
+          - "'role_molecule_self_test' in result.scenarios"
+        fail_msg: "scenarios enumeration empty or missing self: {{ result.scenarios }}"
+        success_msg: "scenarios enumerated: {{ result.scenarios | length }} total"
+
+    - name: Assert coverage section is well-formed
+      ansible.builtin.assert:
+        that:
+          - result.coverage is defined
+          - result.coverage.roles_total is defined
+          - result.coverage.roles_with_scenario is defined
+          - result.coverage.roles_missing is defined
+          - result.coverage.modules_total is defined
+          - result.coverage.modules_with_scenario is defined
+          - result.coverage.modules_missing is defined
+          # sanity: covered cannot exceed total
+          - result.coverage.roles_with_scenario | int <= result.coverage.roles_total | int
+          - result.coverage.modules_with_scenario | int <= result.coverage.modules_total | int
+          # molecule_self_test role itself has scenario role_molecule_self_test
+          # so roles_with_scenario should be >= 1 and == roles_total (full coverage)
+          - result.coverage.roles_with_scenario | int >= 1
+          # All 12 gludd_* modules have test_gludd_* scenarios (W10 complete)
+          - result.coverage.modules_with_scenario | int >= 8
+        fail_msg: "coverage section malformed: {{ result.coverage }}"
+        success_msg: "coverage OK: {{ result.coverage.roles_with_scenario }}/{{ result.coverage.roles_total }} roles, {{ result.coverage.modules_with_scenario }}/{{ result.coverage.modules_total }} modules"
+
+    - name: Assert system_context is present
+      ansible.builtin.assert:
+        that:
+          - result.system_context is defined
+        fail_msg: "system_context missing from artifact"
+        success_msg: "system_context present"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon and remove artefacts ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-molecule-self-test-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove canned override file
+      ansible.builtin.file:
+        path: "{{ canned_override_path }}"
+        state: absent
+      failed_when: false
