@@ -53,7 +53,7 @@ class ScheduleResponse(BaseModel):
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
-    @app.post("/api/schedule")
+    @app.post("/api/schedule", response_model=None)
     async def post_schedule(body: ScheduleRequest) -> ScheduleResponse | JSONResponse:
         """Compute concurrency-safe ordered batches for the supplied work items.
 
