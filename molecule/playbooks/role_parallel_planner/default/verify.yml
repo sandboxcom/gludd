@@ -1,0 +1,63 @@
+---
+- name: Verify - parallel_planner wrote its execution plan artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8837', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8837', true) }}.pid"
+    artifact: "/tmp/gludd-parallel-planner-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8837', true) }}/parallel_planner.json"
+    artifact_md: "/tmp/gludd-parallel-planner-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8837', true) }}/parallel_planner.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'parallel_planner'
+          - result.summary is defined
+          - result.item_count is defined
+          - result.item_count | int == 4
+          - result.batch_count is defined
+          - result.batch_count | int >= 1
+          - result.batches is defined
+          - result.batches | length >= 1
+          - result.work_items is defined
+          - result.work_items | length == 4
+          # All items should appear in the batches
+          - result.batches | flatten | sort == ['ITEM-1', 'ITEM-2', 'ITEM-3', 'ITEM-4'] | sort
+        fail_msg: "parallel_planner artifact wrong: {{ result }}"
+        success_msg: >-
+          parallel_planner ran end-to-end against mock;
+          {{ result.item_count }} items -> {{ result.batch_count }} batches
+
+    - name: Assert Markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-parallel-planner-{{ mock_port }}"
+        state: absent
+      failed_when: false

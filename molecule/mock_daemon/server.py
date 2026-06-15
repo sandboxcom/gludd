@@ -27,6 +27,7 @@ shape matches what each module parses:
   POST /api/spend/configure           -> 200 updated config                  (gludd_spend configure)
   GET  /api/accounting                -> 200 {"accounting":[...],"total":N}  (gludd_accounting all)
   GET  /api/accounting/<project_id>   -> 200 {ProjectAccounting snapshot}    (gludd_accounting project)
+  POST /api/schedule                  -> 200 {"batches":[[id,...],...]]}      (gludd_schedule)
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -261,6 +262,78 @@ VERIFY_SUMMARY = {
 }
 
 
+def _schedule_response(payload: dict) -> dict:
+    """Return a concurrency-safe batched plan for the submitted work items.
+
+    Implements a minimal real scheduler so the mock genuinely exercises the
+    same response shape as the daemon:
+      - Greenfield items and items with no conflicting resource neighbours
+        may share a batch.
+      - Dependency ordering is respected (topological sort).
+    The mock keeps it simple: items with no depends_on go in batch 0 (grouped
+    by resource to avoid conflicts), items that depend on batch-0 items go in
+    batch 1, and so on.
+    """
+    items = payload.get("items", [])
+    if not items:
+        return {"batches": []}
+
+    # Build index by id.
+    by_id: dict[str, dict] = {it["id"]: it for it in items}
+
+    # Topological depth: max depth among depends_on predecessors + 1.
+    depths: dict[str, int] = {}
+
+    def depth(item_id: str, seen: set[str] | None = None) -> int:
+        if item_id in depths:
+            return depths[item_id]
+        if seen is None:
+            seen = set()
+        if item_id in seen:
+            # cycle — return a large number to push it late
+            return 999
+        seen.add(item_id)
+        item = by_id.get(item_id, {})
+        deps = item.get("depends_on", []) or []
+        d = max((depth(dep, seen) + 1 for dep in deps), default=0)
+        depths[item_id] = d
+        return d
+
+    for it in items:
+        depth(it["id"])
+
+    max_depth = max(depths.values(), default=0)
+
+    # Group items into waves by depth; within each wave avoid resource conflicts.
+    # Greenfield items share no resources so they can always go in their wave bucket.
+    batches: list[list[str]] = []
+    for wave in range(max_depth + 1):
+        wave_items = [it for it in items if depths.get(it["id"], 0) == wave]
+        if not wave_items:
+            continue
+        # Split wave into sub-batches by resource conflict.
+        used_resources: set[str] = set()
+        current_batch: list[str] = []
+        for it in wave_items:
+            resources: list[str] = it.get("resources", []) or []
+            is_greenfield: bool = it.get("is_greenfield", False)
+            if is_greenfield or not resources:
+                current_batch.append(it["id"])
+            else:
+                conflicts = used_resources & set(resources)
+                if conflicts and current_batch:
+                    batches.append(current_batch)
+                    current_batch = [it["id"]]
+                    used_resources = set(resources)
+                else:
+                    current_batch.append(it["id"])
+                    used_resources |= set(resources)
+        if current_batch:
+            batches.append(current_batch)
+
+    return {"batches": batches}
+
+
 def _model_call_response(payload: dict) -> dict:
     return {
         "text": "[mock-daemon] applied the requested change.",
@@ -369,6 +442,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             if "window_seconds" in payload:
                 resp["window_seconds"] = payload["window_seconds"]
             self._send_json(200, resp)
+        elif path == "/api/schedule":
+            self._send_json(200, _schedule_response(payload))
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
