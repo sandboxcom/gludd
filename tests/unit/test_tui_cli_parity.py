@@ -3,8 +3,17 @@
 from __future__ import annotations
 
 from typing import Any
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+def _mock_httpx_response(status_code: int = 200, json_data: dict[str, Any] | None = None) -> MagicMock:
+    """Return a mock httpx response with the given status code and JSON body."""
+    mock_resp = MagicMock()
+    mock_resp.status_code = status_code
+    mock_resp.json.return_value = json_data if json_data is not None else {}
+    return mock_resp
 
 
 def _make_handler() -> tuple[Any, dict[str, Any]]:
@@ -210,48 +219,72 @@ class TestModelsDiscoverAction:
     def test_models_discover_action(self) -> None:
         handler, state = _make_handler()
         state["current_view"] = "models"
-        handler.handle_key("d")
+        mock_resp = _mock_httpx_response(200, {"discovered_count": 5})
+        with patch("httpx.post", return_value=mock_resp):
+            handler.handle_key("d")
+        # Handler sets status_msg with "Discovered" text and sets last_discover
         assert "discover" in state.get("status_msg", "").lower() or state.get("last_discover") is not None
+        assert state.get("last_discover") is True
 
 
 class TestWorktreesScanAction:
     def test_worktrees_scan_action(self) -> None:
         handler, state = _make_handler()
         state["current_view"] = "worktrees"
-        handler.handle_key("s")
+        mock_resp = _mock_httpx_response(200, {"tracked_count": 3, "todos": []})
+        with patch("httpx.post", return_value=mock_resp):
+            handler.handle_key("s")
+        # Handler sets status_msg with "Scan" text and sets last_scan
         assert "scan" in state.get("status_msg", "").lower() or state.get("last_scan") is not None
+        assert state.get("last_scan") is True
 
 
 class TestIntegrityReportAction:
     def test_integrity_report_action(self) -> None:
         handler, state = _make_handler()
         state["current_view"] = "integrity"
-        handler.handle_key("p")
+        mock_resp = _mock_httpx_response(200, {"report": "ok"})
+        with patch("httpx.get", return_value=mock_resp):
+            handler.handle_key("p")
+        # Handler sets status_msg with "report" text and sets last_report
         assert "report" in state.get("status_msg", "").lower() or state.get("last_report") is not None
+        assert state.get("last_report") is True
 
 
 class TestAnsibleBuiltinsAction:
     def test_ansible_builtins_action(self) -> None:
         handler, state = _make_handler()
         state["current_view"] = "ansible"
-        handler.handle_key("b")
+        mock_resp = _mock_httpx_response(200, {"modules": ["command", "copy", "file"]})
+        with patch("httpx.get", return_value=mock_resp):
+            handler.handle_key("b")
+        # Handler sets ansible_builtins with modules list and status_msg with "Builtins"
         assert "builtin" in state.get("status_msg", "").lower() or state.get("ansible_builtins") is not None
+        assert state.get("ansible_builtins") == ["command", "copy", "file"]
 
 
 class TestFilestoreBinariesAction:
     def test_filestore_binaries_action(self) -> None:
         handler, state = _make_handler()
         state["current_view"] = "filestore"
-        handler.handle_key("b")
+        mock_resp = _mock_httpx_response(200, {"binaries": ["openbao", "consul"], "count": 2})
+        with patch("httpx.get", return_value=mock_resp):
+            handler.handle_key("b")
+        # Handler sets filestore_binaries with list and status_msg with "Binaries"
         assert "binar" in state.get("status_msg", "").lower() or state.get("filestore_binaries") is not None
+        assert state.get("filestore_binaries") == ["openbao", "consul"]
 
 
 class TestFilestoreBootstrapAction:
     def test_filestore_bootstrap_action(self) -> None:
         handler, state = _make_handler()
         state["current_view"] = "filestore"
-        handler.handle_key("B")
+        mock_resp = _mock_httpx_response(200, {"binary": "openbao", "status": "ok"})
+        with patch("httpx.post", return_value=mock_resp):
+            handler.handle_key("B")
+        # Handler sets status_msg with "Bootstrapped" text and sets last_bootstrap
         assert "bootstrap" in state.get("status_msg", "").lower() or state.get("last_bootstrap") is not None
+        assert state.get("last_bootstrap") is True
 
 
 class TestAllNewTablesNoUnboundedColumns:

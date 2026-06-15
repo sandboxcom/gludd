@@ -1265,7 +1265,7 @@ class TUIKeyHandler:
     def _selftest_run(self) -> None:
         state = self._state
         try:
-            resp = httpx.post(f"{state['daemon_url']}/admin/selftest", timeout=120.0)
+            resp = httpx.post(f"{state['daemon_url']}/admin/selftest", timeout=30.0)
             if resp.status_code == 200:
                 data = resp.json()
                 state["selftest_data"] = data
@@ -1307,7 +1307,7 @@ class TUIKeyHandler:
             resp = httpx.post(
                 f"{state['daemon_url']}/admin/models/discover",
                 params={"provider": "openrouter"},
-                timeout=60.0,
+                timeout=30.0,
             )
             if resp.status_code == 200:
                 data = resp.json()
@@ -1404,7 +1404,7 @@ class TUIKeyHandler:
             resp = httpx.post(
                 f"{state['daemon_url']}/admin/filestore/bootstrap",
                 params={"binary": "openbao"},
-                timeout=300.0,
+                timeout=30.0,
             )
             if resp.status_code == 200:
                 data = resp.json()

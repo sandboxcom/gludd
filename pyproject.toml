@@ -121,7 +121,7 @@ asyncio_default_fixture_loop_scope = "function"
 # is the project-wide fix for the class of "a hanging test stalls everything"
 # (e.g. a TUI input-feed that never reaches quit on headless Linux).
 timeout = 180
-timeout_method = "thread"
+timeout_method = "signal"
 
 [tool.coverage.run]
 source = ["general_ludd"]
