@@ -1,0 +1,95 @@
+---
+# tool_dispatch role — dispatch a tool call via the daemon and capture results
+#
+# Uses gludd_dispatch to POST a tool-call (state=dispatch) and optionally
+# fetch recent records and available handlers, then writes an artifact JSON.
+#
+# DISPATCH-ONLY: never mutates the repo or daemon state beyond the dispatch call.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Dispatch the tool call ────────────────────────────────────────────────────
+
+- name: Dispatch tool call via daemon
+  general_ludd.agent.gludd_dispatch:
+    state: dispatch
+    kind: "{{ tool_kind }}"
+    name: "{{ tool_name }}"
+    args: "{{ tool_args }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _td_dispatch_result
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Capture dispatch result
+  ansible.builtin.set_fact:
+    _td_result: "{{ _td_dispatch_result.result }}"
+    _td_changed: "{{ _td_dispatch_result.changed }}"
+
+# ── Optional: fetch recent records ────────────────────────────────────────────
+
+- name: Fetch recent dispatch records
+  general_ludd.agent.gludd_dispatch:
+    state: recent
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _td_recent_result
+  no_log: "{{ psk | length > 0 }}"
+  when: fetch_recent | bool
+
+- name: Set recent records fact (when fetch_recent=true)
+  ansible.builtin.set_fact:
+    _td_recent: "{{ _td_recent_result.records }}"
+  when: fetch_recent | bool
+
+- name: Set recent records fact (when fetch_recent=false)
+  ansible.builtin.set_fact:
+    _td_recent: []
+  when: not (fetch_recent | bool)
+
+# ── Optional: fetch available handlers ────────────────────────────────────────
+
+- name: Fetch available dispatch handlers
+  general_ludd.agent.gludd_dispatch:
+    state: available
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _td_available_result
+  no_log: "{{ psk | length > 0 }}"
+  when: fetch_available | bool
+
+- name: Set available handlers fact (when fetch_available=true)
+  ansible.builtin.set_fact:
+    _td_available: "{{ _td_available_result.handlers }}"
+  when: fetch_available | bool
+
+- name: Set available handlers fact (when fetch_available=false)
+  ansible.builtin.set_fact:
+    _td_available: []
+  when: not (fetch_available | bool)
+
+# ── Write dispatch artifact ───────────────────────────────────────────────────
+
+- name: Write dispatch artifact JSON
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'tool_dispatch',
+        'tool_kind': tool_kind,
+        'tool_name': tool_name,
+        'tool_args': tool_args,
+        'changed': _td_changed,
+        'result': _td_result,
+        'recent': _td_recent,
+        'available': _td_available
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/tool_dispatch.json"
+    mode: "0644"
+
+- name: Report tool dispatch completion
+  ansible.builtin.debug:
+    msg: "Tool dispatch complete: kind={{ tool_kind }}, name={{ tool_name }}, changed={{ _td_changed }}"

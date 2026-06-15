@@ -1,0 +1,60 @@
+---
+# Exercise the REAL gludd_dispatch module against the mock daemon.
+- name: Converge - exercise gludd_dispatch against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8834', true) }}"
+  tasks:
+    - name: List available dispatch handlers (state=available)
+      general_ludd.agent.gludd_dispatch:
+        state: available
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: available_result
+
+    - name: Persist the available result for verify
+      ansible.builtin.copy:
+        content: "{{ available_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-dispatch-available.json"
+        mode: "0644"
+
+    - name: Show available result
+      ansible.builtin.debug:
+        var: available_result
+
+    - name: Dispatch a tool call (state=dispatch)
+      general_ludd.agent.gludd_dispatch:
+        state: dispatch
+        kind: "tool"
+        name: "shell"
+        args:
+          command: "echo hello"
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: dispatch_result
+
+    - name: Persist the dispatch result for verify
+      ansible.builtin.copy:
+        content: "{{ dispatch_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-dispatch-result.json"
+        mode: "0644"
+
+    - name: Show dispatch result
+      ansible.builtin.debug:
+        var: dispatch_result
+
+    - name: Fetch recent dispatch records (state=recent)
+      general_ludd.agent.gludd_dispatch:
+        state: recent
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: recent_result
+
+    - name: Persist the recent result for verify
+      ansible.builtin.copy:
+        content: "{{ recent_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-dispatch-recent.json"
+        mode: "0644"
+
+    - name: Show recent result
+      ansible.builtin.debug:
+        var: recent_result

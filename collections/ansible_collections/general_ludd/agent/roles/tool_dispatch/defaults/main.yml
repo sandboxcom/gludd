@@ -1,0 +1,18 @@
+---
+# tool_dispatch role defaults — dispatch a tool call via the daemon
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Tool-call parameters (required when dispatching)
+tool_kind: ""
+tool_name: ""
+tool_args: {}
+
+# Artifact output
+artifact_dir: "/tmp/gludd-tool-dispatch"
+
+# Whether to also fetch recent records and available handlers after dispatching
+fetch_recent: false
+fetch_available: false

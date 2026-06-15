@@ -1,0 +1,21 @@
+---
+- name: Converge - run tool_dispatch role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}"
+  tasks:
+    - name: Invoke tool_dispatch role (dispatches a shell tool call)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.tool_dispatch
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-tool-dispatch-{{ mock_port }}"
+        tool_kind: "tool"
+        tool_name: "shell"
+        tool_args:
+          command: "echo hello"
+        fetch_recent: false
+        fetch_available: false

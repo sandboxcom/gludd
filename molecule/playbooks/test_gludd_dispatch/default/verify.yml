@@ -1,0 +1,70 @@
+---
+- name: Verify - gludd_dispatch returned the mock dispatch snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8834', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8834', true) }}.pid"
+  tasks:
+    - name: Load persisted available result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-dispatch-available.json"
+      register: available_raw
+
+    - name: Parse available result
+      ansible.builtin.set_fact:
+        available_result: "{{ available_raw.content | b64decode | from_json }}"
+
+    - name: Assert available result shape
+      ansible.builtin.assert:
+        that:
+          - available_result.handlers is defined
+          - available_result.ansible_facts.gludd_dispatch is defined
+          - available_result.ansible_facts.gludd_dispatch.handlers is defined
+          - available_result.changed == false
+        fail_msg: "gludd_dispatch available result incomplete: {{ available_result }}"
+        success_msg: "gludd_dispatch available returned {{ available_result.handlers | length }} handlers"
+
+    - name: Load persisted dispatch result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-dispatch-result.json"
+      register: dispatch_raw
+
+    - name: Parse dispatch result
+      ansible.builtin.set_fact:
+        dispatch_result: "{{ dispatch_raw.content | b64decode | from_json }}"
+
+    - name: Assert dispatch result shape
+      ansible.builtin.assert:
+        that:
+          - dispatch_result.result is defined
+          - dispatch_result.ansible_facts.gludd_dispatch is defined
+          - dispatch_result.changed == true
+        fail_msg: "gludd_dispatch dispatch result incomplete: {{ dispatch_result }}"
+        success_msg: "gludd_dispatch dispatch returned changed=true with result"
+
+    - name: Load persisted recent result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-dispatch-recent.json"
+      register: recent_raw
+
+    - name: Parse recent result
+      ansible.builtin.set_fact:
+        recent_result: "{{ recent_raw.content | b64decode | from_json }}"
+
+    - name: Assert recent result shape
+      ansible.builtin.assert:
+        that:
+          - recent_result.records is defined
+          - recent_result.ansible_facts.gludd_dispatch is defined
+          - recent_result.ansible_facts.gludd_dispatch.records is defined
+          - recent_result.changed == false
+        fail_msg: "gludd_dispatch recent result incomplete: {{ recent_result }}"
+        success_msg: "gludd_dispatch recent returned {{ recent_result.records | length }} records"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
