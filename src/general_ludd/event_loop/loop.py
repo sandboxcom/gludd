@@ -640,14 +640,139 @@ class EventLoop:
                 logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
                 self._tick_metrics["todos_dispatched"] = 0
                 return
-        dispatch_count = 0
-        for todo in claimed:
-            if cap is not None and dispatch_count >= cap:
-                logger.info("PID cap reached: dispatching %d of %d claimed (cap=%d)", dispatch_count, len(claimed), cap)
-                break
-            await self._dispatch_execute_job(todo)
-            dispatch_count += 1
+
+        # Apply PID cap.
+        if cap is not None and len(claimed) > cap:
+            logger.info(
+                "PID cap reached: dispatching %d of %d claimed (cap=%d)",
+                cap, len(claimed), cap,
+            )
+            claimed = list(claimed[:cap])
+
+        # W(#23): wire Scheduler.plan() to determine concurrency-safe batches.
+        # Each batch may run concurrently (asyncio.gather) when a session_factory
+        # is available — each gathered coroutine opens its OWN async session so
+        # SQLAlchemy's "no concurrent flush on one session" rule is never violated.
+        # Falls back to sequential dispatch when no session_factory (e.g. tests
+        # that pass a bare session=...).
+        dispatch_count = await self._dispatch_jobs_via_scheduler(claimed)
         self._tick_metrics["todos_dispatched"] = dispatch_count
+
+    async def _dispatch_jobs_via_scheduler(self, todos: list[Any]) -> int:
+        """Dispatch todos ordered + grouped by Scheduler.plan().
+
+        Concurrent batches: if self._session_factory is set, each job in a batch
+        opens its own async session (session-per-coroutine) and is gathered with
+        all other jobs in the same batch.  This is safe because:
+          - load_shared_vars is a pure READ (no write contention)
+          - persist_task_return writes to an independent row per job (no flush collision)
+
+        Sequential fallback: if no session_factory (bare-session tests, no-DB mode),
+        jobs run sequentially in scheduler-plan order.
+        """
+        from general_ludd.scheduling.scheduler import CycleError, Scheduler, WorkItem
+
+        if not todos:
+            return 0
+
+        # Build WorkItems.  Default each todo to its own exclusive resource
+        # (its todo_id) so nothing falsely parallelizes unless we can determine
+        # otherwise.  Todos sharing the same queue share a resource label so the
+        # scheduler correctly serializes queue-exclusive operations.
+        items: list[WorkItem] = []
+        for todo in todos:
+            todo_id = str(_safe_str(todo, "todo_id", "") or id(todo))
+            queue = _safe_str(todo, "queue", "core") or "core"
+            # Use the todo_id as a unique resource so each job is self-exclusive
+            # by default; add queue as a shared resource only when queue-exclusive
+            # serialization is explicitly needed (opt-in via config).
+            queue_exclusive = self._config_snapshot.get("scheduler_queue_exclusive", False)
+            resources: frozenset[str] = (
+                frozenset({f"queue:{queue}", f"todo:{todo_id}"})
+                if queue_exclusive
+                else frozenset({f"todo:{todo_id}"})
+            )
+            items.append(WorkItem(id=todo_id, resources=resources))
+
+        # Build id→todo map for lookup.
+        todo_map: dict[str, Any] = {}
+        for todo in todos:
+            tid = str(_safe_str(todo, "todo_id", "") or id(todo))
+            todo_map[tid] = todo
+
+        try:
+            batches = Scheduler().plan(items)
+        except (CycleError, ValueError) as exc:
+            # Fail-closed on scheduler error: fall back to sequential.
+            logger.warning("Scheduler.plan() failed (%s); falling back to sequential", exc)
+            batches = [[str(_safe_str(t, "todo_id", "") or id(t))] for t in todos]
+
+        dispatch_count = 0
+        can_concurrent = self._session_factory is not None
+
+        for batch_ids in batches:
+            batch_todos = [todo_map[bid] for bid in batch_ids if bid in todo_map]
+            if not batch_todos:
+                continue
+
+            if can_concurrent and len(batch_todos) > 1:
+                # Concurrent: each coroutine opens its own session.
+                logger.info(
+                    "Scheduler batch: %d jobs concurrent (session-per-coroutine)",
+                    len(batch_todos),
+                )
+                tasks = [
+                    self._dispatch_execute_job_isolated(t)
+                    for t in batch_todos
+                ]
+                results = await asyncio.gather(*tasks, return_exceptions=True)
+                for res in results:
+                    if isinstance(res, Exception):
+                        logger.error("Concurrent job dispatch raised: %s", res)
+                    else:
+                        dispatch_count += 1
+            elif can_concurrent and len(batch_todos) == 1:
+                # Single job: still use isolated session for consistency.
+                try:
+                    await self._dispatch_execute_job_isolated(batch_todos[0])
+                    dispatch_count += 1
+                except Exception as exc:
+                    logger.error("Job dispatch raised: %s", exc)
+            else:
+                # Sequential fallback (no session_factory).
+                for todo in batch_todos:
+                    try:
+                        await self._dispatch_execute_job(todo)
+                        dispatch_count += 1
+                    except Exception as exc:
+                        logger.error("Sequential job dispatch raised: %s", exc)
+
+        return dispatch_count
+
+    async def _dispatch_execute_job_isolated(self, todo: Any) -> None:
+        """Dispatch a single execute job using its OWN async session.
+
+        Opens a fresh session from self._session_factory for every DB interaction
+        (load_shared_vars, persist_task_return) so this coroutine is safe to run
+        concurrently with other _dispatch_execute_job_isolated calls in the same
+        asyncio.gather() batch — no shared _active_session is touched.
+        """
+        assert self._session_factory is not None
+
+        async with self._session_factory() as job_session:
+            # Build a per-job variable_repo bound to this session.
+            job_variable_repo = VariableNamespaceRepository(job_session)
+            job_task_return_repo = TaskReturnRepository(job_session)
+            await self._dispatch_execute_job(
+                todo,
+                _variable_repo_override=job_variable_repo,
+                _task_return_repo_override=job_task_return_repo,
+                _session_override=job_session,
+            )
+            try:
+                await job_session.commit()
+            except Exception as exc:
+                logger.warning("Failed to commit isolated job session for %s: %s", getattr(todo, "todo_id", "?"), exc)
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
         results = self._tick_state.get("rule_evaluation_results", [])
@@ -662,7 +787,32 @@ class EventLoop:
                     return apply_rule_actions(actions)
         return {}
 
-    async def _dispatch_execute_job(self, todo: Any) -> None:
+    async def _dispatch_execute_job(
+        self,
+        todo: Any,
+        *,
+        _variable_repo_override: Any | None = None,
+        _task_return_repo_override: Any | None = None,
+        _session_override: AsyncSession | None = None,
+    ) -> None:
+        """Dispatch a single execute job.
+
+        The ``_*_override`` keyword arguments are used by
+        :meth:`_dispatch_execute_job_isolated` to inject per-coroutine repos/sessions
+        so this method remains safe when called concurrently via asyncio.gather.
+        When called without overrides (sequential path) it falls back to the shared
+        instance attributes as before.
+        """
+        # Resolve which repos/session to use: per-job overrides (concurrent path)
+        # or the shared tick-level ones (sequential fallback path).
+        eff_variable_repo = (
+            _variable_repo_override if _variable_repo_override is not None else self._variable_repo
+        )
+        eff_task_return_repo = (
+            _task_return_repo_override if _task_return_repo_override is not None else self._task_return_repo
+        )
+        eff_session = _session_override if _session_override is not None else self._active_session
+
         budget_context: dict[str, Any] = {}
         if self._mcp_tool_registry is not None:
             budget_context["mcp_tools"] = self._mcp_tool_registry.tool_names()
@@ -709,7 +859,13 @@ class EventLoop:
             prompt_text, todo, project_id_val,
         )
         skill_body = self._resolve_skill_body(todo)
-        shared_vars = await self._load_shared_vars(project_id_val)
+        # Load shared vars via the effective (possibly per-job) repo.
+        shared_vars: dict[str, str] | None = None
+        if eff_variable_repo is not None:
+            try:
+                shared_vars = await eff_variable_repo.load_vars_for_project(project_id_val)
+            except Exception as exc:
+                logger.warning("load_shared_vars failed for todo %s: %s", getattr(todo, "todo_id", "?"), exc)
         if self._runner is not None:
             job_id = f"EXEC-{todo.todo_id}"
             if ws is not None and hasattr(ws, "private_data_dir"):
@@ -775,7 +931,11 @@ class EventLoop:
             f"{self.worker_base_url}/jobs/execute",
             json=job.model_dump(mode="json"),
         )
-        await self._persist_task_return(todo, job, resp)
+        await self._persist_task_return(
+            todo, job, resp,
+            _task_return_repo_override=eff_task_return_repo,
+            _session_override=eff_session,
+        )
 
     async def _dispatch_validate_job(self, todo: Any) -> None:
         if self._http_client is None:
@@ -793,8 +953,18 @@ class EventLoop:
         )
         logger.info("Validation dispatch for todo %s: status=%s", todo.todo_id, getattr(resp, "status_code", None))
 
-    async def _persist_task_return(self, todo: Any, job: JobSpec, resp: Any) -> None:
-        if self._task_return_repo is None:
+    async def _persist_task_return(
+        self,
+        todo: Any,
+        job: JobSpec,
+        resp: Any,
+        *,
+        _task_return_repo_override: Any | None = None,
+        _session_override: AsyncSession | None = None,
+    ) -> None:
+        eff_repo = _task_return_repo_override if _task_return_repo_override is not None else self._task_return_repo
+        eff_session = _session_override if _session_override is not None else self._active_session
+        if eff_repo is None:
             return
         try:
             body = getattr(resp, "json", None)
@@ -806,7 +976,7 @@ class EventLoop:
                 return
             if not isinstance(data, dict):
                 return
-            await self._task_return_repo.create(data={
+            await eff_repo.create(data={
                 "return_id": data.get("return_id", f"RET-{job.job_id}"),
                 "todo_id": todo.todo_id, "job_id": job.job_id,
                 "playbook": job.playbook, "queue": job.queue,
@@ -814,8 +984,8 @@ class EventLoop:
                 "result_summary": data.get("result_summary", ""),
                 "project_id": job.project_id,
             })
-            if self._active_session is not None:
-                await self._active_session.flush()
+            if eff_session is not None:
+                await eff_session.flush()
             logger.info("Persisted TaskReturn for todo %s", todo.todo_id)
         except Exception as exc:
             logger.warning("Failed to persist task return for %s: %s", todo.todo_id, exc)
