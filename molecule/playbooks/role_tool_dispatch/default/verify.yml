@@ -1,0 +1,50 @@
+---
+- name: Verify - tool_dispatch wrote its dispatch artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}.pid"
+    artifact: "/tmp/gludd-tool-dispatch-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8835', true) }}/tool_dispatch.json"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'tool_dispatch'
+          - result.tool_kind == 'tool'
+          - result.tool_name == 'shell'
+          - result.tool_args is defined
+          - result.changed is defined
+          - result.result is defined
+          # Dispatch should have fired and changed=true
+          - result.changed == true
+        fail_msg: "tool_dispatch artifact wrong: {{ result }}"
+        success_msg: "tool_dispatch ran end-to-end against mock; changed={{ result.changed }}, name={{ result.tool_name }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-tool-dispatch-{{ mock_port }}"
+        state: absent
+      failed_when: false

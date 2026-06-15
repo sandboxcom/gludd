@@ -65,6 +65,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {"gludd_introspect", "gludd_abtest", "gludd
 #   gludd_model_call  -> test_gludd_model_call  (port 8775, POST /admin/models/call)
 #   gludd_skill       -> test_gludd_skill       (port 8777, local skill render with Jinja2)
 #   gludd_worktree    -> test_gludd_worktree    (port 8780, real git worktree present+absent)
+#   gludd_dispatch    -> test_gludd_dispatch    (port 8834, POST /api/dispatch + available + recent)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
 # self_improve_propose is exercised via the propose->ab_test->promote chain that
@@ -104,6 +105,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {"self_improve_propose"}
 #   validate_and_push     -> role_validate_and_push     (8804, override-pass, no push)
 #   velocity_report       -> role_velocity_report       (8823, gludd_metrics+history -> points_per_sprint/trend)
 #   write_tests           -> role_write_tests           (8788, agent_run test_run_cmd -> artifact)
+#   tool_dispatch         -> role_tool_dispatch         (8835, dispatch shell tool call -> artifact)
 
 
 class TestMoleculeHarnessExists:

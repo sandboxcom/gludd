@@ -23,6 +23,9 @@ shape matches what each module parses:
   GET  /api/resource-preferences      -> 200 {"preference":..}              (gludd_db resource_preference)
   GET  /api/features                  -> 200 {"features":[...],"total":N}    (gludd_features list)
   POST /api/features/verify           -> 200 {"summary":{...},"results":[]}  (gludd_features verify)
+  POST /api/dispatch                  -> 200 {"result":{...}}                (gludd_dispatch dispatch)
+  GET  /api/dispatch/available        -> 200 {"handlers":[...]}              (gludd_dispatch available)
+  GET  /api/dispatch/recent           -> 200 {"records":[...]}               (gludd_dispatch recent)
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -212,6 +215,38 @@ VERIFY_SUMMARY = {
 }
 
 
+DISPATCH_HANDLERS = [
+    {"kind": "tool", "name": "shell", "description": "Run a shell command on the agent host"},
+    {"kind": "tool", "name": "read_file", "description": "Read a file from the agent host"},
+    {"kind": "tool", "name": "write_file", "description": "Write a file on the agent host"},
+]
+
+DISPATCH_RECENT = [
+    {
+        "id": "dispatch-mock-0001",
+        "kind": "tool",
+        "name": "shell",
+        "args": {"command": "echo hello"},
+        "status": "success",
+        "result": {"stdout": "hello", "returncode": 0},
+        "dispatched_at": "2026-01-01T00:00:00",
+    },
+]
+
+
+def _dispatch_response(payload: dict) -> dict:
+    return {
+        "result": {
+            "id": "dispatch-mock-new",
+            "kind": payload.get("kind", "tool"),
+            "name": payload.get("name", "unknown"),
+            "args": payload.get("args", {}),
+            "status": "success",
+            "output": "[mock-daemon] dispatch executed successfully.",
+        },
+    }
+
+
 def _model_call_response(payload: dict) -> dict:
     return {
         "text": "[mock-daemon] applied the requested change.",
@@ -287,6 +322,10 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"preference": "mock-profile", "value": "mock-profile"})
         elif path == "/api/features":
             self._send_json(200, {"features": list(FEATURES_SNAPSHOT), "total": len(FEATURES_SNAPSHOT), "filtered": False})
+        elif path == "/api/dispatch/available":
+            self._send_json(200, {"handlers": list(DISPATCH_HANDLERS)})
+        elif path == "/api/dispatch/recent":
+            self._send_json(200, {"records": list(DISPATCH_RECENT)})
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -302,6 +341,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"acked": True})
         elif path == "/api/features/verify":
             self._send_json(200, dict(VERIFY_SUMMARY))
+        elif path == "/api/dispatch":
+            self._send_json(200, _dispatch_response(payload))
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
