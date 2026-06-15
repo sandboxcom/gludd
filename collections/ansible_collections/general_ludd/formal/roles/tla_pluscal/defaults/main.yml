@@ -1,0 +1,18 @@
+---
+# tla_pluscal role defaults
+
+# Path to the .tla spec containing PlusCal algorithm
+spec_path: ""
+
+# Path to tla2tools.jar
+tla_tools_jar: "/opt/tla/tla2tools.jar"
+
+# SAFE-BY-DEFAULT: do NOT run pcal.trans unless explicitly enabled.
+# Java/jar absent or enable_tla=false → translated=false, status=skipped (graceful, non-fatal).
+enable_tla: false
+
+# Override pcal.trans stdout for testing (used when enable_tla=false)
+pcal_output_override: "Translation completed."
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-tla-pluscal"

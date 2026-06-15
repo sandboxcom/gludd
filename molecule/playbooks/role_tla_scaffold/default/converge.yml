@@ -1,0 +1,20 @@
+---
+# Run the REAL tla_scaffold role with deterministic template (enable_model_call=false).
+# Exercises the full template path: .tla + .cfg + tla_scaffold.json are written.
+- name: Converge - run tla_scaffold role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+  tasks:
+    - name: Invoke tla_scaffold (deterministic template)
+      ansible.builtin.include_role:
+        name: general_ludd.formal.tla_scaffold
+      vars:
+        spec_name: "CounterSpec"
+        design_text: "A counter that increments and decrements. It must never go negative."
+        out_dir: "/tmp/gludd-tla-scaffold-{{ mock_port }}"
+        enable_model_call: false
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""

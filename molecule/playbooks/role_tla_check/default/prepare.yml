@@ -1,0 +1,117 @@
+---
+# role_tla_check prepare:
+#   1. Write a Java shim that returns canned TLC output based on args.
+#   2. Start the mock daemon for gludd_message support.
+#
+# The shim handles:
+#   - tlc2.TLC (pass case) → success output
+#   - tlc2.TLC with VIOLATION in spec → violation output (we use arg inspection)
+#   - java -version → version to stderr
+- name: Prepare - java shim + mock daemon for tla_check
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}.pid"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+  tasks:
+    - name: Create java shim directory
+      ansible.builtin.file:
+        path: "{{ shim_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write java shim script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          # Java shim for tla_check molecule scenario
+          ARGS="$*"
+          case "$ARGS" in
+            *tla2sany.SANY*)
+              echo "Parsing completed. No errors."
+              exit 0
+              ;;
+            *tlc2.TLC*ViolationSpec*)
+              echo "Error: Invariant NeverNegative is violated."
+              echo "Error: The behavior up to this point is:"
+              echo "State 1: <Initial predicate>"
+              echo "/\\ n = 0"
+              echo "State 2: <Next>"
+              echo "/\\ n = -1"
+              exit 12
+              ;;
+            *tlc2.TLC*)
+              echo "Model checking completed. No error has been found."
+              exit 0
+              ;;
+            *pcal.trans*)
+              echo "Translation completed."
+              exit 0
+              ;;
+            *-version*)
+              echo 'openjdk version "17.0.0" 2021-09-14' >&2
+              exit 0
+              ;;
+            *)
+              echo "java shim: unrecognized args: $ARGS" >&2
+              exit 0
+              ;;
+          esac
+        dest: "{{ shim_dir }}/java"
+        mode: "0755"
+
+    - name: Create fake spec directories
+      ansible.builtin.file:
+        path: "/tmp/gludd-tla-check-specs-{{ mock_port }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write fake passing spec
+      ansible.builtin.copy:
+        content: |
+          ---- MODULE CounterSpec ----
+          EXTENDS Integers
+          VARIABLES n
+          Init == n = 0
+          Next == n' = n + 1
+          Spec == Init /\ [][Next]_n
+          NeverNegative == n >= 0
+          ====
+        dest: "/tmp/gludd-tla-check-specs-{{ mock_port }}/CounterSpec.tla"
+        mode: "0644"
+
+    - name: Write fake violation spec
+      ansible.builtin.copy:
+        content: |
+          ---- MODULE ViolationSpec ----
+          EXTENDS Integers
+          VARIABLES n
+          Init == n = 0
+          Next == n' = n - 1
+          Spec == Init /\ [][Next]_n
+          NeverNegative == n >= 0
+          ====
+        dest: "/tmp/gludd-tla-check-specs-{{ mock_port }}/ViolationSpec.tla"
+        mode: "0644"
+
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5

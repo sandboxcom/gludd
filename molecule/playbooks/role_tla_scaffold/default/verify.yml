@@ -1,0 +1,97 @@
+---
+# Verify tla_scaffold wrote .tla, .cfg, and tla_scaffold.json with correct content.
+- name: Verify - tla_scaffold wrote spec artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}.pid"
+    out_dir: "/tmp/gludd-tla-scaffold-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    tla_file: "/tmp/gludd-tla-scaffold-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}/CounterSpec.tla"
+    cfg_file: "/tmp/gludd-tla-scaffold-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}/CounterSpec.cfg"
+    artifact: "/tmp/gludd-tla-scaffold-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}/tla_scaffold.json"
+  tasks:
+    - name: Assert .tla file exists
+      ansible.builtin.stat:
+        path: "{{ tla_file }}"
+      register: tla_stat
+      failed_when: not tla_stat.stat.exists
+
+    - name: Assert .cfg file exists
+      ansible.builtin.stat:
+        path: "{{ cfg_file }}"
+      register: cfg_stat
+      failed_when: not cfg_stat.stat.exists
+
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art_stat
+      failed_when: not art_stat.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'tla_scaffold'
+          - result.status == 'completed'
+          - result.spec_name == 'CounterSpec'
+          - result.source == 'deterministic_template'
+          - result.tla_file is defined
+          - result.cfg_file is defined
+          - result.invariant_name is defined
+          - result.invariant_name | length > 0
+          - result.vars is defined
+        fail_msg: "tla_scaffold artifact wrong: {{ result }}"
+        success_msg: "tla_scaffold generated spec with invariant={{ result.invariant_name }}"
+
+    - name: Load .tla file content
+      ansible.builtin.slurp:
+        src: "{{ tla_file }}"
+      register: tla_raw
+
+    - name: Assert .tla contains TLA+ structural markers
+      ansible.builtin.assert:
+        that:
+          - "'MODULE CounterSpec' in (tla_raw.content | b64decode)"
+          - "'VARIABLES' in (tla_raw.content | b64decode)"
+          - "'Init' in (tla_raw.content | b64decode)"
+          - "'Next' in (tla_raw.content | b64decode)"
+          - "'INVARIANT' in (tla_raw.content | b64decode) or 'NeverNegative' in (tla_raw.content | b64decode)"
+        fail_msg: ".tla file missing TLA+ structural markers"
+        success_msg: ".tla file has correct TLA+ structure (MODULE, VARIABLES, Init, Next, invariant)"
+
+    - name: Load .cfg file content
+      ansible.builtin.slurp:
+        src: "{{ cfg_file }}"
+      register: cfg_raw
+
+    - name: Assert .cfg contains SPECIFICATION and INVARIANT
+      ansible.builtin.assert:
+        that:
+          - "'SPECIFICATION' in (cfg_raw.content | b64decode)"
+          - "'INVARIANT' in (cfg_raw.content | b64decode)"
+        fail_msg: ".cfg file missing SPECIFICATION or INVARIANT"
+        success_msg: ".cfg file has SPECIFICATION and INVARIANT sections"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent
+      failed_when: false

@@ -1,0 +1,22 @@
+---
+# Run the REAL tla_pluscal role with pcal_output_override (enable_tla=false).
+# Exercises real classification of pcal.trans output without Java.
+- name: Converge - run tla_pluscal role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+  environment:
+    PATH: "{{ shim_dir }}:{{ ansible_env.PATH }}"
+  tasks:
+    - name: Invoke tla_pluscal (override mode — real classification of canned output)
+      ansible.builtin.include_role:
+        name: general_ludd.formal.tla_pluscal
+      vars:
+        spec_path: "/tmp/gludd-tla-pluscal-{{ mock_port }}/CounterPlusCal.tla"
+        tla_tools_jar: "{{ shim_dir }}/tla2tools.jar"
+        enable_tla: false
+        pcal_output_override: "Translation completed."
+        artifact_dir: "/tmp/gludd-tla-pluscal-out-{{ mock_port }}"

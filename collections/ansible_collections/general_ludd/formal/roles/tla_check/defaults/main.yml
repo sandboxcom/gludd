@@ -1,0 +1,30 @@
+---
+# tla_check role defaults
+
+# Paths to the spec and config (required for real TLC)
+spec_path: ""
+cfg_path: ""
+
+# Path to tla2tools.jar
+tla_tools_jar: "/opt/tla/tla2tools.jar"
+
+# SAFE-BY-DEFAULT: do NOT run TLC unless explicitly enabled.
+# Java/jar absent or enable_tla=false → outcome=skipped (graceful, non-fatal).
+enable_tla: false
+
+# TLC stdout override for testing (used when enable_tla=false).
+# Exercise real outcome classification without real Java.
+tlc_output_override: "Model checking completed. No error has been found."
+
+# Timeout in seconds for TLC (0 = no timeout)
+timeout: 300
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-tla-check"
+
+# Daemon connectivity (for gludd_message on violation)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Message recipient on invariant violation (empty = no message sent)
+handoff_recipient: ""

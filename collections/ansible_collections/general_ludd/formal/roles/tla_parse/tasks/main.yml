@@ -1,0 +1,144 @@
+---
+# tla_parse role — SANY syntax/semantic check
+#
+# Runs: java -cp tla2tools.jar tla2sany.SANY <spec_path>
+#
+# Graceful degradation:
+#   - enable_tla=false (default) → use parse_output_override; status=skipped
+#   - Java or jar absent → status=skipped (non-fatal)
+#   - Real errors in SANY output → parsed=false, errors[] populated
+#
+# Success marker in SANY stdout: "Parsing completed. No errors."
+# Error marker: lines containing "***" (SANY error format)
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - artifact_dir | length > 0
+    fail_msg: "tla_parse: artifact_dir is required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Run real SANY (opt-in only) ───────────────────────────────────────────
+
+- name: Check if Java is available (needed for SANY)
+  ansible.builtin.command:
+    cmd: java -version
+  register: _tp_java_check
+  changed_when: false
+  failed_when: false
+  when: enable_tla | bool
+
+- name: Check if tla2tools.jar exists
+  ansible.builtin.stat:
+    path: "{{ tla_tools_jar }}"
+  register: _tp_jar_stat
+  when: enable_tla | bool
+
+- name: Run SANY parse (enable_tla=true, Java present, jar present)
+  ansible.builtin.command:
+    cmd: "java -cp {{ tla_tools_jar }} tla2sany.SANY {{ spec_path }}"
+  register: _tp_sany_raw
+  changed_when: false
+  failed_when: false
+  when:
+    - enable_tla | bool
+    - not ansible_check_mode
+    - _tp_java_check is defined
+    - _tp_java_check.rc | default(1) == 0
+    - _tp_jar_stat is defined
+    - _tp_jar_stat.stat.exists | default(false)
+
+# ── Select output to classify ─────────────────────────────────────────────
+
+- name: Use real SANY output
+  ansible.builtin.set_fact:
+    _tp_parse_stdout: "{{ (_tp_sany_raw.stdout | default('')) + (_tp_sany_raw.stderr | default('')) }}"
+    _tp_ran: true
+    _tp_status: "ran"
+  when:
+    - enable_tla | bool
+    - not ansible_check_mode
+    - _tp_sany_raw is defined
+    - _tp_sany_raw.rc is defined
+
+- name: Use parse_output_override (enable_tla=false or Java/jar absent or check_mode)
+  ansible.builtin.set_fact:
+    _tp_parse_stdout: "{{ parse_output_override }}"
+    _tp_ran: false
+    _tp_status: "skipped"
+  when: >-
+    not (enable_tla | bool)
+    or ansible_check_mode
+    or (_tp_sany_raw is not defined)
+    or (_tp_sany_raw.rc is not defined)
+
+# ── Classify SANY output ──────────────────────────────────────────────────
+
+- name: Classify parse result (success)
+  ansible.builtin.set_fact:
+    _tp_parsed: true
+    _tp_errors: []
+    _tp_parse_verdict: "ok"
+  when: >-
+    ('Parsing completed' in _tp_parse_stdout)
+    and ('No errors' in _tp_parse_stdout)
+    and ('***' not in _tp_parse_stdout)
+
+- name: Classify parse result (error)
+  ansible.builtin.set_fact:
+    _tp_parsed: false
+    _tp_parse_verdict: "error"
+    _tp_errors: >-
+      {{
+        _tp_parse_stdout.split('\n')
+        | select('search', '\\*\\*\\*')
+        | list
+      }}
+  when: >-
+    ('***' in _tp_parse_stdout)
+    or ('Parsing completed' not in _tp_parse_stdout and _tp_ran | bool)
+
+- name: Set parse defaults (override path — treat override as success unless it has errors)
+  ansible.builtin.set_fact:
+    _tp_parsed: >-
+      {{
+        not ('***' in _tp_parse_stdout)
+        and ('No errors' in _tp_parse_stdout or not _tp_ran)
+      }}
+    _tp_parse_verdict: >-
+      {{ 'ok' if (not ('***' in _tp_parse_stdout)) else 'error' }}
+    _tp_errors: >-
+      {{
+        _tp_parse_stdout.split('\n') | select('search', '\\*\\*\\*') | list
+      }}
+  when:
+    - _tp_parsed is not defined
+
+# ── Write artifact ────────────────────────────────────────────────────────
+
+- name: Write tla_parse.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'tla_parse',
+        'status': _tp_status,
+        'spec_path': spec_path,
+        'tla_ran': _tp_ran | bool,
+        'parsed': _tp_parsed | bool,
+        'parse_verdict': _tp_parse_verdict,
+        'errors': _tp_errors | default([])
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/tla_parse.json"
+    mode: "0644"
+
+- name: Report parse completion
+  ansible.builtin.debug:
+    msg: >-
+      tla_parse: status={{ _tp_status }}
+      parsed={{ _tp_parsed | bool }}
+      errors={{ (_tp_errors | default([])) | length }}

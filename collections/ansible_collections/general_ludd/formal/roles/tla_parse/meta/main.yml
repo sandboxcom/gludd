@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: tla_parse
+  author: Agentic Harness Agent
+  description: >
+    Run SANY (TLA+ syntax/semantic checker) against a .tla spec. Java/jar absent
+    or enable_tla=false results in status=skipped (graceful, non-fatal). Real
+    parse errors are classified and written to tla_parse.json (parsed:bool,
+    errors[]). The output-override mechanism lets molecule exercise real parsing
+    logic without Java.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

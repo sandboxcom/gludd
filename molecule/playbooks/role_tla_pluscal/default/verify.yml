@@ -1,0 +1,64 @@
+---
+# Verify tla_pluscal classified canned pcal.trans output correctly:
+#   translated=true, status=skipped (enable_tla=false), error=false
+- name: Verify - tla_pluscal classified pcal.trans output correctly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}.pid"
+    artifact: "/tmp/gludd-tla-pluscal-out-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}/tla_pluscal.json"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    spec_dir: "/tmp/gludd-tla-pluscal-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    out_dir: "/tmp/gludd-tla-pluscal-out-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art_stat
+      failed_when: not art_stat.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert tla_pluscal classified override output correctly
+      ansible.builtin.assert:
+        that:
+          - result.role == 'tla_pluscal'
+          - result.status == 'skipped'
+          - result.translated | bool
+          - not result.error | bool
+        fail_msg: "tla_pluscal artifact wrong: {{ result }}"
+        success_msg: "tla_pluscal classified pcal output: translated={{ result.translated }} status={{ result.status }}"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove shim directory
+      ansible.builtin.file:
+        path: "{{ shim_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove spec directory
+      ansible.builtin.file:
+        path: "{{ spec_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove output directory
+      ansible.builtin.file:
+        path: "{{ out_dir }}"
+        state: absent
+      failed_when: false
