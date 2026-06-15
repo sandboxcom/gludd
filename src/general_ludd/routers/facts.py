@@ -231,6 +231,28 @@ async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[s
     except Exception as exc:
         logger.debug("features facet unavailable: %s", exc)
     return facet
+def _spend_facet(app: FastAPI) -> dict[str, Any]:
+    """Current rolling-window spend summary for the spend-limiter subsystem.
+
+    Returns a dict suitable for embedding in /api/facts under the ``"spend"``
+    key.  When no limiter is active the values are safe defaults.
+    """
+    limiter = getattr(app.state, "_spend_limiter", None)
+    if limiter is None:
+        return {
+            "limiter_active": False,
+            "window_spend_usd": 0.0,
+            "limit_usd": None,
+            "remaining_usd": None,
+            "window_seconds": None,
+        }
+    return {
+        "limiter_active": True,
+        "window_spend_usd": limiter.window_spend(),
+        "limit_usd": limiter._limit_usd,
+        "remaining_usd": limiter.remaining(),
+        "window_seconds": limiter._window_seconds,
+    }
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -268,6 +290,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "codebase": _codebase_facet(app, recent_failures=history or None),
             "features": await _features_facet(app, project_id=project_id),
             "dispatch": dispatch,
+            "spend": _spend_facet(app),
             "project_id": project_id,
         }
 

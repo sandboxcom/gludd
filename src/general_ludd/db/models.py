@@ -396,6 +396,34 @@ class AgentMessageModel(Base):
     )
 
 
+class SpendRecordModel(Base):
+    """Persisted spend event for the rolling-window spend limiter.
+
+    ``ts`` is a Unix epoch float so arithmetic stays in pure Python / SQL
+    without timezone machinery.  ``project_id`` and ``model`` are optional
+    metadata and are NOT used in the rolling-window math — only ``ts`` and
+    ``cost_usd`` matter for aggregation.
+    """
+
+    __tablename__ = "spend_records"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
+    ts: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False)
+    kind: Mapped[str] = mapped_column(String(64), nullable=False)
+    model: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_spend_records_ts_kind", "ts", "kind"),
+    )
+
+
 class BenchmarkResultModel(Base):
     __tablename__ = "benchmark_results"
 

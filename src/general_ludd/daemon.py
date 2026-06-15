@@ -904,6 +904,7 @@ def create_daemon_app(
         signing,
         skills,
         slurm,
+        spend,
         todos,
         worktree,
     )
@@ -943,5 +944,6 @@ def create_daemon_app(
         skill_handler=None,      # TODO(integration): wire to SkillRegistry
         collection_handler=None, # TODO(integration): wire to collection loader
     )
+    spend.register(app, _daemon_state)
 
     return app
