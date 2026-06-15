@@ -1,0 +1,42 @@
+---
+# Exercise the REAL gludd_spend module against the mock daemon.
+- name: Converge - exercise gludd_spend against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8830', true) }}"
+  tasks:
+    - name: Fetch spend snapshot (state=get)
+      general_ludd.agent.gludd_spend:
+        state: get
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: get_result
+
+    - name: Persist the spend snapshot for verify
+      ansible.builtin.copy:
+        content: "{{ get_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-spend-get.json"
+        mode: "0644"
+
+    - name: Show spend snapshot
+      ansible.builtin.debug:
+        var: get_result
+
+    - name: Configure spend limit (state=configure)
+      general_ludd.agent.gludd_spend:
+        state: configure
+        limit_usd: 10.0
+        window_seconds: 86400
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: configure_result
+
+    - name: Persist the configure result for verify
+      ansible.builtin.copy:
+        content: "{{ configure_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-spend-configure.json"
+        mode: "0644"
+
+    - name: Show configure result
+      ansible.builtin.debug:
+        var: configure_result

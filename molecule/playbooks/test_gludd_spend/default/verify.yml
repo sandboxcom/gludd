@@ -1,0 +1,58 @@
+---
+- name: Verify - gludd_spend returned the mock spend snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8830', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8830', true) }}.pid"
+  tasks:
+    - name: Load persisted spend get result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-spend-get.json"
+      register: get_raw
+
+    - name: Parse spend get result
+      ansible.builtin.set_fact:
+        get_result: "{{ get_raw.content | b64decode | from_json }}"
+
+    - name: Assert spend get shape
+      ansible.builtin.assert:
+        that:
+          - get_result.spend is defined
+          - get_result.ansible_facts.gludd_spend is defined
+          - get_result.spend.limit_usd is defined
+          - get_result.spend.used_usd is defined
+          - get_result.spend.remaining_usd is defined
+          - get_result.spend.remaining_usd | float == 6.25
+          - get_result.spend.limit_usd | float == 10.0
+          - get_result.changed == false
+        fail_msg: "gludd_spend get result incomplete: {{ get_result }}"
+        success_msg: "gludd_spend get returned spend snapshot with remaining_usd={{ get_result.spend.remaining_usd }}"
+
+    - name: Load persisted configure result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-spend-configure.json"
+      register: configure_raw
+
+    - name: Parse configure result
+      ansible.builtin.set_fact:
+        configure_result: "{{ configure_raw.content | b64decode | from_json }}"
+
+    - name: Assert configure result shape
+      ansible.builtin.assert:
+        that:
+          - configure_result.configured is defined
+          - configure_result.configured.limit_usd is defined
+          - configure_result.configured.limit_usd | float == 10.0
+          - configure_result.configured.window_seconds is defined
+          - configure_result.configured.window_seconds | int == 86400
+          - configure_result.changed == true
+        fail_msg: "gludd_spend configure result incomplete: {{ configure_result }}"
+        success_msg: "gludd_spend configure ran; limit_usd={{ configure_result.configured.limit_usd }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
