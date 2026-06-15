@@ -265,7 +265,6 @@ VERIFY_SUMMARY = {
 }
 
 
-<<<<<<< HEAD
 def _schedule_response(payload: dict) -> dict:
     """Return a concurrency-safe batched plan for the submitted work items.
 
@@ -336,7 +335,8 @@ def _schedule_response(payload: dict) -> dict:
             batches.append(current_batch)
 
     return {"batches": batches}
-=======
+
+
 DISPATCH_HANDLERS = [
     {"kind": "tool", "name": "shell", "description": "Run a shell command on the agent host"},
     {"kind": "tool", "name": "read_file", "description": "Read a file from the agent host"},
@@ -367,7 +367,6 @@ def _dispatch_response(payload: dict) -> dict:
             "output": "[mock-daemon] dispatch executed successfully.",
         },
     }
->>>>>>> feature/dispatch-ansible
 
 
 def _model_call_response(payload: dict) -> dict:
