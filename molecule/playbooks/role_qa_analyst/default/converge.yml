@@ -1,0 +1,51 @@
+---
+# qa_analyst converge: run the role three times with different seeded fixtures.
+#
+# Score formula: 0.5*pass_rate + 0.3*(cov/100) - 0.2*(min(flaky,10)/10)
+# Using pass_threshold=0.72:
+#   pass  : 0.5*0.98 + 0.3*0.95 - 0.2*0.0 = 0.775 >= 0.72, flaky=0 → verdict=pass
+#   flaky : 0.5*0.98 + 0.3*0.95 - 0.2*0.2 = 0.735 >= 0.72, flaky=2 → verdict=conditional
+#   fail  : 0.5*0.50 + 0.3*0.40 - 0.2*0.5 = 0.27  <  0.72           → verdict=fail
+- name: Converge - run qa_analyst role against seeded fixtures
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8848', true) }}"
+    artifact_base: "/tmp/gludd-qa-fixtures-{{ mock_port }}"
+  tasks:
+    - name: Invoke qa_analyst (pass scenario — threshold=0.72, score=0.775, flaky=0)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.qa_analyst
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-qa-analyst-pass-{{ mock_port }}"
+        test_matrix_artifact: "{{ artifact_base }}/pass/test_matrix.json"
+        coverage_artifact: "{{ artifact_base }}/pass/coverage.json"
+        flaky_artifact: "{{ artifact_base }}/pass/flaky.json"
+        pass_threshold: 0.72
+
+    - name: Invoke qa_analyst (flaky/conditional — threshold=0.72, score=0.735, flaky=2)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.qa_analyst
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-qa-analyst-flaky-{{ mock_port }}"
+        test_matrix_artifact: "{{ artifact_base }}/flaky/test_matrix.json"
+        coverage_artifact: "{{ artifact_base }}/flaky/coverage.json"
+        flaky_artifact: "{{ artifact_base }}/flaky/flaky.json"
+        pass_threshold: 0.72
+
+    - name: Invoke qa_analyst (fail — threshold=0.72, score=0.27, flaky=5)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.qa_analyst
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-qa-analyst-fail-{{ mock_port }}"
+        test_matrix_artifact: "{{ artifact_base }}/fail/test_matrix.json"
+        coverage_artifact: "{{ artifact_base }}/fail/coverage.json"
+        flaky_artifact: "{{ artifact_base }}/fail/flaky.json"
+        pass_threshold: 0.72

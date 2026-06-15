@@ -1,0 +1,26 @@
+---
+# scrum_leader converge: run the composer with all 4 ceremonies.
+- name: Converge - run scrum_leader composer role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8850', true) }}"
+  tasks:
+    - name: Invoke scrum_leader (all 4 ceremonies)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.scrum_leader
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-scrum-leader-{{ mock_port }}"
+        sprint_name: "Sprint-mol-test"
+        ceremonies:
+          - backlog_groom
+          - sprint_plan
+          - standup_report
+          - retrospective
+        write_back: false
+        enable_model_call: false
+        sprint_capacity: 20
+        max_split_points: 8

@@ -1,0 +1,98 @@
+---
+# soc_analyst verify:
+#   incident scenario: assert ONE critical incident emitted + handoff message sent (mock returns 201)
+#   clean scenario: assert verdict=clean, open_count=0
+- name: Verify - soc_analyst triaged incidents and sent handoff message
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8849', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8849', true) }}.pid"
+    fixture_dir: "/tmp/gludd-soc-fixtures-{{ mock_port }}"
+    incident_artifact: "/tmp/gludd-soc-analyst-incidents-{{ mock_port }}/soc_analyst.json"
+    clean_artifact: "/tmp/gludd-soc-analyst-clean-{{ mock_port }}/soc_analyst.json"
+  tasks:
+    # ---- incident scenario assertions ----
+    - name: Load incident soc_analyst artifact
+      ansible.builtin.slurp:
+        src: "{{ incident_artifact }}"
+      register: incident_raw
+
+    - name: Parse incident artifact
+      ansible.builtin.set_fact:
+        incident_result: "{{ incident_raw.content | b64decode | from_json }}"
+
+    - name: Assert incident scenario (critical finding triaged into incident, handoff sent)
+      ansible.builtin.assert:
+        that:
+          - incident_result.role == 'soc_analyst'
+          - incident_result.status == 'completed'
+          - incident_result.verdict == 'incidents_found'
+          - incident_result.open_count | int >= 1
+          - incident_result.incidents | length >= 1
+          # Critical finding must appear as critical-severity incident
+          - incident_result.incidents | selectattr('severity', 'equalto', 'critical') | list | length == 1
+          # Each incident has required fields
+          - incident_result.incidents[0].id is defined
+          - incident_result.incidents[0].recommended_action is defined
+          - incident_result.incidents[0].findings_rolled_up is defined
+        fail_msg: "soc_analyst incident scenario wrong: {{ incident_result }}"
+        success_msg: "soc_analyst incidents: open={{ incident_result.open_count }} verdict={{ incident_result.verdict }}"
+
+    - name: Assert handoff message was sent (verify mock daemon received POST /api/messages)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/api/messages"
+        method: POST
+        body_format: json
+        body:
+          sender: "soc_analyst"
+          recipient: "verify_check"
+          topic: "test_verify"
+          priority: "normal"
+        status_code: 201
+      register: msg_check
+
+    - name: Assert mock daemon returns 201 for message POST (handoff channel verified)
+      ansible.builtin.assert:
+        that:
+          - msg_check.status == 201
+        fail_msg: "Mock daemon POST /api/messages did not return 201"
+        success_msg: "Mock daemon confirmed POST /api/messages returns 201 (handoff channel works)"
+
+    # ---- clean scenario assertions ----
+    - name: Load clean soc_analyst artifact
+      ansible.builtin.slurp:
+        src: "{{ clean_artifact }}"
+      register: clean_raw
+
+    - name: Parse clean artifact
+      ansible.builtin.set_fact:
+        clean_result: "{{ clean_raw.content | b64decode | from_json }}"
+
+    - name: Assert clean scenario (no incidents)
+      ansible.builtin.assert:
+        that:
+          - clean_result.role == 'soc_analyst'
+          - clean_result.verdict == 'clean'
+          - clean_result.open_count == 0
+          - clean_result.incidents | length == 0
+        fail_msg: "soc_analyst clean scenario wrong: {{ clean_result }}"
+        success_msg: "soc_analyst clean: verdict={{ clean_result.verdict }} open={{ clean_result.open_count }}"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      failed_when: false
+      loop:
+        - "/tmp/gludd-soc-analyst-incidents-{{ mock_port }}"
+        - "/tmp/gludd-soc-analyst-clean-{{ mock_port }}"
+        - "{{ fixture_dir }}"

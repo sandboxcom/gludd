@@ -1,0 +1,259 @@
+---
+# soc_analyst role — triage security findings/events into prioritized incidents
+#
+# Slurps finding_artifacts (each must have a 'findings' list). Correlates and
+# deduplicates findings by rule+file grouping, escalates incident severity by
+# count. Filters to severity >= severity_floor. Produces a prioritized incident
+# list with recommended_action for each. Emits gludd_message priority=high when
+# incidents are present and handoff_recipient is set.
+# REPORT-ONLY: never mutates the repo.
+
+- name: Gather live daemon facts for SOC context
+  general_ludd.agent.gludd_facts:
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: live_facts
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Slurp each finding artifact ────────────────────────────────────────────────
+
+- name: Slurp each finding artifact
+  ansible.builtin.slurp:
+    src: "{{ item }}"
+  register: _soc_raw_artifacts
+  loop: "{{ finding_artifacts }}"
+  loop_control:
+    label: "{{ item }}"
+  failed_when: false
+  when: finding_artifacts | length > 0
+
+# ── Collect all findings from all artifacts ────────────────────────────────────
+
+- name: Collect all findings across artifacts
+  ansible.builtin.set_fact:
+    _soc_all_findings: >-
+      {%- set all = [] -%}
+      {%- if _soc_raw_artifacts is defined and _soc_raw_artifacts.results is defined -%}
+        {%- for result in _soc_raw_artifacts.results -%}
+          {%- if result.content is defined -%}
+            {%- set parsed = result.content | b64decode | from_json -%}
+            {%- set source = result.item | basename | splitext | first -%}
+            {%- for f in (parsed.findings | default([])) -%}
+              {%- set _ = all.append(dict(f, _source=source)) -%}
+            {%- endfor -%}
+          {%- endif -%}
+        {%- endfor -%}
+      {%- endif -%}
+      {{ all }}
+
+- name: Initialize empty findings (no artifacts provided)
+  ansible.builtin.set_fact:
+    _soc_all_findings: []
+  when: _soc_all_findings is not defined
+
+# ── Set severity rank map ──────────────────────────────────────────────────────
+
+- name: Set severity rank map
+  ansible.builtin.set_fact:
+    _soc_severity_rank:
+      "info": 0
+      "low": 1
+      "medium": 2
+      "high": 3
+      "critical": 4
+
+- name: Set floor rank
+  ansible.builtin.set_fact:
+    _soc_floor_rank: "{{ _soc_severity_rank[severity_floor] | default(3) | int }}"
+
+# ── Filter findings by severity floor ─────────────────────────────────────────
+
+- name: Filter findings at or above severity floor
+  ansible.builtin.set_fact:
+    _soc_filtered_findings: >-
+      {{
+        _soc_all_findings
+        | selectattr('severity', 'defined')
+        | selectattr('severity', 'in', _soc_severity_rank.keys() | list)
+        | list
+      }}
+
+- name: Apply severity floor rank filter
+  ansible.builtin.set_fact:
+    _soc_qualifying_findings: >-
+      {%- set result = [] -%}
+      {%- for f in _soc_filtered_findings -%}
+        {%- if (_soc_severity_rank[f.severity] | default(0) | int) >= (_soc_floor_rank | int) -%}
+          {%- set _ = result.append(f) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ result }}
+
+# ── Correlate and deduplicate by rule+file grouping ───────────────────────────
+# Group key = (rule or pattern) + ':' + (location or file)
+# Build a list of unique group keys first, then aggregate per key.
+
+- name: Collect unique group keys from qualifying findings
+  ansible.builtin.set_fact:
+    _soc_group_keys: >-
+      {%- set keys = [] -%}
+      {%- for f in _soc_qualifying_findings -%}
+        {%- set rule_key = f.rule | default(f.pattern | default('unknown')) -%}
+        {%- set loc_key  = f.location | default(f.file | default('unknown')) -%}
+        {%- set key = rule_key ~ ':' ~ loc_key -%}
+        {%- if key not in keys -%}
+          {%- set _ = keys.append(key) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ keys }}
+
+# ── Build incident list with escalation and recommended_action ────────────────
+# For each unique key, collect all findings for that key, then build an incident.
+
+- name: Build incident list from grouped findings
+  ansible.builtin.set_fact:
+    _soc_incidents: >-
+      {%- set incidents = [] -%}
+      {%- set sev_order = ['info', 'low', 'medium', 'high', 'critical'] -%}
+      {%- set idx = namespace(n=1) -%}
+      {%- for key in _soc_group_keys -%}
+        {%- set key_parts = key.split(':') -%}
+        {%- set grp_findings = [] -%}
+        {%- for f in _soc_qualifying_findings -%}
+          {%- set f_rule = f.rule | default(f.pattern | default('unknown')) -%}
+          {%- set f_loc  = f.location | default(f.file | default('unknown')) -%}
+          {%- set f_key  = f_rule ~ ':' ~ f_loc -%}
+          {%- if f_key == key -%}
+            {%- set _ = grp_findings.append(f) -%}
+          {%- endif -%}
+        {%- endfor -%}
+        {%- set base_sev = grp_findings[0].severity if grp_findings | length > 0 else 'high' -%}
+        {%- set base_rank = _soc_severity_rank[base_sev] | default(3) | int -%}
+        {%- set cnt = grp_findings | length -%}
+        {%- set escalated = cnt >= (escalation_count_threshold | int) -%}
+        {%- set escalated_rank = [base_rank + 1, 4] | min if escalated else base_rank -%}
+        {%- set final_sev = sev_order[escalated_rank] -%}
+        {%- set action = 'Remediate immediately — critical security finding' if escalated_rank == 4
+            else ('Investigate and patch — high severity finding' if escalated_rank == 3
+            else 'Review and assess — medium severity finding') -%}
+        {%- set grp_rule = grp_findings[0].rule | default(grp_findings[0].pattern | default('unknown')) if grp_findings | length > 0 else 'unknown' -%}
+        {%- set grp_loc  = grp_findings[0].location | default(grp_findings[0].file | default('unknown')) if grp_findings | length > 0 else 'unknown' -%}
+        {%- set _ = incidents.append({
+          'id': 'INC-' ~ '%03d' | format(idx.n),
+          'severity': final_sev,
+          'rule': grp_rule,
+          'location': grp_loc,
+          'finding_count': cnt,
+          'findings_rolled_up': grp_findings,
+          'escalated': escalated,
+          'recommended_action': action
+        }) -%}
+        {%- set idx.n = idx.n + 1 -%}
+      {%- endfor -%}
+      {{ incidents | sort(attribute='severity', reverse=True) }}
+
+- name: Initialize incidents list (no qualifying findings)
+  ansible.builtin.set_fact:
+    _soc_incidents: []
+  when: _soc_incidents is not defined
+
+# ── Compute open_count and verdict ────────────────────────────────────────────
+
+- name: Compute open_count and verdict
+  ansible.builtin.set_fact:
+    _soc_open_count: "{{ _soc_incidents | length | int }}"
+    _soc_verdict: >-
+      {{
+        'incidents_found' if (_soc_incidents | length > 0)
+        else 'clean'
+      }}
+
+# ── Write artifacts ────────────────────────────────────────────────────────────
+
+- name: Write JSON SOC analyst artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'soc_analyst',
+        'status': 'completed',
+        'incidents': _soc_incidents,
+        'open_count': _soc_open_count | int,
+        'verdict': _soc_verdict,
+        'severity_floor': severity_floor,
+        'total_raw_findings': _soc_all_findings | length,
+        'qualifying_findings': _soc_qualifying_findings | length,
+        'system_context': {
+          'success_rate': live_facts.ansible_facts.gludd.history.success_rate | default(0) | float,
+          'unread_messages': live_facts.ansible_facts.gludd.messages.unread | default(0) | int
+        }
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/soc_analyst.json"
+    mode: "0644"
+
+- name: Write markdown SOC analyst artifact
+  ansible.builtin.copy:
+    content: |
+      # SOC Analyst Report
+
+      **Verdict:** {{ _soc_verdict | upper }}
+      **Open Incidents:** {{ _soc_open_count }}
+      **Severity Floor:** {{ severity_floor }}
+      **Raw findings processed:** {{ _soc_all_findings | length }} ({{ _soc_qualifying_findings | length }} qualifying)
+
+      ## Incidents
+
+      {% if _soc_incidents | length == 0 %}
+      No incidents found at or above severity floor={{ severity_floor }}.
+      {% else %}
+      {% for inc in _soc_incidents %}
+      ### {{ inc.id }} — [{{ inc.severity | upper }}] {{ inc.rule }} @ {{ inc.location }}
+
+      - **Finding count:** {{ inc.finding_count }}{% if inc.escalated %} (ESCALATED){% endif %}
+
+      - **Recommended action:** {{ inc.recommended_action }}
+
+      {% endfor %}
+      {% endif %}
+
+      ---
+      *Generated by general_ludd.agent.soc_analyst — triage only, no repo mutations.*
+    dest: "{{ artifact_dir }}/soc_analyst.md"
+    mode: "0644"
+
+# ── Emit gludd_message priority=high when incidents present ───────────────────
+
+- name: Send incident notification (incidents found, handoff_recipient set)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: soc_analyst
+    recipient: "{{ handoff_recipient }}"
+    topic: soc_incidents_found
+    body: >-
+      {{ {
+        'open_count': _soc_open_count | int,
+        'verdict': _soc_verdict,
+        'top_incidents': _soc_incidents[:3]
+      } | to_json }}
+    priority: "high"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - _soc_open_count | int > 0
+    - not ansible_check_mode
+
+- name: Report SOC analyst completion
+  ansible.builtin.debug:
+    msg: >-
+      SOC analyst: verdict={{ _soc_verdict }}
+      open_incidents={{ _soc_open_count }}
+      severity_floor={{ severity_floor }}
+      raw_findings={{ _soc_all_findings | length }}
+      qualifying={{ _soc_qualifying_findings | length }}

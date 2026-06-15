@@ -1,0 +1,127 @@
+---
+# scrum_leader verify: assert all 4 sub-artifacts exist and consolidated JSON references them.
+- name: Verify - scrum_leader ran all 4 ceremonies and consolidated artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8850', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8850', true) }}.pid"
+    art_dir: "/tmp/gludd-scrum-leader-{{ mock_port }}"
+    consolidated: "/tmp/gludd-scrum-leader-{{ mock_port }}/scrum_leader.json"
+  tasks:
+    # ---- Assert all 4 sub-artifacts exist ----
+    - name: Assert backlog_groom sub-artifact exists
+      ansible.builtin.stat:
+        path: "{{ art_dir }}/backlog_groom/backlog_groom.json"
+      register: bg_stat
+      failed_when: not bg_stat.stat.exists
+
+    - name: Assert sprint_plan sub-artifact exists
+      ansible.builtin.stat:
+        path: "{{ art_dir }}/sprint_plan/sprint_plan.json"
+      register: sp_stat
+      failed_when: not sp_stat.stat.exists
+
+    - name: Assert standup_report sub-artifact exists
+      ansible.builtin.stat:
+        path: "{{ art_dir }}/standup_report/standup_report.json"
+      register: sd_stat
+      failed_when: not sd_stat.stat.exists
+
+    - name: Assert retrospective sub-artifact exists
+      ansible.builtin.stat:
+        path: "{{ art_dir }}/retrospective/retrospective.json"
+      register: retro_stat
+      failed_when: not retro_stat.stat.exists
+
+    # ---- Assert markdown index exists ----
+    - name: Assert scrum_leader.md index exists
+      ansible.builtin.stat:
+        path: "{{ art_dir }}/scrum_leader.md"
+      register: md_stat
+      failed_when: not md_stat.stat.exists
+
+    # ---- Load and parse consolidated JSON ----
+    - name: Load consolidated scrum_leader artifact
+      ansible.builtin.slurp:
+        src: "{{ consolidated }}"
+      register: consolidated_raw
+
+    - name: Parse consolidated artifact
+      ansible.builtin.set_fact:
+        result: "{{ consolidated_raw.content | b64decode | from_json }}"
+
+    - name: Assert consolidated JSON references all 4 ceremonies
+      ansible.builtin.assert:
+        that:
+          - result.role == 'scrum_leader'
+          - result.status == 'completed'
+          - result.ceremonies_run | length == 4
+          - "'backlog_groom' in result.ceremonies_run"
+          - "'sprint_plan' in result.ceremonies_run"
+          - "'standup_report' in result.ceremonies_run"
+          - "'retrospective' in result.ceremonies_run"
+          - result.sprint_plan_summary is defined
+          - result.retro_summary is defined
+          - result.sub_artifacts is defined
+          - result.sub_artifacts.backlog_groom is defined
+          - result.sub_artifacts.sprint_plan is defined
+          - result.sub_artifacts.standup_report is defined
+          - result.sub_artifacts.retrospective is defined
+          - result.verdict == 'completed'
+        fail_msg: "scrum_leader consolidated artifact wrong: {{ result }}"
+        success_msg: "scrum_leader: ceremonies_run={{ result.ceremonies_run | join(',') }} verdict={{ result.verdict }}"
+
+    # ---- Verify each sub-artifact has role field ----
+    - name: Load backlog_groom sub-artifact for spot-check
+      ansible.builtin.slurp:
+        src: "{{ art_dir }}/backlog_groom/backlog_groom.json"
+      register: bg_raw
+
+    - name: Assert backlog_groom sub-artifact is well-formed
+      ansible.builtin.assert:
+        that:
+          - (bg_raw.content | b64decode | from_json).role == 'backlog_groom'
+          - (bg_raw.content | b64decode | from_json).status == 'completed'
+        fail_msg: "backlog_groom sub-artifact malformed"
+        success_msg: "backlog_groom sub-artifact ok"
+
+    - name: Load sprint_plan sub-artifact for spot-check
+      ansible.builtin.slurp:
+        src: "{{ art_dir }}/sprint_plan/sprint_plan.json"
+      register: sp_raw
+
+    - name: Assert sprint_plan sub-artifact is well-formed
+      ansible.builtin.assert:
+        that:
+          - (sp_raw.content | b64decode | from_json).role == 'sprint_plan'
+          - (sp_raw.content | b64decode | from_json).sprint_name == 'Sprint-mol-test'
+        fail_msg: "sprint_plan sub-artifact malformed"
+        success_msg: "sprint_plan sub-artifact ok with sprint_name=Sprint-mol-test"
+
+    - name: Load retrospective sub-artifact for spot-check
+      ansible.builtin.slurp:
+        src: "{{ art_dir }}/retrospective/retrospective.json"
+      register: retro_raw
+
+    - name: Assert retrospective sub-artifact is well-formed
+      ansible.builtin.assert:
+        that:
+          - (retro_raw.content | b64decode | from_json).role == 'retrospective'
+          - (retro_raw.content | b64decode | from_json).well | length > 0
+        fail_msg: "retrospective sub-artifact malformed"
+        success_msg: "retrospective sub-artifact ok"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "{{ art_dir }}"
+        state: absent
+      failed_when: false

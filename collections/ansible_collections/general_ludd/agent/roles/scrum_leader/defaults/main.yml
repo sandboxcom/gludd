@@ -1,0 +1,31 @@
+---
+# scrum_leader role defaults — PURE COMPOSER over planning ceremony roles
+# REPORT-ONLY: never mutates the repo.
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output — each ceremony writes into {{artifact_dir}}/<ceremony_name>/
+artifact_dir: "/tmp/gludd-scrum-leader"
+
+# Sprint name propagated to sub-roles that use it
+sprint_name: "Sprint-1"
+
+# List of ceremony roles to compose. Each role must exist as general_ludd.agent.<name>.
+ceremonies:
+  - backlog_groom
+  - sprint_plan
+  - standup_report
+  - retrospective
+
+# Sub-role overrides: passed as vars to each include_role.
+# write_back: false is inherited by all sub-roles for safe-by-default.
+write_back: false
+enable_model_call: false
+enable_git_push: false
+max_split_points: 8
+# Explicit sprint capacity forwarded to sprint_plan.
+# Non-zero means sprint_plan uses this directly (avoids the max(n) filter edge case).
+# 0 would trigger velocity-derive path in sprint_plan; set >0 for predictable results.
+sprint_capacity: 10

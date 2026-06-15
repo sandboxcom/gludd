@@ -1,0 +1,103 @@
+---
+# qa_analyst verify: assert computed qa_score and verdict transitions.
+#
+# Expected verdicts with threshold=0.72:
+#   pass  scenario: score=0.775, flaky=0  → verdict=pass
+#   flaky scenario: score=0.735, flaky=2  → verdict=conditional
+#   fail  scenario: score=0.27,  flaky=5  → verdict=fail
+- name: Verify - qa_analyst produced correct verdicts and computed scores
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8848', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8848', true) }}.pid"
+    artifact_base: "/tmp/gludd-qa-fixtures-{{ mock_port }}"
+    pass_artifact: "/tmp/gludd-qa-analyst-pass-{{ mock_port }}/qa_analyst.json"
+    flaky_artifact_out: "/tmp/gludd-qa-analyst-flaky-{{ mock_port }}/qa_analyst.json"
+    fail_artifact_out: "/tmp/gludd-qa-analyst-fail-{{ mock_port }}/qa_analyst.json"
+  tasks:
+    # ---- pass scenario: score=0.775 >= 0.72, flaky=0 → verdict=pass ----
+    - name: Load pass qa_analyst artifact
+      ansible.builtin.slurp:
+        src: "{{ pass_artifact }}"
+      register: pass_raw
+
+    - name: Parse pass artifact
+      ansible.builtin.set_fact:
+        pass_result: "{{ pass_raw.content | b64decode | from_json }}"
+
+    - name: Assert pass scenario (qa_score computed, verdict=pass, flaky=0)
+      ansible.builtin.assert:
+        that:
+          - pass_result.role == 'qa_analyst'
+          - pass_result.status == 'completed'
+          - pass_result.qa_score is defined
+          - pass_result.qa_score | float >= 0.72
+          - pass_result.flaky_count == 0
+          - pass_result.verdict == 'pass'
+          - pass_result.coverage_pct == 95.0
+          - pass_result.pass_rate | float == 0.98
+          - pass_result.matrix_gaps | length == 0
+        fail_msg: "qa_analyst pass scenario wrong: {{ pass_result }}"
+        success_msg: "qa_analyst pass: score={{ pass_result.qa_score }} verdict={{ pass_result.verdict }} flaky={{ pass_result.flaky_count }}"
+
+    # ---- flaky scenario: score=0.735 >= 0.72, flaky=2 → verdict=conditional ----
+    - name: Load flaky qa_analyst artifact
+      ansible.builtin.slurp:
+        src: "{{ flaky_artifact_out }}"
+      register: flaky_raw
+
+    - name: Parse flaky artifact
+      ansible.builtin.set_fact:
+        flaky_result: "{{ flaky_raw.content | b64decode | from_json }}"
+
+    - name: Assert flaky scenario (flaky>0 yields verdict=conditional)
+      ansible.builtin.assert:
+        that:
+          - flaky_result.role == 'qa_analyst'
+          - flaky_result.flaky_count == 2
+          - flaky_result.qa_score | float >= 0.72
+          - flaky_result.verdict == 'conditional'
+          - flaky_result.matrix_gaps | length == 2
+        fail_msg: "qa_analyst flaky scenario wrong: {{ flaky_result }}"
+        success_msg: "qa_analyst flaky: score={{ flaky_result.qa_score }} verdict={{ flaky_result.verdict }} flaky={{ flaky_result.flaky_count }}"
+
+    # ---- fail scenario: score=0.27 < 0.72 → verdict=fail ----
+    - name: Load fail qa_analyst artifact
+      ansible.builtin.slurp:
+        src: "{{ fail_artifact_out }}"
+      register: fail_raw
+
+    - name: Parse fail artifact
+      ansible.builtin.set_fact:
+        fail_result: "{{ fail_raw.content | b64decode | from_json }}"
+
+    - name: Assert fail scenario (low score yields verdict=fail)
+      ansible.builtin.assert:
+        that:
+          - fail_result.role == 'qa_analyst'
+          - fail_result.flaky_count == 5
+          - fail_result.verdict == 'fail'
+          - fail_result.qa_score | float < 0.72
+          - fail_result.matrix_gaps | length == 3
+        fail_msg: "qa_analyst fail scenario wrong: {{ fail_result }}"
+        success_msg: "qa_analyst fail: score={{ fail_result.qa_score }} verdict={{ fail_result.verdict }}"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      failed_when: false
+      loop:
+        - "/tmp/gludd-qa-analyst-pass-{{ mock_port }}"
+        - "/tmp/gludd-qa-analyst-flaky-{{ mock_port }}"
+        - "/tmp/gludd-qa-analyst-fail-{{ mock_port }}"
+        - "{{ artifact_base }}"

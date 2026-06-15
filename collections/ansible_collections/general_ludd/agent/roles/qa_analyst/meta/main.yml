@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: qa_analyst
+  author: Agentic Harness Agent
+  description: >
+    Cross-cut quality verdict role. Slurps test_matrix, coverage, and flaky
+    sub-artifacts and computes a real weighted QA score (pass_rate, coverage,
+    flaky penalty). Emits qa_score, coverage_pct, flaky_count, matrix_gaps,
+    and a verdict (pass|conditional|fail). NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

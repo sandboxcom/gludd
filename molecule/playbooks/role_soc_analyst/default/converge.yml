@@ -1,0 +1,37 @@
+---
+# soc_analyst converge: run the role twice:
+#   1) with 2 finding artifacts (security_review + secret_scan) → incidents found
+#      with handoff_recipient set → gludd_message POST to mock daemon (201)
+#   2) with only clean_scan.json → verdict=clean, no incidents
+- name: Converge - run soc_analyst role against seeded fixtures
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8849', true) }}"
+    fixture_dir: "/tmp/gludd-soc-fixtures-{{ mock_port }}"
+  tasks:
+    - name: Invoke soc_analyst (incident scenario — 2 finding artifacts, handoff set)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.soc_analyst
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-soc-analyst-incidents-{{ mock_port }}"
+        finding_artifacts:
+          - "{{ fixture_dir }}/security_review.json"
+          - "{{ fixture_dir }}/secret_scan.json"
+        severity_floor: "high"
+        handoff_recipient: "integrator"
+
+    - name: Invoke soc_analyst (clean scenario — no findings above floor)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.soc_analyst
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-soc-analyst-clean-{{ mock_port }}"
+        finding_artifacts:
+          - "{{ fixture_dir }}/clean_scan.json"
+        severity_floor: "high"
+        handoff_recipient: ""
