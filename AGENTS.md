@@ -10,6 +10,7 @@
 6. **Trust gate output, not SESSION.md.** SESSION.md claims have been false. Gate exit codes are the single source of truth.
 7. **Read `TASKS.md` for current work.** Read `BUGS.md` before claiming anything is finished. Update both as you go.
 8. **Use existing mature projects — never write custom code when a well-formed existing tool exists.** Before writing a secrets scanner, linter, formatter, type checker, test runner, git hook framework, build system, or security scanner, check if an established project (detect-secrets, gitleaks, trufflehog, ruff, mypy, pytest, pre-commit, etc.) exists. Writing custom infrastructure code that duplicates a mature OSS project is a bug. The only exception is application-specific business logic that has no standard library.
+9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 
 ## Completion = Green Gate + TASKS.md Evidence
 
@@ -19,6 +20,33 @@ A task may be called complete ONLY when:
 - `make test-count` shows 0 collection errors
 
 NOTE: `make test-failures` previously masked collection ERRORs by grepping only `^FAILED`. If any gate target output disagrees with `make test`, the FULL `make test` output is the truth, and fixing the gate target is your first task.
+
+## No Unseen Events (observability invariant)
+
+**"If an event happens and no one can see it, it is not an event."** This was a
+direct user mandate (2026-06-15) after a `make gate` ran silently for 16 minutes
+(test output buffered to a temp file) and a CI poller slept without a heartbeat —
+both looked hung when they were working. Unobservable ≠ acceptable.
+
+Binding rules for any operation in this repo's tooling or daemon that runs longer
+than a few seconds:
+
+1. **Stream or heartbeat — never go dark.** Long output must `tee` to stdout; a
+   multi-phase job must print a marker as each phase starts; a poll/wait loop must
+   print a timestamped heartbeat every cycle. A bare `> /dev/null 2>&1` or
+   `> file 2>&1` on a long operation is forbidden.
+2. **Backgrounded ≠ invisible.** When work is moved to a background task, it must
+   still emit progress to its output stream so the launcher can observe it. Do not
+   launch a silent background task and report "it's running."
+3. **Failures must surface their cause.** On failure, tail/print the captured log
+   (see the gate `smoke` phase) — never swallow it.
+4. **Daemon background work emits events.** Daemon-side background jobs (event
+   loop ticks, A/B runs, scheduled tasks) must publish to the message queue /
+   metrics / structured logs so they are observable via `/api/facts`, not silent.
+
+Enforced for tooling by `tests/unit/test_observability_guardrails.py`. Agent
+behavioral mirror: never go silent while the user is waiting — check in the
+foreground and report real state rather than launching a silent task and waiting.
 
 ---
 

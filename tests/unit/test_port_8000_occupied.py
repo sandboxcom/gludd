@@ -10,6 +10,8 @@ import socket
 import threading
 import time
 
+import pytest
+
 
 def _hold_port(port: int, ready_event: threading.Event, stop_event: threading.Event):
     """Bind to a port and hold it until stopped."""
@@ -25,6 +27,11 @@ def _hold_port(port: int, ready_event: threading.Event, stop_event: threading.Ev
         s.close()
 
 
+# All tests here bind/hold the FIXED port 8000. Under xdist's parallel workers,
+# a test that HOLDS 8000 (test_suite_with_8000_occupied) could run concurrently
+# with one that BINDS 8000 (test_can_bind_to_8000) on another worker -> flaky
+# "Address already in use". xdist_group pins them to one worker so they serialize.
+@pytest.mark.xdist_group("port_8000")
 class TestPort8000Occupied:
     def test_can_bind_to_8000(self):
         """Sanity: we can bind to port 8000."""
@@ -67,9 +74,12 @@ class TestPort8000Occupied:
             # Run just the e2e daemon test — must pass while 8000 is occupied
             import subprocess
             import sys
+            # NOTE: no --timeout flag — pytest-timeout is not a declared dependency,
+            # and the main suite runs without it. Hard-depending on an undeclared
+            # plugin here made this test fail whenever the env lacked it.
             result = subprocess.run(
-                [sys.executable, "-m", "pytest", "tests/e2e/test_obj03_worker.py", "-q", "--timeout=30"],
-                capture_output=True, text=True,
+                [sys.executable, "-m", "pytest", "tests/e2e/test_obj03_worker.py", "-q"],
+                capture_output=True, text=True, timeout=120,
             )
             assert result.returncode == 0, (
                 f"E2E daemon tests failed while port 8000 occupied:\n{result.stderr}\n{result.stdout}"

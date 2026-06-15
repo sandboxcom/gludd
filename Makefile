@@ -218,18 +218,25 @@ collect-check:
 gate:
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
+	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
+	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
+	@# backgrounded) is visibly advancing through phases — never a silent black box.
+	@echo "[gate $$(date +%H:%M:%S)] phase 1/5 lint ..."
 	@printf "lint " >> .gate-status
 	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
 		echo "PASS 0" >> .gate-status; \
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
 	fi
+	@echo "[gate $$(date +%H:%M:%S)] phase 2/5 typecheck (mypy, ~30-60s) ..."
 	@printf "typecheck " >> .gate-status
 	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
+	@echo "[gate $$(date +%H:%M:%S)] phase 3/5 collect ..."
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
+	@echo "[gate $$(date +%H:%M:%S)] phase 4/5 test (full suite, streams below; ~16 min) ..."
 	@printf "test " >> .gate-status
 	@# --basetemp pins this run's pytest tmp root so a CONCURRENT pytest (another
 	@# gate, a stray worker) can no longer trigger pytest's keep-last-3 rotation and
@@ -244,8 +251,10 @@ gate:
 	if [ "$$EXIT" -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
 		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
 	fi
+	@echo "[gate $$(date +%H:%M:%S)] phase 5/5 smoke (real daemon boot) ..."
 	@printf "smoke " >> .gate-status
-	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed)
+	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
+	@echo "[gate $$(date +%H:%M:%S)] all phases done, finalizing ..."
 	@echo "---" >> .gate-status
 	@# Stamp the epoch at COMPLETION (executed via $$(...), not parse-time $(shell)).
 	@# The git-commit freshness window (30 min) must start when the gate FINISHES,
@@ -597,6 +606,7 @@ ci-wait-anon:
 			[ "$$FAILED" = "0" ] && echo "RUN GREEN" || echo "RUN NOT GREEN"; \
 			break; \
 		fi; \
+		printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json,time; d=json.load(sys.stdin); jobs=d.get('jobs',[]); done=sum(1 for j in jobs if j['status']=='completed'); run=[j['name'] for j in jobs if j['status']=='in_progress']; print(time.strftime('%H:%M:%S'),'[heartbeat]',f\"{done}/{len(jobs)} jobs done\", ('| running: '+', '.join(run)) if run else '| (waiting for runners)')"; \
 		sleep 20; \
 	done
 

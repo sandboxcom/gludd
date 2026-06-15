@@ -8,14 +8,35 @@ ROOT = Path(__file__).resolve().parent.parent.parent
 
 
 def _run_bandit_json(extra_args: list[str] | None = None) -> dict:
-    with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
-        tmp_path = tmp.name
-    cmd = ["uv", "run", "bandit", "-r", "src/", "-f", "json", "-o", tmp_path]
-    if extra_args:
-        cmd.extend(extra_args)
-    subprocess.run(cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=120)
-    with open(tmp_path) as f:
-        return json.load(f)
+    """Run bandit (``-o <file>``, the proven path) and return its JSON report.
+
+    Hardened over the original: a transient ``uv``/bandit failure used to leave
+    an EMPTY report file and surface as a cryptic ``JSONDecodeError`` with no
+    cause. Now we retry, and if the report is still empty we raise with bandit's
+    stderr so the real reason is visible (observability invariant: never swallow
+    a subprocess error).
+    """
+    cmd_base = ["uv", "run", "bandit", "-r", "src/", "-f", "json"]
+    last = ""
+    for attempt in range(3):
+        with tempfile.NamedTemporaryFile(suffix=".json", delete=False) as tmp:
+            tmp_path = Path(tmp.name)
+        cmd = [*cmd_base, "-o", str(tmp_path), *(extra_args or [])]
+        proc = subprocess.run(
+            cmd, capture_output=True, text=True, cwd=str(ROOT), timeout=180
+        )
+        try:
+            content = tmp_path.read_text().strip()
+        finally:
+            tmp_path.unlink(missing_ok=True)
+        if content:
+            try:
+                return json.loads(content)
+            except json.JSONDecodeError as exc:  # pragma: no cover - defensive
+                last = f"attempt {attempt}: report not JSON: {exc}; stderr={proc.stderr[-400:]}"
+                continue
+        last = f"attempt {attempt}: bandit wrote empty report (rc={proc.returncode}); stderr={proc.stderr[-400:]}"
+    raise AssertionError(f"bandit did not produce a JSON report after retries — {last}")
 
 
 class TestSAST:
