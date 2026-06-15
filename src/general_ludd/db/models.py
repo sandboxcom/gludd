@@ -292,6 +292,58 @@ class BucketLeaseModel(Base):
     )
 
 
+class FeatureStatus(enum.StrEnum):
+    REQUESTED = "requested"
+    IN_PROGRESS = "in_progress"
+    IMPLEMENTED = "implemented"
+    VERIFIED = "verified"
+    REGRESSED = "regressed"
+
+
+def _gen_feature_id() -> str:
+    return f"FEAT-{uuid4().hex[:8].upper()}"
+
+
+class FeatureModel(Base):
+    """Feature-database row: tracks a requested product feature through verification.
+
+    Evidence references (evidence column, JSON list) follow the same grammar as
+    make audit-evidence:
+      test:<pytest-node-id>   role:<name>   module:<name>
+      molecule:<scenario>     file:<path>::<symbol>
+
+    JSON lists (acceptance_criteria, evidence, last_verify_detail) are stored as
+    Text following the PromptProfileModel / TodoModel JSON-in-Text convention.
+    """
+
+    __tablename__ = "features"
+
+    id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=_gen_feature_id
+    )
+    project_id: Mapped[str | None] = mapped_column(
+        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+    )
+    name: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
+    description: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(64), nullable=False, default="general")
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default=FeatureStatus.REQUESTED, index=True
+    )
+    # JSON list of acceptance-criterion strings
+    acceptance_criteria: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    # JSON list of evidence-reference strings (grammar: test: role: module: molecule: file:)
+    evidence: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    verifier_kind: Mapped[str] = mapped_column(String(64), nullable=False, default="evidence")
+    requested_by: Mapped[str] = mapped_column(String(128), nullable=False, default="agent")
+    requested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    verified_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # JSON object: per-ref pass/fail detail from last verify run
+    last_verify_detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+
+
 class PromptProfileModel(Base):
     __tablename__ = "prompt_profiles"
 

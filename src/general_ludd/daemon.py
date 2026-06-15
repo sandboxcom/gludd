@@ -890,6 +890,7 @@ def create_daemon_app(
         benchmark,
         compute,
         facts,
+        features,
         filestore,
         integrity,
         maintenance,
@@ -910,6 +911,7 @@ def create_daemon_app(
     todos.register(app, _daemon_state)
     messages.register(app, _daemon_state)
     facts.register(app, _daemon_state)
+    features.register(app, _daemon_state)
     models.register(app, _daemon_state)
     benchmark.register(app, _daemon_state)
     mcp.register(app, _daemon_state)
