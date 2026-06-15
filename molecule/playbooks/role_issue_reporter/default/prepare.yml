@@ -1,0 +1,73 @@
+---
+# issue_reporter prepare: start mock daemon + write a fixture anomaly artifact
+- name: Prepare - mock daemon + anomaly fixture for issue_reporter
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}.pid"
+    fixture_dir: "/tmp/gludd-issue-reporter-fixture-{{ mock_port }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Create fixture directory
+      ansible.builtin.file:
+        path: "{{ fixture_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write fixture anomaly artifact (simulates log_analyst output)
+      ansible.builtin.copy:
+        content: |
+          {
+            "role": "log_analyst",
+            "status": "completed",
+            "log_source": "/tmp/fixture/agent.log",
+            "error_rate_threshold": 0.1,
+            "files_analysed": 1,
+            "anomalies": [
+              {
+                "type": "error_density",
+                "signal": "error_line_density_exceeded",
+                "severity": "high",
+                "path": "/tmp/fixture/agent.log",
+                "total_lines": 10,
+                "error_lines": 5,
+                "density": 0.5,
+                "evidence": "density=0.5 threshold=0.1 file=/tmp/fixture/agent.log"
+              },
+              {
+                "type": "phase_failure_rate",
+                "signal": "phase_failure_rate_exceeded",
+                "severity": "medium",
+                "path": "plan",
+                "total_lines": 3,
+                "error_lines": 2,
+                "density": 0.667,
+                "evidence": "phase=plan span_count=3 success_count=1 failure_rate=0.667"
+              }
+            ],
+            "anomaly_count": 2,
+            "verdict": "anomalies_detected"
+          }
+        dest: "{{ fixture_dir }}/log_analyst.json"
+        mode: "0644"

@@ -1,0 +1,113 @@
+---
+- name: Verify - issue_reporter generates issues with created=false (write_back=false)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}.pid"
+    artifact: "/tmp/gludd-issue-reporter-{{ mock_port }}/issue_reporter.json"
+    artifact_md: "/tmp/gludd-issue-reporter-{{ mock_port }}/issue_reporter.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact structure
+      ansible.builtin.assert:
+        that:
+          - result.role == 'issue_reporter'
+          - result.status == 'completed'
+          - result.verdict is defined
+          - result.issues is defined
+          - result.issue_count is defined
+        fail_msg: "issue_reporter artifact missing required fields: {{ result }}"
+        success_msg: "issue_reporter artifact has required structure"
+
+    - name: Assert issues drafted (write_back=false → created=false)
+      ansible.builtin.assert:
+        that:
+          # Fixture has 2 anomalies → should produce 2 issues
+          - result.issue_count | int == 2
+          - result.verdict == 'issues_drafted'
+          - result.write_back == false
+          # All issues should have created=false (draft mode)
+          - result.issues | selectattr('created', 'equalto', true) | list | length == 0
+          - result.issues | selectattr('created', 'equalto', false) | list | length == 2
+          # At least one high-severity issue
+          - result.issues | selectattr('severity', 'equalto', 'high') | list | length >= 1
+        fail_msg: >-
+          issue_reporter write_back=false should produce 2 draft issues with created=false,
+          but got: issue_count={{ result.issue_count }}, verdict={{ result.verdict }},
+          issues={{ result.issues }}
+        success_msg: >-
+          issue_reporter correctly drafted {{ result.issue_count }} issues with
+          created=false; verdict={{ result.verdict }}
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- write_back=true pass: run role again with write_back=true ----
+    - name: Invoke issue_reporter (write_back=true)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.issue_reporter
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-issue-reporter-wb-{{ mock_port }}"
+        anomaly_artifact: "/tmp/gludd-issue-reporter-fixture-{{ mock_port }}/log_analyst.json"
+        write_back: true
+        handoff_recipient: "planner"
+
+    - name: Load write_back artifact
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-issue-reporter-wb-{{ mock_port }}/issue_reporter.json"
+      register: wb_raw
+
+    - name: Parse write_back artifact
+      ansible.builtin.set_fact:
+        wb_result: "{{ wb_raw.content | b64decode | from_json }}"
+
+    - name: Assert write_back=true marks issues as created
+      ansible.builtin.assert:
+        that:
+          - wb_result.write_back == true
+          - wb_result.verdict == 'issues_created'
+          - wb_result.issues | selectattr('created', 'equalto', true) | list | length == 2
+        fail_msg: >-
+          issue_reporter write_back=true should mark issues created=true and
+          verdict=issues_created, but got: {{ wb_result }}
+        success_msg: >-
+          issue_reporter write_back=true correctly marked {{ wb_result.issue_count }}
+          issues as created; verdict={{ wb_result.verdict }}
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-issue-reporter-{{ mock_port }}"
+        - "/tmp/gludd-issue-reporter-wb-{{ mock_port }}"
+        - "/tmp/gludd-issue-reporter-fixture-{{ mock_port }}"
+      failed_when: false

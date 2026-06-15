@@ -1,0 +1,75 @@
+---
+- name: Verify - log_analyst detects anomalies from seeded log file
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8845', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8845', true) }}.pid"
+    artifact: "/tmp/gludd-log-analyst-{{ mock_port }}/log_analyst.json"
+    artifact_md: "/tmp/gludd-log-analyst-{{ mock_port }}/log_analyst.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact structure
+      ansible.builtin.assert:
+        that:
+          - result.role == 'log_analyst'
+          - result.status == 'completed'
+          - result.verdict is defined
+          - result.anomalies is defined
+          - result.anomaly_count is defined
+        fail_msg: "log_analyst artifact missing required fields: {{ result }}"
+        success_msg: "log_analyst artifact has required structure"
+
+    - name: Assert anomaly detected from seeded error log
+      ansible.builtin.assert:
+        that:
+          # Fixture log: 5 ERROR/CRITICAL lines / 10 total = 0.5 density > 0.1 threshold
+          - result.verdict == 'anomalies_detected'
+          - result.anomaly_count | int >= 1
+          - result.anomalies | selectattr('type', 'equalto', 'error_density') | list | length >= 1
+        fail_msg: >-
+          log_analyst should have detected error_density anomaly (5/10 error lines = 0.5 density,
+          threshold=0.1) but got verdict={{ result.verdict }} anomalies={{ result.anomalies }}
+        success_msg: >-
+          log_analyst correctly detected error_density anomaly:
+          {{ result.anomaly_count }} anomaly(s), verdict={{ result.verdict }}
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup: stop daemon ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-log-analyst-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove fixture log dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-log-analyst-fixture-{{ mock_port }}"
+        state: absent
+      failed_when: false

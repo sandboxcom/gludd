@@ -1,0 +1,78 @@
+---
+- name: Verify - dead_code_auditor surfaces entries from completion-audit WITHOUT rescanning
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8847', true) }}"
+    artifact: "/tmp/gludd-dead-code-auditor-{{ mock_port }}/dead_code_auditor.json"
+    artifact_md: "/tmp/gludd-dead-code-auditor-{{ mock_port }}/dead_code_auditor.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact structure
+      ansible.builtin.assert:
+        that:
+          - result.role == 'dead_code_auditor'
+          - result.status == 'completed'
+          - result.verdict is defined
+          - result.unreferenced is defined
+          - result.unreferenced_count is defined
+          - result.source is defined
+        fail_msg: "dead_code_auditor artifact missing required fields: {{ result }}"
+        success_msg: "dead_code_auditor artifact has required structure"
+
+    - name: Assert unreferenced entries surfaced from completion audit (without rescanning)
+      ansible.builtin.assert:
+        that:
+          # Fixture has 2 unreferenced + 1 uncovered = 3 total entries
+          - result.unreferenced_count | int == 3
+          - result.verdict == 'unreferenced_found'
+          - result.source == 'completion_audit'
+          - result.enable_vulture == false
+          # All entries should have source=completion_audit
+          - result.unreferenced | selectattr('source', 'equalto', 'completion_audit') | list | length == 3
+          # Specific entries present
+          - result.unreferenced | selectattr('name', 'equalto', 'old_helper_function') | list | length == 1
+          - result.unreferenced | selectattr('name', 'equalto', 'DeprecatedMixin') | list | length == 1
+          - result.unreferenced | selectattr('name', 'equalto', '_internal_legacy_method') | list | length == 1
+        fail_msg: >-
+          dead_code_auditor should surface 3 entries from completion_audit (without rescanning),
+          but got: unreferenced_count={{ result.unreferenced_count }},
+          verdict={{ result.verdict }}, source={{ result.source }},
+          entries={{ result.unreferenced }}
+        success_msg: >-
+          dead_code_auditor correctly surfaced {{ result.unreferenced_count }} entries
+          from completion_audit without rescanning; verdict={{ result.verdict }}
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-dead-code-auditor-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove fixture dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-dca-fixture-{{ mock_port }}"
+        state: absent
+      failed_when: false

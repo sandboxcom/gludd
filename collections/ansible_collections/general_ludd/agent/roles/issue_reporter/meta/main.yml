@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: issue_reporter
+  author: Agentic Harness Agent
+  description: >
+    Converts detected anomalies/findings into structured todos/issues.
+    Slurps a log_analyst (or compatible) anomaly artifact, then either
+    creates todos via gludd_db (write_back=true) or drafts gludd_message
+    notifications (write_back=false). Emits issues list with created status.
+    NEVER mutates the repo.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

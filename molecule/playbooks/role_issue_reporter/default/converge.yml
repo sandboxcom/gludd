@@ -1,0 +1,20 @@
+---
+# Run the REAL issue_reporter role against the mock daemon and fixture anomaly artifact.
+# Default run: write_back=false — asserts issues drafted with created=false.
+- name: Converge - run issue_reporter role (write_back=false)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8846', true) }}"
+  tasks:
+    - name: Invoke issue_reporter (write_back=false)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.issue_reporter
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-issue-reporter-{{ mock_port }}"
+        anomaly_artifact: "/tmp/gludd-issue-reporter-fixture-{{ mock_port }}/log_analyst.json"
+        write_back: false
+        handoff_recipient: "integrator"
