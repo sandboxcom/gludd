@@ -25,6 +25,8 @@ shape matches what each module parses:
   POST /api/features/verify           -> 200 {"summary":{...},"results":[]}  (gludd_features verify)
   GET  /api/spend                     -> 200 spend snapshot                  (gludd_spend get)
   POST /api/spend/configure           -> 200 updated config                  (gludd_spend configure)
+  GET  /api/accounting                -> 200 {"accounting":[...],"total":N}  (gludd_accounting all)
+  GET  /api/accounting/<project_id>   -> 200 {ProjectAccounting snapshot}    (gludd_accounting project)
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -137,6 +139,36 @@ FACTS_SNAPSHOT = {
     "metrics": METRICS_SNAPSHOT,
     "traces": TRACES_SNAPSHOT,
 }
+
+
+ACCOUNTING_SNAPSHOT = [
+    {
+        "project_id": "mock-project-alpha",
+        "elapsed_seconds": 120.5,
+        "tokens_used": 4400,
+        "usd_spent": 0.0048,
+        "quota_usd": 1.0,
+        "pct_quota": 0.48,
+        "loc_changed": 0,
+        "role_stats": {"implement_change": 2, "code_reviewer": 1},
+        "todo_summary": {"pending": 3, "in_progress": 1, "done": 5},
+        "points_estimated": 18,
+        "points_done": 12,
+    },
+    {
+        "project_id": "mock-project-beta",
+        "elapsed_seconds": 60.0,
+        "tokens_used": 1800,
+        "usd_spent": 0.0019,
+        "quota_usd": 1.0,
+        "pct_quota": 0.19,
+        "loc_changed": 0,
+        "role_stats": {"report_status": 1},
+        "todo_summary": {"pending": 1, "done": 2},
+        "points_estimated": 6,
+        "points_done": 4,
+    },
+]
 
 
 FEATURES_SNAPSHOT = [
@@ -306,6 +338,15 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"features": list(FEATURES_SNAPSHOT), "total": len(FEATURES_SNAPSHOT), "filtered": False})
         elif path == "/api/spend":
             self._send_json(200, dict(SPEND_SNAPSHOT))
+        elif path == "/api/accounting":
+            self._send_json(200, {"accounting": list(ACCOUNTING_SNAPSHOT), "total": len(ACCOUNTING_SNAPSHOT)})
+        elif path.startswith("/api/accounting/"):
+            project_id = path[len("/api/accounting/"):]
+            snap = next((s for s in ACCOUNTING_SNAPSHOT if s["project_id"] == project_id), None)
+            if snap is None:
+                self._send_json(404, {"detail": f"Project not found: {project_id}"})
+            else:
+                self._send_json(200, dict(snap))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 

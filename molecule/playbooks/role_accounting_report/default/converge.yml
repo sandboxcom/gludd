@@ -1,0 +1,16 @@
+---
+- name: Converge - run accounting_report role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}"
+  tasks:
+    - name: Invoke accounting_report (scope=all — exercises the all-projects path)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.accounting_report
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-accounting-report-{{ mock_port }}"
+        accounting_scope: "all"

@@ -1,0 +1,41 @@
+---
+# Exercise the REAL gludd_accounting module against the mock daemon.
+- name: Converge - exercise gludd_accounting against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8832', true) }}"
+  tasks:
+    - name: Fetch accounting for all projects (state=all)
+      general_ludd.agent.gludd_accounting:
+        state: all
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: all_result
+
+    - name: Persist the all-accounting result for verify
+      ansible.builtin.copy:
+        content: "{{ all_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-accounting-all.json"
+        mode: "0644"
+
+    - name: Show all-accounting result
+      ansible.builtin.debug:
+        var: all_result
+
+    - name: Fetch accounting for a specific project (state=project)
+      general_ludd.agent.gludd_accounting:
+        state: project
+        project_id: "mock-project-alpha"
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+      register: proj_result
+
+    - name: Persist the project-accounting result for verify
+      ansible.builtin.copy:
+        content: "{{ proj_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-accounting-project.json"
+        mode: "0644"
+
+    - name: Show project-accounting result
+      ansible.builtin.debug:
+        var: proj_result

@@ -1,0 +1,14 @@
+---
+# accounting_report role defaults — generate per-project accounting reports
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output
+artifact_dir: "/tmp/gludd-accounting-report"
+
+# Which project(s) to report on. "all" fetches all projects; otherwise
+# set to a specific project_id string for a single-project report.
+accounting_scope: "all"
+accounting_project_id: ""
