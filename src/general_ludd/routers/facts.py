@@ -35,6 +35,7 @@ from general_ludd.db.repository import (
     TodoRepository,
 )
 from general_ludd.routers.accounting import _build_accountant as _build_accounting_accountant
+from general_ludd.routers.coordination import _coordination_facet
 
 logger = logging.getLogger(__name__)
 
@@ -339,6 +340,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "spend": _spend_facet(app),
             "accounting": await _accounting_facet(app, project_id=project_id),
             "schedule": _schedule_facet(app),
+            "coordination": _coordination_facet(app),
             "project_id": project_id,
         }
 

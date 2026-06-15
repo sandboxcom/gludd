@@ -1009,5 +1009,7 @@ def create_daemon_app(
         collection_handler=None,  # TODO(integration): wire to collection loader — no loader exists
     )
     spend.register(app, _daemon_state)
+    from general_ludd.routers import coordination as _coord_router
+    _coord_router.register(app, _daemon_state)
 
     return app
