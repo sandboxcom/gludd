@@ -2,10 +2,10 @@
 
 ## How It Works
 
-General Ludd Agent is a task-driven autonomous coding system. Here's the flow:
+General Ludd is an autonomous agentic SDLC daemon. The core flow:
 
 ```
-User adds task → Daemon queue → Event Loop → Agent → AI Model → Ansible → Result
+User adds task → Daemon queue → Event Loop → Ansible Runner → general_ludd.agent collection → AI Model → Result
 ```
 
 ## Components
@@ -14,31 +14,107 @@ User adds task → Daemon queue → Event Loop → Agent → AI Model → Ansibl
 
 The daemon is a FastAPI application that exposes:
 - **REST API** for task management (`/api/todos`, `/api/status`)
+- **Facts API** (`GET /api/facts`) — live structured snapshot for playbook logic
+- **Message queue API** (`/api/messages`) — inter-agent coordination
+- **Observability APIs** (`/api/metrics`, `/api/traces`) — metrics and execution traces
 - **Admin API** for runtime configuration (`/admin/*`)
 - **Event loop** running as an async background task
 
-The daemon runs as a single process — no external worker processes or message brokers.
+PSK (pre-shared key) authentication is applied by middleware to all non-public paths.
+
+The daemon runs as a single process, single gunicorn worker. SQLite-only: any non-SQLite
+database URL is refused at startup. Multiple workers would race on the same SQLite file and
+double-dispatch todos.
 
 ### Event Loop
 
 The event loop is the core orchestrator. Every tick (default: 1 second), it:
 
 1. **Claims** runnable tasks from the queue
-2. **Dispatches** them to agents with the appropriate model profile
+2. **Dispatches** them to the Ansible runner with the appropriate model profile
 3. **Monitors** running tasks for completion
-4. **Reviews** completed task returns
-5. **Reconciles** decisions (approve/retry/reject)
+4. **Reviews** completed task returns (optionally with a different model)
+5. **Reconciles** decisions — approve, retry, or reject
 
-### Agents
+### Facts and Message-Queue Backbone
 
-Agents are AI-powered workers with specific roles:
+Two endpoints form the backbone for Ansible coordination:
 
-| Agent | Role | Permissions |
-|-------|------|-------------|
-| `build` | Primary coder | Full read/write/execute |
-| `plan` | Planning and analysis | Read-only, can dispatch explore |
-| `explore` | Codebase search | Read-only |
-| `general` | Multi-purpose | Full read/write/execute |
+**`GET /api/facts`** aggregates the full daemon state into a single structured snapshot:
+- `gludd.work` — in-flight/claimed task status by state
+- `gludd.todos` — queue counts, oldest age, backlog size
+- `gludd.models` — configured model routing + per-model usage/health
+- `gludd.history` — task return success/failure rates
+- `gludd.messages` — unread message counts per recipient
+- `gludd.metrics` — agent-level metrics, global model usage, per-project cost, benchmark rankings
+- `gludd.traces` — recent execution traces with per-phase aggregates
+
+The `gludd_facts` module injects this snapshot as `ansible_facts.gludd` so roles can branch
+on live data in `when:` and `vars:` without coupling to the HTTP layer.
+
+**`/api/messages`** is the inter-agent coordination queue:
+- `POST /api/messages` — send a message to a recipient or to `broadcast`
+- `GET /api/messages?recipient=X` — inbox (includes broadcast)
+- `POST /api/messages/{id}/ack` — mark a message read
+
+The `gludd_message` module wraps this queue for use inside playbooks.
+
+### Observability
+
+- **Metrics** (`GET /api/metrics`): agent-level report, global model usage, per-project cost,
+  benchmark rankings via `MetricsCollector` and `BenchmarkRepository`. Also exposed as
+  `gludd.metrics` in the facts snapshot and via the `gludd_metrics` module.
+- **Traces** (`GET /api/traces`): genuinely-captured in-process execution traces via
+  `RecentTracesBuffer`; OTel exporter status (OTLP bridge if configured, otherwise disabled).
+  Also exposed as `gludd.traces` in the facts snapshot and via the `gludd_traces` module.
+
+### Ansible Collection: `general_ludd.agent`
+
+All task execution goes through the `general_ludd.agent` Ansible collection
+(`collections/ansible_collections/general_ludd/agent/`).
+
+#### Modules
+
+| Module | Purpose |
+|---|---|
+| `gludd_ping` | Connectivity check |
+| `gludd_facts` | Inject `GET /api/facts` as `ansible_facts.gludd` |
+| `gludd_message` | Inter-agent message queue (send/receive/ack) |
+| `gludd_skill` | Invoke a named skill |
+| `gludd_mcp_tool` | Call an MCP tool |
+| `gludd_git` | Git operations |
+| `gludd_worktree` | Git worktree management |
+| `gludd_db` | Direct SQLite record access |
+| `gludd_model_call` | Raw model call with token/cost accounting |
+| `gludd_agent_run` | Spawn a sub-agent run |
+| `gludd_metrics` | Focused read from `GET /api/metrics` |
+| `gludd_traces` | Focused read from `GET /api/traces` |
+
+The real module count: `make collection-modules`
+
+#### Roles by Family
+
+Roles compose modules into complete agent task runs. Grouped by family:
+
+**Code-task roles** — core SDLC actions:
+`agent_task`, `debug_failure`, `dependency_update`, `document_change`, `implement_change`,
+`refactor_code`, `triage_issue`, `write_tests`
+
+**Audit/report roles** — quality and visibility:
+`audit_dependencies`, `audit_security`, `report_audit`, `report_metrics`, `report_status`
+
+**Workflow-pipeline roles** — CI/CD orchestration:
+`gate_triage`, `ci_pipeline_repair`, `flaky_quarantine`, `release_build`, `validate_and_push`
+
+**Secure-SDLC roles** — supply-chain and security assurance:
+`threat_model`, `security_review`, `secret_scan`, `sbom_generate`, `supply_chain_verify`,
+`security_requirements`, `security_gate`
+
+**Agile/sprint roles** — backlog and sprint lifecycle:
+`story_create`, `estimate_story`, `backlog_groom`, `sprint_plan`, `standup_report`,
+`sprint_board_report`, `velocity_report`, `sprint_review`, `retrospective`
+
+The real role count: `make collection-roles`
 
 ### Model Router
 
@@ -46,14 +122,11 @@ The model router selects which AI model to use based on:
 - **Role** — coder tasks use one model, reviewer tasks another
 - **Quality** — high-quality tasks get the best model
 - **Latency** — fast tasks get the quickest model
-- **Pattern** — specific work patterns (code generation, review, etc.)
+- **Pattern** — specific work patterns (code generation, review, planning, etc.)
 
-### Ansible Runner
-
-Task execution happens through Ansible playbooks. The system includes:
-- Core Ansible runner using `ansible-core` as a library
-- Process isolation via containers (optional)
-- Variable templating and Jinja2 support
+Supported providers: Z.AI (GLM), OpenAI, Anthropic Claude, OpenRouter, vLLM (local),
+llama.cpp (local). All use the OpenAI-compatible API surface. API keys are resolved from
+OpenBao or environment variables — never stored in profile YAML files.
 
 ### Project Isolation
 
@@ -94,11 +167,28 @@ pending → in_progress → completed → reviewed
 
 ### Database
 
-PostgreSQL with Alembic migrations. Key tables:
+SQLite with Alembic migrations. Key tables:
 - `projects` — Project definitions
 - `todos` — Task queue
 - `task_returns` — Task results
 - `variable_namespaces` — Per-project Ansible variable scopes
+- `agent_messages` — Inter-agent message queue
+
+## Testing: Molecule Mock-Daemon Harness
+
+Every collection module and role has a molecule scenario under `molecule/playbooks/`. Each
+scenario uses the `default` (localhost) driver: `prepare.yml` starts a lightweight stdlib
+mock daemon that serves the same JSON structure as the real API. No container runtime is
+required; the harness runs on plain GitHub runners.
+
+```bash
+make molecule-test SCENARIO=<name>   # single scenario
+make molecule-test-all               # all scenarios (CI-equivalent)
+make molecule-scenarios              # list all scenarios
+```
+
+A floor (`MIN_MOLECULE_SCENARIOS` in `preflight.py`) ensures scenarios only grow. The gate
+will fail if scenarios are removed.
 
 ## Configuration Layers
 
@@ -116,12 +206,26 @@ Built-in defaults (lowest priority)
 
 ## Security
 
+- PSK-authenticated API (all `/api/*` and `/admin/*` paths)
 - Systemd hardening: `NoNewPrivileges`, `ProtectSystem`, `PrivateTmp`
 - Dedicated service user (not root)
-- Secrets via OpenBao (HashiCorp Vault compatible)
-- Process isolation for Ansible execution
+- Secrets via OpenBao (HashiCorp Vault compatible); API keys never in YAML files
+- Process isolation for Ansible execution (optional container runtime)
 - OPA policy engine for configuration validation
-- SAST scanning (Bandit) and SBOM generation
+- SAST scanning (Bandit), SBOM generation (CycloneDX), dependency audit (`pip-audit`)
+- `detect-secrets` pre-commit hook; `make scan-secrets` at any time
+
+## CI Pipeline
+
+GitHub Actions (`.github/workflows/build.yml`):
+
+1. **gate** — lint + typecheck + collect + test + smoke, Python 3.11 and 3.12 (`fail-fast: false`)
+2. **molecule** — all molecule scenarios after gate passes
+3. **linux / macos / windows** — PyInstaller binary + tarball, timestamped alpha version on push;
+   stable version on tag (`v*`)
+4. **release** — uploads artifacts as a GitHub Release
+
+CI is currently being stabilized — consult the Actions tab for real current status.
 
 ## Deployment Modes
 
@@ -136,5 +240,7 @@ Built-in defaults (lowest priority)
 
 - Health endpoint: `GET /healthz`
 - Status endpoint: `GET /api/status`
-- Metrics: Agent counts, cost tracking, per-project breakdowns
+- Facts snapshot: `GET /api/facts` (work/todos/models/history/messages/metrics/traces)
+- Metrics: `GET /api/metrics` (agent counts, cost tracking, benchmark rankings)
+- Traces: `GET /api/traces` (recent execution traces, phase aggregates)
 - Log level: Adjustable at runtime via `POST /admin/log-level`
