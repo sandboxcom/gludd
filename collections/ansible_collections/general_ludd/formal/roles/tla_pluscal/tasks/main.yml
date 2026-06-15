@@ -1,0 +1,112 @@
+---
+# tla_pluscal role — translate PlusCal to TLA+ via pcal.trans
+#
+# Runs: java -cp tla2tools.jar pcal.trans <spec_path>
+#
+# pcal.trans modifies the .tla file IN PLACE, writing the TLA+ translation
+# between the BEGIN TRANSLATION and END TRANSLATION markers.
+#
+# Success marker: "Translation completed."
+# Error marker: "Unknown error" or non-zero exit or absence of success marker.
+#
+# Graceful degradation:
+#   - enable_tla=false (default) → use pcal_output_override; status=skipped
+#   - Java or jar absent → status=skipped (non-fatal)
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - artifact_dir | length > 0
+    fail_msg: "tla_pluscal: artifact_dir is required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Run real pcal.trans (opt-in only) ────────────────────────────────────
+
+- name: Check if Java is available
+  ansible.builtin.command:
+    cmd: java -version
+  register: _tpc_java_check
+  changed_when: false
+  failed_when: false
+  when: enable_tla | bool
+
+- name: Check if tla2tools.jar exists
+  ansible.builtin.stat:
+    path: "{{ tla_tools_jar }}"
+  register: _tpc_jar_stat
+  when: enable_tla | bool
+
+- name: Run pcal.trans (enable_tla=true, Java + jar present, spec_path set)
+  ansible.builtin.command:
+    cmd: "java -cp {{ tla_tools_jar }} pcal.trans {{ spec_path }}"
+  register: _tpc_pcal_raw
+  changed_when: true
+  failed_when: false
+  when:
+    - enable_tla | bool
+    - not ansible_check_mode
+    - spec_path | length > 0
+    - _tpc_java_check is defined
+    - _tpc_java_check.rc | default(1) == 0
+    - _tpc_jar_stat is defined
+    - _tpc_jar_stat.stat.exists | default(false)
+
+# ── Select output to classify ─────────────────────────────────────────────
+
+- name: Use real pcal.trans output
+  ansible.builtin.set_fact:
+    _tpc_stdout: "{{ (_tpc_pcal_raw.stdout | default('')) + (_tpc_pcal_raw.stderr | default('')) }}"
+    _tpc_ran: true
+    _tpc_status: "ran"
+  when:
+    - enable_tla | bool
+    - not ansible_check_mode
+    - _tpc_pcal_raw is defined
+    - _tpc_pcal_raw.rc is defined
+
+- name: Use pcal_output_override (enable_tla=false or Java/jar absent or check_mode)
+  ansible.builtin.set_fact:
+    _tpc_stdout: "{{ pcal_output_override }}"
+    _tpc_ran: false
+    _tpc_status: "skipped"
+  when: >-
+    not (enable_tla | bool)
+    or ansible_check_mode
+    or (_tpc_pcal_raw is not defined)
+    or (_tpc_pcal_raw.rc is not defined)
+
+# ── Classify pcal.trans output ────────────────────────────────────────────
+
+- name: Classify translation result
+  ansible.builtin.set_fact:
+    _tpc_translated: >-
+      {{ 'Translation completed' in _tpc_stdout or 'Translated' in _tpc_stdout }}
+    _tpc_error: >-
+      {{ 'Unknown error' in _tpc_stdout or 'Error' in _tpc_stdout }}
+
+# ── Write artifact ────────────────────────────────────────────────────────
+
+- name: Write tla_pluscal.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'tla_pluscal',
+        'status': _tpc_status,
+        'spec_path': spec_path,
+        'translated': _tpc_translated | bool,
+        'ran': _tpc_ran | bool,
+        'error': _tpc_error | bool
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/tla_pluscal.json"
+    mode: "0644"
+
+- name: Report PlusCal translation completion
+  ansible.builtin.debug:
+    msg: >-
+      tla_pluscal: status={{ _tpc_status }}
+      translated={{ _tpc_translated | bool }}

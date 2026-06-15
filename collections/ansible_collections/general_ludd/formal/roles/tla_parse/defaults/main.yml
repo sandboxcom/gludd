@@ -1,0 +1,19 @@
+---
+# tla_parse role defaults
+
+# Path to the .tla spec to parse (required)
+spec_path: ""
+
+# Path to tla2tools.jar (required for real parse)
+tla_tools_jar: "/opt/tla/tla2tools.jar"
+
+# SAFE-BY-DEFAULT: do NOT run SANY unless explicitly enabled.
+# Java/jar absent or enable_tla=false → status=skipped (graceful, non-fatal).
+enable_tla: false
+
+# Override SANY stdout for testing (used when enable_tla=false)
+# Provide a string containing SANY output to exercise real parsing logic.
+parse_output_override: "Parsing file {{ spec_path }}\nSemantic processing of module MySpec\nParsing completed. No errors."
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-tla-parse"

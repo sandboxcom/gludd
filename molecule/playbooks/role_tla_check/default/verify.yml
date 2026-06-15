@@ -1,0 +1,121 @@
+---
+# Verify tla_check classified both TLC output overrides correctly:
+#   - pass path: outcome=success
+#   - violation path: outcome=invariant_violated, violated_invariant=NeverNegative
+#     and the role correctly triggered fail (rescued in converge)
+- name: Verify - tla_check classified TLC output correctly
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}.pid"
+    pass_artifact: "/tmp/gludd-tla-check-pass-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}/tla_check.json"
+    violation_artifact: "/tmp/gludd-tla-check-violation-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}/tla_check.json"
+    rescued_marker: "/tmp/gludd-tla-check-violation-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}/violation_rescued.json"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    specs_dir: "/tmp/gludd-tla-check-specs-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+  tasks:
+    # --- SUCCESS PATH ---
+    - name: Assert pass artifact exists
+      ansible.builtin.stat:
+        path: "{{ pass_artifact }}"
+      register: pass_stat
+      failed_when: not pass_stat.stat.exists
+
+    - name: Load pass artifact
+      ansible.builtin.slurp:
+        src: "{{ pass_artifact }}"
+      register: pass_raw
+
+    - name: Parse pass artifact
+      ansible.builtin.set_fact:
+        pass_result: "{{ pass_raw.content | b64decode | from_json }}"
+
+    - name: Assert success path classified correctly
+      ansible.builtin.assert:
+        that:
+          - pass_result.role == 'tla_check'
+          - pass_result.status == 'completed'
+          - pass_result.outcome == 'success'
+          - pass_result.violated_invariant == ''
+        fail_msg: "tla_check success path wrong: {{ pass_result }}"
+        success_msg: "tla_check SUCCESS path correct: outcome={{ pass_result.outcome }}"
+
+    # --- VIOLATION PATH ---
+    - name: Assert violation artifact exists
+      ansible.builtin.stat:
+        path: "{{ violation_artifact }}"
+      register: viol_stat
+      failed_when: not viol_stat.stat.exists
+
+    - name: Load violation artifact
+      ansible.builtin.slurp:
+        src: "{{ violation_artifact }}"
+      register: viol_raw
+
+    - name: Parse violation artifact
+      ansible.builtin.set_fact:
+        viol_result: "{{ viol_raw.content | b64decode | from_json }}"
+
+    - name: Assert violation path classified correctly
+      ansible.builtin.assert:
+        that:
+          - viol_result.role == 'tla_check'
+          - viol_result.outcome == 'invariant_violated'
+          - viol_result.violated_invariant == 'NeverNegative'
+        fail_msg: "tla_check violation path wrong: {{ viol_result }}"
+        success_msg: "tla_check VIOLATION path correct: outcome={{ viol_result.outcome }} invariant={{ viol_result.violated_invariant }}"
+
+    - name: Assert violation path triggered fail (rescued marker present)
+      ansible.builtin.stat:
+        path: "{{ rescued_marker }}"
+      register: rescued_stat
+      failed_when: not rescued_stat.stat.exists
+
+    - name: Load rescued marker
+      ansible.builtin.slurp:
+        src: "{{ rescued_marker }}"
+      register: rescued_raw
+
+    - name: Parse rescued marker
+      ansible.builtin.set_fact:
+        rescued_result: "{{ rescued_raw.content | b64decode | from_json }}"
+
+    - name: Assert rescued marker shows fail-closed behavior worked
+      ansible.builtin.assert:
+        that:
+          - rescued_result.violation_path_failed_as_expected | bool
+        fail_msg: "tla_check fail-closed did not trigger as expected"
+        success_msg: "tla_check fail-closed behavior verified: violation correctly triggered ansible.builtin.fail"
+
+    # ---- cleanup ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove shim directory
+      ansible.builtin.file:
+        path: "{{ shim_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove spec directory
+      ansible.builtin.file:
+        path: "{{ specs_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove pass artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-tla-check-pass-{{ mock_port }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove violation artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-tla-check-violation-{{ mock_port }}"
+        state: absent
+      failed_when: false

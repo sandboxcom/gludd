@@ -1,0 +1,18 @@
+---
+# tla_trace_interpret role defaults
+
+# TLC output string to parse (provide either this or trace_path)
+tlc_output: ""
+
+# Path to a file containing TLC output (alternative to tlc_output)
+trace_path: ""
+
+# Artifact output directory
+artifact_dir: "/tmp/gludd-tla-trace"
+
+# Daemon connectivity (for gludd_message handoff)
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Message recipient for handoff (empty = no message sent)
+handoff_recipient: ""

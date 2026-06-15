@@ -1,0 +1,21 @@
+---
+galaxy_info:
+  role_name: tla_scaffold
+  author: Agentic Harness Agent
+  description: >
+    Generate a TLA+ spec (.tla) and config (.cfg) from a design description.
+    Produces VARIABLES, Init, Next, TypeOK, an INVARIANT naming the impossible
+    state, and a CONSTRAINT bounding the state space. LLM call (gludd_model_call)
+    is gated behind enable_model_call=false; the deterministic template fallback
+    always produces syntactically valid TLA+. Artifacts: <spec>.tla, <spec>.cfg,
+    tla_scaffold.json (vars[], invariant_name, constraint).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

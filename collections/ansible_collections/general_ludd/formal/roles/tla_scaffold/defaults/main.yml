@@ -1,0 +1,19 @@
+---
+# tla_scaffold role defaults
+
+# Design description text (required input)
+design_text: ""
+
+# Name for the TLA+ spec (used as module name + filenames)
+spec_name: "MySpec"
+
+# Output directory for generated files
+out_dir: "/tmp/gludd-tla-scaffold"
+
+# SAFE-BY-DEFAULT: do NOT call the LLM unless explicitly enabled.
+# When false, a deterministic Jinja2 template is used — always syntactically valid TLA+.
+enable_model_call: false
+
+# Daemon connectivity (for gludd_model_call when enable_model_call=true)
+daemon_url: "http://localhost:8000"
+psk: ""

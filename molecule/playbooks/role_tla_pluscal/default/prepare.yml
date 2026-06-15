@@ -1,0 +1,99 @@
+---
+# role_tla_pluscal prepare:
+#   1. Write a Java shim for pcal.trans.
+#   2. Write a fake .tla spec with a PlusCal algorithm block.
+#   3. Start the mock daemon.
+- name: Prepare - java shim + fake PlusCal spec + mock daemon for tla_pluscal
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}.pid"
+    shim_dir: "/tmp/gludd-tla-java-shim-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    fake_spec: "/tmp/gludd-tla-pluscal-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}/CounterPlusCal.tla"
+  tasks:
+    - name: Create java shim directory
+      ansible.builtin.file:
+        path: "{{ shim_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write java shim script
+      ansible.builtin.copy:
+        content: |
+          #!/bin/sh
+          # Java shim for tla_pluscal molecule scenario
+          ARGS="$*"
+          case "$ARGS" in
+            *pcal.trans*)
+              echo "Translation completed."
+              exit 0
+              ;;
+            *tla2sany.SANY*)
+              echo "Parsing completed. No errors."
+              exit 0
+              ;;
+            *tlc2.TLC*)
+              echo "Model checking completed. No error has been found."
+              exit 0
+              ;;
+            *-version*)
+              echo 'openjdk version "17.0.0" 2021-09-14' >&2
+              exit 0
+              ;;
+            *)
+              echo "java shim: unrecognized args: $ARGS" >&2
+              exit 0
+              ;;
+          esac
+        dest: "{{ shim_dir }}/java"
+        mode: "0755"
+
+    - name: Create fake spec directory
+      ansible.builtin.file:
+        path: "{{ fake_spec | dirname }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write fake PlusCal spec
+      ansible.builtin.copy:
+        content: |
+          ---- MODULE CounterPlusCal ----
+          EXTENDS Integers
+
+          (*--algorithm counter
+          variables n = 0;
+          begin
+            while TRUE do
+              n := n + 1;
+            end while;
+          end algorithm; *)
+
+          \* BEGIN TRANSLATION
+          \* (to be filled by pcal.trans)
+          \* END TRANSLATION
+
+          ====
+        dest: "{{ fake_spec }}"
+        mode: "0644"
+
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5

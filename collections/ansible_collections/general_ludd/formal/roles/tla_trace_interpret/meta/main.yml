@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: tla_trace_interpret
+  author: Agentic Harness Agent
+  description: >
+    Parse a TLC counterexample trace into structured steps + narrative. Pure
+    Ansible/Jinja2 parser — no Java required. Extracts the violated invariant
+    name, numbered states (State 1: ... State N:) with their variable bindings,
+    and writes tla_trace.json (invariant, steps[{state_n,vars}], narrative) and
+    a human-readable .md. Sends gludd_message handoff.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

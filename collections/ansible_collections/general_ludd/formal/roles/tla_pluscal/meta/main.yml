@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: tla_pluscal
+  author: Agentic Harness Agent
+  description: >
+    Translate PlusCal algorithm to TLA+ via pcal.trans. Java/jar absent or
+    enable_tla=false results in translated=false, status=skipped (graceful,
+    non-fatal). Artifact: tla_pluscal.json (translated:bool, status, spec_path).
+    The pcal_output_override mechanism lets molecule exercise real classification
+    logic without Java.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

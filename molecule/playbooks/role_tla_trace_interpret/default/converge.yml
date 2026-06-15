@@ -1,0 +1,31 @@
+---
+# Run the REAL tla_trace_interpret role with the canonical violation TLC output.
+# Exercises real line-by-line trace parsing (Jinja2/Ansible, no Java):
+#   - Extracts invariant=NeverNegative
+#   - Extracts 2 states: State 1 (n=0), State 2 (n=-1)
+#   - Writes tla_trace.json and tla_trace.md
+- name: Converge - run tla_trace_interpret role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}"
+    # Canonical TLC violation output (the canned VIOLATION stdout from the spec)
+    violation_output: |
+      Error: Invariant NeverNegative is violated.
+      Error: The behavior up to this point is:
+      State 1: <Initial predicate>
+      /\ n = 0
+      State 2: <Next>
+      /\ n = -1
+  tasks:
+    - name: Invoke tla_trace_interpret with canonical violation output
+      ansible.builtin.include_role:
+        name: general_ludd.formal.tla_trace_interpret
+      vars:
+        tlc_output: "{{ violation_output }}"
+        trace_path: ""
+        artifact_dir: "/tmp/gludd-tla-trace-{{ mock_port }}"
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        handoff_recipient: ""

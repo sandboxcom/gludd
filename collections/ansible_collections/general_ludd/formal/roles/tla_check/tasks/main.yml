@@ -1,0 +1,200 @@
+---
+# tla_check role — run TLC model checker and classify outcome
+#
+# Runs: java -cp tla2tools.jar tlc2.TLC <spec_path> -config <cfg_path>
+#
+# Outcome classification (by STDOUT MARKERS — exit codes are unreliable):
+#   success          → "Model checking completed. No error has been found."
+#   invariant_violated → "Error: Invariant <Name> is violated."
+#                        + "Error: The behavior up to this point is:"
+#   deadlock         → "Error: Deadlock reached."
+#   parse_error      → "***" in output (SANY errors) without violation/deadlock
+#   skipped          → enable_tla=false or Java/jar absent
+#
+# FAIL-CLOSED: role fails (ansible.builtin.fail) on invariant_violated or deadlock.
+
+- name: Validate inputs
+  ansible.builtin.assert:
+    that:
+      - artifact_dir | length > 0
+    fail_msg: "tla_check: artifact_dir is required"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Run real TLC (opt-in only) ────────────────────────────────────────────
+
+- name: Check if Java is available
+  ansible.builtin.command:
+    cmd: java -version
+  register: _tc_java_check
+  changed_when: false
+  failed_when: false
+  when: enable_tla | bool
+
+- name: Check if tla2tools.jar exists
+  ansible.builtin.stat:
+    path: "{{ tla_tools_jar }}"
+  register: _tc_jar_stat
+  when: enable_tla | bool
+
+- name: Run TLC model checker (enable_tla=true, Java + jar present)
+  ansible.builtin.command:
+    cmd: "java -cp {{ tla_tools_jar }} tlc2.TLC {{ spec_path }} -config {{ cfg_path }}"
+  register: _tc_tlc_raw
+  changed_when: false
+  failed_when: false
+  async: "{{ timeout | int if timeout | int > 0 else 3600 }}"
+  poll: 5
+  when:
+    - enable_tla | bool
+    - not ansible_check_mode
+    - _tc_java_check is defined
+    - _tc_java_check.rc | default(1) == 0
+    - _tc_jar_stat is defined
+    - _tc_jar_stat.stat.exists | default(false)
+
+# ── Select output to classify ─────────────────────────────────────────────
+
+- name: Use real TLC output
+  ansible.builtin.set_fact:
+    _tc_tlc_stdout: "{{ (_tc_tlc_raw.stdout | default('')) + (_tc_tlc_raw.stderr | default('')) }}"
+    _tc_ran: true
+  when:
+    - enable_tla | bool
+    - not ansible_check_mode
+    - _tc_tlc_raw is defined
+    - _tc_tlc_raw.rc is defined
+
+- name: Use tlc_output_override (enable_tla=false or Java/jar absent or check_mode)
+  ansible.builtin.set_fact:
+    _tc_tlc_stdout: "{{ tlc_output_override }}"
+    _tc_ran: false
+  when: >-
+    not (enable_tla | bool)
+    or ansible_check_mode
+    or (_tc_tlc_raw is not defined)
+    or (_tc_tlc_raw.rc is not defined)
+
+# ── Classify TLC output (STDOUT MARKERS) ─────────────────────────────────
+
+- name: Classify outcome — success
+  ansible.builtin.set_fact:
+    _tc_outcome: "success"
+    _tc_violated_invariant: ""
+    _tc_raw_trace: ""
+  when: >-
+    'Model checking completed. No error has been found.' in _tc_tlc_stdout
+
+- name: Classify outcome — invariant_violated
+  ansible.builtin.set_fact:
+    _tc_outcome: "invariant_violated"
+    _tc_violated_invariant: >-
+      {{
+        (_tc_tlc_stdout | regex_search('Error: Invariant (\w+) is violated', '\1'))
+        | first | default('UnknownInvariant')
+      }}
+    _tc_raw_trace: >-
+      {{
+        _tc_tlc_stdout
+        | regex_search('Error: The behavior up to this point is:(.*)', '\1', multiline=True)
+        | first | default('')
+      }}
+  when: >-
+    'Model checking completed. No error has been found.' not in _tc_tlc_stdout
+    and 'Error: Invariant' in _tc_tlc_stdout
+    and 'is violated' in _tc_tlc_stdout
+
+- name: Classify outcome — deadlock
+  ansible.builtin.set_fact:
+    _tc_outcome: "deadlock"
+    _tc_violated_invariant: ""
+    _tc_raw_trace: ""
+  when: >-
+    'Model checking completed. No error has been found.' not in _tc_tlc_stdout
+    and _tc_outcome is not defined
+    and 'Error: Deadlock reached.' in _tc_tlc_stdout
+
+- name: Classify outcome — parse_error
+  ansible.builtin.set_fact:
+    _tc_outcome: "parse_error"
+    _tc_violated_invariant: ""
+    _tc_raw_trace: ""
+  when: >-
+    'Model checking completed. No error has been found.' not in _tc_tlc_stdout
+    and _tc_outcome is not defined
+    and ('***' in _tc_tlc_stdout or 'Error:' in _tc_tlc_stdout)
+    and 'Deadlock' not in _tc_tlc_stdout
+    and 'Invariant' not in _tc_tlc_stdout
+
+- name: Classify outcome — skipped (no markers, not ran)
+  ansible.builtin.set_fact:
+    _tc_outcome: "skipped"
+    _tc_violated_invariant: ""
+    _tc_raw_trace: ""
+  when: _tc_outcome is not defined
+
+# ── Write artifact (always, before fail-closed) ───────────────────────────
+
+- name: Write tla_check.json artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'tla_check',
+        'status': 'completed',
+        'tlc_ran': _tc_ran | bool,
+        'outcome': _tc_outcome,
+        'violated_invariant': _tc_violated_invariant,
+        'raw_trace': _tc_raw_trace
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/tla_check.json"
+    mode: "0644"
+
+# ── Handoff message on violation ──────────────────────────────────────────
+
+- name: Send gludd_message on invariant violation (priority=high)
+  general_ludd.agent.gludd_message:
+    state: send
+    sender: tla_check
+    recipient: "{{ handoff_recipient }}"
+    topic: tla_invariant_violated
+    body: >-
+      {{ {
+        'outcome': _tc_outcome,
+        'violated_invariant': _tc_violated_invariant,
+        'spec_path': spec_path
+      } | to_json }}
+    priority: high
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - handoff_recipient | length > 0
+    - _tc_outcome in ['invariant_violated', 'deadlock']
+    - not ansible_check_mode
+
+- name: Report check completion
+  ansible.builtin.debug:
+    msg: "tla_check: outcome={{ _tc_outcome }} violated_invariant={{ _tc_violated_invariant | default('none') }}"
+
+# ── FAIL-CLOSED: fail on violation or deadlock ────────────────────────────
+
+- name: Fail on invariant violation (fail-closed)
+  ansible.builtin.fail:
+    msg: >-
+      TLC found invariant violation: {{ _tc_violated_invariant }}.
+      Outcome: {{ _tc_outcome }}.
+      This is a formal-methods BLOCK — the impossible state was reached.
+      Review tla_check.json and run tla_trace_interpret for a counterexample narrative.
+  when: _tc_outcome == 'invariant_violated'
+
+- name: Fail on deadlock (fail-closed)
+  ansible.builtin.fail:
+    msg: >-
+      TLC found a deadlock. Outcome: {{ _tc_outcome }}.
+      This is a formal-methods BLOCK — the system reached a state with no valid Next.
+      Review tla_check.json and check your Next definition and CONSTRAINT.
+  when: _tc_outcome == 'deadlock'
