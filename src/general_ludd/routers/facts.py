@@ -196,6 +196,43 @@ def _codebase_facet(
         }
 
 
+async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[str, Any]:
+    """Feature-database summary: counts by status + list of feature names per status.
+
+    Sourced from FeatureRepository — never self-asserted.
+    """
+    from general_ludd.db.models import FeatureStatus
+    from general_ludd.db.repository import FeatureRepository
+
+    factory = _get_session_factory(app)
+    facet: dict[str, Any] = {
+        "total": 0,
+        "by_status": {},
+        "verified": [],
+        "implemented": [],
+        "requested": [],
+        "regressed": [],
+    }
+    if factory is None:
+        return facet
+    try:
+        async with factory() as session:
+            repo = FeatureRepository(session)
+            rows = await repo.list_all()
+        by_status: dict[str, list[str]] = {}
+        for row in rows:
+            status = row.status
+            by_status.setdefault(status, []).append(row.name)
+        for status in FeatureStatus:
+            names = by_status.get(status.value, [])
+            facet["by_status"][status.value] = len(names)
+            facet[status.value] = names
+        facet["total"] = len(rows)
+    except Exception as exc:
+        logger.debug("features facet unavailable: %s", exc)
+    return facet
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/api/facts")
     async def api_facts(project_id: str | None = None) -> dict[str, Any]:
@@ -225,6 +262,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "metrics": await _metrics_facet(app, project_id=project_id),
             "traces": _traces_facet(app),
             "codebase": _codebase_facet(app, recent_failures=history or None),
+            "features": await _features_facet(app, project_id=project_id),
             "project_id": project_id,
         }
 

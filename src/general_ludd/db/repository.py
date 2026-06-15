@@ -14,6 +14,8 @@ from general_ludd.db.models import (
     AuditEventModel,
     AuditEventType,
     BenchmarkResultModel,
+    FeatureModel,
+    FeatureStatus,
     ProjectModel,
     PromptProfileModel,
     QueueModel,
@@ -724,3 +726,106 @@ class AgentMessageRepository:
         if created.tzinfo is None:
             created = created.replace(tzinfo=UTC)
         return (now - created).total_seconds() > row.ttl_seconds
+
+
+class FeatureRepository:
+    """Persistence for the feature database (FeatureModel).
+
+    JSON (de)serialization happens at the repo boundary — callers pass / receive
+    Python objects (lists/dicts); the DB stores JSON-in-Text as do PromptProfileModel
+    and TodoModel.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    @staticmethod
+    def _serialize(value: Any) -> str:
+        import json as _json
+
+        if isinstance(value, str):
+            return value
+        return _json.dumps(value)
+
+    # ------------------------------------------------------------------
+    # Write operations
+    # ------------------------------------------------------------------
+
+    async def upsert(self, data: dict[str, Any]) -> FeatureModel:
+        """Insert or update a feature row, keyed by name (unique).
+
+        Fields that are lists/dicts in ``data`` are serialized to JSON before
+        being written to the DB.  The returned model has JSON-string columns.
+        """
+        existing = await self.get_by_name(data["name"])
+        json_fields = {"acceptance_criteria", "evidence"}
+        serialized: dict[str, Any] = {}
+        for key, val in data.items():
+            if key in json_fields:
+                serialized[key] = self._serialize(val)
+            else:
+                serialized[key] = val
+
+        if existing is not None:
+            for key, val in serialized.items():
+                setattr(existing, key, val)
+            await self._session.flush()
+            return existing
+
+        row = FeatureModel(**serialized)
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def set_status(
+        self,
+        feature_id: str,
+        status: FeatureStatus,
+        detail: dict[str, Any] | None = None,
+        verified_at: datetime | None = None,
+    ) -> FeatureModel:
+        """Update status, optional verified_at, and persist the verify-detail JSON."""
+        import json as _json
+
+        row = await self.get_by_id(feature_id)
+        if row is None:
+            raise KeyError(f"Feature {feature_id!r} not found")
+        row.status = status.value
+        if verified_at is not None:
+            row.verified_at = verified_at
+        if detail is not None:
+            row.last_verify_detail = _json.dumps(detail)
+        await self._session.flush()
+        return row
+
+    # ------------------------------------------------------------------
+    # Read operations
+    # ------------------------------------------------------------------
+
+    async def get_by_name(self, name: str) -> FeatureModel | None:
+        stmt = select(FeatureModel).where(FeatureModel.name == name)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def get_by_id(self, feature_id: str) -> FeatureModel | None:
+        stmt = select(FeatureModel).where(FeatureModel.id == feature_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_all(self) -> list[FeatureModel]:
+        result = await self._session.execute(select(FeatureModel))
+        return list(result.scalars().all())
+
+    async def list_by_status(self, status: FeatureStatus) -> list[FeatureModel]:
+        stmt = select(FeatureModel).where(FeatureModel.status == status.value)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_category(self, category: str) -> list[FeatureModel]:
+        stmt = select(FeatureModel).where(FeatureModel.category == category)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
