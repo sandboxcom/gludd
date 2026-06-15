@@ -1,0 +1,20 @@
+---
+- name: Converge - self_improve_ab_test with a benign candidate
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    sc_baseline_root: "/tmp/gludd-abb-baseline"
+    sc_candidate_root: "/tmp/gludd-abb-candidate"
+  tasks:
+    - name: Invoke self_improve_ab_test (enabled) on the benign candidate
+      ansible.builtin.include_role:
+        name: general_ludd.agent.self_improve_ab_test
+      vars:
+        self_improve_enabled: true
+        candidate_worktree: "{{ sc_candidate_root }}"
+        baseline_root: "{{ sc_baseline_root }}"
+        repo_root: "{{ sc_baseline_root }}"
+        target_module_import: "gludd_abb_target.leaf"
+        expect_attr: "VALUE"
+        artifact_dir: "/tmp/gludd-self-improve-abb"

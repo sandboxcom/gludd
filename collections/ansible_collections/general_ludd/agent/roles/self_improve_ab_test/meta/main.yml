@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: self_improve_ab_test
+  author: Agentic Harness Agent
+  description: >
+    Runs gludd_abtest on a candidate worktree in a CRASH-ISOLATED subprocess.
+    The role MUST stay up even when the candidate is built to crash the whole
+    app (os._exit / segfault / infinite loop): the crash is observed as
+    b.crashed and yields promote:false (fail-closed). SAFE BY DEFAULT — gated
+    behind self_improve_enabled (default false).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

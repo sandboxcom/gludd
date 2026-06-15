@@ -1,0 +1,61 @@
+---
+# self_improve_promote — promote a validated candidate via health-gated
+# hot-rotation, with automatic rollback on a post-promote degraded/503.
+#
+# Only acts when the ab_verdict says promote:true. Fail-closed otherwise.
+# SAFE BY DEFAULT: gated behind self_improve_enabled (default false).
+
+- name: Skip self_improve_promote when disabled
+  ansible.builtin.debug:
+    msg: "self_improve_promote disabled (self_improve_enabled is false) — skipping"
+  when: not (self_improve_enabled | default(false) | bool)
+
+- name: self_improve_promote (enabled)
+  when: self_improve_enabled | default(false) | bool
+  block:
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Load the A/B verdict
+      ansible.builtin.slurp:
+        src: "{{ ab_verdict_path }}"
+      register: _sipp_verdict_raw
+
+    - name: Parse the A/B verdict
+      ansible.builtin.set_fact:
+        _sipp_verdict: "{{ _sipp_verdict_raw.content | b64decode | from_json }}"
+
+    - name: Refuse to promote when verdict is not promote:true
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'self_improve_promote',
+            'status': 'skipped',
+            'reason': 'ab_verdict.promote is not true',
+            'promoted': false,
+            'verdict': _sipp_verdict
+          } | to_nice_json }}
+        dest: "{{ promotion_result_path }}"
+        mode: "0644"
+      when: not (_sipp_verdict.promote | default(false) | bool)
+
+    - name: Hot-rotate the validated candidate (health-gated, auto-rollback)
+      general_ludd.agent.gludd_reload:
+        module_name: "{{ target_module_name }}"
+        candidate_source_path: "{{ candidate_source_path }}"
+        health_url: "{{ health_url | default(omit, true) }}"
+        health_timeout: "{{ health_timeout }}"
+        result_path: "{{ promotion_result_path }}"
+      register: reload_result
+      when: _sipp_verdict.promote | default(false) | bool
+
+    - name: Surface the promotion result
+      ansible.builtin.debug:
+        msg: >-
+          self_improve_promote: success={{ reload_result.success | default(false) }}
+          rolled_back={{ reload_result.rolled_back | default(false) }}
+      when: _sipp_verdict.promote | default(false) | bool

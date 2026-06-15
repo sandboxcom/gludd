@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: self_improve_promote
+  author: Agentic Harness Agent
+  description: >
+    On promote:true (from ab_verdict.json) hot-rotates the validated leaf module
+    via gludd_reload (reload_code_module + health-gate + auto-rollback). A
+    post-promote degraded/503 triggers an automatic rollback. SAFE BY DEFAULT —
+    gated behind self_improve_enabled (default false).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

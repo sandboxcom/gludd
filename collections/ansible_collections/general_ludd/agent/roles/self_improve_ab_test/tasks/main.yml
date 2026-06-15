@@ -1,0 +1,53 @@
+---
+# self_improve_ab_test — crash-isolated A/B of a candidate worktree.
+#
+# DECISIVE PROPERTY: this role MUST STAY UP even when the candidate is built to
+# crash the whole app. gludd_abtest runs the candidate in a FRESH interpreter
+# child, so an os._exit / segfault / infinite loop in the candidate is observed
+# (b.crashed / b.timed_out) and never propagates to this playbook process.
+# Fail-closed: any crashed/timed_out => promote:false.
+#
+# SAFE BY DEFAULT: gated behind self_improve_enabled (default false).
+
+- name: Skip self_improve_ab_test when disabled
+  ansible.builtin.debug:
+    msg: "self_improve_ab_test disabled (self_improve_enabled is false) — skipping"
+  when: not (self_improve_enabled | default(false) | bool)
+
+- name: self_improve_ab_test (enabled)
+  when: self_improve_enabled | default(false) | bool
+  block:
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Run crash-isolated A/B test of the candidate
+      general_ludd.agent.gludd_abtest:
+        candidate_root: "{{ candidate_worktree }}"
+        baseline_root: "{{ baseline_root }}"
+        repo_root: "{{ repo_root }}"
+        module: "{{ target_module_import }}"
+        expect_attr: "{{ expect_attr | default(omit, true) }}"
+        timeout: "{{ ab_timeout }}"
+        mem_limit_mb: "{{ ab_mem_limit_mb }}"
+        verdict_path: "{{ ab_verdict_path }}"
+      register: ab
+
+    - name: Surface the A/B verdict
+      ansible.builtin.debug:
+        msg: >-
+          self_improve_ab_test: promote={{ ab.promote }}
+          b.crashed={{ ab.verdict.b.crashed }}
+          b.timed_out={{ ab.verdict.b.timed_out }}
+          reason={{ ab.verdict.reason }}
+
+    - name: Assert fail-closed — a crashed/timed_out candidate is NEVER promoted
+      ansible.builtin.assert:
+        that:
+          - not (ab.verdict.b.crashed | bool and ab.promote | bool)
+          - not (ab.verdict.b.timed_out | bool and ab.promote | bool)
+        fail_msg: "fail-closed violated: crashed/timed_out candidate was promoted"
+        success_msg: "fail-closed holds: promote={{ ab.promote }}"

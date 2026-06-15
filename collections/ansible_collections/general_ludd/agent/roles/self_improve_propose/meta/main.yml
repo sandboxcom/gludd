@@ -1,0 +1,19 @@
+---
+galaxy_info:
+  role_name: self_improve_propose
+  author: Agentic Harness Agent
+  description: >
+    Reads gludd.codebase.* (via gludd_introspect), picks the highest-value
+    target (low coverage intersect high churn intersect debt), and uses
+    gludd_agent_run to produce a candidate diff into an isolated git worktree.
+    SAFE BY DEFAULT — gated behind self_improve_enabled (default false).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

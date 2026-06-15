@@ -1,0 +1,23 @@
+---
+# self_improve_propose defaults — SAFE BY DEFAULT.
+# The whole role is gated behind self_improve_enabled; nothing runs unless an
+# operator opts in.
+self_improve_enabled: false
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Repo to introspect + propose against.
+repo_root: "."
+repo_path: "{{ repo_root }}"
+
+# Where the candidate worktree is created.
+worktree_base: "/tmp/gludd-self-improve"
+candidate_branch: "auto/self-improve/candidate"
+
+# Optional model profile for gludd_agent_run (empty => default routing).
+model_profile: ""
+agent_max_iterations: 6
+
+# Artifact output dir.
+artifact_dir: "/tmp/gludd-self-improve-propose"

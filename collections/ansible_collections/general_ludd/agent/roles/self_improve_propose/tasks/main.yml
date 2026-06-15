@@ -1,0 +1,98 @@
+---
+# self_improve_propose — read codebase self-knowledge, pick a high-value target,
+# and produce a candidate diff in an isolated worktree.
+#
+# SAFE BY DEFAULT: every task is gated behind self_improve_enabled (default
+# false). When disabled the role writes a skipped artifact and does nothing.
+
+- name: Skip self_improve_propose when disabled
+  ansible.builtin.debug:
+    msg: "self_improve_propose disabled (self_improve_enabled is false) — skipping"
+  when: not (self_improve_enabled | default(false) | bool)
+
+- name: self_improve_propose (enabled)
+  when: self_improve_enabled | default(false) | bool
+  block:
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Gather codebase introspection facts
+      general_ludd.agent.gludd_introspect:
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: introspect
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Derive candidate target from low-coverage intersect churn intersect debt
+      ansible.builtin.set_fact:
+        _sip_coverage: "{{ introspect.ansible_facts.gludd.codebase.coverage | default({}) }}"
+        _sip_churn: "{{ introspect.ansible_facts.gludd.codebase.churn | default({}) }}"
+        _sip_debt: "{{ introspect.ansible_facts.gludd.codebase.debt | default({}) }}"
+
+    - name: Pick the lowest-coverage file as the target module (highest value)
+      ansible.builtin.set_fact:
+        _sip_target: >-
+          {{ (_sip_coverage.low_coverage | default([]) | sort(attribute='line_rate'))[0]
+             | default({'file': target_module_override | default(''), 'line_rate': 0.0}) }}
+
+    - name: Set target_module path
+      ansible.builtin.set_fact:
+        target_module: "{{ _sip_target.file | default('') }}"
+
+    - name: Set derived worktree path/branch
+      ansible.builtin.set_fact:
+        _sip_worktree: "{{ worktree_base }}/candidate"
+        _sip_branch: "{{ candidate_branch }}"
+
+    - name: Create isolated candidate worktree
+      general_ludd.agent.gludd_worktree:
+        repo_path: "{{ repo_path }}"
+        branch: "{{ _sip_branch }}"
+        worktree_path: "{{ _sip_worktree }}"
+        state: present
+      register: worktree
+      when: repo_path | length > 0
+
+    - name: Run model agent to produce a candidate diff for the target module
+      general_ludd.agent.gludd_agent_run:
+        prompt: >-
+          Improve test coverage / fix debt for {{ target_module }} in the
+          repository at {{ _sip_worktree }}. Make a minimal, targeted change.
+        model_profile: "{{ model_profile | default('') }}"
+        max_iterations: "{{ agent_max_iterations }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: agent_run
+      no_log: "{{ psk | length > 0 }}"
+      when:
+        - not ansible_check_mode
+        - target_module | length > 0
+      failed_when: false
+
+    - name: Write proposal artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'self_improve_propose',
+            'status': 'proposed',
+            'candidate_worktree': _sip_worktree,
+            'target_module': target_module,
+            'proposed_diff': (agent_run.answer | default(''))[:2000],
+            'signals': {
+              'coverage': _sip_coverage,
+              'churn': _sip_churn,
+              'debt': _sip_debt
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/proposal.json"
+        mode: "0644"
+
+    - name: Report proposal completion
+      ansible.builtin.debug:
+        msg: >-
+          self_improve_propose: target={{ target_module }}
+          worktree={{ _sip_worktree }}

@@ -1,0 +1,66 @@
+---
+# Verify the post-promote degraded health gate triggered a ROLLBACK: the live
+# leaf module file is restored to v1 and the promotion_result reports
+# rolled_back:true / success:false.
+- name: Verify - degraded health gate rolled the promotion back
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8853', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8853', true) }}.pid"
+    live_leaf: "/tmp/gludd-promote-live/src/gludd_promote_target/leaf.py"
+    result_path: "/tmp/gludd-self-improve-promote/promotion_result.json"
+    marker: "/tmp/gludd-promote-parent-alive.marker"
+  tasks:
+    - name: Assert parent-liveness marker exists
+      ansible.builtin.stat:
+        path: "{{ marker }}"
+      register: marker_stat
+      failed_when: not marker_stat.stat.exists
+
+    - name: Read the live leaf module after the promote attempt
+      ansible.builtin.slurp:
+        src: "{{ live_leaf }}"
+      register: leaf_raw
+
+    - name: Assert the live module was ROLLED BACK to v1
+      ansible.builtin.assert:
+        that:
+          - "'v1' in (leaf_raw.content | b64decode)"
+          - "'v2-candidate' not in (leaf_raw.content | b64decode)"
+        fail_msg: "live module was NOT rolled back: {{ leaf_raw.content | b64decode }}"
+        success_msg: "live module rolled back to v1 after degraded health gate."
+
+    - name: Load promotion_result artifact
+      ansible.builtin.slurp:
+        src: "{{ result_path }}"
+      register: result_raw
+
+    - name: Parse promotion_result
+      ansible.builtin.set_fact:
+        promo: "{{ result_raw.content | b64decode | from_json }}"
+
+    - name: Assert promotion result reports rollback / failure
+      ansible.builtin.assert:
+        that:
+          - promo.success == false
+          - promo.rolled_back == true
+        fail_msg: "promotion_result should report rollback: {{ promo }}"
+        success_msg: "promotion_result: success=false, rolled_back=true."
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove scenario artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-self-improve-promote"
+        - "/tmp/gludd-promote-live"
+        - "/tmp/gludd-promote-parent-alive.marker"
+      failed_when: false

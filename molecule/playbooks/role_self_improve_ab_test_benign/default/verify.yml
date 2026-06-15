@@ -1,0 +1,36 @@
+---
+- name: Verify - benign candidate is promoted
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    verdict_path: "/tmp/gludd-self-improve-abb/ab_verdict.json"
+  tasks:
+    - name: Load ab_verdict artifact
+      ansible.builtin.slurp:
+        src: "{{ verdict_path }}"
+      register: verdict_raw
+
+    - name: Parse ab_verdict
+      ansible.builtin.set_fact:
+        verdict: "{{ verdict_raw.content | b64decode | from_json }}"
+
+    - name: Assert benign candidate promoted
+      ansible.builtin.assert:
+        that:
+          - verdict.promote == true
+          - verdict.a.ok == true
+          - verdict.b.ok == true
+          - verdict.b.crashed == false
+        fail_msg: "benign candidate should promote: {{ verdict }}"
+        success_msg: "benign candidate promoted (promote=true, b.ok=true)."
+
+    - name: Remove scenario artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-self-improve-abb"
+        - "/tmp/gludd-abb-baseline"
+        - "/tmp/gludd-abb-candidate"
+      failed_when: false
