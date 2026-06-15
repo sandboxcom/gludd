@@ -577,6 +577,28 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = AgentRegistry()
         dispatcher_executor = None
 
+        # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
+        # Build a rolling-window limiter from budget config when configured.
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+        from general_ludd.daemon_wiring import make_spend_guarded_executor
+
+        spend_limiter: SpendLimiter | None = None
+        if uc is not None:
+            budget_data = getattr(uc, "budget", None) or {}
+            spend_window_usd = float(budget_data.get("spend_window_usd", 0.0))
+            spend_window_seconds = float(budget_data.get("spend_window_seconds", 3600.0))
+            if spend_window_usd > 0.0:
+                spend_limiter = SpendLimiter(
+                    limit_usd=spend_window_usd,
+                    window_seconds=spend_window_seconds,
+                )
+                logger.info(
+                    "SpendLimiter configured: limit=%.4f USD / %.0f s window",
+                    spend_window_usd,
+                    spend_window_seconds,
+                )
+        app.state._spend_limiter = spend_limiter
+
         if model_gateway is not None:
             logger.info(
                 "Gateway-backed executor enabled with %d model profile(s)",
@@ -595,7 +617,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
                     return f"Error: {exc}"
 
-            dispatcher_executor = _gateway_executor
+            # W: event-loop-wiring (#27) — wrap gateway executor with SpendLimiter
+            # pre-call gate.  When no limiter is configured this is a transparent
+            # no-op wrapper.  projected_cost_usd=0.0 so zero-cost calls are never
+            # deferred; callers may override by wrapping again with a real projection.
+            dispatcher_executor = make_spend_guarded_executor(
+                executor=_gateway_executor,
+                spend_limiter=spend_limiter,
+                projected_cost_usd=0.0,  # conservative default; zero never defers
+            )
 
         app.state._agent_dispatcher = AgentDispatcher(
             registry=registry,
@@ -941,17 +971,42 @@ def create_daemon_app(
     slurm.register(app, _daemon_state)
     self_improve.register(app, _daemon_state)
     maintenance.register(app, _daemon_state)
-    # Dynamic dispatch router — handlers are stubs (not_implemented) until the
-    # event-loop integration wires real role/mcp/skill entry points.
-    # TODO(integration): replace stubs with real entry points once the
-    # event-loop turn handler calls DynamicDispatcher directly.
+    # Dynamic dispatch router — handlers close over ``app`` and look up
+    # subsystems lazily at call time so they resolve against the live
+    # lifespan-initialised state rather than the not-yet-started state at
+    # app-creation time.  W: event-loop-wiring (#26).
+    from general_ludd.daemon_wiring import make_mcp_handler, make_role_handler, make_skill_handler
+
+    def _lazy_mcp_handler(name: str, args: dict[str, Any]) -> Any:
+        mcp_client = getattr(app.state, "_mcp_client", None)
+        h = make_mcp_handler(mcp_client)
+        if h is None:
+            raise RuntimeError("MCP client not available")
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(h(name, args))
+
+    def _lazy_skill_handler(name: str, args: dict[str, Any]) -> Any:
+        skill_registry = getattr(app.state, "_skill_registry", None)
+        h = make_skill_handler(skill_registry)
+        if h is None:
+            raise RuntimeError("SkillRegistry not available")
+        return h(name, args)
+
+    def _lazy_role_handler(name: str, args: dict[str, Any]) -> Any:
+        agent_dispatcher = getattr(app.state, "_agent_dispatcher", None)
+        h = make_role_handler(agent_dispatcher)
+        if h is None:
+            raise RuntimeError("AgentDispatcher not available")
+        import asyncio
+        return asyncio.get_event_loop().run_until_complete(h(name, args))
+
     dispatch_router.register(
         app,
         _daemon_state,
-        role_handler=None,       # TODO(integration): wire to role runner
-        mcp_handler=None,        # TODO(integration): wire to MCPClient.call_tool
-        skill_handler=None,      # TODO(integration): wire to SkillRegistry
-        collection_handler=None, # TODO(integration): wire to collection loader
+        role_handler=_lazy_role_handler,
+        mcp_handler=_lazy_mcp_handler,
+        skill_handler=_lazy_skill_handler,
+        collection_handler=None,  # TODO(integration): wire to collection loader — no loader exists
     )
     spend.register(app, _daemon_state)
 
