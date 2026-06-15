@@ -196,6 +196,28 @@ def _codebase_facet(
         }
 
 
+def _schedule_facet(app: FastAPI) -> dict[str, Any]:
+    """Last computed schedule plan and in-flight batch summary.
+
+    Populated by POST /api/schedule; returns an empty placeholder when no plan
+    has been computed yet in this daemon lifetime.
+    """
+    last_plan = getattr(app.state, "_schedule_last_plan", None)
+    if last_plan is None:
+        return {
+            "last_plan": None,
+            "batch_count": 0,
+            "item_count": 0,
+        }
+    batches: list[list[str]] = last_plan.get("batches", [])
+    items: list[dict[str, object]] = last_plan.get("items", [])
+    return {
+        "last_plan": last_plan,
+        "batch_count": len(batches),
+        "item_count": len(items),
+    }
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.get("/api/facts")
     async def api_facts(project_id: str | None = None) -> dict[str, Any]:
@@ -225,6 +247,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "metrics": await _metrics_facet(app, project_id=project_id),
             "traces": _traces_facet(app),
             "codebase": _codebase_facet(app, recent_failures=history or None),
+            "schedule": _schedule_facet(app),
             "project_id": project_id,
         }
 
