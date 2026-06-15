@@ -33,7 +33,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
-        molecule-clean
+        molecule-clean plan
 
 help:
 	@echo "Usage: make [target]"
@@ -1168,6 +1168,18 @@ dogfood:
 
 dogfood-features:
 	@$(UV) run python scripts/dogfood_features.py
+
+# --- Orchestration planner (#32) ---
+# Reads a JSON work-list (file path via WORK= or stdin) and prints which items
+# can run in parallel NOW (batch 0) plus the full ordered batch plan.
+# Usage: make plan WORK=/tmp/example.json
+WORK ?=
+plan:
+	@if [ -n "$(WORK)" ]; then \
+		$(UV) run python scripts/plan_work.py "$(WORK)"; \
+	else \
+		$(UV) run python scripts/plan_work.py; \
+	fi
 
 audit-findings:
 	@$(UV) run python -c "from general_ludd.quality.preflight import run_completion_audit as a; r=a(); print('pct', r['completion_pct'], 'failed', r['failed_count']); [print(f['class_name'], f['file']) for f in r['findings']]"
