@@ -47,6 +47,9 @@ _FACTS_FACETS = [
     "codebase",
     "features",
     "dispatch",
+    "spend",
+    "accounting",
+    "schedule",
     "project_id",
 ]
 
@@ -87,7 +90,7 @@ _ENDPOINTS: list[dict[str, Any]] = [
         "purpose": (
             "Full live daemon state snapshot for playbook logic: "
             "work, todos, models, history, messages, metrics, traces, "
-            "codebase, features, dispatch. "
+            "codebase, features, dispatch, spend, accounting, schedule. "
             "Optional query param: project_id (filter by project)."
         ),
         "auth_required": True,
@@ -103,6 +106,9 @@ _ENDPOINTS: list[dict[str, Any]] = [
             "codebase": "object — codebase self-knowledge (churn, complexity, debt)",
             "features": "object — feature counts by status",
             "dispatch": "object — recent dispatch events + registered handler kinds",
+            "spend": "object — rolling-window spend (limiter_active, window_spend_usd, limit_usd, remaining_usd)",
+            "accounting": "object — per-project accounting snapshots (time, cost, quota, tokens, LoC, role stats)",
+            "schedule": "object — last computed concurrency-safe batch plan (last_plan, batch_count, item_count)",
             "project_id": "string | null — the project_id filter used",
         },
     },
@@ -313,6 +319,63 @@ _ENDPOINTS: list[dict[str, Any]] = [
         "path": "/api/deployments",
         "purpose": "List active compute deployments (instance_id + status).",
         "auth_required": True,
+    },
+    # ── Spend limiter ────────────────────────────────────────────────────────
+    {
+        "method": "GET",
+        "path": "/api/spend",
+        "purpose": (
+            "Current rolling-window spend summary: "
+            "limiter_active, window_spend_usd, limit_usd, remaining_usd, window_seconds."
+        ),
+        "auth_required": True,
+    },
+    {
+        "method": "POST",
+        "path": "/api/spend/configure",
+        "purpose": "Update the spend limiter's limit_usd and window_seconds at runtime.",
+        "auth_required": True,
+        "request_body": {
+            "limit_usd": "float (required, >0) — spend cap in USD for the rolling window",
+            "window_seconds": "float (required, >0) — rolling window width in seconds",
+        },
+    },
+    # ── Accounting ───────────────────────────────────────────────────────────
+    {
+        "method": "GET",
+        "path": "/api/accounting",
+        "purpose": (
+            "Per-project accounting snapshots for all known projects: "
+            "time_elapsed_s, usd_spent, quota_pct, tokens_used, loc_changed, role_run_counts, todos."
+        ),
+        "auth_required": True,
+    },
+    {
+        "method": "GET",
+        "path": "/api/accounting/{project_id}",
+        "purpose": "Accounting snapshot for a single project. 404 if project unknown.",
+        "auth_required": True,
+    },
+    # ── Concurrency scheduler ────────────────────────────────────────────────
+    {
+        "method": "POST",
+        "path": "/api/schedule",
+        "purpose": (
+            "Compute concurrency-safe ordered batches for a set of work items. "
+            "Items within a batch may run concurrently; later batches depend on earlier ones. "
+            "Returns 409 on dependency cycle."
+        ),
+        "auth_required": True,
+        "request_body": {
+            "items": (
+                "array (required) — list of work-item objects, each with: "
+                "id (string, required), resources (list[string], optional), "
+                "depends_on (list[string], optional), is_greenfield (bool, optional)"
+            ),
+        },
+        "response_shape": {
+            "batches": "array of arrays — ordered batches of item ids",
+        },
     },
 ]
 
