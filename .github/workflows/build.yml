@@ -51,6 +51,7 @@ jobs:
           make lint typecheck test-count test smoke
         env:
           GLUDD_PSK: ""
+          GLUDD_XDIST: auto
 
   molecule:
     needs: [version, gate]

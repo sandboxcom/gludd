@@ -8,7 +8,10 @@ PYTHON := python3
 UV := uv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
-_XDIST_WORKERS := $(shell python3 -c "import os; print(max(1, (os.cpu_count() or 1) // 4))")
+# Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
+# single worker — a 4-vCPU runner's cpu//4=1 made the gate sit ~38min near the
+# 40min wall). Local default stays cpu//4. Accepts an int or "auto".
+_XDIST_WORKERS := $(shell python3 -c "import os; v=os.environ.get('GLUDD_XDIST'); print(v if v else max(1, (os.cpu_count() or 1) // 4))")
 _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
     .PHONY: \
@@ -568,7 +571,7 @@ git-remote-sandboxcom:
 	@echo "Remote sandboxcom configured"
 
 git-push-sandboxcom:
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom master
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
 git-pull-sandboxcom:
