@@ -260,10 +260,15 @@ FEATURE_SEED: list[dict[str, Any]] = [
             "At least 13 auditor/analyst roles under collections/.../agent/roles/",
         ],
         "evidence": [
-            "role:auditor_security",
-            "role:auditor_compliance",
-            "role:analyst_metrics",
-            "role:analyst_code_quality",
+            "role:soc_analyst",
+            "role:qa_analyst",
+            "role:log_analyst",
+            "role:dead_code_auditor",
+            "role:cost_optimization_auditor",
+            "role:enhancement_auditor",
+            "role:feature_gap_auditor",
+            "role:ui_ux_analyst",
+            "role:code_reviewer",
         ],
         "verifier_kind": "evidence",
         "status": "implemented",
@@ -437,11 +442,12 @@ FEATURE_SEED: list[dict[str, Any]] = [
             "docs/profiles/ directory exists",
             "At least one profile doc generated",
         ],
-        "evidence": [
-            "file:docs/profiles/README.md::profile",
-        ],
+        "evidence": [],
         "verifier_kind": "evidence",
-        "status": "implemented",
+        # docs/profiles/ directory and generated profile docs do not exist;
+        # docs/profiles.md is a hand-written how-to guide, not auto-generated docs.
+        # Downgraded from false-implemented to requested (honest status).
+        "status": "requested",
         "requested_by": "engagement",
     },
     {
