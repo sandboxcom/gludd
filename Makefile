@@ -568,6 +568,24 @@ ci-annotations-anon:
 		$(PYTHON) -c "import sys,json,urllib.request; d=json.load(sys.stdin); \
 		[print('JOB', j['id'], j['name'], j['conclusion'], 'check_run:', j.get('check_run_url','')) for j in d.get('jobs',[]) if j['conclusion'] in ('failure','cancelled')]" 2>&1 || echo "failed"
 
+# Poll a run until ALL jobs reach a terminal state, printing each job's final
+# conclusion. Exits non-zero if any job failed. For watching a freshly-pushed run.
+ci-wait-anon:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-wait-anon RUN=<run-id>"; exit 1; fi
+	@echo "Polling run $(RUN) until terminal..."
+	@while true; do \
+		OUT=$$(curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/sandboxcom/gludd/actions/runs/$(RUN)/jobs?per_page=50"); \
+		DONE=$$(printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); jobs=d.get('jobs',[]); pend=[j for j in jobs if j['status']!='completed']; print('PENDING' if pend else 'DONE')"); \
+		if [ "$$DONE" = "DONE" ]; then \
+			printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print('JOB', j['name'], '->', j['conclusion']) for j in d.get('jobs',[])]"; \
+			FAILED=$$(printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for j in d.get('jobs',[]) if j['conclusion'] not in ('success','skipped')))"); \
+			echo "FAILED_JOBS=$$FAILED"; \
+			[ "$$FAILED" = "0" ] && echo "RUN GREEN" || echo "RUN NOT GREEN"; \
+			break; \
+		fi; \
+		sleep 20; \
+	done
+
 ci-checkrun-anno:
 	@if [ -z "$(CHECK)" ]; then echo "Usage: make ci-checkrun-anno CHECK=<check-run-id>"; exit 1; fi
 	@curl -s -H "Accept: application/vnd.github+json" \
