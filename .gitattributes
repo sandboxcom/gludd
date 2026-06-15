@@ -1,6 +1,3 @@
 # TEMPORARY (integration only): union-merge the additive shared registration
 # files so independent feature branches' additions (facets, router registrations,
 # models) combine automatically instead of conflicting. Removed after integration.
-src/general_ludd/daemon.py merge=union
-src/general_ludd/routers/facts.py merge=union
-src/general_ludd/db/models.py merge=union
