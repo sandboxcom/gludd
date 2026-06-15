@@ -1,0 +1,64 @@
+---
+- name: Verify - gludd_accounting returned the mock accounting snapshots
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8832', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8832', true) }}.pid"
+  tasks:
+    - name: Load persisted all-accounting result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-accounting-all.json"
+      register: all_raw
+
+    - name: Parse all-accounting result
+      ansible.builtin.set_fact:
+        all_result: "{{ all_raw.content | b64decode | from_json }}"
+
+    - name: Assert all-accounting shape
+      ansible.builtin.assert:
+        that:
+          - all_result.accounting is defined
+          - all_result.accounting | length == 2
+          - all_result.ansible_facts.gludd_accounting is defined
+          - all_result.ansible_facts.gludd_accounting | length == 2
+          - all_result.accounting[0].project_id is defined
+          - all_result.accounting[0].usd_spent is defined
+          - all_result.accounting[0].tokens_used is defined
+          - all_result.accounting[0].elapsed_seconds is defined
+          - all_result.accounting[0].role_stats is defined
+          - all_result.accounting[0].todo_summary is defined
+          - all_result.accounting[0].points_estimated is defined
+          - all_result.accounting[0].points_done is defined
+        fail_msg: "gludd_accounting all result incomplete: {{ all_result }}"
+        success_msg: "gludd_accounting all returned {{ all_result.accounting | length }} snapshots with expected shape"
+
+    - name: Load persisted project-accounting result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-accounting-project.json"
+      register: proj_raw
+
+    - name: Parse project-accounting result
+      ansible.builtin.set_fact:
+        proj_result: "{{ proj_raw.content | b64decode | from_json }}"
+
+    - name: Assert project-accounting shape
+      ansible.builtin.assert:
+        that:
+          - proj_result.accounting is defined
+          - proj_result.project_id == 'mock-project-alpha'
+          - proj_result.accounting.project_id == 'mock-project-alpha'
+          - proj_result.accounting.usd_spent is defined
+          - proj_result.accounting.tokens_used is defined
+          - proj_result.accounting.role_stats is defined
+          - proj_result.accounting.todo_summary is defined
+          - proj_result.changed == false
+        fail_msg: "gludd_accounting project result incomplete: {{ proj_result }}"
+        success_msg: "gludd_accounting project returned snapshot for {{ proj_result.project_id }}"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

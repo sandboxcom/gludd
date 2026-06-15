@@ -1,0 +1,63 @@
+---
+- name: Verify - accounting_report wrote its report artifacts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}.pid"
+    artifact: "/tmp/gludd-accounting-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}/accounting_report.json"
+    artifact_md: "/tmp/gludd-accounting-report-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8833', true) }}/accounting_report.md"
+  tasks:
+    - name: Assert JSON artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load JSON artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse JSON artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.role == 'accounting_report'
+          - result.scope is defined
+          - result.project_count is defined
+          - result.project_count | int == 2
+          - result.total_usd_spent is defined
+          - result.total_tokens_used is defined
+          - result.total_elapsed_seconds is defined
+          - result.total_loc_changed is defined
+          - result.snapshots is defined
+          - result.snapshots | length == 2
+          - result.snapshots[0].project_id is defined
+          - result.snapshots[0].usd_spent is defined
+          - result.snapshots[0].role_stats is defined
+          - result.snapshots[0].todo_summary is defined
+        fail_msg: "accounting_report artifact wrong: {{ result }}"
+        success_msg: "accounting_report ran end-to-end against mock; projects={{ result.project_count }}, usd={{ result.total_usd_spent }}"
+
+    - name: Assert markdown artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_md }}"
+      register: art_md
+      failed_when: not art_md.stat.exists
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-accounting-report-{{ mock_port }}"
+        state: absent
+      failed_when: false
