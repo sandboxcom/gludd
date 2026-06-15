@@ -1,0 +1,17 @@
+---
+- name: Converge - run budget_guard role against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8831', true) }}"
+  tasks:
+    - name: Invoke budget_guard (budget_fail_on_exhausted=false — exercises the warn path)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.budget_guard
+      vars:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        artifact_dir: "/tmp/gludd-budget-guard-{{ mock_port }}"
+        budget_fail_on_exhausted: false
+        budget_fail_threshold_usd: 0

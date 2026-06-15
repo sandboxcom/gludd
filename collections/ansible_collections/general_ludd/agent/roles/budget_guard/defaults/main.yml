@@ -1,0 +1,18 @@
+---
+# budget_guard role defaults — check daemon spend against a budget ceiling
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Budget policy
+# Fail the play when remaining_usd falls to or below this threshold.
+# Set to 0 (default) to only warn; set > 0 to fail-closed when budget is exhausted.
+budget_fail_threshold_usd: 0
+
+# When true, fail the play if remaining_usd <= budget_fail_threshold_usd.
+# When false (default), only emit a warning and write the artifact.
+budget_fail_on_exhausted: false
+
+# Artifact output
+artifact_dir: "/tmp/gludd-budget-guard"

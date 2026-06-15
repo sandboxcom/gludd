@@ -23,6 +23,8 @@ shape matches what each module parses:
   GET  /api/resource-preferences      -> 200 {"preference":..}              (gludd_db resource_preference)
   GET  /api/features                  -> 200 {"features":[...],"total":N}    (gludd_features list)
   POST /api/features/verify           -> 200 {"summary":{...},"results":[]}  (gludd_features verify)
+  GET  /api/spend                     -> 200 spend snapshot                  (gludd_spend get)
+  POST /api/spend/configure           -> 200 updated config                  (gludd_spend configure)
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -170,6 +172,21 @@ FEATURES_SNAPSHOT = [
     },
 ]
 
+SPEND_SNAPSHOT = {
+    "limit_usd": 10.0,
+    "used_usd": 3.75,
+    "remaining_usd": 6.25,
+    "window_seconds": 86400,
+    "window_label": "24h",
+    "period_start": "2026-06-15T00:00:00Z",
+}
+
+SPEND_CONFIGURE_RESPONSE = {
+    "limit_usd": 10.0,
+    "window_seconds": 86400,
+    "updated": True,
+}
+
 VERIFY_SUMMARY = {
     "summary": {
         "total": 2,
@@ -287,6 +304,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"preference": "mock-profile", "value": "mock-profile"})
         elif path == "/api/features":
             self._send_json(200, {"features": list(FEATURES_SNAPSHOT), "total": len(FEATURES_SNAPSHOT), "filtered": False})
+        elif path == "/api/spend":
+            self._send_json(200, dict(SPEND_SNAPSHOT))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -302,6 +321,13 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"acked": True})
         elif path == "/api/features/verify":
             self._send_json(200, dict(VERIFY_SUMMARY))
+        elif path == "/api/spend/configure":
+            resp = dict(SPEND_CONFIGURE_RESPONSE)
+            if "limit_usd" in payload:
+                resp["limit_usd"] = payload["limit_usd"]
+            if "window_seconds" in payload:
+                resp["window_seconds"] = payload["window_seconds"]
+            self._send_json(200, resp)
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
