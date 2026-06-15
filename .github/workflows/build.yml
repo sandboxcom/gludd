@@ -14,6 +14,7 @@ permissions:
 jobs:
   version:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       version: ${{ steps.ver.outputs.version }}
     steps:
@@ -30,6 +31,7 @@ jobs:
   gate:
     needs: version
     runs-on: ubuntu-latest
+    timeout-minutes: 40
     strategy:
       # Don't cancel the 3.12 leg when 3.11 fails (or vice-versa): we want both
       # Python versions' results on every run, not just the first failure.
@@ -37,8 +39,8 @@ jobs:
       matrix:
         python-version: ["3.11", "3.12"]
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
@@ -53,9 +55,10 @@ jobs:
   molecule:
     needs: [version, gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Run all molecule scenarios
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
@@ -69,12 +72,13 @@ jobs:
   linux:
     needs: [version, gate]
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
@@ -93,7 +97,7 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-x86_64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-x86_64.tar.gz" > "../gludd-${VERSION}-linux-x86_64.tar.gz.sha256"
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-x86_64
           path: |
@@ -103,12 +107,13 @@ jobs:
   macos:
     needs: [version, gate]
     runs-on: macos-latest
+    timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         run: |
           sed -i "" "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
@@ -127,7 +132,7 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-macos-arm64.tar.gz" .
           shasum -a 256 "../gludd-${VERSION}-macos-arm64.tar.gz" > "../gludd-${VERSION}-macos-arm64.tar.gz.sha256"
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-macos-arm64
           path: |
@@ -137,12 +142,13 @@ jobs:
   windows:
     needs: [version, gate]
     runs-on: windows-latest
+    timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         shell: pwsh
         run: |
@@ -162,7 +168,7 @@ jobs:
           Copy-Item -r playbooks dist/release/playbooks
           Compress-Archive -Path dist/release/* -DestinationPath "dist/gludd-$env:VERSION-windows-x86_64.zip"
           certutil -hashfile "dist/gludd-$env:VERSION-windows-x86_64.zip" SHA256 > "dist/gludd-$env:VERSION-windows-x86_64.zip.sha256"
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-windows-x86_64
           path: |
@@ -172,12 +178,13 @@ jobs:
   termux:
     needs: [version, gate]
     runs-on: ubuntu-24.04-arm
+    timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/checkout@692973e3d937129bcbf40652eb9f2f61becf3332
-      - uses: astral-sh/setup-uv@d4b2f3b6ecc6e67c4457f6d3e41ec42d3d0fcb86
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
       - name: Inject version
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
@@ -196,7 +203,7 @@ jobs:
           cd dist/release
           tar czf "../gludd-${VERSION}-linux-aarch64.tar.gz" .
           sha256sum "../gludd-${VERSION}-linux-aarch64.tar.gz" > "../gludd-${VERSION}-linux-aarch64.tar.gz.sha256"
-      - uses: actions/upload-artifact@b4b15b8c7c6ac21ea08fcf65892d2ee8f75cf882
+      - uses: actions/upload-artifact@b7c566a772e6b6bfb58ed0dc250532a479d7789f  # v6.0.0 (node24)
         with:
           name: gludd-linux-aarch64
           path: |
@@ -206,18 +213,19 @@ jobs:
   release:
     needs: [version, gate, linux, macos, windows, termux]
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
-      - uses: actions/download-artifact@fa0a91b85d4f404e444e00e005971372dc801d16
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (node24)
         with:
           path: artifacts
           pattern: gludd-*
           merge-multiple: true
       - name: List artifacts
         run: ls -la artifacts/
-      - uses: softprops/action-gh-release@3bb12739c298aeb8a4eeaf626c5b8d85266b0e65
+      - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
           tag_name: ${{ env.VERSION }}
           name: ${{ env.VERSION }}

@@ -45,6 +45,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest-asyncio>=0.25.0",
     "pytest-xdist>=3.5.0",
+    "pytest-timeout>=2.3.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pre-commit>=4.0.0",
@@ -114,6 +115,13 @@ pythonpath = ["src"]
 addopts = "-v --tb=short"
 asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
+# UNIVERSAL per-test stall guard: no single test may hang the suite. Applies to
+# EVERY pytest invocation (local gate, container, CI) — a test exceeding 180s is
+# killed with a full thread-stack dump instead of freezing the run forever. This
+# is the project-wide fix for the class of "a hanging test stalls everything"
+# (e.g. a TUI input-feed that never reaches quit on headless Linux).
+timeout = 180
+timeout_method = "thread"
 
 [tool.coverage.run]
 source = ["general_ludd"]
@@ -135,6 +143,7 @@ dev = [
     "pytest-cov>=6.0.0",
     "pytest-asyncio>=0.25.0",
     "pytest-xdist>=3.5.0",
+    "pytest-timeout>=2.3.0",
     "ruff>=0.8.0",
     "mypy>=1.13.0",
     "pre-commit>=4.0.0",

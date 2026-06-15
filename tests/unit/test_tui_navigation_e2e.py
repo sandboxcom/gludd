@@ -95,8 +95,14 @@ def _tui_patches(os_read_keys: list[bytes]):
         stdin = stack.enter_context(patch("sys.stdin"))
         stdin.fileno.return_value = 0
 
+        # Tail with Ctrl-C (\x03), which the runner loop breaks on UNCONDITIONALLY
+        # (tui/runner.py). The old `[b""] * 100` tail was ignored by the loop
+        # (`if ch:` skips empty reads), so a key sequence that didn't reach a quit
+        # path span on empty reads forever — an infinite busy-loop that hung on
+        # headless Linux/CI (no TTY) while passing on macOS. \x03 guarantees the
+        # loop always exits, so a TUI test can never hang.
         stack.enter_context(
-            patch("os.read", side_effect=os_read_keys + [b""] * 100)
+            patch("os.read", side_effect=os_read_keys + [b"\x03"] * 100)
         )
         stack.enter_context(
             patch("select.select", return_value=([1], [], []))

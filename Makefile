@@ -160,6 +160,12 @@ init: setup-dirs
 sync:
 	@$(UV) sync --locked
 
+# Regenerate uv.lock from pyproject (after adding/removing a dependency) and
+# install it. Use this instead of `sync` when pyproject deps changed.
+relock:
+	@$(UV) lock
+	@$(UV) sync
+
 install-pip:
 	@$(PYTHON) -m venv .venv
 	@. .venv/bin/activate && pip install --upgrade pip
@@ -268,6 +274,46 @@ gate:
 # a second concurrent run that collides with an in-flight one (see gate --basetemp).
 ps-pytest:
 	@pgrep -fl 'pytest|molecule test|make gate' || echo "NONE running"
+
+# Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
+kill-stray:
+	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null; pkill -9 -f 'pytest tests/' 2>/dev/null; pkill -9 -f 'make gate' 2>/dev/null; echo "killed stray pytest/gate (if any)"
+
+# STALL WATCHDOG — run a long command under active no-progress + max-runtime
+# supervision so a hang can NEVER sit silently forever. Streams the command's
+# output to LOG; every 10s it checks (a) how long since LOG last grew (idle) and
+# (b) total elapsed. If idle >= STALL_SECS (no progress = stalled) or elapsed >=
+# MAX_SECS, it kills the whole process tree and exits non-zero (124) with a clear
+# RESULT= line — so the supervising task COMPLETES (and notifies) instead of
+# leaving anyone waiting on a dead run. Emits a heartbeat each cycle.
+#   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' STALL_SECS=180 MAX_SECS=3600
+STALL_SECS ?= 180
+MAX_SECS ?= 3600
+run-watched:
+	@if [ -z "$(CMD)" ]; then echo "Usage: make run-watched CMD='<command>' [STALL_SECS=180] [MAX_SECS=3600] [LOG=/tmp/gludd-watched.log]"; exit 1; fi
+	@LOGF="$${LOG:-/tmp/gludd-watched.log}"; : > "$$LOGF"; \
+	echo "[watchdog] CMD: $(CMD)"; \
+	echo "[watchdog] stall>$(STALL_SECS)s or total>$(MAX_SECS)s -> kill tree + RESULT; log=$$LOGF"; \
+	set -m; $(CMD) > "$$LOGF" 2>&1 & CMDPID=$$!; \
+	START=$$(date +%s); \
+	while kill -0 $$CMDPID 2>/dev/null; do \
+		sleep 10; \
+		NOW=$$(date +%s); \
+		MT=$$(stat -f %m "$$LOGF" 2>/dev/null || stat -c %Y "$$LOGF" 2>/dev/null || echo $$NOW); \
+		IDLE=$$((NOW - MT)); ELAPSED=$$((NOW - START)); \
+		echo "[watchdog $$(date +%H:%M:%S)] elapsed=$${ELAPSED}s idle=$${IDLE}s (last log line: $$(tail -1 "$$LOGF" 2>/dev/null | cut -c1-70))"; \
+		if [ "$$IDLE" -ge "$(STALL_SECS)" ]; then \
+			echo "[watchdog] STALL: no output for $${IDLE}s — killing tree"; \
+			kill -TERM -$$CMDPID 2>/dev/null || kill -TERM $$CMDPID 2>/dev/null; sleep 2; kill -KILL -$$CMDPID 2>/dev/null || kill -KILL $$CMDPID 2>/dev/null; pkill -9 -f gludd-gate-basetemp 2>/dev/null; \
+			echo "[watchdog] RESULT=STALLED idle=$${IDLE}s elapsed=$${ELAPSED}s"; exit 124; \
+		fi; \
+		if [ "$$ELAPSED" -ge "$(MAX_SECS)" ]; then \
+			echo "[watchdog] TIMEOUT: ran $${ELAPSED}s — killing tree"; \
+			kill -TERM -$$CMDPID 2>/dev/null || kill -TERM $$CMDPID 2>/dev/null; sleep 2; kill -KILL -$$CMDPID 2>/dev/null || kill -KILL $$CMDPID 2>/dev/null; pkill -9 -f gludd-gate-basetemp 2>/dev/null; \
+			echo "[watchdog] RESULT=TIMEOUT elapsed=$${ELAPSED}s"; exit 124; \
+		fi; \
+	done; \
+	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
 
 test-integration:
 	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
@@ -591,24 +637,45 @@ ci-annotations-anon:
 		$(PYTHON) -c "import sys,json,urllib.request; d=json.load(sys.stdin); \
 		[print('JOB', j['id'], j['name'], j['conclusion'], 'check_run:', j.get('check_run_url','')) for j in d.get('jobs',[]) if j['conclusion'] in ('failure','cancelled')]" 2>&1 || echo "failed"
 
-# Poll a run until ALL jobs reach a terminal state, printing each job's final
-# conclusion. Exits non-zero if any job failed. For watching a freshly-pushed run.
+# Poll a run until the RUN-LEVEL conclusion is terminal, then report it.
+# CRITICAL: this waits on the run object's own `status`/`conclusion`, NOT on a
+# snapshot of currently-visible jobs. The old version declared "RUN GREEN" as
+# soon as the visible jobs (version + the two gates) completed — but this
+# workflow has DEPENDENT jobs (artifact build) that only appear AFTER the gates,
+# so it reported green while the run actually FAILED. GitHub only sets the run's
+# status=completed when the WHOLE run is done and conclusion reflects the true
+# outcome (failure if any required job failed) — so a false-green is impossible.
+# Exits non-zero on a non-success conclusion so the failure is itself observable.
 ci-wait-anon:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-wait-anon RUN=<run-id>"; exit 1; fi
-	@echo "Polling run $(RUN) until terminal..."
+	@echo "Polling run $(RUN) until the RUN-LEVEL conclusion is terminal..."
 	@while true; do \
-		OUT=$$(curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/sandboxcom/gludd/actions/runs/$(RUN)/jobs?per_page=50"); \
-		DONE=$$(printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); jobs=d.get('jobs',[]); pend=[j for j in jobs if j['status']!='completed']; print('PENDING' if pend else 'DONE')"); \
-		if [ "$$DONE" = "DONE" ]; then \
-			printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print('JOB', j['name'], '->', j['conclusion']) for j in d.get('jobs',[])]"; \
-			FAILED=$$(printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(sum(1 for j in d.get('jobs',[]) if j['conclusion'] not in ('success','skipped')))"); \
-			echo "FAILED_JOBS=$$FAILED"; \
-			[ "$$FAILED" = "0" ] && echo "RUN GREEN" || echo "RUN NOT GREEN"; \
+		RUNJSON=$$(curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/sandboxcom/gludd/actions/runs/$(RUN)"); \
+		STATUS=$$(printf '%s' "$$RUNJSON" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('status') or '?')"); \
+		CONCL=$$(printf '%s' "$$RUNJSON" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print(d.get('conclusion') or '')"); \
+		if [ "$$STATUS" = "completed" ]; then \
+			JOBS=$$(curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/sandboxcom/gludd/actions/runs/$(RUN)/jobs?per_page=100"); \
+			printf '%s' "$$JOBS" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print('JOB', j['name'], '->', j['conclusion']) for j in d.get('jobs',[])]"; \
+			echo "RUN_CONCLUSION=$$CONCL"; \
+			if [ "$$CONCL" = "success" ]; then echo "RUN GREEN"; else echo "RUN NOT GREEN ($$CONCL)"; exit 1; fi; \
 			break; \
 		fi; \
-		printf '%s' "$$OUT" | $(PYTHON) -c "import sys,json,time; d=json.load(sys.stdin); jobs=d.get('jobs',[]); done=sum(1 for j in jobs if j['status']=='completed'); run=[j['name'] for j in jobs if j['status']=='in_progress']; print(time.strftime('%H:%M:%S'),'[heartbeat]',f\"{done}/{len(jobs)} jobs done\", ('| running: '+', '.join(run)) if run else '| (waiting for runners)')"; \
+		echo "$$(date +%H:%M:%S) [heartbeat] run status=$$STATUS conclusion=$${CONCL:-pending} (waiting for run-level completion)"; \
 		sleep 20; \
 	done
+
+# Resolve an action repo's recent tags -> commit SHAs (public API, no auth) so we
+# can pin GitHub Actions to a Node-24-compatible release by full SHA.
+gh-tags:
+	@if [ -z "$(REPO)" ]; then echo "Usage: make gh-tags REPO=owner/name"; exit 1; fi
+	@curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/$(REPO)/tags?per_page=20" | \
+		$(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print('MSG:', d.get('message')) if isinstance(d,dict) else [print(t['name'], t['commit']['sha']) for t in d]"
+
+# Print the Node runtime an action declares (node20 vs node24) at a given tag,
+# so we pin to the MINIMAL node24 release rather than guessing a major bump.
+gh-action-node:
+	@if [ -z "$(REPO)" ] || [ -z "$(TAG)" ]; then echo "Usage: make gh-action-node REPO=owner/name TAG=vX"; exit 1; fi
+	@echo "$(REPO)@$(TAG):"; curl -s "https://raw.githubusercontent.com/$(REPO)/$(TAG)/action.yml" | grep -i 'using:' || echo "  (no using: line / not found)"
 
 ci-checkrun-anno:
 	@if [ -z "$(CHECK)" ]; then echo "Usage: make ci-checkrun-anno CHECK=<check-run-id>"; exit 1; fi
@@ -913,6 +980,68 @@ container-run:
 container-push:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi
 	@$(CONTAINER_RUNTIME) push $(CONTAINER_IMAGE)
+
+# Reproduce CI's Linux "Gate" step locally — no GitHub login needed. Runs the
+# EXACT CI command (make lint typecheck test-count test smoke) inside a Linux
+# python container so platform-specific failures (tests skipped on macOS but run
+# on Linux, etc.) surface here directly instead of only in CI. PYV=3.11|3.12.
+# Uses a container-local venv (UV_PROJECT_ENVIRONMENT) so the host macOS .venv is
+# never touched. Streams via tee (observability invariant).
+# Ensure the podman Linux VM is initialised and running (macOS needs a VM to run
+# Linux containers). Idempotent: init/start fail harmlessly if already done.
+podman-up:
+	@command -v podman >/dev/null 2>&1 || { echo "podman not installed"; exit 1; }
+	@podman machine init 2>/dev/null || true
+	@podman machine start 2>/dev/null || true
+	@# A stale default connection (e.g. an old Lima VM) hijacks `podman run`;
+	@# force the running podman machine to be the default so containers actually run.
+	@podman system connection default podman-machine-default 2>/dev/null || true
+	@podman machine list
+
+podman-restart:
+	@podman machine stop 2>/dev/null || true
+	@podman machine start
+	@podman system connection default podman-machine-default 2>/dev/null || true
+	@podman machine list
+
+VMEM ?= 4096
+VCPU ?= 4
+# Recreate the podman VM from scratch with the requested resources. The default
+# 2GiB VM crashed (and self-destructed) under the full test suite; a fresh VM
+# with more memory is more reliable than trying to resize a dead one.
+podman-resize:
+	@podman machine rm -f podman-machine-default 2>/dev/null || true
+	@podman machine init --memory $(VMEM) --cpus $(VCPU) 2>/dev/null || true
+	@podman machine start
+	@podman system connection default podman-machine-default 2>/dev/null || true
+	@podman machine list
+
+podman-diag:
+	@echo "--- machine list ---"; podman machine list 2>&1 || true
+	@echo "--- connection list ---"; podman system connection list 2>&1 || true
+	@echo "--- info (host socket) ---"; podman info --format '{{.Host.RemoteSocket.Path}}' 2>&1 | head -3 || true
+
+PYV ?= 3.11
+ci-repro-linux:
+	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: no docker/podman found — cannot reproduce the Linux gate locally"; exit 1; fi
+	@echo "=== Reproducing CI Linux gate (python $(PYV)) via $(CONTAINER_RUNTIME) ==="
+	@# slim base: tiny pull (avoids the I/O error unpacking the full image's giant
+	@# static libs); uv downloads its own python like CI's setup-uv, so the base
+	@# python barely matters. rc file preserves the container's real exit through
+	@# the tee pipe (observability invariant: the pipe must not swallow failures).
+	@rm -f /tmp/gludd-ci-repro-rc; \
+	( $(CONTAINER_RUNTIME) run --rm -v "$$(pwd)":/work -w /work \
+		-e UV_PROJECT_ENVIRONMENT=/opt/venv-linux -e GLUDD_PSK="" \
+		python:$(PYV)-slim-bookworm bash -c "set -e; \
+			echo '--- installing make/lsof/curl/git + uv ---'; \
+			apt-get update -qq && apt-get install -y -qq make lsof curl procps git >/dev/null; \
+			pip install -q uv; \
+			echo '--- uv sync (python $(PYV), container-local venv) ---'; \
+			uv sync --python $(PYV); \
+			echo '--- running CI gate command ---'; \
+			make lint typecheck test-count test smoke"; echo $$? > /tmp/gludd-ci-repro-rc ) 2>&1 | tee /tmp/gludd-ci-repro-$(PYV).log; \
+	RC=$$(cat /tmp/gludd-ci-repro-rc 2>/dev/null || echo 1); \
+	echo "=== ci-repro-linux exit=$$RC ==="; exit $$RC
 
 sast:
 	@mkdir -p dist

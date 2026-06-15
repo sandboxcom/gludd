@@ -79,8 +79,12 @@ def _tui_patches(os_read_keys: list[bytes], extra: list | None = None):
         stdin = stack.enter_context(patch("sys.stdin"))
         stdin.fileno.return_value = 0
 
+        # \x03 tail = unconditional break in the runner loop, so a key sequence
+        # that never reaches a quit path can't infinite-loop (the old [b""] tail
+        # was ignored by `if ch:` and hung on headless Linux/CI). See the matching
+        # note in test_tui_navigation_e2e.py.
         stack.enter_context(
-            patch("os.read", side_effect=os_read_keys + [b""] * 20))
+            patch("os.read", side_effect=os_read_keys + [b"\x03"] * 20))
         stack.enter_context(
             patch("select.select", return_value=([1], [], [])))
         stack.enter_context(

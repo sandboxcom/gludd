@@ -73,14 +73,38 @@ class TestNoUnseenEvents:
             "sleep loop is an unseen event (regression of the silent-poller defect)"
         )
 
+    def test_ci_poll_waits_on_run_level_conclusion(self) -> None:
+        """The poller must trust the RUN-level conclusion, not a job snapshot.
+
+        Regression guard: the old poller declared "RUN GREEN" as soon as the
+        currently-visible jobs completed, but dependent jobs (artifact build)
+        appear later — so it false-greened a run that actually FAILED. The run
+        object's own `conclusion` is only finalized when the whole run is done.
+        """
+        body = _recipe("ci-wait-anon")
+        assert "d.get('conclusion')" in body, (
+            "ci-wait-anon MUST read the run-level conclusion, not infer green "
+            "from a snapshot of visible jobs (that false-greened a failing run)"
+        )
+        assert "RUN_CONCLUSION" in body
+        assert "exit 1" in body, (
+            "a non-success run conclusion must surface as a non-zero exit"
+        )
+
     def test_no_full_suite_pytest_to_devnull_anywhere(self) -> None:
-        """No recipe anywhere may run the full suite silently to /dev/null."""
-        offenders = [
-            line.strip()
-            for line in MAKEFILE.read_text().splitlines()
-            if "pytest tests/" in line and "/dev/null" in line
-        ]
-        assert not offenders, f"full-suite pytest silenced to /dev/null: {offenders}"
+        """No recipe may RUN the full suite while discarding output to /dev/null.
+
+        Only actual pytest invocations count — `pkill`/`pgrep` lines reference
+        'pytest tests/' as a process *pattern*, not a run, and their `2>/dev/null`
+        silences the kill, not test output.
+        """
+        offenders = []
+        for line in MAKEFILE.read_text().splitlines():
+            if "pkill" in line or "pgrep" in line:
+                continue
+            if re.search(r"-m pytest tests/|run pytest tests/", line) and "/dev/null" in line:
+                offenders.append(line.strip())
+        assert not offenders, f"full-suite pytest run silenced to /dev/null: {offenders}"
 
     def test_smoke_in_gate_surfaces_failure_log(self) -> None:
         """A failed smoke phase must tail its log, not swallow it to /dev/null."""
@@ -92,4 +116,40 @@ class TestNoUnseenEvents:
         )
         assert "tail -20 /tmp/gludd-gate-smoke.log" in body, (
             "gate must tail the smoke log on failure so the cause is visible"
+        )
+
+
+class TestNoSilentStalls:
+    """No operation may hang silently — enforced at EVERY layer (universal stall
+    guard, not a one-off): per-test timeout, a command watchdog, and CI job caps.
+    """
+
+    def test_pytest_has_global_per_test_timeout(self) -> None:
+        cfg = (ROOT / "pyproject.toml").read_text()
+        assert "[tool.pytest.ini_options]" in cfg
+        m = re.search(r"^timeout\s*=\s*(\d+)", cfg, re.MULTILINE)
+        assert m and int(m.group(1)) > 0, (
+            "pyproject [tool.pytest.ini_options] MUST set a global per-test "
+            "`timeout` so one hanging test can never freeze the whole suite"
+        )
+
+    def test_pytest_timeout_dependency_declared(self) -> None:
+        cfg = (ROOT / "pyproject.toml").read_text()
+        assert "pytest-timeout" in cfg, "pytest-timeout must be a declared dev dependency"
+
+    def test_run_watched_watchdog_exists(self) -> None:
+        mk = MAKEFILE.read_text()
+        assert "run-watched:" in mk, "Makefile must provide the run-watched stall watchdog"
+        for token in ("STALL_SECS", "MAX_SECS", "RESULT=STALLED", "kill"):
+            assert token in mk, f"run-watched watchdog is missing {token!r}"
+
+    def test_every_ci_job_has_timeout_minutes(self) -> None:
+        import yaml
+
+        wf = yaml.safe_load((ROOT / ".github" / "workflows" / "build.yml").read_text())
+        jobs = wf.get("jobs", {})
+        assert jobs, "build.yml has no jobs"
+        missing = [name for name, j in jobs.items() if "timeout-minutes" not in j]
+        assert not missing, (
+            f"CI jobs with no timeout-minutes (could hang for hours): {missing}"
         )
