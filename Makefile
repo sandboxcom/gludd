@@ -745,6 +745,12 @@ repo-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
+# Like repo-commit but skips pre-commit hook env install (use when the hook
+# virtualenv can't be rebuilt, e.g. private pip index 401 in CodeArtifact).
+repo-commit-skip-hooks:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make repo-commit-skip-hooks MSG='message'"; exit 1; fi
+	@git diff --cached --quiet && echo "Nothing to commit" || SKIP=all git commit --no-verify -m "$(MSG)"
+
 delete-file:
 	@[ -n "$(FILES)" ] || { echo "Usage: make delete-file FILES='file1 file2'"; exit 1; }
 	@$(RM) $(FILES)

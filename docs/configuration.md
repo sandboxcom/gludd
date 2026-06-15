@@ -55,22 +55,17 @@ Profile IDs must match a `model_profile_id` from `config/model_profiles/*.yml`.
 
 ### database
 
-PostgreSQL connection settings. If omitted, falls back to SQLite (not for production).
+gludd is **SQLite only**. The database defaults to
+`~/.local/share/general-ludd/gludd.db` with no configuration needed. If you set a `url`
+it must be a `sqlite+aiosqlite:///` URL; any other URL is refused at startup.
 
 ```yaml
 database:
-  # Option 1: Full URL (overrides everything else)
-  url: postgresql://user:pass@host:5432/dbname
-
-  # Option 2: Individual components
-  host: localhost
-  port: 5432
-  name: gludd
-  user: gludd
-  password: secret  # Better: put in env file
+  # Optional: override the default SQLite path
+  url: sqlite+aiosqlite:////var/lib/general-ludd/gludd.db
 ```
 
-Environment variable `DATABASE_URL` overrides all of the above.
+Environment variable `DATABASE_URL` overrides the above (must also be a SQLite URL).
 
 ### agents
 
