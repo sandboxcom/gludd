@@ -771,7 +771,10 @@ def create_daemon_app(
     _psk = os.environ.get("GLUDD_PSK", "")
     app.state._psk = _psk
 
-    _PUBLIC_PATHS = {"/healthz", "/readyz", "/api/status", "/api/todos", "/docs", "/openapi.json", "/redoc"}
+    _PUBLIC_PATHS = {
+        "/healthz", "/readyz", "/api/status", "/api/todos", "/api/webmcp",
+        "/docs", "/openapi.json", "/redoc",
+    }
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -908,12 +911,14 @@ def create_daemon_app(
         slurm,
         spend,
         todos,
+        webmcp,
         worktree,
     )
     from general_ludd.routers import (
         dispatch as dispatch_router,
     )
 
+    webmcp.register(app, _daemon_state)
     todos.register(app, _daemon_state)
     messages.register(app, _daemon_state)
     accounting.register(app, _daemon_state)
