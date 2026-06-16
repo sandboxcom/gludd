@@ -147,6 +147,12 @@ jobs:
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
+      # pyinstaller imports ansible.cli at build time, and ansible's
+      # initialize_locale() hard-fails unless the locale encoding is UTF-8.
+      # Windows runners default to cp1252 -> "Ansible requires UTF-8 ... Detected
+      # 1252". Python UTF-8 mode makes the preferred encoding utf-8 so it passes.
+      PYTHONUTF8: "1"
+      PYTHONIOENCODING: "utf-8"
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
