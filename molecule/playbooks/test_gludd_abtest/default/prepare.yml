@@ -1,0 +1,80 @@
+---
+# gludd_abtest runs in-process: it spawns FRESH child interpreters that import a
+# module from each root's `src/`, so the candidate is never loaded into the
+# controller. Prepare builds two throwaway roots:
+#   baseline/src/abmod.py  -- a trivially-importable module (A, must pass)
+#   candidate/src/abmod.py -- a byte-identical good variant (B, promotable)
+#   crasher/src/abmod.py   -- a variant that crashes at import (B', NOT promotable)
+# The mock daemon is also started to honour the module-scenario coverage policy,
+# even though gludd_abtest never calls it.
+- name: Prepare - throwaway A/B roots + mock daemon for gludd_abtest
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}.pid"
+    ab_base: "/tmp/gludd-abtest-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Remove any stale A/B roots
+      ansible.builtin.file:
+        path: "{{ ab_base }}"
+        state: absent
+
+    - name: Create the three A/B src trees
+      ansible.builtin.file:
+        path: "{{ ab_base }}/{{ item }}/src"
+        state: directory
+        mode: "0755"
+      loop:
+        - baseline
+        - candidate
+        - crasher
+
+    - name: Write a trivially-importable baseline module (A passes)
+      ansible.builtin.copy:
+        dest: "{{ ab_base }}/baseline/src/abmod.py"
+        mode: "0644"
+        content: |
+          VERSION = "baseline"
+
+          def value() -> int:
+              return 1
+
+    - name: Write a byte-good candidate module (B promotable)
+      ansible.builtin.copy:
+        dest: "{{ ab_base }}/candidate/src/abmod.py"
+        mode: "0644"
+        content: |
+          VERSION = "candidate"
+
+          def value() -> int:
+              return 2
+
+    - name: Write a candidate that crashes at import (B' NOT promotable)
+      ansible.builtin.copy:
+        dest: "{{ ab_base }}/crasher/src/abmod.py"
+        mode: "0644"
+        content: |
+          import os
+          os._exit(7)  # die before the import completes -> isolated child crashes

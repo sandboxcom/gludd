@@ -378,3 +378,85 @@ class TestSkillRenderer:
         from general_ludd.skills.renderer import render_skill
         result = render_skill("", {})
         assert result == ""
+
+
+class TestGluddDbOpContract:
+    """Every ``op:`` a role passes to gludd_db must be a declared argspec choice.
+
+    Regression guard: story_create previously called gludd_db with
+    ``op: todo_create`` while the module's argspec only allowed
+    {todo_get, todo_update_status, resource_preference} — a guaranteed runtime
+    failure. This test parses the module's declared choices and every role task
+    that invokes gludd_db, and fails if any role uses an op the module rejects.
+    """
+
+    MODULES_DIR = (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent"
+        / "plugins" / "modules"
+    )
+    ROLES_DIR = (
+        ROOT / "collections" / "ansible_collections" / "general_ludd" / "agent" / "roles"
+    )
+
+    def _declared_ops(self) -> set[str]:
+        """Extract the op= choices=[...] list from gludd_db.py's argspec."""
+        import ast
+
+        src = (self.MODULES_DIR / "gludd_db.py").read_text()
+        tree = ast.parse(src)
+        for node in ast.walk(tree):
+            # Find the op=dict(..., choices=[...]) keyword in argument_spec=dict(...)
+            if isinstance(node, ast.keyword) and node.arg == "op" and isinstance(node.value, ast.Call):
+                for kw in node.value.keywords:
+                    if kw.arg == "choices" and isinstance(kw.value, ast.List):
+                        return {
+                            e.value
+                            for e in kw.value.elts
+                            if isinstance(e, ast.Constant) and isinstance(e.value, str)
+                        }
+        raise AssertionError("could not locate op= choices in gludd_db.py argspec")
+
+    def _role_db_ops(self) -> list[tuple[str, str]]:
+        """Return (role_name, op) for every gludd_db task across all roles."""
+        found: list[tuple[str, str]] = []
+        for tasks_file in self.ROLES_DIR.glob("*/tasks/*.yml"):
+            try:
+                docs = list(yaml.safe_load_all(tasks_file.read_text()))
+            except yaml.YAMLError:
+                continue
+            role_name = tasks_file.parent.parent.name
+            for doc in docs:
+                if not isinstance(doc, list):
+                    continue
+                for task in doc:
+                    self._collect_db_ops(task, role_name, found)
+        return found
+
+    def _collect_db_ops(self, task, role_name, found) -> None:
+        """Recurse into block/rescue/always and record any gludd_db op."""
+        if not isinstance(task, dict):
+            return
+        for key in ("block", "rescue", "always"):
+            if isinstance(task.get(key), list):
+                for sub in task[key]:
+                    self._collect_db_ops(sub, role_name, found)
+        for mod_key in ("general_ludd.agent.gludd_db", "gludd_db"):
+            args = task.get(mod_key)
+            if isinstance(args, dict) and "op" in args:
+                op = args["op"]
+                if isinstance(op, str) and "{{" not in op:
+                    found.append((role_name, op))
+
+    def test_todo_create_is_a_declared_choice(self):
+        assert "todo_create" in self._declared_ops(), (
+            "gludd_db must declare todo_create (story_create / issue_reporter need it)"
+        )
+
+    def test_every_role_db_op_is_declared(self):
+        declared = self._declared_ops()
+        used = self._role_db_ops()
+        assert used, "expected at least one gludd_db op across roles"
+        invalid = [(role, op) for role, op in used if op not in declared]
+        assert not invalid, (
+            f"role(s) call gludd_db with op not in argspec choices {sorted(declared)}: {invalid}"
+        )

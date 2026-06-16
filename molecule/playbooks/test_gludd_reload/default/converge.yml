@@ -1,0 +1,50 @@
+---
+# Exercise the REAL gludd_reload module: a healthy hot-rotation (no health gate
+# -> success) followed by a health-gated rotation whose gate fails -> rollback.
+- name: Converge - run gludd_reload happy path then rollback path
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    base: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+  tasks:
+    - name: Healthy hot-rotation (no health_url -> reload succeeds)
+      general_ludd.agent.gludd_reload:
+        module_name: "leafmod"
+        candidate_source_path: "{{ base }}/candidate/leafmod_good.py"
+        result_path: "{{ base }}/result_good.json"
+      register: reload_good
+
+    - name: Health-gated hot-rotation whose gate fails -> auto-rollback
+      # The mock daemon has no /readyz route, so it returns 404 (non-200); the
+      # module's health_check treats that as unhealthy and rolls back.
+      general_ludd.agent.gludd_reload:
+        module_name: "leafmod"
+        candidate_source_path: "{{ base }}/candidate/leafmod_rollback.py"
+        health_url: "http://127.0.0.1:{{ mock_port }}/readyz"
+        health_timeout: 3.0
+        result_path: "{{ base }}/result_rollback.json"
+      register: reload_rollback
+
+    - name: Capture the live module source AFTER both runs (must be the good v2)
+      ansible.builtin.slurp:
+        src: "{{ base }}/live/leafmod.py"
+      register: live_after
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'good': reload_good,
+            'rollback': reload_rollback,
+            'live_after': (live_after.content | b64decode)
+          } | to_nice_json }}
+        dest: "/tmp/gludd-mock-{{ mock_port }}-reload.json"
+        mode: "0644"
+
+    - name: Show reload outcomes
+      ansible.builtin.debug:
+        msg:
+          - "good.success={{ reload_good.success }} rolled_back={{ reload_good.rolled_back }}"
+          - "rollback.success={{ reload_rollback.success }} rolled_back={{ reload_rollback.rolled_back }}"

@@ -35,11 +35,14 @@ class TestReloadManagerRequestExecute:
         assert result.reload_type == ReloadType.CONFIG
         assert result.reload_id
 
-    def test_execute_reload_returns_success(self):
+    def test_execute_reload_returns_no_op(self):
+        # BUG#2 fix: the in-memory manager performs no real reload/validation, so
+        # it must report an honest non-success status instead of fail-open
+        # "success". A real code swap goes through HotReloader with a health gate.
         mgr = ReloadManager()
         rr = mgr.request_reload(ReloadType.WORKER_CODE)
         result = mgr.execute_reload(rr.reload_id)
-        assert result.status == "success"
+        assert result.status == "no_op"
         assert result.reload_type == ReloadType.WORKER_CODE
 
     def test_execute_reload_unknown_id_returns_failed(self):
@@ -92,7 +95,8 @@ class TestReloadManagerStatus:
         rr = mgr.request_reload(ReloadType.WORKER_CODE)
         mgr.execute_reload(rr.reload_id)
         status = mgr.get_reload_status(rr.reload_id)
-        assert status.status == "success"
+        # BUG#2 fix: stored status mirrors the honest no_op execute result.
+        assert status.status == "no_op"
         assert status.completed_at is not None
 
     def test_get_reload_status_unknown_returns_unknown(self):
@@ -173,7 +177,9 @@ class TestSelfImprovementReload:
         wf = SelfImprovementWorkflow()
         ar = ApplyResult(todo_id="SI-abcd1234", applied=True, reload_needed=True, validation_passed=True)
         result = wf.reload_if_needed(ar)
-        assert result.status == "success"
+        # BUG#2 fix: no concrete code target armed ⇒ falls back to the in-memory
+        # manager, which now honestly reports no_op rather than fail-open success.
+        assert result.status == "no_op"
         assert result.reload_type == ReloadType.WORKER_CODE
 
 
@@ -185,7 +191,9 @@ class TestSelfImprovementFullCycle:
         ar = wf.apply_improvement(todo["todo_id"], vr)
         assert ar.applied is True
         rr = wf.reload_if_needed(ar)
-        assert rr.status == "success"
+        # BUG#2 fix: no concrete code target ⇒ honest no_op from the in-memory
+        # manager fallback (no real swap/health gate performed).
+        assert rr.status == "no_op"
 
     def test_full_cycle_fail_blocks_reload(self):
         wf = SelfImprovementWorkflow()

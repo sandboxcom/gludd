@@ -1,0 +1,69 @@
+---
+- name: Verify - self_improve_propose proposed against the lowest-coverage target
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}.pid"
+    repo_path: "/tmp/gludd-self-improve-repo-{{ mock_port }}"
+    worktree_base: "/tmp/gludd-self-improve-{{ mock_port }}"
+    artifact: "/tmp/gludd-self-improve-propose-{{ mock_port }}/proposal.json"
+  tasks:
+    - name: Assert proposal artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load proposal artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse proposal artifact
+      ansible.builtin.set_fact:
+        proposal: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert the role picked the real lowest-coverage target and ran the chain
+      ansible.builtin.assert:
+        that:
+          - proposal.role == 'self_improve_propose'
+          - proposal.status == 'proposed'
+          # Target derived from the daemon's codebase.coverage.low_coverage (0.31 < 0.55).
+          - proposal.target_module == 'src/general_ludd/util/helpers.py'
+          # gludd_introspect signals were threaded through into the artifact.
+          - proposal.signals.coverage.low_coverage | length == 2
+          - proposal.signals.churn is defined
+          - proposal.signals.debt is defined
+          # The candidate worktree path was derived under the worktree_base.
+          - proposal.candidate_worktree == worktree_base ~ '/candidate'
+          # gludd_agent_run hit the mock /admin/models/call and returned text.
+          - proposal.proposed_diff | length > 0
+        fail_msg: "self_improve_propose artifact wrong: {{ proposal }}"
+        success_msg: >-
+          self_improve_propose ran end-to-end: introspect->pick target
+          {{ proposal.target_module }}->worktree->agent_run->proposal.json
+
+    - name: Assert the isolated candidate worktree was really created (real git)
+      ansible.builtin.stat:
+        path: "{{ worktree_base }}/candidate"
+      register: wt
+      failed_when: not wt.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove repo, worktree base and artifact dir
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_path }}"
+        - "{{ worktree_base }}"
+        - "/tmp/gludd-self-improve-propose-{{ mock_port }}"
+      failed_when: false
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

@@ -52,10 +52,8 @@ def _role_scenario(role: str) -> str:
 
 # --- The shrinking checklist -------------------------------------------------
 # Modules that DO NOT yet have a dedicated test_<module> molecule scenario.
-# gludd_introspect/abtest/reload are exercised via the role_self_improve_* scenarios
-# (abtest via role_self_improve_ab_test, reload via role_self_improve_promote,
-# introspect via the propose path); dedicated test_gludd_* scenarios are a TODO.
-_NOT_YET_COVERED_MODULES: set[str] = {"gludd_introspect", "gludd_abtest", "gludd_reload"}
+# Empty: every gludd_* module now has a dedicated test_gludd_* scenario.
+_NOT_YET_COVERED_MODULES: set[str] = set()
 # All gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
 #   gludd_db          -> test_gludd_db          (port 8776, todo_get/update/resource_preference)
@@ -68,11 +66,13 @@ _NOT_YET_COVERED_MODULES: set[str] = {"gludd_introspect", "gludd_abtest", "gludd
 #   gludd_worktree    -> test_gludd_worktree    (port 8780, real git worktree present+absent)
 #   gludd_accounting  -> test_gludd_accounting  (port 8832, GET /api/accounting + /api/accounting/{id})
 #   gludd_dispatch    -> test_gludd_dispatch    (port 8834, POST /api/dispatch + available + recent)
+#   gludd_introspect  -> test_gludd_introspect  (port 8838, GET /api/facts -> codebase block)
+#   gludd_abtest      -> test_gludd_abtest       (port 8839, in-proc run_ab: good promote + crasher reject)
+#   gludd_reload      -> test_gludd_reload       (port 8840, in-proc HotReloader: healthy swap + 404-gate rollback)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
-# self_improve_propose is exercised via the propose->ab_test->promote chain that
-# role_self_improve_ab_test/_promote cover; a dedicated scenario is a TODO.
-_NOT_YET_COVERED_ROLES: set[str] = {"self_improve_propose"}
+# Empty: every role under the collection now has a role_<name> scenario.
+_NOT_YET_COVERED_ROLES: set[str] = set()
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)
 #   audit_dependencies    -> role_audit_dependencies    (8786, gludd_facts+gludd_agent_run -> artifact)
@@ -110,6 +110,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {"self_improve_propose"}
 #   write_tests           -> role_write_tests           (8788, agent_run test_run_cmd -> artifact)
 #   accounting_report     -> role_accounting_report     (8833, gludd_accounting all -> cost/time/LoC report)
 #   tool_dispatch         -> role_tool_dispatch         (8835, dispatch shell tool call -> artifact)
+#   self_improve_propose  -> role_self_improve_propose  (8841, introspect->target->worktree->proposal.json)
 
 
 class TestMoleculeHarnessExists:

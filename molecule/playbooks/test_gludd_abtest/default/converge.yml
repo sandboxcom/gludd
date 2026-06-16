@@ -1,0 +1,41 @@
+---
+# Exercise the REAL gludd_abtest module twice: a promotable candidate and a
+# crash-isolated non-promotable candidate.
+- name: Converge - run gludd_abtest A/B comparisons
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+    ab_base: "/tmp/gludd-abtest-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+  tasks:
+    - name: A/B a good candidate against the baseline (expect promote=true)
+      general_ludd.agent.gludd_abtest:
+        baseline_root: "{{ ab_base }}/baseline"
+        candidate_root: "{{ ab_base }}/candidate"
+        module: "abmod"
+        expect_attr: "value"
+        timeout: 30.0
+        verdict_path: "{{ ab_base }}/verdict_good.json"
+      register: ab_good
+
+    - name: A/B a crashing candidate against the baseline (expect promote=false)
+      general_ludd.agent.gludd_abtest:
+        baseline_root: "{{ ab_base }}/baseline"
+        candidate_root: "{{ ab_base }}/crasher"
+        module: "abmod"
+        timeout: 30.0
+        verdict_path: "{{ ab_base }}/verdict_crash.json"
+      register: ab_crash
+
+    - name: Persist both verdicts for verify
+      ansible.builtin.copy:
+        content: "{{ {'good': ab_good, 'crash': ab_crash} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-abtest.json"
+        mode: "0644"
+
+    - name: Show A/B verdicts
+      ansible.builtin.debug:
+        msg:
+          - "good.promote={{ ab_good.promote }} reason={{ ab_good.verdict.reason }}"
+          - "crash.promote={{ ab_crash.promote }} reason={{ ab_crash.verdict.reason }}"

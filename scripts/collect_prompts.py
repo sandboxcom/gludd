@@ -15,10 +15,11 @@ import re
 import sys
 import textwrap
 import urllib.request
-import yaml
 from pathlib import Path
 
-SOURCES: dict[str, dict[str, str]] = {
+import yaml
+
+SOURCES: dict[str, dict[str, str | list[str]]] = {
     "aider": {
         "repo": "paul-gauthier/aider",
         "description": "AI pair programming in your terminal",
@@ -79,7 +80,8 @@ def _fetch_url(url: str, timeout: int = 30) -> str | None:
     try:
         req = urllib.request.Request(url, headers={"User-Agent": "general-ludd/0.1"})
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return resp.read().decode("utf-8")
+            data: bytes = resp.read()
+            return data.decode("utf-8")
     except Exception as exc:
         print(f"  WARN: Failed to fetch {url}: {exc}", file=sys.stderr)
         return None
@@ -118,10 +120,7 @@ def _extract_yaml_prompts(content: str) -> list[str]:
                     return [data[key]]
             for key in ("prompts", "templates"):
                 if key in data and isinstance(data[key], list):
-                    return [
-                        p for p in data[key]
-                        if isinstance(p, (str, dict))
-                    ]
+                    return [p for p in data[key] if isinstance(p, str)]
     except yaml.YAMLError:
         pass
     return []
@@ -183,13 +182,15 @@ def _list_dir(repo: str, path: str) -> list[str]:
 
 def collect_source(
     source_name: str,
-    source_info: dict[str, str],
+    source_info: dict[str, str | list[str]],
     output_dir: Path,
 ) -> list[Path]:
-    repo = source_info["repo"]
+    repo = str(source_info["repo"])
     paths = source_info["paths"]
-    extract_type = source_info["extract"]
-    var_names = source_info.get("var_names", [])
+    assert isinstance(paths, list)
+    extract_type = str(source_info["extract"])
+    raw_var_names = source_info.get("var_names", [])
+    var_names: list[str] = raw_var_names if isinstance(raw_var_names, list) else []
     collected: list[Path] = []
 
     resolved_paths: list[str] = []
@@ -230,8 +231,8 @@ def collect_source(
             out_path = output_dir / f"{profile_name}.yml"
             out_path.parent.mkdir(parents=True, exist_ok=True)
             with open(out_path, "w") as f:
-                license_info = source.get("license", "Apache-2.0")
-                repo_url = f"https://github.com/{source['repo']}"
+                license_info = source_info.get("license", "Apache-2.0")
+                repo_url = f"https://github.com/{repo}"
                 f.write(
                     f"# Source: {repo_url}\n"
                     f"# License: {license_info}\n"

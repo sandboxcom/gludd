@@ -1,0 +1,57 @@
+---
+- name: Verify - gludd_abtest promoted the good candidate and rejected the crasher
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}.pid"
+    ab_base: "/tmp/gludd-abtest-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8839', true) }}"
+  tasks:
+    - name: Load persisted verdicts
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-abtest.json"
+      register: raw
+
+    - name: Parse verdicts
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert the good candidate was promoted (real subprocess A/B)
+      ansible.builtin.assert:
+        that:
+          - res.good.promote | bool
+          - res.good.verdict.a.ok | bool
+          - res.good.verdict.b.ok | bool
+          - not (res.good.verdict.b.crashed | bool)
+        fail_msg: "gludd_abtest should promote the good candidate: {{ res.good.verdict }}"
+        success_msg: "gludd_abtest: good candidate promoted (A ok, B ok, within slack)"
+
+    - name: Assert the crashing candidate was rejected fail-closed
+      ansible.builtin.assert:
+        that:
+          - not (res.crash.promote | bool)
+          - res.crash.verdict.a.ok | bool
+          - res.crash.verdict.b.crashed | bool
+          - "'crashed' in res.crash.verdict.reason"
+        fail_msg: "gludd_abtest must reject the crashing candidate: {{ res.crash.verdict }}"
+        success_msg: "gludd_abtest: crasher observed as crashed=true in isolated child, promote=false"
+
+    - name: Confirm the good verdict artifact was written to disk
+      ansible.builtin.stat:
+        path: "{{ ab_base }}/verdict_good.json"
+      register: vg
+      failed_when: not vg.stat.exists
+
+    # ---- cleanup ----
+    - name: Remove A/B roots
+      ansible.builtin.file:
+        path: "{{ ab_base }}"
+        state: absent
+      failed_when: false
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

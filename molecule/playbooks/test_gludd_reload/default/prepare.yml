@@ -1,0 +1,78 @@
+---
+# gludd_reload runs in-process: it snapshots a live leaf module's bytes,
+# os.replace()s a candidate source over the live path, importlib.reload()s it,
+# then runs a health gate (a /readyz poll) with auto-rollback on failure.
+# Prepare builds a throwaway live module + two candidate sources, and starts the
+# mock daemon whose default /readyz route 404s (used to drive the rollback path).
+- name: Prepare - throwaway leaf module + candidates + mock daemon for gludd_reload
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}.pid"
+    base: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Remove any stale reload tree
+      ansible.builtin.file:
+        path: "{{ base }}"
+        state: absent
+
+    - name: Create the live module dir (on PYTHONPATH) and candidate dir
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: directory
+        mode: "0755"
+      loop:
+        - "{{ base }}/live"
+        - "{{ base }}/candidate"
+
+    - name: Write the live leaf module (the rollback baseline)
+      ansible.builtin.copy:
+        dest: "{{ base }}/live/leafmod.py"
+        mode: "0644"
+        content: |
+          VERSION = "live-v1"
+
+          def greet() -> str:
+              return "hello from live-v1"
+
+    - name: Write the GOOD candidate source (swapped in on the healthy reload)
+      ansible.builtin.copy:
+        dest: "{{ base }}/candidate/leafmod_good.py"
+        mode: "0644"
+        content: |
+          VERSION = "candidate-v2"
+
+          def greet() -> str:
+              return "hello from candidate-v2"
+
+    - name: Write the candidate used for the rollback (health-gate-fail) run
+      ansible.builtin.copy:
+        dest: "{{ base }}/candidate/leafmod_rollback.py"
+        mode: "0644"
+        content: |
+          VERSION = "candidate-rollback"
+
+          def greet() -> str:
+              return "hello from candidate-rollback"

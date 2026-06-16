@@ -172,24 +172,50 @@ class HotReloader:
             self._invalidate_source_cache(live_path)
             importlib.reload(module)
         except Exception as exc:
-            self._restore_module_bytes(module, live_path, original_bytes)
+            rb = self._restore_module_bytes(module, live_path, original_bytes)
+            details["rollback_verified"] = rb
             return self._code_reload_failure(
-                scope, details, f"reload failed: {exc}", rolled_back=True
+                scope,
+                details,
+                f"reload failed: {exc}",
+                rolled_back=True,
+                rollback_verified=rb,
             )
 
-        # Health gate.
-        healthy = True
-        if health_check is not None:
-            try:
-                healthy = bool(health_check())
-            except Exception as exc:
-                logger.warning("health_check raised, treating as unhealthy: %s", exc)
-                healthy = False
+        # Health gate. A code swap that imports cleanly is NOT proof it is
+        # correct — "it imports" is necessary but never sufficient. Without a
+        # semantic health gate we have no evidence the candidate behaves, so we
+        # fail CLOSED: roll the live module back to the original bytes and refuse
+        # to report success. A successful unverified code reload would let a
+        # corrupt-but-importable candidate be committed silently — exactly the
+        # self-improvement-safety hole BUG#2 describes. A passing health gate is
+        # therefore REQUIRED for a code reload to succeed.
+        if health_check is None:
+            rb = self._restore_module_bytes(module, live_path, original_bytes)
+            details["rollback_verified"] = rb
+            return self._code_reload_failure(
+                scope,
+                details,
+                "no health_check: unverified code reload refused",
+                rolled_back=True,
+                rollback_verified=rb,
+            )
+
+        try:
+            healthy = bool(health_check())
+        except Exception as exc:
+            logger.warning("health_check raised, treating as unhealthy: %s", exc)
+            healthy = False
 
         if not healthy:
-            self._restore_module_bytes(module, live_path, original_bytes)
+            rb = self._restore_module_bytes(module, live_path, original_bytes)
+            details["rollback_verified"] = rb
             return self._code_reload_failure(
-                scope, details, "health gate failed after reload", rolled_back=True
+                scope,
+                details,
+                "health gate failed after reload",
+                rolled_back=True,
+                rollback_verified=rb,
             )
 
         self._publish(ReloadCompletedEvent(scope=scope))
@@ -198,15 +224,39 @@ class HotReloader:
 
     def _restore_module_bytes(
         self, module: Any, live_path: Path, original_bytes: bytes
-    ) -> None:
-        """Restore the rollback buffer over the live path and reload the module
-        so the running interpreter reverts to the original code."""
+    ) -> bool:
+        """Restore the rollback buffer over the live path, reload the module so
+        the running interpreter reverts to the original code, and VERIFY the
+        restore actually took.
+
+        Returns True only when the live file is byte-for-byte the original AND
+        the importlib.reload succeeded — i.e. the running module is genuinely
+        back to its starting state. Returns False otherwise (a swallowed/failed
+        rollback reload, or the bytes did not round-trip), so callers can report
+        rolled_back honestly instead of claiming a rollback that never landed.
+        """
         try:
             live_path.write_bytes(original_bytes)
             self._invalidate_source_cache(live_path)
             importlib.reload(module)
-        except Exception as exc:  # pragma: no cover - defensive
+        except Exception as exc:
             logger.error("rollback failed for %s: %s", live_path, exc)
+            return False
+
+        # Verify the live file was actually returned to the original bytes and
+        # the reload picked them up. "We attempted a restore" is not the same as
+        # "the module is back to original" — only the byte-equality + successful
+        # reload above is evidence we can stand behind.
+        try:
+            restored_ok = live_path.read_bytes() == original_bytes
+        except OSError as exc:
+            logger.error("could not verify rollback for %s: %s", live_path, exc)
+            return False
+        if not restored_ok:
+            logger.error(
+                "rollback verification failed for %s: live bytes != original", live_path
+            )
+        return restored_ok
 
     @staticmethod
     def _invalidate_source_cache(live_path: Path) -> None:
@@ -237,8 +287,11 @@ class HotReloader:
         details: dict[str, Any],
         error: str,
         rolled_back: bool = False,
+        rollback_verified: bool | None = None,
     ) -> ReloadResult:
         details = {**details, "rolled_back": rolled_back}
+        if rollback_verified is not None:
+            details["rollback_verified"] = rollback_verified
         self._publish(ReloadFailedEvent(scope=scope, error=error))
         return ReloadResult(success=False, scope=scope, details=details, error=error)
 

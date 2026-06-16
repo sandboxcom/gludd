@@ -83,7 +83,7 @@ def main() -> int:
         tag = " <-- run NOW" if idx == 0 else ""
         print(f"  Batch {idx}: {batch}{tag}")
 
-    print(f"\n=== Parallel NOW (batch 0) ===")
+    print("\n=== Parallel NOW (batch 0) ===")
     if parallel_now:
         print(f"  Can start immediately: {parallel_now}")
     else:
@@ -94,7 +94,7 @@ def main() -> int:
         for a_id, b_id, shared_file in serialized:
             print(f"  '{a_id}' <-> '{b_id}'  [shared file: {shared_file}]")
 
-    print(f"\n=== Explanation ===")
+    print("\n=== Explanation ===")
     print(f"  {explanation}")
 
     return 0

@@ -7,7 +7,6 @@ Downloads are skipped if the binary already exists. Platform auto-detected.
 """
 
 import asyncio
-import os
 import sys
 from pathlib import Path
 

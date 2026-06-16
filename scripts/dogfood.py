@@ -187,7 +187,7 @@ async def run_dogfood() -> int:
                         todo_item.version,  # type: ignore[attr-defined]
                     )
 
-        loop._dispatch_execute_job = patched_dispatch  # type: ignore[assignment]
+        loop._dispatch_execute_job = patched_dispatch
         await loop.tick()
         progress["claimed_and_dispatched"] = True
 

@@ -1,0 +1,24 @@
+---
+# Exercise the REAL gludd_introspect module against the mock daemon.
+- name: Converge - load codebase introspection facts from the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8838', true) }}"
+  tasks:
+    - name: Call gludd_introspect against the mock daemon
+      general_ludd.agent.gludd_introspect:
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+      register: introspect_result
+
+    - name: Persist the injected gludd.codebase facts for verify
+      ansible.builtin.copy:
+        content: "{{ ansible_facts['gludd']['codebase'] | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-codebase.json"
+        mode: "0644"
+
+    - name: Show injected codebase facts
+      ansible.builtin.debug:
+        var: ansible_facts['gludd']['codebase']

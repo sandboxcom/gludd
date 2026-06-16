@@ -71,14 +71,24 @@ class ReloadManager:
                 message="Unknown reload_id",
             )
 
+        # FAIL-OPEN FIX (BUG#2): this manager performs NO real reload — it only
+        # mutates in-memory bookkeeping. Reporting "success" for a reload that
+        # ran, validated, and touched nothing lets a self-improvement be marked
+        # "applied" with zero verification. Report an honest, non-success status
+        # so nothing downstream can treat this no-op as a verified live swap. A
+        # genuine code reload goes through HotReloader.reload_code_module, which
+        # requires a passing health gate before it reports success.
         now = datetime.now(UTC).isoformat()
-        entry["status"] = "success"
+        entry["status"] = "no_op"
         entry["completed_at"] = now
-        entry["message"] = f"Reloaded {entry['reload_type'].value}"
+        entry["message"] = (
+            f"No-op: {entry['reload_type'].value} reload not performed — "
+            "no real reload/validation implemented for this target"
+        )
         return ReloadResult(
             reload_id=reload_id,
             reload_type=entry["reload_type"],
-            status="success",
+            status="no_op",
             message=entry["message"],
             timestamp=now,
         )

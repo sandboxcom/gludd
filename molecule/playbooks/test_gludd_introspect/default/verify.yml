@@ -1,0 +1,42 @@
+---
+- name: Verify - gludd_introspect injected the codebase snapshot
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8838', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8838', true) }}.pid"
+  tasks:
+    - name: Load persisted codebase facts
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-codebase.json"
+      register: codebase_raw
+
+    - name: Parse codebase facts
+      ansible.builtin.set_fact:
+        codebase: "{{ codebase_raw.content | b64decode | from_json }}"
+
+    - name: Assert every documented introspection facet is present (real GET /api/facts)
+      ansible.builtin.assert:
+        that:
+          - codebase.churn is defined
+          - codebase.complexity is defined
+          - codebase.coverage is defined
+          - codebase.debt is defined
+          - codebase.dead_code is defined
+          - codebase.missing_tests is defined
+          - codebase.perf_cost is defined
+          - codebase.recent_failures is defined
+          # The module returned the daemon's real low_coverage list verbatim.
+          - codebase.coverage.low_coverage | length == 2
+          - (codebase.coverage.low_coverage | sort(attribute='line_rate'))[0].file
+            == 'src/general_ludd/util/helpers.py'
+          - codebase.recent_failures.count | int == 2
+        fail_msg: "gludd_introspect codebase snapshot incomplete: {{ codebase }}"
+        success_msg: "gludd_introspect injected churn/complexity/coverage/debt/.. from mock /api/facts"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

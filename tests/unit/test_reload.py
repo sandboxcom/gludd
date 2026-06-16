@@ -44,7 +44,9 @@ class TestReloadManagerExecuteConfigReload:
         mgr = ReloadManager()
         rr = mgr.request_reload(ReloadType.CONFIG)
         result = mgr.execute_reload(rr.reload_id)
-        assert result.status == "success"
+        # BUG#2 fix: the in-memory manager performs no real reload, so it must
+        # report an honest non-success status rather than fail-open "success".
+        assert result.status == "no_op"
         assert result.reload_type == ReloadType.CONFIG
 
 
@@ -53,7 +55,8 @@ class TestReloadManagerExecutePromptReload:
         mgr = ReloadManager()
         rr = mgr.request_reload(ReloadType.PROMPTS)
         result = mgr.execute_reload(rr.reload_id)
-        assert result.status == "success"
+        # BUG#2 fix: no real reload performed ⇒ honest no_op, not "success".
+        assert result.status == "no_op"
         assert result.reload_type == ReloadType.PROMPTS
 
 
@@ -62,7 +65,8 @@ class TestReloadManagerExecuteWorkerCodeReload:
         mgr = ReloadManager()
         rr = mgr.request_reload(ReloadType.WORKER_CODE)
         result = mgr.execute_reload(rr.reload_id)
-        assert result.status == "success"
+        # BUG#2 fix: no real reload performed ⇒ honest no_op, not "success".
+        assert result.status == "no_op"
         assert result.reload_type == ReloadType.WORKER_CODE
 
 
@@ -83,7 +87,8 @@ class TestReloadManagerGetStatus:
         mgr.execute_reload(rr.reload_id)
         status = mgr.get_reload_status(rr.reload_id)
         assert isinstance(status, ReloadStatus)
-        assert status.status == "success"
+        # BUG#2 fix: stored status mirrors the honest no_op execute result.
+        assert status.status == "no_op"
         assert status.reload_id == rr.reload_id
         assert status.started_at is not None
         assert status.completed_at is not None
@@ -140,7 +145,10 @@ class TestSelfImprovementApplyAndReload:
         assert apply_result.reload_needed is True
 
         reload_result = wf.reload_if_needed(apply_result)
-        assert reload_result.status == "success"
+        # BUG#2 fix: with no concrete code target armed, reload_if_needed falls
+        # back to the in-memory manager, which now honestly reports no_op (no
+        # real swap/health-gate performed) instead of fail-open "success".
+        assert reload_result.status == "no_op"
 
 
 class TestSelfImprovementNoReloadWhenNotNeeded:

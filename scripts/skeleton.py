@@ -1,12 +1,10 @@
 #!/usr/bin/env python3
 import os
-import subprocess
-import sys
 
 ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def main():
+def main() -> None:
     dirs = [
         "src/general_ludd/worker",
         "src/general_ludd/event_loop",

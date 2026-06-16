@@ -161,11 +161,6 @@ def test_decide_rejects_forged_ok_result() -> None:
 # --------------------------------------------------------------------------- #
 
 
-@pytest.mark.xfail(
-    reason="BUG#2 (reload fail-open: no semantic gate / unverified rollback) not yet "
-    "fixed — tracked. Out of scope for the BUG#1 A/B-sentinel fix in this batch.",
-    strict=False,
-)
 def test_reload_code_module_no_health_check_swaps_on_import_only(
     tmp_path: Path,
 ) -> None:
@@ -228,11 +223,6 @@ def test_reload_code_module_no_health_check_swaps_on_import_only(
             sys.path.remove(str(live_src))
 
 
-@pytest.mark.xfail(
-    reason="BUG#2 (ReloadManager.execute_reload fail-open success) not yet fixed — "
-    "tracked. Out of scope for the BUG#1 A/B-sentinel fix in this batch.",
-    strict=False,
-)
 def test_manager_execute_reload_always_reports_success() -> None:
     """ReloadManager.execute_reload unconditionally flips status to 'success'
     without running, validating, or touching any code — a fail-OPEN success
@@ -253,11 +243,6 @@ def test_manager_execute_reload_always_reports_success() -> None:
     )
 
 
-@pytest.mark.xfail(
-    reason="BUG#2 (rollback not verified) not yet fixed — tracked. Out of scope for "
-    "the BUG#1 A/B-sentinel fix in this batch.",
-    strict=False,
-)
 def test_rollback_does_not_verify_restored_module(tmp_path: Path) -> None:
     """When the health gate fails, _restore_module_bytes restores the file and
     re-imports, but does NOT verify the running module actually matches the

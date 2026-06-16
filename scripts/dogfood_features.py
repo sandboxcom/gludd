@@ -29,7 +29,11 @@ def _check_evidence_ref(ref: str, repo_root: Path) -> tuple[bool, str]:
     """Dispatch a single evidence reference.  No subprocess — presence checks only."""
     if ref.startswith("module:"):
         name = ref[len("module:"):]
-        modules_dir = repo_root / "collections" / "ansible_collections" / "general_ludd" / "agent" / "plugins" / "modules"
+        modules_dir = (
+            repo_root
+            / "collections" / "ansible_collections" / "general_ludd"
+            / "agent" / "plugins" / "modules"
+        )
         for ext in ("", ".py"):
             if (modules_dir / f"{name}{ext}").exists():
                 return True, f"module file found: {name}{ext}"
@@ -93,14 +97,14 @@ def run_dogfood_features() -> int:
 
     failures: list[str] = []
     warnings: list[str] = []
-    report: list[dict] = []
+    report: list[dict[str, object]] = []
 
     for feat in FEATURE_SEED:
         name = feat.get("name", "?")
         status = str(feat.get("status", "requested")).lower()
         evidence: list[str] = feat.get("evidence") or []
 
-        per_ref: list[dict] = []
+        per_ref: list[dict[str, object]] = []
         met_count = 0
 
         # Fail-closed: if status is implemented/verified but evidence is empty
@@ -129,12 +133,18 @@ def run_dogfood_features() -> int:
                 report.append({"name": name, "status": status, "outcome": "FAIL", "met": 0, "total": len(evidence)})
             else:
                 outcome = "PASS_ALL" if met_count == len(evidence) else "PASS_PARTIAL"
-                report.append({"name": name, "status": status, "outcome": outcome, "met": met_count, "total": len(evidence)})
+                report.append({
+                    "name": name, "status": status, "outcome": outcome,
+                    "met": met_count, "total": len(evidence),
+                })
                 _log(f"  OK [{name}] status={status} {met_count}/{len(evidence)} evidence refs met")
         else:
             # requested/regressed — just informational
             outcome = "SKIP_REQUESTED"
-            report.append({"name": name, "status": status, "outcome": outcome, "met": met_count, "total": len(evidence)})
+            report.append({
+                "name": name, "status": status, "outcome": outcome,
+                "met": met_count, "total": len(evidence),
+            })
             if evidence and met_count > 0:
                 warnings.append(
                     f"  WARN [{name}] status={status} but {met_count}/{len(evidence)} evidence refs met "
@@ -143,9 +153,9 @@ def run_dogfood_features() -> int:
 
     # Summary
     _log("=== DOGFOOD-FEATURES SUMMARY ===")
-    pass_count = sum(1 for r in report if r["outcome"].startswith("PASS"))
-    fail_count = sum(1 for r in report if r["outcome"].startswith("FAIL"))
-    skip_count = sum(1 for r in report if r["outcome"].startswith("SKIP"))
+    pass_count = sum(1 for r in report if str(r["outcome"]).startswith("PASS"))
+    fail_count = sum(1 for r in report if str(r["outcome"]).startswith("FAIL"))
+    skip_count = sum(1 for r in report if str(r["outcome"]).startswith("SKIP"))
     _log(f"  Total features: {len(FEATURE_SEED)}")
     _log(f"  PASS: {pass_count}  FAIL: {fail_count}  SKIP(requested): {skip_count}")
 

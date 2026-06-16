@@ -142,6 +142,39 @@ FACTS_SNAPSHOT = {
     },
     "metrics": METRICS_SNAPSHOT,
     "traces": TRACES_SNAPSHOT,
+    # Codebase self-introspection block consumed by gludd_introspect
+    # (resp.get("codebase", {})) and the self_improve_propose role, which picks
+    # the lowest-line_rate file under codebase.coverage.low_coverage.
+    "codebase": {
+        "churn": {
+            "hot_files": [
+                {"file": "src/general_ludd/example/leaf.py", "commits": 12},
+                {"file": "src/general_ludd/util/helpers.py", "commits": 7},
+            ],
+        },
+        "complexity": {
+            "worst": [
+                {"file": "src/general_ludd/example/leaf.py", "cyclomatic": 18},
+            ],
+        },
+        "coverage": {
+            "overall_line_rate": 0.74,
+            "low_coverage": [
+                {"file": "src/general_ludd/util/helpers.py", "line_rate": 0.31},
+                {"file": "src/general_ludd/example/leaf.py", "line_rate": 0.55},
+            ],
+        },
+        "debt": {
+            "todo_count": 4,
+            "items": [
+                {"file": "src/general_ludd/util/helpers.py", "marker": "TODO", "line": 22},
+            ],
+        },
+        "dead_code": {"candidates": []},
+        "missing_tests": {"modules": ["src/general_ludd/util/helpers.py"]},
+        "perf_cost": {"slowest_phase": "generate", "total_cost_usd": 0.0026},
+        "recent_failures": {"count": 2, "rate": 0.08},
+    },
 }
 
 

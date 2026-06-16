@@ -1,7 +1,6 @@
-import sqlite3
-import pathlib
 import json
-import sys
+import pathlib
+import sqlite3
 
 db = pathlib.Path.home() / ".local/share/opencode/opencode.db"
 conn = sqlite3.connect(str(db))

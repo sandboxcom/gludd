@@ -1,8 +1,7 @@
 """Verify enhanced status endpoint output matches the CLI format."""
-import asyncio
 import json
 
-from general_ludd.cli import _gather_offline_status, _format_offline_status
+from general_ludd.cli import _format_offline_status, _gather_offline_status
 
 print("=== OFFLINE STATUS ===")
 info = _gather_offline_status()
