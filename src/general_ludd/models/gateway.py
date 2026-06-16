@@ -17,6 +17,27 @@ from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutEvent
 
 logger = logging.getLogger(__name__)
 
+# Default TTL (seconds) for cached model responses. LLM outputs are
+# non-deterministic and time-sensitive, so entries must expire rather than
+# live forever. Configurable per-gateway via response_cache_ttl_seconds.
+DEFAULT_RESPONSE_CACHE_TTL_SECONDS = 3600
+
+
+def _coerce_token_count(value: Any) -> int:
+    """Coerce a provider-supplied token count into a safe, billable int.
+
+    Provider usage metadata is fully untrusted. We:
+    - reject bool (isinstance(True, int) is True) so it counts as 0, not 1;
+    - reject non-numeric values (count as 0);
+    - clamp at >= 0 so a negative count cannot produce a negative cost (which
+      would CREDIT the budget guard and bypass the run-budget ceiling).
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    return 0
+
 
 class _SecretsResolver(Protocol):
     def resolve(self, alias_name: str) -> str | None: ...
@@ -94,6 +115,7 @@ class ModelGateway:
         metrics_collector: Any | None = None,
         metrics_agent_id: str | None = None,
         response_cache: Any | None = None,
+        response_cache_ttl_seconds: int = DEFAULT_RESPONSE_CACHE_TTL_SECONDS,
         health_tracker: Any | None = None,
     ) -> None:
         self._profiles: dict[str, ModelProfile] = {}
@@ -111,6 +133,7 @@ class ModelGateway:
         self._metrics_collector = metrics_collector
         self._metrics_agent_id = metrics_agent_id
         self._response_cache = response_cache
+        self._response_cache_ttl_seconds = response_cache_ttl_seconds
         self._health_tracker = health_tracker
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
@@ -154,7 +177,9 @@ class ModelGateway:
             )
 
         if self._response_cache is not None:
-            cache_key = _make_cache_key(profile_id, messages, **kwargs)
+            cache_key = _make_cache_key(
+                profile_id, messages, model_name=profile.model_name, **kwargs
+            )
             cached = self._response_cache.get(cache_key)
             if cached is not None:
                 logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
@@ -206,11 +231,22 @@ class ModelGateway:
         content = getattr(raw_response, "content", str(raw_response))
         usage = getattr(raw_response, "usage_metadata", {}) or {}
 
-        cost = 0.0
-        input_tokens = usage.get("input_tokens", 0)
-        output_tokens = usage.get("output_tokens", 0)
-        if isinstance(input_tokens, (int, float)) and isinstance(output_tokens, (int, float)):
-            cost = input_tokens * profile.cost_per_input_token + output_tokens * profile.cost_per_output_token
+        # Provider-controlled usage data: never trust it for billing.
+        # - reject bool (isinstance(True, int) is True) so it counts as 0, not 1
+        # - clamp at >= 0 so a negative count can never produce a negative cost
+        #   (a negative cost would CREDIT the budget guard and bypass the ceiling)
+        # - accept OpenAI-style key names as fallbacks so whole provider families
+        #   are not silently metered at $0
+        input_tokens = _coerce_token_count(
+            usage.get("input_tokens", usage.get("prompt_tokens", 0))
+        )
+        output_tokens = _coerce_token_count(
+            usage.get("output_tokens", usage.get("completion_tokens", 0))
+        )
+        cost = (
+            input_tokens * profile.cost_per_input_token
+            + output_tokens * profile.cost_per_output_token
+        )
 
         logger.debug(
             "Model call complete: profile=%s, input_tokens=%s, output_tokens=%s, cost=%.6f",
@@ -227,8 +263,8 @@ class ModelGateway:
             self._metrics_collector.record_model_call(
                 agent_id=self._metrics_agent_id,
                 model_id=profile_id,
-                input_tokens=int(input_tokens) if isinstance(input_tokens, (int, float)) else 0,
-                output_tokens=int(output_tokens) if isinstance(output_tokens, (int, float)) else 0,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
                 success=True,
                 cost_per_input_token=profile.cost_per_input_token,
                 cost_per_output_token=profile.cost_per_output_token,
@@ -242,14 +278,23 @@ class ModelGateway:
             raw_response=raw_response,
         )
 
-        if self._response_cache is not None:
-            cache_key = _make_cache_key(profile_id, messages, **kwargs)
-            self._response_cache.set(cache_key, {
-                "content": response.content,
-                "usage_metadata": response.usage_metadata,
-                "cost_estimate": response.cost_estimate,
-                "model_name": response.model_name,
-            })
+        # Do not cache an error-shaped "successful" response: some providers
+        # return a 200 with empty content on a soft failure. Caching it would
+        # serve the empty/error answer forever for identical calls.
+        if self._response_cache is not None and response.content.strip():
+            cache_key = _make_cache_key(
+                profile_id, messages, model_name=profile.model_name, **kwargs
+            )
+            self._response_cache.set(
+                cache_key,
+                {
+                    "content": response.content,
+                    "usage_metadata": response.usage_metadata,
+                    "cost_estimate": response.cost_estimate,
+                    "model_name": response.model_name,
+                },
+                expire=self._response_cache_ttl_seconds,
+            )
 
         return response
 
@@ -315,7 +360,11 @@ class ModelGateway:
                 return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
-            if kind in (TimeoutKind.AUTH_ERROR, TimeoutKind.CONTEXT_LENGTH):
+            if kind in (
+                TimeoutKind.AUTH_ERROR,
+                TimeoutKind.CONTEXT_LENGTH,
+                TimeoutKind.INVALID_REQUEST,
+            ):
                 return False
             decision = policy.decide(kind, _attempt_counter[0])
             return bool(decision.should_retry)
@@ -358,7 +407,11 @@ class ModelGateway:
                     except _retryable_exc_types as exc:
                         _last_exc[0] = exc
                         kind = TimeoutClassifier.classify(exc)
-                        if kind in (TimeoutKind.AUTH_ERROR, TimeoutKind.CONTEXT_LENGTH):
+                        if kind in (
+                TimeoutKind.AUTH_ERROR,
+                TimeoutKind.CONTEXT_LENGTH,
+                TimeoutKind.INVALID_REQUEST,
+            ):
                             # Non-retryable: record and re-raise immediately.
                             if tracker is not None:
                                 tracker.record_event(TimeoutEvent(

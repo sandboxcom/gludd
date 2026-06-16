@@ -3,10 +3,12 @@
 A candidate code variant is run in a FRESH interpreter child process (never
 imported into the parent/daemon), under resource limits, so a variant that is
 built to crash the whole process — ``os._exit``, a segfault, an infinite loop,
-or an OOM allocation — CANNOT take down the parent. The parent observes only
-the child's exit status and a bounded slice of its output, and fails closed:
-only an explicit ``RESULT_OK`` sentinel printed after the workload's assertions
-pass yields ``ok=True``.
+or an OOM allocation — CANNOT take down the parent. The parent observes the
+child's exit status and a parent-controlled result file, and fails closed: only
+exit 0 PLUS the child framework writing the parent's per-run random nonce into
+that file — which it does ONLY after the workload's assertions pass — yields
+``ok=True``. The nonce rides a dedicated parent-named channel the candidate
+cannot reach, so a candidate cannot forge success on its own stdout.
 """
 
 from __future__ import annotations

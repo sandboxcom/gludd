@@ -269,28 +269,54 @@ class EventLoop:
         self._config_snapshot = dict(self.config)
 
     async def _reap_stuck_todos(self) -> None:
+        """Requeue ACTIVE todos whose worker is genuinely gone.
+
+        A liveness signal is required before reaping: an ACTIVE todo is only
+        "stuck" if its bucket lease has *expired* (or never existed). A todo that
+        is still executing holds a live (unexpired) lease — its ``updated_at`` is
+        frozen at claim time with no heartbeat, so ``updated_at`` ALONE is not a
+        liveness clock and must never be used to reap live work.
+
+        ``version`` is NOT a retry counter (it is bumped by every write), so it is
+        no longer conflated with attempts. A genuinely stale todo is simply
+        requeued for another attempt.
+        """
         if self._active_session is None or self._todo_repo is None:
             return
         try:
-            from general_ludd.db.models import TodoModel
-            cutoff = datetime.now(UTC) - timedelta(minutes=self._stuck_timeout_minutes)
+            from general_ludd.db.models import BucketLeaseModel, TodoModel
+            now = datetime.now(UTC)
+            cutoff = now - timedelta(minutes=self._stuck_timeout_minutes)
             stmt = (
                 select(TodoModel)
                 .where(TodoModel.status == TodoStatus.ACTIVE.value)
                 .where(TodoModel.updated_at < cutoff)
             )
             result = await self._active_session.execute(stmt)
-            stuck = list(result.scalars().all())
-            for todo in stuck:
-                attempts = getattr(todo, "version", 0)
-                if attempts >= self._max_retries:
-                    todo.status = TodoStatus.FAILED.value
-                else:
-                    todo.status = TodoStatus.QUEUED.value
-                todo.updated_at = datetime.now(UTC)
-            if stuck:
+            candidates = list(result.scalars().all())
+            reaped = 0
+            for todo in candidates:
+                # Liveness gate: a still-running worker holds a live bucket lease.
+                # Only reap when NO unexpired lease exists for this todo.
+                queue = _safe_str(todo, "queue", "core") or "core"
+                todo_id = _safe_str(todo, "todo_id", "") or ""
+                bucket_key = f"{queue}:{todo_id}"
+                live_lease = (
+                    await self._active_session.execute(
+                        select(BucketLeaseModel)
+                        .where(BucketLeaseModel.bucket_key == bucket_key)
+                        .where(BucketLeaseModel.expires_at > now)
+                    )
+                ).scalar_one_or_none()
+                if live_lease is not None:
+                    # Worker is still heartbeating (lease alive) -> do NOT reap.
+                    continue
+                todo.status = TodoStatus.QUEUED.value
+                todo.updated_at = now
+                reaped += 1
+            if reaped:
                 await self._active_session.flush()
-                logger.info("Reaped %d stuck ACTIVE todos", len(stuck))
+                logger.info("Reaped %d stuck ACTIVE todos (no live lease)", reaped)
         except Exception as exc:
             logger.warning("Stuck-todo reaper failed: %s", exc)
 

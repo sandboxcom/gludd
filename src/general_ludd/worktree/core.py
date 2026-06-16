@@ -145,12 +145,17 @@ class WorktreeScanner:
         self._config = config
         self._tracked: dict[str, TrackedWorktree] = tracked or {}
 
-    def scan(self) -> list[TrackedWorktree]:
-        """Scan all configured watch paths for git worktrees."""
+    def scan(self, watch_paths: list[str] | None = None) -> list[TrackedWorktree]:
+        """Scan watch paths for git worktrees.
+
+        ``watch_paths`` optionally overrides the configured roots (e.g. a
+        dispatcher rescanning a single directory after an AGENTS.md event).
+        """
         import os
 
+        roots = watch_paths if watch_paths is not None else self._config.watch_paths
         discovered: list[TrackedWorktree] = []
-        for root_path in self._config.watch_paths:
+        for root_path in roots:
             expanded = os.path.expanduser(root_path)
             if not os.path.isdir(expanded):
                 continue
@@ -232,15 +237,76 @@ class WorktreeScanner:
 
         return None
 
-    def remove_stale(self, active_paths: set[str]) -> list[str]:
-        """Remove tracked worktrees that no longer exist. Returns removed todo IDs."""
+    def remove_stale(
+        self,
+        active_paths: set[str],
+        restrict_to: list[str] | None = None,
+    ) -> list[str]:
+        """Drop tracking for worktrees that no longer exist AND reclaim the
+        abandoned worktree directory on the filesystem.
+
+        For each tracked path no longer present in ``active_paths`` we both
+        forget the in-memory entry (returning its todo id) and invoke
+        ``git worktree remove --force`` so the directory is actually reclaimed,
+        falling back to ``git worktree prune`` for stale administrative refs.
+        Without this the daemon would leak abandoned worktree directories
+        forever.
+
+        ``restrict_to``, when given, limits eviction to tracked paths that live
+        under one of those roots — so a narrowed event-driven scan does not
+        evict worktrees in directories it never rescanned.
+        """
         removed: list[str] = []
+        restrict_roots = (
+            [os.path.abspath(os.path.expanduser(p)) for p in restrict_to]
+            if restrict_to is not None
+            else None
+        )
         for path in list(self._tracked):
-            if path not in active_paths:
-                wt = self._tracked.pop(path)
-                if wt.todo_id:
-                    removed.append(wt.todo_id)
+            if path in active_paths:
+                continue
+            if restrict_roots is not None and not self._under_any_root(path, restrict_roots):
+                continue
+            wt = self._tracked.pop(path)
+            self._reclaim_worktree_dir(path)
+            if wt.todo_id:
+                removed.append(wt.todo_id)
         return removed
+
+    @staticmethod
+    def _under_any_root(path: str, roots: list[str]) -> bool:
+        abspath = os.path.abspath(os.path.expanduser(path))
+        for root in roots:
+            root_prefix = root.rstrip(os.sep) + os.sep
+            if abspath == root or abspath.startswith(root_prefix):
+                return True
+        return False
+
+    @staticmethod
+    def _reclaim_worktree_dir(path: str) -> None:
+        """Actually remove an abandoned git worktree directory.
+
+        Runs ``git worktree remove --force -- <path>`` from the worktree's own
+        directory (so git locates the owning repo), then ``git worktree prune``
+        to clear stale administrative entries. All failures are swallowed —
+        reclamation is best-effort and must never raise into the scan loop.
+        """
+        import contextlib
+        import subprocess
+
+        # `git -C <path>` resolves the linked working tree's main repository.
+        for argv in (
+            ["git", "-C", path, "worktree", "remove", "--force", "--", path],
+            ["git", "-C", path, "worktree", "prune"],
+        ):
+            with contextlib.suppress(Exception):
+                subprocess.run(
+                    argv,
+                    capture_output=True,
+                    text=True,
+                    timeout=10,
+                    check=False,
+                )
 
 
 class WorktreeEventDispatcher:
@@ -323,14 +389,24 @@ class WorktreeMonitor:
         self._todo_creator = todo_creator
         self._event_dispatcher = WorktreeEventDispatcher(self._scanner, config)
 
-    def evaluate(self) -> list[dict[str, object]]:
-        """Evaluate worktrees and return list of todos to create."""
+    def evaluate(self, watch_paths: list[str] | None = None) -> list[dict[str, object]]:
+        """Evaluate worktrees and return list of todos to create.
+
+        ``watch_paths`` optionally narrows the scan to specific directories
+        (used by the event dispatcher when a single AGENTS.md change fires);
+        when ``None`` the configured ``watch_paths`` are scanned. The parameter
+        is accepted (and used) so the dispatcher's
+        ``evaluate(watch_paths=[...])`` call site does not raise ``TypeError``.
+        """
         if not self._config.enabled:
             return []
 
-        discovered = self._scanner.scan()
+        discovered = self._scanner.scan(watch_paths=watch_paths)
         active_paths = {wt.path for wt in discovered}
-        self._scanner.remove_stale(active_paths)
+        # Only reconcile (and prune) tracking for the paths we actually
+        # rescanned — a narrowed event-driven scan must not evict worktrees in
+        # directories it never looked at.
+        self._scanner.remove_stale(active_paths, restrict_to=watch_paths)
 
         todos: list[dict[str, object]] = []
         todos_created = 0

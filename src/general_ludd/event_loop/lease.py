@@ -49,11 +49,41 @@ async def reclaim_expired_leases(
     session: AsyncSession,
     max_age_seconds: int = 300,
 ) -> int:
+    """Delete expired bucket leases AND requeue the orphaned work they guarded.
+
+    A lease whose ``expires_at`` is in the past means the holder (a tick/worker)
+    is presumed crashed. Deleting the bookkeeping row alone loses the work: the
+    associated todo stays ACTIVE forever and ``claim_runnable`` (which only sees
+    QUEUED) never re-dispatches it. So for each expired lease we also reset its
+    still-ACTIVE todo back to QUEUED with a guarded conditional UPDATE so the work
+    is actually reclaimable. The bucket_key is ``f"{queue}:{todo_id}"`` (see
+    EventLoop._phase_claim_runnable_todos).
+    """
+    from sqlalchemy import update
+
+    from general_ludd.db.models import TodoModel
+    from general_ludd.schemas.todo import TodoStatus
+
     now = datetime.now(UTC)
     stmt = select(BucketLeaseModel).where(BucketLeaseModel.expires_at < now)
     result = await session.execute(stmt)
     expired = list(result.scalars().all())
     for lease in expired:
+        # bucket_key == f"{queue}:{todo_id}"; the todo_id is the part after the
+        # first ':' (queue names contain no ':'). Guard non-str/malformed keys
+        # (e.g. a mocked lease, or a legacy bucket_key without a ':') so a bad
+        # key just skips the requeue instead of raising.
+        bucket_key = lease.bucket_key
+        todo_id = bucket_key.partition(":")[2] if isinstance(bucket_key, str) else ""
+        if todo_id:
+            await session.execute(
+                update(TodoModel)
+                .where(
+                    TodoModel.todo_id == todo_id,
+                    TodoModel.status == TodoStatus.ACTIVE.value,
+                )
+                .values(status=TodoStatus.QUEUED.value, updated_at=now)
+            )
         await session.delete(lease)
     await session.flush()
     return len(expired)

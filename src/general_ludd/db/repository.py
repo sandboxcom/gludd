@@ -113,6 +113,18 @@ class TodoRepository:
         return list(result.scalars().all())
 
     async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
+        """Claim QUEUED todos for execution with a guarded conditional UPDATE.
+
+        SQLite has no row-level locking (``with_for_update`` is silently dropped),
+        so the claim cannot rely on a lock. Instead, each candidate is flipped
+        QUEUED->ACTIVE with an optimistic ``WHERE id=? AND status='queued' AND
+        version=?`` UPDATE. Only the caller whose UPDATE affects a row (rowcount
+        == 1) "wins" the claim; a caller that lost the race (rowcount == 0) skips
+        the row, so every todo is returned to exactly one caller -> no double
+        claim / double dispatch.
+        """
+        from sqlalchemy import update
+
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
         if project_id is not None:
             stmt = stmt.where(TodoModel.project_id == project_id)
@@ -120,12 +132,33 @@ class TodoRepository:
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
-        todos = list(result.scalars().all())
+        candidates = list(result.scalars().all())
         now = datetime.now(UTC)
-        for todo in todos:
+        claimed: list[TodoModel] = []
+        for todo in candidates:
             old_status = todo.status
+            old_version = todo.version
+            # Guarded conditional claim: transition only if the row is STILL
+            # queued at the same version we read. Mirrors transition()'s
+            # version/status guard so a concurrent claimer cannot also win.
+            guard = (
+                update(TodoModel)
+                .where(
+                    TodoModel.id == todo.id,
+                    TodoModel.status == TodoStatus.QUEUED.value,
+                    TodoModel.version == old_version,
+                )
+                .values(status=TodoStatus.ACTIVE.value, version=old_version + 1, updated_at=now)
+            )
+            res = await self._session.execute(guard)
+            if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+                # Lost the race: another caller already claimed this row. Drop our
+                # stale in-memory copy and skip it so it is never returned twice.
+                await self._session.refresh(todo)
+                continue
+            # We won: sync the in-memory ORM object to the committed values.
             todo.status = TodoStatus.ACTIVE.value
-            todo.version += 1
+            todo.version = old_version + 1
             todo.updated_at = now
             evt = TodoEventModel(
                 todo_id=todo.todo_id,
@@ -136,8 +169,9 @@ class TodoRepository:
                 reason="Claimed for execution",
             )
             self._session.add(evt)
+            claimed.append(todo)
         await self._session.flush()
-        return todos
+        return claimed
 
     async def count_active(self) -> int:
         from sqlalchemy import func
@@ -272,17 +306,43 @@ class TaskReturnRepository:
         }
 
     async def claim_unreviewed(self, project_id: str | None = None, limit: int = 10) -> list[TaskReturnModel]:
+        """Claim 'created' task-returns for review with a guarded conditional UPDATE.
+
+        TaskReturnModel has no version column, so the optimistic guard is on
+        ``status`` alone: each candidate is flipped 'created'->'claimed_for_review'
+        with ``WHERE id=? AND status='created'``. Only the caller whose UPDATE
+        affects a row (rowcount == 1) claims it; a loser (rowcount == 0) skips it.
+        This makes each return claimed by exactly one caller -> no double-review.
+        """
+        from sqlalchemy import update
+
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
         stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(limit)
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        for row in rows:
+        candidates = list(result.scalars().all())
+        now = datetime.now(UTC)
+        claimed: list[TaskReturnModel] = []
+        for row in candidates:
+            guard = (
+                update(TaskReturnModel)
+                .where(
+                    TaskReturnModel.id == row.id,
+                    TaskReturnModel.status == "created",
+                )
+                .values(status="claimed_for_review", updated_at=now)
+            )
+            res = await self._session.execute(guard)
+            if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+                # Lost the race: another caller already claimed this return.
+                await self._session.refresh(row)
+                continue
             row.status = "claimed_for_review"
-            row.updated_at = datetime.now(UTC)
+            row.updated_at = now
+            claimed.append(row)
         await self._session.flush()
-        return rows
+        return claimed
 
 
 class AuditEventRepository:

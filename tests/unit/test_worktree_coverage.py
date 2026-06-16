@@ -601,7 +601,7 @@ class TestWorktreeMonitorEvaluate:
         scanner.remove_stale = MagicMock()
         monitor = WorktreeMonitor(config, scanner=scanner)
         monitor.evaluate()
-        scanner.remove_stale.assert_called_once_with({str(tmp_path)})
+        scanner.remove_stale.assert_called_once_with({str(tmp_path)}, restrict_to=None)
 
 
 class TestWorktreeMonitorIsAbandoned:

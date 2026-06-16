@@ -87,7 +87,8 @@ class TestCreateBranch:
         result = GitAutomation(".").create_branch("feature-x")
         assert result == "feature-x"
         mock_run.assert_called_once_with(
-            ["git", "checkout", "-b", "feature-x"],
+            # `--` ends option parsing so a dash-leading name can't be an option.
+            ["git", "checkout", "-b", "feature-x", "--"],
             cwd=".",
             capture_output=True,
             text=True,

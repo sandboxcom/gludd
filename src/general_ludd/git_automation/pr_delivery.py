@@ -32,6 +32,17 @@ class PRDelivery:
         title: str,
         description: str = "",
     ) -> dict[str, Any]:
+        # Fail closed on a dash-leading branch: it would be parsed as a git/gh
+        # OPTION (e.g. --upload-pack=...) rather than a branch positional.
+        if branch_name.startswith("-"):
+            return {
+                "pr_url": None,
+                "error": (
+                    f"refusing branch name that begins with '-' (would be parsed "
+                    f"as a git/gh option): {branch_name!r}"
+                ),
+            }
+
         if not self._check_gh_available():
             return {
                 "pr_url": None,
@@ -40,7 +51,8 @@ class PRDelivery:
 
         try:
             push_result = subprocess.run(
-                ["git", "push", "origin", branch_name],
+                # `--` ends option parsing before the refspec positional.
+                ["git", "push", "origin", "--", branch_name],
                 cwd=repo_path, capture_output=True, text=True, timeout=30,
             )
             if push_result.returncode != 0:

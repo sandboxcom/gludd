@@ -1,19 +1,29 @@
 """Fresh-interpreter child entrypoint for the A/B runner.
 
-Invoked as ``python -m general_ludd.abtest._child <candidate_root> <workload_json>``.
+Invoked as ``python -m general_ludd.abtest._child <candidate_root>
+<workload_json> <mem_mb> <cpu_s> <result_path> <nonce>``.
 
 The child:
   1. inserts ``<candidate_root>/src`` at the FRONT of ``sys.path`` so the
      candidate variant shadows the installed copy,
   2. applies POSIX resource limits (address space + CPU time) when available,
   3. runs the workload (which imports/exercises the candidate),
-  4. prints the literal sentinel line ``RESULT_OK`` followed by a JSON line
+  4. writes the parent-generated NONCE into the parent-created result file, and
+     prints the literal sentinel line ``RESULT_OK`` followed by a JSON line,
      ONLY after the workload returns without raising.
 
+The result-file nonce — NOT the stdout sentinel — is the authoritative success
+signal. The parent generates a fresh random nonce per run and hands the child
+both the nonce and a dedicated result-file path that the candidate body cannot
+observe. The candidate body runs during step 3 (import), strictly BEFORE the
+framework writes the nonce in step 4. A candidate that forges ``RESULT_OK`` onto
+stdout and ``os._exit(0)``s dies before step 4 ever runs, so the result file
+never receives the nonce and the parent fails closed.
+
 If the workload raises, the traceback goes to stderr and the child exits
-non-zero WITHOUT printing the sentinel. If the candidate calls ``os._exit`` or
-segfaults, the interpreter dies before the sentinel is printed. Either way the
-parent fails closed: no sentinel ⇒ not ok.
+non-zero WITHOUT writing the nonce. If the candidate calls ``os._exit`` or
+segfaults, the interpreter dies before the nonce is written. Either way the
+parent fails closed: no nonce in the result file ⇒ not ok.
 
 Nothing in this module is imported by the parent runner at runtime — it only
 ever runs inside the child interpreter.
@@ -76,15 +86,47 @@ def _run_workload(workload: dict[str, Any]) -> dict[str, Any]:
     raise ValueError(f"unknown workload kind: {kind!r}")
 
 
+def _write_result_nonce(result_path: str, nonce: str, detail: dict[str, Any]) -> None:
+    """Write the parent-generated ``nonce`` (plus a JSON detail blob) into the
+    parent-created ``result_path``.
+
+    This runs ONLY after ``_run_workload`` returns without raising, i.e. strictly
+    AFTER the candidate body has been imported and the workload's assertions have
+    passed. The candidate body cannot reach this code: a forged stdout sentinel +
+    ``os._exit(0)`` from the candidate terminates the interpreter before we get
+    here, leaving the result file without the nonce so the parent fails closed.
+    """
+    import os
+
+    payload = json.dumps({"nonce": nonce, "detail": detail})
+    # Write atomically (tmp + os.replace) so the parent never reads a partial
+    # nonce, and fsync so the bytes are durable before the child exits 0.
+    tmp_path = result_path + ".tmp"
+    fd = os.open(tmp_path, os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+    try:
+        os.write(fd, payload.encode("utf-8"))
+        os.fsync(fd)
+    finally:
+        os.close(fd)
+    os.replace(tmp_path, result_path)
+
+
 def main(argv: list[str]) -> int:
-    if len(argv) < 3:
-        sys.stderr.write("usage: _child <candidate_root> <workload_json> [mem_mb] [cpu_s]\n")
+    # argv: <prog> <candidate_root> <workload_json> <mem_mb> <cpu_s>
+    #       <result_path> <nonce>
+    if len(argv) < 7:
+        sys.stderr.write(
+            "usage: _child <candidate_root> <workload_json> <mem_mb> <cpu_s> "
+            "<result_path> <nonce>\n"
+        )
         return 2
 
     candidate_root = argv[1]
     workload = json.loads(argv[2])
-    mem_limit_mb = int(argv[3]) if len(argv) > 3 else 0
-    cpu_seconds = int(argv[4]) if len(argv) > 4 else 0
+    mem_limit_mb = int(argv[3])
+    cpu_seconds = int(argv[4])
+    result_path = argv[5]
+    nonce = argv[6]
 
     _apply_limits(mem_limit_mb, cpu_seconds)
 
@@ -98,7 +140,17 @@ def main(argv: list[str]) -> int:
         traceback.print_exc()
         return 1
 
-    # Sentinel printed ONLY after the workload's assertions passed.
+    # AUTHORITATIVE success signal: write the parent's nonce into the parent's
+    # result file, ONLY after the workload's assertions passed. A candidate that
+    # never let _run_workload return cannot have reached this line.
+    try:
+        _write_result_nonce(result_path, nonce, detail)
+    except OSError:
+        traceback.print_exc()
+        return 1
+
+    # Stdout sentinel kept for human-readable logs only; the parent no longer
+    # trusts it as proof of success (it rides candidate-writable stdout).
     sys.stdout.write(SENTINEL + "\n")
     sys.stdout.write(json.dumps(detail) + "\n")
     sys.stdout.flush()

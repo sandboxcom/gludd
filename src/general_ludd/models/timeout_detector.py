@@ -36,6 +36,7 @@ class TimeoutKind(enum.Enum):
     CONTEXT_LENGTH = "context_length"
     PROVIDER_ERROR = "provider_error"
     AUTH_ERROR = "auth_error"
+    INVALID_REQUEST = "invalid_request"
     UNKNOWN = "unknown"
 
 
@@ -136,7 +137,10 @@ class TimeoutClassifier:
             for pattern in _CONTEXT_LENGTH_PATTERNS:
                 if pattern in body:
                     return TimeoutKind.CONTEXT_LENGTH
-            return TimeoutKind.AUTH_ERROR
+            # A generic 400 (malformed request, bad param, invalid schema) is a
+            # non-auth client error. Labeling it AUTH_ERROR would poison health
+            # metrics and misdirect the operator.
+            return TimeoutKind.INVALID_REQUEST
 
         return TimeoutKind.UNKNOWN
 
@@ -202,8 +206,10 @@ class ModelHealthTracker:
         if consecutive < self._failure_threshold:
             return True
 
+        # RATE_LIMITED is intentionally NOT here: a 429'd model IS retryable
+        # after a cooldown and MUST be backed off, so it must flow into the
+        # cooldown branch below and be reported unhealthy until it clears.
         non_retryable = {
-            TimeoutKind.RATE_LIMITED,
             TimeoutKind.AUTH_ERROR,
             TimeoutKind.CONTEXT_LENGTH,
         }
@@ -251,7 +257,11 @@ class TimeoutRetryPolicy:
         *,
         retry_after_seconds: float | None = None,
     ) -> RetryDecision:
-        if kind in (TimeoutKind.AUTH_ERROR, TimeoutKind.CONTEXT_LENGTH):
+        if kind in (
+            TimeoutKind.AUTH_ERROR,
+            TimeoutKind.CONTEXT_LENGTH,
+            TimeoutKind.INVALID_REQUEST,
+        ):
             return RetryDecision(
                 should_retry=False,
                 reason=f"{kind.value} is not retryable",

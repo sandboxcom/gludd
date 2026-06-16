@@ -385,6 +385,25 @@ molecule-test-all:
 	if [ -n "$$FAILED" ]; then echo "FAILED:$$FAILED"; exit 1; fi; \
 	echo "=== molecule-test-all: ALL scenarios passed ==="
 
+clean-tmp:
+	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /tmp/gludd-winfix*-gate.log /tmp/gludd-test-gate.txt /tmp/pytest-of-* 2>/dev/null || true
+	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
+	@echo "clean-tmp done"
+
+# Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
+# never silently refill the volume. Prints % used + free on the data volume.
+disk:
+	@df -h / | awk 'NR==1 || /\/$$/'
+	@echo "--- gludd scratch + worktree venv footprint ---"
+	@du -sh /tmp/gludd-* 2>/dev/null | tail -5 || true
+	@du -sh /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null | tail -5 || true
+
+# Remove regenerable .venv dirs from agent worktrees (source is preserved;
+# `uv sync` recreates on demand). The main disk hog when many worktree agents run.
+clean-worktree-venvs:
+	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null || true
+	@echo "clean-worktree-venvs done"
+
 molecule-clean:
 	@echo "Removing stray molecule/<scenario> runtime dirs (any dir directly under molecule/ that is NOT playbooks, roles, internal_tools, mock_daemon, library)..."
 	@for d in molecule/*/; do \
@@ -582,9 +601,23 @@ git-fetch-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git fetch sandboxcom
 	@echo "Fetched from sandboxcom/gludd"
 
+# Create an annotated tag and push it to sandboxcom to trigger the tag-gated
+# release job (version -> gate -> builds -> release). Usage:
+#   make git-tag-push TAG=v0.1.0-alpha.1 MSG='alpha release'
+git-tag-push:
+	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [MSG='...']"; exit 1; }
+	@git tag -a "$(TAG)" -m "$(if $(MSG),$(MSG),$(TAG))"
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
+
 # --- CI observability (W16) ---
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
+
+# Confirm a published GitHub Release + list its downloadable assets.
+release-view:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
+	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print('RELEASE:', d.get('tagName'), '|', d.get('url')); print('  draft=%s prerelease=%s published=%s' % (d.get('isDraft'), d.get('isPrerelease'), d.get('publishedAt'))); a=d.get('assets',[]); print('  ASSETS (%d):' % len(a)); [print('   -', x['name'], x['size'], 'bytes') for x in a]" || echo "release-view-failed"
 
 ci-artifacts:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-artifacts RUN=<id>"; exit 1; fi
@@ -596,6 +629,51 @@ wt-import:
 	@if [ -z "$(SRC)" ] || [ -z "$(DST)" ]; then echo "Usage: make wt-import SRC=path DST=path"; exit 1; fi
 	@mkdir -p "$$(dirname "$(DST)")"
 	@cp "$(SRC)" "$(DST)" && echo "imported -> $(DST)"
+
+# Merge a whole agent worktree's uncommitted changes into the main checkout:
+# copy every modified-tracked + new-untracked file (git-ignored paths like .venv
+# are auto-excluded by ls-files --exclude-standard). Skips scratch/redteam docs.
+# Usage: make wt-sync SRC=/abs/path/to/worktree-root
+wt-sync:
+	@[ -n "$(SRC)" ] || { echo "Usage: make wt-sync SRC=<worktree-root>"; exit 1; }
+	@cd "$(SRC)" && { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u | while read -r f; do \
+		case "$$f" in \
+			.venv/*|*.pyc|.gate-status|.gate-failed|REDTEAM_*|*.log) continue;; \
+		esac; \
+		mkdir -p "/Users/shawnwilson/gludd/$$(dirname "$$f")"; \
+		cp "$(SRC)/$$f" "/Users/shawnwilson/gludd/$$f" && echo "  synced $$f"; \
+	done
+	@echo "wt-sync done: $(SRC)"
+
+# Read-only: list a worktree's uncommitted changed files (for planning a sync).
+wt-changed:
+	@[ -n "$(SRC)" ] || { echo "Usage: make wt-changed SRC=<worktree-root>"; exit 1; }
+	@cd "$(SRC)" && { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u | grep -vE '^(\.venv/|REDTEAM_|.*\.log$$)' || echo "(no tracked/untracked changes)"
+
+# Tear down an integrated/redundant agent worktree (reclaims its source + frees
+# the branch). --force because agent worktrees carry uncommitted (already-synced)
+# changes. Usage: make wt-remove SRC=<worktree-root>
+wt-remove:
+	@[ -n "$(SRC)" ] || { echo "Usage: make wt-remove SRC=<worktree-root>"; exit 1; }
+	@git worktree remove --force "$(SRC)" 2>/dev/null && echo "removed: $(SRC)" || echo "remove skipped/failed: $(SRC)"
+
+# Reclaim disk safely: remove every CLEAN worktree (git refuses any with
+# uncommitted changes, so dirty/unsynced ones are preserved). Branch refs always
+# persist, so committed feature branches survive removal and can be merged by
+# name or re-checked-out later. Protects the main checkout + the orchestrator cwd.
+wt-prune-safe:
+	@git worktree list --porcelain | awk '/^worktree /{print $$2}' | while read -r wt; do \
+		case "$$wt" in \
+			*/gludd|*a2fb5d73d80b29494) echo "  protected: $$wt"; continue;; \
+		esac; \
+		git worktree remove "$$wt" 2>/dev/null && echo "  removed (clean): $$wt" || echo "  kept (dirty/unsynced): $$wt"; \
+	done
+	@echo "wt-prune-safe done"
+
+# Read-only: which feature/* branches still have work NOT yet in master (the real
+# integration backlog). A branch absent here is already merged.
+branches-unmerged:
+	@git branch --no-merged master | sed 's/^[+* ]*//' | grep -E '^(feature/|worktree-agent-)' | grep -v worktree-agent || echo "(all feature branches merged)"
 
 # Anti-overstatement tool: the MEASURED pass-rate of recent CI runs, so
 # "reliable"/"green" must be quoted as this ratio, never asserted as an adjective.

@@ -108,8 +108,11 @@ class TestTimeoutClassifier:
             request=MagicMock(),
             response=MagicMock(status_code=400),
         )
-        kind = TimeoutClassifier.classify(exc, response_body="invalid api key")
-        assert kind == TimeoutKind.AUTH_ERROR
+        # A generic 400 (not a context-length error) is a non-auth client error.
+        # Labeling it AUTH_ERROR would poison health metrics and mislead the
+        # operator; auth failures are signaled by 401/403, not a bare 400.
+        kind = TimeoutClassifier.classify(exc, response_body="invalid value for 'temperature'")
+        assert kind == TimeoutKind.INVALID_REQUEST
 
     def test_classify_401(self) -> None:
         from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutKind
@@ -192,14 +195,17 @@ class TestModelHealthTracker:
         time.sleep(0.02)
         assert tracker.is_healthy("gpt-4") is True
 
-    def test_rate_limit_does_not_mark_unhealthy(self) -> None:
+    def test_rate_limit_marks_unhealthy_within_cooldown(self) -> None:
         from general_ludd.models.timeout_detector import (
             ModelHealthTracker,
             TimeoutEvent,
             TimeoutKind,
         )
 
-        tracker = ModelHealthTracker(failure_threshold=2)
+        # RATE_LIMITED IS retryable-after-cooldown, so a 429'd model must be
+        # reported unhealthy (and backed off) until the cooldown elapses, not
+        # treated as permanently healthy.
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=60.0)
         event = TimeoutEvent(
             model_id="gpt-4",
             kind=TimeoutKind.RATE_LIMITED,
@@ -208,7 +214,7 @@ class TestModelHealthTracker:
         )
         for _ in range(10):
             tracker.record_event(event)
-        assert tracker.is_healthy("gpt-4") is True
+        assert tracker.is_healthy("gpt-4") is False
 
     def test_auth_error_does_not_mark_unhealthy(self) -> None:
         from general_ludd.models.timeout_detector import (

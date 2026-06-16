@@ -13,14 +13,24 @@ logger = logging.getLogger(__name__)
 
 DEFAULT_CACHE_DIR = "~/.cache/general-ludd/response-cache"
 
+# Default TTL (seconds) for cached model responses. LLM outputs are
+# non-deterministic / time-sensitive, so entries must expire.
+DEFAULT_CACHE_TTL_SECONDS = 3600
+
 
 def _make_cache_key(
     profile_id: str,
     messages: list[dict[str, str]],
+    *,
+    model_name: str | None = None,
     **kwargs: Any,
 ) -> str:
+    # Include the resolved model_name so that swapping a profile's underlying
+    # model invalidates its cached output instead of serving the old model's
+    # response under the same profile id.
     payload = {
         "profile": profile_id,
+        "model_name": model_name,
         "messages": messages,
         "kwargs": kwargs,
     }
@@ -50,8 +60,14 @@ class ModelResponseCache:
             return cast(dict[str, Any], result)
         return None
 
-    def set(self, cache_key: str, response: dict[str, Any]) -> None:
-        self._cache.set(cache_key, response)
+    def set(
+        self,
+        cache_key: str,
+        response: dict[str, Any],
+        *,
+        expire: float | None = DEFAULT_CACHE_TTL_SECONDS,
+    ) -> None:
+        self._cache.set(cache_key, response, expire=expire)
 
     def invalidate(self, cache_key: str) -> None:
         self._cache.delete(cache_key)
