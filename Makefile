@@ -586,6 +586,38 @@ git-fetch-sandboxcom:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
+ci-artifacts:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-artifacts RUN=<id>"; exit 1; fi
+	@gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); a=d.get('artifacts',[]); print('TOTAL ARTIFACTS:', d.get('total_count', len(a))); [print(' -', x['name'], x['size_in_bytes'], 'bytes', '(EXPIRED)' if x.get('expired') else '(live)') for x in a]" || echo "ci-artifacts-failed"
+
+# Integration helper: copy a (red-team-fixed/new) file from an agent worktree
+# into the main checkout without routing it through the orchestrator's context.
+wt-import:
+	@if [ -z "$(SRC)" ] || [ -z "$(DST)" ]; then echo "Usage: make wt-import SRC=path DST=path"; exit 1; fi
+	@mkdir -p "$$(dirname "$(DST)")"
+	@cp "$(SRC)" "$(DST)" && echo "imported -> $(DST)"
+
+# Anti-overstatement tool: the MEASURED pass-rate of recent CI runs, so
+# "reliable"/"green" must be quoted as this ratio, never asserted as an adjective.
+ci-greenness:
+	@gh run list -R sandboxcom/gludd -L 20 --json conclusion,status 2>/dev/null | $(PYTHON) -c "import sys,json; r=json.load(sys.stdin); done=[x for x in r if x.get('status')=='completed']; g=[x for x in done if x.get('conclusion')=='success']; total=len(done); print('CI greenness (last %d completed runs): %d GREEN, %d not-green = %d%%.' % (total, len(g), total-len(g), (100*len(g)//total if total else 0))); print('  -> Do NOT call CI \"reliable/green\" without quoting this ratio.')" || echo "ci-greenness-failed"
+
+# --- enabler targets for parallel verification + wider quality gates ---
+# Isolated single-file pytest: unique basetemp so concurrent agent runs never
+# collide (the #40 fix). Usage: make test-iso TESTFILE=tests/... ID=<uniq>
+test-iso:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-iso TESTFILE=path [ID=x]"; exit 1; fi
+	@BT="/tmp/gludd-iso-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) -p no:cacheprovider --basetemp="$$BT" -q; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+# Wider lint/type scope (#35) — measures lint across ALL tracked python, not just src/tests.
+lint-all:
+	@$(UV) run ruff check src tests collections scripts alembic tools molecule
+typecheck-all:
+	@$(UV) run mypy src scripts tools
+# Ansible/YAML lint (#36), fail-on-error (no `|| true`).
+yaml-lint:
+	@$(UV) run ansible-lint playbooks collections/ansible_collections/general_ludd/agent/roles
+
 ci-log:
 	@if [ -n "$(RUN)" ]; then \
 		gh run view -R sandboxcom/gludd $(RUN) --log-failed 2>&1 || echo "gh-run-view-failed"; \

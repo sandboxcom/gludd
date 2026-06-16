@@ -41,7 +41,11 @@ a = Analysis(
     hookspath=[],
     hooksconfig={},
     runtime_hooks=[],
-    excludes=['pytest', 'mypy', 'ruff', 'pre_commit', 'molecule', 'ansible_lint'],
+    # ansible.cli is excluded: gludd drives ansible-core's executor API
+    # (ansible.runner/core_runner/templating), never the CLI. Bundling ansible.cli
+    # makes pyinstaller import it at build time, and ansible.cli.initialize_locale()
+    # hard-fails on Windows' cp1252 locale ("Ansible requires UTF-8; Detected 1252").
+    excludes=['pytest', 'mypy', 'ruff', 'pre_commit', 'molecule', 'ansible_lint', 'ansible.cli'],
     win_no_prefer_redirects=False,
     win_private_assemblies=False,
     cipher=block_cipher,

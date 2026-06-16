@@ -664,13 +664,28 @@ class TestFilestoreRemoveExisting:
 class TestAdminSelftest:
     @pytest.mark.asyncio
     async def test_selftest_no_molecule_dir(self, transport):
-        async with AsyncClient(transport=transport, base_url="http://test") as client:
-            resp = await client.post("/admin/selftest")
-            assert resp.status_code == 200
-            data = resp.json()
-            assert "scenarios_run" in data
-            assert "results" in data
-            assert "errors" in data
+        # Hermetic: this test asserts the "no molecule dir" fast path, so the
+        # molecule-dir probe MUST be forced False. Without this the endpoint
+        # finds the repo's real molecule/playbooks and shells out to a real
+        # `uv run molecule test` per scenario (each timeout=300) — a non-hermetic
+        # fan-out that blows the 180s per-test timeout under load. Forcing the
+        # probe False exercises the empty path with zero subprocesses.
+        import os.path as _ospath
+
+        real_isdir = _ospath.isdir
+
+        def _no_molecule(path):
+            return False if "molecule" in str(path) else real_isdir(path)
+
+        with patch("os.path.isdir", side_effect=_no_molecule):
+            async with AsyncClient(transport=transport, base_url="http://test") as client:
+                resp = await client.post("/admin/selftest")
+                assert resp.status_code == 200
+                data = resp.json()
+                assert "scenarios_run" in data
+                assert data["scenarios_run"] == 0
+                assert data["results"] == []
+                assert data["errors"] == []
 
 
 class TestDispatchModeEndpoint:
