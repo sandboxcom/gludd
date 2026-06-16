@@ -102,7 +102,10 @@ class TestTarballStructure:
     def test_makefile_dist_builds_pyinstaller(self):
         with open(os.path.join(PROJECT_ROOT, "Makefile")) as f:
             makefile = f.read()
-        dist_section = makefile.split("dist:")[1].split("\n\n")[0] if "dist:" in makefile else ""
+        # Anchor on the real line-start "dist:" target, not any substring like
+        # "test-xdist:" (otherwise an unrelated target whose name ends in "dist"
+        # is parsed as the dist recipe).
+        dist_section = makefile.split("\ndist:")[1].split("\n\n")[0] if "\ndist:" in makefile else ""
         assert "pyinstaller" in dist_section or "build-executable" in dist_section
 
     def test_config_files_exist_for_tarball(self):

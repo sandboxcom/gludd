@@ -1,0 +1,68 @@
+---
+- name: Verify - self_improve_propose wrote a real introspect-driven proposal
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}.pid"
+    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    worktree_base: "/tmp/gludd-self-improve-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    artifact_dir: "/tmp/gludd-self-improve-propose-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+  tasks:
+    - name: Assert the proposal artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/proposal.json"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load proposal artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/proposal.json"
+      register: art_raw
+
+    - name: Parse proposal artifact
+      ansible.builtin.set_fact:
+        proposal: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert the proposal followed introspect -> target -> worktree -> proposal
+      ansible.builtin.assert:
+        that:
+          # role identity + status
+          - proposal.role == 'self_improve_propose'
+          - proposal.status == 'proposed'
+          # target_module is the lowest-coverage file from the mock's codebase facts
+          # (coverage.low_coverage: util/helpers.py @ line_rate 0.31 is the minimum).
+          - proposal.target_module == 'src/general_ludd/util/helpers.py'
+          # the candidate worktree path the role created
+          - proposal.candidate_worktree == worktree_base + '/candidate'
+          # the introspection signals were carried through from /api/facts
+          - proposal.signals.coverage.low_coverage is defined
+          - (proposal.signals.coverage.low_coverage | length) >= 1
+          - proposal.signals.churn is defined
+          - proposal.signals.debt is defined
+        fail_msg: "self_improve_propose proposal wrong: {{ proposal }}"
+        success_msg: "self_improve_propose: introspect-driven target + real worktree + proposal.json"
+
+    - name: Assert a REAL git worktree was created on the throwaway repo
+      ansible.builtin.stat:
+        path: "{{ worktree_base }}/candidate/.git"
+      register: wt
+      failed_when: not wt.stat.exists
+
+    # ---- cleanup: stop daemon + remove throwaway repo/worktree/artifacts ----
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove throwaway repo + worktree base + artifacts
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ repo_path }}"
+        - "{{ worktree_base }}"
+        - "{{ artifact_dir }}"
+      failed_when: false

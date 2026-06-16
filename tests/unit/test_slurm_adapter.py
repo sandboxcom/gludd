@@ -202,8 +202,10 @@ class TestSlurmAdapterStatus:
         assert "ExitCode" in format_args[0]
         assert "--parsable2" in args
         assert "--noheader" in args
-        assert "--jobs" in args
-        assert "12345" in args
+        # Hardened (#68): the job id is bound to its flag as ``--jobs=<id>`` so it
+        # can never be parsed as a standalone option / smuggled extra flag.
+        assert "--jobs=12345" in args
+        assert "12345" not in args
 
     def test_query_raises_slurm_not_installed(self):
         adapter = SlurmAdapter()
@@ -247,7 +249,10 @@ class TestSlurmAdapterCancel:
         with patch("general_ludd.infra.slurm.subprocess.run", side_effect=fake_run):
             adapter.cancel("12345")
 
-        assert captured["args"] == ["scancel", "12345"]
+        # Hardened (#68): an explicit ``--`` end-of-options guard precedes the
+        # (validated, numeric) positional job id so a leading-dash value can
+        # never be reinterpreted as a scancel flag.
+        assert captured["args"] == ["scancel", "--", "12345"]
 
     def test_cancel_raises_slurm_not_installed(self):
         adapter = SlurmAdapter()

@@ -21,6 +21,9 @@ class BootstrapResult:
     url: str
     token: str
     initialized: bool
+    # H-1: the per-boot dev root token minted for the local container, surfaced
+    # so connect() can authenticate without the old hardcoded literal "root".
+    container_token: str | None = None
 
 
 @dataclass
@@ -54,6 +57,12 @@ class SecretsManager:
         self._aliases = aliases or {}
         self._config = config or OpenBaoConfig()
         self._local_bootstrap_result: BootstrapResult | None = None
+        # H-1: per-boot dev root token for the local container (set by
+        # start_local_container) so connect() never falls back to a literal.
+        self._container_token: str | None = None
+        # W5.1: secret-id accessors we have issued, tracked so a rotation can
+        # destroy the prior secret_id once a fresh one is minted.
+        self._secret_id_accessors: dict[str, list[str]] = {}
 
     def register_alias(self, alias: SecretAlias) -> None:
         self._aliases[alias.alias] = alias
@@ -108,10 +117,23 @@ class SecretsManager:
             raise RuntimeError("No OpenBao backend available. Run bootstrap_local() first.")
         self._client = hvac.Client(url=url, token=token)
 
+    # W5.1: bound the lifetime of AppRole credentials. An un-bounded secret_id /
+    # token never expires, so a single leak is permanent. These defaults cap the
+    # blast radius and are passed to OpenBao at role creation.
+    SECRET_ID_TTL = "24h"
+    TOKEN_TTL = "1h"
+
     def setup_approle(self, role_name: str) -> AppRoleCreds:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
-        self._client.auth.approle.create_role(role_name)
+        # W5.1: create the role with bounded secret_id / token TTLs so leaked
+        # credentials self-expire instead of living forever.
+        self._client.auth.approle.create_role(
+            role_name,
+            secret_id_ttl=self.SECRET_ID_TTL,
+            token_ttl=self.TOKEN_TTL,
+            token_max_ttl=self.TOKEN_TTL,
+        )
         role_id_resp = self._client.auth.approle.read_role_id(role_name)
         role_id = role_id_resp["data"]["role_id"]
         secret_id = self._generate_secret_id(role_name)
@@ -121,7 +143,42 @@ class SecretsManager:
         if self._client is None:
             raise RuntimeError("Not connected.")
         resp = self._client.auth.approle.generate_secret_id(role_name)
-        return str(resp["data"]["secret_id"])
+        data = resp["data"]
+        # W5.1: track the accessor so a later rotation can destroy this secret_id.
+        accessor = data.get("secret_id_accessor")
+        if accessor:
+            self._secret_id_accessors.setdefault(role_name, []).append(str(accessor))
+        return str(data["secret_id"])
+
+    def rotate_approle_secret_id(self, role_name: str) -> str:
+        """Mint a fresh secret_id for ``role_name`` and destroy the prior ones.
+
+        W5.1: rotation issues a new secret_id, then destroys every previously
+        tracked accessor for the role so the old credential is immediately
+        invalidated — limiting the window in which a leaked secret_id is usable.
+        Returns the new secret_id.
+        """
+        if self._client is None:
+            raise RuntimeError("Not connected. Call connect() first.")
+        # Snapshot the accessors issued before this rotation, then mint the new one.
+        old_accessors = list(self._secret_id_accessors.get(role_name, []))
+        new_secret_id = self._generate_secret_id(role_name)
+        for accessor in old_accessors:
+            try:
+                self._client.auth.approle.destroy_secret_id_accessor(
+                    role_name, accessor
+                )
+            except Exception as exc:
+                logger.warning(
+                    "Failed to destroy old secret_id accessor for role %s: %s",
+                    role_name, exc,
+                )
+        # Retain only accessors minted by this rotation (i.e. drop the destroyed ones).
+        current = self._secret_id_accessors.get(role_name, [])
+        self._secret_id_accessors[role_name] = [
+            a for a in current if a not in old_accessors
+        ]
+        return new_secret_id
 
     def write_secret(self, path: str, value: dict[str, Any]) -> None:
         if self._client is None:
@@ -184,25 +241,41 @@ class SecretsManager:
         self,
         binary_resolver: BinaryPathResolver | None = None,
     ) -> str | None:
+        # H-1 fail-closed: never spin up a throwaway local dev container when the
+        # operator has declared an external/managed OpenBao — that would shadow
+        # the real backend with an unsealed dev instance.
+        if self._config.mode == "external":
+            raise RuntimeError(
+                "start_local_container refused: config.mode=='external' — "
+                "use the configured external OpenBao backend, not a local dev container."
+            )
         import platform
         resolver = binary_resolver or BinaryPathResolver()
         runtime = resolver.get_container_runtime()
         image = self._config.local_image
         is_macos = platform.system() == "Darwin"
         is_podman = "podman" in runtime
+        # H-1: mint a fresh, unguessable dev root token every boot instead of the
+        # well-known literal "root", and bind the dev listener to loopback only so
+        # the unsealed dev instance is never reachable off-host. The token is
+        # surfaced on BootstrapResult so connect() can authenticate to it.
+        container_token = uuid.uuid4().hex
+        self._container_token = container_token
         args = [runtime, "run", "-d"]
         if is_podman and is_macos:
             args.extend(["--network", "host"])
         else:
-            args.extend(["-p", "8200:8200"])
+            # Publish ONLY on loopback (127.0.0.1) — not the default 0.0.0.0 — so
+            # the dev container is not exposed on every host interface.
+            args.extend(["-p", "127.0.0.1:8200:8200"])
         args.extend([
             "--name",
             f"gludd-{self._config.backend}",
             image,
             "server",
             "-dev",
-            "-dev-root-token-id=root",
-            "-dev-listen-address=0.0.0.0:8200",
+            f"-dev-root-token-id={container_token}",
+            "-dev-listen-address=127.0.0.1:8200",
         ])
         proc = await asyncio.create_subprocess_exec(
             *args,
@@ -218,6 +291,14 @@ class SecretsManager:
             )
             return None
         container_id = stdout.decode().strip()
+        # Surface the per-boot token on the bootstrap result so connect() uses it
+        # (rather than the old hardcoded "root").
+        self._local_bootstrap_result = BootstrapResult(
+            url="http://127.0.0.1:8200",
+            token=container_token,
+            initialized=True,
+            container_token=container_token,
+        )
         return container_id or None
 
     async def health_check(self) -> bool:

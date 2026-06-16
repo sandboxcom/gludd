@@ -16,21 +16,27 @@
         state: directory
         mode: "0755"
 
+    # noqa command-instead-of-module: ansible.builtin.git cannot `git init` a
+    # fresh empty repository, so command is the correct module here.
     - name: Initialize git repository
-      ansible.builtin.command:
+      ansible.builtin.command: # noqa: command-instead-of-module
         cmd: git init
         chdir: "{{ repo_path }}"
       register: init_result
       changed_when: "'Initialized' in init_result.stdout"
 
+    # noqa command-instead-of-module: the git module has no `git config`
+    # capability; setting user.email requires command.
     - name: Configure git user email
-      ansible.builtin.command:
+      ansible.builtin.command: # noqa: command-instead-of-module
         cmd: git config user.email "{{ user_email }}"
         chdir: "{{ repo_path }}"
       changed_when: false
 
+    # noqa command-instead-of-module: the git module has no `git config`
+    # capability; setting user.name requires command.
     - name: Configure git user name
-      ansible.builtin.command:
+      ansible.builtin.command: # noqa: command-instead-of-module
         cmd: git config user.name "{{ user_name }}"
         chdir: "{{ repo_path }}"
       changed_when: false

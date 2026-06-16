@@ -337,16 +337,21 @@ def test_cache_serves_stale_after_model_swap():
 
 
 def test_empty_content_success_is_cached():
-    """FIXED 5b: an error-shaped successful response (empty content) is NOT
-    cached, so a subsequent good call is served fresh."""
+    """FIXED 5b (revised by Fix 5 / empty-200-billed): an error-shaped 200 with
+    empty content now RAISES a retryable PROVIDER_ERROR BEFORE record_spend, so
+    it is neither billed nor cached. A subsequent good call is served fresh."""
     cache = _InMemoryCache()
+    guard = RunBudgetGuard(run_budget_usd=10.0)
 
     def chat_empty(**kw):
-        return _FakeChatModel(content="", usage={})
+        return _FakeChatModel(content="", usage={"input_tokens": 100, "output_tokens": 100})
 
-    gw = _gateway_with(chat_empty, [_profile("p1")], response_cache=cache)
-    r1 = gw.call_model("p1", [{"role": "user", "content": "hi"}])
-    assert r1.content == ""
+    gw = _gateway_with(chat_empty, [_profile("p1")], response_cache=cache, budget_guard=guard)
+    # Empty 200 -> retryable provider error raised before billing.
+    with pytest.raises(httpx.HTTPStatusError):
+        gw.call_model("p1", [{"role": "user", "content": "hi"}])
+    # Not billed: record_spend never ran for the empty 200.
+    assert guard.get_total_spend() == pytest.approx(0.0)
 
     def chat_good(**kw):
         return _FakeChatModel(content="real-answer", usage={})

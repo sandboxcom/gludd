@@ -275,7 +275,7 @@ class TestGitIntelligence:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/some/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "abc123\tFix login bug\tdev\t2026-01-01\n\ndef456\tAdd feature\tdev\t2026-01-02\n"
@@ -290,7 +290,7 @@ class TestGitIntelligence:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "file1.py\nfile1.py\nfile1.py\nfile2.py\n"

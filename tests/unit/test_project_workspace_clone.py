@@ -75,8 +75,13 @@ class TestMaterializeWorkspace:
     def test_materialize_clones_repo_url_into_workspace_repo_dir(self, tmp_path):
         url = _make_fixture_repo(tmp_path / "origin")
         workspace_path = tmp_path / "ws"
+        # allow_local: this fixture uses a trusted local file:// repo (no network).
+        # base_dir=tmp_path so the in-tmp workspace_path is inside the jail root.
         repo_dir = materialize_project_workspace(
-            repo_url=url, workspace_path=str(workspace_path)
+            repo_url=url,
+            workspace_path=str(workspace_path),
+            base_dir=str(tmp_path),
+            allow_local=True,
         )
         assert repo_dir is not None
         repo_path = Path(repo_dir)
@@ -88,6 +93,98 @@ class TestMaterializeWorkspace:
             repo_url="", workspace_path=str(tmp_path / "ws")
         )
         assert result is None
+
+
+class TestMaterializeRejectsUnsafeCloneUrls:
+    """#56 (RCE/SSRF): caller-supplied repo_url is validated before git clone.
+
+    Each dangerous URL form must be REFUSED with ValueError (the router turns
+    that into HTTP 422) and must never reach GitAutomation.clone.
+    """
+
+    @pytest.mark.parametrize(
+        "bad_url",
+        [
+            "file:///etc/passwd",
+            "file://localhost/etc/shadow",
+            "ext::sh -c 'touch /tmp/pwned'",
+            "git::https://evil.example/repo",
+            "fd::17/foo",
+            "ssh://git@github.com/-oProxyCommand=cmd/repo.git",
+            "git@github.com:-oProxyCommand=touch${IFS}pwned/repo.git",
+            "https://169.254.169.254/latest/meta-data/",
+            "http://127.0.0.1/repo.git",
+            "https://localhost/repo.git",
+            "https://10.0.0.5/internal.git",
+            "git://192.168.1.10/internal.git",
+        ],
+    )
+    def test_unsafe_clone_url_raises_422_inputs(self, tmp_path, bad_url):
+        with pytest.raises(ValueError):
+            materialize_project_workspace(
+                repo_url=bad_url,
+                workspace_path="proj-x",
+                base_dir=str(tmp_path),
+            )
+
+    def test_normal_https_public_clone_is_accepted(self, tmp_path):
+        """A normal https clone to a public host is materialized (not rejected).
+
+        We serve it from a LOCAL bare fixture repo so there is no network, but
+        present it as an https URL to a public host by validating the guard
+        directly and then cloning the trusted local mirror.
+        """
+        from general_ludd.security.auth import is_safe_clone_url
+
+        # The guard must ACCEPT a normal public https clone URL.
+        assert is_safe_clone_url("https://github.com/octocat/Hello-World.git")
+        assert is_safe_clone_url("git://git.example.org/public/repo.git")
+
+        # And an in-root workspace_path + trusted local repo materializes cleanly.
+        url = _make_fixture_repo(tmp_path / "origin")
+        repo_dir = materialize_project_workspace(
+            repo_url=url,
+            workspace_path="proj-ok",
+            base_dir=str(tmp_path),
+            allow_local=True,
+        )
+        assert repo_dir is not None
+        assert (Path(repo_dir) / ".git").is_dir()
+
+
+class TestMaterializeConfinesWorkspacePath:
+    """#56 (traversal): a ../-escaping workspace_path is rejected with ValueError."""
+
+    @pytest.mark.parametrize(
+        "escape",
+        [
+            "../../../etc/evil",
+            "../outside",
+            "/etc/cron.d/evil",
+            "sub/../../../../tmp/escape",
+        ],
+    )
+    def test_escaping_workspace_path_raises(self, tmp_path, escape):
+        # A safe local fixture URL (allow_local) so ONLY the path guard can trip.
+        url = _make_fixture_repo(tmp_path / "origin")
+        with pytest.raises(ValueError):
+            materialize_project_workspace(
+                repo_url=url,
+                workspace_path=escape,
+                base_dir=str(tmp_path / "root"),
+                allow_local=True,
+            )
+
+    def test_in_root_relative_workspace_path_is_accepted(self, tmp_path):
+        url = _make_fixture_repo(tmp_path / "origin")
+        repo_dir = materialize_project_workspace(
+            repo_url=url,
+            workspace_path="nested/proj-ok",
+            base_dir=str(tmp_path / "root"),
+            allow_local=True,
+        )
+        assert repo_dir is not None
+        assert (Path(repo_dir) / ".git").is_dir()
 
 
 def _make_async_engine():

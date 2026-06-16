@@ -11,8 +11,12 @@
     key_ref: "cosign/default"
     git_root: "{{ git_root | default(omit) }}"
   tasks:
+    # noqa jinja[spacing]: the cmd is Python source (run via script), not a
+    # Jinja template. The f-string `{{{{ project_id }}}}` is Python brace-
+    # escaping that emits a literal `{{ project_id }}`; ansible-lint mis-reads
+    # the doubled braces as Jinja spacing — its rewrite would corrupt the output.
     - name: Write gitsign config to OpenBao
-      ansible.builtin.script:
+      ansible.builtin.script: # noqa: jinja[spacing]
         cmd: |
           import sys
           sys.path.insert(0, "{{ lookup('env', 'PWD') }}/src")
@@ -35,8 +39,10 @@
         executable: python3
       register: gitsign_store
 
+    # noqa command-instead-of-module: ansible.builtin.git has no `git config`
+    # capability; these local gitsign settings require shell.
     - name: Configure git to use gitsign
-      ansible.builtin.shell:
+      ansible.builtin.shell: # noqa: command-instead-of-module
         cmd: |
           git config --local gpg.x509.program gitsign
           git config --local gpg.format x509
@@ -44,6 +50,7 @@
           git config --local tag.gpgsign true
         chdir: "{{ git_root }}"
       when: git_root is defined and git_root | length > 0
+      changed_when: true
 
     - name: Report gitsign configuration
       ansible.builtin.debug:

@@ -17,6 +17,23 @@ logger = logging.getLogger(__name__)
 
 _REGISTRY = CollectorRegistry(auto_describe=False)
 
+# CARDINALITY GUARD (anti-DoS).
+#
+# Metric label VALUES are frequently built from unbounded, caller-controlled
+# inputs (full file paths, project ids, raw error strings, URLs). Prometheus
+# creates a brand-new time series for every distinct label-value combination,
+# so an attacker (or a careless caller) feeding a flood of unique values would
+# grow memory 1:1 with the inputs -> unbounded growth / out-of-memory DoS.
+#
+# We bound cardinality at the exporter so EVERY caller is protected regardless
+# of where the value came from: for each (metric, label-key) pair we remember
+# at most MAX_LABEL_VALUES_PER_KEY distinct values. Once that budget is spent,
+# any further never-before-seen value is normalized to a single overflow bucket
+# (OVERFLOW_LABEL_VALUE). The count is preserved (no event is dropped) but the
+# number of distinct series stays bounded instead of exploding.
+MAX_LABEL_VALUES_PER_KEY = 50
+OVERFLOW_LABEL_VALUE = "__other__"
+
 
 class MetricsExporter:
     def __init__(self, registry: CollectorRegistry | None = None) -> None:
@@ -25,11 +42,41 @@ class MetricsExporter:
         self._gauges: dict[str, Gauge] = {}
         self._histograms: dict[str, Histogram] = {}
         self._started_at: float = time.monotonic()
+        # Tracks the set of label values already admitted for each
+        # (metric_name, label_key); used to enforce the cardinality budget.
+        self._seen_label_values: dict[tuple[str, str], set[str]] = {}
 
         self._uptime = Gauge(
             "gludd_uptime_seconds", "Process uptime in seconds",
             registry=self._registry,
         )
+
+    def _bound_labels(self, name: str, labels: dict[str, str]) -> dict[str, str]:
+        """Cap label cardinality per (metric, label-key).
+
+        Returns a new labels dict where any value that would exceed the
+        per-key budget is collapsed to ``OVERFLOW_LABEL_VALUE``. Values are
+        coerced to ``str`` so callers passing ints/paths/etc. still hit the
+        same bounded set. Already-seen values always pass through verbatim so
+        genuinely low-cardinality dimensions (method, status class) stay exact.
+        """
+        bounded: dict[str, str] = {}
+        for key, raw in labels.items():
+            value = str(raw)
+            budget_key = (name, key)
+            seen = self._seen_label_values.setdefault(budget_key, set())
+            if value in seen:
+                bounded[key] = value
+            elif len(seen) < MAX_LABEL_VALUES_PER_KEY:
+                seen.add(value)
+                bounded[key] = value
+            else:
+                # Budget exhausted: fold this novel value into the overflow
+                # bucket so it cannot create a new series. The overflow value
+                # itself counts as one of the admitted values.
+                seen.add(OVERFLOW_LABEL_VALUE)
+                bounded[key] = OVERFLOW_LABEL_VALUE
+        return bounded
 
     def counter_inc(self, name: str, labels: dict[str, str] | None = None, value: int = 1) -> None:
         counter = self._counters.get(name)
@@ -38,7 +85,7 @@ class MetricsExporter:
             counter = Counter(name, name, labelnames=label_keys, registry=self._registry)
             self._counters[name] = counter
         if labels:
-            counter.labels(**labels).inc(value)
+            counter.labels(**self._bound_labels(name, labels)).inc(value)
         else:
             counter.inc(value)
 
@@ -49,7 +96,7 @@ class MetricsExporter:
             gauge = Gauge(name, name, labelnames=label_keys, registry=self._registry)
             self._gauges[name] = gauge
         if labels:
-            gauge.labels(**labels).set(value)
+            gauge.labels(**self._bound_labels(name, labels)).set(value)
         else:
             gauge.set(value)
 
@@ -60,7 +107,7 @@ class MetricsExporter:
             hist = Histogram(name, name, labelnames=label_keys, registry=self._registry)
             self._histograms[name] = hist
         if labels:
-            hist.labels(**labels).observe(value)
+            hist.labels(**self._bound_labels(name, labels)).observe(value)
         else:
             hist.observe(value)
 

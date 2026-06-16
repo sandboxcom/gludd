@@ -1,0 +1,307 @@
+"""Per-repo git serialization (issue #63).
+
+gludd runs roles in PARALLEL, and many of those roles call git against the
+SAME working tree at the same time. Concurrent mutating git invocations race on
+``.git/index.lock`` (git aborts with "Another git process is running for this
+repository"), on ``HEAD``, and on the commit graph (lost / interleaved commits).
+There is no serialization in plain ``subprocess.run(["git", ...])``.
+
+``git_repo_lock(repo_path)`` is the serialization choke point. It implements
+TWO layers so the guarantee holds both inside one daemon process and across
+several processes sharing a repo on disk:
+
+(a) **In-process re-entrant lock registry** — keyed by
+    ``os.path.realpath(repo_path)`` so every thread / coroutine in one daemon
+    that touches a given repo serializes on the SAME lock object. The lock is
+    re-entrant (``threading.RLock``) so a nested git call on the same repo from
+    the same thread (e.g. ``commit()`` calling ``_run_git`` three times, or a
+    helper that itself runs git while already holding the lock) does NOT
+    self-deadlock.
+
+(b) **Cross-process file lock** — an advisory ``flock`` on
+    ``<repo>/.git/gludd-git.lock``. A second daemon / a stray external git
+    wrapper that goes through this lock will block until the holder releases.
+    The file lock has a configurable acquire timeout and breaks a STALE lock
+    (a crashed holder that never released) so a dead process can never deadlock
+    the repo forever.
+
+This module is the central serializer wired into
+``git_automation/repo.py``'s ``_run_git`` (the single choke point every
+GitAutomation git call flows through). Other modules that shell out to git
+directly against a shared repo — notably ``worktree/core.py``,
+``execution/engine.py``, ``pr_delivery.py``, and ``git_intel.py`` — own their
+own call sites and SHOULD adopt ``git_repo_lock`` around their mutating git
+invocations too; this module is deliberately import-light so they can.
+
+``_run_git`` is synchronous (plain ``subprocess.run``), so the primary API is a
+synchronous context manager. ``async_git_repo_lock`` is provided for async
+callers (it acquires the same locks off the event loop via ``run_in_executor``
+so it never blocks the loop while waiting on a contended repo).
+"""
+
+from __future__ import annotations
+
+import contextlib
+import errno
+import logging
+import os
+import threading
+import time
+from collections.abc import Iterator
+
+logger = logging.getLogger(__name__)
+
+# Name of the per-repo cross-process lock file, placed inside ``.git`` so it
+# travels with the repo and is naturally excluded from the work tree.
+_LOCK_FILENAME = "gludd-git.lock"
+
+# How long to wait to acquire the cross-process file lock before giving up.
+_DEFAULT_ACQUIRE_TIMEOUT = 60.0
+
+# If the lock file has not been touched in this long, treat the holder as dead
+# (crashed without releasing) and break the lock. Must be comfortably larger
+# than the longest legitimate git op (clone uses a 120s timeout in repo.py).
+_DEFAULT_STALE_AFTER = 300.0
+
+# Poll interval while waiting for a contended file lock.
+_POLL_INTERVAL = 0.05
+
+
+# --- in-process re-entrant lock registry ---------------------------------
+
+# Guards the registry dict itself; held only for the dict lookup, never while
+# a per-repo lock is held (so it can never become a contention bottleneck).
+_registry_guard = threading.Lock()
+_repo_locks: dict[str, threading.RLock] = {}
+
+# Re-entrancy depth for the CROSS-PROCESS file lock, per repo key. flock is
+# advisory per open-file-description, NOT re-entrant across separate ``os.open``
+# fds in the same process — a nested ``git_repo_lock`` opening a second fd would
+# block on itself. We are always holding the per-repo RLock (a single thread)
+# when we touch this, so a plain int keyed by repo is safe: depth 0 -> actually
+# flock; depth > 0 -> a nested re-entry that must NOT re-flock.
+_file_lock_depth: dict[str, int] = {}
+
+
+def _normalize(repo_path: str) -> str:
+    """Canonical key for a repo path.
+
+    ``os.path.realpath`` collapses symlinks and ``..`` so two different spellings
+    of the same repo (``./repo`` vs ``/abs/repo`` vs a symlinked path) map to one
+    lock object. Falls back to ``abspath`` if the path does not yet exist.
+    """
+    try:
+        return os.path.realpath(repo_path)
+    except OSError:
+        return os.path.abspath(repo_path)
+
+
+def _get_inprocess_lock(key: str) -> threading.RLock:
+    with _registry_guard:
+        lock = _repo_locks.get(key)
+        if lock is None:
+            lock = threading.RLock()
+            _repo_locks[key] = lock
+        return lock
+
+
+# --- cross-process file lock ---------------------------------------------
+
+# fcntl is POSIX-only. On platforms without it (Windows) we degrade to the
+# in-process lock alone rather than failing to import.
+try:
+    import fcntl
+
+    _HAVE_FCNTL = True
+except ImportError:  # pragma: no cover - non-POSIX fallback
+    _HAVE_FCNTL = False
+
+
+def _git_dir(repo_path: str) -> str | None:
+    """Return the ``.git`` directory for ``repo_path`` if one exists.
+
+    Only returns a directory we can place a lock file in. If there is no
+    ``.git`` directory (not yet initialized, or a bare/worktree gitfile we do
+    not want to special-case), returns ``None`` and the caller falls back to the
+    in-process lock alone — the common in-daemon race is still serialized.
+    """
+    git_dir = os.path.join(repo_path, ".git")
+    if os.path.isdir(git_dir):
+        return git_dir
+    return None
+
+
+def _break_if_stale(lock_path: str, stale_after: float) -> None:
+    """Remove the lock file if it looks abandoned by a crashed holder.
+
+    We use the file's mtime as a liveness signal: a live holder bumps it (via
+    ``os.utime``) on acquisition. If it has not been touched in ``stale_after``
+    seconds, the previous holder almost certainly died without releasing, so we
+    unlink the file to break the deadlock. Unlinking is best-effort and racy by
+    nature; flock on the freshly created descriptor is what actually arbitrates.
+    """
+    try:
+        mtime = os.path.getmtime(lock_path)
+    except OSError:
+        return
+    age = time.time() - mtime
+    if age > stale_after:
+        logger.warning(
+            "breaking stale git lock %s (age %.0fs > %.0fs); previous holder "
+            "presumed crashed",
+            lock_path,
+            age,
+            stale_after,
+        )
+        with contextlib.suppress(OSError):
+            os.unlink(lock_path)
+
+
+@contextlib.contextmanager
+def _file_lock(
+    git_dir: str,
+    key: str,
+    *,
+    timeout: float,
+    stale_after: float,
+) -> Iterator[None]:
+    """Hold an advisory flock on ``<git_dir>/gludd-git.lock``.
+
+    Blocks (polling, non-blocking flock) until the lock is free or ``timeout``
+    elapses. While waiting, if the existing lock file is older than
+    ``stale_after`` it is broken so a crashed holder cannot deadlock forever.
+    On timeout raises ``TimeoutError`` so a stuck repo surfaces as a clean
+    failure rather than an unbounded hang.
+
+    Re-entrant within the process: callers always hold the per-repo RLock when
+    they get here, so ``key``'s depth counter is single-threaded. A nested entry
+    (depth > 0) skips re-flocking — opening a second fd and flocking it would
+    otherwise deadlock against this process's own first fd.
+    """
+    if not _HAVE_FCNTL:  # pragma: no cover - non-POSIX fallback
+        yield
+        return
+
+    if _file_lock_depth.get(key, 0) > 0:
+        # Already held by this process (re-entrant nested acquire). Do not open
+        # a second fd / re-flock; just account the depth and pass through.
+        _file_lock_depth[key] += 1
+        try:
+            yield
+        finally:
+            _file_lock_depth[key] -= 1
+        return
+
+    lock_path = os.path.join(git_dir, _LOCK_FILENAME)
+    deadline = time.monotonic() + timeout
+    fd = os.open(lock_path, os.O_CREAT | os.O_RDWR, 0o644)
+    try:
+        while True:
+            try:
+                fcntl.flock(fd, fcntl.LOCK_EX | fcntl.LOCK_NB)
+                break
+            except OSError as exc:
+                if exc.errno not in (errno.EAGAIN, errno.EACCES, errno.EWOULDBLOCK):
+                    raise
+                if time.monotonic() >= deadline:
+                    raise TimeoutError(
+                        f"timed out after {timeout}s acquiring git lock {lock_path!r} "
+                        f"(another git process holds the repo)"
+                    ) from exc
+                _break_if_stale(lock_path, stale_after)
+                time.sleep(_POLL_INTERVAL)
+        # We hold the lock. Stamp the file so other waiters' staleness check
+        # sees a fresh holder, and mark this process as the holder (depth 1) so
+        # nested re-entries skip re-flocking.
+        with contextlib.suppress(OSError):
+            os.utime(lock_path, None)
+        _file_lock_depth[key] = 1
+        try:
+            yield
+        finally:
+            _file_lock_depth[key] = 0
+            with contextlib.suppress(OSError):
+                fcntl.flock(fd, fcntl.LOCK_UN)
+    finally:
+        with contextlib.suppress(OSError):
+            os.close(fd)
+
+
+# --- public API -----------------------------------------------------------
+
+
+@contextlib.contextmanager
+def git_repo_lock(
+    repo_path: str,
+    *,
+    timeout: float = _DEFAULT_ACQUIRE_TIMEOUT,
+    stale_after: float = _DEFAULT_STALE_AFTER,
+) -> Iterator[None]:
+    """Serialize mutating git operations against the repo at ``repo_path``.
+
+    Acquires, in order:
+      1. the in-process re-entrant lock for this repo (serializes threads /
+         coroutines in THIS process; re-entrant so nested git calls on the same
+         repo in one thread never self-deadlock), then
+      2. the cross-process flock on ``<repo>/.git/gludd-git.lock`` (serializes
+         across processes; bounded by ``timeout`` and stale-broken so a crashed
+         holder cannot deadlock the repo forever).
+
+    The in-process lock is taken FIRST so that, within one process, only one
+    thread at a time ever contends for the (more expensive, timeout-bearing)
+    file lock — and re-entrant acquisition by an already-holding thread skips
+    straight through both layers: the RLock re-enters cheaply, and ``_file_lock``
+    tracks a per-repo depth counter so a nested entry does NOT open a second fd
+    and re-flock (advisory flock is per open-file-description and would deadlock
+    a second fd against this process's own first fd). So a nested
+    ``git_repo_lock`` on the same repo in one thread never self-deadlocks.
+
+    Usage::
+
+        with git_repo_lock(repo_path):
+            subprocess.run(["git", "commit", ...], cwd=repo_path)
+
+    Raises ``TimeoutError`` if the cross-process lock cannot be acquired within
+    ``timeout`` seconds.
+    """
+    key = _normalize(repo_path)
+    inproc = _get_inprocess_lock(key)
+    inproc.acquire()
+    try:
+        git_dir = _git_dir(repo_path)
+        if git_dir is None:
+            # No .git directory to anchor a cross-process lock; the in-process
+            # lock alone still serializes the in-daemon race (the common case).
+            yield
+        else:
+            with _file_lock(git_dir, key, timeout=timeout, stale_after=stale_after):
+                yield
+    finally:
+        inproc.release()
+
+
+async def async_git_repo_lock(
+    repo_path: str,
+    *,
+    timeout: float = _DEFAULT_ACQUIRE_TIMEOUT,
+    stale_after: float = _DEFAULT_STALE_AFTER,
+) -> contextlib.AbstractContextManager[None]:
+    """Async-friendly acquire of :func:`git_repo_lock`.
+
+    Acquires the (potentially blocking, timeout-bearing) lock off the event loop
+    via ``run_in_executor`` so waiting on a contended repo never blocks the
+    loop, then returns an already-entered context manager. Use as::
+
+        cm = await async_git_repo_lock(repo_path)
+        with cm:
+            ...  # run git
+
+    For purely synchronous call sites (like repo.py's ``_run_git``) use
+    :func:`git_repo_lock` directly.
+    """
+    import asyncio
+
+    cm = git_repo_lock(repo_path, timeout=timeout, stale_after=stale_after)
+    loop = asyncio.get_running_loop()
+    await loop.run_in_executor(None, cm.__enter__)
+    return cm

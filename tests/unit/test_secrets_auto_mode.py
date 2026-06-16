@@ -74,7 +74,9 @@ class TestMigratedSecretReadBack:
 
         mgr = SecretsManager(client=fake_client, config=OpenBaoConfig(kv_mount="secret"))
 
-        env_var = "GLUDD_TEST_AUTO_KEY"
+        # S-1: alias must match the credential allowlist (*_API_KEY) so migration
+        # reads it from the environment; GLUDD_TEST_AUTO_KEY would be skipped.
+        env_var = "GLUDD_TEST_AUTO_API_KEY"
         os.environ[env_var] = "supersecret"  # test value
         try:
             profiles = [{"model_profile_id": "p1", "credential_alias": env_var}]

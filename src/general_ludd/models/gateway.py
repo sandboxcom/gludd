@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import threading
 from dataclasses import dataclass, field
 from typing import Any, Protocol
 
@@ -14,6 +15,7 @@ from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutEvent, TimeoutRetryPolicy
+from general_ludd.security.auth import is_safe_fetch_url
 
 logger = logging.getLogger(__name__)
 
@@ -135,6 +137,22 @@ class ModelGateway:
         self._response_cache = response_cache
         self._response_cache_ttl_seconds = response_cache_ttl_seconds
         self._health_tracker = health_tracker
+        # Per-cache-key single-flight locks: under concurrency, N identical
+        # cache misses would all call the provider (cache stampede). We serialize
+        # identical misses on a per-key lock so only the first does the provider
+        # call and the rest re-read the now-populated cache. _cache_key_locks is
+        # itself guarded by _cache_key_locks_guard.
+        self._cache_key_locks: dict[str, threading.Lock] = {}
+        self._cache_key_locks_guard = threading.Lock()
+
+    def _cache_key_lock(self, cache_key: str) -> threading.Lock:
+        """Return the process-local single-flight lock for a cache key."""
+        with self._cache_key_locks_guard:
+            lock = self._cache_key_locks.get(cache_key)
+            if lock is None:
+                lock = threading.Lock()
+                self._cache_key_locks[cache_key] = lock
+            return lock
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -176,6 +194,7 @@ class ModelGateway:
                 f"profile_budget={profile.run_budget_usd}"
             )
 
+        cache_key: str | None = None
         if self._response_cache is not None:
             cache_key = _make_cache_key(
                 profile_id, messages, model_name=profile.model_name, **kwargs
@@ -185,6 +204,37 @@ class ModelGateway:
                 logger.debug("Cache hit for profile=%s key=%s", profile_id, cache_key[:12])
                 return ModelResponse(**cached)
 
+        # Cache stampede single-flight: under concurrency N identical misses
+        # would otherwise all hit the provider. Serialize identical misses on a
+        # per-key lock; inside the lock we re-read the cache (double-checked
+        # locking) so only the first miss does the provider call and the rest
+        # serve the now-populated entry.
+        if cache_key is not None and self._response_cache is not None:
+            with self._cache_key_lock(cache_key):
+                cached = self._response_cache.get(cache_key)
+                if cached is not None:
+                    logger.debug(
+                        "Cache hit (single-flight) profile=%s key=%s",
+                        profile_id,
+                        cache_key[:12],
+                    )
+                    return ModelResponse(**cached)
+                return self._invoke_and_bill(
+                    profile, profile_id, messages, cache_key, **kwargs
+                )
+
+        return self._invoke_and_bill(
+            profile, profile_id, messages, None, **kwargs
+        )
+
+    def _invoke_and_bill(
+        self,
+        profile: ModelProfile,
+        profile_id: str,
+        messages: list[dict[str, str]],
+        cache_key: str | None,
+        **kwargs: Any,
+    ) -> ModelResponse:
         provider_name = profile.provider
         registry = self._registry
 
@@ -209,6 +259,22 @@ class ModelGateway:
         if profile.api_base_alias and self._secrets:
             base_url = self._secrets.resolve(profile.api_base_alias)
             if base_url:
+                # SSRF guard: a config/secrets-supplied base_url is fully
+                # untrusted. Validate the LITERAL host with the shared no-DNS
+                # helper BEFORE it reaches the provider client (which would make
+                # outbound requests). Fail CLOSED on loopback / private /
+                # link-local / cloud-metadata targets so a malicious or
+                # misconfigured alias can never point the gateway at an internal
+                # service or the instance metadata endpoint. No DNS resolution is
+                # performed (the helper is deliberately literal) so this can
+                # never block the call path.
+                if not is_safe_fetch_url(base_url):
+                    raise ValueError(
+                        f"Refusing model call for profile '{profile_id}': "
+                        f"configured base_url is not a permitted outbound "
+                        f"target (must be https to a non-loopback / "
+                        f"non-private / non-metadata host)."
+                    )
                 init_kwargs["base_url"] = base_url
         init_kwargs.update(kwargs)
 
@@ -230,6 +296,19 @@ class ModelGateway:
 
         content = getattr(raw_response, "content", str(raw_response))
         usage = getattr(raw_response, "usage_metadata", {}) or {}
+
+        # Empty-200 guard: some providers return HTTP 200 with empty content on
+        # a soft/transient failure. Bill+cache BOTH happened AFTER this point, so
+        # an empty 200 was being billed (record_spend) and (until the content
+        # guard at cache-set) could leak into spend metrics. Raise a RETRYABLE
+        # PROVIDER_ERROR BEFORE any record_spend so an empty 200 is never billed,
+        # never metered, and never cached — and is retried/failed-over like any
+        # other transient provider error. record_timeout_on_failure records it
+        # as PROVIDER_ERROR (5xx) on the health tracker.
+        if not str(content).strip():
+            empty_exc = self._empty_response_error(profile_id)
+            self.record_timeout_on_failure(profile_id, empty_exc)
+            raise empty_exc
 
         # Provider-controlled usage data: never trust it for billing.
         # - reject bool (isinstance(True, int) is True) so it counts as 0, not 1
@@ -278,13 +357,11 @@ class ModelGateway:
             raw_response=raw_response,
         )
 
-        # Do not cache an error-shaped "successful" response: some providers
-        # return a 200 with empty content on a soft failure. Caching it would
-        # serve the empty/error answer forever for identical calls.
-        if self._response_cache is not None and response.content.strip():
-            cache_key = _make_cache_key(
-                profile_id, messages, model_name=profile.model_name, **kwargs
-            )
+        # content is non-empty (the empty-200 guard above raised otherwise), so
+        # we never cache an error-shaped "successful" response here. cache_key is
+        # the same key the single-flight path locked on, so the entry the next
+        # waiter re-reads is exactly this one.
+        if self._response_cache is not None and cache_key is not None:
             self._response_cache.set(
                 cache_key,
                 {
@@ -297,6 +374,31 @@ class ModelGateway:
             )
 
         return response
+
+    @staticmethod
+    def _empty_response_error(profile_id: str) -> Exception:
+        """Build a RETRYABLE provider error for an empty-content 200 response.
+
+        An httpx.HTTPStatusError with status 503 is used so that (a)
+        TimeoutClassifier.classify() labels it PROVIDER_ERROR, and (b) the
+        tenacity retry predicate in call_model_with_retry treats it as
+        retryable (it is an httpx.HTTPStatusError) — so an empty 200 is retried
+        and ultimately failed-over, never billed.
+        """
+        import httpx
+
+        request = httpx.Request("POST", "https://empty-200.invalid/v1/chat")
+        response = httpx.Response(
+            503,
+            request=request,
+            text=f"empty 200 from provider for profile '{profile_id}'",
+        )
+        return httpx.HTTPStatusError(
+            f"empty-content 200 response from profile '{profile_id}' "
+            "(treated as a retryable provider error; not billed)",
+            request=request,
+            response=response,
+        )
 
     def call_model_with_retry(
         self,
@@ -335,14 +437,20 @@ class ModelGateway:
             base_backoff_seconds=base_backoff_seconds,
         )
 
-        # If primary is already unhealthy, skip straight to fallbacks.
+        # If primary is already unhealthy, skip straight to fallbacks. Each
+        # fallback attempt goes through _call_fallback so its circuit is honored
+        # and its success/failure is recorded on the health tracker.
         if tracker is not None and not tracker.is_healthy(profile_id):
             fallback_ids = list(profile.fallback_profiles)
-            for fb_id in fallback_ids:
-                if tracker.is_healthy(fb_id):
-                    return self.call_model(fb_id, messages, **kwargs)
+            result, last_fb_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+            if result is not None:
+                return result
+            if last_fb_exc is not None:
+                raise last_fb_exc from None
             if fallback_ids:
-                return self.call_model(fallback_ids[0], messages, **kwargs)
+                # All fallbacks failed is_healthy and none was attempted: probe
+                # the first as a last resort (records its own success/failure).
+                return self._call_fallback(fallback_ids[0], messages, **kwargs)
 
         _retryable_exc_types = (
             httpx.HTTPStatusError,
@@ -431,18 +539,64 @@ class ModelGateway:
             # Should not reach here (return or raise should happen above).
             return None  # type: ignore[return-value]
 
-        # Tenacity exhausted (failover_after attempts tried on primary) → walk fallbacks.
+        # Tenacity exhausted (failover_after attempts tried on primary) → walk
+        # fallbacks. _walk_fallbacks skips any fallback that fails is_healthy and
+        # records success/failure for the ones it attempts (Fix 3).
         fallback_ids = list(profile.fallback_profiles)
-        for fb_id in fallback_ids:
-            try:
-                return self.call_model(fb_id, messages, **kwargs)
-            except Exception:
-                continue
+        result, last_fb_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+        if result is not None:
+            return result
 
-        last = _last_exc[0]
+        last = last_fb_exc or _last_exc[0]
         if last is not None:
             raise last from None
         raise RuntimeError(f"call_model_with_retry: all attempts failed for profile '{profile_id}'")
+
+    def _call_fallback(
+        self,
+        fb_id: str,
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> ModelResponse:
+        """Call one fallback profile, recording its success/failure on the
+        health tracker.
+
+        The bare fallback-exhaustion loop used to call call_model(fb_id) with no
+        is_healthy gate and never recorded the fallback's success or failure, so
+        the breaker never tracked fallback health (Fix 3). call_model already
+        records failures via record_timeout_on_failure on exception; here we add
+        the success path so a healthy fallback resets its consecutive counter.
+        """
+        result = self.call_model(fb_id, messages, **kwargs)
+        if self._health_tracker is not None:
+            self._health_tracker.record_success(fb_id)
+        return result
+
+    def _walk_fallbacks(
+        self,
+        fallback_ids: list[str],
+        messages: list[dict[str, str]],
+        **kwargs: Any,
+    ) -> tuple[ModelResponse | None, BaseException | None]:
+        """Try fallbacks in order, skipping circuit-open ones; return the first
+        success (or the last exception if all attempted ones failed).
+
+        Returns (response, None) on success, or (None, last_exc) if every
+        attempted fallback raised. A fallback that fails is_healthy is skipped
+        (circuit honored) and does NOT count as an attempt.
+        """
+        tracker = self._health_tracker
+        last_exc: BaseException | None = None
+        for fb_id in fallback_ids:
+            if tracker is not None and not tracker.is_healthy(fb_id):
+                # Circuit open for this fallback: skip without billing/calling.
+                continue
+            try:
+                return self._call_fallback(fb_id, messages, **kwargs), None
+            except Exception as exc:  # try the next fallback
+                last_exc = exc
+                continue
+        return None, last_exc
 
     def record_timeout_on_failure(
         self,

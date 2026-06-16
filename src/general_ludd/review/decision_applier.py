@@ -56,7 +56,12 @@ async def apply_decision(
         logger.warning("Unknown decision type: %s", decision.decision)
         return
 
-    await todo_repo.transition(decision.matched_todo_id, target_status, todo.version)
+    await todo_repo.transition(
+        decision.matched_todo_id,
+        target_status,
+        todo.version,
+        project_id=todo.project_id,
+    )
 
     if decision.child_todos:
         for child_data in decision.child_todos:

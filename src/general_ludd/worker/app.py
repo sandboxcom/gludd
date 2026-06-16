@@ -122,27 +122,65 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
 
     # W5.6 (AUTH blocker): the worker runs arbitrary registered playbooks for any
     # caller who can reach the port. Enforce the same pre-shared-key the daemon
-    # uses (GLUDD_PSK). When the env var is unset, auth is disabled (matching the
-    # daemon's behavior) so local/dev callers and existing tests still work.
+    # uses (GLUDD_PSK), via the SHARED security/auth helpers so the worker and
+    # daemon cannot drift apart.
+    #
+    #   * verify_psk    -> constant-time compare (hmac.compare_digest), no timing
+    #                      side channel (the old non-constant compare leaked the
+    #                      key one byte at a time).
+    #   * GLUDD_REQUIRE_AUTH -> opt-in fail-closed: when set but no PSK is
+    #                      configured, non-public paths refuse with 503 instead
+    #                      of silently serving an unauthenticated request.
+    #
+    # All of this is pure string/env work — NO sockets, NO DNS, NO blocking I/O —
+    # so create_app stays import-safe and cannot hang a test collection.
+    from general_ludd.security.auth import require_auth_env, verify_psk
+
     _psk = os.environ.get("GLUDD_PSK", "")
     application.state._psk = _psk
+    _require_auth = require_auth_env()
+    application.state._require_auth = _require_auth
+    _no_auth = not _psk
+    application.state._no_auth = _no_auth
     _public_paths = {"/healthz", "/docs", "/openapi.json", "/redoc"}
+
+    if _no_auth and not _require_auth:
+        # LOUD startup warning — an unprotected worker runs arbitrary playbooks
+        # for any caller that can reach the port.
+        logger.warning(
+            "SECURITY: GLUDD_PSK is not set — the worker is running with auth "
+            "DISABLED. Any caller that can reach the port can execute registered "
+            "playbooks. Set GLUDD_PSK to enable auth, or GLUDD_REQUIRE_AUTH=1 to "
+            "fail closed when no PSK is set."
+        )
+    elif _no_auth and _require_auth:
+        logger.warning(
+            "SECURITY: GLUDD_REQUIRE_AUTH is set but GLUDD_PSK is not — the "
+            "worker will REFUSE (503) non-public paths until a PSK is configured."
+        )
+
+    def _is_public(path: str) -> bool:
+        return path in _public_paths or path.startswith("/docs")
 
     @application.middleware("http")
     async def _psk_auth_middleware(request: Any, call_next: Any) -> Any:
-        if _psk:
-            path = request.url.path
-            if path not in _public_paths and not path.startswith("/docs"):
-                auth = request.headers.get("Authorization", "")
-                token = (
-                    auth.removeprefix("Bearer ").strip()
-                    if auth.startswith("Bearer ")
-                    else ""
+        path = request.url.path
+        if _no_auth and _require_auth and not _is_public(path):
+            return JSONResponse(
+                status_code=503,
+                content={"error": "auth_required", "reason": "no PSK configured"},
+            )
+        if _psk and not _is_public(path):
+            auth = request.headers.get("Authorization", "")
+            token = (
+                auth.removeprefix("Bearer ").strip()
+                if auth.startswith("Bearer ")
+                else ""
+            )
+            if not verify_psk(token, _psk):
+                return JSONResponse(
+                    status_code=401, content={"error": "unauthorized"}
                 )
-                if not token or token != _psk:
-                    return JSONResponse(
-                        status_code=401, content={"error": "unauthorized"}
-                    )
         return await call_next(request)
 
     @application.get("/healthz")

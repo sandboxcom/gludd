@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import ipaddress
+import os
+import re
 from typing import Any, ClassVar
 
 import httpx
@@ -9,6 +12,125 @@ import httpx
 from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb
 
 DISPATCH_MODES = ["active", "passive_external", "worktree_monitor"]
+
+# --- Daemon/gunicorn spawn hardening -----------------------------------------
+#
+# Both spawn sites (this module's _start_daemon and tui/runner.py's
+# start_daemon) build a gunicorn argv from config / UI state. Those values
+# are untrusted, so a launcher must validate them and fail closed before any
+# subprocess is created. The argv is always built in list-form and Popen is
+# always invoked without a shell.
+
+_VALID_LOG_LEVELS = frozenset(
+    {"debug", "info", "warning", "warn", "error", "critical"}
+)
+# A permissive but injection-proof hostname: letters/digits/dot/hyphen, with
+# IPv4/IPv6 handled separately. No colon (would smuggle a port), no
+# whitespace, no shell metacharacters.
+_HOSTNAME_RE = re.compile(r"^[A-Za-z0-9](?:[A-Za-z0-9.\-]{0,253}[A-Za-z0-9])?$")
+
+
+def _validate_int(value: Any, name: str, *, lo: int, hi: int) -> int:
+    # bool is a subclass of int — reject it so True/False can't pose as a
+    # port or worker count.
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise ValueError(f"{name} must be an int, got {value!r}")
+    if not (lo <= value <= hi):
+        raise ValueError(f"{name} {value} out of range [{lo}, {hi}]")
+    return value
+
+
+def _validate_host(host: Any) -> str:
+    if not isinstance(host, str) or not host:
+        raise ValueError(f"host must be a non-empty string, got {host!r}")
+    # Accept IPv4 / IPv6 literals.
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    if not _HOSTNAME_RE.match(host):
+        raise ValueError(f"host {host!r} is not a valid hostname or IP")
+    return host
+
+
+def _validate_log_level(log_level: Any) -> str:
+    if not isinstance(log_level, str) or log_level.lower() not in _VALID_LOG_LEVELS:
+        raise ValueError(f"log-level {log_level!r} is not a recognized level")
+    return log_level.lower()
+
+
+def _validate_paths(paths: Any, confine_root: str | None) -> list[str]:
+    if not isinstance(paths, (list, tuple)):
+        raise ValueError(f"paths must be a list, got {paths!r}")
+    resolved: list[str] = []
+    root_real = os.path.realpath(confine_root) if confine_root else None
+    for p in paths:
+        if not isinstance(p, str) or not p:
+            raise ValueError(f"path must be a non-empty string, got {p!r}")
+        if "\x00" in p:
+            raise ValueError(f"path {p!r} contains a null byte")
+        real = os.path.realpath(p)
+        if root_real is not None and real != root_real and not real.startswith(
+            root_real + os.sep
+        ):
+            raise ValueError(f"path {p!r} escapes confinement root {confine_root!r}")
+        resolved.append(real)
+    return resolved
+
+
+def validate_gunicorn_spawn_args(
+    *,
+    host: Any,
+    port: Any,
+    workers: Any = 1,
+    log_level: Any = None,
+    paths: Any = None,
+    confine_root: str | None = None,
+) -> None:
+    """Validate daemon/gunicorn spawn inputs; raise ValueError on bad values.
+
+    A daemon launcher must fail closed: an out-of-range port, an injection-y
+    host, a non-int worker count, an unknown log-level, or a path outside the
+    confinement root all raise before any subprocess is spawned.
+    """
+    _validate_host(host)
+    _validate_int(port, "port", lo=1, hi=65535)
+    _validate_int(workers, "workers", lo=1, hi=4096)
+    if log_level is not None:
+        _validate_log_level(log_level)
+    if paths is not None:
+        _validate_paths(paths, confine_root)
+
+
+def build_gunicorn_cmd(
+    *,
+    host: Any,
+    port: Any,
+    workers: Any = 1,
+    log_level: Any = None,
+) -> list[str]:
+    """Validate inputs, then build the gunicorn argv in list-form.
+
+    The returned argv is safe to pass to subprocess.Popen without a shell.
+    Raises ValueError on any invalid input (fail closed).
+    """
+    validate_gunicorn_spawn_args(
+        host=host, port=port, workers=workers, log_level=log_level
+    )
+    cmd = [
+        "gunicorn",
+        "general_ludd.daemon:create_daemon_app()",
+        "--worker-class",
+        "uvicorn_worker.UvicornWorker",
+        "--workers",
+        str(int(workers)),
+        "--bind",
+        f"{host}:{int(port)}",
+    ]
+    if log_level is not None:
+        cmd += ["--log-level", str(log_level).lower()]
+    return cmd
 
 _TOGGLE_VIEWS: dict[str, tuple[str, str]] = {
     "u": ("mcp", "MCP Servers — [s]earch  [u] exit"),
@@ -1153,13 +1275,20 @@ class TUIKeyHandler:
 
         from general_ludd.hardware.probe import probe_hardware
         hw = probe_hardware()
-        cmd = [
-            "gunicorn",
-            "general_ludd.daemon:create_daemon_app()",
-            "--worker-class", "uvicorn_worker.UvicornWorker",
-            "--workers", str(hw.gunicorn_workers),
-            "--bind", "0.0.0.0:8000",
-        ]
+        # Host/port/log-level may come from UI state / config — validate and
+        # fail closed before building any argv or spawning a process.
+        host = state.get("daemon_host", "0.0.0.0")
+        port = state.get("daemon_port", 8000)
+        log_level = state.get("daemon_log_level")
+        workers = state.get("daemon_workers", hw.gunicorn_workers)
+        try:
+            cmd = build_gunicorn_cmd(
+                host=host, port=port, workers=workers, log_level=log_level
+            )
+        except ValueError as exc:
+            state["daemon_running"] = False
+            state["status_msg"] = f"Start failed: invalid spawn args: {exc}"
+            return
         try:
             proc = subprocess.Popen(
                 cmd,

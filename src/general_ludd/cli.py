@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import os
+import re
 import signal
 import sys
 import time
@@ -684,9 +685,17 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     install_project_log_filter()
 
-    config_dir = getattr(args, "config_dir", None)
-    templates_dir = getattr(args, "templates_dir", None)
-    playbooks_dir = getattr(args, "playbooks_dir", None)
+    # Path args are optional; treat anything that isn't a non-empty string as
+    # absent. A real argparse Namespace yields None when unset, but defending
+    # against non-string attrs keeps _build_daemon_env's path validation from
+    # mistaking an unset/non-str value for an injection attempt.
+    def _opt_path(name: str) -> str | None:
+        value = getattr(args, name, None)
+        return value if isinstance(value, str) and value else None
+
+    config_dir = _opt_path("config_dir")
+    templates_dir = _opt_path("templates_dir")
+    playbooks_dir = _opt_path("playbooks_dir")
 
     bind_host = args.host
     psk = ""
@@ -2567,6 +2576,106 @@ def _stop_daemon_via_pid_file(pid_file: str) -> bool:
     return True
 
 
+# --------------------------------------------------------------------------- #
+# Daemon-spawn input hardening
+#
+# _cmd_daemon spawns the daemon via subprocess.Popen(cmd, start_new_session=True,
+# close_fds=True). Even though Popen is given a *list* argv (no shell), the host
+# and port flow into the "--bind HOST:PORT" token and the log-level / path args
+# flow into the child's environment. None of those are trusted (they come from
+# CLI args), so each is validated against a strict whitelist BEFORE it can reach
+# the spawned process. A bad value fails closed with ValueError rather than
+# smuggling shell metacharacters, NUL bytes, extra argv flags, or out-of-range
+# values into the daemon.
+# --------------------------------------------------------------------------- #
+
+_LOG_LEVEL_ALLOWLIST = frozenset({"debug", "info", "warning", "error"})
+
+# A hostname label per RFC 952/1123: alphanumerics and hyphens, not starting or
+# ending with a hyphen, 1-63 chars; labels joined by dots. We also accept bare
+# IPv4 / IPv6 literals (validated via ipaddress below).
+_HOSTNAME_LABEL_RE = re.compile(r"^(?!-)[A-Za-z0-9-]{1,63}(?<!-)$")
+
+
+def _validate_daemon_host(host: str) -> str:
+    """Return ``host`` if it is a safe hostname / IP literal, else raise.
+
+    Rejects anything that is not a plain hostname or IP: shell metacharacters,
+    whitespace, embedded argv flags, NUL bytes, etc. cannot pass.
+    """
+    import ipaddress
+
+    if not isinstance(host, str) or not host:
+        raise ValueError("daemon host must be a non-empty string")
+    if len(host) > 255:
+        raise ValueError("daemon host is too long")
+    # IPv4 / IPv6 literal?
+    try:
+        ipaddress.ip_address(host)
+        return host
+    except ValueError:
+        pass
+    # Otherwise must be a dotted hostname of valid labels. This forbids spaces,
+    # ';', '&', '|', '$', '`', '(', ')', newlines, leading '-' (argv flag), etc.
+    labels = host.split(".")
+    if all(_HOSTNAME_LABEL_RE.match(label) for label in labels):
+        return host
+    raise ValueError(f"invalid daemon host: {host!r}")
+
+
+def _validate_daemon_port(port: int) -> int:
+    """Return ``port`` as an int in the TCP range 1-65535, else raise.
+
+    A bool, a non-numeric string, or an out-of-range value fails closed.
+    """
+    # bool is an int subclass; reject it explicitly so True/False can't slip in.
+    if isinstance(port, bool):
+        raise ValueError(f"invalid daemon port: {port!r}")
+    try:
+        port_int = int(port)
+    except (TypeError, ValueError):
+        raise ValueError(f"invalid daemon port: {port!r}") from None
+    # int("80a0") already raises; but int(8000.9) would truncate, so require the
+    # original to be an int when it isn't a clean decimal string.
+    if isinstance(port, str) and not port.isdigit():
+        raise ValueError(f"invalid daemon port: {port!r}")
+    if not (1 <= port_int <= 65535):
+        raise ValueError(f"daemon port out of range (1-65535): {port_int}")
+    return port_int
+
+
+def _validate_daemon_log_level(log_level: str) -> str:
+    """Return the normalized (lowercase) log level if allowlisted, else raise."""
+    if not isinstance(log_level, str):
+        raise ValueError(f"invalid daemon log-level: {log_level!r}")
+    normalized = log_level.lower()
+    if normalized not in _LOG_LEVEL_ALLOWLIST:
+        raise ValueError(
+            f"invalid daemon log-level: {log_level!r} "
+            f"(allowed: {', '.join(sorted(_LOG_LEVEL_ALLOWLIST))})"
+        )
+    return normalized
+
+
+def _validate_daemon_path(value: str, *, name: str) -> str:
+    """Return ``value`` if it is a safe path arg, else raise.
+
+    The path is passed to the child via an environment variable, so it must not
+    contain NUL bytes, newlines/carriage returns (which could forge additional
+    env entries), or shell-command-substitution metacharacters. The path is not
+    required to exist, but it must be a single confined token.
+    """
+    if not isinstance(value, str):
+        raise ValueError(f"invalid {name} path: {value!r}")
+    if "\x00" in value:
+        raise ValueError(f"{name} path contains a NUL byte")
+    if any(ch in value for ch in ("\n", "\r")):
+        raise ValueError(f"{name} path contains a newline")
+    if any(ch in value for ch in (";", "`", "$", "|", "&")):
+        raise ValueError(f"{name} path contains a forbidden metacharacter: {value!r}")
+    return value
+
+
 def _build_daemon_env(
     config_dir: str | None = None,
     templates_dir: str | None = None,
@@ -2577,15 +2686,16 @@ def _build_daemon_env(
 ) -> dict[str, str]:
     env: dict[str, str] = {}
     if config_dir:
-        env["GLUDD_CONFIG_DIR"] = config_dir
+        env["GLUDD_CONFIG_DIR"] = _validate_daemon_path(config_dir, name="config-dir")
     if templates_dir:
-        env["GLUDD_TEMPLATES_DIR"] = templates_dir
+        env["GLUDD_TEMPLATES_DIR"] = _validate_daemon_path(templates_dir, name="templates-dir")
     if playbooks_dir:
-        env["GLUDD_PLAYBOOKS_DIR"] = playbooks_dir
+        env["GLUDD_PLAYBOOKS_DIR"] = _validate_daemon_path(playbooks_dir, name="playbooks-dir")
     if tick_interval != 1.0:
         env["GLUDD_TICK_INTERVAL"] = str(tick_interval)
-    if log_level != "info":
-        env["GLUDD_LOG_LEVEL"] = log_level
+    normalized_level = _validate_daemon_log_level(log_level)
+    if normalized_level != "info":
+        env["GLUDD_LOG_LEVEL"] = normalized_level
     env["GLUDD_PSK"] = psk
     return env
 
@@ -2616,8 +2726,15 @@ def _build_daemon_start_cmd(
     port: int = 8000,
     workers: int | None = None,
 ) -> list[str]:
+    # Harden every CLI-derived token before it can reach the spawned process.
+    # host/port feed the "--bind HOST:PORT" argv token; validate them so a
+    # malicious --host/--port cannot inject shell metacharacters or extra argv
+    # flags (Popen gets a list, but a value like "1.2.3.4 --bind 0.0.0.0:80"
+    # would still split into rogue tokens via the bind string otherwise).
+    safe_host = _validate_daemon_host(host)
+    safe_port = _validate_daemon_port(port)
     workers = _clamp_workers_for_sqlite(workers)
-    return [
+    argv: list[str] = [
         "gunicorn",
         "general_ludd.daemon:create_daemon_app()",
         "--worker-class",
@@ -2625,8 +2742,9 @@ def _build_daemon_start_cmd(
         "--workers",
         str(workers),
         "--bind",
-        f"{host}:{port}",
+        f"{safe_host}:{safe_port}",
     ]
+    return argv
 
 
 def _cmd_tui(args: argparse.Namespace) -> None:

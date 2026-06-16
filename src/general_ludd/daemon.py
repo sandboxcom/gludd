@@ -284,6 +284,49 @@ async def _restore_persisted_projects(project_manager: Any, session_factory: Any
         logger.warning("Failed to restore persisted projects: %s", exc)
 
 
+async def _restore_persisted_spend(
+    spend_limiter: Any,
+    session_factory: Any,
+    *,
+    window_seconds: float,
+) -> None:
+    """#49 (#2): rehydrate the rolling spend window from the DB on startup.
+
+    Without this, a daemon restart resets the in-memory window to zero — the
+    spend cap could be evaded simply by restarting.  Records persisted by
+    SpendRepository within the current rolling window are loaded back into the
+    limiter via ``restore()``.
+
+    The daemon limiter uses a WALL-CLOCK clock (``time.time``) so persisted
+    timestamps remain comparable across process restarts (a monotonic clock
+    resets its origin each process and could not be persisted meaningfully).
+
+    Best-effort: a failure here must not abort startup, but it is logged loudly
+    because a silent failure would re-open the restart-bypass.
+    """
+    if spend_limiter is None or session_factory is None:
+        return
+    try:
+        import time as _time
+
+        from general_ludd.db.repository import SpendRepository
+
+        since = _time.time() - float(window_seconds)
+        async with session_factory() as session:
+            repo = SpendRepository(session)
+            rows = await repo.list_since(since)
+        records = [(float(r.ts), float(r.cost_usd)) for r in rows]
+        spend_limiter.restore(records)
+        logger.info(
+            "SpendLimiter: restored %d persisted spend record(s) from DB "
+            "(window_spend=%.6f USD)",
+            len(records),
+            spend_limiter.window_spend(),
+        )
+    except Exception as exc:  # pragma: no cover - defensive startup guard
+        logger.warning("Failed to restore persisted spend: %s", exc)
+
+
 def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
     workspaces: dict[str, Any] = {}
     if project_manager is not None:
@@ -588,14 +631,26 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             spend_window_usd = float(budget_data.get("spend_window_usd", 0.0))
             spend_window_seconds = float(budget_data.get("spend_window_seconds", 3600.0))
             if spend_window_usd > 0.0:
+                import time as _time
+
+                # Wall-clock (time.time), NOT monotonic: persisted spend
+                # timestamps must survive a process restart so the rolling
+                # window can be rehydrated from the DB (#49 #2).
                 spend_limiter = SpendLimiter(
                     limit_usd=spend_window_usd,
                     window_seconds=spend_window_seconds,
+                    clock=_time.time,
                 )
                 logger.info(
                     "SpendLimiter configured: limit=%.4f USD / %.0f s window",
                     spend_window_usd,
                     spend_window_seconds,
+                )
+                # Rehydrate accumulated spend so a restart can't reset the cap.
+                await _restore_persisted_spend(
+                    spend_limiter,
+                    session_factory,
+                    window_seconds=spend_window_seconds,
                 )
         app.state._spend_limiter = spend_limiter
 
@@ -834,7 +889,16 @@ def create_daemon_app(
         "/docs", "/openapi.json", "/redoc",
     }
 
-    def _is_public(path: str) -> bool:
+    # AUTH-1: public access is (method, path)-aware. A path on the public list
+    # is only public for SAFE, read-only methods (GET/HEAD/OPTIONS). The same
+    # path under a mutating method (POST/PUT/PATCH/DELETE) is NOT public — e.g.
+    # `GET /api/todos` lists todos without auth, but `POST /api/todos` CREATES a
+    # todo and must go through the auth gate like any other write.
+    _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
+
+    def _is_public(method: str, path: str) -> bool:
+        if method.upper() not in _SAFE_METHODS:
+            return False
         return path in _PUBLIC_PATHS or path.startswith("/docs")
 
     @app.middleware("http")
@@ -845,7 +909,8 @@ def create_daemon_app(
         metrics.counter_inc("gludd_http_requests_total", {"method": request.method})
         start = time.monotonic()
         path = request.url.path
-        if _no_auth and _require_auth and not _is_public(path):
+        method = request.method
+        if _no_auth and _require_auth and not _is_public(method, path):
             # A-3: fail-closed — no PSK configured but auth is required.
             from fastapi.responses import JSONResponse
 
@@ -860,9 +925,9 @@ def create_daemon_app(
                 "Auth check: psk_configured=%s path=%s public=%s",
                 True,
                 path,
-                _is_public(path),
+                _is_public(method, path),
             )
-            if not _is_public(path):
+            if not _is_public(method, path):
                 auth = request.headers.get("Authorization", "")
                 token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
                 # A-1: constant-time comparison to prevent timing attacks.

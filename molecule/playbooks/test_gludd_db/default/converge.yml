@@ -8,6 +8,10 @@
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8776', true) }}"
     daemon_url: "http://127.0.0.1:{{ mock_port }}"
     todo_id: "TODO-001"
+    # Capability identity for the per-role default-DENY db policy: this probe
+    # exercises todo_get + todo_update_status + resource_preference, so it runs
+    # as the molecule_db_probe role (granted exactly those ops in capability_policy.py).
+    capability_role: "molecule_db_probe"
 
   tasks:
     - name: Fetch a todo (GET /api/todos/<id>)
@@ -15,6 +19,7 @@
         op: todo_get
         todo_id: "{{ todo_id }}"
         daemon_url: "{{ daemon_url }}"
+        role: "{{ capability_role }}"
       register: get_result
 
     - name: Update todo status (PATCH /api/todos/<id>)
@@ -23,6 +28,7 @@
         todo_id: "{{ todo_id }}"
         status: "in_progress"
         daemon_url: "{{ daemon_url }}"
+        role: "{{ capability_role }}"
       register: update_result
 
     - name: Read resource preference (GET /api/resource-preferences)
@@ -30,6 +36,7 @@
         op: resource_preference
         resource_type: "model"
         daemon_url: "{{ daemon_url }}"
+        role: "{{ capability_role }}"
       register: pref_result
 
     - name: Persist results for verify

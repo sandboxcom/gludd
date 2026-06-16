@@ -81,6 +81,7 @@
     description: "{{ _sc_narrative }}"
     work_type: "code"
     queue: "core"
+    role: "{{ capability_role }}"
   register: _sc_todo_result
   no_log: "{{ psk | length > 0 }}"
   when:

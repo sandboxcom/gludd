@@ -1,0 +1,31 @@
+# ansible-lint configuration for general_ludd (#36 — REAL yaml/ansible linting).
+#
+# `make yaml-lint` runs `ansible-lint` (fail-on-error, no `|| true`) over
+# playbooks/ and the agent collection's roles/. The DEFAULT production profile
+# emits ~1165 "fatal" violations, but ~all of them come from two purely
+# STYLISTIC rules that conflict with this codebase's deliberate, consistent
+# conventions — NOT from real bugs. We disable exactly those two rules (each
+# justified below) and keep every CORRECTNESS rule enabled, so the gate still
+# catches genuine problems: syntax errors, deprecated/wrong modules,
+# command-instead-of-module, missing changed_when/failed_when on shell/command,
+# risky file perms, jinja errors, truthiness, octal perms, etc.
+
+profile: production
+
+skip_list:
+  # var-naming[no-role-prefix]: ansible-lint's production profile demands every
+  # role var/register/set_fact be prefixed with the role name (e.g.
+  # accounting_report_daemon_url). This repo intentionally uses short, shared
+  # var names (daemon_url, psk, artifact_dir, repo_path) that are passed in
+  # uniformly across ALL ~55 roles by the dispatcher, plus underscore-prefixed
+  # private registers (_ar_result, _ci_health). Renaming would break the
+  # role-invocation contract the Python dispatcher relies on. This is a naming
+  # convention, not a correctness rule.
+  - var-naming[no-role-prefix]
+
+  # yaml[line-length]: 160-char line cap. These roles embed long Jinja
+  # expressions and prompt/template strings that are far more readable on one
+  # line than artificially wrapped. Length is style, not correctness — the
+  # Python side already lints real code. Wrapping every long Jinja line risks
+  # introducing whitespace/semantics bugs for zero functional gain.
+  - yaml[line-length]

@@ -34,6 +34,27 @@ def _get_session_factory(app: FastAPI) -> Any:
     return getattr(app.state, "_session_factory", None)
 
 
+def _active_project_ids(app: FastAPI) -> set[str] | None:
+    """Return the set of active project IDs, or None when no manager/projects.
+
+    None signals "unconstrained" — when no project manager is wired or it holds
+    no active projects, callers may pass any project_id (or none). When at least
+    one active project exists, a non-null project_id MUST match one of them.
+    """
+    manager = getattr(app.state, "_project_manager", None)
+    if manager is None:
+        return None
+    try:
+        active = manager.list_active()
+    except Exception:
+        return None
+    ids = {getattr(p, "project_id", None) for p in active}
+    ids.discard(None)
+    if not ids:
+        return None
+    return ids  # type: ignore[return-value]
+
+
 def _todo_to_dict(todo: Any) -> dict[str, Any]:
     return {
         "todo_id": todo.todo_id,
@@ -61,6 +82,19 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/api/todos", status_code=201)
     async def api_add_todo(req: AddTodoRequest) -> dict[str, Any]:
+        # AUTH-2: a non-null project_id must reference an ACTIVE project. When no
+        # active projects are configured the field is unconstrained (back-compat
+        # with the single-project / no-project-manager deployments and tests).
+        if req.project_id is not None:
+            active_ids = _active_project_ids(app)
+            if active_ids is not None and req.project_id not in active_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"Unknown project_id {req.project_id!r}: not an active "
+                        f"project"
+                    ),
+                )
         factory = _get_session_factory(app)
         todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
         todo: dict[str, Any] = {

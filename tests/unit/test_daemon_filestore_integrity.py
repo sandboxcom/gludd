@@ -93,8 +93,12 @@ class TestRealDaemonEndpoints:
 
     @patch("general_ludd.integrity.scanner.FileIntegrityScanner.scan")
     def test_integrity_scan_with_paths(self, mock_scan, client):
+        import tempfile
+
         mock_scan.return_value = {"scanned": 5, "changes": []}
-        resp = client.post("/admin/integrity/scan", json={"paths": ["/tmp"]})
+        # Use the real system temp root (an allowed scan root); literal "/tmp" is
+        # not the temp dir on macOS and is correctly refused by path confinement.
+        resp = client.post("/admin/integrity/scan", json={"paths": [tempfile.gettempdir()]})
         assert resp.status_code == 200
         data = resp.json()
         assert "scanned" in data

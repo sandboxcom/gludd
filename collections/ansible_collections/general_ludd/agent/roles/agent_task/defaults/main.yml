@@ -33,5 +33,9 @@ commit_prefix: "auto"
 daemon_url: "http://localhost:8000"
 psk: ""   # no_log in tasks; prefer GLUDD_PSK env var
 
+# Capability identity for the per-role default-DENY db policy (capability_policy.py).
+# Grants ONLY this role's db ops (todo_get, todo_update_status). Override to widen.
+capability_role: "agent_task"
+
 # Destructive ops guard — must NOT push anywhere by default
 enable_git_push: false

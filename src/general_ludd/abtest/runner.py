@@ -61,6 +61,66 @@ def _bounded_tail(text: str) -> str:
     return data.decode("utf-8", errors="replace")
 
 
+def _validate_inputs(
+    root_str: str, workload: Workload, mem_limit_mb: int, timeout: float
+) -> str:
+    """Validate caller/config-supplied values BEFORE any child is spawned and
+    return the JSON-serialized workload to ship as a single argv element.
+
+    This is the parent-side trust boundary. Every value here may originate from
+    a caller or config and is about to become an element of the child's argv.
+    We fail closed (raise ``ValueError``) on anything that could corrupt argv,
+    smuggle a Python object across the boundary, or weaken the child's limits:
+
+      * ``root_str`` must be a non-empty, non-whitespace string with NO NUL
+        byte. A NUL byte would either truncate the path at the OS layer or make
+        ``Popen`` raise; an empty/whitespace path cannot name a real ``src``
+        dir. We do NOT shell out (argv is always a list passed to ``Popen``), so
+        classic shell-metacharacter injection is structurally impossible — but a
+        NUL is still rejected defensively. The child path lands ONLY on the
+        child's ``sys.path`` (never the parent's), and a traversal-y root can at
+        worst point the child at code the caller already controls, so we do not
+        forbid ``..``; we DO forbid the bytes that corrupt argv itself.
+      * ``workload`` must be a ``dict`` that round-trips through ``json.dumps``
+        (no callables/objects/pickles), and its serialized form must contain no
+        NUL byte. We never ship a Python callable across the boundary — that is
+        the whole reason workloads are JSON specs (see ``workloads.py``).
+      * ``mem_limit_mb`` (and thus the derived CPU budget) must be a
+        non-negative ``int`` so a negative limit can't widen the child's cap.
+      * ``timeout`` must be a positive, finite number so the wall-clock deadline
+        is real.
+
+    Returns the validated ``json.dumps(workload)`` string so the caller builds
+    argv from exactly the bytes we checked.
+    """
+    if not isinstance(root_str, str) or not root_str.strip():
+        raise ValueError("candidate_root must be a non-empty path string")
+    if "\x00" in root_str:
+        raise ValueError("candidate_root must not contain a NUL byte")
+
+    if not isinstance(workload, dict):
+        raise ValueError("workload must be a dict (JSON-serializable spec)")
+    try:
+        # allow_nan=False keeps the shipped JSON strict and portable.
+        workload_json = json.dumps(workload, allow_nan=False)
+    except (TypeError, ValueError) as exc:
+        raise ValueError(f"workload is not JSON-serializable: {exc}") from exc
+    if "\x00" in workload_json:
+        raise ValueError("workload must not contain a NUL byte")
+
+    if not isinstance(mem_limit_mb, int) or isinstance(mem_limit_mb, bool):
+        raise ValueError("mem_limit_mb must be an int")
+    if mem_limit_mb < 0:
+        raise ValueError("mem_limit_mb must be non-negative")
+
+    if not isinstance(timeout, (int, float)) or isinstance(timeout, bool):
+        raise ValueError("timeout must be a number")
+    if not (timeout > 0) or timeout != timeout or timeout == float("inf"):
+        raise ValueError("timeout must be a positive, finite number")
+
+    return workload_json
+
+
 def _result_nonce_matches(result_path: str, expected_nonce: str) -> bool:
     """Return True iff the child wrote the parent's exact ``expected_nonce`` into
     ``result_path``.
@@ -103,6 +163,12 @@ def run_candidate_in_subprocess(
     process.
     """
     root_str = str(candidate_root)
+    # Validate every caller/config-supplied value at the parent-side trust
+    # boundary BEFORE spawning anything. Fail closed (ValueError) on argv-
+    # corrupting paths, non-serializable workloads, or limit-weakening inputs.
+    # Returns the exact JSON we'll ship as the workload argv element.
+    workload_json = _validate_inputs(root_str, workload, mem_limit_mb, timeout)
+
     # CPU limit is a coarse backstop for runaway compute; the wall-clock
     # timeout below is the authoritative deadline.
     cpu_seconds = max(1, int(timeout) + 1)
@@ -122,20 +188,30 @@ def run_candidate_in_subprocess(
         "-m",
         "general_ludd.abtest._child",
         root_str,
-        json.dumps(workload),
+        workload_json,
         str(mem_limit_mb),
         str(cpu_seconds),
         result_path,
         nonce,
     ]
 
+    # Defense in depth: argv MUST be a flat list of plain str (no extra
+    # injected args, no non-string element that could coerce oddly). This is an
+    # invariant, not a recoverable input error — a violation is a bug here, not
+    # bad caller input, so it asserts rather than ValueErrors.
+    assert isinstance(cmd, list) and len(cmd) == 9
+    assert all(isinstance(part, str) for part in cmd)
+
     try:
         start = time.monotonic()
+        # shell=False is the default and is required: argv is passed as a list,
+        # so no shell parses it and metacharacters in any element are inert.
         proc = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
             stderr=subprocess.STDOUT,
             text=True,
+            shell=False,
         )
         timed_out = False
         try:

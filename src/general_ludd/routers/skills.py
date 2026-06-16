@@ -5,8 +5,13 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
+from general_ludd.security.auth import is_path_within
 from general_ludd.skills.catalog import SkillCatalog
-from general_ludd.skills.fetcher import GitHubSkillSource, RemoteSkillFetcher
+from general_ludd.skills.fetcher import (
+    GitHubSkillSource,
+    RemoteSkillFetcher,
+    _safe_skill_filename,
+)
 
 
 def _get_catalog(app: FastAPI) -> Any:
@@ -96,7 +101,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
         target = os.path.join(config_dir, "skills")
         os.makedirs(target, exist_ok=True)
-        skill_file = os.path.join(target, f"{skill.name}.md")
+        # Sanitize the attacker-controlled skill name into a single safe path
+        # segment, then confirm the resolved file stays inside the skills dir.
+        stem = _safe_skill_filename(skill.name)
+        if stem is None or not is_path_within(target, f"{stem}.md"):
+            raise HTTPException(status_code=422, detail=f"Unsafe skill name: {skill.name!r}")
+        skill_file = os.path.join(target, f"{stem}.md")
         content = f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n\n{skill.body}\n"
         with open(skill_file, "w") as f:
             f.write(content)

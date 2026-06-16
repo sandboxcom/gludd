@@ -1,0 +1,296 @@
+"""Self-contained Prometheus observability connector.
+
+Reads metrics from a Prometheus HTTP API and normalizes every sample into a
+flat record. The HTTP transport is *injectable* so the connector can be driven
+entirely from mocked responses in tests (no real network, no DNS, no shell).
+
+Design constraints honoured here:
+
+* No imports from sibling connectors, the package ``__init__``, or any
+  connector base class — this module stands alone.
+* SSRF protection blocks loopback / private / link-local / cloud-metadata
+  *literal* hosts on ``base_url``. We deliberately do **not** resolve DNS
+  (so no DNS-rebinding surface and no network at construction time), and we
+  **allow** ``http`` because Prometheus is frequently exposed on plain HTTP
+  inside an allowlisted internal network.
+* ``health()`` never raises. ``query()`` never raises: transport / protocol
+  failures are surfaced as a single normalized error record.
+* No ``shell=True`` and no subprocess use anywhere.
+
+Record shape (one dict per sample)::
+
+    {
+        "ts": float,                 # unix seconds of the sample
+        "source": str,               # connector name
+        "kind": "metrics",
+        "level_or_status": str,      # "" for data, "error" for failures
+        "message": str,              # "<__name__>{label="v", ...}"
+        "value": float,              # numeric sample value
+        "labels": dict[str, str],    # metric labels (incl. __name__)
+        "raw": Any,                  # original series/sample/payload
+    }
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import os
+import time
+from collections.abc import Callable
+from typing import Any
+from urllib.parse import urlsplit
+
+# Injectable transport signature: (url, params, headers) -> (status, json)
+HttpGet = Callable[..., "tuple[int, Any]"]
+
+KIND = "metrics"
+
+# Hostnames that must never be reached, regardless of IP resolution.
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "metadata",
+        "metadata.google.internal",
+        "metadata.goog",
+    }
+)
+
+_DEFAULT_TIMEOUT = 10.0
+
+
+def _strip_brackets(host: str) -> str:
+    # IPv6 literals arrive as "[::1]"
+    if host.startswith("[") and host.endswith("]"):
+        return host[1:-1]
+    return host
+
+
+def _is_blocked_ip(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(_strip_brackets(host))
+    except ValueError:
+        return False
+    # Block the obviously dangerous categories. ``is_global`` is the cleanest
+    # single gate, but we also explicitly cover link-local metadata and the
+    # 0.0.0.0 wildcard for clarity / belt-and-suspenders.
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+        or not ip.is_global
+    )
+
+
+def _validate_base_url(base_url: str) -> str:
+    """Reject SSRF-prone literal hosts; return a normalized base_url.
+
+    Allows http and https only. Performs NO DNS resolution.
+    """
+    if not base_url or not isinstance(base_url, str):
+        raise ValueError("base_url is required")
+
+    parts = urlsplit(base_url)
+    if parts.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported scheme: {parts.scheme!r} (only http/https)")
+
+    host = (parts.hostname or "").strip().lower()
+    if not host:
+        raise ValueError("base_url has no host")
+
+    if host in _BLOCKED_HOSTNAMES:
+        raise ValueError(f"blocked host: {host!r}")
+
+    if _is_blocked_ip(host):
+        raise ValueError(f"blocked internal/metadata address: {host!r}")
+
+    # Normalize: drop trailing slash so endpoint joins are clean.
+    return base_url.rstrip("/")
+
+
+def _fmt_labels(metric: dict[str, Any]) -> str:
+    """Render ``__name__{k="v", ...}`` with sorted, non-name labels."""
+    name = str(metric.get("__name__", ""))
+    pairs = sorted((k, v) for k, v in metric.items() if k != "__name__")
+    if not pairs:
+        return name
+    inner = ", ".join(f'{k}="{v}"' for k, v in pairs)
+    return f"{name}{{{inner}}}"
+
+
+class PrometheusSource:
+    """A metrics source backed by the Prometheus HTTP API."""
+
+    KIND = KIND
+
+    def __init__(
+        self,
+        config: dict[str, Any],
+        http_get: HttpGet | None = None,
+        *,
+        timeout: float = _DEFAULT_TIMEOUT,
+    ) -> None:
+        if http_get is None:
+            raise ValueError("http_get transport must be injected")
+
+        base_url = config.get("base_url", "")
+        self._base_url = _validate_base_url(base_url)
+        self._token_env = config.get("token_env")
+        self._http_get = http_get
+        self._timeout = float(timeout)
+        self.kind = KIND
+        # A stable, human-readable name derived from the validated host.
+        host = urlsplit(self._base_url).netloc
+        self.name = config.get("name") or f"prometheus:{host}"
+
+    # -- helpers ----------------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._token_env:
+            token = os.environ.get(self._token_env)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
+        return headers
+
+    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+        return {
+            "ts": time.time(),
+            "source": self.name,
+            "kind": KIND,
+            "level_or_status": "error",
+            "message": message,
+            "value": 0.0,
+            "labels": {},
+            "raw": raw,
+        }
+
+    def _sample_record(
+        self, metric: dict[str, Any], ts: Any, raw_value: Any, raw: Any
+    ) -> dict[str, Any]:
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            value = 0.0
+        try:
+            ts_f = float(ts)
+        except (TypeError, ValueError):
+            ts_f = 0.0
+        labels = {str(k): str(v) for k, v in metric.items()}
+        return {
+            "ts": ts_f,
+            "source": self.name,
+            "kind": KIND,
+            "level_or_status": "",
+            "message": _fmt_labels(metric),
+            "value": value,
+            "labels": labels,
+            "raw": raw,
+        }
+
+    # -- public API -------------------------------------------------------
+
+    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+        """Run an instant or range PromQL query; return normalized records.
+
+        Range mode is selected when ``start``/``end``/``step`` are present.
+        Never raises: failures become a single error record.
+        """
+        promql = spec.get("promql")
+        if not promql:
+            return [self._error_record("missing 'promql' in spec", {"spec": spec})]
+
+        is_range = any(k in spec for k in ("start", "end", "step"))
+        if is_range:
+            endpoint = "/api/v1/query_range"
+            params: dict[str, Any] = {"query": promql}
+            for key in ("start", "end", "step"):
+                if key in spec:
+                    params[key] = spec[key]
+        else:
+            endpoint = "/api/v1/query"
+            params = {"query": promql}
+            if "time" in spec:
+                params["time"] = spec["time"]
+
+        url = f"{self._base_url}{endpoint}"
+        try:
+            status, payload = self._http_get(
+                url, params=params, headers=self._headers()
+            )
+        except Exception as exc:  # surfaced as a record, never raised
+            return [self._error_record(f"transport error: {exc}", {"url": url})]
+
+        return self._normalize(status, payload)
+
+    def _normalize(self, status: int, payload: Any) -> list[dict[str, Any]]:
+        if not isinstance(payload, dict):
+            return [self._error_record(f"non-dict payload (status {status})", payload)]
+
+        if payload.get("status") != "success":
+            err = payload.get("error") or f"prometheus returned status {status}"
+            return [self._error_record(str(err), payload)]
+
+        data = payload.get("data") or {}
+        result_type = data.get("resultType")
+        result = data.get("result")
+
+        records: list[dict[str, Any]] = []
+
+        if result_type == "vector":
+            for series in result or []:
+                metric = series.get("metric", {})
+                ts, raw_value = series.get("value", [0.0, "0"])
+                records.append(self._sample_record(metric, ts, raw_value, series))
+
+        elif result_type == "matrix":
+            for series in result or []:
+                metric = series.get("metric", {})
+                for ts, raw_value in series.get("values", []):
+                    records.append(self._sample_record(metric, ts, raw_value, series))
+
+        elif result_type == "scalar":
+            # result is [ts, "value"]
+            ts, raw_value = (result or [0.0, "0"])[:2]
+            records.append(self._sample_record({}, ts, raw_value, {"scalar": result}))
+
+        else:
+            return [
+                self._error_record(
+                    f"unsupported resultType: {result_type!r}", payload
+                )
+            ]
+
+        return records
+
+    def health(self) -> dict[str, Any]:
+        """Return a health dict. Never raises.
+
+        Uses the cheap ``query=1`` instant query as a liveness probe (works on
+        every Prometheus regardless of whether ``/-/healthy`` is exposed).
+        """
+        url = f"{self._base_url}/api/v1/query"
+        try:
+            status, payload = self._http_get(
+                url, params={"query": "1"}, headers=self._headers()
+            )
+        except Exception as exc:  # health must never raise
+            return {"ok": False, "source": self.name, "error": str(exc)}
+
+        ok = (
+            isinstance(payload, dict)
+            and payload.get("status") == "success"
+            and 200 <= int(status) < 300
+        )
+        result: dict[str, Any] = {"ok": ok, "source": self.name, "status": status}
+        if not ok:
+            if isinstance(payload, dict):
+                result["error"] = str(
+                    payload.get("error") or f"unhealthy (status {status})"
+                )
+            else:
+                result["error"] = f"unhealthy (status {status})"
+        return result

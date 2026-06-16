@@ -37,6 +37,9 @@ class TestValidationRunnerExecution:
                 todo_id="TODO-010",
                 worktree_path=tmpdir,
                 test_commands=["echo '1 passed'"],
+                # echo is an arbitrary stand-in test runner here, not a real
+                # one; opt out of the runner allowlist for this smoke test.
+                enforce_runner_allowlist=False,
             )
             result = runner.run_validation()
             assert isinstance(result, ValidationResult)

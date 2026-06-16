@@ -9,6 +9,7 @@ Covers:
 
 from __future__ import annotations
 
+import threading
 import time
 from unittest.mock import MagicMock, patch
 
@@ -321,6 +322,243 @@ class TestModelHealthTracker:
             timestamp=time.monotonic(), duration_s=5.0,
         ))
         assert tracker.is_healthy("gpt-4") is False
+
+
+class TestModelHealthTrackerConcurrency:
+    """Concurrency fixes 1 & 2: locked record_event/record_success and an
+    atomic, single-flight is_healthy cooldown gate."""
+
+    def test_concurrent_failures_not_lost_breaker_trips(self) -> None:
+        """Fix 1: record_event under a barrier-synchronized thundering herd must
+        count EVERY failure (no lost updates), so the breaker trips."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        n = 64
+        tracker = ModelHealthTracker(failure_threshold=n, cooldown_seconds=60.0)
+        barrier = threading.Barrier(n)
+
+        def hammer() -> None:
+            barrier.wait()  # force maximal interleave on the read-modify-write
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+
+        threads = [threading.Thread(target=hammer) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Every one of the n failures was counted (no lost update).
+        assert tracker.get_health("m")["consecutive_failures"] == n
+        assert tracker.get_health("m")["total_failures"] == n
+        # With threshold == n, exactly n failures crosses it -> unhealthy.
+        assert tracker.is_healthy("m", admit_probe=False) is False
+
+    def test_history_not_corrupted_under_concurrency(self) -> None:
+        """Fix 1: concurrent appends + truncation of _history must not race
+        (no lost entries, length capped at max_event_history)."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        cap = 50
+        n = 200
+        tracker = ModelHealthTracker(
+            failure_threshold=10_000, cooldown_seconds=60.0, max_event_history=cap
+        )
+        barrier = threading.Barrier(n)
+
+        def hammer() -> None:
+            barrier.wait()
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+
+        threads = [threading.Thread(target=hammer) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # total counter saw every event; history is truncated to the cap.
+        assert tracker.get_health("m")["total_failures"] == n
+        assert len(tracker._history["m"]) == cap
+
+    def test_cooldown_admits_only_one_probe(self) -> None:
+        """Fix 2: after cooldown elapses, a barrier-synchronized herd of
+        is_healthy() callers must admit EXACTLY ONE half-open probe; the rest
+        see the breaker still open."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=0.01)
+        for _ in range(2):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+        assert tracker.is_healthy("m", admit_probe=False) is False
+        time.sleep(0.02)  # cooldown elapses
+
+        n = 50
+        barrier = threading.Barrier(n)
+        results: list[bool] = []
+        results_lock = threading.Lock()
+
+        def probe() -> None:
+            barrier.wait()
+            ok = tracker.is_healthy("m")
+            with results_lock:
+                results.append(ok)
+
+        threads = [threading.Thread(target=probe) for _ in range(n)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        # Exactly ONE caller was admitted as the half-open probe.
+        assert results.count(True) == 1
+        assert results.count(False) == n - 1
+
+    def test_probe_does_not_reset_consecutive(self) -> None:
+        """Fix 2: admitting a half-open probe must NOT reset _consecutive to 0 —
+        the breaker stays OPEN until record_success (or a failed probe re-arms)."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=0.01)
+        for _ in range(3):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+        time.sleep(0.02)
+        # First poll admits the probe...
+        assert tracker.is_healthy("m") is True
+        # ...but did NOT reset the counter (breaker still open underneath).
+        assert tracker._consecutive["m"] == 3
+        # A status poll never consumes a probe and reports the open breaker as
+        # "would admit" (healthy) without resetting either.
+        assert tracker.get_health("m")["consecutive_failures"] == 3
+
+    def test_probe_success_clears_breaker(self) -> None:
+        """Fix 2: a successful probe (record_success) clears the breaker and the
+        probe-in-flight slot, so the model is healthy again."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=0.01)
+        for _ in range(3):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+        time.sleep(0.02)
+        assert tracker.is_healthy("m") is True  # probe admitted
+        tracker.record_success("m")             # probe succeeded
+        assert tracker.is_healthy("m", admit_probe=False) is True
+        assert tracker._consecutive["m"] == 0
+
+    def test_failed_probe_re_arms_and_admits_next_window(self) -> None:
+        """Fix 2: if the probe fails (record_event), the probe slot is released
+        and re-armed so the NEXT cooldown window can admit a fresh probe."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=0.01)
+        for _ in range(2):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+        time.sleep(0.02)
+        assert tracker.is_healthy("m") is True   # window 1 probe admitted
+        assert tracker.is_healthy("m") is False  # slot held within window
+        # Probe fails -> records a new event, re-arming the breaker.
+        tracker.record_event(
+            TimeoutEvent(
+                model_id="m",
+                kind=TimeoutKind.READ_TIMEOUT,
+                timestamp=time.monotonic(),
+                duration_s=0.0,
+            )
+        )
+        time.sleep(0.02)  # window 2 cooldown elapses
+        # A fresh probe is admitted for the new window.
+        assert tracker.is_healthy("m") is True
+
+    def test_get_health_does_not_consume_probe(self) -> None:
+        """Fix 2: status polls (get_health -> admit_probe=False) must not consume
+        the single probe slot, so a real caller can still get it."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=0.01)
+        for _ in range(3):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id="m",
+                    kind=TimeoutKind.READ_TIMEOUT,
+                    timestamp=time.monotonic(),
+                    duration_s=0.0,
+                )
+            )
+        time.sleep(0.02)
+        # Several status polls...
+        for _ in range(5):
+            assert tracker.get_health("m")["healthy"] is True
+        # ...did not consume the probe; the real caller still gets it.
+        assert tracker.is_healthy("m") is True
+        assert tracker.is_healthy("m") is False  # now consumed
 
 
 class TestTimeoutRetryPolicy:

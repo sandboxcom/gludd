@@ -17,8 +17,18 @@ from typing import Any
 from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
 from general_ludd.models.model_registry import ModelRegistry
 from general_ludd.tui.breadcrumb import pop_breadcrumb, push_breadcrumb, render_breadcrumb
-from general_ludd.tui.keybindings import TUIKeyHandler
+from general_ludd.tui.keybindings import (
+    TUIKeyHandler,
+    validate_gunicorn_spawn_args,
+)
 from general_ludd.tui.logger import TUILogger
+
+# The runner spawns the daemon via h._build_daemon_start_cmd(host, port,
+# workers), whose host/port/workers come from CLI args / config and are thus
+# untrusted. A daemon launcher must validate them and fail closed before any
+# subprocess is created. The validator is shared with the keybindings spawn
+# site so both launchers enforce identical rules.
+validate_daemon_spawn_args = validate_gunicorn_spawn_args
 
 
 def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
@@ -78,11 +88,24 @@ def run_tui(args: argparse.Namespace, h: SimpleNamespace) -> None:
             status_msg = "Daemon already running"
             daemon_running = True
             return
+        _host = getattr(args, "host", "0.0.0.0")
+        _port = getattr(args, "port", 8000)
+        _workers = getattr(args, "workers", 1)
+        _log_level = getattr(args, "log_level", None)
+        # Fail closed on bad spawn args (out-of-range port, injection-y host,
+        # bad worker count / log-level) before any subprocess is created.
+        try:
+            validate_daemon_spawn_args(
+                host=_host, port=_port, workers=_workers, log_level=_log_level
+            )
+        except ValueError as exc:
+            status_msg = f"Start failed: invalid spawn args: {exc}"
+            return
         try:
             cmd = h._build_daemon_start_cmd(
-                host=getattr(args, "host", "0.0.0.0"),
-                port=getattr(args, "port", 8000),
-                workers=getattr(args, "workers", 1),
+                host=_host,
+                port=_port,
+                workers=_workers,
             )
             daemon_proc = subprocess.Popen(
                 cmd,

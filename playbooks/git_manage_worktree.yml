@@ -17,8 +17,10 @@
         state: directory
         mode: "0755"
 
+    # noqa command-instead-of-module: ansible.builtin.git has no worktree
+    # support; `git worktree list` requires command.
     - name: List worktrees
-      ansible.builtin.command:
+      ansible.builtin.command: # noqa: command-instead-of-module
         cmd: git worktree list --porcelain
         chdir: "{{ repo_path }}"
       register: worktree_list

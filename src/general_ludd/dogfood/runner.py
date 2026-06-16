@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+import subprocess
 import time
 from dataclasses import dataclass
 from typing import Any
@@ -10,6 +11,36 @@ from typing import Any
 from pydantic import BaseModel, field_validator
 
 from general_ludd.dogfood.sprint_parser import parse_sprint_markdown
+
+# A smoke-task name is interpolated into the playbook path
+# (``playbooks/<task_name>.yml``) and handed to ``ansible-playbook`` as an argv
+# token.  It is caller-derived, so it must be confined: no path separators /
+# ``..`` traversal (which would escape ``playbooks/``), no leading dash (which
+# ansible-playbook would parse as an option), and no shell metacharacters
+# (defence-in-depth even though we never use a shell / shell=True).
+_SAFE_TASK_NAME = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+_SHELL_META_CHARS = set(";|&$`><(){}[]!*?~#'\" \t\n\r\\")
+
+
+def _validate_task_name(task_name: str) -> str:
+    """Return ``task_name`` if it is a confined, injection-safe playbook stem.
+
+    Raises ``ValueError`` otherwise.  Rejects: non-string, empty, path
+    separators, ``..`` traversal, leading dash, and any shell metacharacter.
+    """
+    if not isinstance(task_name, str) or not task_name:
+        raise ValueError("task_name must be a non-empty string")
+    if "/" in task_name or "\\" in task_name:
+        raise ValueError(f"task_name must not contain path separators: {task_name!r}")
+    if ".." in task_name:
+        raise ValueError(f"task_name must not contain traversal: {task_name!r}")
+    if task_name.startswith("-"):
+        raise ValueError(f"task_name must not start with a dash: {task_name!r}")
+    if any(ch in _SHELL_META_CHARS for ch in task_name):
+        raise ValueError(f"task_name must not contain shell metacharacters: {task_name!r}")
+    if not _SAFE_TASK_NAME.match(task_name):
+        raise ValueError(f"task_name is not a safe playbook stem: {task_name!r}")
+    return task_name
 
 
 class DogfoodConfig(BaseModel):
@@ -90,9 +121,12 @@ class DogfoodRunner:
     def run_smoke_task(self, task_name: str) -> SmokeTaskResult:
         start = time.time()
         try:
-            import subprocess
+            # Confine the caller-derived task name before it reaches argv: a
+            # bad name (traversal / leading-dash / metachar) must fail closed
+            # WITHOUT spawning a subprocess.
+            safe_name = _validate_task_name(task_name)
             result = subprocess.run(
-                ["ansible-playbook", "--syntax-check", f"playbooks/{task_name}.yml"],
+                ["ansible-playbook", "--syntax-check", f"playbooks/{safe_name}.yml"],
                 capture_output=True,
                 text=True,
                 cwd=self.config.repo_root,

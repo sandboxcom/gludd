@@ -11,6 +11,62 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Shell metacharacters that imply the command author expected shell semantics
+# that this runner deliberately does NOT provide (we never use shell=True). A
+# string containing any of these is rejected outright rather than being
+# silently mis-executed by shlex.split — e.g. "pytest; rm -rf /" would have run
+# only "pytest" while dropping the destructive tail, masking an injection.
+_SHELL_METACHARS = frozenset(";&|<>`$()\n\r")
+
+# Allowlist of expected test runners. The config supplies command strings, so
+# the leading argv token (the binary to exec) is constrained to known-safe
+# runners unless the caller explicitly opts out via enforce_runner_allowlist.
+_DEFAULT_RUNNER_ALLOWLIST = frozenset({"pytest", "uv", "make", "python", "python3"})
+
+
+class CommandValidationError(ValueError):
+    """Raised when a config-supplied test command fails safety validation."""
+
+
+def _validate_command(
+    cmd: str, *, enforce_allowlist: bool, allowlist: frozenset[str]
+) -> list[str]:
+    """Validate and tokenize a config-supplied command into an argv list.
+
+    Rejects shell-metachar-laden strings (which shlex.split would mis-handle)
+    and, unless opted out, constrains the runner binary to an allowlist. The
+    returned argv is always passed to subprocess with shell=False.
+    """
+    if not cmd or not cmd.strip():
+        raise CommandValidationError("empty test command")
+
+    bad = sorted(set(cmd) & _SHELL_METACHARS)
+    if bad:
+        raise CommandValidationError(
+            f"test command contains shell metacharacter(s) {bad!r}; "
+            f"shell semantics are not supported (no shell=True): {cmd!r}"
+        )
+
+    try:
+        argv = shlex.split(cmd)
+    except ValueError as exc:  # unbalanced quotes, etc.
+        raise CommandValidationError(f"unparseable test command {cmd!r}: {exc}") from exc
+
+    if not argv:
+        raise CommandValidationError(f"test command tokenized to nothing: {cmd!r}")
+
+    if enforce_allowlist:
+        # Compare on the bare basename so "/usr/bin/python" still matches.
+        runner = argv[0].rsplit("/", 1)[-1]
+        if runner not in allowlist:
+            raise CommandValidationError(
+                f"test runner {runner!r} is not in the allowlist "
+                f"{sorted(allowlist)!r}; pass enforce_runner_allowlist=False "
+                f"to opt out: {cmd!r}"
+            )
+
+    return argv
+
 
 @dataclass
 class ValidationResult:
@@ -23,10 +79,20 @@ class ValidationResult:
 
 
 class ValidationRunner:
-    def __init__(self, todo_id: str, worktree_path: str, test_commands: list[str]) -> None:
+    def __init__(
+        self,
+        todo_id: str,
+        worktree_path: str,
+        test_commands: list[str],
+        *,
+        enforce_runner_allowlist: bool = True,
+        runner_allowlist: frozenset[str] = _DEFAULT_RUNNER_ALLOWLIST,
+    ) -> None:
         self.todo_id = todo_id
         self.worktree_path = worktree_path
         self.test_commands = test_commands
+        self.enforce_runner_allowlist = enforce_runner_allowlist
+        self.runner_allowlist = runner_allowlist
 
     def run_validation(self) -> ValidationResult:
         combined_stdout = ""
@@ -34,12 +100,25 @@ class ValidationRunner:
         total_passed = 0
         total_failed = 0
 
-        for cmd in self.test_commands:
+        # Validate ALL commands up front so a bad command never causes a
+        # partial run (fail-closed): we reject the batch before exec'ing any.
+        argvs = [
+            _validate_command(
+                cmd,
+                enforce_allowlist=self.enforce_runner_allowlist,
+                allowlist=self.runner_allowlist,
+            )
+            for cmd in self.test_commands
+        ]
+
+        for argv in argvs:
+            # argv is a validated list (never a shell string); shell=False.
             proc = subprocess.run(
-                shlex.split(cmd),
+                argv,
                 cwd=self.worktree_path,
                 capture_output=True,
                 text=True,
+                shell=False,
             )
             combined_stdout += proc.stdout + "\n"
             passed, failed, failures = _parse_pytest_output(proc.stdout, proc.returncode)

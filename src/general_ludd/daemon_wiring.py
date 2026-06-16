@@ -196,29 +196,38 @@ def make_spend_guarded_executor(
     *,
     executor: ExecutorFn,
     spend_limiter: Any | None,
-    projected_cost_usd: float = 0.0,
+    projected_cost_usd: float | None = 0.0,
 ) -> ExecutorFn:
-    """Wrap an executor with a pre-call SpendLimiter.would_exceed() check.
+    """Wrap an executor with an atomic SpendLimiter check-and-record gate.
 
     When ``spend_limiter`` is None, the original executor is returned unchanged
     (no-op gate).
 
-    When a limiter is configured:
-      * If ``spend_limiter.would_exceed(projected_cost_usd)`` is True the call
-        is deferred — the executor is NOT called and a sentinel string
-        ``"deferred:spend_limit_exceeded"`` is returned.
-      * Otherwise the executor is called normally.
+    When a limiter is configured, the cost is charged ATOMICALLY *before* the
+    call via ``spend_limiter.try_charge(projected_cost_usd, ...)``:
 
-    After a successful call the caller is responsible for recording the actual
-    cost via ``spend_limiter.record(...)``.  This wrapper only provides the
-    pre-call gate; recording is left to the caller so it can use the actual
-    measured cost rather than the projection.
+      * If the charge is accepted (it fits the remaining budget) it is also
+        RECORDED against the rolling window in the same critical section, so
+        the limiter is no longer inert — repeated calls accumulate spend and
+        the cap actually trips (#1).  Recording before the call also makes the
+        check-and-record atomic, so concurrent dispatches cannot collectively
+        overshoot the cap (#3).
+      * If the charge is refused — because it would exceed the cap, or because
+        ``projected_cost_usd`` is ``None`` (unknown cost) while a cap is
+        configured (fail CLOSED, #4) — the executor is NOT called and the
+        sentinel string ``"deferred:spend_limit_exceeded"`` is returned.
+
+    Charging the projection up front (rather than the measured cost afterward)
+    is the conservative choice for a soft cap: a dispatch that is admitted has
+    already consumed its budgeted headroom, so a concurrent dispatch sees the
+    reduced remaining budget immediately.
 
     Args:
         executor:           The real async executor coroutine function.
         spend_limiter:      SpendLimiter instance, or None to disable the gate.
-        projected_cost_usd: Estimated cost of one call (USD).  Defaults to 0.0
-                            which never triggers deferral per SpendLimiter semantics.
+        projected_cost_usd: Estimated cost of one call (USD), or ``None`` when
+                            the cost is unknown.  ``None`` fails CLOSED when a
+                            cap is configured.  ``0.0`` never triggers deferral.
 
     Returns:
         A wrapped async executor with the same signature.
@@ -227,10 +236,13 @@ def make_spend_guarded_executor(
         return executor
 
     async def _guarded(*args: Any, **kwargs: Any) -> str:
-        if spend_limiter.would_exceed(projected_cost_usd):
+        # Atomic check-and-record: charges the projected cost iff it fits, and
+        # fails closed on unknown cost under a configured cap.
+        admitted = spend_limiter.try_charge(projected_cost_usd, kind="token")
+        if not admitted:
             remaining = spend_limiter.remaining()
             logger.warning(
-                "SpendLimiter: deferring dispatch — projected=%.6f USD remaining=%.6f USD",
+                "SpendLimiter: deferring dispatch — projected=%s USD remaining=%.6f USD",
                 projected_cost_usd,
                 remaining,
             )

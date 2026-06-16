@@ -1,0 +1,84 @@
+---
+# gludd_reload runs the REAL HotReloader IN-PROCESS: it imports a live, file-backed
+# leaf module by dotted name, os.replace's a candidate source over the live path,
+# importlib.reload's it, then runs a health gate (a /readyz-style poll). On a failed
+# gate the original bytes are restored. To exercise this honestly WITHOUT mutating
+# any general_ludd source, prepare builds a throwaway importable package on its own
+# PYTHONPATH root:
+#   reloadroot/gluddreload_leaf.py   -- the LIVE leaf module (importable, file-backed)
+#   reloadroot/_candidate_good.py    -- a healthy candidate to swap in (gate passes)
+#   reloadroot/_candidate_bad.py     -- a candidate to swap in for the 404-gate case
+# The mock daemon is started so the health gate has a real HTTP endpoint:
+#   health_url -> http://127.0.0.1:<port>/healthz  -> 200      => healthy swap
+#   health_url -> http://127.0.0.1:<port>/readyz   -> 404      => gate fails, rollback
+# (The mock has no /readyz route, so it answers 404 — a non-200 status the module's
+#  health check treats as unhealthy, forcing the documented auto-rollback.)
+- name: Prepare - throwaway importable leaf + candidates + mock daemon for gludd_reload
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}.pid"
+    reload_root: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Remove any stale reload root (+ its bytecode cache)
+      ansible.builtin.file:
+        path: "{{ reload_root }}"
+        state: absent
+
+    - name: Create the reload root (a fresh PYTHONPATH entry)
+      ansible.builtin.file:
+        path: "{{ reload_root }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write the LIVE leaf module (importable, file-backed; VERSION=='live')
+      ansible.builtin.copy:
+        dest: "{{ reload_root }}/gluddreload_leaf.py"
+        mode: "0644"
+        content: |
+          VERSION = "live"
+
+          def value() -> int:
+              return 1
+
+    - name: Write the HEALTHY candidate source (swap target for the passing gate)
+      ansible.builtin.copy:
+        dest: "{{ reload_root }}/_candidate_good.py"
+        mode: "0644"
+        content: |
+          VERSION = "candidate-good"
+
+          def value() -> int:
+              return 2
+
+    - name: Write the candidate source used for the 404-gate rollback case
+      ansible.builtin.copy:
+        dest: "{{ reload_root }}/_candidate_bad.py"
+        mode: "0644"
+        content: |
+          VERSION = "candidate-bad"
+
+          def value() -> int:
+              return 99

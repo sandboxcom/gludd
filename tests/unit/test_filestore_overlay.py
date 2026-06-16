@@ -7,7 +7,13 @@ from pathlib import Path
 
 
 class TestConfigOverlay:
-    def test_overlay_reads_from_config_first(self):
+    def test_overlay_does_not_shadow_value_present_in_store(self):
+        # SECURITY (Finding 1, #62): the overlay must NOT shadow a value that is
+        # present in the main store. Reads and writes resolve through the same
+        # backend, so a just-written store value always wins over an overlay file
+        # of the same path (otherwise an attacker-controlled overlay could shadow
+        # a real written value). The overlay only PROVIDES paths absent from the
+        # store (see test_overlay_only_file_not_in_store).
         from general_ludd.filestore.store import FileStore
 
         with tempfile.TemporaryDirectory() as store_tmp, tempfile.TemporaryDirectory() as overlay_tmp:
@@ -19,7 +25,7 @@ class TestConfigOverlay:
             overlay_file.write_text("from_overlay")
 
             content = store.read_text("base/file.txt")
-            assert content == "from_overlay"
+            assert content == "from_store"
 
     def test_overlay_falls_back_to_store(self):
         from general_ludd.filestore.store import FileStore

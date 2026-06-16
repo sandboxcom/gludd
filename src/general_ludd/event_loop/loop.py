@@ -18,6 +18,7 @@ from general_ludd.controllers.pid import LoadController
 from general_ludd.db.models import TaskDecisionModel
 from general_ludd.db.repository import (
     AuditEventRepository,
+    ConcurrencyError,
     TaskReturnRepository,
     TodoRepository,
     VariableNamespaceRepository,
@@ -183,6 +184,15 @@ class EventLoop:
         self._benchmark_recorder: Any = None
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
+        # Reconcile idempotency ledgers (defects F1/F2):
+        #   _applied_decisions  — decision ids whose status transition has already
+        #     been applied; re-applying the same decision on a later tick/re-run is
+        #     a no-op (F1: non-idempotent decision re-apply).
+        #   _pushed_work        — todo (work) ids whose completed work has already
+        #     been pushed; guarantees the push fires exactly once and is never
+        #     duplicated across ticks (F2: completed-work push lost/double).
+        self._applied_decisions: set[str] = set()
+        self._pushed_work: set[str] = set()
         self._config_snapshot: dict[str, Any] = {}
         self._event_bus = event_bus
         self._project_manager = project_manager
@@ -1016,6 +1026,19 @@ class EventLoop:
         except Exception as exc:
             logger.warning("Failed to persist task return for %s: %s", todo.todo_id, exc)
 
+    @staticmethod
+    def _decision_id(d: Any) -> str:
+        """Stable identity for a TaskDecision row.
+
+        Prefer the persisted primary key; fall back to (return_id, matched_todo_id)
+        so a decision with no surrogate id is still de-dupable. This id keys the
+        F1 idempotency ledger so the same decision can never be applied twice.
+        """
+        raw_id = getattr(d, "id", None)
+        if raw_id is not None:
+            return f"id:{raw_id}"
+        return f"ret:{getattr(d, 'return_id', '')}:todo:{getattr(d, 'matched_todo_id', '')}"
+
     async def _phase_reconcile_completed_decisions(self) -> None:
         if self._active_session is None or self._todo_repo is None:
             return
@@ -1026,32 +1049,97 @@ class EventLoop:
         result = await self._active_session.execute(stmt)
         decisions = list(result.scalars().all())
         reconciled = 0
+        push_failures = 0
         for d in decisions:
             if not d.matched_todo_id:
+                continue
+            decision_id = self._decision_id(d)
+            already_applied = decision_id in self._applied_decisions
+            if already_applied:
+                # F1: idempotent re-apply — never transition the same decision
+                # twice. BUT a `complete` decision whose earlier push FAILED
+                # (F3) is still status=COMPLETE-but-unpushed; that push must be
+                # retried independently of the apply ledger (keyed on work id),
+                # or the work would be silently lost.
+                if (
+                    d.decision == "complete"
+                    and d.matched_todo_id not in self._pushed_work
+                ):
+                    todo = await self._todo_repo.get_by_id(d.matched_todo_id)
+                    if todo is not None and await self._attempt_completed_push(todo):
+                        push_failures += 1
                 continue
             todo = await self._todo_repo.get_by_id(d.matched_todo_id)
             if todo is None or todo.status != TodoStatus.REVIEWING_RETURN.value:
                 continue
             new_status = self._decision_to_status(d.decision)
-            if new_status is not None:
+            if new_status is None:
+                continue
+            # F6: version race. We transition with the version we just read; the
+            # repository performs a guarded compare-and-set on (version, status).
+            # If a CONCURRENT reconcile already moved the row, the CAS affects
+            # zero rows and raises ConcurrencyError — we treat this stale
+            # reconcile as a lost race: do NOT mark it applied, do NOT push, and
+            # never overwrite the newer state. It simply skips this tick.
+            try:
                 await self._todo_repo.transition(todo.todo_id, new_status, todo.version)
-                reconciled += 1
-                if new_status == TodoStatus.COMPLETE and d.decision == "complete":
-                    with contextlib.suppress(Exception):
-                        await self._try_commit_completed_work(todo)
-                if self._audit_repo is not None:
-                    with contextlib.suppress(Exception):
-                        from general_ludd.db.models import AuditEventType
-                        await self._audit_repo.record_typed(
-                            AuditEventType.TODO_STATUS_CHANGED,
-                            entity_type="todo", entity_id=todo.todo_id,
-                            project_id=todo.project_id,
-                            details={
-                                "old": todo.status, "new": new_status.value,
-                                "decision": d.decision,
-                            },
-                        )
+            except ConcurrencyError as exc:
+                logger.info(
+                    "Reconcile lost version race for todo %s (decision %s): %s — "
+                    "skipping stale reconcile",
+                    todo.todo_id, decision_id, exc,
+                )
+                continue
+            # Transition committed: this decision is now applied exactly once.
+            self._applied_decisions.add(decision_id)
+            reconciled += 1
+            if (
+                new_status == TodoStatus.COMPLETE
+                and d.decision == "complete"
+                and await self._attempt_completed_push(todo)
+            ):
+                push_failures += 1
+            if self._audit_repo is not None:
+                with contextlib.suppress(Exception):
+                    from general_ludd.db.models import AuditEventType
+                    await self._audit_repo.record_typed(
+                        AuditEventType.TODO_STATUS_CHANGED,
+                        entity_type="todo", entity_id=todo.todo_id,
+                        project_id=todo.project_id,
+                        details={
+                            "old": todo.status, "new": new_status.value,
+                            "decision": d.decision,
+                        },
+                    )
         self._tick_metrics["decisions_applied"] = reconciled
+        self._tick_metrics["push_failures"] = push_failures
+
+    async def _attempt_completed_push(self, todo: Any) -> bool:
+        """Push completed work exactly once; return True if this attempt FAILED.
+
+        F2: deduped by work (todo) id — a todo already pushed is a no-op, so the
+        push fires exactly once across ticks (never twice).
+        F3: a commit/push failure is surfaced (returned True + error log), and
+        the work id is left OUT of the ledger so the push is RETRIED on a later
+        tick rather than silently leaving status=COMPLETE-but-unpushed.
+        """
+        if todo.todo_id in self._pushed_work:
+            logger.debug(
+                "Completed work %s already pushed — skipping duplicate push",
+                todo.todo_id,
+            )
+            return False
+        try:
+            await self._try_commit_completed_work(todo)
+        except Exception as exc:
+            logger.error(
+                "Reconcile: completed-work push FAILED for %s "
+                "(state diverged COMPLETE vs unpushed) — will retry: %s",
+                todo.todo_id, exc,
+            )
+            return True
+        self._pushed_work.add(todo.todo_id)
+        return False
 
     def _decision_to_status(self, decision: str) -> TodoStatus | None:
         mapping: dict[str, TodoStatus] = {
@@ -1082,7 +1170,12 @@ class EventLoop:
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
                 self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:
+                # F3: surface (don't swallow) so the caller can detect the
+                # COMPLETE-but-unpushed split-brain and retry. The caller decides
+                # whether to mark the work pushed — a raised failure leaves it
+                # unmarked so the push is retried, never silently lost.
                 logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
+                raise
 
     def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
         """F1: open a PR for completed work when git_automation.open_pr is set.

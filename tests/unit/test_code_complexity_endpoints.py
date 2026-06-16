@@ -80,7 +80,10 @@ class TestCodeComplexityEndpoint:
         app = create_daemon_app()
         client = TestClient(app)
 
-        resp = client.post("/admin/code/complexity", json={"path": "/nonexistent/file.py"})
+        # In-tree (temp-root) path that does not exist: confinement allows it,
+        # and a missing file must still degrade gracefully to loc==0 (not 422/500).
+        missing = os.path.join(tempfile.gettempdir(), "gludd-nonexistent-file.py")
+        resp = client.post("/admin/code/complexity", json={"path": missing})
         assert resp.status_code == 200
         data = resp.json()
         assert data["score"]["loc"] == 0
@@ -137,7 +140,8 @@ class TestSuggestModelEndpoint:
         app = create_daemon_app()
         client = TestClient(app)
 
-        resp = client.post("/admin/code/suggest-model", json={"path": "/nonexistent/file.py"})
+        missing = os.path.join(tempfile.gettempdir(), "gludd-nonexistent-file.py")
+        resp = client.post("/admin/code/suggest-model", json={"path": missing})
         assert resp.status_code == 200
         data = resp.json()
         assert data["complexity"]["loc"] == 0

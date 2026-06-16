@@ -74,10 +74,15 @@ try:
         WritePolicyError,
         default_policy,
     )
+    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_audit import (
+        IntegrityViolation,
+        WriteAuditLog,
+    )
 except ImportError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
     from fs_write_policy import WritePolicyError, default_policy  # type: ignore[import]
+    from fs_write_audit import IntegrityViolation, WriteAuditLog  # type: ignore[import]
     from gludd import error_result, ok_result  # type: ignore[import]
 
 
@@ -117,6 +122,16 @@ def main() -> None:
         ))
         return
 
+    # FIM-on-write: compose an audit log over the SAME policy so the worktree
+    # state-marker we write is auditable (path/sha256/timestamp manifest) and
+    # any out-of-band tampering of that marker between runs is detected. The
+    # manifest lives beside the worktree root and is itself policy-checked.
+    audit = WriteAuditLog(
+        policy=policy,
+        manifest_path=os.path.join(repo_parent, ".gludd_worktree_audit.json"),
+    )
+    marker_path = os.path.join(worktree_path, ".gludd_worktree_state")
+
     try:
         from general_ludd.git_automation.repo import GitAutomation  # type: ignore[import]
     except ImportError as exc:
@@ -143,6 +158,22 @@ def main() -> None:
         if not result.success:
             module.fail_json(**error_result(
                 f"Failed to create worktree: {result.message}",
+                worktree_path=worktree_path,
+                branch=branch,
+            ))
+            return
+        # Record an auditable, FIM-tracked state marker for the new worktree.
+        # audited_write fail-closes on policy violation AND on out-of-band
+        # tampering of a previously-recorded marker, so a hijacked marker path
+        # never silently succeeds.
+        try:
+            audit.audited_write(
+                marker_path,
+                f"branch={branch}\nstate=present\n".encode(),
+            )
+        except (WritePolicyError, IntegrityViolation) as exc:
+            module.fail_json(**error_result(
+                f"worktree state-marker audit failed: {exc}",
                 worktree_path=worktree_path,
                 branch=branch,
             ))

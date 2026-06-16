@@ -4,10 +4,53 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import re
 import shutil
 from dataclasses import dataclass
 
 logger = logging.getLogger(__name__)
+
+
+class InvalidPackageSpecError(ValueError):
+    """Raised when a package spec fails argument-injection validation."""
+
+
+# PEP 508-ish: a package name (letters/digits/_-.), optional extras in
+# brackets, and an optional version specifier built from the comparison
+# operators and version tokens uv/pip accept. Deliberately strict: no
+# whitespace, no shell metacharacters, no leading dash, no path separators,
+# no URLs / VCS refs / local-file installs.
+_PACKAGE_NAME = r"[A-Za-z0-9][A-Za-z0-9._-]*"
+_EXTRAS = r"(?:\[[A-Za-z0-9._,\s-]*\])?"
+_VERSION_SPEC = r"(?:(?:===|==|!=|~=|>=|<=|>|<)[A-Za-z0-9][A-Za-z0-9._*+!-]*)"
+_SPEC_RE = re.compile(
+    rf"^{_PACKAGE_NAME}{_EXTRAS}"
+    rf"(?:{_VERSION_SPEC}(?:\s*,\s*{_VERSION_SPEC})*)?$"
+)
+
+
+def _validate_package_spec(spec: str) -> str:
+    """Validate a uv/pip package spec against argument injection.
+
+    Accepts a PEP 508-ish ``name[extras]<version-spec>`` value. Rejects
+    empty/whitespace specs, leading-dash option injection
+    (``--index-url=...``, ``-e .``), shell metacharacters, internal
+    whitespace, and path-like values. Returns the spec unchanged on success
+    so callers can use it inline.
+    """
+    if not isinstance(spec, str):
+        raise InvalidPackageSpecError(f"package spec must be a string: {spec!r}")
+    if not spec or spec != spec.strip():
+        raise InvalidPackageSpecError(f"empty or padded package spec: {spec!r}")
+    if spec.startswith("-"):
+        raise InvalidPackageSpecError(
+            f"package spec must not start with '-' (option injection): {spec!r}"
+        )
+    if not _SPEC_RE.match(spec):
+        raise InvalidPackageSpecError(
+            f"unsafe or malformed package spec: {spec!r}"
+        )
+    return spec
 
 
 @dataclass
@@ -67,6 +110,11 @@ class DependencyManager:
             if version_constraint
             else package_name
         )
+        # Harden against argument/option injection (issue #69): the spec is
+        # derived from caller input and is passed positionally to uv/pip.
+        # Reject anything that is not a PEP 508-ish package spec BEFORE any
+        # subprocess is launched.
+        spec = _validate_package_spec(spec)
 
         if _has_uv():
             return await self._update_with_uv(package_name, spec)
@@ -75,7 +123,9 @@ class DependencyManager:
     async def _update_with_uv(
         self, package_name: str, spec: str
     ) -> UpdateResult:
-        rc, stdout, _ = await self._run("uv", "add", spec)
+        # `--` separates positional package args from uv options so a spec
+        # can never be reinterpreted as a flag.
+        rc, stdout, _ = await self._run("uv", "add", "--", spec)
         if rc != 0:
             logger.error("uv add failed for %s", spec)
             return UpdateResult(
@@ -99,7 +149,7 @@ class DependencyManager:
         self, package_name: str, spec: str
     ) -> UpdateResult:
         rc, stdout, _ = await self._run(
-            "pip", "install", "--upgrade", spec
+            "pip", "install", "--upgrade", "--", spec
         )
         if rc != 0:
             logger.error("pip install failed for %s", spec)

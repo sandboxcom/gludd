@@ -27,6 +27,7 @@
     todo_id: "{{ story_id }}"
     daemon_url: "{{ daemon_url }}"
     psk: "{{ psk }}"
+    role: "{{ capability_role }}"
   register: _es_story_fetch
   no_log: "{{ psk | length > 0 }}"
   when:

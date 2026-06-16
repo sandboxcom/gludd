@@ -125,7 +125,15 @@ class TestFinding2EnvIsolation:
         config = _make_config(env={"SERVER_FLAG": "1"})
         proc = _mock_process([_init_response()])
 
-        with patch("asyncio.create_subprocess_exec", return_value=proc) as mexec:
+        # The launch-command allowlist/PATH-resolution guard (Finding #65) is
+        # a separate concern with its own coverage; here we deliberately narrow
+        # PATH to assert env isolation, which would otherwise make the bare
+        # ``python`` exec unresolvable. Neutralise just that guard so this test
+        # exercises env assembly only.
+        with (
+            patch("general_ludd.mcp.transport._validate_launch_command"),
+            patch("asyncio.create_subprocess_exec", return_value=proc) as mexec,
+        ):
             client = MCPStdioClient(config)
             await client.start()
 
@@ -143,7 +151,12 @@ class TestFinding2EnvIsolation:
         monkeypatch.setenv("PATH", "/usr/bin")
         config = _make_config(env={"PATH": "/custom/bin"})
         proc = _mock_process([_init_response()])
-        with patch("asyncio.create_subprocess_exec", return_value=proc) as mexec:
+        # See note in test_full_host_env_not_leaked_to_subprocess: the launch
+        # guard is out of scope for this env-isolation assertion.
+        with (
+            patch("general_ludd.mcp.transport._validate_launch_command"),
+            patch("asyncio.create_subprocess_exec", return_value=proc) as mexec,
+        ):
             await MCPStdioClient(config).start()
         assert mexec.call_args.kwargs["env"]["PATH"] == "/custom/bin"
 

@@ -3,9 +3,153 @@
 from __future__ import annotations
 
 import os
+import re
 from dataclasses import dataclass, field
 from datetime import UTC, datetime, timedelta
 from typing import Any
+
+# --------------------------------------------------------------------------- #
+# git worktree input hardening                                                #
+#                                                                             #
+# Branch names and worktree paths reach `git worktree` (add/list/remove) from #
+# caller input. Without validation a value beginning with '-' is parsed by    #
+# git as an OPTION (e.g. --upload-pack=...) rather than a positional, and a    #
+# traversal / out-of-base path could plant or reclaim a worktree anywhere on  #
+# the filesystem. We fail closed BEFORE building any argv:                     #
+#   * validate_branch_name  — reject leading '-', whitespace/control chars and #
+#     git ref metacharacters,                                                  #
+#   * confine_worktree_path — realpath the path and require it to live under   #
+#     an allowed base directory,                                               #
+# and every builder emits list-form argv with a `--` end-of-options separator #
+# before the path positional so a value can never be reinterpreted as a flag. #
+# --------------------------------------------------------------------------- #
+
+# Characters git itself forbids in a ref, plus shell metacharacters and
+# whitespace. A legitimate branch name never contains any of these.
+_BRANCH_FORBIDDEN = re.compile(r"[\s~^:?*\[\\\x00-\x1f\x7f;&|$`(){}<>'\"!]")
+
+
+def validate_branch_name(name: str) -> str:
+    """Validate a branch name destined for ``git worktree add -b``.
+
+    Rejects (raising ``ValueError``):
+      * empty / whitespace-only names,
+      * a leading ``-`` (git would parse it as an option, not a ref),
+      * whitespace, control chars and shell/ref metacharacters,
+      * git's own ref rules: ``..`` sequences, a leading ``/``, and a
+        ``.lock`` suffix.
+
+    Returns the (unchanged) name on success so call sites can inline it.
+    """
+    if not name or not name.strip():
+        raise ValueError("refusing empty branch name")
+    if name.startswith("-"):
+        raise ValueError(
+            f"refusing branch name that begins with '-' (would be parsed as a "
+            f"git option, not a ref): {name!r}"
+        )
+    if name.startswith("/"):
+        raise ValueError(f"refusing branch name with a leading '/': {name!r}")
+    if ".." in name:
+        raise ValueError(f"refusing branch name containing '..': {name!r}")
+    if name.endswith(".lock"):
+        raise ValueError(f"refusing branch name ending in '.lock': {name!r}")
+    if _BRANCH_FORBIDDEN.search(name):
+        raise ValueError(
+            f"refusing branch name with forbidden/metacharacter content: {name!r}"
+        )
+    return name
+
+
+def confine_worktree_path(path: str, allowed_base: str) -> str:
+    """Confine ``path`` to ``allowed_base`` and return its realpath.
+
+    Rejects (raising ``ValueError``):
+      * a value beginning with ``-`` (would be parsed as a git option),
+      * a path whose realpath (symlinks resolved) is not the base itself or a
+        descendant of it — this catches ``..`` traversal, absolute out-of-base
+        paths and symlink escapes alike.
+
+    Returns the resolved absolute path on success; this is the exact string
+    placed into the argv after the ``--`` separator.
+    """
+    if path.startswith("-"):
+        raise ValueError(
+            f"refusing worktree path that begins with '-' (would be parsed as a "
+            f"git option, not a path): {path!r}"
+        )
+    base_real = os.path.realpath(os.path.expanduser(allowed_base))
+    target_real = os.path.realpath(os.path.expanduser(path))
+    base_prefix = base_real.rstrip(os.sep) + os.sep
+    if target_real != base_real and not target_real.startswith(base_prefix):
+        raise ValueError(
+            f"refusing worktree path that escapes the allowed base "
+            f"{allowed_base!r}: {path!r} -> {target_real!r}"
+        )
+    return target_real
+
+
+def build_worktree_add_argv(
+    repo_path: str,
+    branch_name: str,
+    worktree_path: str,
+    allowed_base: str,
+) -> list[str]:
+    """Build the argv for ``git worktree add`` (list-form, hardened).
+
+    Validates the branch name and confines the worktree path before assembling
+    a list-form argv with a ``--`` separator before the path positional.
+    Raises ``ValueError`` if either input is rejected.
+    """
+    validate_branch_name(branch_name)
+    safe_path = confine_worktree_path(worktree_path, allowed_base)
+    # `-b <branch>` then `--` then the path positional, so neither the branch
+    # nor the path can be reinterpreted as an option. `repo_path` selects the
+    # owning repo via `-C` (an argv element, never shell-interpolated).
+    return [
+        "git",
+        "-C",
+        repo_path,
+        "worktree",
+        "add",
+        "-b",
+        branch_name,
+        "--",
+        safe_path,
+    ]
+
+
+def build_worktree_remove_argv(
+    worktree_path: str,
+    allowed_base: str,
+    repo_path: str | None = None,
+) -> list[str]:
+    """Build the argv for ``git worktree remove --force`` (list-form, hardened).
+
+    Confines the worktree path before assembling a list-form argv with a ``--``
+    separator before the path positional. When ``repo_path`` is given it is
+    passed via ``-C`` to select the owning repo. Raises ``ValueError`` if the
+    path is rejected.
+    """
+    safe_path = confine_worktree_path(worktree_path, allowed_base)
+    argv = ["git"]
+    if repo_path is not None:
+        argv += ["-C", repo_path]
+    argv += ["worktree", "remove", "--force", "--", safe_path]
+    return argv
+
+
+def build_worktree_list_argv(repo_path: str | None = None) -> list[str]:
+    """Build the argv for ``git worktree list --porcelain`` (list-form).
+
+    No caller-controlled positional, so nothing to confine; ``repo_path`` (when
+    given) is passed via ``-C`` as an argv element.
+    """
+    argv = ["git"]
+    if repo_path is not None:
+        argv += ["-C", repo_path]
+    argv += ["worktree", "list", "--porcelain"]
+    return argv
 
 
 @dataclass
@@ -290,14 +434,32 @@ class WorktreeScanner:
         directory (so git locates the owning repo), then ``git worktree prune``
         to clear stale administrative entries. All failures are swallowed —
         reclamation is best-effort and must never raise into the scan loop.
+
+        Hardened: the ``path`` is validated and realpath-confined to its own
+        parent directory BEFORE any subprocess runs. A value beginning with
+        ``-`` (which git would parse as an option) or one whose realpath
+        escapes its parent is refused and NO subprocess is invoked — reclaim
+        fails closed rather than letting an injection-y path reach git.
         """
         import contextlib
         import subprocess
 
-        # `git -C <path>` resolves the linked working tree's main repository.
+        # Confine the path to its own parent directory (resolves symlinks and
+        # rejects a leading-dash / out-of-base value). Fail closed: if the path
+        # cannot be validated, reclaim nothing rather than exec git on it.
+        try:
+            parent = os.path.dirname(os.path.realpath(os.path.expanduser(path))) or os.sep
+            safe_path = confine_worktree_path(path, parent)
+        except ValueError:
+            return
+
+        # `git -C <safe_path>` resolves the linked working tree's main
+        # repository. List-form argv with a `--` separator before the path
+        # positional (built by build_worktree_remove_argv) so the path can
+        # never be reinterpreted as an option.
         for argv in (
-            ["git", "-C", path, "worktree", "remove", "--force", "--", path],
-            ["git", "-C", path, "worktree", "prune"],
+            build_worktree_remove_argv(safe_path, parent, repo_path=safe_path),
+            ["git", "-C", safe_path, "worktree", "prune"],
         ):
             with contextlib.suppress(Exception):
                 subprocess.run(

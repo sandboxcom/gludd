@@ -1,8 +1,9 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
-from fastapi import FastAPI, Request
+from fastapi import FastAPI, HTTPException, Request
 
 from general_ludd.code_intelligence.callgraph import CallGraph
 from general_ludd.code_intelligence.complexity_scorer import CodeComplexityScorer
@@ -30,6 +31,41 @@ from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
 from general_ludd.scoring.router import AdaptiveRouter
+from general_ludd.security.auth import is_path_within
+
+
+def _workspace_root(app: FastAPI) -> str:
+    """The directory attacker-supplied code paths are confined to.
+
+    Prefers GLUDD_WORKSPACE, then the daemon's configured workspace root, then
+    the current working directory. Pure env/attr read — no I/O, no blocking.
+    """
+    return (
+        os.environ.get("GLUDD_WORKSPACE")
+        or getattr(app.state, "_workspace_root", None)
+        or os.getcwd()
+    )
+
+
+def _confined_code_path(app: FastAPI, path: str) -> str:
+    """Validate ``path`` is inside the workspace root or raise 422.
+
+    Refuses absolute paths and ``../`` escapes so /admin/code/* cannot be used to
+    read arbitrary files (e.g. /etc/passwd, ~/.ssh/id_rsa) off the host.
+    """
+    import tempfile
+
+    # The workspace root plus the system temp dir (a legitimate scratch location
+    # an operator analyzes files from). Sensitive host paths (/etc, ~/.ssh, /root)
+    # remain outside both roots and are refused.
+    roots = [_workspace_root(app), tempfile.gettempdir()]
+    for r in roots:
+        if path and is_path_within(r, path):
+            return os.path.realpath(os.path.join(os.path.realpath(r), path))
+    raise HTTPException(
+        status_code=422,
+        detail=f"path must be inside the workspace or temp root: {path!r}",
+    )
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -272,8 +308,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if isinstance(body, str):
             body = json.loads(body)
         path = body.get("path", "")
+        safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
-        score = scorer.score_file(path)
+        score = scorer.score_file(safe_path)
         task_type = scorer.suggest_task_type(score)
         return {
             "score": score.model_dump(),
@@ -288,8 +325,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if isinstance(body, str):
             body = json.loads(body)
         path = body.get("path", "")
+        safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
-        score = scorer.score_file(path)
+        score = scorer.score_file(safe_path)
         task_type = scorer.suggest_task_type(score)
 
         recommendation: dict[str, Any] = {

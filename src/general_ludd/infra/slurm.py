@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import enum
 import logging
+import re
 import subprocess
 from dataclasses import dataclass, field
 
@@ -12,6 +13,69 @@ import httpx
 logger = logging.getLogger(__name__)
 
 _SLURM_API_VERSION = "v0.0.40"
+
+# A Slurm job id is one or more digits, optionally with an array/step suffix
+# (``123_4``, ``123.batch``). It is never a flag, never contains whitespace or
+# shell metacharacters. We require it to begin with a digit so a value like
+# ``-A evil`` or ``--help`` can never be smuggled into argv as an extra option.
+_JOB_ID_RE = re.compile(r"^[0-9][0-9_.+]*$")
+
+# Names / partitions / accounts / qos: a conservative safe charset. No leading
+# dash (would be read as a flag / SBATCH option), no whitespace (would split
+# into extra tokens), no newlines (would inject an extra ``#SBATCH`` directive
+# into the generated script), no shell metacharacters.
+_NAME_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9_.:+-]*$")
+
+# Time limits: ``MM``, ``MM:SS``, ``HH:MM:SS``, ``D-HH``, ``D-HH:MM``,
+# ``D-HH:MM:SS``. Digits, colons and a single day-dash only — never leading.
+_TIME_RE = re.compile(r"^[0-9]+(-[0-9]{1,2})?(:[0-9]{1,2}){0,2}$")
+
+
+def _require_job_id(job_id: str) -> str:
+    """Fail-closed validation for a Slurm job id used as a positional argv arg."""
+    if not isinstance(job_id, str) or not _JOB_ID_RE.match(job_id):
+        raise ValueError(
+            f"invalid Slurm job id {job_id!r}: must be numeric "
+            "(no flags, whitespace or shell metacharacters)"
+        )
+    return job_id
+
+
+def _require_name(value: str, field_name: str) -> str:
+    """Fail-closed validation for a name/partition/account/qos style token."""
+    if not isinstance(value, str) or not _NAME_RE.match(value):
+        raise ValueError(
+            f"invalid Slurm {field_name} {value!r}: must match a safe charset "
+            "(no leading dash, whitespace, newlines or shell metacharacters)"
+        )
+    return value
+
+
+def _require_time(value: str) -> str:
+    """Fail-closed validation for a Slurm time limit."""
+    if not isinstance(value, str) or not _TIME_RE.match(value):
+        raise ValueError(
+            f"invalid Slurm time limit {value!r}: expected [[D-]HH:]MM[:SS] digits only"
+        )
+    return value
+
+
+def _require_extra_arg(value: str) -> str:
+    """Fail-closed validation for an operator-supplied passthrough sbatch arg.
+
+    Each entry is a single argv token. It must be a non-empty string with no
+    newline (which could smuggle a ``#SBATCH`` directive into the script) and
+    no NUL.
+    """
+    if (
+        not isinstance(value, str)
+        or not value
+        or "\n" in value
+        or "\r" in value
+        or "\x00" in value
+    ):
+        raise ValueError(f"invalid sbatch extra_arg {value!r}")
+    return value
 
 
 class SlurmNotInstalledError(Exception):
@@ -112,6 +176,18 @@ class SlurmAdapter:
         output: str | None = None,
         extra_args: list[str] | None = None,
     ) -> str:
+        # Validate every config-derived value fail-closed BEFORE it is embedded
+        # in argv or in the generated batch script. This guards both the local
+        # CLI path and the REST path (a hostile job_name/partition could inject
+        # an extra ``#SBATCH`` directive into the script that REST also runs).
+        self._validate_submit_params(
+            job_name=job_name,
+            partition=partition,
+            gpus=gpus,
+            memory=memory,
+            time_limit=time_limit,
+            extra_args=extra_args,
+        )
         if self._is_remote:
             return self._remote_submit(
                 command=command,
@@ -133,6 +209,39 @@ class SlurmAdapter:
             output=output,
             extra_args=extra_args,
         )
+
+    @staticmethod
+    def _validate_submit_params(
+        *,
+        job_name: str | None,
+        partition: str | None,
+        gpus: str | None,
+        memory: str | None,
+        time_limit: str | None,
+        extra_args: list[str] | None,
+    ) -> None:
+        """Fail-closed validation of all user/config-supplied submit params.
+
+        ``command`` and ``output`` are deliberately not charset-restricted here:
+        ``command`` is the script body (arbitrary shell by design) and ``output``
+        is a path. But name/partition/gpus/memory/time_limit are embedded into
+        ``#SBATCH`` directive lines, so a newline or shell metacharacter in any
+        of them would let a caller inject an extra directive or break out of the
+        intended argument — exactly the injection this hardening prevents.
+        """
+        if job_name is not None:
+            _require_name(job_name, "job_name")
+        if partition is not None:
+            _require_name(partition, "partition")
+        if gpus is not None:
+            _require_name(gpus, "gpus")
+        if memory is not None:
+            _require_name(memory, "memory")
+        if time_limit is not None:
+            _require_time(time_limit)
+        if extra_args is not None:
+            for arg in extra_args:
+                _require_extra_arg(arg)
 
     def status(self, job_id: str) -> SlurmJobInfo:
         if self._is_remote:
@@ -288,7 +397,8 @@ class SlurmAdapter:
     ) -> str:
         args = ["sbatch"]
         if extra_args:
-            args.extend(extra_args)
+            for arg in extra_args:
+                args.append(_require_extra_arg(arg))
         script = self._build_script(
             command=command,
             job_name=job_name,
@@ -299,6 +409,9 @@ class SlurmAdapter:
             time_limit=time_limit,
             output=output,
         )
+        # End-of-options guard so the trailing script positional can never be
+        # reinterpreted as an sbatch flag, then the script body itself.
+        args.append("--")
         args.append(script)
 
         try:
@@ -320,13 +433,16 @@ class SlurmAdapter:
         return self._parse_job_id(result.stdout)
 
     def _local_status(self, job_id: str) -> SlurmJobInfo:
+        job_id = _require_job_id(job_id)
+        # Bind the job id to its flag with ``--jobs=<id>`` so it can never be
+        # parsed as a standalone option. sacct takes no positional args, so the
+        # validated id rides as the flag value rather than as a positional.
         args = [
             "sacct",
             "--format=JobID,State,ExitCode",
             "--parsable2",
             "--noheader",
-            "--jobs",
-            job_id,
+            f"--jobs={job_id}",
         ]
 
         try:
@@ -344,9 +460,10 @@ class SlurmAdapter:
         return self._parse_sacct_line(job_id, result.stdout.strip())
 
     def _local_cancel(self, job_id: str) -> None:
+        job_id = _require_job_id(job_id)
         try:
             result = subprocess.run(
-                ["scancel", job_id],
+                ["scancel", "--", job_id],
                 capture_output=True,
                 text=True,
             )

@@ -128,21 +128,23 @@ class TestSecretMigrationFromEnv:
     def test_migrate_multiple_profiles(self, monkeypatch: pytest.MonkeyPatch):
         from general_ludd.secrets.migration import migrate_profile_secrets
 
-        monkeypatch.setenv("KEY_A", "val-a")
-        monkeypatch.setenv("KEY_B", "val-b")
+        # S-1: aliases must match the credential allowlist (e.g. *_API_KEY) for
+        # migration to read them from the environment.
+        monkeypatch.setenv("A_API_KEY", "val-a")  # pragma: allowlist secret
+        monkeypatch.setenv("B_API_KEY", "val-b")  # pragma: allowlist secret
 
         mgr, _kv = _make_connected_manager()
 
         profiles = [
-            {"model_profile_id": "prof_a", "credential_alias": "KEY_A", "api_base_alias": None},
-            {"model_profile_id": "prof_b", "credential_alias": "KEY_B", "api_base_alias": None},
+            {"model_profile_id": "prof_a", "credential_alias": "A_API_KEY", "api_base_alias": None},
+            {"model_profile_id": "prof_b", "credential_alias": "B_API_KEY", "api_base_alias": None},
         ]
 
         result = migrate_profile_secrets(mgr, profiles)
         assert result["migrated"] == 2
 
-        assert mgr.resolve("KEY_A") == "val-a"
-        assert mgr.resolve("KEY_B") == "val-b"
+        assert mgr.resolve("A_API_KEY") == "val-a"
+        assert mgr.resolve("B_API_KEY") == "val-b"
 
 
 class TestSecretScrubbingFromConfig:

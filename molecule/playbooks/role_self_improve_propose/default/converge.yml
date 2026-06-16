@@ -1,0 +1,30 @@
+---
+# Run the REAL self_improve_propose role from the collection with the safety gate
+# OPENED (self_improve_enabled=true). The role:
+#   introspect -> reads the mock daemon's /api/facts codebase block (gludd_introspect),
+#   target    -> picks the lowest line_rate file from coverage.low_coverage,
+#   worktree  -> creates a genuine git worktree on the throwaway repo (gludd_worktree),
+#   proposal  -> runs gludd_agent_run (mock /admin/models/call) and writes proposal.json.
+# Only the daemon is mocked; the worktree op runs real git on the disposable repo.
+- name: Converge - run self_improve_propose role (enabled)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    worktree_base: "/tmp/gludd-self-improve-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    artifact_dir: "/tmp/gludd-self-improve-propose-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+  tasks:
+    - name: Invoke self_improve_propose
+      ansible.builtin.include_role:
+        name: general_ludd.agent.self_improve_propose
+      vars:
+        self_improve_enabled: true
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        repo_path: "{{ repo_path }}"
+        worktree_base: "{{ worktree_base }}"
+        candidate_branch: "auto/self-improve/candidate-{{ mock_port }}"
+        artifact_dir: "{{ artifact_dir }}"
+        agent_max_iterations: 1

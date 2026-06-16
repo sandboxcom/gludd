@@ -5,6 +5,10 @@
 daemon_url: "http://localhost:8000"
 psk: ""
 
+# Capability identity for the per-role default-DENY db policy (capability_policy.py).
+# Grants ONLY this role's db op (todo_create for write_back). Override to widen.
+capability_role: "story_create"
+
 # Artifact output
 artifact_dir: "/tmp/gludd-story-create"
 

@@ -25,8 +25,12 @@
         executable: python3
       register: key_gen
 
+    # noqa jinja[spacing]: the cmd is Python source (run via script), not a
+    # Jinja template. The f-string `{{{{ project_id }}}}` is Python brace-
+    # escaping that emits a literal `{{ project_id }}`; ansible-lint mis-reads
+    # the doubled braces as Jinja spacing — its rewrite would corrupt the output.
     - name: Store cosign key in OpenBao
-      ansible.builtin.script:
+      ansible.builtin.script: # noqa: jinja[spacing]
         cmd: |
           import sys, os
           sys.path.insert(0, "{{ lookup('env', 'PWD') }}/src")

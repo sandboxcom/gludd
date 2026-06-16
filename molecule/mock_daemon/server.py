@@ -460,6 +460,13 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         path = urlparse(self.path).path
         if path == "/healthz":
             self._send_json(200, {"status": "ok"})
+        elif path == "/readyz":
+            # Healthy readiness gate for gludd_reload's health_url: 200 + not degraded.
+            self._send_json(200, {"status": "ok", "degraded": False})
+        elif path == "/readyz-degraded":
+            # Degraded readiness gate: 200 but degraded=true -> gludd_reload treats it
+            # as UNHEALTHY and rolls the hot-swapped module back (fail-closed gate).
+            self._send_json(200, {"status": "degraded", "degraded": True})
         elif path == "/api/facts":
             self._send_json(200, dict(FACTS_SNAPSHOT))
         elif path == "/api/metrics":

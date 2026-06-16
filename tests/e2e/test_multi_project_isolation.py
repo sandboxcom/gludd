@@ -151,19 +151,24 @@ class TestMultiProjectDaemonE2E:
 
 class TestMultiProjectFullFlowE2E:
     def test_full_lifecycle_two_projects(self, client):
-        alpha = _unique_project_id()
-        beta = _unique_project_id()
-
-        client.post(
+        # Once active projects exist, AUTH-2 requires a non-null todo
+        # project_id to reference a registered, active project. Use the
+        # IDs returned by project creation rather than arbitrary strings.
+        resp_alpha = client.post(
             "/admin/projects",
             json={"name": "webapp", "weight": 60.0},
         )
-        client.post(
+        assert resp_alpha.status_code in (200, 201)
+        alpha = resp_alpha.json()["project_id"]
+
+        resp_beta = client.post(
             "/admin/projects",
             json={"name": "api", "weight": 40.0},
         )
+        assert resp_beta.status_code in (200, 201)
+        beta = resp_beta.json()["project_id"]
 
-        client.post(
+        resp = client.post(
             "/api/todos",
             json={
                 "title": "Build homepage",
@@ -172,7 +177,8 @@ class TestMultiProjectFullFlowE2E:
                 "work_type": "code",
             },
         )
-        client.post(
+        assert resp.status_code == 201
+        resp = client.post(
             "/api/todos",
             json={
                 "title": "Build API endpoint",
@@ -181,6 +187,7 @@ class TestMultiProjectFullFlowE2E:
                 "work_type": "code",
             },
         )
+        assert resp.status_code == 201
 
         alpha_todos = client.get("/api/todos", params={"project_id": alpha}).json()
         assert len(alpha_todos) == 1

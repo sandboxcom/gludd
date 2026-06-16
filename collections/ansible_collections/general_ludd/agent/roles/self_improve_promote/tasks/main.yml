@@ -10,7 +10,7 @@
     msg: "self_improve_promote disabled (self_improve_enabled is false) — skipping"
   when: not (self_improve_enabled | default(false) | bool)
 
-- name: self_improve_promote (enabled)
+- name: Self_improve_promote (enabled)
   when: self_improve_enabled | default(false) | bool
   block:
 

@@ -1,17 +1,54 @@
 from __future__ import annotations
 
+import os
 import time
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.integrity.scanner import FileIntegrityScanner, sign_change_openbao
+from general_ludd.security.auth import is_path_within
 from general_ludd.validation.gap_analyzer import GapAnalyzer
 from general_ludd.validation.log_auditor import LogAuditor
 
 _integrity_changes: list[dict[str, Any]] = []
 _integrity_log: list[dict[str, Any]] = []
+
+
+def _scan_roots(app: FastAPI) -> list[str]:
+    """The directories an integrity scan is allowed to touch.
+
+    A caller-supplied scan path must resolve inside one of these roots; anything
+    else (e.g. ``/etc``, ``/``, ``~/.ssh``) is refused. Pure env/attr reads — no
+    blocking I/O.
+    """
+    import tempfile
+
+    roots = [
+        os.environ.get("GLUDD_WORKSPACE", ""),
+        str(getattr(app.state, "_config_dir", "") or ""),
+        os.path.expanduser("~/.config/gludd"),
+        os.path.expanduser("~/.local/share/general-ludd"),
+        # Legitimate scratch location for integrity scans (still excludes /etc, ~/.ssh).
+        tempfile.gettempdir(),
+    ]
+    return [r for r in roots if r]
+
+
+def _confine_scan_paths(app: FastAPI, paths: list[Any]) -> list[str]:
+    """Validate each requested scan path lies inside an allowed root, else 422."""
+    roots = _scan_roots(app)
+    confined: list[str] = []
+    for raw in paths:
+        p = str(raw)
+        if not any(is_path_within(root, p) for root in roots):
+            raise HTTPException(
+                status_code=422,
+                detail=f"scan path escapes the allowed roots: {p!r}",
+            )
+        confined.append(p)
+    return confined
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -21,13 +58,17 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         req = req or {}
         paths = req.get("paths", [])
         if not paths:
-            import os as _os
+            # Trusted defaults — already the allowed roots, no confinement needed.
             paths = [
                 str(getattr(app.state, "_config_dir", "")),
-                _os.path.expanduser("~/.config/gludd"),
-                _os.path.expanduser("~/.local/share/general-ludd"),
+                os.path.expanduser("~/.config/gludd"),
+                os.path.expanduser("~/.local/share/general-ludd"),
             ]
             paths = [p for p in paths if p]
+        else:
+            # AUTH-5: caller-supplied scan paths must stay inside an allowed root
+            # so the endpoint can't be used to hash/exfiltrate arbitrary files.
+            paths = _confine_scan_paths(app, paths)
         scanner = FileIntegrityScanner()
         result = scanner.scan(paths, exclude_patterns=[r"\.pyc$", r"__pycache__", r"\.git/", r"\.db$"])
         _integrity_changes[:] = result["changes"]

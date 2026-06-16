@@ -14,7 +14,7 @@
     msg: "self_improve_ab_test disabled (self_improve_enabled is false) — skipping"
   when: not (self_improve_enabled | default(false) | bool)
 
-- name: self_improve_ab_test (enabled)
+- name: Self_improve_ab_test (enabled)
   when: self_improve_enabled | default(false) | bool
   block:
 

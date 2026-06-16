@@ -29,9 +29,13 @@ Design notes
 
 from __future__ import annotations
 
+import logging
+import threading
 import time
 from collections.abc import Callable
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 
 class SpendLimiter:
@@ -56,10 +60,26 @@ class SpendLimiter:
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
         # Each record: (timestamp_float, cost_usd_float)
         self._records: list[tuple[float, float]] = []
+        # Re-entrant lock guards the check-and-record sequence so concurrent
+        # charges in one window cannot collectively race past the cap (#3).
+        # Re-entrant because try_charge() calls window_spend()/record() which
+        # also acquire the lock.
+        self._lock = threading.RLock()
 
     # ------------------------------------------------------------------
     # Public API
     # ------------------------------------------------------------------
+
+    @property
+    def cap_configured(self) -> bool:
+        """True when a positive spend cap is configured.
+
+        A non-positive ``limit_usd`` (<= 0) means "unlimited" — there is no cap
+        to enforce, so fail-closed semantics (refusing unknown costs) do not
+        apply.  A positive limit means a cap exists and unknown costs must be
+        refused (fail closed).
+        """
+        return self._limit_usd > 0.0
 
     def record(
         self,
@@ -83,7 +103,100 @@ class SpendLimiter:
             project_id: Optional project scope (informational).
         """
         ts = at if at is not None else self._clock()
-        self._records.append((ts, cost_usd))
+        with self._lock:
+            self._records.append((ts, cost_usd))
+
+    def try_charge(
+        self,
+        cost_usd: float | None,
+        *,
+        kind: str,
+        at: float | None = None,
+        model: str | None = None,
+        project_id: str | None = None,
+        **extra: Any,
+    ) -> bool:
+        """Atomically check the cap and, if the charge fits, record it.
+
+        This is the enforcement entry point that closes the bypasses:
+
+        * #1 (inert limiter): every accepted charge is RECORDED against the
+          window in the same critical section as the check, so the rolling
+          spend actually grows and the cap can trip.
+        * #3 (concurrent overshoot): the check-and-record runs under a lock, so
+          two concurrent charges can never both observe the same headroom and
+          both commit — their combined spend can never exceed the cap.
+        * #4 (silent fail-open): when ``cost_usd`` is ``None`` (unknown cost)
+          and a cap is configured, the charge is REFUSED — no record is made
+          and the caller must defer.  Only when no cap is configured
+          (``cap_configured`` is False) is an unknown cost allowed through.
+
+        Args:
+            cost_usd:   Amount to charge in USD, or ``None`` if the cost could
+                        not be determined.
+            kind:       Resource kind (e.g. ``"token"``, ``"infra"``).
+            at:         Override the record timestamp (useful in tests).
+            model:      Optional model identifier (informational).
+            project_id: Optional project scope (informational).
+
+        Returns:
+            True if the charge was accepted and recorded; False if it was
+            refused (cap would be exceeded, or unknown cost under a cap).
+        """
+        with self._lock:
+            if cost_usd is None:
+                # Unknown cost: fail CLOSED when a cap is configured.
+                if self.cap_configured:
+                    logger.warning(
+                        "SpendLimiter: refusing charge of UNKNOWN cost under a "
+                        "configured cap (limit=%.6f USD) — failing closed.",
+                        self._limit_usd,
+                    )
+                    return False
+                # No cap -> nothing to enforce; allow (and do not record an
+                # unknown amount).
+                return True
+            if self.would_exceed(cost_usd, now=at):
+                return False
+            self.record(
+                cost_usd,
+                kind=kind,
+                at=at,
+                model=model,
+                project_id=project_id,
+                **extra,
+            )
+            return True
+
+    def snapshot(self) -> list[tuple[float, float]]:
+        """Return a serializable copy of the in-window records.
+
+        Persist this across a daemon restart and pass it back to ``restore`` so
+        accumulated spend SURVIVES the restart (#2) — otherwise a restart resets
+        the window to zero and the cap can be evaded by restarting.
+
+        Returns:
+            A list of ``(timestamp, cost_usd)`` tuples.
+        """
+        with self._lock:
+            return list(self._records)
+
+    def restore(self, records: list[tuple[float, float]] | None) -> None:
+        """Reload previously-snapshotted records into this limiter.
+
+        Records outside the current window are pruned lazily on the next
+        ``window_spend()`` call, so restoring stale records after a long
+        downtime is safe.
+
+        Args:
+            records: A list of ``(timestamp, cost_usd)`` tuples produced by
+                     ``snapshot`` (or an equivalent persisted form).  ``None``
+                     or empty is a no-op.
+        """
+        if not records:
+            return
+        with self._lock:
+            self._records.extend((float(ts), float(c)) for ts, c in records)
 
     def window_spend(self, now: float | None = None) -> float:
         """Sum of all spend within the rolling window ending at ``now``.
@@ -100,9 +213,10 @@ class SpendLimiter:
         if now is None:
             now = self._clock()
         cutoff = now - self._window_seconds
-        # Prune in-place: keep records where ts >= cutoff
-        self._records = [(ts, c) for ts, c in self._records if ts >= cutoff]
-        return sum(c for _, c in self._records)
+        with self._lock:
+            # Prune in-place: keep records where ts >= cutoff
+            self._records = [(ts, c) for ts, c in self._records if ts >= cutoff]
+            return sum(c for _, c in self._records)
 
     def remaining(self, now: float | None = None) -> float:
         """Remaining budget within the current window.

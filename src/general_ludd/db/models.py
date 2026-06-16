@@ -72,7 +72,10 @@ class TodoModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     todo_id: Mapped[str] = mapped_column(String(32), unique=True, nullable=False, default=_gen_todo_id)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     title: Mapped[str] = mapped_column(String(512), nullable=False)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -115,7 +118,10 @@ class TodoModel(Base):
     )
 
     events: Mapped[list[TodoEventModel]] = relationship(
-        back_populates="todo", order_by="TodoEventModel.id"
+        back_populates="todo",
+        order_by="TodoEventModel.id",
+        cascade="all, delete-orphan",
+        passive_deletes=True,
     )
 
 
@@ -123,9 +129,17 @@ class TodoEventModel(Base):
     __tablename__ = "todo_events"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    todo_id: Mapped[str] = mapped_column(String(32), ForeignKey("todos.todo_id"), nullable=False, index=True)
+    todo_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     event_type: Mapped[str] = mapped_column(String(64), nullable=False)
     old_status: Mapped[str | None] = mapped_column(String(32), nullable=True)
@@ -143,7 +157,10 @@ class TaskReturnModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     return_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
     job_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -173,7 +190,10 @@ class TaskDecisionModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     return_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     matched_todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True)
     decision: Mapped[str] = mapped_column(String(32), nullable=False)
@@ -194,7 +214,10 @@ class QueueModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     queue_name: Mapped[str] = mapped_column(String(64), unique=True, nullable=False)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     queue_enabled: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
     priority_weight: Mapped[int] = mapped_column(Integer, nullable=False, default=100)
@@ -216,7 +239,10 @@ class AuditEventModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     event_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     actor: Mapped[str] = mapped_column(String(64), nullable=False, default="agent")
     entity_type: Mapped[str] = mapped_column(String(64), nullable=False)
@@ -236,7 +262,10 @@ class VariableNamespaceModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     namespace: Mapped[str] = mapped_column(String(128), nullable=False)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
@@ -249,7 +278,7 @@ class VariableNamespaceModel(Base):
     )
 
     values: Mapped[list[VariableValueModel]] = relationship(
-        back_populates="namespace", cascade="all, delete-orphan"
+        back_populates="namespace", cascade="all, delete-orphan", passive_deletes=True
     )
 
 
@@ -258,7 +287,10 @@ class VariableValueModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     namespace_id: Mapped[int] = mapped_column(
-        Integer, ForeignKey("variable_namespaces.id"), nullable=False, index=True
+        Integer,
+        ForeignKey("variable_namespaces.id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
     )
     key: Mapped[str] = mapped_column(String(256), nullable=False)
     value: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -281,7 +313,10 @@ class BucketLeaseModel(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     bucket_key: Mapped[str] = mapped_column(String(256), nullable=False, index=True)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     holder_id: Mapped[str] = mapped_column(String(128), nullable=False)
     expires_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
@@ -322,7 +357,10 @@ class FeatureModel(Base):
         String(32), primary_key=True, default=_gen_feature_id
     )
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     name: Mapped[str] = mapped_column(String(256), nullable=False, unique=True)
     description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -378,7 +416,10 @@ class AgentMessageModel(Base):
         String(40), primary_key=True, default=lambda: f"MSG-{uuid4().hex[:12].upper()}"
     )
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     sender: Mapped[str] = mapped_column(String(128), nullable=False)
     recipient: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
@@ -409,7 +450,10 @@ class SpendRecordModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     ts: Mapped[float] = mapped_column(Float, nullable=False, index=True)
     cost_usd: Mapped[float] = mapped_column(Float, nullable=False)
@@ -431,7 +475,10 @@ class RoleRunModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     project_id: Mapped[str | None] = mapped_column(
-        String(32), ForeignKey("projects.project_id"), nullable=True, index=True
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     role: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
     ts: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
@@ -446,7 +493,10 @@ class BenchmarkResultModel(Base):
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
     prompt_profile_id: Mapped[str] = mapped_column(
-        String(64), ForeignKey("prompt_profiles.id"), nullable=True, index=True
+        String(64),
+        ForeignKey("prompt_profiles.id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
     )
     model_profile_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)

@@ -115,6 +115,7 @@ class AnsibleRunnerAdapter:
         private_data_dir: str | None = None,
         extravars: dict[str, Any] | None = None,
         env: dict[str, str] | None = None,
+        timeout: float | None = None,
         **runner_kwargs: Any,
     ) -> dict[str, Any]:
         try:
@@ -128,9 +129,18 @@ class AnsibleRunnerAdapter:
                 saved_env[key] = os.environ.get(key)
                 os.environ[key] = val
         try:
+            # Network-exposed path: ALWAYS bound the run with a FINITE timeout so
+            # a runaway/sleeping playbook can never hang the worker. When the
+            # caller does not specify one, resolve the env/default bound here
+            # (GLUDD_PLAYBOOK_TIMEOUT, default 300s) so a finite value is always
+            # passed down — never None (which would run unbounded inline).
+            from general_ludd.ansible.core_runner import _env_default_timeout
+
+            effective_timeout = _env_default_timeout() if timeout is None else timeout
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
                 extravars=extravars or {},
+                timeout=effective_timeout,
             )
             return result.model_dump()
         except Exception as exc:

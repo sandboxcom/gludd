@@ -390,6 +390,26 @@ clean-tmp:
 	@rm -rf /private/tmp/gludd-iso-* /private/tmp/pytest-of-* 2>/dev/null || true
 	@echo "clean-tmp done"
 
+# Proactive ENOSPC guard: reclaim scratch + venvs + already-merged worktrees,
+# then FAIL FAST if free space is still under FLOOR (default 2048 MiB) so a gate
+# or agent batch can never silently drive the volume to the ENOSPC deadlock.
+# Run `make disk-guard` before every gate / agent wave.
+disk-guard:
+	@# SAFE reclaim ONLY — regenerable scratch + venvs. NEVER removes a worktree
+	@# (a worktree may hold UNSYNCED agent work; --force here once destroyed 5
+	@# fixes). Worktree teardown is a SEPARATE, deliberate step (wt-prune-safe,
+	@# no --force) done only AFTER the work is synced. This guard just reclaims
+	@# scratch and refuses the heavy op below the floor.
+	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /private/tmp/pytest-of-* 2>/dev/null || true
+	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null || true
+	@FREE=$$(df -m / | awk 'NR==2{print $$4}'); FLOOR=$${FLOOR:-2048}; \
+	if [ "$$FREE" -lt "$$FLOOR" ]; then \
+		echo "DISK-GUARD FAIL: only $${FREE}MiB free (< $${FLOOR}MiB floor) — refusing heavy op."; \
+		echo "  Free space first, e.g.: tmutil deletelocalsnapshots / ; rm -rf ~/Library/Caches/*"; \
+		exit 1; \
+	fi; \
+	echo "disk-guard OK: $${FREE}MiB free (floor $${FLOOR})"
+
 # Disk headroom check — run BEFORE any heavy op (gate, agent dispatch) so we
 # never silently refill the volume. Prints % used + free on the data volume.
 disk:
@@ -489,6 +509,16 @@ untrack:
 git-rm:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm FILES='path ...'"; exit 1; }
 	@git rm -r $(FILES) && echo "git-removed: $(FILES)"
+
+# Revert working-tree changes for specific files: tracked files -> HEAD version,
+# untracked files -> deleted. Used to back a synced-but-broken agent change out
+# of the working tree without disturbing other synced work.
+git-revert-files:
+	@[ -n "$(FILES)" ] || { echo "Usage: make git-revert-files FILES='...'"; exit 1; }
+	@for f in $(FILES); do \
+		if git ls-files --error-unmatch "$$f" >/dev/null 2>&1; then git checkout HEAD -- "$$f" && echo "  reverted $$f"; \
+		else rm -f "$$f" && echo "  removed (untracked) $$f"; fi; \
+	done
 
 git-log:
 	@git log --oneline -10 || echo "No git history"
@@ -718,6 +748,18 @@ ci-greenness:
 test-iso:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-iso TESTFILE=path [ID=x]"; exit 1; fi
 	@BT="/tmp/gludd-iso-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) -p no:cacheprovider --basetemp="$$BT" -q; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+# Like test-iso but with the GATE's xdist flags (-n 2 --dist loadgroup) to
+# reproduce xdist-only hangs/deadlocks that test-iso (single-process) misses.
+test-xdist:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-xdist TESTFILE=path"; exit 1; fi
+	@BT="/tmp/gludd-xdist-$${ID:-$$$$}"; rm -rf "$$BT"; $(UV) run python -m pytest $(TESTFILE) -n 2 --dist loadgroup -p no:cacheprovider --basetemp="$$BT" -q; RC=$$?; rm -rf "$$BT"; exit $$RC
+
+# Full-suite xdist run with a THREAD-method per-test timeout so an uninterruptible
+# hang (which the gate's signal-method timeout can't catch) is force-failed and
+# NAMED, instead of stalling the whole run. Diagnostic only.
+test-hang-debug:
+	@BT="/tmp/gludd-hangdbg"; rm -rf "$$BT"; $(UV) run python -m pytest tests/ -n 2 --dist loadgroup -p no:cacheprovider --timeout=100 --timeout-method=thread --basetemp="$$BT" -q -rf; RC=$$?; rm -rf "$$BT"; exit $$RC
 
 # Wider lint/type scope (#35) — measures lint across ALL tracked python, not just src/tests.
 lint-all:

@@ -18,10 +18,16 @@ naming convention.
 
 from __future__ import annotations
 
+import asyncio
 import os
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
+import pytest
+
+from general_ludd.secrets.config import OpenBaoConfig
 from general_ludd.secrets.env import EnvSecretsManager
+from general_ludd.secrets.manager import SecretsManager
+from general_ludd.secrets.migration import migrate_profile_secrets
 from general_ludd.secrets.project_secrets import ProjectSecretsManager
 
 
@@ -96,3 +102,207 @@ class TestProjectSecretsScoping:
         scoped_call = base.read_secret.call_args[0][0]
         assert "proj-x" in scoped_call
         assert result == "scoped-val"
+
+
+class TestProjectKvPathContainment:
+    """S-1 (KV path containment): _scoped_path must reject traversal."""
+
+    def test_project_id_with_slash_rejected(self):
+        base = MagicMock()
+        with pytest.raises(ValueError):
+            ProjectSecretsManager(base_manager=base, project_id="proj/../other")
+
+    def test_project_id_with_dotdot_rejected(self):
+        base = MagicMock()
+        with pytest.raises(ValueError):
+            ProjectSecretsManager(base_manager=base, project_id="..")
+
+    def test_scoped_path_stays_under_project_prefix(self):
+        base = MagicMock()
+        pmgr = ProjectSecretsManager(base_manager=base, project_id="proj-x")
+        scoped = pmgr._scoped_path("db/password")
+        assert scoped == "projects/proj-x/db/password"
+        assert scoped.startswith("projects/proj-x/")
+
+    def test_path_traversal_in_path_arg_rejected(self):
+        base = MagicMock()
+        pmgr = ProjectSecretsManager(base_manager=base, project_id="proj-x")
+        # A traversal in the per-call path must not escape the project prefix.
+        with pytest.raises(ValueError):
+            pmgr._scoped_path("../../other-project/secret")
+
+    def test_write_with_traversal_path_blocked(self):
+        base = MagicMock()
+        pmgr = ProjectSecretsManager(base_manager=base, project_id="proj-x")
+        with pytest.raises(ValueError):
+            pmgr.write_secret("../escape", {"value": "x"})
+        base.write_secret.assert_not_called()
+
+
+class TestMigrationAllowlist:
+    """S-1: migrate_profile_secrets must honor the EnvSecretsManager allowlist."""
+
+    def test_psk_alias_skipped_not_migrated(self):
+        mgr = MagicMock()
+        profiles = [
+            {"model_profile_id": "p1", "credential_alias": "GLUDD_PSK"},
+        ]
+        with patch.dict(os.environ, {"GLUDD_PSK": "super-secret-psk"}):
+            result = migrate_profile_secrets(mgr, profiles)
+        assert result["migrated"] == 0
+        assert "GLUDD_PSK" in result["skipped"]
+        mgr.write_secret.assert_not_called()
+
+    def test_arbitrary_env_aliases_skipped(self):
+        mgr = MagicMock()
+        profiles = [
+            {"model_profile_id": "p1", "credential_alias": "PATH"},
+            {"model_profile_id": "p2", "credential_alias": "AWS_SECRET_ACCESS_KEY"},
+        ]
+        with patch.dict(
+            os.environ,
+            {"PATH": "/usr/bin", "AWS_SECRET_ACCESS_KEY": "leak"},  # pragma: allowlist secret
+        ):
+            result = migrate_profile_secrets(mgr, profiles)
+        assert result["migrated"] == 0
+        assert "PATH" in result["skipped"]
+        assert "AWS_SECRET_ACCESS_KEY" in result["skipped"]
+        mgr.write_secret.assert_not_called()
+
+    def test_api_key_alias_still_migrates(self):
+        mgr = MagicMock()
+        profiles = [
+            {"model_profile_id": "p1", "credential_alias": "OPENAI_API_KEY"},
+        ]
+        with patch.dict(os.environ, {"OPENAI_API_KEY": "sk-real"}):  # pragma: allowlist secret
+            result = migrate_profile_secrets(mgr, profiles)
+        assert result["migrated"] == 1
+        assert "OPENAI_API_KEY" in result["aliases"]
+        mgr.write_secret.assert_called_once()
+        # The value written is the resolved env value, not None.
+        written_value = mgr.write_secret.call_args[0][1]
+        assert written_value == {"value": "sk-real"}
+
+
+class TestLocalContainerHardening:
+    """H-1: dev container must bind loopback + use a per-boot random token."""
+
+    def _start(self, mgr: SecretsManager) -> tuple[str | None, list[str]]:
+        captured: dict[str, list[str]] = {}
+
+        async def fake_exec(*args: str, **kwargs: object):
+            captured["args"] = list(args)
+            proc = AsyncMock()
+            proc.returncode = 0
+            proc.communicate = AsyncMock(return_value=(b"container-abc\n", b""))
+            return proc
+
+        resolver = MagicMock()
+        resolver.get_container_runtime.return_value = "docker"
+        with patch(
+            "general_ludd.secrets.manager.asyncio.create_subprocess_exec",
+            side_effect=fake_exec,
+        ), patch("platform.system", return_value="Linux"):
+            cid = asyncio.run(mgr.start_local_container(binary_resolver=resolver))
+        return cid, captured.get("args", [])
+
+    def test_no_root_token_literal(self):
+        mgr = SecretsManager(config=OpenBaoConfig(mode="auto"))
+        cid, args = self._start(mgr)
+        assert cid == "container-abc"
+        joined = " ".join(args)
+        assert "-dev-root-token-id=root" not in joined
+        assert "root" not in args  # no bare 'root' literal token
+
+    def test_binds_loopback_only(self):
+        mgr = SecretsManager(config=OpenBaoConfig(mode="auto"))
+        _cid, args = self._start(mgr)
+        joined = " ".join(args)
+        assert "0.0.0.0:8200" not in joined
+        assert "-dev-listen-address=127.0.0.1:8200" in args
+        assert "127.0.0.1:8200:8200" in args
+
+    def test_per_boot_token_surfaced_on_bootstrap_result(self):
+        mgr = SecretsManager(config=OpenBaoConfig(mode="auto"))
+        _cid, args = self._start(mgr)
+        # The minted token must appear in the dev-root-token-id arg AND on the
+        # bootstrap result so connect() can authenticate to it.
+        token_arg = next(a for a in args if a.startswith("-dev-root-token-id="))
+        token = token_arg.split("=", 1)[1]
+        assert token and token != "root"
+        assert mgr._local_bootstrap_result is not None
+        assert mgr._local_bootstrap_result.token == token
+        assert mgr._local_bootstrap_result.container_token == token
+
+    def test_token_is_per_boot_random(self):
+        mgr1 = SecretsManager(config=OpenBaoConfig(mode="auto"))
+        mgr2 = SecretsManager(config=OpenBaoConfig(mode="auto"))
+        _c1, args1 = self._start(mgr1)
+        _c2, args2 = self._start(mgr2)
+        t1 = next(a for a in args1 if a.startswith("-dev-root-token-id=")).split("=", 1)[1]
+        t2 = next(a for a in args2 if a.startswith("-dev-root-token-id=")).split("=", 1)[1]
+        assert t1 != t2
+
+    def test_external_mode_refuses_local_container(self):
+        mgr = SecretsManager(
+            config=OpenBaoConfig(
+                mode="external",
+                external_url="https://bao.example.com:8200",
+                external_token="s.ext",
+            )
+        )
+        resolver = MagicMock()
+        resolver.get_container_runtime.return_value = "docker"
+        with pytest.raises(RuntimeError):
+            asyncio.run(mgr.start_local_container(binary_resolver=resolver))
+
+
+class TestAppRoleRotation:
+    """W5.1: rotate_approle_secret_id mints new + destroys old; bounded TTLs."""
+
+    def _connected_mgr(self) -> SecretsManager:
+        mgr = SecretsManager(config=OpenBaoConfig())
+        mgr._client = MagicMock()
+        return mgr
+
+    def test_setup_approle_uses_bounded_ttls(self):
+        mgr = self._connected_mgr()
+        mgr._client.auth.approle.read_role_id.return_value = {
+            "data": {"role_id": "rid-1"}
+        }
+        mgr._client.auth.approle.generate_secret_id.return_value = {
+            "data": {"secret_id": "sid-1", "secret_id_accessor": "acc-1"}
+        }
+        mgr.setup_approle("role-x")
+        kwargs = mgr._client.auth.approle.create_role.call_args[1]
+        assert kwargs.get("secret_id_ttl")
+        assert kwargs.get("token_ttl")
+
+    def test_rotate_mints_new_and_destroys_old(self):
+        mgr = self._connected_mgr()
+        mgr._client.auth.approle.read_role_id.return_value = {
+            "data": {"role_id": "rid-1"}
+        }
+        # First secret_id (issued at setup) tracked under accessor acc-1.
+        mgr._client.auth.approle.generate_secret_id.return_value = {
+            "data": {"secret_id": "sid-1", "secret_id_accessor": "acc-1"}
+        }
+        mgr.setup_approle("role-x")
+        assert mgr._secret_id_accessors["role-x"] == ["acc-1"]
+
+        # Rotation mints sid-2 (accessor acc-2) and destroys acc-1.
+        mgr._client.auth.approle.generate_secret_id.return_value = {
+            "data": {"secret_id": "sid-2", "secret_id_accessor": "acc-2"}
+        }
+        new_sid = mgr.rotate_approle_secret_id("role-x")
+        assert new_sid == "sid-2"
+        mgr._client.auth.approle.destroy_secret_id_accessor.assert_called_once_with(
+            "role-x", "acc-1"
+        )
+        # Old accessor dropped; only the freshly minted one remains tracked.
+        assert mgr._secret_id_accessors["role-x"] == ["acc-2"]
+
+    def test_rotate_without_client_raises(self):
+        mgr = SecretsManager(config=OpenBaoConfig())
+        with pytest.raises(RuntimeError):
+            mgr.rotate_approle_secret_id("role-x")

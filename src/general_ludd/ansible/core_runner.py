@@ -14,6 +14,7 @@ This provides direct access to:
 from __future__ import annotations
 
 import logging
+import multiprocessing
 import os
 from typing import Any
 
@@ -21,6 +22,53 @@ import yaml
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
+
+# Default wall-clock bound (seconds) for a single playbook run when the caller
+# does not pass one. The network-exposed worker adapter (runner.py) always
+# passes a finite timeout; this default guards any other in-process caller.
+_DEFAULT_PLAYBOOK_TIMEOUT = 300.0
+# rc returned when a run is killed for exceeding its wall-clock bound (matches
+# the shell convention for "command timed out").
+_TIMEOUT_RC = 124
+
+
+def _json_safe(obj: Any) -> Any:
+    """Coerce a structure to JSON/pickle-safe primitives.
+
+    Used to ferry an AnsibleResult dump out of a fork child: dicts/lists recurse,
+    JSON scalars pass through, and anything else (an ansible object embedded in an
+    event's result payload) is replaced by its ``repr`` so the queue.put never
+    fails on an unpicklable leaf.
+    """
+    if obj is None or isinstance(obj, (bool, int, float, str)):
+        return obj
+    if isinstance(obj, dict):
+        return {str(k): _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, (list, tuple)):
+        return [_json_safe(v) for v in obj]
+    try:
+        import json
+
+        json.dumps(obj)
+        return obj
+    except Exception:
+        return repr(obj)
+
+
+def _env_default_timeout() -> float:
+    """Resolve the default playbook timeout from GLUDD_PLAYBOOK_TIMEOUT.
+
+    A non-positive or unparseable value falls back to the 300s default. The env
+    var is read per-call so tests can override it without re-importing.
+    """
+    raw = os.environ.get("GLUDD_PLAYBOOK_TIMEOUT", "")
+    if not raw:
+        return _DEFAULT_PLAYBOOK_TIMEOUT
+    try:
+        val = float(raw)
+    except ValueError:
+        return _DEFAULT_PLAYBOOK_TIMEOUT
+    return val if val > 0 else _DEFAULT_PLAYBOOK_TIMEOUT
 
 try:
     from ansible.parsing.dataloader import DataLoader
@@ -145,6 +193,7 @@ class AnsibleResult(BaseModel):
     stats: dict[str, Any] = Field(default_factory=dict)
     events: list[dict[str, Any]] = Field(default_factory=list)
     host_results: dict[str, Any] = Field(default_factory=dict)
+    error: str | None = None
 
     @field_validator("status", mode="before")
     @classmethod
@@ -177,13 +226,71 @@ class CoreAnsibleRunner:
         skip_tags: list[str] | None = None,
         connection: str = "local",
         become: bool = False,
+        timeout: float | None = None,
     ) -> AnsibleResult:
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
-        return self._execute_with_core(
+
+        # HIGH (process_isolation): the config used to be stored and silently
+        # ignored. If isolation is REQUESTED but we cannot honor it natively,
+        # fail CLOSED — never run an isolation-requiring job unconfined.
+        iso = self._process_isolation
+        if (
+            iso is not None
+            and getattr(iso, "enabled", False)
+            and not self._isolation_supported(iso)
+        ):
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error=(
+                    "process_isolation requested but not supported in this "
+                    "runtime; refusing to run unconfined"
+                ),
+            )
+
+        # HIGH (unwrapped extravars): wrap EVERY untrusted extra-var value
+        # Ansible-unsafe before it reaches the executor, so embedded Jinja in
+        # model output (or any other caller-supplied value) is never re-
+        # templated into a shell/command/template task.
+        from general_ludd.ansible.unsafe import wrap_extravars
+
+        safe_extravars = wrap_extravars(extravars)
+
+        # HIGH (no timeout): bound the run in a killable fork child. An
+        # unbounded pb_exec.run() let a runaway/sleeping playbook hang the
+        # worker forever. The network-exposed adapter (runner.py) ALWAYS passes
+        # a finite timeout, so the exposed path is always bounded.
+        #
+        # Bounding requires a fork child, which (a) cannot share an in-process
+        # mock and (b) serializes the result across the process boundary. So an
+        # explicit timeout=None means "run inline, no bound" — preserving the
+        # in-process API (direct event/stat collection, mockable executor) for
+        # trusted callers and tests. A None timeout falls back to the env-driven
+        # default ONLY when one is configured, never to a silent fork.
+        if timeout is None:
+            env_to = os.environ.get("GLUDD_PLAYBOOK_TIMEOUT", "")
+            if not env_to:
+                return self._execute_with_core(
+                    playbook_path=playbook_path,
+                    inventory=inventory,
+                    extravars=safe_extravars,
+                    verbosity=verbosity,
+                    check=check,
+                    tags=tags,
+                    skip_tags=skip_tags,
+                    connection=connection,
+                    become=become,
+                )
+            bound = _env_default_timeout()
+        else:
+            bound = timeout
+
+        return self._run_with_timeout(
+            timeout=bound,
             playbook_path=playbook_path,
             inventory=inventory,
-            extravars=extravars,
+            extravars=safe_extravars,
             verbosity=verbosity,
             check=check,
             tags=tags,
@@ -191,6 +298,135 @@ class CoreAnsibleRunner:
             connection=connection,
             become=become,
         )
+
+    @staticmethod
+    def _isolation_supported(iso: Any) -> bool:
+        """Whether requested process isolation can actually be honored.
+
+        Native ansible-core library execution (PlaybookExecutor) does NOT apply
+        the runner-style container isolation; honoring it requires the named
+        executable (e.g. podman/bwrap) to exist on PATH. When it does not, we
+        cannot confine the run, so the caller must fail closed.
+        """
+        import shutil
+
+        executable = getattr(iso, "executable", None)
+        if not executable:
+            return False
+        return shutil.which(executable) is not None
+
+    def _run_with_timeout(
+        self,
+        timeout: float,
+        **exec_kwargs: Any,
+    ) -> AnsibleResult:
+        """Run ``_execute_with_core`` in a fork child bounded by ``timeout``.
+
+        The child puts its serialized AnsibleResult on a queue. The parent joins
+        with a deadline; on expiry it terminate()s then kill()s the child and
+        returns a failed result with rc 124. A non-positive timeout means "no
+        bound" and runs inline.
+        """
+        if timeout is None or timeout <= 0:
+            return self._execute_with_core(**exec_kwargs)
+
+        # Prefer a fork context so the child inherits the already-imported
+        # ansible modules and this object's state without re-pickling them.
+        try:
+            ctx = multiprocessing.get_context("fork")
+        except ValueError:  # pragma: no cover - platforms without fork
+            # No fork available (e.g. Windows / spawn-only). Fall back to inline
+            # execution rather than failing — the timeout cannot be enforced via
+            # a killable child here, but correctness is preserved.
+            logger.warning(
+                "fork start method unavailable; running playbook without a "
+                "killable timeout child"
+            )
+            return self._execute_with_core(**exec_kwargs)
+
+        queue: Any = ctx.Queue()
+
+        def _target() -> None:
+            import contextlib
+
+            # Become a process-group leader so a timeout can SIGKILL the whole
+            # group (this child + any ansible worker processes it forks).
+            with contextlib.suppress(AttributeError, OSError):  # non-POSIX: no-op
+                os.setsid()
+            try:
+                result = self._execute_with_core(**exec_kwargs)
+                # Sanitize before crossing the process boundary: event payloads
+                # can carry arbitrary (non-picklable) ansible objects, which
+                # would make queue.put raise and the child die "without a
+                # result". JSON round-trip coerces every leaf to a picklable
+                # primitive (unserializable values become their repr).
+                payload = _json_safe(result.model_dump())
+                queue.put(("ok", payload))
+            except BaseException as exc:  # report any failure (incl. SystemExit) up
+                queue.put(("err", f"{type(exc).__name__}: {exc}"))
+
+        # NOT daemon=True: ansible's PlaybookExecutor forks its own task-worker
+        # processes, and a daemonic parent cannot have children (Python forbids
+        # it), which would silently no-op the play. We instead kill the whole
+        # process GROUP on timeout to reap any worker children too.
+        proc = ctx.Process(target=_target, daemon=False)
+        proc.start()
+        proc.join(timeout)
+
+        if proc.is_alive():
+            # Deadline blown — kill the child and (best-effort) its worker tree,
+            # then hard-kill if it ignores SIGTERM.
+            self._terminate_tree(proc)
+            logger.error(
+                "Playbook exceeded wall-clock timeout of %.1fs; killed", timeout
+            )
+            return AnsibleResult(
+                status="failed",
+                rc=_TIMEOUT_RC,
+                error=f"playbook timed out after {timeout:.1f}s",
+            )
+
+        try:
+            kind, payload = queue.get_nowait()
+        except Exception:
+            # Child exited without posting a result (crash/OOM/SIGKILL).
+            return AnsibleResult(
+                status="failed",
+                rc=1,
+                error="playbook child exited without a result",
+            )
+        if kind == "ok":
+            return AnsibleResult(**payload)
+        return AnsibleResult(status="failed", rc=1, error=str(payload))
+
+    @staticmethod
+    def _terminate_tree(proc: Any) -> None:
+        """Kill a timed-out child and the process group it leads.
+
+        The child called ``os.setsid()``, so its PID is its process-group id and
+        every ansible worker it forked shares that group. We SIGTERM the group,
+        give it a moment, then SIGKILL the group, and finally reap the child.
+        """
+        pid = proc.pid
+        for sig_name in ("SIGTERM", "SIGKILL"):
+            if not proc.is_alive():
+                break
+            try:
+                import signal
+
+                sig = getattr(signal, sig_name)
+                if pid is not None:
+                    try:
+                        os.killpg(pid, sig)
+                    except (ProcessLookupError, PermissionError, OSError):
+                        # Fall back to signalling just the child.
+                        os.kill(pid, sig)
+            except (ProcessLookupError, OSError):
+                pass
+            proc.join(5.0)
+        if proc.is_alive():  # pragma: no cover - last-resort
+            proc.kill()
+            proc.join(5.0)
 
     def _execute_with_core(
         self,
@@ -209,6 +445,17 @@ class CoreAnsibleRunner:
         from ansible.inventory.manager import InventoryManager
         from ansible.module_utils.common.collections import ImmutableDict
         from ansible.vars.manager import VariableManager
+
+        # Ensure the collection/plugin loader is initialized in THIS process.
+        # When the run is bounded in a fork child, the child must (re)install the
+        # AnsibleCollectionFinder on its own sys.meta_path or ansible.builtin.*
+        # module resolution fails ("couldn't resolve module/action"). Idempotent.
+        try:
+            from ansible.plugins.loader import init_plugin_loader
+
+            init_plugin_loader()
+        except Exception:  # pragma: no cover - older cores auto-init on use
+            pass
 
         loader = DataLoader()
 

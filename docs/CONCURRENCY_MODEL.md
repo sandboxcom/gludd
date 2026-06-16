@@ -1,0 +1,182 @@
+# Concurrency Model Reference
+
+gludd is a long-running daemon that dispatches many roles **in parallel**. Two
+shared resources need explicit serialization / atomicity to stay correct under
+that parallelism:
+
+1. **A git working tree** shared by parallel roles → `git_repo_lock`.
+2. **The rolling spend budget** charged by concurrent dispatches → `SpendLimiter`.
+
+This document describes both, verified against the source.
+
+---
+
+## 1. Per-repo git serialization — `git_repo_lock`
+
+**File:** `src/general_ludd/git_automation/locking.py`
+**Wired into:** `src/general_ludd/git_automation/repo.py` `_run_git` (the single
+choke point every `GitAutomation` git call flows through).
+
+### Why it exists
+
+Parallel roles call git against the **same** working tree concurrently. Plain
+`subprocess.run(["git", ...])` has no serialization, so concurrent mutating git
+invocations race on:
+
+- `.git/index.lock` — git aborts with *"Another git process is running for this
+  repository"*,
+- `HEAD`,
+- the commit graph — lost / interleaved commits.
+
+`git_repo_lock(repo_path)` is the serialization choke point. It holds the
+guarantee **both inside one daemon process and across several processes** that
+share a repo on disk, using two layers.
+
+### Layer (a): in-process re-entrant lock registry
+
+- A module-level registry `dict[str, threading.RLock]` keyed by
+  **`os.path.realpath(repo_path)`** (`_normalize`), so every thread / coroutine
+  in one daemon that touches a given repo serializes on the **same** lock object
+  — even when the repo is reached via different spellings (`./repo`,
+  `/abs/repo`, a symlink).
+- The lock is a `threading.RLock` (**re-entrant**), so a nested git call on the
+  same repo from the same thread (e.g. `commit()` calling `_run_git` three
+  times, or a helper that runs git while already holding the lock) does **not**
+  self-deadlock.
+- The registry dict itself is guarded by a separate short-lived
+  `_registry_guard` lock, held only for the dict lookup — never while a per-repo
+  lock is held — so it can never become a contention bottleneck.
+
+### Layer (b): cross-process file lock
+
+- An advisory `flock` (`fcntl.LOCK_EX | LOCK_NB`, polled) on
+  **`<repo>/.git/gludd-git.lock`**. A second daemon / a stray external git
+  wrapper going through this lock blocks until the holder releases.
+- **Bounded acquire:** `_DEFAULT_ACQUIRE_TIMEOUT = 60.0s`. On timeout it raises
+  `TimeoutError` so a stuck repo surfaces as a clean failure, never an unbounded
+  hang.
+- **Stale-lock breaking:** `_DEFAULT_STALE_AFTER = 300.0s`. The lock file's
+  mtime is the liveness signal (the holder `os.utime`s it on acquire); if it has
+  not been touched in `stale_after`, the previous holder is presumed crashed and
+  the file is unlinked so a dead process can **never deadlock the repo forever**.
+  (300s is comfortably above the longest legitimate op — clone uses a 120s
+  timeout.)
+- **Re-entrancy across the fd boundary:** advisory `flock` is per
+  open-file-description and is *not* re-entrant across separate `os.open` fds in
+  one process. A per-repo depth counter (`_file_lock_depth`) — only ever touched
+  while the per-repo RLock is held, so single-threaded — makes a nested entry
+  (depth > 0) skip re-flocking instead of opening a second fd and deadlocking
+  against the process's own first fd.
+- **POSIX-only:** on platforms without `fcntl` (Windows) it degrades gracefully
+  to the in-process lock alone (the common in-daemon race is still serialized)
+  rather than failing to import.
+
+### Acquisition order & API
+
+`git_repo_lock` acquires the **in-process RLock first**, then the file lock, so
+within one process only one thread at a time ever contends for the (more
+expensive, timeout-bearing) file lock. A re-entrant acquisition by an
+already-holding thread passes straight through both layers cheaply.
+
+```python
+with git_repo_lock(repo_path):
+    subprocess.run(["git", "commit", ...], cwd=repo_path)
+```
+
+- Synchronous context manager (`git_repo_lock`) is the primary API, because
+  `_run_git` is synchronous `subprocess.run`.
+- `async_git_repo_lock` acquires the same (potentially blocking) lock **off the
+  event loop** via `run_in_executor`, then returns an already-entered context
+  manager, so an async caller never blocks the loop while waiting on a contended
+  repo.
+
+If there is no `.git` directory yet (`_git_dir` returns `None`), the
+cross-process lock is skipped and the in-process lock alone serializes the
+common in-daemon race.
+
+### Call sites that still need to adopt it
+
+`_run_git` in `repo.py` is wired. The module is deliberately import-light so
+other modules that shell out to git **directly** against a shared repo can adopt
+`git_repo_lock` around their mutating invocations too. Per the module docstring,
+those outstanding call sites are:
+
+- `src/general_ludd/worktree/core.py`
+- `src/general_ludd/execution/engine.py`
+- `src/general_ludd/git_automation/pr_delivery.py`
+- `src/general_ludd/code_intelligence/git_intel.py` (its git calls are
+  read-only history queries, lowest-risk, but listed for completeness)
+
+Until those adopt the lock, a mutating git call made directly from one of them
+(bypassing `_run_git`) is not serialized against the others.
+
+---
+
+## 2. Atomic spend charging — `SpendLimiter`
+
+**File:** `src/general_ludd/controllers/spend_limiter.py`
+
+A **soft, rolling-window** spend cap checked *before* a model/infra call. It is
+never used to hard-abort an in-flight call: a dispatch whose projected cost fits
+the remaining budget proceeds; once remaining `<= 0`, any positive projected
+cost defers the dispatch.
+
+State: in-memory list of `(timestamp, cost_usd)` records; entries older than
+`window_seconds` are pruned lazily on every `window_spend()`. The `clock` is an
+injectable zero-arg callable (`time.monotonic` by default; a fake clock in
+tests).
+
+### Atomic `try_charge`
+
+`try_charge(cost_usd, *, kind, ...)` runs the **check-and-record in a single
+critical section** under a re-entrant `threading.RLock`, returning `True` iff
+the charge was accepted and recorded. This closes three bypasses:
+
+- **Inert limiter:** every accepted charge is `record()`ed against the window in
+  the same critical section as the check, so rolling spend actually grows and
+  the cap can trip.
+- **Concurrent overshoot:** because check-and-record is atomic under the lock,
+  two concurrent charges can never both observe the same headroom and both
+  commit — their combined spend can never exceed the cap. (The lock is
+  *re-entrant* because `try_charge` calls `would_exceed`/`window_spend`/`record`,
+  which each also take the lock.)
+- **Silent fail-open on unknown cost:** when `cost_usd is None` and a cap is
+  configured (`cap_configured` — i.e. `limit_usd > 0`), the charge is
+  **refused** (no record made; caller must defer). Only when no cap is
+  configured is an unknown cost allowed through.
+
+Supporting predicates: `would_exceed(projected)` →
+`window_spend + projected > limit`; `remaining()` → `max(0, limit - spent)`
+(never negative). A projected cost of `0.0` never triggers deferral even at the
+cap.
+
+### Restart-rehydrate
+
+In-memory window state would reset to zero on a daemon restart, letting the cap
+be evaded by restarting. To prevent that:
+
+- `snapshot()` returns a serializable copy of the in-window
+  `(timestamp, cost_usd)` records.
+- Persist it across a restart and pass it back to `restore(records)`, which
+  re-extends the limiter's records so accumulated spend **survives** the
+  restart.
+- Restored records outside the current window are pruned lazily on the next
+  `window_spend()`, so rehydrating stale records after a long downtime is safe.
+
+### Integration status
+
+The enforcement primitive (`try_charge`, `snapshot`/`restore`) is complete and
+unit-tested. The module carries a `TODO(integration)` to wire
+`would_exceed()`/`record()` (or `try_charge`) into the dispatch path before
+every model/infra call so each dispatch checks the rolling budget prior to
+executing.
+
+---
+
+## Summary
+
+| Concern | Primitive | Mechanism | Bound / fail-mode |
+| --- | --- | --- | --- |
+| Parallel roles racing on one git tree | `git_repo_lock` (`git_automation/locking.py`) | in-process RLock keyed by realpath + cross-process `flock` on `.git/gludd-git.lock` | 60s acquire timeout → `TimeoutError`; 300s stale-break; re-entrant; POSIX-only with in-process fallback |
+| Concurrent dispatches racing past the budget | `SpendLimiter.try_charge` (`controllers/spend_limiter.py`) | atomic check-and-record under a re-entrant lock | unknown cost under a cap → refused (fail closed) |
+| Budget surviving a restart | `SpendLimiter.snapshot` / `restore` | persist + rehydrate `(ts, cost)` records | stale records pruned lazily on next window read |

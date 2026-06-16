@@ -22,6 +22,7 @@ from __future__ import annotations
 
 import enum
 import logging
+import threading
 import time
 from dataclasses import dataclass
 from typing import Any, ClassVar
@@ -159,6 +160,14 @@ class ModelHealthTracker:
         self.__total: dict[str, int] = {}
         self.__last_failure: dict[str, TimeoutEvent] = {}
         self.__history: dict[str, list[TimeoutEvent]] = {}
+        # Single-flight half-open probe bookkeeping: model_ids for which a probe
+        # has been admitted in the current cooldown window. Cleared on
+        # record_success (probe succeeded) or record_event (probe re-armed the
+        # breaker). Guarded by __lock like every other mutable field.
+        self.__probe_in_flight: set[str] = set()
+        # RLock (re-entrant) so internal helpers that re-acquire the lock — and
+        # get_health(), which calls is_healthy() — do not self-deadlock.
+        self.__lock = threading.RLock()
 
     @property
     def _failure_threshold(self) -> int:
@@ -190,51 +199,87 @@ class ModelHealthTracker:
 
     def record_event(self, event: TimeoutEvent) -> None:
         mid = event.model_id
-        self._consecutive[mid] = self._consecutive.get(mid, 0) + 1
-        self._total[mid] = self._total.get(mid, 0) + 1
-        self._last_failure[mid] = event
-        history = self._history.setdefault(mid, [])
-        history.append(event)
-        if len(history) > self._max_event_history:
-            del history[: len(history) - self._max_event_history]
+        # Lock the ENTIRE read-modify-write: a bare `d[k] = d.get(k,0)+1` is not
+        # atomic under threads, so concurrent failures were lost-updating the
+        # consecutive counter and the breaker could never reach its threshold.
+        with self.__lock:
+            self._consecutive[mid] = self._consecutive.get(mid, 0) + 1
+            self._total[mid] = self._total.get(mid, 0) + 1
+            self._last_failure[mid] = event
+            history = self._history.setdefault(mid, [])
+            history.append(event)
+            if len(history) > self._max_event_history:
+                del history[: len(history) - self._max_event_history]
+            # A new failure re-arms the breaker: a previously-admitted half-open
+            # probe must NOT keep the gate "claimed". If this event WAS the
+            # failed probe, clearing the flag re-opens the breaker so a future
+            # cooldown can admit a fresh probe (rather than the model being
+            # stuck either permanently open or permanently probe-claimed).
+            self.__probe_in_flight.discard(mid)
 
     def record_success(self, model_id: str) -> None:
-        self._consecutive[model_id] = 0
+        with self.__lock:
+            self._consecutive[model_id] = 0
+            self.__probe_in_flight.discard(model_id)
 
-    def is_healthy(self, model_id: str) -> bool:
-        consecutive = self._consecutive.get(model_id, 0)
-        if consecutive < self._failure_threshold:
-            return True
-
-        # RATE_LIMITED is intentionally NOT here: a 429'd model IS retryable
-        # after a cooldown and MUST be backed off, so it must flow into the
-        # cooldown branch below and be reported unhealthy until it clears.
-        non_retryable = {
-            TimeoutKind.AUTH_ERROR,
-            TimeoutKind.CONTEXT_LENGTH,
-        }
-        last = self._last_failure.get(model_id)
-        if last is not None and last.kind in non_retryable:
-            return True
-
-        if last is not None:
-            elapsed = time.monotonic() - last.timestamp
-            if elapsed >= self._cooldown_seconds:
-                self._consecutive[model_id] = 0
+    def is_healthy(self, model_id: str, *, admit_probe: bool = True) -> bool:
+        # The whole body is locked so the check-and-reset is atomic: previously
+        # this read _consecutive and (in the cooldown branch) reset it to 0 as a
+        # side effect of a *read*, unlocked — every concurrent caller raced past
+        # the cooldown gate and a thundering herd hit the recovering provider.
+        #
+        # admit_probe=False lets status polls (get_health) inspect health
+        # WITHOUT consuming the single half-open probe slot.
+        with self.__lock:
+            consecutive = self._consecutive.get(model_id, 0)
+            if consecutive < self._failure_threshold:
                 return True
 
-        return False
+            # RATE_LIMITED is intentionally NOT here: a 429'd model IS retryable
+            # after a cooldown and MUST be backed off, so it must flow into the
+            # cooldown branch below and be reported unhealthy until it clears.
+            non_retryable = {
+                TimeoutKind.AUTH_ERROR,
+                TimeoutKind.CONTEXT_LENGTH,
+            }
+            last = self._last_failure.get(model_id)
+            if last is not None and last.kind in non_retryable:
+                return True
+
+            if last is not None:
+                elapsed = time.monotonic() - last.timestamp
+                if elapsed >= self._cooldown_seconds:
+                    # Cooldown elapsed: admit exactly ONE half-open probe per
+                    # cooldown window. The probe branch does NOT reset
+                    # _consecutive to 0 — the breaker stays OPEN until either a
+                    # record_success() (probe healthy) clears it, or a
+                    # record_event() (probe failed) re-arms it. This prevents
+                    # the stampede where every concurrent caller's is_healthy()
+                    # returned True and reset the counter.
+                    if not admit_probe:
+                        # A pure status poll: report "would admit a probe" as
+                        # healthy without consuming the slot.
+                        return True
+                    if model_id in self.__probe_in_flight:
+                        # Another caller already holds this window's probe slot.
+                        return False
+                    self.__probe_in_flight.add(model_id)
+                    return True
+
+            return False
 
     def get_health(self, model_id: str) -> dict[str, Any]:
-        last = self._last_failure.get(model_id)
-        return {
-            "model_id": model_id,
-            "healthy": self.is_healthy(model_id),
-            "consecutive_failures": self._consecutive.get(model_id, 0),
-            "total_failures": self._total.get(model_id, 0),
-            "last_failure_kind": last.kind.value if last else None,
-            "last_failure_at": last.timestamp if last else None,
-        }
+        with self.__lock:
+            last = self._last_failure.get(model_id)
+            return {
+                "model_id": model_id,
+                # admit_probe=False: a status poll must never consume the probe.
+                "healthy": self.is_healthy(model_id, admit_probe=False),
+                "consecutive_failures": self._consecutive.get(model_id, 0),
+                "total_failures": self._total.get(model_id, 0),
+                "last_failure_kind": last.kind.value if last else None,
+                "last_failure_at": last.timestamp if last else None,
+            }
 
 
 class TimeoutRetryPolicy:

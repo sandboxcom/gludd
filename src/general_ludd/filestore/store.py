@@ -34,10 +34,57 @@ class FileStore:
         if self._overlay_path is not None and os.path.isdir(self._overlay_path):
             self._overlay_fs = OSFS(self._overlay_path)
 
+    @staticmethod
+    def _is_binary_path(path: str) -> bool:
+        # Binaries/ must NEVER resolve through the overlay (an attacker-controlled
+        # overlay must not be able to shadow a trusted executable).
+        norm = path.lstrip("/")
+        return norm == "binaries" or norm.startswith("binaries/")
+
+    def _overlay_owns(self, path: str) -> bool:
+        """Whether the overlay should serve this path.
+
+        Findings 1/2: writes/removes go to the MAIN store, so the overlay must
+        only serve a path when the main store does NOT have it. Otherwise an
+        overlay file silently shadows a just-written value (a write must be
+        visible to the subsequent read). Binaries are never served from the
+        overlay (Finding 1, trust boundary).
+        """
+        if self._overlay_fs is None:
+            return False
+        if self._is_binary_path(path):
+            return False
+        if self._fs.exists(path):
+            return False
+        return bool(self._overlay_fs.exists(path))
+
+    def _root_for(self, fs: OSFS) -> str:
+        return self._overlay_path if fs is self._overlay_fs else self._root_path
+
+    def _confine(self, fs: OSFS, path: str) -> None:
+        """Finding 4: reject entries whose realpath escapes the backend root.
+
+        OSFS follows symlinks, so a symlink planted in the store/overlay root
+        can be followed out of the root (exfiltration / out-of-root clobber).
+        After resolving, assert the realpath stays under the intended root.
+        """
+        root = self._root_for(fs)
+        root_real = os.path.realpath(root)
+        try:
+            syspath = fs.getsyspath(path)
+        except Exception:
+            # No OS-level path for this entry (non-OSFS backend) → nothing to confine.
+            return
+        target_real = os.path.realpath(syspath)
+        if target_real != root_real and not target_real.startswith(root_real + os.sep):
+            raise PermissionError(f"Path escapes store root: {path}")
+
     def _resolve_path(self, path: str) -> tuple[OSFS, str]:
-        if self._overlay_fs is not None and self._overlay_fs.exists(path):
-            return self._overlay_fs, path
-        return self._fs, path
+        # _overlay_owns() is True only when _overlay_fs is not None, so this
+        # narrows to a concrete OSFS for both branches.
+        fs: OSFS = self._overlay_fs if self._overlay_owns(path) else self._fs  # type: ignore[assignment]
+        self._confine(fs, path)
+        return fs, path
 
     @property
     def root_path(self) -> str:
@@ -45,6 +92,7 @@ class FileStore:
 
     def write_text(self, path: str, content: str) -> None:
         self._fs.makedirs(dirname(path), recreate=True)
+        self._confine(self._fs, dirname(path) or "/")
         self._fs.writetext(path, content)
 
     def read_text(self, path: str) -> str:
@@ -57,16 +105,19 @@ class FileStore:
 
     def write_bytes(self, path: str, data: bytes) -> None:
         self._fs.makedirs(dirname(path), recreate=True)
+        self._confine(self._fs, dirname(path) or "/")
         self._fs.writebytes(path, data)
 
     def exists(self, path: str) -> bool:
-        if self._overlay_fs is not None and self._overlay_fs.exists(path):
+        # Use the same resolution as reads/removes so that exists()==True implies
+        # the resolving backend can serve/remove the path (Finding 3 consistency).
+        if self._overlay_owns(path):
             return True
         return self._fs.exists(path)
 
     def is_dir(self, path: str) -> bool:
-        if self._overlay_fs is not None and self._overlay_fs.exists(path):
-            return self._overlay_fs.isdir(path)
+        if self._overlay_owns(path):
+            return self._overlay_fs.isdir(path)  # type: ignore[union-attr]
         return self._fs.isdir(path)
 
     def list_dir(self, path: str = "/") -> list[dict[str, Any]]:
@@ -112,12 +163,20 @@ class FileStore:
         self._fs.makedirs(path, recreate=True)
 
     def remove(self, path: str) -> None:
-        if not self._fs.exists(path):
-            raise FileNotFoundError(f"Path not found: {path}")
-        if self._fs.isdir(path):
-            self._fs.removetree(path)
+        # Finding 3: remove from whichever backend exists() resolves to, so a
+        # path exists() reported True can always be removed (no FileNotFoundError
+        # on an overlay-only entry, and an overlay-only "removed" path no longer
+        # resolves afterwards).
+        if self._overlay_owns(path):
+            target: OSFS = self._overlay_fs  # type: ignore[assignment]
+        elif self._fs.exists(path):
+            target = self._fs
         else:
-            self._fs.remove(path)
+            raise FileNotFoundError(f"Path not found: {path}")
+        if target.isdir(path):
+            target.removetree(path)
+        else:
+            target.remove(path)
 
     def get_info(self, path: str) -> dict[str, Any]:
         info = self._fs.getinfo(path, namespaces=["details"])

@@ -8,6 +8,7 @@ import re
 import subprocess
 from datetime import UTC, datetime
 
+from general_ludd.git_automation.locking import git_repo_lock
 from general_ludd.git_automation.types import (
     CloneResult,
     InitResult,
@@ -33,6 +34,65 @@ _FORCE_PUSH_PATTERN = re.compile(
 )
 
 
+# git "transport helper" URL schemes that make `git clone` run an ARBITRARY
+# command (ext::/git::/fd::). `ext::sh -c ...` is a documented remote-code-exec
+# primitive; fd:: and git:: are the same class. We refuse them unconditionally —
+# a legitimate https/ssh/git clone never needs them.
+_DANGEROUS_CLONE_SCHEMES = ("ext::", "git::", "fd::")
+
+
+def _reject_dangerous_clone_url(url: str, *, allow_local: bool = True) -> str:
+    """Reject a clone URL that is a code-exec / local-disclosure primitive.
+
+    Defense-in-depth at the git wrapper itself (a higher layer may also validate,
+    but this layer must never be the weak link). UNCONDITIONALLY rejected (these
+    have no legitimate https/ssh/git clone use — they are pure RCE / option
+    injection vectors):
+
+    * a value beginning with ``-`` -> git would parse it as an OPTION, not a url
+      (option injection, e.g. ``--upload-pack=<cmd>``).
+    * ``ext::``/``git::``/``fd::`` transport helpers -> arbitrary command exec.
+    * any url carrying an embedded ssh ``-o``/``ProxyCommand`` option ->
+      ssh would run an arbitrary command via ProxyCommand.
+
+    Conditionally rejected:
+
+    * ``file://`` -> local filesystem disclosure (clone any local repo). Allowed
+      by default (the product materializes trusted local-repo projects via this
+      wrapper); pass ``allow_local=False`` for an UNTRUSTED, caller-supplied url
+      (the projects router's HTTP-supplied ``repo_url``) to refuse it.
+
+    Returns the stripped url when safe; raises ``ValueError`` otherwise.
+    """
+    stripped = url.strip()
+    if stripped.startswith("-"):
+        raise ValueError(
+            f"refusing clone url that begins with '-' (option injection, would "
+            f"be parsed as a git flag): {url!r}"
+        )
+    lowered = stripped.lower()
+    for scheme in _DANGEROUS_CLONE_SCHEMES:
+        if lowered.startswith(scheme):
+            raise ValueError(
+                f"refusing clone url using the {scheme!r} transport helper "
+                f"(arbitrary command execution): {url!r}"
+            )
+    if lowered.startswith("file://") and not allow_local:
+        raise ValueError(
+            f"refusing file:// clone url (local filesystem disclosure); pass "
+            f"allow_local=True to clone a trusted local repo: {url!r}"
+        )
+    # An embedded ssh option (-o / ProxyCommand=) anywhere in the url would be
+    # handed to ssh and can run an arbitrary command via ProxyCommand. The token
+    # appears as `-o`, `-oProxyCommand=...`, or a standalone `ProxyCommand=`.
+    if "proxycommand" in lowered or "-o" in stripped.split():
+        raise ValueError(
+            f"refusing clone url embedding an ssh -o/ProxyCommand option "
+            f"(arbitrary command execution): {url!r}"
+        )
+    return stripped
+
+
 def _reject_leading_dash(value: str, *, kind: str) -> str:
     """Reject a ref/path value that begins with ``-``.
 
@@ -56,6 +116,21 @@ class GitAutomation:
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
         env = {**os.environ, **_NON_INTERACTIVE_GIT_ENV}
+        # SERIALIZATION (issue #63): gludd runs roles in parallel and many call
+        # git against the same repo concurrently, racing on .git/index.lock, on
+        # HEAD, and on commits. Every git invocation flows through this choke
+        # point, so we hold the per-repo lock for the FULL duration of the
+        # subprocess (and the timeout translation below). The lock is re-entrant,
+        # so nested/sequential _run_git calls on the same repo from one thread
+        # (e.g. commit() doing add+commit+rev-parse) never self-deadlock. The
+        # leading-dash guards, clone hardening, and timeout-to-CalledProcessError
+        # behavior are unchanged — only the serialization is added.
+        with git_repo_lock(self.repo_path):
+            return self._run_git_locked(args, check=check, env=env)
+
+    def _run_git_locked(
+        self, args: tuple[str, ...], *, check: bool, env: dict[str, str]
+    ) -> subprocess.CompletedProcess[str]:
         try:
             return subprocess.run(
                 ["git", *args],
@@ -146,7 +221,14 @@ class GitAutomation:
         result = self._run_git("rev-parse", "HEAD")
         return result.stdout.strip()
 
-    def clone(self, url: str, target_dir: str, timeout: float = 120.0) -> CloneResult:
+    def clone(
+        self,
+        url: str,
+        target_dir: str,
+        timeout: float = 120.0,
+        *,
+        allow_local: bool = True,
+    ) -> CloneResult:
         """Clone ``url`` into ``target_dir``.
 
         Idempotent: if ``target_dir`` already contains a git checkout, this is a
@@ -155,7 +237,20 @@ class GitAutomation:
         so callers can fail closed without try/except noise. A bounded ``timeout``
         and a non-interactive environment guarantee this never blocks the daemon
         (e.g. on a credential prompt for a private/unreachable remote).
+
+        Defense-in-depth (#64): the url is screened HERE — even if a higher layer
+        validates, this wrapper UNCONDITIONALLY refuses ``ext::``/``git::``/``fd::``
+        transport helpers and embedded ssh ``-o``/``ProxyCommand`` (arbitrary
+        command exec) and any url beginning with ``-`` (option injection). For an
+        UNTRUSTED caller-supplied url, pass ``allow_local=False`` to also refuse
+        ``file://`` (local filesystem disclosure). A rejected url returns
+        ``success=False`` and NEVER launches git. The argv also inserts ``--``
+        before the positional url/path so a url can never be reparsed as a flag.
         """
+        try:
+            safe_url = _reject_dangerous_clone_url(url, allow_local=allow_local)
+        except ValueError as exc:
+            return CloneResult(path=os.path.abspath(target_dir), url=url, success=False, message=str(exc))
         target = os.path.abspath(target_dir)
         if os.path.isdir(os.path.join(target, ".git")):
             return CloneResult(
@@ -167,7 +262,9 @@ class GitAutomation:
         env = {**os.environ, "GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
         try:
             result = subprocess.run(
-                ["git", "clone", url, target],
+                # `--` ends option parsing so neither the url nor the target path
+                # can ever be reinterpreted as a git option.
+                ["git", "clone", "--", safe_url, target],
                 capture_output=True,
                 text=True,
                 timeout=timeout,

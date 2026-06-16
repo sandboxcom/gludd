@@ -1,0 +1,68 @@
+---
+- name: Verify - gludd_reload promoted the healthy swap and rolled the 404 gate back
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}.pid"
+    reload_root: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+  tasks:
+    - name: Load persisted reload results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-reload.json"
+      register: raw
+
+    - name: Parse reload results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert the healthy swap was PROMOTED (gate passed, no rollback)
+      ansible.builtin.assert:
+        that:
+          - res.good.success | bool
+          - not (res.good.rolled_back | bool)
+          - "'candidate-good' in res.live_after_good"
+        fail_msg: "gludd_reload should promote the healthy swap: {{ res.good }}"
+        success_msg: "gludd_reload: healthy candidate swapped in and gate passed (success, no rollback)"
+
+    - name: Assert the 404 health gate forced an auto-ROLLBACK (fail-closed)
+      ansible.builtin.assert:
+        that:
+          - not (res.rollback.success | bool)
+          - res.rollback.rolled_back | bool
+          - "'candidate-bad' not in res.live_after_rollback"
+          - "'candidate-good' in res.live_after_rollback"
+        fail_msg: "gludd_reload must roll back when the /readyz gate 404s: {{ res.rollback }}"
+        success_msg: "gludd_reload: 404 gate failed, live module restored to its pre-swap bytes"
+
+    - name: Confirm the promotion-result artifacts were written to disk
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ reload_root }}/promotion_good.json"
+        - "{{ reload_root }}/promotion_rollback.json"
+      register: artifacts
+
+    - name: Assert both promotion artifacts exist
+      ansible.builtin.assert:
+        that:
+          - item.stat.exists
+        fail_msg: "missing promotion artifact: {{ item.item }}"
+        success_msg: "promotion artifact present: {{ item.item }}"
+      loop: "{{ artifacts.results }}"
+      loop_control:
+        label: "{{ item.item }}"
+
+    # ---- cleanup ----
+    - name: Remove the throwaway reload root
+      ansible.builtin.file:
+        path: "{{ reload_root }}"
+        state: absent
+      failed_when: false
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

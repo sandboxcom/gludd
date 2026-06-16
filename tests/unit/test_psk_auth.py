@@ -45,6 +45,8 @@ class TestDaemonStartPSK:
                 args.log_level = "info"
                 args.tick_interval = 1.0
                 args.config_dir = None
+                args.templates_dir = None
+                args.playbooks_dir = None
                 from general_ludd.cli import _cmd_daemon
 
                 with contextlib.suppress(SystemExit):
@@ -63,6 +65,8 @@ class TestDaemonStartPSK:
                 args.log_level = "info"
                 args.tick_interval = 1.0
                 args.config_dir = None
+                args.templates_dir = None
+                args.playbooks_dir = None
                 from general_ludd.cli import _cmd_daemon
 
                 with contextlib.suppress(SystemExit):

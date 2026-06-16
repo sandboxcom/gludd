@@ -36,7 +36,7 @@
     _bg_ranked: >-
       {%- set result = [] -%}
       {%- for item in _bg_backlog_items -%}
-        {%- set wc = (item.title | default('untitled') | split | length) -%}
+        {%- set wc = item.title | default('untitled') | split | length -%}
         {%- set pts = 1 if wc <= 3 else (2 if wc <= 5 else (3 if wc <= 8 else 5)) -%}
         {%- set _ = result.append(dict(item, estimated_points=pts, rank=loop.index)) -%}
       {%- endfor -%}

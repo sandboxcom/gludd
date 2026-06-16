@@ -23,6 +23,11 @@ from general_ludd.events.types import (
     SkillUpdatedEvent,
     TemplateUpdatedEvent,
 )
+from general_ludd.security.capability_lattice import (
+    CapabilityError,
+    ProtectedPathError,
+    check_self_modification,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -109,10 +114,16 @@ class HotReloader:
         module_name: str,
         candidate_source_path: str,
         health_check: Callable[[], bool] | None = None,
+        role: str | None = None,
     ) -> ReloadResult:
         """Hot-rotate a single leaf module's source over the live file.
 
         Steps (fail-closed at every stage):
+          0. Consult the self-modification guards (issue #58): the live path
+             must not be a protected guardrail/policy/permission file, and a
+             swap into a ``collections/`` tree requires the acting ``role`` to
+             hold ``collections_self_modify``. Either denial refuses the swap
+             BEFORE a single byte is written.
           1. Resolve the live module and its on-disk ``__file__``. Only an
              already-imported, file-backed module is eligible (a leaf with no
              in-flight state — the caller is responsible for that contract).
@@ -148,6 +159,21 @@ class HotReloader:
             )
         live_path = Path(live_path_str)
         details["live_path"] = str(live_path)
+
+        # Self-modification guards (issue #58): refuse protected guard files
+        # outright, and require collections_self_modify for a swap into the
+        # agent's own collections/ source. Runs BEFORE any byte is read/written
+        # so a denied swap leaves the live module byte-for-byte unchanged.
+        try:
+            check_self_modification(str(live_path), role)
+        except ProtectedPathError as exc:
+            return self._code_reload_failure(
+                scope, details, f"protected guard file: {exc}"
+            )
+        except CapabilityError as exc:
+            return self._code_reload_failure(
+                scope, details, f"capability denied: {exc}"
+            )
 
         candidate = Path(candidate_source_path)
         if not candidate.is_file():

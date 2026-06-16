@@ -18,14 +18,19 @@
         state: directory
         mode: "0755"
 
+    # noqa command-instead-of-module: ansible.builtin.git only does
+    # clone/checkout/pull — it cannot stage (`git add -A`) the working tree, so
+    # command is the correct module here.
     - name: Stage all changes
-      ansible.builtin.command:
+      ansible.builtin.command: # noqa: command-instead-of-module
         cmd: git add -A
         chdir: "{{ repo_path }}"
       changed_when: true
 
+    # noqa command-instead-of-module: the git module cannot create commits;
+    # `git commit` via command is the supported path.
     - name: Commit changes
-      ansible.builtin.command:
+      ansible.builtin.command: # noqa: command-instead-of-module
         cmd: git commit -m "{{ commit_message }}"
         chdir: "{{ repo_path }}"
       register: commit_result

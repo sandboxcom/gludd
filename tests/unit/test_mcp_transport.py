@@ -156,7 +156,12 @@ class TestMCPStdioClient:
         config = _make_config(env={"FOO": "bar"})
         proc = _mock_process([_init_response()])
 
-        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+        # PATH is narrowed above for the env-leak assertion; pin which() so the
+        # launch-hardening exec-resolution check (#65) doesn't depend on the
+        # ambient PATH having `python` on it.
+        with patch("shutil.which", return_value="/usr/bin/python"), patch(
+            "asyncio.create_subprocess_exec", return_value=proc
+        ) as mock_exec:
             client = MCPStdioClient(config)
             await client.start()
 

@@ -11,6 +11,46 @@ from pathlib import Path
 
 from pydantic import BaseModel, field_validator
 
+# Characters that must never appear in an output dir. Even though the subprocess
+# calls use argv list-form (no shell), these are rejected as defense-in-depth so
+# a future refactor to a shell form cannot reintroduce an injection sink, and so
+# NUL/newline can never corrupt the argv or a written manifest path.
+_FORBIDDEN_DIR_CHARS = set(";|&`$<>\n\r\t\x00")
+
+
+def _validate_output_dir(output_dir: str) -> str:
+    """Validate a caller/config-derived output dir before it reaches argv.
+
+    ``output_dir`` flows in untrusted (release_orchestrator -> make
+    release-validate). The build interpolates it into
+    ``uv build --out-dir <output_dir>`` and runs ``os.makedirs`` on it. Reject:
+
+      * empty/whitespace-only values,
+      * leading-dash values (``--out-dir=...``, ``-rf``) — argv/flag smuggling
+        into ``uv``,
+      * shell metacharacters / NUL / newline (defense-in-depth),
+      * ``..`` path-traversal components (escape the intended artifacts root).
+
+    Returns the stripped dir on success; raises ``ValueError`` (fail closed)
+    otherwise — before any subprocess spawn or directory creation.
+    """
+    if not isinstance(output_dir, str):
+        raise ValueError("output_dir must be a string")
+    candidate = output_dir.strip()
+    if not candidate:
+        raise ValueError("output_dir must not be empty")
+    if candidate.startswith("-"):
+        raise ValueError(f"output_dir must not start with '-' (flag smuggling): {output_dir!r}")
+    bad = _FORBIDDEN_DIR_CHARS & set(candidate)
+    if bad:
+        raise ValueError(
+            f"output_dir contains forbidden characters {sorted(bad)!r}: {output_dir!r}"
+        )
+    parts = candidate.replace("\\", "/").split("/")
+    if ".." in parts:
+        raise ValueError(f"output_dir must not contain '..' traversal: {output_dir!r}")
+    return candidate
+
 
 class BundleManifest(BaseModel):
     version: str
@@ -41,6 +81,8 @@ class BundleResult:
 
 class PipBundleBuilder:
     def build(self, output_dir: str, version: str) -> BundleResult:
+        # Fail closed on injection-y dirs BEFORE any makedirs/subprocess spawn.
+        output_dir = _validate_output_dir(output_dir)
         os.makedirs(output_dir, exist_ok=True)
 
         build_result = subprocess.run(

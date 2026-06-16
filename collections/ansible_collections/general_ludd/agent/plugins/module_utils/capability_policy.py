@@ -371,6 +371,48 @@ def _builtin_table() -> dict[str, CapabilityPolicy]:
             facts_prefixes=["ludd"],
             network_hosts=["localhost", "127.0.0.1"],
         ),
+        # --- per-collection-role db grants (principle of least privilege): each
+        #     general_ludd.agent role that calls gludd_db gets a capability
+        #     identity granting ONLY the db ops it actually invokes.  A role's
+        #     tasks pass `role: "{{ capability_role }}"` (defaulted to its own
+        #     name); the default-DENY policy then permits exactly those ops and
+        #     nothing more.  Adding a new db op to a role REQUIRES extending its
+        #     grant here — the wiring unit test enforces this. ---
+        # agent_task: fetch its todo, then mark it done/failed.
+        "agent_task": CapabilityPolicy(
+            role="agent_task",
+            db_ops=["todo_get", "todo_update_status"],
+            facts_prefixes=["ludd.todos"],
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        # estimate_story: read-only — fetch the story to estimate.
+        "estimate_story": CapabilityPolicy(
+            role="estimate_story",
+            db_ops=["todo_get"],
+            facts_prefixes=["ludd"],
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        # security_requirements: fetch the story; optional write_back updates status.
+        "security_requirements": CapabilityPolicy(
+            role="security_requirements",
+            db_ops=["todo_get", "todo_update_status"],
+            facts_prefixes=["ludd"],
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        # story_create: optional write_back creates a todo (create only).
+        "story_create": CapabilityPolicy(
+            role="story_create",
+            db_ops=["todo_create"],
+            facts_prefixes=["ludd"],
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
+        # molecule_db_probe: the direct gludd_db module molecule test exercises
+        # every read/update/resource op against the mock daemon.
+        "molecule_db_probe": CapabilityPolicy(
+            role="molecule_db_probe",
+            db_ops=["todo_get", "todo_update_status", "resource_preference"],
+            network_hosts=["localhost", "127.0.0.1"],
+        ),
     }
 
 

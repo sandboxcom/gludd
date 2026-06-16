@@ -19,6 +19,7 @@ Status derivation:
 from __future__ import annotations
 
 import logging
+import re
 import subprocess
 from collections.abc import Callable
 from datetime import UTC, datetime
@@ -30,12 +31,49 @@ logger = logging.getLogger(__name__)
 # Prior statuses that degrade to REGRESSED when evidence fails
 _DEGRADING_STATUSES = {"verified", "implemented"}
 
+# A pytest node id comes from feature-database evidence strings
+# (``test:<pytest-node-id>``) and is therefore caller/config-derived.  It is
+# handed to ``uv run pytest <node_id> …`` as a single argv token, so it must be
+# confined: a node id starting with ``-`` would be parsed by pytest as an option
+# (argument injection), and shell metacharacters have no business in a node id
+# (defence-in-depth even though we never use a shell / shell=True).  A valid node
+# id is a path (with ``/``, ``.``, ``_``, ``-`` in segments) optionally followed
+# by ``::``-separated selectors.
+_SAFE_NODE_ID = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9._/-]*(?:::[A-Za-z0-9_][A-Za-z0-9._\[\]-]*)*$")
+_NODE_META_CHARS = set(";|&$`><(){}!*?~#'\" \t\n\r\\")
+
+
+def _validate_node_id(node_id: str) -> str:
+    """Return ``node_id`` if it is a confined, injection-safe pytest node id.
+
+    Raises ``ValueError`` otherwise.  Rejects: non-string, empty, leading dash
+    (option injection), and any shell metacharacter / whitespace.
+    """
+    if not isinstance(node_id, str) or not node_id:
+        raise ValueError("node_id must be a non-empty string")
+    if node_id.startswith("-"):
+        raise ValueError(f"node_id must not start with a dash: {node_id!r}")
+    if any(ch in _NODE_META_CHARS for ch in node_id):
+        raise ValueError(f"node_id must not contain shell metacharacters: {node_id!r}")
+    if not _SAFE_NODE_ID.match(node_id):
+        raise ValueError(f"node_id is not a safe pytest node id: {node_id!r}")
+    return node_id
+
 
 def _default_runner(node_id: str) -> int:
-    """Default pytest runner: uv run pytest <node> -q.  Returns rc."""
+    """Default pytest runner: uv run pytest <node> -q.  Returns rc.
+
+    The node id is validated first; an injection-shaped node id fails closed
+    (rc=1) WITHOUT spawning a subprocess.
+    """
+    try:
+        safe_node = _validate_node_id(node_id)
+    except ValueError as exc:
+        logger.warning("feature_verifier: rejected unsafe node id %r: %s", node_id, exc)
+        return 1
     try:
         result = subprocess.run(
-            ["uv", "run", "pytest", node_id, "-q", "--no-header", "--tb=no"],
+            ["uv", "run", "pytest", safe_node, "-q", "--no-header", "--tb=no"],
             capture_output=True,
             timeout=120,
         )

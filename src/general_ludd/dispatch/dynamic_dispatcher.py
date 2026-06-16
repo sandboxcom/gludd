@@ -19,6 +19,8 @@ from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any, Literal
 
+from general_ludd.security.capability_lattice import role_may_dispatch
+
 logger = logging.getLogger(__name__)
 
 # Supported tool-call kinds.
@@ -154,6 +156,7 @@ class DynamicDispatcher:
         mcp_handler: Handler | None = None,
         skill_handler: Handler | None = None,
         collection_handler: Handler | None = None,
+        role: str | None = None,
     ) -> None:
         self._handlers: dict[str, Handler] = {}
         if role_handler is not None:
@@ -164,10 +167,37 @@ class DynamicDispatcher:
             self._handlers["skill"] = skill_handler
         if collection_handler is not None:
             self._handlers["collection"] = collection_handler
+        # The acting role whose capability lattice gates every dispatch
+        # (issue #58). When None the dispatcher is unrestricted (back-compat for
+        # call sites that never supplied a role); when set, a tool-call kind the
+        # role lacks is denied BEFORE its handler is invoked.
+        self._role = role
 
     def dispatch(self, call: ToolCall) -> DispatchResult:
         """Dispatch a single ToolCall.  Returns DispatchResult — never raises."""
         kind = call.kind
+
+        # Per-role capability lattice (issue #58): when a role is bound, it must
+        # hold the capability the tool-call kind requires, or dispatch is denied
+        # fail-closed before the handler runs.
+        if self._role is not None and not role_may_dispatch(self._role, kind):
+            logger.warning(
+                "DynamicDispatcher: role %r lacks capability for kind %r "
+                "(tool %r) — fail-closed",
+                self._role,
+                kind,
+                call.name,
+            )
+            return DispatchResult(
+                ok=False,
+                kind=kind,
+                name=call.name,
+                error=(
+                    f"capability_denied: role {self._role!r} may not dispatch "
+                    f"kind {kind!r}"
+                ),
+            )
+
         handler = self._handlers.get(kind)
         if handler is None:
             logger.warning(

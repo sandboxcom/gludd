@@ -53,10 +53,7 @@ def _role_scenario(role: str) -> str:
 # --- The shrinking checklist -------------------------------------------------
 # Modules that DO NOT yet have a dedicated test_<module> molecule scenario.
 # Empty: every gludd_* module now has a dedicated test_gludd_* scenario.
-# gludd_reload: the test_gludd_reload scenario was reverted — it failed in CI
-# (HotReloader module subprocess needs an import-clean general_ludd + PYTHONPATH
-# that the molecule harness doesn't yet provide). Tracked for a proper re-add.
-_NOT_YET_COVERED_MODULES: set[str] = {"gludd_reload"}
+_NOT_YET_COVERED_MODULES: set[str] = set()
 # All other gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
 #   gludd_db          -> test_gludd_db          (port 8776, todo_get/update/resource_preference)
@@ -75,10 +72,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {"gludd_reload"}
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
 # Empty: every role under the collection now has a role_<name> scenario.
-# self_improve_propose: the role_self_improve_propose scenario was reverted — it
-# failed in CI (needs a real seeded git repo + worktree the harness doesn't yet
-# provide). Tracked for a proper re-add.
-_NOT_YET_COVERED_ROLES: set[str] = {"self_improve_propose"}
+_NOT_YET_COVERED_ROLES: set[str] = set()
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)
 #   audit_dependencies    -> role_audit_dependencies    (8786, gludd_facts+gludd_agent_run -> artifact)

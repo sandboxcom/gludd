@@ -10,7 +10,7 @@
     msg: "self_improve_propose disabled (self_improve_enabled is false) — skipping"
   when: not (self_improve_enabled | default(false) | bool)
 
-- name: self_improve_propose (enabled)
+- name: Self_improve_propose (enabled)
   when: self_improve_enabled | default(false) | bool
   block:
 

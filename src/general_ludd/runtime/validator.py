@@ -2,12 +2,36 @@
 
 from __future__ import annotations
 
+import re
 import subprocess
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 from general_ludd.runtime.profile import DataSourceMount, RuntimeProfile
+
+
+class PathArgError(ValueError):
+    """Raised when a path/package argument fails injection-hardening checks."""
+
+
+# A filesystem path argument handed to uv/pip as a positional. Allows the
+# usual path characters but rejects whitespace and every shell metacharacter
+# (; & | ` $ ( ) < > ' " newline/tab) so it can never inject when it reaches
+# argv. A leading '-' is rejected separately so the value can't be parsed as a
+# flag (defense in depth alongside the ``--`` separator).
+_PATH_ARG_RE = re.compile(r"^[A-Za-z0-9._/+@~-]+$")
+
+
+def _validate_path_arg(value: str) -> str:
+    """Return ``value`` unchanged if safe, else raise ``PathArgError``."""
+    if not isinstance(value, str) or not value.strip():
+        raise PathArgError("path argument must be a non-empty string")
+    if value.startswith("-"):
+        raise PathArgError(f"path argument must not start with '-': {value!r}")
+    if not _PATH_ARG_RE.fullmatch(value):
+        raise PathArgError(f"path argument contains illegal characters: {value!r}")
+    return value
 
 
 @dataclass
@@ -41,8 +65,14 @@ class RuntimeValidator:
             errors.append(f"Expected mode native_uv, got {profile.mode}")
             return ValidationResult(valid=False, errors=errors)
         try:
+            safe_project_root = _validate_path_arg(profile.project_root)
+        except PathArgError as exc:
+            errors.append(f"unsafe project_root path: {exc}")
+            return ValidationResult(valid=False, errors=errors)
+        try:
             result = subprocess.run(
-                ["uv", "sync", "--dry-run", "--project", profile.project_root],
+                # ``--`` ends option parsing before the positional path.
+                ["uv", "sync", "--dry-run", "--project", "--", safe_project_root],
                 capture_output=True,
                 text=True,
                 timeout=60,
@@ -61,8 +91,14 @@ class RuntimeValidator:
             errors.append(f"Expected mode native_pip, got {profile.mode}")
             return ValidationResult(valid=False, errors=errors)
         try:
+            safe_project_root = _validate_path_arg(profile.project_root)
+        except PathArgError as exc:
+            errors.append(f"unsafe project_root path: {exc}")
+            return ValidationResult(valid=False, errors=errors)
+        try:
             result = subprocess.run(
-                ["pip", "install", "--dry-run", "-e", profile.project_root],
+                # ``--`` ends option parsing before the positional path.
+                ["pip", "install", "--dry-run", "-e", "--", safe_project_root],
                 capture_output=True,
                 text=True,
                 timeout=120,

@@ -11,10 +11,10 @@ The migration process:
 from __future__ import annotations
 
 import logging
-import os
 from pathlib import Path
 from typing import Any
 
+from general_ludd.secrets.env import EnvSecretsManager
 from general_ludd.secrets.manager import SecretAlias
 
 logger = logging.getLogger(__name__)
@@ -27,6 +27,13 @@ def migrate_profile_secrets(
     aliases_to_migrate: list[tuple[str, str, str]] = []
     skipped: list[str] = []
 
+    # S-1: resolve alias values through the fail-closed EnvSecretsManager
+    # allowlist rather than reading os.environ directly. An attacker-controlled
+    # credential_alias like GLUDD_PSK / PATH / AWS_SECRET_ACCESS_KEY therefore
+    # resolves to None (and is skipped) instead of being copied into the vault;
+    # legitimate *_API_KEY / *_API_BASE aliases still migrate.
+    env_resolver = EnvSecretsManager()
+
     for profile in profiles:
         profile_id = str(profile.get("model_profile_id", "unknown"))
         for alias_field in ("credential_alias", "api_base_alias"):
@@ -34,7 +41,7 @@ def migrate_profile_secrets(
             if not raw_alias or not isinstance(raw_alias, str):
                 continue
             alias_name: str = raw_alias
-            value = os.environ.get(alias_name)
+            value = env_resolver.resolve(alias_name)
             if value is None:
                 skipped.append(alias_name)
                 logger.debug("Skipping %s: not found in environment", alias_name)

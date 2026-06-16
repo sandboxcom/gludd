@@ -92,14 +92,14 @@
 
 - name: Apply model output override (when provided and model off)
   ansible.builtin.set_fact:
-    _ea_proposals: "{{ (model_output_override | from_json)[:max_proposals | int] }}"
+    _ea_proposals: "{{ (model_output_override | from_json)[: max_proposals | int] }}"
   when:
     - not enable_model_call | bool
     - model_output_override | length > 0
 
 - name: Use heuristic proposals (no model, no override)
   ansible.builtin.set_fact:
-    _ea_proposals: "{{ _ea_heuristic_proposals[:max_proposals | int] }}"
+    _ea_proposals: "{{ _ea_heuristic_proposals[: max_proposals | int] }}"
   when:
     - not enable_model_call | bool
     - model_output_override | length == 0

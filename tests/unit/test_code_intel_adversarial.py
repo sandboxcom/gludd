@@ -247,7 +247,7 @@ class TestGitIntelligenceAdversarial:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "a.py\nb.py\n\nb.py\nc.py\n\na.py\nb.py\n"
@@ -271,7 +271,7 @@ class TestGitIntelligenceAdversarial:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "author alice\nauthor bob\n\tcode line\n"
@@ -293,7 +293,7 @@ class TestGitIntelligenceAdversarial:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "5\tAlice\n3\tBob <bob@e.com>\n"
@@ -316,7 +316,7 @@ class TestGitIntelligenceAdversarial:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "abc123\tmsg1\tauthor1\t2026-01-01\nshort\n"
@@ -340,7 +340,7 @@ class TestGitIntelligenceAdversarial:
         from general_ludd.code_intelligence.git_intel import GitIntelligence
 
         git_intel = GitIntelligence("/repo")
-        with patch("subprocess.run") as mock_run:
+        with patch("subprocess.run") as mock_run, patch("os.path.isdir", return_value=True):
             mock_result = MagicMock()
             mock_result.returncode = 0
             mock_result.stdout = "src/main.py\n\tsrc/main.py\nsrc/util.py\n"

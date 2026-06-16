@@ -7,11 +7,28 @@ from pathlib import Path
 
 import httpx
 
+from general_ludd.security.auth import is_path_within, is_safe_fetch_url
+from general_ludd.security.sanitize import sanitize_path
 from general_ludd.skills.catalog import CatalogSkillEntry
 from general_ludd.skills.loader import parse_skill_md
 from general_ludd.skills.skill import Skill
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_skill_filename(name: str) -> str | None:
+    """Sanitize an attacker-controlled skill name into a single-segment file
+    stem. Rejects path separators, traversal, and absolute paths so a skill
+    named ``../../etc/cron.d/evil`` can never escape the install dir."""
+    if not name:
+        return None
+    cleaned = sanitize_path(name.strip())
+    if cleaned is None:
+        return None
+    # Must remain a single path segment — no nested dirs from the skill name.
+    if "/" in cleaned or "\\" in cleaned or cleaned in {"", ".", ".."}:
+        return None
+    return cleaned
 
 GITHUB_API_BASE = "https://api.github.com"
 GITHUB_RAW_BASE = "https://raw.githubusercontent.com"
@@ -78,8 +95,15 @@ class GitHubSkillSource:
 
 class RemoteSkillFetcher:
     def fetch(self, url: str) -> Skill | None:
+        # SSRF guard: only https + non-private/loopback/metadata hosts, checked
+        # against the LITERAL host (no DNS resolution -> no blocking). Redirects
+        # are disabled so a 30x cannot bounce us onto an internal target after
+        # the URL passed the gate.
+        if not is_safe_fetch_url(url):
+            logger.warning("Refusing unsafe skill URL: %s", url)
+            return None
         try:
-            resp = httpx.get(url, timeout=15.0, follow_redirects=True)
+            resp = httpx.get(url, timeout=15.0, follow_redirects=False)
         except httpx.HTTPError:
             logger.warning("Failed to fetch skill from %s", url)
             return None
@@ -91,12 +115,20 @@ class RemoteSkillFetcher:
         skill = self.fetch(url)
         if skill is None:
             return None
+        stem = _safe_skill_filename(skill.name)
+        if stem is None:
+            logger.warning("Refusing skill with unsafe name: %r", skill.name)
+            return None
         target = Path(target_dir)
         target.mkdir(parents=True, exist_ok=True)
-        skill_file = target / f"{skill.name}.md"
+        skill_file = target / f"{stem}.md"
+        # Defense in depth: confirm the resolved file stays inside target_dir.
+        if not is_path_within(str(target), f"{stem}.md"):
+            logger.warning("Refusing skill path escaping %s: %r", target_dir, skill.name)
+            return None
         content = f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n\n{skill.body}\n"
         skill_file.write_text(content)
-        logger.info("Installed skill %s to %s", skill.name, skill_file)
+        logger.info("Installed skill %s to %s", stem, skill_file)
         return skill_file
 
 

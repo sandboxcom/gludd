@@ -358,62 +358,101 @@ class ExecutionEngine:
             f.write(content)
 
     def _diff_target_paths(self, diff_text: str) -> list[str]:
-        """Extract the ``+++`` target paths a unified diff would write.
+        """Extract every path a unified diff could write, as ``patch -p1`` sees it.
 
-        ``patch -p1`` strips one leading path component, so ``+++ b/foo`` targets
-        ``foo``. We mirror that strip here so containment is checked against the
-        same path patch will actually write.
+        ``patch`` reads BOTH the ``---`` (source/old) and ``+++`` (target/new)
+        header lines and, with ``--force``, can fall back to the source path when
+        the target is absent. So an attacker could hide an escaping path on the
+        ``---`` line behind a benign ``+++``. We therefore validate both.
+
+        ``patch -p1`` strips one leading path component, so ``--- a/foo`` and
+        ``+++ b/foo`` both target ``foo``. We mirror that strip here so
+        containment is checked against the same path patch will actually touch.
         """
         targets: list[str] = []
         for line in diff_text.split("\n"):
-            if line.startswith("+++ "):
+            if line.startswith("+++ ") or line.startswith("--- "):
                 raw = line[4:].strip()
                 # Drop a trailing tab-timestamp if present.
                 raw = raw.split("\t", 1)[0].strip()
                 if raw in ("/dev/null", ""):
                     continue
-                # -p1 strips the first component (e.g. the "b/" prefix).
+                # -p1 strips the first component (e.g. the "a/"/"b/" prefix).
                 parts = raw.split("/", 1)
                 stripped = parts[1] if len(parts) == 2 else parts[0]
-                targets.append(stripped)
+                if stripped:
+                    targets.append(stripped)
         return targets
+
+    def _diff_changed_files(self, diff_text: str) -> list[str]:
+        """Files a ``+++`` line names (post ``-p1`` strip), de-duplicated.
+
+        Used to report which files were touched AFTER patch succeeds. Distinct
+        from :meth:`_diff_target_paths`, which also covers ``---`` for the jail
+        check.
+        """
+        changed: list[str] = []
+        for line in diff_text.split("\n"):
+            if not line.startswith("+++ "):
+                continue
+            raw = line[4:].strip().split("\t", 1)[0].strip()
+            if raw in ("/dev/null", ""):
+                continue
+            parts = raw.split("/", 1)
+            stripped = parts[1] if len(parts) == 2 else parts[0]
+            if stripped and stripped not in changed:
+                changed.append(stripped)
+        return changed
 
     def _apply_unified_diff(self, diff_text: str) -> list[str]:
         import tempfile
-        changed: list[str] = []
         # Containment jail (model-supplied diff): refuse to apply ANY hunk whose
-        # target escapes the workspace via absolute or ../ path. We validate every
-        # +++ target BEFORE invoking patch, so a single escaping path aborts the
-        # whole diff rather than letting patch write outside the workspace.
-        for target in self._diff_target_paths(diff_text):
+        # source (---) OR target (+++) escapes the workspace via absolute or ../
+        # path. We validate every header path BEFORE invoking patch, so a single
+        # escaping path aborts the whole diff rather than letting patch write
+        # outside the workspace.
+        targets = self._diff_target_paths(diff_text)
+        if not targets:
+            return []
+        for target in targets:
             try:
                 self._resolve_in_workspace(target)
             except ValueError as exc:
                 logger.warning("Refusing diff with escaping target: %s", exc)
                 return []
+        # Run patch confined to the REALPATH jail base — the same path the jail
+        # check above resolved against — so a symlinked workspace can't make
+        # patch's working directory diverge from what we validated.
+        jail = os.path.realpath(self.workspace_path)
+        diff_path: str | None = None
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".diff", delete=False
             ) as f:
                 f.write(diff_text)
                 diff_path = f.name
-            subprocess.run(
+            # argv is list-form (never a shell string): diff_path and jail are
+            # caller/LLM-adjacent, so list-form keeps them out of shell parsing.
+            result = subprocess.run(
                 [
-                    "patch", "-p1", "-d", self.workspace_path, "-i",
+                    "patch", "-p1", "-d", jail, "-i",
                     diff_path, "--force", "--no-backup-if-mismatch",
                 ],
                 capture_output=True, text=True, timeout=30,
             )
-            for line in diff_text.split("\n"):
-                if line.startswith("+++ b/"):
-                    p = line[6:].strip()
-                    if p:
-                        changed.append(p)
-                elif line.startswith("+++ "):
-                    p = line[4:].strip()
-                    if p:
-                        changed.append(p)
-            os.unlink(diff_path)
+            # Only report files as changed when patch actually succeeded; a
+            # rejected/failed patch must not be advertised as an applied change.
+            if result.returncode != 0:
+                logger.warning(
+                    "patch exited %s; treating diff as not applied: %s",
+                    result.returncode, (result.stderr or result.stdout)[:500],
+                )
+                return []
+            return self._diff_changed_files(diff_text)
         except Exception as exc:
             logger.warning("Failed to apply diff: %s", exc)
-        return changed
+            return []
+        finally:
+            if diff_path is not None:
+                with contextlib.suppress(OSError):
+                    os.unlink(diff_path)
