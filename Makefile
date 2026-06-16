@@ -672,6 +672,27 @@ wt-prune-safe:
 
 # Read-only: which feature/* branches still have work NOT yet in master (the real
 # integration backlog). A branch absent here is already merged.
+# Merge a branch into the working tree WITHOUT committing (so its changes can be
+# gated together with other staged work, then committed once). Aborts cleanly on
+# conflict. Usage: make git-merge-nc BR=feature/xxx
+git-merge-nc:
+	@[ -n "$(BR)" ] || { echo "Usage: make git-merge-nc BR=feature/xxx"; exit 1; }
+	@git merge --no-ff --no-commit "$(BR)" && echo "merged (uncommitted): $(BR)" || { echo "MERGE CONFLICT — aborting"; git merge --abort; exit 1; }
+
+wt-prune-force-merged:
+	@git worktree list --porcelain | awk '/^worktree /{print $$2}' | while read -r wt; do \
+		case "$$wt" in \
+			*/gludd|*a2fb5d73d80b29494) echo "  protected: $$wt"; continue;; \
+		esac; \
+		head=$$(git -C "$$wt" rev-parse HEAD 2>/dev/null); \
+		if [ -n "$$head" ] && git merge-base --is-ancestor "$$head" master 2>/dev/null; then \
+			git worktree remove --force "$$wt" 2>/dev/null && echo "  removed (merged HEAD): $$wt" || echo "  fail: $$wt"; \
+		else \
+			echo "  KEPT (unmerged HEAD): $$wt"; \
+		fi; \
+	done
+	@echo "wt-prune-force-merged done"
+
 branches-unmerged:
 	@git branch --no-merged master | sed 's/^[+* ]*//' | grep -E '^(feature/|worktree-agent-)' | grep -v worktree-agent || echo "(all feature branches merged)"
 

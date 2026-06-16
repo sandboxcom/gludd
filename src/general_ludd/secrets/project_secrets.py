@@ -23,6 +23,21 @@ class ProjectSecretsManager:
         return result
 
     def resolve(self, alias_name: str) -> str | None:
+        # S-1: project-scoped resolution. A project's secret is looked up under
+        # its own scoped path first (projects/<id>/<alias>); only then do we
+        # fall back to the base manager for shared credential aliases. The base
+        # manager is itself fail-closed (see EnvSecretsManager.resolve), so
+        # non-allowlisted ambient env vars (e.g. GLUDD_PSK) resolve to None and
+        # one project can never read another project's scoped secret by name.
+        # Only KV-capable backends (OpenBao SecretsManager) support a scoped
+        # read; the env-backed manager has no read_secret, so we skip straight
+        # to the (fail-closed) resolve fallback there.
+        if hasattr(self._base, "read_secret"):
+            scoped = self.read_secret(alias_name)
+            if isinstance(scoped, dict):
+                value = scoped.get("value")
+                if isinstance(value, str):
+                    return value
         result: str | None = self._base.resolve(alias_name)
         return result
 

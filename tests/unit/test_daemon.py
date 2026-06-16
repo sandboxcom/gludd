@@ -39,7 +39,13 @@ class TestDaemonApp:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/healthz")
             assert resp.status_code == 200
-            assert resp.json() == {"status": "healthy"}
+            # A-3 (redteam): /healthz now also advertises the auth security
+            # posture (no_auth / auth_degraded). The liveness `status` field keeps
+            # its original "healthy" value for back-compat.
+            body = resp.json()
+            assert body["status"] == "healthy"
+            assert "no_auth" in body
+            assert "auth_degraded" in body
 
     @pytest.mark.asyncio
     async def test_log_level_endpoint_changes_level(self, transport):

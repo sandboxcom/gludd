@@ -798,13 +798,44 @@ def create_daemon_app(
     from general_ludd.hardware.probe import probe_hardware
     app.state._hardware = probe_hardware()
 
+    import hmac
+
     _psk = os.environ.get("GLUDD_PSK", "")
     app.state._psk = _psk
+    # A-3: opt-in fail-closed. Default stays open-but-warned for back-compat
+    # (the ~100 no-PSK tests expect open admin access). When GLUDD_REQUIRE_AUTH
+    # is truthy AND no PSK is configured, /admin/* (and other non-public paths)
+    # refuse with 503 instead of silently serving an unauthenticated request.
+    _require_auth = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    app.state._require_auth = _require_auth
+    # A-3: surface the no-auth posture so /healthz can advertise the degraded
+    # security stance and operators can detect an unprotected daemon.
+    _no_auth = not _psk
+    app.state._no_auth = _no_auth
+    if _no_auth and not _require_auth:
+        # A-3: LOUD startup warning — an unprotected /admin surface is a serious
+        # posture, never a silent default.
+        logger.warning(
+            "SECURITY: GLUDD_PSK is not set — the daemon is running with admin "
+            "auth DISABLED (degraded/no_auth mode). The entire /admin surface is "
+            "open to any caller that can reach the port. Set GLUDD_PSK to enable "
+            "auth, or GLUDD_REQUIRE_AUTH=1 to fail closed when no PSK is set."
+        )
+    elif _no_auth and _require_auth:
+        logger.warning(
+            "SECURITY: GLUDD_REQUIRE_AUTH is set but GLUDD_PSK is not — "
+            "non-public paths will be REFUSED (503) until a PSK is configured."
+        )
 
     _PUBLIC_PATHS = {
         "/healthz", "/readyz", "/api/status", "/api/todos", "/api/webmcp",
         "/docs", "/openapi.json", "/redoc",
     }
+
+    def _is_public(path: str) -> bool:
+        return path in _PUBLIC_PATHS or path.startswith("/docs")
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -813,18 +844,29 @@ def create_daemon_app(
         metrics = get_metrics_exporter()
         metrics.counter_inc("gludd_http_requests_total", {"method": request.method})
         start = time.monotonic()
-        if _psk:
-            path = request.url.path
-            logger.debug(
-                "Auth check: PSK=%r path=%s public=%s",
-                _psk[:4] if len(_psk) > 4 else _psk,
-                path,
-                path in _PUBLIC_PATHS,
+        path = request.url.path
+        if _no_auth and _require_auth and not _is_public(path):
+            # A-3: fail-closed — no PSK configured but auth is required.
+            from fastapi.responses import JSONResponse
+
+            app.state._stats_responses += 1
+            return JSONResponse(
+                status_code=503,
+                content={"error": "auth_required", "reason": "no PSK configured"},
             )
-            if path not in _PUBLIC_PATHS and not path.startswith("/docs"):
+        if _psk:
+            # A-2: never log any portion of the PSK — only whether it is configured.
+            logger.debug(
+                "Auth check: psk_configured=%s path=%s public=%s",
+                True,
+                path,
+                _is_public(path),
+            )
+            if not _is_public(path):
                 auth = request.headers.get("Authorization", "")
                 token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
-                if not token or token != _psk:
+                # A-1: constant-time comparison to prevent timing attacks.
+                if not token or not hmac.compare_digest(token, _psk):
                     from fastapi.responses import JSONResponse
 
                     app.state._stats_responses += 1
@@ -842,11 +884,31 @@ def create_daemon_app(
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
 
     @app.get("/healthz")
-    async def healthz() -> dict[str, str]:
+    async def healthz() -> dict[str, Any]:
         degraded = getattr(app.state, "_degraded", None)
+        # A-3: advertise the no-auth security posture so operators (and the
+        # red-team test) can detect an unprotected daemon via the liveness probe.
+        # The top-level `status` keeps its existing liveness semantics
+        # ("healthy" unless catastrophic) so back-compat callers/tests are
+        # unaffected; the security posture rides on the `no_auth`/`auth_degraded`
+        # fields instead.
+        no_auth = bool(getattr(app.state, "_no_auth", False))
+        require_auth = bool(getattr(app.state, "_require_auth", False))
+        auth_degraded = no_auth and not require_auth
         if degraded:
-            return {"status": "degraded", "reason": str(degraded)[:200]}
-        return {"status": "healthy"}
+            return {
+                "status": "degraded",
+                "reason": str(degraded)[:200],
+                "no_auth": no_auth,
+                "require_auth": require_auth,
+                "auth_degraded": auth_degraded,
+            }
+        return {
+            "status": "healthy",
+            "no_auth": no_auth,
+            "require_auth": require_auth,
+            "auth_degraded": auth_degraded,
+        }
 
     @app.get("/readyz")
     async def readyz() -> Any:
