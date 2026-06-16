@@ -3,9 +3,11 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
 import os
 import re
+import signal
 import subprocess
 import uuid
 from typing import Any
@@ -72,23 +74,32 @@ def _build_user_prompt(job: JobSpec) -> str:
 
 
 def _run_tests(workspace: str) -> tuple[int, str]:
+    # start_new_session=True puts `make test` (and every recipe grandchild it
+    # spawns: pytest, xdist workers, etc.) into its OWN process group. On timeout
+    # we os.killpg the whole group so no recipe grandchild leaks and keeps running
+    # after we've given up — a plain subprocess.run timeout only kills `make`.
+    proc: subprocess.Popen[str] | None = None
     try:
-        result = subprocess.run(
+        proc = subprocess.Popen(
             ["make", "test"],
-            cwd=workspace, capture_output=True, text=True, timeout=120,
+            cwd=workspace,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE,
+            text=True,
+            start_new_session=True,
         )
-        output = (
-            result.stdout[-2000:] if len(result.stdout) > 2000
-            else result.stdout
-        )
-        if not output and result.stderr:
-            output = (
-                result.stderr[-2000:] if len(result.stderr) > 2000
-                else result.stderr
-            )
-        return result.returncode, output or "(no output)"
-    except subprocess.TimeoutExpired:
-        return 1, "Test run timed out after 120s"
+        try:
+            stdout, stderr = proc.communicate(timeout=120)
+        except subprocess.TimeoutExpired:
+            with contextlib.suppress(ProcessLookupError, OSError):
+                os.killpg(os.getpgid(proc.pid), signal.SIGKILL)
+            with contextlib.suppress(Exception):
+                proc.communicate(timeout=5)
+            return 1, "Test run timed out after 120s"
+        output = stdout[-2000:] if len(stdout) > 2000 else stdout
+        if not output and stderr:
+            output = stderr[-2000:] if len(stderr) > 2000 else stderr
+        return proc.returncode, output or "(no output)"
     except FileNotFoundError:
         return 0, "No test command available (make not found)"
     except Exception as exc:
@@ -315,15 +326,71 @@ class ExecutionEngine:
 
         return result
 
+    def _resolve_in_workspace(self, file_path: str) -> str:
+        """Resolve ``file_path`` against the workspace, refusing any escape.
+
+        The model supplies these paths. An absolute path (``/etc/passwd``) or a
+        ``../`` traversal would otherwise let a write/patch land OUTSIDE the
+        workspace. We jail it: resolve the realpath of both the workspace base and
+        the candidate, and refuse unless the candidate is contained in the base
+        (via os.path.commonpath). Returns the safe absolute path.
+        """
+        base = os.path.realpath(self.workspace_path)
+        # join() makes an absolute file_path REPLACE base — exactly the escape we
+        # must catch — so the containment check below (not join alone) is the gate.
+        full = os.path.realpath(os.path.join(base, file_path))
+        try:
+            common = os.path.commonpath([base, full])
+        except ValueError:
+            # Different drives / mixed abs+rel on Windows -> not contained.
+            common = ""
+        if common != base:
+            raise ValueError(
+                f"refusing path that escapes the workspace: {file_path!r} "
+                f"(resolved to {full!r}, base {base!r})"
+            )
+        return full
+
     def _write_file(self, file_path: str, content: str) -> None:
-        full_path = os.path.join(self.workspace_path, file_path)
+        full_path = self._resolve_in_workspace(file_path)
         os.makedirs(os.path.dirname(full_path), exist_ok=True)
         with open(full_path, "w") as f:
             f.write(content)
 
+    def _diff_target_paths(self, diff_text: str) -> list[str]:
+        """Extract the ``+++`` target paths a unified diff would write.
+
+        ``patch -p1`` strips one leading path component, so ``+++ b/foo`` targets
+        ``foo``. We mirror that strip here so containment is checked against the
+        same path patch will actually write.
+        """
+        targets: list[str] = []
+        for line in diff_text.split("\n"):
+            if line.startswith("+++ "):
+                raw = line[4:].strip()
+                # Drop a trailing tab-timestamp if present.
+                raw = raw.split("\t", 1)[0].strip()
+                if raw in ("/dev/null", ""):
+                    continue
+                # -p1 strips the first component (e.g. the "b/" prefix).
+                parts = raw.split("/", 1)
+                stripped = parts[1] if len(parts) == 2 else parts[0]
+                targets.append(stripped)
+        return targets
+
     def _apply_unified_diff(self, diff_text: str) -> list[str]:
         import tempfile
         changed: list[str] = []
+        # Containment jail (model-supplied diff): refuse to apply ANY hunk whose
+        # target escapes the workspace via absolute or ../ path. We validate every
+        # +++ target BEFORE invoking patch, so a single escaping path aborts the
+        # whole diff rather than letting patch write outside the workspace.
+        for target in self._diff_target_paths(diff_text):
+            try:
+                self._resolve_in_workspace(target)
+            except ValueError as exc:
+                logger.warning("Refusing diff with escaping target: %s", exc)
+                return []
         try:
             with tempfile.NamedTemporaryFile(
                 mode="w", suffix=".diff", delete=False

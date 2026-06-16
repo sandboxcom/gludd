@@ -219,7 +219,9 @@ FEATURE_SEED: list[dict[str, Any]] = [
             "molecule_self_test scenario exists",
         ],
         "evidence": [
-            "molecule:molecule_self_test",
+            # The molecule scenario dir is named role_molecule_self_test (the
+            # mock-daemon harness scenario); the role itself is molecule_self_test.
+            "molecule:role_molecule_self_test",
             "role:self_improve_propose",
         ],
         "verifier_kind": "evidence",
@@ -321,9 +323,14 @@ FEATURE_SEED: list[dict[str, Any]] = [
         "acceptance_criteria": [
             "make gate passes in CI (not just locally)",
         ],
+        # .gate-status is a build artifact (.gitignore line 18) — absent in a
+        # fresh checkout and in CI, so it can NEVER serve as reproducible
+        # evidence. Removed; the daemon-lifespan integration test is the real,
+        # reproducible proof the gated paths boot. The "green in GitHub Actions"
+        # claim itself remains unverified-in-CI, so status stays implemented (not
+        # verified) honestly.
         "evidence": [
             "test:tests/integration/test_daemon_lifespan.py",
-            "file:.gate-status::PASS",
         ],
         "verifier_kind": "evidence",
         # Note: CI-green unverified-in-CI at seed time

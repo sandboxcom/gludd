@@ -6,9 +6,16 @@ gets rendered into agent system prompts at runtime.
 
 from __future__ import annotations
 
+import fnmatch
 from typing import Any
 
 from pydantic import BaseModel, field_validator
+
+# Shell metacharacters that enable chaining / redirection / substitution. A
+# command containing any of these is rejected outright: the allowlist matches a
+# SINGLE command (e.g. "make test"), and these characters would let a matched
+# prefix smuggle a second, unmatched command (e.g. "make x; rm -rf /").
+_SHELL_METACHARACTERS = frozenset(";&|<>`$()\n\r")
 
 
 class GuardrailConfig(BaseModel):
@@ -61,6 +68,41 @@ class AgentBehavior(BaseModel):
 
     def should_stop(self, condition: str) -> bool:
         return condition in self.stop_conditions
+
+    def is_command_allowed(self, command: str) -> bool:
+        """Enforceable predicate over ``allowed_command_patterns``.
+
+        ``allowed_command_patterns`` was previously prompt-only (rendered into the
+        system prompt, never actually checked). This makes it a real gate so it CAN
+        be enforced. NOTE: the live mechanism in this repo is still EXTERNAL —
+        ``.opencode/plugin/enforce-make.ts`` and the harness permission rules deny
+        non-``make`` Bash before it runs. This predicate gives an in-process,
+        testable equivalent for callers that want to pre-check a command.
+
+        A command is allowed only if ALL hold:
+          - it is non-empty after stripping,
+          - it contains no shell metacharacter (chaining/redirect/substitution),
+          - it does not begin with ``-`` (would be parsed as an option),
+          - it carries no ``VAR=val`` env prefix (smuggles environment), and
+          - it fnmatch-matches at least one allowed pattern.
+        """
+        if not command or not command.strip():
+            return False
+        cmd = command.strip()
+        # Reject shell metacharacters: they enable chaining/redirection so a
+        # matched prefix could carry an unmatched second command.
+        if any(ch in _SHELL_METACHARACTERS for ch in cmd):
+            return False
+        first = cmd.split(" ", 1)[0]
+        # Leading-dash first token would be parsed as an option, not a command.
+        if first.startswith("-"):
+            return False
+        # An env-prefix (FOO=bar make test) smuggles environment into the call.
+        if "=" in first:
+            return False
+        return any(
+            fnmatch.fnmatch(cmd, pattern) for pattern in self.allowed_command_patterns
+        )
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()

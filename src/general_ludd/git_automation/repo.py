@@ -19,6 +19,15 @@ from general_ludd.git_automation.types import (
 
 logger = logging.getLogger(__name__)
 
+# Bound EVERY git subprocess so a slow/unreachable remote or a credential prompt
+# can never hang the caller forever (the daemon awaits commit/push inside a tick).
+_GIT_TIMEOUT_SECONDS = 60.0
+
+# Non-interactive git environment: GIT_TERMINAL_PROMPT=0 makes git fail instead
+# of blocking on a username/password TTY prompt; GIT_ASKPASS=echo neutralises any
+# credential-helper prompt (mirrors what clone() already sets).
+_NON_INTERACTIVE_GIT_ENV = {"GIT_TERMINAL_PROMPT": "0", "GIT_ASKPASS": "echo"}
+
 _FORCE_PUSH_PATTERN = re.compile(
     r"\s+(-f\s+|--force\b|--force-with-lease\b)"
 )
@@ -46,13 +55,33 @@ class GitAutomation:
         self.repo_path = repo_path
 
     def _run_git(self, *args: str, check: bool = True) -> subprocess.CompletedProcess[str]:
-        return subprocess.run(
-            ["git", *args],
-            cwd=self.repo_path,
-            capture_output=True,
-            text=True,
-            check=check,
-        )
+        env = {**os.environ, **_NON_INTERACTIVE_GIT_ENV}
+        try:
+            return subprocess.run(
+                ["git", *args],
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=check,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env=env,
+            )
+        except subprocess.TimeoutExpired as exc:
+            # A hung git (unreachable remote / credential prompt) must surface as a
+            # CLEAN failure, never as a daemon-stalling crash. We translate the
+            # timeout into a CalledProcessError so every existing caller that
+            # already handles git failure (commit/push catch CalledProcessError,
+            # is_repo() catches it) fails closed instead of propagating a hang.
+            logger.error("git %s timed out after %ss", args[0] if args else "?", _GIT_TIMEOUT_SECONDS)
+            raise subprocess.CalledProcessError(
+                returncode=124,
+                cmd=["git", *args],
+                output=exc.stdout if isinstance(exc.stdout, str) else "",
+                stderr=(
+                    exc.stderr if isinstance(exc.stderr, str)
+                    else f"git timed out after {_GIT_TIMEOUT_SECONDS}s"
+                ),
+            ) from exc
 
     def init_repo(self, path: str | None = None) -> InitResult:
         target = path or self.repo_path

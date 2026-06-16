@@ -178,12 +178,25 @@ class FeatureVerifier:
         return False, f"role dir not found: {name}"
 
     def _check_module(self, name: str) -> tuple[bool, str]:
-        plugins_dir = self._root / "plugins" / "modules"
-        # Accept name with or without .py extension
+        # gludd_* modules live under the agent collection, not a top-level
+        # plugins/ dir.  Check the canonical collection path first, then fall
+        # back to a top-level plugins/modules/ (some layouts) and finally an
+        # rglob so a module is found wherever a real plugins/modules/ holds it.
+        canonical = (
+            self._root
+            / "collections" / "ansible_collections" / "general_ludd"
+            / "agent" / "plugins" / "modules"
+        )
+        for plugins_dir in (canonical, self._root / "plugins" / "modules"):
+            for ext in ("", ".py"):
+                candidate = plugins_dir / f"{name}{ext}"
+                if candidate.exists():
+                    return True, f"module found: {candidate.relative_to(self._root)}"
+        # Last resort: any plugins/modules/<name>[.py] anywhere under the repo.
         for ext in ("", ".py"):
-            candidate = plugins_dir / f"{name}{ext}"
-            if candidate.exists():
-                return True, f"module found: {candidate.relative_to(self._root)}"
+            for candidate in self._root.rglob(f"plugins/modules/{name}{ext}"):
+                if candidate.exists():
+                    return True, f"module found: {candidate.relative_to(self._root)}"
         return False, f"module not found: plugins/modules/{name}[.py]"
 
     def _check_molecule(self, scenario: str) -> tuple[bool, str]:

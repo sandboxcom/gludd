@@ -11,6 +11,53 @@ from general_ludd.agents.behavior import (
 )
 
 
+class TestIsCommandAllowed:
+    """Fix 4: allowed_command_patterns is now an enforceable predicate.
+
+    NOTE: the LIVE enforcement mechanism remains external (.opencode plugin +
+    harness permission rules); this predicate is the in-process, testable
+    equivalent so the patterns CAN be enforced by any caller that wants to.
+    """
+
+    def test_make_command_allowed(self):
+        b = AgentBehavior()  # default allowlist is ["make *"]
+        assert b.is_command_allowed("make test") is True
+        assert b.is_command_allowed("make test-unit TESTFILE=x") is True
+
+    def test_non_matching_command_rejected(self):
+        b = AgentBehavior()
+        assert b.is_command_allowed("rm -rf /") is False
+        assert b.is_command_allowed("python foo.py") is False
+
+    def test_chaining_metacharacters_rejected(self):
+        b = AgentBehavior()
+        # A matched prefix must not be able to smuggle a second command.
+        assert b.is_command_allowed("make test; rm -rf /") is False
+        assert b.is_command_allowed("make test && rm -rf /") is False
+        assert b.is_command_allowed("make test | sh") is False
+        assert b.is_command_allowed("make $(rm -rf /)") is False
+        assert b.is_command_allowed("make test > /etc/passwd") is False
+        assert b.is_command_allowed("make `whoami`") is False
+
+    def test_leading_dash_rejected(self):
+        b = AgentBehavior(allowed_command_patterns=["* *", "*"])
+        assert b.is_command_allowed("--evil-option") is False
+
+    def test_env_prefix_rejected(self):
+        b = AgentBehavior()
+        assert b.is_command_allowed("FOO=bar make test") is False
+
+    def test_empty_command_rejected(self):
+        b = AgentBehavior()
+        assert b.is_command_allowed("") is False
+        assert b.is_command_allowed("   ") is False
+
+    def test_custom_pattern_matches(self):
+        b = AgentBehavior(allowed_command_patterns=["make *", "git status"])
+        assert b.is_command_allowed("git status") is True
+        assert b.is_command_allowed("git push") is False
+
+
 class TestAgentBehaviorDefaults:
     def test_default_behavior_has_all_policies_enabled(self):
         b = AgentBehavior()

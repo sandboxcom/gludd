@@ -1070,8 +1070,15 @@ class EventLoop:
             try:
                 from general_ludd.git_automation.repo import GitAutomation
                 repo = GitAutomation(worktree)
-                repo.commit(f"[{todo.todo_id}] {todo.title}")
-                repo.push(branch=branch_name)
+                # M (LIVE stall fix): commit/push shell out to blocking git.
+                # Even with a per-subprocess timeout, a 60s blocking call inside
+                # the async tick would freeze every other coroutine. Offload to a
+                # worker thread (mirrors the playbook dispatch's asyncio.to_thread)
+                # so blocking git can never stall the event loop.
+                await asyncio.to_thread(
+                    repo.commit, f"[{todo.todo_id}] {todo.title}"
+                )
+                await asyncio.to_thread(repo.push, branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
                 self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:

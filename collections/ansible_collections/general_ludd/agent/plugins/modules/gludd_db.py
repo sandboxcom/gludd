@@ -62,6 +62,13 @@ DOCUMENTATION:
       description: Request timeout in seconds.
       type: int
       default: 30
+    role:
+      description:
+        - Capability role on whose behalf the op runs.
+        - The per-role capability policy (default-DENY) gates which ops are
+          permitted; an unknown role may perform no ops.
+      type: str
+      default: ""
 
 EXAMPLES:
   - name: Fetch a todo
@@ -122,10 +129,15 @@ try:
         error_result,
         ok_result,
     )
+    from ansible_collections.general_ludd.agent.plugins.module_utils.capability_policy import (  # noqa: E501
+        CapabilityError,
+        for_role,
+    )
 except ImportError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
     from gludd import GluddClient, error_result, ok_result  # type: ignore[import]
+    from capability_policy import CapabilityError, for_role  # type: ignore[import]
 
 
 def main() -> None:
@@ -144,6 +156,7 @@ def main() -> None:
             daemon_url=dict(type="str", default="http://localhost:8000"),
             psk=dict(type="str", default="", no_log=True),
             timeout=dict(type="int", default=30),
+            role=dict(type="str", default=""),
         ),
         required_if=[
             ("op", "todo_get", ["todo_id"]),
@@ -155,6 +168,21 @@ def main() -> None:
     )
 
     op: str = module.params["op"]
+
+    # Capability gate (fail-closed): the role's per-role policy must explicitly
+    # grant this db op.  An unknown/empty role grants nothing (default-DENY), so
+    # the op is refused before any daemon call is made.
+    cap = for_role(module.params["role"])
+    try:
+        cap.check_db_op(op)
+    except CapabilityError as exc:
+        module.fail_json(**error_result(
+            f"db op denied by capability policy: {exc}",
+            op=op,
+            role=module.params["role"],
+        ))
+        return
+
     client = GluddClient(
         base_url=module.params["daemon_url"],
         psk=module.params["psk"],

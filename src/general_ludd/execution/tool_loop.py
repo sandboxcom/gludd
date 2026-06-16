@@ -7,6 +7,7 @@ and the results are fed back to continue the conversation.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any, cast
 
@@ -108,14 +109,35 @@ class ToolCallLoop:
                             tc_args = {}
                     try:
                         server_id = self._resolve_server_id(tc_name)
-                        result = await self._mcp_client.call_tool(
-                            server_id, tc_name, tc_args,
+                        # Per-tool timeout: a hung/slow MCP tool must NOT stall the
+                        # whole tool loop (and the daemon that awaits it). Bound the
+                        # call; on timeout we fall through to the tool-error branch
+                        # below, which appends an error message the model can react
+                        # to, instead of hanging forever.
+                        result = await asyncio.wait_for(
+                            self._mcp_client.call_tool(
+                                server_id, tc_name, tc_args,
+                            ),
+                            timeout=self._per_tool_timeout,
                         )
                         messages.append({
                             "role": "tool",
                             "tool_call_id": tc.get("id", ""),
                             "content": str(result),
                         })
+                    except TimeoutError:
+                        messages.append({
+                            "role": "tool",
+                            "tool_call_id": tc.get("id", ""),
+                            "content": (
+                                f"Tool error: {tc_name!r} timed out after "
+                                f"{self._per_tool_timeout}s"
+                            ),
+                        })
+                        logger.warning(
+                            "Tool %r timed out after %ss for job %s",
+                            tc_name, self._per_tool_timeout, job.job_id,
+                        )
                     except Exception as exc:
                         messages.append({
                             "role": "tool",

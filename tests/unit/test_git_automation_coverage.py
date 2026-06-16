@@ -86,14 +86,16 @@ class TestCreateBranch:
     def test_create_branch(self, mock_run: MagicMock):
         result = GitAutomation(".").create_branch("feature-x")
         assert result == "feature-x"
-        mock_run.assert_called_once_with(
-            # `--` ends option parsing so a dash-leading name can't be an option.
-            ["git", "checkout", "-b", "feature-x", "--"],
-            cwd=".",
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        # `--` ends option parsing so a dash-leading name can't be an option.
+        # Fix 1: _run_git now also passes a bounded timeout + non-interactive env.
+        mock_run.assert_called_once()
+        call = mock_run.call_args
+        assert call.args[0] == ["git", "checkout", "-b", "feature-x", "--"]
+        assert call.kwargs["cwd"] == "."
+        assert call.kwargs["check"] is True
+        assert call.kwargs["timeout"] == 60.0
+        assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
+        assert call.kwargs["env"]["GIT_ASKPASS"] == "echo"
 
 
 class TestCommit:
@@ -111,13 +113,14 @@ class TestTagRelease:
     def test_tag_release(self, mock_run: MagicMock):
         result = GitAutomation(".").tag_release("v1.0")
         assert result == "v1.0"
-        mock_run.assert_called_once_with(
-            ["git", "tag", "-a", "v1.0", "-m", "Release v1.0"],
-            cwd=".",
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        mock_run.assert_called_once()
+        call = mock_run.call_args
+        assert call.args[0] == ["git", "tag", "-a", "v1.0", "-m", "Release v1.0"]
+        assert call.kwargs["cwd"] == "."
+        assert call.kwargs["check"] is True
+        # Fix 1: bounded timeout + non-interactive env on every _run_git call.
+        assert call.kwargs["timeout"] == 60.0
+        assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
 class TestTagCheckpoint:
@@ -125,13 +128,14 @@ class TestTagCheckpoint:
     def test_tag_checkpoint(self, mock_run: MagicMock):
         result = GitAutomation(".").tag_checkpoint("checkpoint-1")
         assert result == "checkpoint-1"
-        mock_run.assert_called_once_with(
-            ["git", "tag", "checkpoint-1"],
-            cwd=".",
-            capture_output=True,
-            text=True,
-            check=True,
-        )
+        mock_run.assert_called_once()
+        call = mock_run.call_args
+        assert call.args[0] == ["git", "tag", "checkpoint-1"]
+        assert call.kwargs["cwd"] == "."
+        assert call.kwargs["check"] is True
+        # Fix 1: bounded timeout + non-interactive env on every _run_git call.
+        assert call.kwargs["timeout"] == 60.0
+        assert call.kwargs["env"]["GIT_TERMINAL_PROMPT"] == "0"
 
 
 class TestPush:
