@@ -1,0 +1,396 @@
+"""Self-contained RabbitMQ management-API observability connector.
+
+Pulls cluster health from the RabbitMQ management HTTP API
+(``/api/overview``, ``/api/queues``, ``/api/nodes``) and normalizes the
+operationally-interesting figures (queue depth, unacked messages, node memory)
+into flat metric records.
+
+Design constraints honoured here:
+
+* No imports from sibling connectors, the package ``__init__``, or any
+  connector base class — this module stands alone.
+* SSRF protection blocks loopback / private / link-local / cloud-metadata
+  *literal* hosts on ``base_url`` (no DNS resolution, no network at
+  construction time). Plain ``http`` is allowed (the management UI commonly
+  runs on internal HTTP).
+* Basic-auth credentials are read from the environment via ``user_env`` /
+  ``password_env`` — never hard-coded, never logged.
+* The HTTP transport is *injectable* so the connector is driven entirely from
+  mocked responses in tests (no real network, no DNS, no shell, no subprocess).
+* ``health()`` never raises (reports failure in ``{"ok", "detail"}``).
+  ``query()`` never raises: transport / protocol failures become a single
+  normalized error record.
+* Every backend call is time-bound (``timeout`` passed to the transport).
+
+The management API listens on port ``15672`` by default; if ``base_url`` has no
+explicit port we append ``:15672``.
+
+Record shape (one dict per sample)::
+
+    {
+        "ts": float,                 # scrape time (unix seconds)
+        "source": str,               # connector name
+        "kind": "metrics",
+        "level_or_status": str,      # "" for data, "error" for failures
+        "message": str,              # human-readable line
+        "value": float,              # numeric payload
+        "labels": dict[str, str],    # {queue, vhost, node, metric, ...}
+        "raw": Any,                  # original API object
+    }
+"""
+
+from __future__ import annotations
+
+import base64
+import ipaddress
+import os
+import time
+from collections.abc import Callable
+from typing import Any
+from urllib.parse import urlsplit
+
+# Injectable transport signature: (url, params, headers, timeout) -> (status, json)
+HttpGet = Callable[..., "tuple[int, Any]"]
+
+KIND = "metrics"
+
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "metadata",
+        "metadata.google.internal",
+        "metadata.goog",
+    }
+)
+
+_DEFAULT_TIMEOUT = 10.0
+_DEFAULT_MGMT_PORT = 15672
+
+
+def _strip_brackets(host: str) -> str:
+    if host.startswith("[") and host.endswith("]"):
+        return host[1:-1]
+    return host
+
+
+def _is_blocked_ip(host: str) -> bool:
+    try:
+        ip = ipaddress.ip_address(_strip_brackets(host))
+    except ValueError:
+        return False
+    return (
+        ip.is_loopback
+        or ip.is_private
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+        or not ip.is_global
+    )
+
+
+def _validate_base_url(base_url: str) -> str:
+    """Reject SSRF-prone literal hosts; append the mgmt port if absent.
+
+    Allows http and https only. Performs NO DNS resolution.
+    """
+    if not base_url or not isinstance(base_url, str):
+        raise ValueError("base_url is required")
+
+    parts = urlsplit(base_url)
+    if parts.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported scheme: {parts.scheme!r} (only http/https)")
+
+    host = (parts.hostname or "").strip().lower()
+    if not host:
+        raise ValueError("base_url has no host")
+
+    if host in _BLOCKED_HOSTNAMES:
+        raise ValueError(f"blocked host: {host!r}")
+
+    if _is_blocked_ip(host):
+        raise ValueError(f"blocked internal/metadata address: {host!r}")
+
+    normalized = base_url.rstrip("/")
+    if parts.port is None:
+        # Re-bracket IPv6 literals when appending the port.
+        host_token = f"[{host}]" if ":" in host else host
+        normalized = f"{parts.scheme}://{host_token}:{_DEFAULT_MGMT_PORT}"
+    return normalized
+
+
+def _f(value: Any) -> float:
+    try:
+        return float(value)
+    except (TypeError, ValueError):
+        return 0.0
+
+
+class RabbitMqSource:
+    """A metrics source backed by the RabbitMQ management HTTP API."""
+
+    KIND = KIND
+
+    def __init__(
+        self,
+        config: dict[str, Any],
+        http_get: HttpGet | None = None,
+        *,
+        timeout: float = _DEFAULT_TIMEOUT,
+    ) -> None:
+        if http_get is None:
+            raise ValueError("http_get transport must be injected")
+
+        base_url = config.get("base_url", "")
+        self._base_url = _validate_base_url(base_url)
+        self._user_env = config.get("user_env")
+        self._password_env = config.get("password_env")
+        self._http_get = http_get
+        self._timeout = float(timeout)
+        self.kind = KIND
+        host = urlsplit(self._base_url).netloc
+        self.name = config.get("name") or f"rabbitmq:{host}"
+
+    # -- helpers ----------------------------------------------------------
+
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Accept": "application/json"}
+        user = os.environ.get(self._user_env) if self._user_env else None
+        password = os.environ.get(self._password_env) if self._password_env else None
+        if user is not None and password is not None:
+            token = base64.b64encode(f"{user}:{password}".encode()).decode("ascii")
+            headers["Authorization"] = f"Basic {token}"
+        return headers
+
+    def _get(self, path: str) -> tuple[int, Any]:
+        url = f"{self._base_url}{path}"
+        return self._http_get(
+            url, params=None, headers=self._headers(), timeout=self._timeout
+        )
+
+    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+        return {
+            "ts": time.time(),
+            "source": self.name,
+            "kind": KIND,
+            "level_or_status": "error",
+            "message": message,
+            "value": 0.0,
+            "labels": {},
+            "raw": raw,
+        }
+
+    def _record(
+        self, message: str, value: float, labels: dict[str, str], ts: float, raw: Any
+    ) -> dict[str, Any]:
+        return {
+            "ts": ts,
+            "source": self.name,
+            "kind": KIND,
+            "level_or_status": "",
+            "message": message,
+            "value": value,
+            "labels": labels,
+            "raw": raw,
+        }
+
+    # -- normalization ----------------------------------------------------
+
+    def _normalize_queues(
+        self, queues: Any, ts: float
+    ) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        if not isinstance(queues, list):
+            return records
+        for q in queues:
+            if not isinstance(q, dict):
+                continue
+            name = str(q.get("name", ""))
+            vhost = str(q.get("vhost", ""))
+            base_labels = {"queue": name, "vhost": vhost}
+            depth = _f(q.get("messages"))
+            ready = _f(q.get("messages_ready"))
+            unacked = _f(q.get("messages_unacknowledged"))
+            memory = _f(q.get("memory"))
+            records.append(
+                self._record(
+                    f"queue {vhost}/{name} depth",
+                    depth,
+                    {**base_labels, "metric": "queue_depth"},
+                    ts,
+                    q,
+                )
+            )
+            records.append(
+                self._record(
+                    f"queue {vhost}/{name} ready",
+                    ready,
+                    {**base_labels, "metric": "queue_ready"},
+                    ts,
+                    q,
+                )
+            )
+            records.append(
+                self._record(
+                    f"queue {vhost}/{name} unacked",
+                    unacked,
+                    {**base_labels, "metric": "queue_unacked"},
+                    ts,
+                    q,
+                )
+            )
+            records.append(
+                self._record(
+                    f"queue {vhost}/{name} memory",
+                    memory,
+                    {**base_labels, "metric": "queue_memory"},
+                    ts,
+                    q,
+                )
+            )
+        return records
+
+    def _normalize_nodes(self, nodes: Any, ts: float) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        if not isinstance(nodes, list):
+            return records
+        for node in nodes:
+            if not isinstance(node, dict):
+                continue
+            nname = str(node.get("name", ""))
+            base_labels = {"node": nname}
+            records.append(
+                self._record(
+                    f"node {nname} mem_used",
+                    _f(node.get("mem_used")),
+                    {**base_labels, "metric": "node_mem_used"},
+                    ts,
+                    node,
+                )
+            )
+            records.append(
+                self._record(
+                    f"node {nname} fd_used",
+                    _f(node.get("fd_used")),
+                    {**base_labels, "metric": "node_fd_used"},
+                    ts,
+                    node,
+                )
+            )
+            records.append(
+                self._record(
+                    f"node {nname} sockets_used",
+                    _f(node.get("sockets_used")),
+                    {**base_labels, "metric": "node_sockets_used"},
+                    ts,
+                    node,
+                )
+            )
+            running = 1.0 if node.get("running") else 0.0
+            records.append(
+                self._record(
+                    f"node {nname} running",
+                    running,
+                    {**base_labels, "metric": "node_running"},
+                    ts,
+                    node,
+                )
+            )
+        return records
+
+    def _normalize_overview(self, overview: Any, ts: float) -> list[dict[str, Any]]:
+        records: list[dict[str, Any]] = []
+        if not isinstance(overview, dict):
+            return records
+        totals = overview.get("queue_totals")
+        if isinstance(totals, dict):
+            records.append(
+                self._record(
+                    "cluster total messages",
+                    _f(totals.get("messages")),
+                    {"metric": "cluster_messages"},
+                    ts,
+                    totals,
+                )
+            )
+            records.append(
+                self._record(
+                    "cluster total unacked",
+                    _f(totals.get("messages_unacknowledged")),
+                    {"metric": "cluster_unacked"},
+                    ts,
+                    totals,
+                )
+            )
+        obj_totals = overview.get("object_totals")
+        if isinstance(obj_totals, dict):
+            records.append(
+                self._record(
+                    "cluster connections",
+                    _f(obj_totals.get("connections")),
+                    {"metric": "cluster_connections"},
+                    ts,
+                    obj_totals,
+                )
+            )
+        return records
+
+    # -- public API -------------------------------------------------------
+
+    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
+        """Pull overview/queues/nodes and normalize. Never raises.
+
+        ``spec`` may carry ``endpoints`` (a subset of
+        ``{"overview", "queues", "nodes"}``) to restrict the scrape.
+        """
+        requested = spec.get("endpoints") or ("overview", "queues", "nodes")
+        ts = time.time()
+        records: list[dict[str, Any]] = []
+
+        endpoint_map = {
+            "overview": ("/api/overview", self._normalize_overview),
+            "queues": ("/api/queues", self._normalize_queues),
+            "nodes": ("/api/nodes", self._normalize_nodes),
+        }
+
+        for key in requested:
+            spec_entry = endpoint_map.get(key)
+            if spec_entry is None:
+                continue
+            path, normalizer = spec_entry
+            try:
+                status, payload = self._get(path)
+            except Exception as exc:
+                records.append(
+                    self._error_record(
+                        f"transport error on {path}: {exc}", {"path": path}
+                    )
+                )
+                continue
+            if not (200 <= int(status) < 300):
+                records.append(
+                    self._error_record(
+                        f"http status {status} on {path}", {"status": status}
+                    )
+                )
+                continue
+            records.extend(normalizer(payload, ts))
+
+        return records
+
+    def health(self) -> dict[str, Any]:
+        """Return ``{"ok": bool, "detail": str}``. Never raises.
+
+        Probes ``/api/overview`` (cheap, always present on the mgmt API).
+        """
+        try:
+            status, payload = self._get("/api/overview")
+        except Exception as exc:  # health must never raise
+            return {"ok": False, "detail": f"transport error: {exc}"}
+
+        ok = 200 <= int(status) < 300 and isinstance(payload, dict)
+        if ok:
+            version = payload.get("rabbitmq_version", "?")
+            return {"ok": True, "detail": f"overview ok (rabbitmq {version})"}
+        return {"ok": False, "detail": f"unhealthy (status {status})"}

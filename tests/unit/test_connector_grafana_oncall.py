@@ -1,0 +1,225 @@
+"""Unit tests for the Grafana OnCall incident-source connector.
+
+Transport is fully MOCKED via ``httpx.MockTransport`` — no real network.
+"""
+
+from __future__ import annotations
+
+import json
+from typing import Any
+
+import httpx
+import pytest
+
+from general_ludd.connectors.grafana_oncall import GrafanaOnCallSource
+
+_TOKEN = "grafana-secret-token-DO-NOT-LEAK"
+_ENV = "GRAFANA_ONCALL_TOKEN"
+_PUBLIC_BASE = "https://oncall.example-grafana.net"
+
+_CANNED = {
+    "results": [
+        {
+            "id": "ag-1",
+            "title": "High error rate on api-gateway",
+            "state": "firing",
+            "created_at": "2026-06-16T08:30:00Z",
+            "integration": "prometheus",
+            "team": "platform",
+            "acknowledged_by": None,
+        },
+        {
+            "id": "ag-2",
+            "title": "Pod crashloop",
+            "state": "acknowledged",
+            "created_at": "2026-06-16T09:00:00Z",
+            "integration": "alertmanager",
+            "team": "infra",
+            "acknowledged_by": "ada",
+        },
+    ]
+}
+
+
+def _capture_transport(captured: dict[str, Any], status: int = 200, body: Any = None):
+    body = _CANNED if body is None else body
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        captured["request"] = request
+        return httpx.Response(status, json=body)
+
+    return httpx.MockTransport(handler)
+
+
+def _make(captured: dict[str, Any], extra: dict[str, Any] | None = None, **kw):
+    cfg: dict[str, Any] = {"base_url": _PUBLIC_BASE}
+    if extra:
+        cfg.update(extra)
+    return GrafanaOnCallSource(cfg, transport=_capture_transport(captured, **kw))
+
+
+def test_kind_and_name():
+    src = GrafanaOnCallSource(
+        {"base_url": _PUBLIC_BASE},
+        transport=httpx.MockTransport(lambda r: httpx.Response(200)),
+    )
+    assert src.KIND == "incidents"
+    assert GrafanaOnCallSource.KIND == "incidents"
+    assert src.name == "grafana_oncall"
+    named = GrafanaOnCallSource(
+        {"base_url": _PUBLIC_BASE, "name": "oncall-prod"}, transport=src._transport
+    )
+    assert named.name == "oncall-prod"
+
+
+def test_base_url_required():
+    with pytest.raises(ValueError):
+        GrafanaOnCallSource({})
+
+
+def test_query_normalizes_alert_groups(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    captured: dict[str, Any] = {}
+    src = _make(captured)
+
+    records = src.query({"state": "firing", "limit": 25})
+
+    assert len(records) == 2
+    rec = records[0]
+    assert rec["ts"] == "2026-06-16T08:30:00Z"
+    assert rec["source"] == "grafana_oncall"
+    assert rec["kind"] == "incidents"
+    assert rec["level_or_status"] == "firing"
+    assert rec["message"] == "High error rate on api-gateway"
+    assert rec["value"] is None
+    assert rec["labels"] == {
+        "integration": "prometheus",
+        "team": "platform",
+        "state": "firing",
+        "acknowledged_by": None,
+    }
+    assert rec["raw"]["id"] == "ag-1"
+    assert records[1]["labels"]["acknowledged_by"] == "ada"
+
+    req = captured["request"]
+    assert req.url.path == "/api/v1/alert_groups"
+    assert "state=firing" in str(req.url)
+    assert "perpage=25" in str(req.url)
+
+
+def test_query_handles_bare_list_payload(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    captured: dict[str, Any] = {}
+    src = _make(captured, body=_CANNED["results"])
+    records = src.query()
+    assert len(records) == 2
+    assert records[0]["level_or_status"] == "firing"
+
+
+def test_auth_header_from_env(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    captured: dict[str, Any] = {}
+    src = _make(captured)
+    src.query()
+    # raw token, no scheme prefix
+    assert captured["request"].headers["Authorization"] == _TOKEN
+
+
+def test_custom_token_env(monkeypatch):
+    monkeypatch.delenv(_ENV, raising=False)
+    monkeypatch.setenv("MY_GRAFANA", _TOKEN)
+    captured: dict[str, Any] = {}
+    src = GrafanaOnCallSource(
+        {"base_url": _PUBLIC_BASE, "token_env": "MY_GRAFANA"},
+        transport=_capture_transport(captured),
+    )
+    src.query()
+    assert captured["request"].headers["Authorization"] == _TOKEN
+
+
+def test_missing_token_raises_in_query(monkeypatch):
+    monkeypatch.delenv(_ENV, raising=False)
+    captured: dict[str, Any] = {}
+    src = _make(captured)
+    with pytest.raises(RuntimeError):
+        src.query()
+
+
+def test_ssrf_rejects_internal_base_url():
+    with pytest.raises(ValueError):
+        GrafanaOnCallSource({"base_url": "http://127.0.0.1:8080"})
+    with pytest.raises(ValueError):
+        GrafanaOnCallSource({"base_url": "http://10.1.2.3"})
+    with pytest.raises(ValueError):
+        GrafanaOnCallSource({"base_url": "http://169.254.169.254"})
+
+
+def test_ssrf_allow_private_opt_in():
+    src = GrafanaOnCallSource(
+        {"base_url": "http://oncall.internal.lan:8080", "allow_private": True},
+        transport=httpx.MockTransport(lambda r: httpx.Response(200)),
+    )
+    assert src._base_url == "http://oncall.internal.lan:8080"
+
+
+def test_token_never_in_records_or_labels(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    captured: dict[str, Any] = {}
+    src = _make(captured)
+    records = src.query()
+    blob = json.dumps(records)
+    assert _TOKEN not in blob
+    for rec in records:
+        assert _TOKEN not in json.dumps(rec["raw"])
+        assert _TOKEN not in json.dumps(rec["labels"])
+
+
+def test_token_never_in_health_error(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ConnectError("connection failed", request=request)
+
+    src = GrafanaOnCallSource({"base_url": _PUBLIC_BASE}, transport=httpx.MockTransport(boom))
+    result = src.health()
+    assert result["ok"] is False
+    assert _TOKEN not in json.dumps(result)
+
+
+def test_health_ok(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    captured: dict[str, Any] = {}
+    src = _make(captured)
+    result = src.health()
+    assert result["ok"] is True
+    assert "detail" in result
+
+
+def test_health_not_ok_on_bad_status(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+    src = GrafanaOnCallSource(
+        {"base_url": _PUBLIC_BASE},
+        transport=httpx.MockTransport(lambda r: httpx.Response(500, json={})),
+    )
+    result = src.health()
+    assert result["ok"] is False
+    assert "500" in result["detail"]
+
+
+def test_health_missing_token(monkeypatch):
+    monkeypatch.delenv(_ENV, raising=False)
+    captured: dict[str, Any] = {}
+    src = _make(captured)
+    result = src.health()
+    assert result["ok"] is False
+
+
+def test_health_never_raises(monkeypatch):
+    monkeypatch.setenv(_ENV, _TOKEN)
+
+    def boom(request: httpx.Request) -> httpx.Response:
+        raise httpx.ReadTimeout("timed out", request=request)
+
+    src = GrafanaOnCallSource({"base_url": _PUBLIC_BASE}, transport=httpx.MockTransport(boom))
+    result = src.health()
+    assert result["ok"] is False

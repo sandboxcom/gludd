@@ -1,0 +1,296 @@
+"""TempoSource — distributed-tracing connector for Grafana Tempo.
+
+Self-contained: no base class, no sibling imports. Normalizes Tempo search
+results (and optionally fetched full traces) into the common gludd record
+shape. HTTP transport is injectable for fully mocked (no-network) testing.
+
+Contract
+--------
+- ``KIND = "traces"`` class attribute; ``name`` instance attribute.
+- ``__init__(config, transport=None)`` — config-driven; Bearer token read from
+  the env var named by ``token_env`` (never a literal secret in config).
+- ``base_url`` is SSRF-guarded by literal-host inspection (no DNS); private /
+  internal hosts rejected unless ``allow_private`` is set.
+- ``health()`` returns ``{"ok": bool, "detail": str}`` and never raises.
+- ``query(spec)`` returns a list of normalized record dicts.
+
+Tempo HTTP API
+--------------
+- ``GET {base_url}/api/search?tags=&start=&end=`` returns ``{"traces": [...]}``
+  trace summaries (durationMs, rootServiceName, rootTraceName, traceID).
+- ``GET {base_url}/api/search?q=<TraceQL>`` is used when ``spec["traceql"]`` is
+  given (the same response shape).
+- ``GET {base_url}/api/traces/{id}`` fetches the full trace; when
+  ``spec["fetch_spans"]`` is true, one record is emitted per span instead of
+  one per trace summary.
+"""
+
+from __future__ import annotations
+
+import ipaddress
+import json
+import os
+import urllib.parse
+import urllib.request
+from typing import Any, Protocol, runtime_checkable
+
+__all__ = ["HttpResponse", "SsrfError", "TempoSource"]
+
+
+class SsrfError(ValueError):
+    """Raised when ``base_url`` targets a blocked (private/internal) host."""
+
+
+class HttpResponse:
+    """Minimal transport response: status code plus raw body bytes."""
+
+    def __init__(self, status: int, body: bytes) -> None:
+        self.status = status
+        self.body = body
+
+    def json(self) -> Any:
+        return json.loads(self.body.decode("utf-8"))
+
+
+@runtime_checkable
+class HttpTransport(Protocol):
+    """Injectable HTTP transport. The default uses stdlib urllib."""
+
+    def get(
+        self, url: str, *, headers: dict[str, str], timeout: float
+    ) -> HttpResponse: ...
+
+
+class _UrllibTransport:
+    """Default time-bound transport backed by ``urllib.request`` (no shell)."""
+
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> HttpResponse:
+        req = urllib.request.Request(url, headers=headers, method="GET")
+        with urllib.request.urlopen(req, timeout=timeout) as resp:
+            body: bytes = resp.read()
+            status = int(getattr(resp, "status", 200) or 200)
+            return HttpResponse(status, body)
+
+
+def _host_is_private(host: str) -> bool:
+    """True if *host* is a literal private/internal address (no DNS lookup)."""
+    bare = host.strip("[]")
+    try:
+        ip = ipaddress.ip_address(bare)
+    except ValueError:
+        lowered = host.lower()
+        return lowered in {"localhost", "localhost.localdomain"}
+    return (
+        ip.is_private
+        or ip.is_loopback
+        or ip.is_link_local
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _guard_base_url(base_url: str, *, allow_private: bool) -> str:
+    parsed = urllib.parse.urlparse(base_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise SsrfError(f"unsupported url scheme: {parsed.scheme!r}")
+    host = parsed.hostname
+    if not host:
+        raise SsrfError(f"no host in base_url: {base_url!r}")
+    if not allow_private and _host_is_private(host):
+        raise SsrfError(f"blocked private/internal host: {host!r}")
+    return base_url.rstrip("/")
+
+
+class TempoSource:
+    """Normalizing connector for the Grafana Tempo HTTP API."""
+
+    KIND = "traces"
+
+    def __init__(self, config: dict[str, Any], transport: HttpTransport | None = None) -> None:
+        self.name: str = str(config.get("name", "tempo"))
+        self.allow_private: bool = bool(config.get("allow_private", False))
+        self.base_url: str = _guard_base_url(
+            str(config["base_url"]), allow_private=self.allow_private
+        )
+        self.timeout: float = float(config.get("timeout", 10.0))
+        self.default_tags: str | None = (
+            str(config["tags"]) if config.get("tags") is not None else None
+        )
+        self.default_start: int | None = (
+            int(config["start"]) if config.get("start") is not None else None
+        )
+        self.default_end: int | None = (
+            int(config["end"]) if config.get("end") is not None else None
+        )
+
+        token_env = config.get("token_env")
+        self._token: str | None = os.environ.get(str(token_env)) if token_env else None
+
+        self._transport: HttpTransport = transport if transport is not None else _UrllibTransport()
+
+    def _headers(self) -> dict[str, str]:
+        headers = {"Accept": "application/json"}
+        if self._token:
+            headers["Authorization"] = f"Bearer {self._token}"
+        return headers
+
+    def _get(self, path: str, params: dict[str, Any]) -> HttpResponse:
+        query = urllib.parse.urlencode(
+            {k: v for k, v in params.items() if v is not None}, doseq=True
+        )
+        url = f"{self.base_url}{path}"
+        if query:
+            url = f"{url}?{query}"
+        return self._transport.get(url, headers=self._headers(), timeout=self.timeout)
+
+    def health(self) -> dict[str, Any]:
+        """Probe ``/api/search`` with a bounded window. Never raises."""
+        try:
+            resp = self._get("/api/search", {"limit": 1})
+        except Exception as exc:
+            return {"ok": False, "detail": f"{type(exc).__name__}: {exc}"}
+        if resp.status >= 400:
+            return {"ok": False, "detail": f"http {resp.status}"}
+        try:
+            resp.json()
+        except Exception as exc:
+            return {"ok": False, "detail": f"invalid json: {exc}"}
+        return {"ok": True, "detail": "reachable"}
+
+    def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
+        """Search traces and emit normalized records.
+
+        Default: one record per trace summary. When ``spec["fetch_spans"]`` is
+        truthy, each trace is fetched via ``/api/traces/{id}`` and one record is
+        emitted per span.
+        """
+        spec = spec or {}
+        traceql = spec.get("traceql")
+        if traceql is not None:
+            params: dict[str, Any] = {"q": str(traceql)}
+        else:
+            params = {
+                "tags": spec.get("tags", self.default_tags),
+                "start": spec.get("start", self.default_start),
+                "end": spec.get("end", self.default_end),
+            }
+        if spec.get("limit") is not None:
+            params["limit"] = spec["limit"]
+
+        resp = self._get("/api/search", params)
+        payload = resp.json()
+        summaries = payload.get("traces", []) if isinstance(payload, dict) else []
+
+        if spec.get("fetch_spans"):
+            records: list[dict[str, Any]] = []
+            for summary in summaries:
+                if isinstance(summary, dict):
+                    records.extend(self._fetch_and_normalize_spans(summary))
+            return records
+
+        return [
+            self._normalize_summary(summary)
+            for summary in summaries
+            if isinstance(summary, dict)
+        ]
+
+    def _normalize_summary(self, summary: dict[str, Any]) -> dict[str, Any]:
+        trace_id = str(summary.get("traceID", ""))
+        service = str(summary.get("rootServiceName", ""))
+        message = str(summary.get("rootTraceName", ""))
+        labels = {
+            "service": service,
+            "trace_id": trace_id,
+            "span_id": "",
+            "status": "ok",
+        }
+        return {
+            "ts": summary.get("startTimeUnixNano"),
+            "source": self.name,
+            "kind": self.KIND,
+            "level_or_status": "ok",
+            "message": message,
+            "value": summary.get("durationMs"),
+            "labels": labels,
+            "raw": summary,
+        }
+
+    def _fetch_and_normalize_spans(self, summary: dict[str, Any]) -> list[dict[str, Any]]:
+        trace_id = str(summary.get("traceID", ""))
+        if not trace_id:
+            return []
+        safe_id = urllib.parse.quote(trace_id, safe="")
+        resp = self._get(f"/api/traces/{safe_id}", {})
+        payload = resp.json()
+        records: list[dict[str, Any]] = []
+        for batch in self._iter_batches(payload):
+            resource = batch.get("resource", {})
+            service = self._resource_service(resource)
+            for scoped in self._iter_scope_spans(batch):
+                for span in scoped.get("spans", []):
+                    if isinstance(span, dict):
+                        records.append(
+                            self._normalize_span(span, service, trace_id)
+                        )
+        return records
+
+    @staticmethod
+    def _iter_batches(payload: Any) -> list[dict[str, Any]]:
+        if isinstance(payload, dict):
+            batches = payload.get("batches")
+            if isinstance(batches, list):
+                return [b for b in batches if isinstance(b, dict)]
+        return []
+
+    @staticmethod
+    def _iter_scope_spans(batch: dict[str, Any]) -> list[dict[str, Any]]:
+        scoped = batch.get("scopeSpans") or batch.get("instrumentationLibrarySpans") or []
+        return [s for s in scoped if isinstance(s, dict)]
+
+    @staticmethod
+    def _resource_service(resource: Any) -> str:
+        if not isinstance(resource, dict):
+            return ""
+        for attr in resource.get("attributes", []):
+            if isinstance(attr, dict) and attr.get("key") == "service.name":
+                value = attr.get("value", {})
+                if isinstance(value, dict):
+                    return str(value.get("stringValue", ""))
+        return ""
+
+    def _normalize_span(
+        self, span: dict[str, Any], service: str, trace_id: str
+    ) -> dict[str, Any]:
+        name = str(span.get("name", ""))
+        span_id = str(span.get("spanId", span.get("spanID", "")))
+        status_obj = span.get("status") or {}
+        status_code = (
+            str(status_obj.get("code", "")) if isinstance(status_obj, dict) else ""
+        )
+        is_error = status_code in {"2", "STATUS_CODE_ERROR", "ERROR"}
+        status = "error" if is_error else (status_code or "ok")
+        start = span.get("startTimeUnixNano")
+        end = span.get("endTimeUnixNano")
+        duration_ms: float | None = None
+        try:
+            if start is not None and end is not None:
+                duration_ms = (int(end) - int(start)) / 1_000_000
+        except (TypeError, ValueError):
+            duration_ms = None
+        labels = {
+            "service": service,
+            "trace_id": trace_id,
+            "span_id": span_id,
+            "status": status,
+        }
+        return {
+            "ts": start,
+            "source": self.name,
+            "kind": self.KIND,
+            "level_or_status": "error" if is_error else "ok",
+            "message": name,
+            "value": duration_ms,
+            "labels": labels,
+            "raw": span,
+        }
