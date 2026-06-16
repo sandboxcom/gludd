@@ -34,6 +34,12 @@ repos:
 
   - repo: local
     hooks:
+      - id: scan-conflicts
+        name: scan for git conflict markers
+        entry: python scripts/scan_conflicts.py
+        language: system
+        pass_filenames: true
+
       - id: ruff-lint
         name: ruff lint
         entry: uv run ruff check src tests

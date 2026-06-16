@@ -6,11 +6,16 @@ other call.
 
 A context-free consumer learns from this response:
   - auth.header / auth.scheme / auth.env_var — how to obtain and send the PSK
+  - auth.require_auth_env_var — GLUDD_REQUIRE_AUTH, the fail-closed switch that
+    turns the no-PSK posture from open-dev-mode into 503-refuse
   - auth.public_paths — which paths need NO token (the rest need Bearer auth)
   - endpoints — the full endpoint inventory with method, path, purpose, and
-    for POST endpoints, the request_body field schema
+    for POST endpoints, the request_body field schema (key GET endpoints carry
+    a response_shape too)
   - facts_facets — the keys returned by GET /api/facts so the consumer knows
     what the aggregation snapshot contains
+  - error_responses — the daemon's error envelope shapes (401/422/503) so the
+    consumer can parse failures, not only successes
 
 Only endpoints that genuinely exist are listed here (honest documentation).
 """
@@ -77,6 +82,22 @@ _ENDPOINTS: list[dict[str, Any]] = [
             "queue depths, config paths, filestore info, quality-gate result."
         ),
         "auth_required": False,
+        "response_shape": {
+            "version": "string — running daemon version",
+            "uptime_ticks": "int — total event-loop ticks since boot",
+            "todos_total": "int — total tasks across all queues",
+            "queue_depths": "object — per-queue task counts {queue_name: int}",
+            "tick_metrics": "object — event-loop tick timing/metrics",
+            "config_dir": "string | null — config directory path",
+            "config_files": "array[string] — discovered .yml/.yaml config paths",
+            "filestore_root": "string — filestore root path",
+            "filestore_binaries": "array — bootstrapped binaries {name, version}",
+            "binary_versions": "object — known binary versions {name: version}",
+            "db_engine": "string — SQLAlchemy engine repr",
+            "db_url": "string — database URL",
+            "quality_gate": "object — last gate result {overall, passed_count, total_count}",
+            "hardware": "object — probed hardware facts",
+        },
     },
     {
         "method": "GET",
@@ -330,6 +351,13 @@ _ENDPOINTS: list[dict[str, Any]] = [
             "limiter_active, window_spend_usd, limit_usd, remaining_usd, window_seconds."
         ),
         "auth_required": True,
+        "response_shape": {
+            "limiter_active": "bool — false when no limiter is wired (defaults returned)",
+            "window_spend_usd": "float — USD spent in the current rolling window",
+            "limit_usd": "float — the configured spend cap for the window",
+            "remaining_usd": "float — limit_usd minus window_spend_usd",
+            "window_seconds": "float — rolling-window width in seconds",
+        },
     },
     {
         "method": "POST",
@@ -381,6 +409,39 @@ _ENDPOINTS: list[dict[str, Any]] = [
 ]
 
 
+# Error envelope shapes the daemon actually emits, keyed by HTTP status.
+# Grounded in daemon.py's auth middleware + FastAPI's default validation handler,
+# so a context-free consumer can parse failures, not only successes.
+_ERROR_RESPONSES: dict[str, dict[str, Any]] = {
+    "401": {
+        "meaning": (
+            "Missing or invalid Bearer token on a protected path (GLUDD_PSK is "
+            "configured but the request did not present the matching token)."
+        ),
+        "body": {"error": "unauthorized"},
+    },
+    "422": {
+        "meaning": (
+            "Request body / query params failed validation. FastAPI's standard "
+            "validation envelope: a 'detail' array of per-field error objects."
+        ),
+        "body": {
+            "detail": (
+                "array of {loc: [...], msg: string, type: string} validation errors"
+            )
+        },
+    },
+    "503": {
+        "meaning": (
+            "Fail-closed: GLUDD_REQUIRE_AUTH is truthy but no GLUDD_PSK is "
+            "configured, so every non-public path is refused until a PSK is set. "
+            "Also used for readiness failures on /readyz."
+        ),
+        "body": {"error": "auth_required", "reason": "no PSK configured"},
+    },
+}
+
+
 _SELF_DESCRIPTION: dict[str, Any] = {
     "name": "general-ludd-agent",
     "description": (
@@ -395,11 +456,19 @@ _SELF_DESCRIPTION: dict[str, Any] = {
         "scheme": "Bearer",
         "format": "Authorization: Bearer <token>",
         "env_var": "GLUDD_PSK",
+        "require_auth_env_var": "GLUDD_REQUIRE_AUTH",
         "description": (
             "Set GLUDD_PSK in the daemon environment.  "
             "Pass the same value as 'Authorization: Bearer <GLUDD_PSK>' on every "
             "request to a protected path.  "
-            "When GLUDD_PSK is unset the daemon runs with auth disabled (dev mode)."
+            "When GLUDD_PSK is unset the daemon runs with auth DISABLED (dev "
+            "mode) — every path is served open and /healthz advertises this via "
+            "its no_auth / auth_degraded fields.  "
+            "Set GLUDD_REQUIRE_AUTH=1 (or true/yes/on) to FAIL CLOSED instead: "
+            "when GLUDD_REQUIRE_AUTH is truthy AND no GLUDD_PSK is configured, "
+            "every non-public path is refused with HTTP 503 "
+            "{'error': 'auth_required', 'reason': 'no PSK configured'} rather "
+            "than served without a token."
         ),
         "public_paths": _PUBLIC_PATHS,
         "note": (
@@ -409,6 +478,7 @@ _SELF_DESCRIPTION: dict[str, Any] = {
         ),
     },
     "facts_facets": _FACTS_FACETS,
+    "error_responses": _ERROR_RESPONSES,
     "endpoints": _ENDPOINTS,
 }
 

@@ -77,8 +77,19 @@ class AgentCapabilities:
     def list_agent_tools(self) -> list[dict[str, str]]:
         return self.tool_adapter.list_agent_tools()
 
-    def make_tool_loop(self, model_gateway: Any, mcp_client: Any = None) -> ToolCallLoop:
-        return ToolCallLoop(model_gateway=model_gateway, mcp_client=mcp_client)
+    def make_tool_loop(
+        self,
+        model_gateway: Any,
+        mcp_client: Any = None,
+        mcp_registry: Any = None,
+    ) -> ToolCallLoop:
+        # mcp_registry pins the capability gate (Finding 3) explicitly; if not
+        # passed, ToolCallLoop falls back to the client's own registry.
+        return ToolCallLoop(
+            model_gateway=model_gateway,
+            mcp_client=mcp_client,
+            mcp_registry=mcp_registry,
+        )
 
     def make_graph_gateway(
         self,

@@ -127,8 +127,9 @@ class TestMCPClientFacade:
         started_ids: list[str] = []
 
         class FakeTransport:
-            def __init__(self, cfg):
+            def __init__(self, cfg, secrets_mgr=None):
                 self._cfg = cfg
+                self._secrets_mgr = secrets_mgr
 
             async def start(self):
                 started_ids.append(self._cfg.server_id)

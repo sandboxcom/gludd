@@ -10,6 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any, cast
 
+from general_ludd.mcp.registry import MCPToolRegistry
+from general_ludd.mcp.transport import MCPTransportError
 from general_ludd.schemas.job import JobSpec
 
 logger = logging.getLogger(__name__)
@@ -25,11 +27,42 @@ class ToolCallLoop:
         mcp_client: Any = None,
         max_iterations: int = MAX_TOOL_ITERATIONS,
         per_tool_timeout: float = PER_TOOL_TIMEOUT_SECONDS,
+        mcp_registry: MCPToolRegistry | None = None,
     ) -> None:
         self._gateway = model_gateway
         self._mcp_client = mcp_client
         self._max_iterations = max_iterations
         self._per_tool_timeout = per_tool_timeout
+        # Finding 3 (capability gate): the registry of tools the MCP layer
+        # actually advertises. Model-chosen tool names are resolved against it
+        # to (a) reject any name the model invented / smuggled and (b) pin the
+        # call to the tool's real server_id instead of a wildcard None.
+        self._mcp_registry = mcp_registry
+        if mcp_registry is None and mcp_client is not None:
+            # Fall back to the facade's own registry when one wasn't passed
+            # explicitly, so the gate is on by default whenever it can be.
+            self._mcp_registry = getattr(mcp_client, "_registry", None)
+
+    def _resolve_server_id(self, tc_name: str) -> str:
+        """Map a model-chosen tool name to its registered server_id.
+
+        Capability gate (Finding 3): a tool name that is NOT in the registry is
+        rejected outright with MCPTransportError — the model cannot reach an
+        unadvertised tool, and a real server_id is always supplied (never None).
+        """
+        registry = self._mcp_registry
+        if registry is None:
+            raise MCPTransportError(
+                "MCP tool registry unavailable; refusing ungated tool call "
+                f"{tc_name!r}"
+            )
+        tool = registry.get_tool(tc_name)
+        if tool is None or not tool.server_id:
+            raise MCPTransportError(
+                f"Tool {tc_name!r} is not a registered MCP tool (capability "
+                f"gate); refusing call"
+            )
+        return tool.server_id
 
     def is_available(self) -> bool:
         return self._mcp_client is not None
@@ -74,8 +107,9 @@ class ToolCallLoop:
                         except _json.JSONDecodeError:
                             tc_args = {}
                     try:
+                        server_id = self._resolve_server_id(tc_name)
                         result = await self._mcp_client.call_tool(
-                            None, tc_name, tc_args,
+                            server_id, tc_name, tc_args,
                         )
                         messages.append({
                             "role": "tool",

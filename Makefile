@@ -575,6 +575,9 @@ install-hooks:
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run pre-commit install --hook-type pre-push
 	@echo "pre-commit hooks installed: secrets-scan, ruff, collect-check (pre-commit), gate (pre-push)"
 
+scan-conflicts:
+	@$(PYTHON) scripts/scan_conflicts.py
+
 scan-secrets-baseline:
 	@$(UV) run detect-secrets scan --all-files --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' 2>/dev/null > .secrets.baseline || true
 	@echo "Secrets baseline created in .secrets.baseline"

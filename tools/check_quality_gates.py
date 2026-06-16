@@ -9,7 +9,7 @@ from general_ludd.quality.tools import check_quality_gates
 
 
 def main() -> None:
-    config: dict = {
+    config: dict[str, object] = {
         "python": {
             "enabled": True,
             "line_coverage_min_percent": 90.0,

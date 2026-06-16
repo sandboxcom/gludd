@@ -148,6 +148,100 @@ class TestMCPStdioClient:
         with pytest.raises(MCPTransportError):
             await client.list_tools()
 
+    async def test_start_passes_minimal_env_not_full_host_env(self, monkeypatch):
+        # Finding 2: a sensitive host env var must NEVER reach the subprocess.
+        monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-super-secret")
+        monkeypatch.setenv("GLUDD_PSK", "psk-secret")
+        monkeypatch.setenv("PATH", "/usr/bin:/bin")
+        config = _make_config(env={"FOO": "bar"})
+        proc = _mock_process([_init_response()])
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+            client = MCPStdioClient(config)
+            await client.start()
+
+        env = mock_exec.call_args.kwargs["env"]
+        # Declared env is present; allowlisted PATH is present.
+        assert env["FOO"] == "bar"
+        assert env["PATH"] == "/usr/bin:/bin"
+        # Host secrets are NOT leaked into the subprocess env.
+        assert "ANTHROPIC_API_KEY" not in env
+        assert "GLUDD_PSK" not in env
+
+    async def test_readline_timeout_terminates_and_raises(self):
+        # Finding 1: a hung server (readline never returns) must time out, kill
+        # the process, and raise — never block forever.
+        config = _make_config(timeout_seconds=0.05)
+        proc = _mock_process([_init_response()])
+
+        async def _never_returns():
+            await asyncio.sleep(3600)
+            return b""
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            client = MCPStdioClient(config)
+            await client.start()
+
+        proc.stdout.readline = AsyncMock(side_effect=_never_returns)
+        proc.kill = MagicMock()
+
+        with pytest.raises(MCPTransportError, match="timed out"):
+            await client.list_tools()
+
+        proc.kill.assert_called_once()
+
+    async def test_stop_kills_when_terminate_ignored(self):
+        # Finding 4: if wait() after terminate() exceeds the timeout, escalate
+        # to kill() instead of waiting forever.
+        config = _make_config(timeout_seconds=0.05)
+        proc = _mock_process([_init_response()])
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            client = MCPStdioClient(config)
+            await client.start()
+
+        async def _hangs():
+            await asyncio.sleep(3600)
+            return 0
+
+        proc.wait = AsyncMock(side_effect=_hangs)
+        proc.kill = MagicMock()
+
+        await client.stop()
+
+        proc.terminate.assert_called_once()
+        proc.kill.assert_called_once()
+
+    async def test_interleave_skip_capped(self):
+        # Finding 5: a flood of non-matching frames must not spin forever.
+        config = _make_config()
+        # init consumes id=1; then 200 frames with the WRONG id (id=99).
+        wrong = {"jsonrpc": "2.0", "id": 99, "result": {}}
+        proc = _mock_process([_init_response()] + [wrong] * 200)
+        proc.kill = MagicMock()
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc):
+            client = MCPStdioClient(config)
+            await client.start()
+            with pytest.raises(MCPTransportError, match="interleaved frames"):
+                await client.list_tools()
+
+    async def test_secrets_manager_resolves_env_aliases(self):
+        # Finding 7: env_aliases are resolved via the secrets manager at start.
+        config = _make_config(env={}, env_aliases={"API_TOKEN": "my_alias"})
+        proc = _mock_process([_init_response()])
+
+        secrets_mgr = MagicMock()
+        secrets_mgr.resolve = MagicMock(return_value="resolved-secret")
+
+        with patch("asyncio.create_subprocess_exec", return_value=proc) as mock_exec:
+            client = MCPStdioClient(config, secrets_mgr=secrets_mgr)
+            await client.start()
+
+        env = mock_exec.call_args.kwargs["env"]
+        assert env["API_TOKEN"] == "resolved-secret"
+        secrets_mgr.resolve.assert_called_once_with("my_alias")
+
 
 class TestMCPClientFacade:
     def _make_configs(self) -> dict[str, MCPServerConfig]:
@@ -212,3 +306,24 @@ class TestMCPClientFacade:
 
             await client.stop_all()
             assert mock_transport.stop.call_count == 2
+
+    async def test_start_all_stops_started_transport_on_later_failure(self):
+        # Finding 6: if a server's start() raises mid-loop, the transport that
+        # was already constructed must be stopped so its subprocess can't leak.
+        configs = self._make_configs()
+        registry = MCPToolRegistry()
+
+        failing = MagicMock()
+        failing.start = AsyncMock(side_effect=RuntimeError("boom"))
+        failing.stop = AsyncMock()
+        failing.list_tools = AsyncMock(return_value=[])
+
+        with patch("general_ludd.mcp.client.MCPStdioClient", return_value=failing):
+            client = MCPClient(configs, registry)
+            with pytest.raises(RuntimeError, match="boom"):
+                await client.start_all()
+
+        # The transport whose start() failed was stopped (not leaked) and is
+        # NOT tracked in self._transports.
+        failing.stop.assert_awaited()
+        assert client._transports == {}

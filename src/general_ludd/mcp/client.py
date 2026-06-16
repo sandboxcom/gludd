@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import contextlib
 from typing import Any
 
 from general_ludd.mcp.config import MCPServerConfig
@@ -10,9 +11,15 @@ from general_ludd.mcp.transport import MCPStdioClient, MCPTransportError
 class MCPClient:
     """Facade managing multiple MCP server connections."""
 
-    def __init__(self, configs: dict[str, MCPServerConfig], registry: MCPToolRegistry) -> None:
+    def __init__(
+        self,
+        configs: dict[str, MCPServerConfig],
+        registry: MCPToolRegistry,
+        secrets_mgr: Any = None,
+    ) -> None:
         self._configs = configs
         self._registry = registry
+        self._secrets_mgr = secrets_mgr
         self._transports: dict[str, MCPStdioClient] = {}
 
     async def start_all(self) -> None:
@@ -20,9 +27,18 @@ class MCPClient:
             if not config.enabled:
                 continue
             if config.is_stdio():
-                transport = MCPStdioClient(config)
-                await transport.start()
-                tools = await transport.list_tools()
+                transport = MCPStdioClient(config, secrets_mgr=self._secrets_mgr)
+                # Finding 6: if start()/list_tools() raises mid-loop, this just-
+                # started transport is not yet tracked in self._transports, so
+                # stop_all() would never reap it — its subprocess would leak.
+                # Stop it here before re-raising so no orphan is left behind.
+                try:
+                    await transport.start()
+                    tools = await transport.list_tools()
+                except Exception:
+                    with contextlib.suppress(Exception):
+                        await transport.stop()
+                    raise
                 for tool in tools:
                     self._registry.register_tool(server_id, tool)
                 self._transports[server_id] = transport

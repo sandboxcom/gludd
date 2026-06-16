@@ -70,9 +70,14 @@ try:
         error_result,
         ok_result,
     )
+    from ansible_collections.general_ludd.agent.plugins.module_utils.fs_write_policy import (
+        WritePolicyError,
+        default_policy,
+    )
 except ImportError:
     import sys
     sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "module_utils"))
+    from fs_write_policy import WritePolicyError, default_policy  # type: ignore[import]
     from gludd import error_result, ok_result  # type: ignore[import]
 
 
@@ -91,6 +96,26 @@ def main() -> None:
     branch: str = module.params["branch"]
     worktree_path: str = module.params["worktree_path"]
     state: str = module.params["state"]
+
+    # Fail-closed write-policy guard: the worktree_path is a filesystem write
+    # target (git plants/removes a working tree there). Enforce that it resolves
+    # inside an explicit allowlist — the repo's parent dir (worktrees live beside
+    # the repo), the repo itself, and /tmp scratch — BEFORE any git mutation, so
+    # a traversal/symlink/outside-root path can never plant or delete a tree in
+    # an arbitrary location. Applies to both create and remove.
+    repo_parent = os.path.dirname(os.path.abspath(repo_path)) or os.sep
+    policy = default_policy(
+        workspace=os.path.abspath(repo_path),
+        worktree_root=repo_parent,
+    )
+    try:
+        policy.check(worktree_path)
+    except WritePolicyError as exc:
+        module.fail_json(**error_result(
+            f"worktree_path denied by write policy: {exc}",
+            worktree_path=worktree_path,
+        ))
+        return
 
     try:
         from general_ludd.git_automation.repo import GitAutomation  # type: ignore[import]

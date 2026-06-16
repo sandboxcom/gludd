@@ -1,15 +1,14 @@
 """Alembic migration for prompt_profiles and benchmark_results tables."""
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "004"
-down_revision: Union[str, None] = "003"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "003"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -23,7 +22,12 @@ def upgrade() -> None:
         sa.Column("task_types", sa.Text(), nullable=False, server_default="[]"),
         sa.Column("tags", sa.Text(), nullable=False, server_default="[]"),
         sa.Column("version", sa.String(32), nullable=False, server_default="latest"),
-        sa.Column("collected_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "collected_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
     )
 
     op.create_table(
@@ -44,7 +48,12 @@ def upgrade() -> None:
         sa.Column("success", sa.Boolean(), nullable=False, server_default="0"),
         sa.Column("error_message", sa.Text(), nullable=False, server_default=""),
         sa.Column("raw_output", sa.Text(), nullable=False, server_default=""),
-        sa.Column("created_at", sa.DateTime(timezone=True), nullable=False, server_default=sa.text("CURRENT_TIMESTAMP")),
+        sa.Column(
+            "created_at",
+            sa.DateTime(timezone=True),
+            nullable=False,
+            server_default=sa.text("CURRENT_TIMESTAMP"),
+        ),
     )
 
     op.create_index("ix_benchmark_task_model", "benchmark_results", ["task_type", "model_profile_id"])

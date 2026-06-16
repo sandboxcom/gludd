@@ -1,15 +1,14 @@
 """Alembic migration for projects table and project_id columns."""
 
-from typing import Sequence, Union
+from collections.abc import Sequence
 
-from alembic import op
 import sqlalchemy as sa
-
+from alembic import op
 
 revision: str = "002"
-down_revision: Union[str, None] = "001"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+down_revision: str | None = "001"
+branch_labels: str | Sequence[str] | None = None
+depends_on: str | Sequence[str] | None = None
 
 
 def upgrade() -> None:
@@ -52,7 +51,13 @@ def upgrade() -> None:
 
     op.add_column("variable_namespaces", sa.Column("project_id", sa.String(32), nullable=True))
     op.create_index("ix_variable_namespaces_project_id", "variable_namespaces", ["project_id"])
-    op.create_foreign_key("fk_variable_namespaces_project_id", "variable_namespaces", "projects", ["project_id"], ["project_id"])
+    op.create_foreign_key(
+        "fk_variable_namespaces_project_id",
+        "variable_namespaces",
+        "projects",
+        ["project_id"],
+        ["project_id"],
+    )
     op.drop_constraint("uq_variable_namespace_key", "variable_namespaces", type_="unique")
     op.create_unique_constraint("uq_namespace_project", "variable_namespaces", ["namespace", "project_id"])
 

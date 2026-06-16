@@ -151,4 +151,7 @@ class TestMigration002Smoke:
         assert "projects" in content
         assert "project_id" in content
         assert 'revision: str = "002"' in content
-        assert 'down_revision: Union[str, None] = "001"' in content
+        # Accept either the legacy Union[...] or the modern X | None annotation
+        # (ruff UP007 rewrote it) — the meaningful assertion is down_revision="001".
+        assert 'down_revision: Union[str, None] = "001"' in content or \
+            'down_revision: str | None = "001"' in content
