@@ -127,6 +127,22 @@ class ConnectorRegistry:
             self._errors.append({"name": name, "error": f"construct: {exc}"})
             return
 
+        # P2 preflight: the constructed object must satisfy the _SourceLike
+        # structural protocol (name, KIND, health(), query()).  Reject silently
+        # broken connector implementations before they pollute the registry.
+        if not isinstance(source, _SourceLike):
+            self._errors.append(
+                {
+                    "name": name,
+                    "error": (
+                        f"construct: factory returned an object that does not "
+                        f"satisfy _SourceLike (missing name/KIND/health/query): "
+                        f"{type(source)!r}"
+                    ),
+                }
+            )
+            return
+
         kind = str(getattr(source, "KIND", config.get("kind") or "unknown"))
         # Operator config's name is authoritative for addressing the source.
         with contextlib.suppress(Exception):  # pragma: no cover - read-only name
@@ -151,11 +167,20 @@ class ConnectorRegistry:
 
         dotted = config.get("class")
         if isinstance(dotted, str) and dotted:
+            # Allowlist: the module portion of a dotted class path must start
+            # with general_ludd.connectors. to prevent arbitrary-code-exec via
+            # operator-controlled config (e.g. "class": "os:system").
+            _check_module_allowlist(dotted, selector="class")
             return _import_dotted(dotted)
 
         module = config.get("module")
         if isinstance(module, str) and module:
             mod_path = module if "." in module else f"{_CONNECTORS_PKG}.{module}"
+            # Allowlist: reject any module path that doesn't live inside the
+            # connectors package.  A bare name (no dot) already gets the prefix
+            # prepended above, so it always passes; a dotted name like "os" or
+            # "os.path" would not get the prefix and is rejected here.
+            _check_module_allowlist(mod_path, selector="module")
             mod = importlib.import_module(mod_path)
             class_name = config.get("class_name")
             if isinstance(class_name, str) and class_name:
@@ -257,6 +282,42 @@ def _family_for(name: str, config: dict[str, Any]) -> str:
             if inferred != "unknown":
                 return inferred
     return "unknown"
+
+
+_MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
+
+
+def _check_module_allowlist(path: str, *, selector: str) -> None:
+    """Raise ValueError if *path* does not start with the connectors package.
+
+    For the ``class`` selector *path* is the full ``module.path:ClassName`` or
+    ``module.path.ClassName`` string — we extract the module portion first.
+    For the ``module`` selector *path* is already the resolved module path.
+
+    This is a hard-reject: it is called BEFORE any ``importlib.import_module``
+    so a hostile config value like ``"os"`` or ``"os.system"`` never results in
+    an import.
+    """
+    if selector == "class":
+        # Extract the module portion from "mod.path:ClassName" or
+        # "mod.path.ClassName" — same logic as _import_dotted.
+        if ":" in path:
+            mod_portion, _, _ = path.partition(":")
+        else:
+            mod_portion, _, _ = path.rpartition(".")
+    else:
+        mod_portion = path
+
+    if not (
+        mod_portion == _MODULE_ALLOWLIST_PREFIX
+        or mod_portion.startswith(_MODULE_ALLOWLIST_PREFIX + ".")
+    ):
+        raise ValueError(
+            f"module import denied: {path!r} (selector={selector!r}) does not "
+            f"start with the required prefix {_MODULE_ALLOWLIST_PREFIX!r}. "
+            f"Only connectors under general_ludd.connectors may be loaded from "
+            f"operator config."
+        )
 
 
 def _import_dotted(dotted: str) -> SourceFactory:
