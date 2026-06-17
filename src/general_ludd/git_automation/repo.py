@@ -548,6 +548,53 @@ class GitAutomation:
             )
         return MergeResult(success=True, strategy=strategy, message=result.stdout.strip())
 
+    def _run_gate_cmd(
+        self,
+        gate_cmd: list[str],
+        *,
+        rollback_sha: str | None = None,
+    ) -> subprocess.CompletedProcess[str] | GatedCommitResult:
+        """Run ``gate_cmd`` with the standard non-interactive env + timeout.
+
+        Returns the :class:`subprocess.CompletedProcess` when the gate exits 0
+        so the caller can proceed.  On ``TimeoutExpired`` or a non-zero exit the
+        method returns a :class:`GatedCommitResult` with ``success=False``
+        directly — the caller should propagate it without further processing.
+
+        If *rollback_sha* is provided and the gate fails/times out, a
+        ``git reset --hard <rollback_sha>`` is issued before returning so the
+        caller's working tree is left at the pre-operation commit.  The failure
+        message will carry a ``" (rolled back)"`` suffix in that case.
+        """
+        suffix = " (rolled back)" if rollback_sha is not None else ""
+        try:
+            gate = subprocess.run(
+                gate_cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
+        except subprocess.TimeoutExpired:
+            if rollback_sha is not None:
+                self._run_git("reset", "--hard", rollback_sha, check=False)
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=124,
+                message=f"gate command timed out{suffix}",
+            )
+        if gate.returncode != 0:
+            if rollback_sha is not None:
+                self._run_git("reset", "--hard", rollback_sha, check=False)
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=gate.returncode,
+                message=(gate.stderr or gate.stdout or "gate command failed").strip() + suffix,
+            )
+        return gate
+
     def gated_commit(
         self, files: list[str], message: str, gate_cmd: list[str]
     ) -> GatedCommitResult:
@@ -570,26 +617,9 @@ class GitAutomation:
                 gate_returncode=exc.returncode,
                 message=f"failed to stage files: {(exc.stderr or '').strip()}",
             )
-        try:
-            gate = subprocess.run(
-                gate_cmd,
-                cwd=self.repo_path,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=_GIT_TIMEOUT_SECONDS,
-                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
-            )
-        except subprocess.TimeoutExpired:
-            return GatedCommitResult(
-                success=False, gate_returncode=124, message="gate command timed out"
-            )
-        if gate.returncode != 0:
-            return GatedCommitResult(
-                success=False,
-                gate_returncode=gate.returncode,
-                message=(gate.stderr or gate.stdout or "gate command failed").strip(),
-            )
+        gate_result = self._run_gate_cmd(gate_cmd)
+        if isinstance(gate_result, GatedCommitResult):
+            return gate_result
         try:
             self._run_git("commit", "-m", message)
             sha = self._run_git("rev-parse", "HEAD").stdout.strip()
@@ -645,28 +675,9 @@ class GitAutomation:
         if strategy == "squash":
             self._run_git("commit", "-m", f"Merge {source} into {target} (squash)", check=False)
         # The merge is applied (HEAD moved). Gate the merged tree; roll back on fail.
-        try:
-            gate = subprocess.run(
-                gate_cmd,
-                cwd=self.repo_path,
-                capture_output=True,
-                text=True,
-                check=False,
-                timeout=_GIT_TIMEOUT_SECONDS,
-                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
-            )
-        except subprocess.TimeoutExpired:
-            self._run_git("reset", "--hard", pre_sha, check=False)
-            return GatedCommitResult(
-                success=False, gate_returncode=124, message="gate command timed out (rolled back)"
-            )
-        if gate.returncode != 0:
-            self._run_git("reset", "--hard", pre_sha, check=False)
-            return GatedCommitResult(
-                success=False,
-                gate_returncode=gate.returncode,
-                message=(gate.stderr or gate.stdout or "gate command failed").strip() + " (rolled back)",
-            )
+        gate_result = self._run_gate_cmd(gate_cmd, rollback_sha=pre_sha)
+        if isinstance(gate_result, GatedCommitResult):
+            return gate_result
         sha = self._run_git("rev-parse", "HEAD").stdout.strip()
         return GatedCommitResult(
             success=True, commit_sha=sha, gate_returncode=0, message="merged"
