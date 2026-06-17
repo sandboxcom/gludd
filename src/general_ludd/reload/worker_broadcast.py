@@ -72,7 +72,18 @@ class WorkerBroadcaster:
                     headers=headers,
                     timeout=10.0,
                 )
-                results.append(BroadcastResult(worker_id=w.worker_id, success=resp.status_code == 200))
+                if resp.status_code == 200:
+                    results.append(BroadcastResult(worker_id=w.worker_id, success=True))
+                elif resp.status_code == 401:
+                    logger.error(
+                        "Broadcast to %s rejected (401): PSK mismatch or auth misconfiguration",
+                        w.worker_id,
+                    )
+                    results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="Unauthorized"))
+                else:
+                    results.append(
+                        BroadcastResult(worker_id=w.worker_id, success=False, error=f"HTTP {resp.status_code}")
+                    )
             except Exception as exc:
                 logger.warning("Broadcast to %s failed: %s", w.worker_id, exc)
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=str(exc)))
@@ -91,7 +102,18 @@ class WorkerBroadcaster:
                     headers=headers,
                     timeout=10.0,
                 )
-                results.append(BroadcastResult(worker_id=w.worker_id, success=resp.status_code == 200))
+                if resp.status_code == 200:
+                    results.append(BroadcastResult(worker_id=w.worker_id, success=True))
+                elif resp.status_code == 401:
+                    logger.error(
+                        "Broadcast to %s rejected (401): PSK mismatch or auth misconfiguration",
+                        w.worker_id,
+                    )
+                    results.append(BroadcastResult(worker_id=w.worker_id, success=False, error="Unauthorized"))
+                else:
+                    results.append(
+                        BroadcastResult(worker_id=w.worker_id, success=False, error=f"HTTP {resp.status_code}")
+                    )
             except Exception as exc:
                 results.append(BroadcastResult(worker_id=w.worker_id, success=False, error=str(exc)))
         return results
