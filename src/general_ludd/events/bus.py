@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import inspect
 import logging
 from collections import defaultdict
 from collections.abc import Callable
@@ -13,6 +12,8 @@ logger = logging.getLogger(__name__)
 
 
 class EventBus:
+    _MAX_BACKGROUND_TASKS: int = 1000
+
     def __init__(self, history_size: int = 0) -> None:
         self._subscribers: dict[str, list[tuple[str, Callable[..., Any]]]] = defaultdict(list)
         self._history: list[Event] = []
@@ -56,8 +57,6 @@ class EventBus:
                 result = callback(event)
                 if asyncio.iscoroutine(result):
                     self._dispatch_coro(result)
-                elif inspect.iscoroutinefunction(callback):
-                    self._dispatch_coro(callback(event))
                 delivered += 1
             except Exception as exc:
                 failed += 1
@@ -106,14 +105,29 @@ class EventBus:
             loop = None
 
         if loop is not None:
+            if len(self._background_tasks) >= self._MAX_BACKGROUND_TASKS:
+                logger.error(
+                    "EventBus: _background_tasks cap (%d) reached — dropping async subscriber "
+                    "for this event to prevent OOM under burst",
+                    self._MAX_BACKGROUND_TASKS,
+                )
+                coro.close()
+                return
             task = loop.create_task(coro)
             task.add_done_callback(self._on_task_done)
             self._background_tasks.add(task)
             return
 
-        # No running loop: drive the coroutine on a dedicated, isolated loop and
-        # restore whatever event-loop policy state existed before, so we never
-        # leave a closed loop behind for the next caller to trip over.
+        # No running loop: drive the coroutine on a dedicated, isolated loop.
+        # Capture the prior current-loop so we can RESTORE it afterward instead
+        # of clobbering it with None — leaving None would break callers that call
+        # asyncio.get_event_loop() after us and expect the thread's prior loop.
+        prior_loop: asyncio.AbstractEventLoop | None = None
+        try:
+            prior_loop = asyncio.get_event_loop_policy().get_event_loop()
+        except RuntimeError:
+            prior_loop = None
+
         new_loop = asyncio.new_event_loop()
         try:
             new_loop.run_until_complete(coro)
@@ -128,10 +142,9 @@ class EventBus:
             try:
                 new_loop.close()
             finally:
-                # Drop any reference to the (now closed) loop as the current one
-                # so subsequent asyncio.get_event_loop() calls create a fresh one
-                # instead of returning this closed loop.
-                asyncio.set_event_loop(None)
+                # Restore the thread's prior event loop (not None) so subsequent
+                # asyncio.get_event_loop() calls see the same loop as before.
+                asyncio.set_event_loop(prior_loop)
 
     def _on_task_done(self, task: asyncio.Task[Any]) -> None:
         """Done-callback for scheduled async subscriber tasks.
