@@ -206,6 +206,120 @@ def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
     sys.exit(1)
 
 
+def _validate_daemon_url(url: str) -> None:
+    """Validate the daemon URL supplied via --daemon-url.
+
+    Accepts http or https only.  Rejects embedded credentials (user:pass@)
+    and malformed/missing hosts.  Exits with an error message on failure.
+    The default ``http://localhost:8000`` is always valid.
+    """
+    from urllib.parse import urlsplit
+
+    if not url or not isinstance(url, str):
+        print("Error: --daemon-url must be a non-empty string.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        print(f"Error: Invalid --daemon-url: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if parts.scheme.lower() not in ("http", "https"):
+        print(
+            f"Error: --daemon-url must use http or https (got {parts.scheme!r}).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if parts.username or parts.password:
+        print(
+            "Error: --daemon-url must not contain embedded credentials (user:pass@).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not parts.hostname:
+        print("Error: --daemon-url has no host.", file=sys.stderr)
+        sys.exit(1)
+
+
+def _validate_webhook_url(url: str) -> None:
+    """SSRF guard for webhook handler URLs (hooks register --handler).
+
+    Accepts http or https.  Rejects loopback, RFC-1918, link-local, cloud
+    metadata endpoints, and any IP literal in a reserved/private range.
+    Uses the same literal-host deny list as ``is_safe_fetch_url`` without
+    the https-only restriction, because webhook receivers may be on http
+    within trusted infra — the important guard is the host blocklist.
+    """
+    from urllib.parse import urlsplit
+
+    try:
+        from general_ludd.security.auth import _host_is_blocked
+        _have_security = True
+    except ImportError:
+        _have_security = False
+
+    if not url or not isinstance(url, str):
+        print("Error: --handler must be a non-empty URL.", file=sys.stderr)
+        sys.exit(1)
+    try:
+        parts = urlsplit(url)
+    except ValueError as exc:
+        print(f"Error: Invalid --handler URL: {exc}", file=sys.stderr)
+        sys.exit(1)
+    if parts.scheme.lower() not in ("http", "https"):
+        print(
+            f"Error: --handler URL must use http or https (got {parts.scheme!r}).",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    host = parts.hostname or ""
+    if not host:
+        print("Error: --handler URL has no host.", file=sys.stderr)
+        sys.exit(1)
+    if _have_security and _host_is_blocked(host):
+        print(
+            f"Error: --handler URL host {host!r} is a loopback, private, or "
+            "cloud-metadata address and cannot be used as a webhook target.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+    if not _have_security:
+        import ipaddress
+
+        host_lower = host.strip().lower()
+        blocked_names = {
+            "localhost",
+            "localhost.localdomain",
+            "metadata",
+            "metadata.google.internal",
+            "instance-data",
+        }
+        if host_lower in blocked_names or host_lower in {"169.254.169.254", "100.100.100.200"}:
+            print(
+                f"Error: --handler URL host {host!r} is a loopback, private, or "
+                "cloud-metadata address and cannot be used as a webhook target.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        try:
+            ip = ipaddress.ip_address(host_lower)
+            if (
+                ip.is_private
+                or ip.is_loopback
+                or ip.is_link_local
+                or ip.is_reserved
+                or ip.is_multicast
+                or ip.is_unspecified
+            ):
+                print(
+                    f"Error: --handler URL host {host!r} is a loopback, private, or "
+                    "cloud-metadata address and cannot be used as a webhook target.",
+                    file=sys.stderr,
+                )
+                sys.exit(1)
+        except ValueError:
+            pass  # non-IP hostname — only explicit name blocklist applies
+
+
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     parser = argparse.ArgumentParser(
         prog="gludd",
@@ -669,6 +783,12 @@ def main() -> None:
         else:
             parser.print_help()
             sys.exit(1)
+    # Validate the daemon URL exactly once, before dispatching to any subcommand.
+    # Commands that have no --daemon-url (e.g. daemon, version, help) will not
+    # have daemon_url on the namespace, so we guard with getattr.
+    daemon_url = getattr(args, "daemon_url", None)
+    if daemon_url is not None:
+        _validate_daemon_url(daemon_url)
     args.func(args)
 
 
@@ -1025,6 +1145,16 @@ def _cmd_health(args: argparse.Namespace) -> None:
 def _cmd_project_add(args: argparse.Namespace) -> None:
     import json
 
+    raw_workspace = args.workspace_path or ""
+    if raw_workspace:
+        try:
+            _validate_daemon_path(raw_workspace, name="workspace-path")
+        except ValueError as exc:
+            print(f"Error: --workspace-path is invalid: {exc}", file=sys.stderr)
+            sys.exit(1)
+        workspace_path = os.path.realpath(os.path.expanduser(raw_workspace))
+    else:
+        workspace_path = raw_workspace
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/projects",
@@ -1033,7 +1163,7 @@ def _cmd_project_add(args: argparse.Namespace) -> None:
                 "weight": args.weight,
                 "description": args.description,
                 "repo_url": args.repo_url,
-                "workspace_path": args.workspace_path,
+                "workspace_path": workspace_path,
                 "dispatch_mode": args.dispatch_mode,
             }),
             headers={"Content-Type": "application/json"},
@@ -2814,6 +2944,7 @@ def _cmd_hooks_list(args: argparse.Namespace) -> None:
 
 
 def _cmd_hooks_register(args: argparse.Namespace) -> None:
+    _validate_webhook_url(args.handler)
     try:
         resp = httpx.post(
             f"{args.daemon_url}/admin/hooks",
