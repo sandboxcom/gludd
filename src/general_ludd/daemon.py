@@ -562,6 +562,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     run_timeout_seconds=float(budget_data.get("timeout_seconds", float("inf"))),
                     per_call_budget_usd=float(budget_data.get("per_task_limit", float("inf"))),
                 )
+        # B1: expose the run budget guard on app.state so router-built fallback
+        # gateways (routers/models.py) and the /admin/models/call pre-check can
+        # reuse the SAME guard instance instead of running ungated.
+        app.state._budget_guard = budget_guard
 
         # Build the model gateway once (H4/H12): both the in-process reviewer and
         # the agent dispatcher reuse the SAME gateway instance.
@@ -575,6 +579,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 ],
                 provider_registry=None,
                 secrets_manager=secrets_resolver,
+                # B1: thread the RunBudgetGuard built above (daemon ~556-564) into
+                # the gateway so _invoke_and_bill's record_spend(cost) actually
+                # fires. Without this self._budget_guard stayed None and every
+                # paid call billed $0 against the run budget.
+                budget_guard=budget_guard,
                 metrics_collector=ext.get("metrics_collector"),
             )
             app.state._model_gateway = model_gateway
