@@ -22,6 +22,18 @@ def _safe_float(value: str | float, default: float = 0.0) -> float:
         return default
 
 
+def _model_combined_name(model: dict[str, Any]) -> str:
+    """Lowercased ``"<name> <id>"`` blob used for keyword classification.
+
+    Both role assignment and quality classification match keywords against the
+    model's name and id together; this builds the single normalized string they
+    share (``f"{name.lower()} {id.lower()}"``).
+    """
+    model_name = model.get("name", "").lower()
+    model_id = model.get("id", "").lower()
+    return f"{model_name} {model_id}"
+
+
 class AutoConfigurator:
     """Generates model profiles from scraped/discovered model data."""
 
@@ -115,9 +127,7 @@ class AutoConfigurator:
 
     @staticmethod
     def _assign_roles(model: dict[str, Any]) -> list[str]:
-        model_name = model.get("name", "").lower()
-        model_id = model.get("id", "").lower()
-        combined = f"{model_name} {model_id}"
+        combined = _model_combined_name(model)
 
         if any(w in combined for w in ("coder", "code-", "dev")):
             return ["coder", "reviewer", "test_writer"]
@@ -131,9 +141,7 @@ class AutoConfigurator:
 
     @staticmethod
     def _assign_quality(model: dict[str, Any]) -> str:
-        model_name = model.get("name", "").lower()
-        model_id = model.get("id", "").lower()
-        combined = f"{model_name} {model_id}"
+        combined = _model_combined_name(model)
         context = int(model.get("context_length", 0))
 
         if any(w in combined for w in ("pro", "ultra", "max", "opus", "sonnet")):

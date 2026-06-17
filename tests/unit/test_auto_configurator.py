@@ -6,7 +6,13 @@ from typing import Any
 
 import pytest
 
-from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer, _safe_float, _safe_profile_id
+from general_ludd.models.auto_configurator import (
+    AutoConfigurator,
+    ModelPrioritizer,
+    _model_combined_name,
+    _safe_float,
+    _safe_profile_id,
+)
 
 
 class TestSafeHelpers:
@@ -36,6 +42,25 @@ class TestSafeHelpers:
 
     def test_safe_float_custom_default(self) -> None:
         assert _safe_float("bad", -1.0) == -1.0
+
+
+class TestModelCombinedName:
+    def test_combines_name_and_id_lowercased(self) -> None:
+        assert (
+            _model_combined_name({"name": "GPT-4o", "id": "OpenAI/GPT-4o"})
+            == "gpt-4o openai/gpt-4o"
+        )
+
+    def test_missing_fields_default_to_empty(self) -> None:
+        assert _model_combined_name({}) == " "
+
+    def test_missing_name_keeps_id(self) -> None:
+        assert _model_combined_name({"id": "X/Y"}) == " x/y"
+
+    def test_matches_inline_formula(self) -> None:
+        model = {"name": "DeepSeek Coder", "id": "deepseek/coder"}
+        expected = f"{model['name'].lower()} {model['id'].lower()}"
+        assert _model_combined_name(model) == expected
 
 
 class TestAutoConfiguratorGenerateProfiles:

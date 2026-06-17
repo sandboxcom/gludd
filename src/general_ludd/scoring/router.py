@@ -17,6 +17,26 @@ from general_ludd.schemas.benchmark import (
 log = logging.getLogger(__name__)
 
 
+def _coerce_sample_count(value: Any) -> int:
+    """Coerce an aggregate-row ``sample_count`` into a safe non-negative int.
+
+    Aggregate rows come from the benchmark store and are not fully trusted:
+    - reject ``bool`` (``isinstance(True, int)`` is True) so a stray boolean
+      counts as 0, not 1;
+    - reject non-numeric values (count as 0);
+    - clamp at ``>= 0`` so a negative count can never satisfy the min-samples
+      filter as if it were a real sample total.
+
+    Mirrors the bool-guard/clamp of ``gateway._coerce_token_count`` without
+    importing across the package boundary.
+    """
+    if isinstance(value, bool):
+        return 0
+    if isinstance(value, (int, float)):
+        return max(0, int(value))
+    return 0
+
+
 class AdaptiveRouter:
     def __init__(
         self,
@@ -106,18 +126,32 @@ class AdaptiveRouter:
             return True
         return cost > cap
 
-    async def _get_best_from_history(
-        self, task_type: TaskType
-    ) -> RoutingCandidate | None:
-        if self._repo is None:
-            return None
-        aggregates = await self._repo.get_aggregate_scores(task_type=task_type.value)
-        if not aggregates:
-            return None
-        candidates = []
+    def _parse_aggregates_to_candidates(
+        self,
+        aggregates: list[dict[str, Any]],
+        task_type: TaskType,
+        *,
+        max_cost: float | None = None,
+    ) -> list[RoutingCandidate]:
+        """Coerce aggregate rows into ``RoutingCandidate``s, applying the shared
+        min-samples + health-tracker filters (and, when ``max_cost`` is given, a
+        cost-cap filter).
+
+        This is the de-duplicated body that both ``_get_best_from_history`` and
+        ``_get_cheapest_for_task`` share. The cost-cap is a parameter: pass
+        ``max_cost=None`` (the default) to keep every row that passes the
+        min-samples + health filters; pass a cap to additionally drop any row
+        whose ``avg_cost`` is over the cap (or non-finite, via ``_exceeds_cap``).
+        Field coercion, the min-samples threshold, and the half-open-probe-safe
+        health check are identical to the original inlined loops.
+        """
+        candidates: list[RoutingCandidate] = []
         for agg in aggregates:
-            sample_count = int(agg.get("sample_count", 0))
+            sample_count = _coerce_sample_count(agg.get("sample_count", 0))
             if sample_count < self._min_samples:
+                continue
+            avg_cost = float(agg.get("avg_cost", 0.0))
+            if max_cost is not None and self._exceeds_cap(avg_cost, max_cost):
                 continue
             model_id = agg["model_profile_id"]
             if (
@@ -129,7 +163,6 @@ class AdaptiveRouter:
             ):
                 continue
             composite = float(agg.get("composite_score", 0.0))
-            avg_cost = float(agg.get("avg_cost", 0.0))
             candidates.append(
                 RoutingCandidate(
                     prompt_profile_id=agg.get("prompt_profile_id"),
@@ -140,6 +173,17 @@ class AdaptiveRouter:
                     task_type=task_type,
                 )
             )
+        return candidates
+
+    async def _get_best_from_history(
+        self, task_type: TaskType
+    ) -> RoutingCandidate | None:
+        if self._repo is None:
+            return None
+        aggregates = await self._repo.get_aggregate_scores(task_type=task_type.value)
+        if not aggregates:
+            return None
+        candidates = self._parse_aggregates_to_candidates(aggregates, task_type)
         if not candidates:
             return None
         max_cost = max((c.avg_cost_usd for c in candidates), default=0.0)
@@ -186,34 +230,9 @@ class AdaptiveRouter:
         if self._repo is None:
             return None
         aggregates = await self._repo.get_aggregate_scores(task_type=task_type.value)
-        candidates = []
-        for agg in aggregates:
-            sample_count = int(agg.get("sample_count", 0))
-            if sample_count < self._min_samples:
-                continue
-            avg_cost = float(agg.get("avg_cost", 0.0))
-            if self._exceeds_cap(avg_cost, max_cost):
-                continue
-            model_id = agg["model_profile_id"]
-            if (
-                self._health_tracker is not None
-                # admit_probe=False: this is a candidate-filtering status read,
-                # not a call attempt — it must NOT consume the single half-open
-                # probe slot (that belongs to the actual gateway call).
-                and not self._health_tracker.is_healthy(model_id, admit_probe=False)
-            ):
-                continue
-            composite = float(agg.get("composite_score", 0.0))
-            candidates.append(
-                RoutingCandidate(
-                    prompt_profile_id=agg.get("prompt_profile_id"),
-                    model_profile_id=model_id,
-                    composite_score=composite,
-                    avg_cost_usd=avg_cost,
-                    sample_count=sample_count,
-                    task_type=task_type,
-                )
-            )
+        candidates = self._parse_aggregates_to_candidates(
+            aggregates, task_type, max_cost=max_cost
+        )
         if not candidates:
             return None
         return max(candidates, key=lambda c: c.composite_score)

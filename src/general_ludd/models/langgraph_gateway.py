@@ -17,6 +17,19 @@ from general_ludd.schemas.benchmark import TaskType
 log = logging.getLogger(__name__)
 
 
+def _task_type_from_str(s: str, default: TaskType = TaskType.FEATURE) -> TaskType:
+    """Parse a work-type string into a ``TaskType``, falling back to ``default``.
+
+    Normalizes ``"-"`` to ``"_"`` and lowercases before the enum lookup; any
+    unrecognized value yields ``default`` (``TaskType.FEATURE``) rather than
+    raising.
+    """
+    try:
+        return TaskType(s.replace("-", "_").lower())
+    except ValueError:
+        return default
+
+
 class GraphState(TypedDict, total=False):
     messages: list[Any]
     task_context: dict[str, Any]
@@ -136,6 +149,15 @@ class LangGraphGateway:
             "warnings": warnings,
         }
 
+    @staticmethod
+    def _extract_content(result: Any) -> str:
+        """Return ``result.content`` if present, else ``str(result)``.
+
+        Mirrors the gateway's ``getattr(result, "content", str(result))`` so a
+        model response object and a bare string both yield text content.
+        """
+        return result.content if hasattr(result, "content") else str(result)
+
     async def _classify_step(self, state: GraphState) -> GraphState:
         return state
 
@@ -144,10 +166,7 @@ class LangGraphGateway:
             try:
                 ctx = state.get("task_context", {})
                 wt = ctx.get("work_type", "feature")
-                try:
-                    task_type = TaskType(wt.replace("-", "_").lower())
-                except ValueError:
-                    task_type = TaskType.FEATURE
+                task_type = _task_type_from_str(wt)
                 decision = await self._router.route(task_type)
                 if decision and not decision.fallback:
                     state["selected_model"] = decision.selected_model_profile_id or state.get("selected_model")
@@ -167,7 +186,7 @@ class LangGraphGateway:
                 profile_id=model,
                 messages=state["messages"],
             )
-            state["generated_output"] = result.content if hasattr(result, "content") else str(result)
+            state["generated_output"] = self._extract_content(result)
         except Exception as exc:
             state["generated_output"] = ""
             state["warnings"] = [*list(state.get("warnings", [])), f"Generation failed: {exc}"]
@@ -202,7 +221,7 @@ class LangGraphGateway:
             return {"content": "", "model": profile_id, "warnings": ["no call_model_fn"]}
         try:
             result = await self._call_model(profile_id=profile_id, messages=messages)
-            content = result.content if hasattr(result, "content") else str(result)
+            content = self._extract_content(result)
             return {
                 "content": content,
                 "model": profile_id,
