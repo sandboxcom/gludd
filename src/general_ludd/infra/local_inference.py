@@ -1,11 +1,16 @@
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import logging
+import os
 import re
+import signal
 import time
 from dataclasses import dataclass, field
 from typing import Any
+
+import httpx
 
 from general_ludd.events.bus import EventBus
 from general_ludd.events.types import CustomEvent
@@ -44,11 +49,29 @@ def _validate_model(model: str) -> str:
     return model
 
 
-def _validate_host(host: str) -> str:
+# Hosts that are safe to bind to without network exposure.
+_LOOPBACK_HOSTS = {"localhost", "127.0.0.1", "::1"}
+
+
+def _validate_host(host: str, *, allow_nonloopback: bool = False) -> str:
+    """Validate a host value destined for an argv position.
+
+    By default only loopback addresses are accepted (localhost / 127.0.0.1 /
+    ::1) because the inference API has no authentication layer and binding to
+    0.0.0.0 / :: would expose it on every NIC.  Pass ``allow_nonloopback=True``
+    for Slurm/cluster paths where the server intentionally binds on a cluster
+    interface.
+    """
     if not isinstance(host, str) or not host:
         raise ValueError("host must be a non-empty string")
     if _has_shell_metachars(host) or not _HOST_RE.match(host):
         raise ValueError(f"invalid host: {host!r}")
+    if not allow_nonloopback and host not in _LOOPBACK_HOSTS:
+        raise ValueError(
+            f"host {host!r} is not a loopback address; binding the unauthenticated "
+            "inference API on a non-loopback interface is rejected by default. "
+            "Use allow_nonloopback=True (Slurm/cluster mode) to override."
+        )
     return host
 
 
@@ -83,6 +106,12 @@ class LocalServerConfig:
     gpu_layers: int = -1
     context_size: int = 4096
     extra_args: list[str] = field(default_factory=list)
+    # Seconds to wait for the /health endpoint to return 200 after launch.
+    # Set to 0 to skip the readiness probe (not recommended in production).
+    startup_timeout: float = 120.0
+    # Allow binding to non-loopback interfaces (e.g. cluster nodes via Slurm).
+    # Defaults to False; must be explicitly set True for Slurm/cluster engines.
+    allow_nonloopback: bool = False
 
 
 @dataclass
@@ -146,11 +175,22 @@ class LocalInferenceManager:
             *cmd,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
+            # Place the child in its own process group so that when we stop the
+            # server we can send SIGTERM/SIGKILL to the *entire* process group,
+            # catching vllm/llama.cpp worker grandchildren that would otherwise
+            # be orphaned if we only signal the direct child.
+            start_new_session=True,
         )
         server.process = process
-        server.status = "running"
         server.started_at = time.time()
         server.pid = process.pid
+
+        # Wait for the server to become ready before advertising it as "running".
+        # This prevents callers from sending requests to a not-yet-initialised
+        # model, and surfaces launch failures (OOM, bad model path, etc.) early.
+        await self._wait_for_ready(server)
+
+        server.status = "running"
         if self._event_bus:
             self._event_bus.publish(
                 CustomEvent(
@@ -164,11 +204,55 @@ class LocalInferenceManager:
             )
         return server
 
+    async def _wait_for_ready(self, server: LocalServer) -> None:
+        """Poll the /health endpoint until the server is ready or times out.
+
+        Sets ``server.status = "error"`` and raises ``RuntimeError`` if:
+        - the subprocess exits before becoming healthy (crash / bad model path),
+        - the startup_timeout expires before /health returns 200.
+
+        If ``startup_timeout <= 0`` the probe is skipped (test/dev shortcut).
+        """
+        if server.config.startup_timeout <= 0:
+            return
+
+        health_url = f"http://{server.config.host}:{server.config.port}/health"
+        deadline = time.time() + server.config.startup_timeout
+        poll_interval = 2.0
+
+        while time.time() < deadline:
+            # Check whether the process exited prematurely.
+            if server.process is not None and server.process.returncode is not None:
+                server.status = "error"
+                raise RuntimeError(
+                    f"Local inference server {server.server_id!r} exited "
+                    f"(returncode={server.process.returncode}) before becoming ready."
+                )
+
+            try:
+                async with httpx.AsyncClient(timeout=5.0) as client:
+                    resp = await client.get(health_url)
+                if resp.status_code == 200:
+                    return  # ready
+            except (httpx.TransportError, httpx.TimeoutException):
+                pass  # server not yet accepting connections
+
+            await asyncio.sleep(poll_interval)
+
+        # Timed out — mark error and raise.
+        server.status = "error"
+        raise RuntimeError(
+            f"Local inference server {server.server_id!r} did not become ready "
+            f"within {server.config.startup_timeout}s (health URL: {health_url})."
+        )
+
     async def _start_slurm_server(self, server: LocalServer) -> LocalServer:
         adapter = SlurmAdapter()
         # Validate before interpolating into the shell command string.
         model = _validate_model(server.config.model_name or server.config.model_path)
-        host = _validate_host(server.config.host)
+        # Slurm jobs run on cluster compute nodes that may legitimately bind on
+        # non-loopback interfaces; allow_nonloopback reflects the config flag.
+        host = _validate_host(server.config.host, allow_nonloopback=server.config.allow_nonloopback)
         port = _validate_port(server.config.port)
         extra_args = _validate_extra_args(list(server.config.extra_args))
         if isinstance(server.config.gpu_layers, bool) or not isinstance(server.config.gpu_layers, int):
@@ -218,11 +302,17 @@ class LocalInferenceManager:
         if server is None or not server.is_running:
             return
         if server.process and server.process.returncode is None:
-            server.process.terminate()
+            pid = server.process.pid
+            # Signal the entire process group so that vllm/llama.cpp worker
+            # grandchildren (which were placed in their own session by
+            # start_new_session=True) receive SIGTERM and don't become orphans.
+            with contextlib.suppress(ProcessLookupError):
+                os.killpg(os.getpgid(pid), signal.SIGTERM)
             try:
                 await asyncio.wait_for(server.process.wait(), timeout=10.0)
             except TimeoutError:
-                server.process.kill()
+                with contextlib.suppress(ProcessLookupError):
+                    os.killpg(os.getpgid(pid), signal.SIGKILL)
         server.status = "stopped"
         server.process = None
         server.pid = None
@@ -257,7 +347,7 @@ class LocalInferenceManager:
     def _build_command(self, config: LocalServerConfig) -> list[str]:
         # Validate every config value that is interpolated into the argv (or,
         # for slurm, into the --wrap shell string) before building the command.
-        host = _validate_host(config.host)
+        host = _validate_host(config.host, allow_nonloopback=config.allow_nonloopback)
         port = _validate_port(config.port)
         extra_args = _validate_extra_args(list(config.extra_args))
         # gpu_layers / context_size are typed ints; guard against tampering.
