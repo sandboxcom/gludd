@@ -112,10 +112,14 @@ _BUILTIN: dict[str, RoleCapabilities] = {
         collections_self_modify=False,
         dispatch_kinds=frozenset({"role", "mcp", "skill"}),
     ),
+    # The operator role is the ONLY built-in granted the "web" dispatch kind
+    # (outbound network egress / SSRF surface) — every other role is deny-by-
+    # default for "web". The web toolkit's own SafeFetcher still SSRF-guards every
+    # hop; this lattice grant is the per-role reachability gate on top of that.
     "operator": RoleCapabilities(
         role="operator",
         collections_self_modify=False,
-        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill"}),
+        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill", "web"}),
     ),
     "report_status": RoleCapabilities(
         role="report_status",

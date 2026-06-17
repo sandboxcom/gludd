@@ -24,12 +24,14 @@ from general_ludd.security.capability_lattice import role_may_dispatch
 logger = logging.getLogger(__name__)
 
 # Supported tool-call kinds.
-ToolCallKind = Literal["role", "collection", "mcp", "skill"]
+ToolCallKind = Literal["role", "collection", "mcp", "skill", "web"]
 
 # Privileged tool-call kinds: an unbound (None) role is denied these fail-closed.
 # These kinds can drive self-modification / privileged handlers, so a dispatcher
-# constructed without an explicit role must NOT be able to reach them.
-PRIVILEGED_KINDS = frozenset({"role", "collection", "mcp", "skill"})
+# constructed without an explicit role must NOT be able to reach them. "web" is
+# privileged because it performs outbound network egress (an SSRF/exfil surface),
+# so it is deny-by-default per role like the others.
+PRIVILEGED_KINDS = frozenset({"role", "collection", "mcp", "skill", "web"})
 
 # Explicit opt-in sentinel: the ONLY role value that bypasses the capability
 # gate entirely (e.g. trusted in-process call sites). A None role is no longer
@@ -166,6 +168,7 @@ class DynamicDispatcher:
         mcp_handler: Handler | None = None,
         skill_handler: Handler | None = None,
         collection_handler: Handler | None = None,
+        web_handler: Handler | None = None,
         role: str | None = None,
     ) -> None:
         self._handlers: dict[str, Handler] = {}
@@ -177,6 +180,8 @@ class DynamicDispatcher:
             self._handlers["skill"] = skill_handler
         if collection_handler is not None:
             self._handlers["collection"] = collection_handler
+        if web_handler is not None:
+            self._handlers["web"] = web_handler
         # The acting role whose capability lattice gates every dispatch
         # (issue #58). A None role now FAILS CLOSED on privileged kinds (it is
         # NOT unrestricted); only the explicit ``UNRESTRICTED_ROLE`` sentinel

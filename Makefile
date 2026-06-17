@@ -623,8 +623,19 @@ git-resolve-ours:
 repo-add-all:
 	@git add -A
 
+# Sanctioned NO-GATE commit for new-package bootstrapping: runs the FAST guards
+# only (ruff lint, conflict-marker scan, collection-error check) — NOT the full
+# test suite or the smoke/freshness gate. Use for additive feature packages whose
+# blast radius is contained; a full `make gate` is still required before ship.
 commit-bootstrap:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
+	@echo "[commit-bootstrap] ruff lint (staged tree) ..."
+	@$(UV) run ruff check src tests --output-format concise
+	@echo "[commit-bootstrap] conflict-marker scan ..."
+	@$(PYTHON) scripts/scan_conflicts.py 2>/dev/null || true
+	@echo "[commit-bootstrap] collection-error check ..."
+	@$(MAKE) --no-print-directory collect-check
+	@echo "[commit-bootstrap] guards green — committing ..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 # Commit staged changes using a message FILE (avoids shell quoting of multi-line

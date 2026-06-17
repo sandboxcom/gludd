@@ -72,6 +72,14 @@ observability = [
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
 ]
+# JS render + rich main-content extraction for the web toolkit. OPTIONAL: the
+# web package imports cleanly without these (render_js / rich parse lazy-import
+# them inside the function and return a structured renderer_unavailable fallback
+# when absent). Installing this extra does NOT change the v1 hard-dep footprint.
+web = [
+    "playwright>=1.40.0",
+    "trafilatura>=1.8.0",
+]
 
 [project.scripts]
 gludd = "general_ludd.cli:main"
@@ -105,7 +113,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "trafilatura.*", "playwright.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
