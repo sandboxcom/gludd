@@ -109,9 +109,9 @@ class SecretsManager:
                 return None
             # Outage / auth / TLS / network failure — fail CLOSED, do not
             # masquerade as a missing secret.
-            logger.error("Failed to resolve secret alias %s: %s", alias_name, exc)
+            logger.error("Failed to resolve secret alias %s: %s", alias_name, type(exc).__name__)
             raise SecretsUnavailableError(
-                f"secrets backend unavailable resolving alias {alias_name!r}: {exc}"
+                f"secrets backend unavailable resolving alias {alias_name!r}: {type(exc).__name__}"
             ) from exc
         return None
 
@@ -244,9 +244,9 @@ class SecretsManager:
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None
-            logger.error("Failed to read secret at %s: %s", path, exc)
+            logger.error("Failed to read secret at %s: %s", path, type(exc).__name__)
             raise SecretsUnavailableError(
-                f"secrets backend unavailable reading {path!r}: {exc}"
+                f"secrets backend unavailable reading {path!r}: {type(exc).__name__}"
             ) from exc
         return None
 
