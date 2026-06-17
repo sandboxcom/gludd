@@ -175,18 +175,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 todo_count += 1
 
         config_dir = getattr(app.state, "_config_dir", None)
-        config_paths: list[str] = []
+        config_file_count = 0
         if config_dir and os.path.isdir(config_dir):
-            for f in sorted(os.listdir(config_dir)):
+            for f in os.listdir(config_dir):
                 if f.endswith(".yml") or f.endswith(".yaml"):
-                    config_paths.append(os.path.join(config_dir, f))
+                    config_file_count += 1
 
         bare_binaries: list[dict[str, Any]] = []
         known_versions: dict[str, str] = {}
-        filestore_root = ""
+        filestore_available = False
         try:
             store = FileStore()
-            filestore_root = store.root_path
+            filestore_available = bool(store.root_path)
             boot = BinaryBootstrapper(store=store)
             bare_binaries = [
                 {"name": b["binary_name"], "version": b.get("version", "?")}
@@ -195,6 +195,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             known_versions = boot.get_known_versions()
         except Exception:
             pass
+
+        _engine = getattr(app.state, "_db_engine", None)
+        db_url = _engine.url.render_as_string(hide_password=True) if _engine is not None else "sqlite"
 
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
@@ -206,13 +209,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "todos_total": todo_count,
             "queue_depths": queue_depths,
             "tick_metrics": elapsed,
-            "config_dir": config_dir,
-            "config_files": config_paths,
-            "filestore_root": filestore_root,
+            "config_file_count": config_file_count,
+            "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
             "db_engine": str(getattr(app.state, "_db_engine", None)),
-            "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
+            "db_url": db_url,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
         }
