@@ -42,6 +42,7 @@ RUN pip install --no-cache-dir /tmp/wheels/*.whl && \
 COPY config/ config/
 COPY playbooks/ playbooks/
 COPY templates/ templates/
+COPY LICENSE THIRD_PARTY_LICENSES.md /app/
 
 USER gludd
 

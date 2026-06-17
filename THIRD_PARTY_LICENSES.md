@@ -16,6 +16,14 @@ General Ludd bundles and depends on the following third-party software.
 - Bundled version: 1.9.0
 - The MPL-2.0 license text is available at https://www.mozilla.org/en-US/MPL/2.0/
 
+### ripgrep (rg)
+- License: MIT OR Unlicense
+- Homepage: https://github.com/BurntSushi/ripgrep
+- Bundled version: 14.1.1
+- Bundled as the upstream-released, unmodified `rg` binary (musl-static build).
+- The MIT license text is available at https://github.com/BurntSushi/ripgrep/blob/master/LICENSE-MIT
+  and the Unlicense at https://github.com/BurntSushi/ripgrep/blob/master/UNLICENSE
+
 ## Python Dependencies
 
 A complete list of Python dependencies and their licenses is available in

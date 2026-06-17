@@ -154,6 +154,9 @@ class OktaSource:
         self.timeout = float(self.config.get("timeout", 30.0))
 
         self._guard_ssrf(self.org_url)
+        # Pin the configured host so a server-supplied next-page URL cannot
+        # redirect us off-org (response-driven SSRF).
+        self._org_host = (urlsplit(self.org_url).hostname or "").lower()
 
     # -- internals ---------------------------------------------------------
 
@@ -166,6 +169,21 @@ class OktaSource:
             raise ValueError(
                 f"okta: refusing private/loopback host {host!r} "
                 "(set allow_private=True to override)"
+            )
+
+    def _guard_next_url(self, url: str) -> None:
+        """Re-guard a server-supplied pagination URL before fetching it.
+
+        Applies the full SSRF scheme/private-host guard *and* pins the host to
+        the configured ``org_url`` host so a malicious ``Link: rel="next"``
+        header cannot pivot to an internal metadata endpoint or a third party.
+        """
+        self._guard_ssrf(url)
+        host = (urlsplit(url).hostname or "").lower()
+        if host != self._org_host:
+            raise ValueError(
+                f"okta: refusing cross-host next-page URL {host!r} "
+                f"(pinned to {self._org_host!r})"
             )
 
     def _token(self) -> str:
@@ -284,6 +302,8 @@ class OktaSource:
             link = self._next_link(resp)
             if not link:
                 break
+            # Re-guard the server-supplied next URL BEFORE we trust/fetch it.
+            self._guard_next_url(link)
             url, next_params = self._split_url_params(link)
 
         return out

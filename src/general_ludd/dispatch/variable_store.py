@@ -10,7 +10,7 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from jinja2 import Environment, Undefined
+from jinja2 import Environment, Undefined, select_autoescape
 
 from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
 
@@ -73,7 +73,7 @@ class VariableStore:
         Missing variables resolve to an empty string (not a hard error) so
         partial templates remain useful when only some vars are populated yet.
         """
-        env = Environment(undefined=Undefined, autoescape=False)
+        env = Environment(undefined=Undefined, autoescape=select_autoescape())
         ctx: dict[str, Any] = {**self.all_vars(), **extra}
         try:
             tmpl = env.from_string(template)

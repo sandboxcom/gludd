@@ -1,0 +1,1 @@
+"""Secrets-manager unit tests."""

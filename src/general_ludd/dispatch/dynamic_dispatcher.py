@@ -26,6 +26,16 @@ logger = logging.getLogger(__name__)
 # Supported tool-call kinds.
 ToolCallKind = Literal["role", "collection", "mcp", "skill"]
 
+# Privileged tool-call kinds: an unbound (None) role is denied these fail-closed.
+# These kinds can drive self-modification / privileged handlers, so a dispatcher
+# constructed without an explicit role must NOT be able to reach them.
+PRIVILEGED_KINDS = frozenset({"role", "collection", "mcp", "skill"})
+
+# Explicit opt-in sentinel: the ONLY role value that bypasses the capability
+# gate entirely (e.g. trusted in-process call sites). A None role is no longer
+# unrestricted — it denies every privileged kind.
+UNRESTRICTED_ROLE = "__unrestricted__"
+
 # Typed handler signature: takes (name, args) and returns any JSON-serialisable
 # value.  Handlers may be coroutines; DynamicDispatcher.dispatch is sync-only
 # but callers may wrap in asyncio if needed.  For unit tests inject plain
@@ -168,19 +178,24 @@ class DynamicDispatcher:
         if collection_handler is not None:
             self._handlers["collection"] = collection_handler
         # The acting role whose capability lattice gates every dispatch
-        # (issue #58). When None the dispatcher is unrestricted (back-compat for
-        # call sites that never supplied a role); when set, a tool-call kind the
-        # role lacks is denied BEFORE its handler is invoked.
+        # (issue #58). A None role now FAILS CLOSED on privileged kinds (it is
+        # NOT unrestricted); only the explicit ``UNRESTRICTED_ROLE`` sentinel
+        # bypasses the gate. When set to a real role, a tool-call kind the role
+        # lacks is denied BEFORE its handler is invoked.
         self._role = role
 
     def dispatch(self, call: ToolCall) -> DispatchResult:
         """Dispatch a single ToolCall.  Returns DispatchResult — never raises."""
         kind = call.kind
 
-        # Per-role capability lattice (issue #58): when a role is bound, it must
-        # hold the capability the tool-call kind requires, or dispatch is denied
-        # fail-closed before the handler runs.
-        if self._role is not None and not role_may_dispatch(self._role, kind):
+        # Per-role capability lattice (issue #58): the gate fails closed unless
+        # the role is the explicit UNRESTRICTED_ROLE sentinel. A None (unbound)
+        # role denies every PRIVILEGED_KIND; a real role must hold the capability
+        # the tool-call kind requires. The check runs BEFORE the handler.
+        if self._role != UNRESTRICTED_ROLE and (
+            (self._role is None and kind in PRIVILEGED_KINDS)
+            or (self._role is not None and not role_may_dispatch(self._role, kind))
+        ):
             logger.warning(
                 "DynamicDispatcher: role %r lacks capability for kind %r "
                 "(tool %r) — fail-closed",

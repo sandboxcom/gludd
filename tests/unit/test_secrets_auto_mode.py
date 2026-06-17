@@ -42,7 +42,10 @@ class TestAutoModeFallback:
     def test_auto_reachable_url_uses_openbao(self):
         cfg = OpenBaoConfig(
             mode="auto",
-            external_url="http://vault.local:8200",
+            # https:// required: connect() now refuses to send the auth token
+            # over plaintext transport (fail-closed). A reachable, authenticated
+            # https backend is what auto-mode must commit to.
+            external_url="https://vault.local:8200",
             external_token="t",  # test token
         )
         fake_client = MagicMock()

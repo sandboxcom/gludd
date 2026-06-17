@@ -146,6 +146,9 @@ class EntraSignInSource:
         self.timeout = float(self.config.get("timeout", 30.0))
 
         self._guard_ssrf(self.base_url)
+        # Pin the configured host so a server-supplied @odata.nextLink cannot
+        # redirect us off-endpoint (response-driven SSRF).
+        self._base_host = (urlsplit(self.base_url).hostname or "").lower()
 
     # -- internals ---------------------------------------------------------
 
@@ -160,6 +163,21 @@ class EntraSignInSource:
             raise ValueError(
                 f"entra_signin: refusing private/loopback host {host!r} "
                 "(set allow_private=True to override)"
+            )
+
+    def _guard_next_url(self, url: str) -> None:
+        """Re-guard a server-supplied pagination URL before fetching it.
+
+        Applies the full SSRF scheme/private-host guard *and* pins the host to
+        the configured ``base_url`` host so a malicious ``@odata.nextLink``
+        cannot pivot to an internal metadata endpoint or a third party.
+        """
+        self._guard_ssrf(url)
+        host = (urlsplit(url).hostname or "").lower()
+        if host != self._base_host:
+            raise ValueError(
+                f"entra_signin: refusing cross-host next-page URL {host!r} "
+                f"(pinned to {self._base_host!r})"
             )
 
     def _token(self) -> str:
@@ -283,6 +301,8 @@ class EntraSignInSource:
             link = self._next_link(body)
             if not link:
                 break
+            # Re-guard the server-supplied next URL BEFORE we trust/fetch it.
+            self._guard_next_url(link)
             url, params = self._split_url_params(link)
 
         return out

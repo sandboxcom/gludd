@@ -386,6 +386,8 @@ class GitHubIssuesSource(IssueSource):
         super().__init__(base_url_cfg, transport=None, require_base_url=False)
         # Override base_url with the raw string (the base class sets it from config).
         self.base_url = str(base_url_cfg["base_url"]).rstrip("/")
+        # Re-run the SSRF guard against the reassigned base_url.
+        self._guard_base_url()
 
         self._repo = repo
         self._token_env = str(config.get("token_env") or "GITHUB_TOKEN")
@@ -417,6 +419,9 @@ class GitHubIssuesSource(IssueSource):
         body: Any | None = None,
     ) -> tuple[int, Any]:
         """Issue one HTTP request via the injectable transport."""
+        # Defense-in-depth: re-check the SSRF guard per request in case
+        # ``base_url`` was mutated after construction.
+        self._guard_base_url()
         url = f"{self.base_url}{path}"
         hdrs = self._headers()
         if self._raw_transport is not None:

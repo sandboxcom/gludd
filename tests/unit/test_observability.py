@@ -165,7 +165,7 @@ class TestAutoBenchmarkRecorder:
 
         await recorder.record_from_trace(trace, success=True)
         repo.record_result.assert_called_once()
-        call_kwargs = repo.record_result.call_args[1]
+        call_kwargs = repo.record_result.call_args.args[0]
         assert call_kwargs["model_profile_id"] == "gpt4"
         assert call_kwargs["prompt_profile_id"] == "default_prompt"
         assert call_kwargs["success"] is True
@@ -185,7 +185,7 @@ class TestAutoBenchmarkRecorder:
         span.complete(status="error", error_message="timeout")
 
         await recorder.record_from_trace(trace, success=False)
-        call_kwargs = repo.record_result.call_args[1]
+        call_kwargs = repo.record_result.call_args.args[0]
         assert call_kwargs["success"] is False
         assert call_kwargs["error_message"] == "timeout"
 

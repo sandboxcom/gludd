@@ -26,6 +26,10 @@ from general_ludd.db.repository import (
 from general_ludd.event_loop.lease import reclaim_expired_leases
 from general_ludd.mcp.client import MCPClient
 from general_ludd.mcp.registry import MCPToolRegistry
+from general_ludd.models.job_invocation import (
+    invoke_model_for_generation,
+    is_generation_work_type,
+)
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
 from general_ludd.schemas.job import JobSpec
@@ -152,6 +156,7 @@ class EventLoop:
         project_workspace: Any | None = None,
         self_improve_interval: int = 0,
         reviewer: Any | None = None,
+        model_gateway: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -160,6 +165,7 @@ class EventLoop:
         self._project_workspace = project_workspace
         self._self_improve_interval = self_improve_interval
         self._reviewer = reviewer
+        self._model_gateway = model_gateway
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -431,6 +437,14 @@ class EventLoop:
         project = self._select_tick_project()
         return project.project_id if project is not None else None
 
+    def _estimated_dispatch_cost(self, item_count: int) -> float:
+        budget_cfg = self.config.get("budget", {}) if isinstance(self.config, dict) else {}
+        per_job = budget_cfg.get("per_dispatch_usd", 0.01) if isinstance(budget_cfg, dict) else 0.01
+        try:
+            return float(per_job) * max(0, int(item_count))
+        except (TypeError, ValueError):
+            return 0.0
+
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:
             return
@@ -441,7 +455,9 @@ class EventLoop:
     async def _phase_dispatch_return_review_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_returns", [])
         if self._budget_guard is not None:
-            check = self._budget_guard.check_all_limits()
+            check = self._budget_guard.check_all_limits(
+                estimated_cost=self._estimated_dispatch_cost(len(claimed))
+            )
             if not check["allowed"]:
                 logger.warning("Budget exceeded, skipping return review dispatch: %s", check["reason"])
                 self._tick_metrics["returns_reviewed"] = 0
@@ -479,7 +495,11 @@ class EventLoop:
                 "return_id": job.return_id, "queue": job.queue,
                 "work_type": job.work_type,
             }, shared_vars=None)
-            self._runner.run_playbook(playbook_name="return_review.yml", private_data_dir=dirs["root"])
+            await asyncio.to_thread(
+                self._runner.run_playbook,
+                playbook_name="return_review.yml",
+                private_data_dir=dirs["root"],
+            )
             return
         if self._http_client is None:
             return
@@ -671,7 +691,9 @@ class EventLoop:
         if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
             cap = pid_outputs.desired_total_active_buckets
         if self._budget_guard is not None:
-            check = self._budget_guard.check_all_limits()
+            check = self._budget_guard.check_all_limits(
+                estimated_cost=self._estimated_dispatch_cost(len(claimed))
+            )
             if not check["allowed"]:
                 logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
                 self._tick_metrics["todos_dispatched"] = 0
@@ -913,6 +935,23 @@ class EventLoop:
             else:
                 dirs = self._runner.prepare_job_dirs(job_id)
                 pdd = dirs["root"]
+            # C1 (W3.x): invoke the model for a generation work type the SAME
+            # way the worker HTTP path does, then feed the generated text into
+            # the playbook vars so the runner path is not a no-op generator.
+            if self._model_gateway is not None and is_generation_work_type(
+                _safe_str(todo, "work_type")
+            ):
+                model_response = await asyncio.to_thread(
+                    invoke_model_for_generation,
+                    self._model_gateway,
+                    job_id=job_id,
+                    work_type=_safe_str(todo, "work_type"),
+                    model_profile=resolved_model_profile,
+                    prompt_text=prompt_text,
+                    skill_body=skill_body,
+                )
+            else:
+                model_response = None
             self._runner.write_vars(job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
@@ -920,6 +959,7 @@ class EventLoop:
                 "model_profile": resolved_model_profile,
                 "prompt_profile": resolved_prompt_profile,
                 "prompt_text": prompt_text, "skill_body": skill_body,
+                "model_response": model_response,
                 "playbook": playbook, **budget_context,
             }, shared_vars=shared_vars)
             runner_env: dict[str, str] = {}
@@ -1242,8 +1282,32 @@ class EventLoop:
     async def _persist_self_improve_todos(self, todos: list[dict[str, Any]]) -> int:
         if self._todo_repo is None or self._active_session is None:
             return 0
+        # Admission gate (W3.7): cap how many self-improve todos may be open at
+        # once and decide each admitted todo's initial status (default: a human
+        # gate via approval_required rather than auto-queuing self-generated work).
+        from general_ludd.self_improve.gate import SelfImproveGate
+
+        si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
+        if not isinstance(si_cfg, dict):
+            si_cfg = {}
+        gate = SelfImproveGate(
+            max_open=si_cfg.get("max_open", 10),
+            auto_queue=si_cfg.get("auto_queue", False),
+        )
+        terminal = {
+            TodoStatus.COMPLETE.value,
+            TodoStatus.FAILED.value,
+            TodoStatus.CANCELLED.value,
+        }
+        existing = await self._todo_repo.list_by_work_type("self_improve")
+        open_count = sum(
+            1 for t in existing if _safe_str(t, "status") not in terminal
+        )
         persisted = 0
         for todo in todos:
+            decision = gate.evaluate(todo, open_count=open_count)
+            if not decision.admitted:
+                continue
             priority_raw = todo.get("priority", "high")
             if isinstance(priority_raw, int):
                 priority = priority_raw
@@ -1252,7 +1316,7 @@ class EventLoop:
             payload: dict[str, Any] = {
                 "title": str(todo.get("title", "Self-improvement task"))[:512],
                 "description": str(todo.get("description", "")),
-                "status": TodoStatus.BACKLOG.value,
+                "status": decision.initial_status,
                 "work_type": "self_improve",
                 "priority": priority,
                 "created_by": "self_improve_harness",
@@ -1260,6 +1324,7 @@ class EventLoop:
             try:
                 await self._todo_repo.create(payload)
                 persisted += 1
+                open_count += 1
             except Exception as exc:
                 logger.warning("Failed to persist self-improve todo: %s", exc)
         if persisted:

@@ -11,6 +11,10 @@ class OpenBaoConfig(BaseModel):
     binary_path: str | None = None
     external_url: str | None = None
     external_token: str | None = None
+    # Security: TLS verification for the external OpenBao client. True (default)
+    # verifies against the system CA bundle; a str is treated as a path to a CA
+    # bundle / cert. Disabling (False) is permitted but discouraged.
+    external_tls_verify: bool | str = True
     local_image: str = "ghcr.io/openbao/openbao"
     local_image_digest_pin: str | None = None
     local_container_runtime: str = "podman_preferred"

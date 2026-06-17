@@ -7,6 +7,7 @@ import math
 from datetime import datetime
 from typing import Any
 
+from general_ludd.routing_roles import weights_for
 from general_ludd.schemas.benchmark import (
     RoutingCandidate,
     RoutingDecision,
@@ -141,8 +142,32 @@ class AdaptiveRouter:
             )
         if not candidates:
             return None
-        adjusted = [(self._apply_quantization_penalty(c), c) for c in candidates]
-        return max(adjusted, key=lambda pair: pair[0])[1]
+        max_cost = max((c.avg_cost_usd for c in candidates), default=0.0)
+        ranked = [
+            (
+                self._cost_adjusted_rank(
+                    c, self._apply_quantization_penalty(c), max_cost
+                ),
+                c,
+            )
+            for c in candidates
+        ]
+        return max(ranked, key=lambda pair: pair[0])[1]
+
+    @staticmethod
+    def _cost_adjusted_rank(
+        candidate: RoutingCandidate,
+        quality: float,
+        max_cost: float,
+    ) -> float:
+        """Rank key: quality reward minus normalized-cost penalty, per task role.
+
+        Internal RANKING key only — does NOT mutate composite_score.
+        """
+        weights = weights_for(candidate.task_type)
+        cost = candidate.avg_cost_usd
+        cost_norm = (cost / max_cost) if (max_cost > 0 and math.isfinite(cost)) else 0.0
+        return weights.quality * quality - weights.cost * cost_norm
 
     def _apply_quantization_penalty(self, candidate: RoutingCandidate) -> float:
         score = candidate.composite_score

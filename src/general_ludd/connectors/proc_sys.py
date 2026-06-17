@@ -41,12 +41,30 @@ _SELECTORS: dict[str, str] = {
 }
 
 
+def _under_root(candidate: str) -> bool:
+    """True iff ``candidate`` (an absolute path) sits under an allowed root."""
+    return any(
+        candidate == root or candidate.startswith(root + os.sep)
+        for root in _ALLOWED_ROOTS
+    )
+
+
 def _is_confined(path: str) -> bool:
-    """True iff ``path`` normalizes to a location under an allowed root."""
+    """True iff ``path`` resolves to a location under an allowed root.
+
+    Both the lexical normalization (``os.path.normpath``) AND the symlink-
+    resolved real path (``os.path.realpath``) must land under an allowed root.
+    Requiring both defeats a magic-symlink escape such as
+    ``/proc/1/root/etc/shadow`` whose normpath stays under ``/proc`` but whose
+    realpath escapes to ``/etc/shadow``.
+    """
     norm = os.path.normpath(path)
     if not os.path.isabs(norm):
         return False
-    return any(norm == root or norm.startswith(root + os.sep) for root in _ALLOWED_ROOTS)
+    if not _under_root(norm):
+        return False
+    real = os.path.realpath(norm)
+    return _under_root(real)
 
 
 class ProcSysSource:
@@ -70,7 +88,9 @@ class ProcSysSource:
             raise ValueError(f"path outside /proc,/sys is refused: {path}")
         if self._reader is None:
             raise RuntimeError("no reader injected for ProcSysSource")
-        return self._reader(os.path.normpath(path))
+        # Hand the reader the fully resolved path so it reads exactly what was
+        # confinement-checked (no TOCTOU gap, no re-resolution surprise).
+        return self._reader(os.path.realpath(os.path.normpath(path)))
 
     @staticmethod
     def _resolve_select(spec: dict[str, Any]) -> tuple[str, str]:

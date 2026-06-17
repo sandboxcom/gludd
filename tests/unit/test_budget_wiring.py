@@ -1,10 +1,15 @@
-"""Unit tests for Feature #8: Budget Caps Wiring."""
+"""Unit tests for Feature #8: Budget Caps Wiring.
+
+Also covers the BudgetManager-gated dispatch executor pattern (#49 daily +
+per-todo caps) in TestBudgetManagerGatedExecutor at the bottom of this file.
+"""
 
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from general_ludd.controllers.budget import RunBudgetGuard
+from general_ludd.controllers.budget_manager import BudgetManager
 from general_ludd.event_loop.loop import EventLoop
 from general_ludd.schemas.todo import (
     Todo,
@@ -285,3 +290,164 @@ class TestModelGatewayBudgetTracking:
             resp = gw.call_model("gpt4_noguard", [{"role": "user", "content": "hi"}])
 
         assert resp.content == "ok"
+
+
+# Sentinel returned by the BudgetManager gate when a budget check defers.
+_BM_DEFERRED = "deferred:budget_exhausted"
+
+
+def _make_budget_gated_executor(
+    *,
+    executor,
+    budget,
+    todo_id,
+    projected_cost_usd,
+    realised_cost_usd=None,
+):
+    """Build the BudgetManager gating pattern around an async executor.
+
+    Pattern (the daily + per-todo analogue of make_spend_guarded_executor):
+
+      1. per-todo ceiling check  -> defer if refused
+      2. daily cap check         -> defer if refused (sticky pause)
+      3. run the executor
+      4. record the REALISED cost (defaults to the projection) on both the
+         per-todo and daily ledgers via record_spend.
+    """
+    charged = projected_cost_usd if realised_cost_usd is None else realised_cost_usd
+
+    async def _gated(*args, **kwargs):
+        todo_check = budget.check_todo_budget(todo_id, projected_cost_usd)
+        if not todo_check["allowed"]:
+            return _BM_DEFERRED
+        daily_check = budget.check_daily_budget(projected_cost_usd)
+        if not daily_check["allowed"]:
+            return _BM_DEFERRED
+        result = await executor(*args, **kwargs)
+        budget.record_spend(todo_id, charged)
+        return result
+
+    return _gated
+
+
+class TestBudgetManagerGatedExecutor:
+    """#49 — BudgetManager daily/per-todo caps gate the dispatch executor.
+
+    Distinct from RunBudgetGuard (above): exercises
+    controllers/budget_manager.BudgetManager (check_daily_budget /
+    check_todo_budget / record_spend / get_status) and its sticky kill switch.
+    """
+
+    @pytest.mark.asyncio
+    async def test_daily_cap_trips_then_stays_paused(self):
+        # Daily cap 1.0; first call projects 0.8 (fits), records realised 0.8.
+        budget = BudgetManager(daily_limit_usd=1.0)
+        executor = AsyncMock(return_value="ran")
+
+        guarded = _make_budget_gated_executor(
+            executor=executor,
+            budget=budget,
+            todo_id="todo-1",
+            projected_cost_usd=0.8,
+        )
+
+        assert await guarded() == "ran"
+        executor.assert_awaited_once()
+        status = budget.get_status()
+        assert status["daily_spend"] == pytest.approx(0.8)
+        assert status["paused"] is False
+
+        # Second call: 0.8 + 0.8 = 1.6 > 1.0 -> trips the sticky pause.
+        executor.reset_mock()
+        assert await guarded() == _BM_DEFERRED
+        executor.assert_not_awaited()
+        assert budget.get_status()["paused"] is True
+
+        # Sticky: even a tiny projection is refused while paused.
+        cheap = _make_budget_gated_executor(
+            executor=executor,
+            budget=budget,
+            todo_id="todo-1",
+            projected_cost_usd=0.0001,
+        )
+        assert await cheap() == _BM_DEFERRED
+        executor.assert_not_awaited()
+        assert budget.get_status()["paused"] is True
+
+    @pytest.mark.asyncio
+    async def test_records_realised_not_projected_cost(self):
+        """The gate records the REALISED cost, which can differ from the projection."""
+        budget = BudgetManager(daily_limit_usd=10.0)
+        executor = AsyncMock(return_value="ran")
+
+        guarded = _make_budget_gated_executor(
+            executor=executor,
+            budget=budget,
+            todo_id="todo-r",
+            projected_cost_usd=2.0,   # admitted on projection
+            realised_cost_usd=0.5,    # but actually cost less
+        )
+        assert await guarded() == "ran"
+        assert budget.get_status()["daily_spend"] == pytest.approx(0.5)
+
+    @pytest.mark.asyncio
+    async def test_per_todo_ceiling_defers_with_daily_headroom(self):
+        # Generous daily budget, tight per-todo ceiling of 0.05.
+        budget = BudgetManager(daily_limit_usd=100.0, per_todo_limit_usd=0.05)
+        executor = AsyncMock(return_value="ran")
+
+        guarded = _make_budget_gated_executor(
+            executor=executor,
+            budget=budget,
+            todo_id="todo-x",
+            projected_cost_usd=0.10,  # exceeds the per-todo ceiling
+        )
+
+        assert await guarded() == _BM_DEFERRED
+        executor.assert_not_awaited()
+        # Per-todo refusal must not charge the daily ledger nor pause.
+        status = budget.get_status()
+        assert status["daily_spend"] == pytest.approx(0.0)
+        assert status["paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_per_todo_accumulates_to_ceiling(self):
+        """Repeated small charges on one todo trip its own ceiling, not the daily cap."""
+        budget = BudgetManager(daily_limit_usd=100.0, per_todo_limit_usd=0.05)
+        executor = AsyncMock(return_value="ran")
+
+        guarded = _make_budget_gated_executor(
+            executor=executor,
+            budget=budget,
+            todo_id="todo-y",
+            projected_cost_usd=0.03,
+        )
+        assert await guarded() == "ran"  # 0.03 fits
+        executor.reset_mock()
+        # 0.03 + 0.03 = 0.06 > 0.05 ceiling -> second call defers.
+        assert await guarded() == _BM_DEFERRED
+        executor.assert_not_awaited()
+        status = budget.get_status()
+        assert status["daily_spend"] == pytest.approx(0.03)
+        assert status["paused"] is False
+
+    @pytest.mark.asyncio
+    async def test_get_status_reflects_paused_after_daily_breach(self):
+        budget = BudgetManager(daily_limit_usd=0.10)
+        executor = AsyncMock(return_value="ran")
+
+        guarded = _make_budget_gated_executor(
+            executor=executor,
+            budget=budget,
+            todo_id="todo-z",
+            projected_cost_usd=0.5,  # 0.5 > 0.10 -> immediate daily breach
+        )
+
+        assert budget.get_status()["paused"] is False
+        assert await guarded() == _BM_DEFERRED
+        executor.assert_not_awaited()
+
+        status = budget.get_status()
+        assert status["paused"] is True
+        assert status["daily_limit"] == pytest.approx(0.10)
+        assert status["daily_spend"] == pytest.approx(0.0)

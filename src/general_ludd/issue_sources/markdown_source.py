@@ -38,7 +38,7 @@ _TASK_RE = re.compile(r"^(?P<indent>\s*)[-*+]\s+\[(?P<mark>[ xX]?)\]\s+(?P<text>
 
 
 def _stable_id(text: str, ordinal: int) -> str:
-    digest = hashlib.sha1(f"{ordinal}:{text}".encode()).hexdigest()[:12]
+    digest = hashlib.sha1(f"{ordinal}:{text}".encode(), usedforsecurity=False).hexdigest()[:12]
     return f"md-{ordinal}-{digest}"
 
 

@@ -194,8 +194,14 @@ def _guard_ssrf(base_url: str, *, allow_private: bool) -> None:
             ) from None
         try:
             infos = socket.getaddrinfo(host, None)
-        except OSError:
-            return
+        except OSError as exc:
+            # Fail closed: an unresolvable host must not be silently allowed
+            # (a DNS failure could mask an internal/rebinding target). Match
+            # the cilium_hubble / nomad connectors' fail-closed posture.
+            raise ValueError(
+                f"base_url host {host!r} could not be resolved "
+                "(set allow_private=True to override)"
+            ) from exc
         for info in infos:
             addr = str(info[4][0])
             try:

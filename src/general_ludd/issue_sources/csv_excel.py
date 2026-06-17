@@ -30,6 +30,7 @@ from general_ludd.issue_sources.base import (
     new_issue_record,
     parse_iso_ts,
 )
+from general_ludd.security.sanitize import confine_path_multi, workspace_roots
 
 # Default header-name -> IssueRecord-field mapping.
 _DEFAULT_COLUMNS: dict[str, str] = {
@@ -60,7 +61,13 @@ class CsvExcelSource(IssueSource):
         path = config.get("path")
         if not path:
             raise ValueError("config['path'] is required for the csv/excel source")
-        self.path: str = str(path)
+        self.root = self._resolve_root(config)
+        confined = confine_path_multi(str(path), workspace_roots(self.root))
+        if confined is None:
+            raise ValueError(
+                f"refusing csv/excel path outside the allowed workspace jail: {path!r}"
+            )
+        self.path: str = confined
         cols = config.get("columns")
         self.columns: dict[str, str] = dict(cols) if isinstance(cols, dict) else dict(_DEFAULT_COLUMNS)
         words = config.get("status_words") or {}
@@ -69,6 +76,23 @@ class CsvExcelSource(IssueSource):
             if t.value in words:
                 self.status_words[t] = str(words[t.value])
         self.sheet: str | None = str(config["sheet"]) if config.get("sheet") else None
+
+    # -- path jail --------------------------------------------------------- #
+
+    @staticmethod
+    def _resolve_root(config: dict[str, Any]) -> str | None:
+        """Resolve the workspace-jail root: ``config['root']`` then env, else None.
+
+        Prefers an explicit ``config['root']``, falling back to the
+        ``GLUDD_WORKSPACE`` environment variable. Whitespace-only values are
+        treated as absent so the jail defaults to cwd + temp (via
+        :func:`workspace_roots`).
+        """
+        candidate = config.get("root") or os.environ.get("GLUDD_WORKSPACE")
+        if candidate is None:
+            return None
+        stripped = str(candidate).strip()
+        return stripped or None
 
     # -- format detection -------------------------------------------------- #
 

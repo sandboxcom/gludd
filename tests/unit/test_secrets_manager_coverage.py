@@ -8,6 +8,7 @@ from general_ludd.secrets.config import OpenBaoConfig
 from general_ludd.secrets.manager import (
     SecretAlias,
     SecretsManager,
+    SecretsUnavailableError,
 )
 
 
@@ -21,12 +22,13 @@ class TestResolveWithClient:
         mgr.register_alias(SecretAlias(alias="db", path="db/pass"))
         assert mgr.resolve("db") == "secret-val"
 
-    def test_resolve_with_client_exception_returns_none(self):
+    def test_resolve_with_client_exception_raises(self):
         mock_client = MagicMock()
         mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("boom")
         mgr = SecretsManager(client=mock_client)
         mgr.register_alias(SecretAlias(alias="db", path="db/pass"))
-        assert mgr.resolve("db") is None
+        with pytest.raises(SecretsUnavailableError):
+            mgr.resolve("db")
 
 
 class TestConnect:
@@ -60,11 +62,12 @@ class TestWriteSecret:
 
 
 class TestReadSecret:
-    def test_read_secret_with_exception_returns_none(self):
+    def test_read_secret_with_exception_raises(self):
         mock_client = MagicMock()
         mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("fail")
         mgr = SecretsManager(client=mock_client)
-        assert mgr.read_secret("some/path") is None
+        with pytest.raises(SecretsUnavailableError):
+            mgr.read_secret("some/path")
 
     def test_read_secret_no_data_data_returns_none(self):
         mock_client = MagicMock()
@@ -95,11 +98,12 @@ class TestDeleteSecret:
 
 
 class TestScanForImageUpdates:
-    def test_scan_with_exception_returns_none(self):
+    def test_scan_with_exception_raises(self):
         mock_client = MagicMock()
         mock_client.secrets.kv.v2.read_secret_version.side_effect = Exception("err")
         mgr = SecretsManager(client=mock_client)
-        assert mgr.scan_for_image_updates() is None
+        with pytest.raises(SecretsUnavailableError):
+            mgr.scan_for_image_updates()
 
     def test_scan_no_stored_data_returns_none(self):
         mock_client = MagicMock()

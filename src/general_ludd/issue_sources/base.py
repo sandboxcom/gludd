@@ -592,12 +592,25 @@ class IssueSource:
         self.transport = transport
         base_url = config.get("base_url")
         self.base_url: str | None = str(base_url) if base_url else None
-        if require_base_url:
-            if not self.base_url:
-                raise ValueError("config['base_url'] is required for this source")
-            host = urlparse(self.base_url).hostname or ""
-            if _is_internal_host(host):
-                raise ValueError(f"refusing internal base_url host: {host!r}")
+        if require_base_url and not self.base_url:
+            raise ValueError("config['base_url'] is required for this source")
+        # SSRF guard runs whenever a base_url is PRESENT, regardless of
+        # ``require_base_url`` (which now only governs the missing-url error).
+        self._guard_base_url()
+
+    def _guard_base_url(self) -> None:
+        """Reject a ``base_url`` pointing at an internal/loopback host.
+
+        Literal-host SSRF guard (no DNS resolution). A no-op when ``base_url``
+        is unset; otherwise raises ``ValueError`` on an internal host. Safe to
+        re-invoke per-request for defense-in-depth against post-construction
+        ``base_url`` mutation.
+        """
+        if not self.base_url:
+            return
+        host = urlparse(self.base_url).hostname or ""
+        if _is_internal_host(host):
+            raise ValueError(f"refusing internal base_url host: {host!r}")
 
     @property
     def name(self) -> str:

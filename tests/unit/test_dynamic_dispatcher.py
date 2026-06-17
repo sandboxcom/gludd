@@ -8,6 +8,7 @@ from __future__ import annotations
 import json
 
 from general_ludd.dispatch.dynamic_dispatcher import (
+    UNRESTRICTED_ROLE,
     DispatchResult,
     DynamicDispatcher,
     ToolCall,
@@ -121,6 +122,7 @@ class TestDynamicDispatcherRouting:
             mcp_handler=lambda name, args: {"mcp_result": name, "args": args},
             skill_handler=lambda name, args: f"skill:{name}:{args}",
             collection_handler=lambda name, args: [name],
+            role=UNRESTRICTED_ROLE,
         )
 
     def test_role_handler_called(self):
@@ -156,26 +158,30 @@ class TestDynamicDispatcherRouting:
 
 class TestDynamicDispatcherUnknownKind:
     def test_unknown_kind_returns_error_result(self):
-        d = DynamicDispatcher(role_handler=lambda n, a: "ok")
+        d = DynamicDispatcher(
+            role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
+        )
         result = d.dispatch(ToolCall(kind="unknown_xyz", name="foo", args={}))  # type: ignore[arg-type]
         assert result.ok is False
         assert result.error is not None
         assert "unknown_kind" in result.error
 
     def test_no_handlers_at_all_fail_closed(self):
-        d = DynamicDispatcher()
+        d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
         result = d.dispatch(ToolCall(kind="role", name="planner", args={}))
         assert result.ok is False
 
     def test_kind_not_registered_fail_closed(self):
         """Dispatcher has some handlers but the specific kind is absent."""
-        d = DynamicDispatcher(skill_handler=lambda n, a: "ok")
+        d = DynamicDispatcher(
+            skill_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
+        )
         result = d.dispatch(ToolCall(kind="mcp", name="tool", args={}))
         assert result.ok is False
         assert "mcp" in (result.error or "")
 
     def test_error_result_has_name_and_kind(self):
-        d = DynamicDispatcher()
+        d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
         result = d.dispatch(ToolCall(kind="role", name="my-tool", args={}))
         assert result.name == "my-tool"
         assert result.kind == "role"
@@ -190,7 +196,7 @@ class TestDynamicDispatcherHandlerError:
         def _bad_handler(name: str, args: dict) -> str:
             raise RuntimeError("boom")
 
-        d = DynamicDispatcher(role_handler=_bad_handler)
+        d = DynamicDispatcher(role_handler=_bad_handler, role=UNRESTRICTED_ROLE)
         result = d.dispatch(ToolCall(kind="role", name="bad", args={}))
         assert result.ok is False
         assert "boom" in (result.error or "")
@@ -200,7 +206,7 @@ class TestDynamicDispatcherHandlerError:
         def _explode(name: str, args: dict) -> str:
             raise ValueError("explode")
 
-        d = DynamicDispatcher(mcp_handler=_explode)
+        d = DynamicDispatcher(mcp_handler=_explode, role=UNRESTRICTED_ROLE)
         # Should not raise:
         result = d.dispatch(ToolCall(kind="mcp", name="x", args={}))
         assert result.ok is False
@@ -215,6 +221,7 @@ class TestDynamicDispatcherDispatchAll:
         d = DynamicDispatcher(
             role_handler=lambda n, a: "ok",
             skill_handler=lambda n, a: "skill-ok",
+            role=UNRESTRICTED_ROLE,
         )
         calls = [
             ToolCall(kind="role", name="planner"),
@@ -225,7 +232,9 @@ class TestDynamicDispatcherDispatchAll:
         assert len(results) == 3
 
     def test_dispatch_all_mixed_ok_and_fail(self):
-        d = DynamicDispatcher(role_handler=lambda n, a: "ok")
+        d = DynamicDispatcher(
+            role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
+        )
         calls = [
             ToolCall(kind="role", name="a"),
             ToolCall(kind="mcp", name="b"),   # unknown → fail
@@ -235,7 +244,7 @@ class TestDynamicDispatcherDispatchAll:
         assert results[1].ok is False
 
     def test_dispatch_all_empty_list(self):
-        d = DynamicDispatcher()
+        d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
         assert d.dispatch_all([]) == []
 
     def test_dispatch_all_order_preserved(self):
@@ -245,7 +254,7 @@ class TestDynamicDispatcherDispatchAll:
             order.append(name)
             return name
 
-        d = DynamicDispatcher(role_handler=_handler)
+        d = DynamicDispatcher(role_handler=_handler, role=UNRESTRICTED_ROLE)
         calls = [ToolCall(kind="role", name=n) for n in ["a", "b", "c"]]
         d.dispatch_all(calls)
         assert order == ["a", "b", "c"]

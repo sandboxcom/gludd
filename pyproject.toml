@@ -4,7 +4,8 @@ version = "0.1.0-alpha.202606120000"
 description = "General Ludd Agent — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
-license = {text = "MIT"}
+license = "MIT"
+license-files = ["LICENSE", "THIRD_PARTY_LICENSES.md"]
 authors = [{name = "General Ludd Team"}]
 
 dependencies = [
@@ -79,8 +80,14 @@ gludd = "general_ludd.cli:main"
 requires = ["hatchling"]
 build-backend = "hatchling.build"
 
+[tool.hatch.build.targets.sdist]
+include = ["src/general_ludd", "LICENSE", "THIRD_PARTY_LICENSES.md", "README.md"]
+
 [tool.hatch.build.targets.wheel]
 packages = ["src/general_ludd"]
+
+[tool.hatch.build.targets.wheel.force-include]
+"THIRD_PARTY_LICENSES.md" = "general_ludd/THIRD_PARTY_LICENSES.md"
 
 [tool.ruff]
 target-version = "py311"

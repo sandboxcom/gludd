@@ -155,6 +155,15 @@ class TodoRepository:
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
+    async def list_by_work_type(
+        self, work_type: str, project_id: str | None = None
+    ) -> list[TodoModel]:
+        stmt = select(TodoModel).where(TodoModel.work_type == work_type)
+        if project_id is not None:
+            stmt = stmt.where(TodoModel.project_id == project_id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
     async def claim_runnable(self, limit: int = 10, project_id: str | None = None) -> list[TodoModel]:
         """Claim QUEUED todos for execution with a guarded conditional UPDATE.
 
@@ -637,6 +646,7 @@ class BenchmarkRepository:
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
                     func.avg(BenchmarkResultModel.token_efficiency_score).label("avg_efficiency"),
                     func.count().label("sample_count"),
+                    func.avg(BenchmarkResultModel.cost_usd).label("avg_cost"),
                     func.avg(
                         BenchmarkResultModel.completion_score * 0.4
                         + BenchmarkResultModel.code_quality_score * 0.3
@@ -665,6 +675,7 @@ class BenchmarkRepository:
                     "avg_instruction": r.avg_instruction,
                     "avg_efficiency": r.avg_efficiency,
                     "sample_count": r.sample_count,
+                    "avg_cost": r.avg_cost,
                     "composite_score": getattr(r, "composite_score", None),
                 }
                 for r in rows

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import asyncio
+import logging
 
 import pytest
 
@@ -123,15 +124,21 @@ class TestPublishWithCoroutineFunctionCallback:
 
 
 class TestPublishCallbackException:
-    def test_sync_callback_exception_logged(self):
+    def test_sync_callback_exception_logged(self, caplog):
         bus = EventBus()
 
         def bad_handler(event: Event) -> None:
             raise RuntimeError("boom")
 
         bus.subscribe("test.exc", bad_handler)
-        count = bus.publish(Event(type="test.exc"))
-        assert count == 1
+        with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
+            count = bus.publish(Event(type="test.exc"))
+        # A throwing subscriber is NOT a successful delivery: publish() returns
+        # the count of successful deliveries, so the failing one is excluded.
+        assert count == 0
+        # The failure must still be surfaced at ERROR (new contract).
+        assert any(rec.levelno == logging.ERROR for rec in caplog.records)
+        assert any("boom" in rec.getMessage() for rec in caplog.records)
 
     @pytest.mark.asyncio
     async def test_async_callback_exception_does_not_stop_others(self):

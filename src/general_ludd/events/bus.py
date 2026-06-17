@@ -35,10 +35,22 @@ class EventBus:
             ]
 
     def publish(self, event: Event) -> int:
+        """Deliver ``event`` to every matching subscriber.
+
+        Returns the number of *successful* synchronous deliveries. Subscribers
+        that raise are excluded from the count and logged at ERROR (with the
+        event type/id). Async subscribers are scheduled and counted as
+        delivered at dispatch time; any exception they raise once they actually
+        run is surfaced separately by the background-task done-callback in
+        :meth:`_dispatch_coro` (see :meth:`_on_task_done`).
+        """
         key = event.type if isinstance(event.type, str) else event.type.value
+        event_id = getattr(event, "event_id", None)
         subscribers = list(self._subscribers.get(key, []))
         wildcard_subs = list(self._subscribers.get("*", []))
         all_subs = subscribers + wildcard_subs
+        delivered = 0
+        failed = 0
         for sub_id, callback in all_subs:
             try:
                 result = callback(event)
@@ -46,15 +58,33 @@ class EventBus:
                     self._dispatch_coro(result)
                 elif inspect.iscoroutinefunction(callback):
                     self._dispatch_coro(callback(event))
+                delivered += 1
             except Exception as exc:
-                logger.warning("Event subscriber %s error: %s", sub_id, exc)
+                failed += 1
+                logger.error(
+                    "Event subscriber %s failed for event type=%s id=%s: %s",
+                    sub_id,
+                    key,
+                    event_id,
+                    exc,
+                    exc_info=True,
+                )
+
+        if failed:
+            logger.error(
+                "Event type=%s id=%s: %d/%d subscriber(s) failed",
+                key,
+                event_id,
+                failed,
+                len(all_subs),
+            )
 
         if self._history_size > 0:
             self._history.append(event)
             if len(self._history) > self._history_size:
                 self._history = self._history[-self._history_size:]
 
-        return len(all_subs)
+        return delivered
 
     def _dispatch_coro(self, coro: Any) -> None:
         """Run a coroutine produced by a subscriber callback.
@@ -77,7 +107,7 @@ class EventBus:
 
         if loop is not None:
             task = loop.create_task(coro)
-            task.add_done_callback(self._background_tasks.discard)
+            task.add_done_callback(self._on_task_done)
             self._background_tasks.add(task)
             return
 
@@ -87,6 +117,13 @@ class EventBus:
         new_loop = asyncio.new_event_loop()
         try:
             new_loop.run_until_complete(coro)
+        except Exception as exc:
+            # Surface async subscriber failures even on the no-running-loop
+            # path. Without this they would propagate out of publish() and be
+            # mis-attributed to the (already-counted) subscriber, or vanish.
+            logger.error(
+                "Async event subscriber raised in dispatch loop: %s", exc, exc_info=True
+            )
         finally:
             try:
                 new_loop.close()
@@ -95,6 +132,24 @@ class EventBus:
                 # so subsequent asyncio.get_event_loop() calls create a fresh one
                 # instead of returning this closed loop.
                 asyncio.set_event_loop(None)
+
+    def _on_task_done(self, task: asyncio.Task[Any]) -> None:
+        """Done-callback for scheduled async subscriber tasks.
+
+        Removes the task from the tracking set and, crucially, surfaces any
+        exception it raised. Without calling ``task.exception()`` here, an async
+        subscriber that throws would fail silently (asyncio only emits a
+        "Task exception was never retrieved" warning at GC time, which is easy
+        to miss and arrives detached from the originating event).
+        """
+        self._background_tasks.discard(task)
+        if task.cancelled():
+            return
+        exc = task.exception()
+        if exc is not None:
+            logger.error(
+                "Async event subscriber task failed: %s", exc, exc_info=exc
+            )
 
     def get_history(self) -> list[Event]:
         return list(self._history)

@@ -27,7 +27,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 		molecule-version molecule-test molecule-test-all \
 		collection-roles collection-modules molecule-scenarios \
 		container-build container-run container-push \
-        build-executable dist dist-clean bundle-binaries \
+        build-executable dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
         status-snapshot audit-evidence deps-audit dogfood-features \
@@ -36,7 +36,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
-        molecule-clean plan
+        molecule-clean plan ps-gludd kill-stale
 
 help:
 	@echo "Usage: make [target]"
@@ -278,9 +278,60 @@ gate:
 ps-pytest:
 	@pgrep -fl 'pytest|molecule test|make gate' || echo "NONE running"
 
+# Read-only census of every gludd-related process (pytest/molecule/uv/python
+# daemon/gate/ansible) with PID, PPID, elapsed time and command. Marks each row
+# ORPHAN when its parent is PID 1 (init/launchd) — i.e. the make/agent/gate that
+# spawned it has died and it was reparented: the signature of a STALE process.
+# A row whose parent is still alive is ACTIVE. Never kills anything; it is the
+# evidence `kill-stale` acts on. Excludes this make invocation's own tree.
+ps-gludd:
+	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
+	printf '%-8s %-8s %-10s %-7s %s\n' PID PPID ELAPSED STATE COMMAND; \
+	ps -axo pid=,ppid=,etime=,command= | \
+	grep -E 'pytest|molecule|general_ludd|gludd-gate-basetemp|ansible-playbook' | \
+	grep -v -E 'grep |ps-gludd|kill-stale' | \
+	while read -r pid ppid etime rest; do \
+		[ "$$pid" = "$$SELF" ] && continue; \
+		[ "$$pid" = "$$PARENT" ] && continue; \
+		if [ "$$ppid" = "1" ]; then state=ORPHAN; else state=active; fi; \
+		printf '%-8s %-8s %-10s %-7s %s\n' "$$pid" "$$ppid" "$$etime" "$$state" "$$(echo "$$rest" | cut -c1-86)"; \
+	done; \
+	echo "--- ORPHAN(ppid=1)=stale, parent died; active=live parent. kill-stale removes ORPHANs only ---"
+
 # Kill stray pytest/gate processes (e.g. xdist workers orphaned by a killed run).
+# NOTE: blunt instrument — see kill-stale for self-tree-protecting cleanup.
 kill-stray:
 	@pkill -9 -f 'gludd-gate-basetemp' 2>/dev/null; pkill -9 -f 'pytest tests/' 2>/dev/null; pkill -9 -f 'make gate' 2>/dev/null; echo "killed stray pytest/gate (if any)"
+
+# Reap ONLY genuinely-stale gludd processes — never the active one. A process is
+# killed iff ALL of:
+#   (1) it matches a known gludd scratch pattern (molecule mock_daemon, a python
+#       running out of a .claude/worktrees/agent-* venv, a stray cli tui, an
+#       orphaned pytest/gate-basetemp/ansible run), AND
+#   (2) its parent is PID 1 — it was REPARENTED because the make/agent/gate that
+#       spawned it died (a live-parented process is still part of an active run), AND
+#   (3) it has NO living child processes — so an orphaned-but-alive daemon that is
+#       still recycling workers (e.g. the gunicorn daemon) is treated as ACTIVE and
+#       KEPT, exactly the "don't kill the active one" guarantee.
+# This make invocation's own process + its parent are always excluded, so running
+# `make kill-stale` can never kill the shell/agent driving it. See `make ps-gludd`
+# for the read-only census this acts on.
+kill-stale:
+	@SELF=$$$$; PARENT=$$(ps -o ppid= -p $$SELF 2>/dev/null | tr -d ' '); \
+	PARENTS=$$(ps -axo ppid= | tr -s ' ' '\n' | grep -E '^[0-9]+$$' | sort -u); \
+	echo "[kill-stale] self=$$SELF parent=$$PARENT — reaping orphaned childless gludd scratch only"; \
+	ps -axo pid=,ppid=,command= | \
+	grep -E 'molecule/mock_daemon|\.claude/worktrees/agent-[^ ]*/\.venv/bin/python|general_ludd\.cli tui|gludd-gate-basetemp|pytest tests/|ansible-playbook' | \
+	grep -v -E 'grep |kill-stale|ps-gludd' | \
+	while read -r pid ppid rest; do \
+		cmd=$$(echo "$$rest" | cut -c1-70); \
+		{ [ "$$pid" = "$$SELF" ] || [ "$$pid" = "$$PARENT" ]; } && { echo "  KEEP (self/parent): $$pid"; continue; }; \
+		if [ "$$ppid" != "1" ]; then echo "  KEEP (live parent $$ppid = active run): $$pid $$cmd"; continue; fi; \
+		if echo "$$PARENTS" | grep -qx "$$pid"; then echo "  KEEP (orphan WITH live children = active daemon): $$pid $$cmd"; continue; fi; \
+		kill -TERM "$$pid" 2>/dev/null; sleep 0.2; kill -KILL "$$pid" 2>/dev/null; \
+		echo "  KILLED stale orphan: $$pid $$cmd"; \
+	done; \
+	echo "[kill-stale] done"
 
 # STALL WATCHDOG — run a long command under active no-progress + max-runtime
 # supervision so a hang can NEVER sit silently forever. Streams the command's
@@ -400,6 +451,9 @@ disk-guard:
 	@# fixes). Worktree teardown is a SEPARATE, deliberate step (wt-prune-safe,
 	@# no --force) done only AFTER the work is synced. This guard just reclaims
 	@# scratch and refuses the heavy op below the floor.
+	@# Also reap stale orphaned gludd daemons/test-servers (memory + held ports)
+	@# before the heavy op — kill-stale is self-tree- and active-daemon-safe.
+	@$(MAKE) --no-print-directory kill-stale || true
 	@rm -rf /tmp/gludd-iso-* /tmp/gludd-gate-basetemp /private/tmp/pytest-of-* 2>/dev/null || true
 	@rm -rf /Users/shawnwilson/gludd/.claude/worktrees/agent-*/.venv 2>/dev/null || true
 	@FREE=$$(df -m / | awk 'NR==2{print $$4}'); FLOOR=$${FLOOR:-2048}; \
@@ -633,13 +687,17 @@ scan-conflicts:
 	@$(PYTHON) scripts/scan_conflicts.py
 
 # Observability into the agent-floor guardrail (#79/#78): prints the maintained
-# inc/dec counter AND the GROUND-TRUTH count of live subagents (harness task
-# .output files appended within the last 90s). If the counter is "(missing)" or
-# disagrees with ground-truth, the floor hooks are not firing / are mis-wired.
+# inc/dec counter AND the GROUND-TRUTH count of live subagents. Ground truth is
+# now "transcript actively appended during a short probe" (scripts/agent_liveness.py)
+# — NOT "mtime within 90s", which counted a just-COMPLETED agent's final
+# transcript write as live and so REPORTED 11 WHEN ONLY 3 WERE RUNNING (a counter
+# that over-counts is worse than none: it HIDES a floor breach). The probe biases
+# toward undercount (over-provision), the safe direction, and is hook-independent.
+# If the maintained counter disagrees, trust ground-truth (the probe).
 floor-status:
 	@printf '[floor-status] maintained counter: '
 	@cat "$${TMPDIR:-/tmp}/claude-agent-floor.count" 2>/dev/null || cat /tmp/claude-agent-floor.count 2>/dev/null || echo "(MISSING in both \$$TMPDIR and /tmp)"
-	@$(PYTHON) -c "import os,glob,time; b='/private/tmp/claude-%d/-Users-shawnwilson-gludd'%os.getuid(); ss=sorted(glob.glob(b+'/*/'),key=os.path.getmtime,reverse=True); t=(ss[0]+'tasks') if ss else None; fs=glob.glob(t+'/*.output') if t and os.path.isdir(t) else []; now=time.time(); live=[f for f in fs if now-os.path.getmtime(f)<90]; print('[floor-status] ground-truth live agents (output mtime <90s): %d  of %d total task files  (dir=%s)'%(len(live),len(fs),t))"
+	@$(PYTHON) scripts/agent_liveness.py
 
 scan-secrets-baseline:
 	@echo "[scan-secrets-baseline] scanning tracked files with detect-secrets (no per-file stream; typically 30-90s on this repo)..."
@@ -1277,10 +1335,42 @@ dist: build-executable bundle-binaries sbom
 dist-clean:
 	@rm -rf dist/general-ludd-agent-* dist/hottentot-agent-* dist/gludd dist/hottentot build
 
-bundle-binaries:
+bundle-binaries: bundle-ripgrep
 	@echo "Bundling OpenBao and OpenTofu binaries into dist/binaries..."
 	@mkdir -p dist/binaries
 	@$(UV) run python scripts/download_bundled_binaries.py || echo "Some binaries could not be downloaded (network unavailable?). The dist will still include what was bundled."
+
+# Bundle a SHA-pinned, musl-static ripgrep (BurntSushi) into dist/binaries/rg.
+# The musl-static x86_64-linux build is fully self-contained (no libc dep), which
+# is what the dist tarball / container ships. The download is checksum-verified
+# fail-closed: if shasum -c does not match RG_SHA256 the staged binary is removed
+# and the target exits non-zero, so a corrupted/MITM'd download can never be
+# bundled. Locating it at runtime is handled by BinaryBootstrapper.get_bundled_
+# binary_path('rg') -> dist/binaries/rg (see code_intelligence/rg_search.py).
+RG_VERSION ?= 14.1.1
+RG_PLATFORM ?= x86_64-unknown-linux-musl
+RG_ARCHIVE := ripgrep-$(RG_VERSION)-$(RG_PLATFORM).tar.gz
+RG_URL := https://github.com/BurntSushi/ripgrep/releases/download/$(RG_VERSION)/$(RG_ARCHIVE)
+# TODO: fill in the real sha256 of $(RG_ARCHIVE) for $(RG_VERSION)/$(RG_PLATFORM).
+# Obtain it from the release page / `shasum -a 256 $(RG_ARCHIVE)`. Until set to a
+# real value, bundle-ripgrep fails closed (the placeholder will never verify).
+RG_SHA256 ?= 0000000000000000000000000000000000000000000000000000000000000000
+bundle-ripgrep:
+	@echo "Bundling ripgrep $(RG_VERSION) ($(RG_PLATFORM)) into dist/binaries/rg..."
+	@mkdir -p dist/binaries
+	@tmp=$$(mktemp -d) && trap 'rm -rf "$$tmp"' EXIT && \
+		echo "  downloading $(RG_URL)" && \
+		curl -fsSL "$(RG_URL)" -o "$$tmp/$(RG_ARCHIVE)" && \
+		echo "$(RG_SHA256)  $$tmp/$(RG_ARCHIVE)" > "$$tmp/rg.sha256" && \
+		if ! shasum -a 256 -c "$$tmp/rg.sha256"; then \
+			echo "ERROR: ripgrep checksum mismatch (expected $(RG_SHA256)) — refusing to bundle"; \
+			exit 1; \
+		fi && \
+		tar xzf "$$tmp/$(RG_ARCHIVE)" -C "$$tmp" && \
+		cp "$$tmp/ripgrep-$(RG_VERSION)-$(RG_PLATFORM)/rg" dist/binaries/rg && \
+		chmod +x dist/binaries/rg && \
+		echo "  bundled -> dist/binaries/rg" || \
+		{ echo "WARNING: ripgrep bundle failed (network unavailable or sha unset?); search degrades to in-process"; rm -f dist/binaries/rg; }
 
 container-build:
 	@if [ -z "$(CONTAINER_RUNTIME)" ]; then echo "ERROR: podman or docker not found"; exit 1; fi

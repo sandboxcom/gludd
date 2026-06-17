@@ -42,6 +42,20 @@ def _make_trace(spans: list[ExecutionSpan] | None = None) -> ExecutionTrace:
     return trace
 
 
+def _recorded_data(repo: AsyncMock) -> dict[str, object]:
+    """The single positional ``data`` dict passed to repo.record_result(data).
+
+    BenchmarkRepository.record_result(self, data) takes ONE positional dict and
+    does BenchmarkResultModel(**data), so the recorder must pass the flattened
+    column dict positionally — never kwargs with a ``scores`` sub-dict.
+    """
+    call = repo.record_result.call_args
+    assert call.args, "record_result must be called with a positional data dict"
+    data = call.args[0]
+    assert isinstance(data, dict)
+    return data
+
+
 class TestComputeScoresFromTrace:
     def test_success_scores(self) -> None:
         trace = _make_trace([_make_span(input_tokens=500)])
@@ -109,11 +123,44 @@ class TestAutoBenchmarkRecorderRecord:
         trace = _make_trace([span])
         await recorder.record_from_trace(trace, success=True)
         repo.record_result.assert_awaited_once()
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["success"] is True
-        assert call_kwargs["scores"]["completion"] == 1.0
-        assert call_kwargs["model_profile_id"] == "model-1"
-        assert call_kwargs["task_type"] == "code"
+        data = _recorded_data(repo)
+        assert data["success"] is True
+        assert data["completion_score"] == 1.0
+        assert data["model_profile_id"] == "model-1"
+        assert data["task_type"] == "code"
+
+    async def test_record_result_called_with_single_positional_dict(self) -> None:
+        """record_result must be called with ONE positional dict (no kwargs, no
+        ``scores`` key) so BenchmarkRepository.record_result(data) ->
+        BenchmarkResultModel(**data) constructs instead of raising TypeError."""
+        repo = AsyncMock()
+        recorder = AutoBenchmarkRecorder(benchmark_repo=repo)
+        await recorder.record_from_trace(_make_trace([_make_span()]), success=True)
+        call = repo.record_result.call_args
+        assert len(call.args) == 1
+        assert call.kwargs == {}
+        data = call.args[0]
+        assert isinstance(data, dict)
+        assert "scores" not in data
+
+    async def test_recorded_dict_matches_benchmark_model_columns(self) -> None:
+        """The flattened dict keys must be exactly the model's column names — and a
+        real BenchmarkResultModel(**data) must construct from it."""
+        from sqlalchemy import inspect as sa_inspect
+
+        from general_ludd.db.models import BenchmarkResultModel
+
+        repo = AsyncMock()
+        recorder = AutoBenchmarkRecorder(benchmark_repo=repo)
+        await recorder.record_from_trace(_make_trace([_make_span()]), success=True)
+        data = _recorded_data(repo)
+
+        columns = {c.key for c in sa_inspect(BenchmarkResultModel).columns}
+        assert set(data) <= columns, set(data) - columns
+        # Real construction would raise TypeError on a stray kwarg like ``scores``.
+        row = BenchmarkResultModel(**data)
+        assert row.completion_score == 1.0
+        assert row.model_profile_id == "model-1"
 
     async def test_adjusts_code_quality_from_test_results(self) -> None:
         repo = AsyncMock()
@@ -121,16 +168,16 @@ class TestAutoBenchmarkRecorderRecord:
         trace = _make_trace([_make_span()])
         test_results = {"total": 10, "passed": 8}
         await recorder.record_from_trace(trace, success=True, test_results=test_results)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["scores"]["code_quality"] == 0.8
+        data = _recorded_data(repo)
+        assert data["code_quality_score"] == 0.8
 
     async def test_code_quality_unchanged_when_no_test_results(self) -> None:
         repo = AsyncMock()
         recorder = AutoBenchmarkRecorder(benchmark_repo=repo)
         trace = _make_trace([_make_span()])
         await recorder.record_from_trace(trace, success=True, test_results=None)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["scores"]["code_quality"] == 0.5
+        data = _recorded_data(repo)
+        assert data["code_quality_score"] == 0.5
 
     async def test_code_quality_unchanged_when_total_zero(self) -> None:
         repo = AsyncMock()
@@ -138,8 +185,8 @@ class TestAutoBenchmarkRecorderRecord:
         trace = _make_trace([_make_span()])
         test_results = {"total": 0, "passed": 0}
         await recorder.record_from_trace(trace, success=True, test_results=test_results)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["scores"]["code_quality"] == 0.5
+        data = _recorded_data(repo)
+        assert data["code_quality_score"] == 0.5
 
     async def test_passes_error_message_from_last_span(self) -> None:
         repo = AsyncMock()
@@ -147,8 +194,8 @@ class TestAutoBenchmarkRecorderRecord:
         span = _make_span(error_message="boom")
         trace = _make_trace([span])
         await recorder.record_from_trace(trace, success=False)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["error_message"] == "boom"
+        data = _recorded_data(repo)
+        assert data["error_message"] == "boom"
 
     async def test_passes_empty_error_when_none(self) -> None:
         repo = AsyncMock()
@@ -156,8 +203,8 @@ class TestAutoBenchmarkRecorderRecord:
         span = _make_span(error_message=None)
         trace = _make_trace([span])
         await recorder.record_from_trace(trace, success=True)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["error_message"] == ""
+        data = _recorded_data(repo)
+        assert data["error_message"] == ""
 
     async def test_handles_repo_exception(self) -> None:
         repo = AsyncMock()
@@ -172,8 +219,8 @@ class TestAutoBenchmarkRecorderRecord:
         span = _make_span(duration_ms=2500.0)
         trace = _make_trace([span])
         await recorder.record_from_trace(trace, success=True)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["time_seconds"] == 2.5
+        data = _recorded_data(repo)
+        assert data["time_seconds"] == 2.5
 
     async def test_passes_zero_time_when_duration_zero(self) -> None:
         repo = AsyncMock()
@@ -181,8 +228,8 @@ class TestAutoBenchmarkRecorderRecord:
         span = _make_span(duration_ms=0.0)
         trace = _make_trace([span])
         await recorder.record_from_trace(trace, success=True)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["time_seconds"] == 0.0
+        data = _recorded_data(repo)
+        assert data["time_seconds"] == 0.0
 
     async def test_uses_unknown_model_when_none(self) -> None:
         repo = AsyncMock()
@@ -190,8 +237,8 @@ class TestAutoBenchmarkRecorderRecord:
         span = _make_span(model_profile_id=None)
         trace = _make_trace([span])
         await recorder.record_from_trace(trace, success=True)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["model_profile_id"] == "unknown"
+        data = _recorded_data(repo)
+        assert data["model_profile_id"] == "unknown"
 
     async def test_uses_last_span_for_model(self) -> None:
         repo = AsyncMock()
@@ -200,5 +247,5 @@ class TestAutoBenchmarkRecorderRecord:
         span2 = _make_span(model_profile_id="second")
         trace = _make_trace([span1, span2])
         await recorder.record_from_trace(trace, success=True)
-        call_kwargs = repo.record_result.call_args[1]
-        assert call_kwargs["model_profile_id"] == "second"
+        data = _recorded_data(repo)
+        assert data["model_profile_id"] == "second"

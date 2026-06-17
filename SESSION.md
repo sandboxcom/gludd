@@ -7,16 +7,45 @@
 ## Last Updated
 - 2026-06-12 (independent validation pass: gate ALL PASSED at 65fc28b; stale ratchet counts corrected to 23; work plan now in GLM_REMEDIATION_GUIDE_3.md)
 
+## 2026-06-16 — Integration wave (C1/M9 + security hardening + cost gates)
+
+> Status: **gate pending** (not yet run on this working tree — do not treat as green).
+
+Landed in this working tree:
+
+- **C1 worker-model wiring** — worker dispatch now selects/binds the model per worker.
+- **M9 to_thread** — blocking calls offloaded via `asyncio.to_thread` to keep the loop responsive.
+- **observe router** — observability routing wired into the request path.
+- **Cost gates** — `SpendLimiter` + `BudgetManager` enforce spend ceilings on dispatch.
+- **Scoring weights** — routing scorer now factors `avg_cost` and `routing_roles` weights.
+- **Connector normalize** — connector join-key / payload normalization layer.
+- **Security fixes**:
+  - CsvExcel connector path jail.
+  - SSRF guards for GitHubIssues / Okta / Entra connectors.
+  - Dispatch default-DENY capability gate.
+  - Secrets + MCP fail-closed behavior.
+  - Gateway circuit breaker.
+  - Feature-verifier path jail.
+  - Connector DNS / symlink resolution hardening.
+- **bandit** — 5 HIGH findings fixed.
+- **SelfImproveGate** — self-improvement gate added.
+- **accounting loc** — accounting / cost localization wiring.
+- **alembic 005** — new migration revision 005.
+- **LICENSE packaging** — LICENSE included in package metadata.
+- **ripgrep** — ripgrep-backed code search.
+- **TUI graph** — TUI graph view.
+- **doc corrections** — assorted documentation fixes.
+
 ## Current Gate Status (2026-06-12)
 ## Current Gate Status (2026-06-12)
 ## Current Gate Status (2026-06-12)
 ## Current Gate Status (2026-06-13)
+## Current Gate Status (2026-06-17)
 <!-- gate:begin -->
 - lint PASS 0
-- typecheck PASS 13
+- typecheck PASS 0
 - collect PASS 0
-- test PASS 0
-- smoke PASS
+- test
 
 <!-- gate:end -->
 
@@ -67,8 +96,8 @@
 - V2.2-V2.6: pending
 
 ## Known Gaps
-- 23 ratchet entries remaining (17 strict + 6 flaky) — count verified against config/ratchet.yml 2026-06-12
-- 18 mypy errors tracked (baseline: 18)
+- 12 ratchet entries remaining (2 strict + 10 flaky) — count verified against config/ratchet.yml 2026-06-16
+- 0 mypy errors tracked (baseline: 0)
 - Remaining strict entries need real infrastructure changes:
   - Daemon lifespan needs real DB (2 entries)
   - Container/container-runtime tests need real containers (5 entries)

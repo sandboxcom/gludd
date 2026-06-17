@@ -9,23 +9,90 @@ Data sources are wired up from live daemon state:
   - usage records: MetricsCollector.get_cost_by_project + get_full_report
   - todos:         TodoRepository.list_all (project-filtered)
   - role runs:     RoleRunRepository.list_all (project-filtered)
-  - loc_changed:   injected as 0 until git-diff --numstat integration lands
+  - loc_changed:   git -C <repo_dir> diff HEAD --numstat (added+deleted)
   - project list:  ProjectManager.list_active
-
-# TODO(integration): wire loc_changed to a real git-diff --numstat source
 """
 
 from __future__ import annotations
 
 import logging
+import subprocess
 from dataclasses import asdict
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.accounting.ledger import Accountant, ProjectAccounting
+from general_ludd.projects.workspace import ProjectWorkspace
 
 logger = logging.getLogger(__name__)
+
+
+def _project_loc_changed(repo_dir: Path | str | None) -> int:
+    """Sum added+deleted lines in ``repo_dir``'s working tree vs HEAD.
+
+    Runs ``git -C <repo_dir> diff HEAD --numstat`` (argv list, no shell) and
+    sums the added+deleted columns across all files, skipping binary rows
+    (``-`` markers). Fail-safe: any error (missing/None repo_dir, non-git dir,
+    no HEAD, git missing, timeout) returns 0 and never raises.
+    """
+    if repo_dir is None:
+        return 0
+    repo_path = str(repo_dir)
+    if not repo_path:
+        return 0
+    try:
+        proc = subprocess.run(
+            ["git", "-C", repo_path, "diff", "HEAD", "--numstat"],
+            capture_output=True,
+            text=True,
+            timeout=15,
+            check=False,
+        )
+    except (OSError, subprocess.SubprocessError) as exc:
+        logger.debug("git diff --numstat failed for %s: %s", repo_path, exc)
+        return 0
+    if proc.returncode != 0:
+        return 0
+    total = 0
+    for line in proc.stdout.splitlines():
+        parts = line.split("\t")
+        if len(parts) < 2:
+            continue
+        added, deleted = parts[0], parts[1]
+        # Binary files report "-" for added/deleted; skip them.
+        if added == "-" or deleted == "-":
+            continue
+        try:
+            total += int(added) + int(deleted)
+        except ValueError:
+            continue
+    return total
+
+
+def _project_repo_dir(app: FastAPI, pid: str) -> Path | None:
+    """Resolve a project's repo checkout directory via ProjectManager.
+
+    Looks up ``ProjectManager.get_project(pid).workspace_path`` and maps it
+    through ``ProjectWorkspace(...).repo_dir``. Returns ``None`` when the
+    project manager, project, or workspace_path is unavailable.
+    """
+    pm = getattr(app.state, "_project_manager", None)
+    if pm is None:
+        return None
+    try:
+        project = pm.get_project(pid)
+    except Exception as exc:
+        logger.debug("get_project(%s) failed: %s", pid, exc)
+        return None
+    if project is None:
+        return None
+    workspace_path = getattr(project, "workspace_path", "") or ""
+    if not workspace_path:
+        return None
+    ws = ProjectWorkspace(project_id=pid, workspace_path=workspace_path)
+    return ws.repo_dir
 
 
 def _get_session_factory(app: FastAPI) -> Any:
@@ -143,8 +210,7 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
         return role_by_project.get(pid, [])
 
     def _loc_provider(pid: str) -> int:
-        # TODO(integration): wire loc_changed to a real git-diff --numstat source
-        return 0
+        return _project_loc_changed(_project_repo_dir(app, pid))
 
     def _project_provider() -> list[str]:
         return known_projects

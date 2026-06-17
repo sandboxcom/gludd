@@ -9,6 +9,8 @@ a = Analysis(
         ('config', 'config'),
         ('templates', 'templates'),
         ('playbooks', 'playbooks'),
+        ('LICENSE', '.'),
+        ('THIRD_PARTY_LICENSES.md', '.'),
     ],
     hiddenimports=[
         'general_ludd',

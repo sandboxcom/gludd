@@ -335,6 +335,9 @@ class ElasticsearchSource:
         if trace_id is not None:
             # surfaced for the façade's associate-by-trace_id
             labels["trace.id"] = trace_id
+        if span_id is not None:
+            # surfaced for the façade's associate-by-span_id
+            labels["span.id"] = span_id
 
         return {
             "ts": ts,

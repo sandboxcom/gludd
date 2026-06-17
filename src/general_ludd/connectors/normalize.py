@@ -109,9 +109,20 @@ _SEVERITY_MAP: dict[str, str] = {
 
 # Label aliases per canonical join key. First non-empty alias wins. All lookups
 # are case-insensitive on the *label name* (aliases are stored lower-cased).
-_TRACE_ALIASES = ("trace_id", "traceid", "x-b3-traceid", "x_b3_traceid")
-_HOST_ALIASES = ("host", "hostname", "instance", "computer", "node")
-_SERVICE_ALIASES = ("service", "app", "application", "job", "unit", "container_name")
+_TRACE_ALIASES = ("trace_id", "traceid", "trace.id", "x-b3-traceid", "x_b3_traceid")
+_SPAN_ALIASES = ("span_id", "spanid", "span.id", "x-b3-spanid", "x_b3_spanid")
+_REQUEST_ALIASES = (
+    "request_id",
+    "requestid",
+    "request.id",
+    "correlation_id",
+    "correlationid",
+    "correlation.id",
+    "x-request-id",
+    "x_request_id",
+)
+_HOST_ALIASES = ("host", "hostname", "instance", "computer", "node", "machine")
+_SERVICE_ALIASES = ("service", "service.name", "app", "application", "job", "unit", "container_name")
 _NAMESPACE_ALIASES = ("namespace", "k8s_namespace", "kubernetes_namespace")
 _POD_ALIASES = ("pod", "k8s_pod", "pod_name")
 _CONTAINER_ALIASES = ("container", "k8s_container", "container_name")
@@ -131,6 +142,18 @@ def _coerce_label_map(labels: Any) -> dict[str, Any]:
     if not isinstance(labels, dict):
         return {}
     out: dict[str, Any] = {}
+    # Datadog ships labels as a flat ``tags`` list of ``"k:v"`` strings. Fold
+    # them in first so a direct (non-tag) label of the same name always wins.
+    tags = labels.get("tags")
+    if isinstance(tags, list | tuple):
+        for tag in tags:
+            text = _as_str(tag)
+            if text is None or ":" not in text:
+                continue
+            tag_key, tag_value = text.split(":", 1)
+            tag_key = tag_key.strip().lower()
+            if tag_key:
+                out[tag_key] = tag_value.strip()
     for key, value in labels.items():
         try:
             out[str(key).lower()] = value
@@ -234,6 +257,14 @@ def _derive_join(record: dict[str, Any]) -> dict[str, Any]:
     trace_id = _as_str(_first_present(label_map, _TRACE_ALIASES))
     if trace_id is not None:
         join["trace_id"] = trace_id
+
+    span_id = _as_str(_first_present(label_map, _SPAN_ALIASES))
+    if span_id is not None:
+        join["span_id"] = span_id
+
+    request_id = _as_str(_first_present(label_map, _REQUEST_ALIASES))
+    if request_id is not None:
+        join["request_id"] = request_id
 
     host = _normalize_host(_first_present(label_map, _HOST_ALIASES))
     if host is not None:

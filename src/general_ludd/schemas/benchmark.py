@@ -21,6 +21,13 @@ class TaskType(StrEnum):
     INTEGRATION = "integration"
 
 
+class TaskRole(StrEnum):
+    PLANNER = "planner"
+    EDITOR = "editor"
+    COMPACTOR = "compactor"
+    ENUMERATOR = "enumerator"
+
+
 class PromptProfile(BaseModel):
     id: str
     name: str
@@ -78,6 +85,7 @@ class BenchmarkResult(BaseModel):
     success: bool = False
     error_message: str = ""
     raw_output: str = ""
+    task_role: TaskRole | None = None
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
     @field_validator("model_profile_id", mode="before")

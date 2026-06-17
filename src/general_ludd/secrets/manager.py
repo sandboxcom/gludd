@@ -16,6 +16,29 @@ from general_ludd.secrets.config import OpenBaoConfig
 logger = logging.getLogger(__name__)
 
 
+class SecretsUnavailableError(RuntimeError):
+    """The secrets backend could not be reached or refused the request.
+
+    Raised when a secret lookup fails for any reason OTHER than the secret
+    genuinely not existing — e.g. the backend is down/sealed, the token is
+    invalid/forbidden, TLS failed, or the connection timed out. Treating these
+    conditions as "secret absent" (returning None) would let an outage or an
+    auth failure silently masquerade as a missing secret, causing callers to
+    fail OPEN. Surfacing this error instead forces callers to fail CLOSED.
+    """
+
+
+def _is_genuine_not_found(exc: BaseException) -> bool:
+    """True only when ``exc`` means the secret genuinely does not exist.
+
+    hvac raises :class:`hvac.exceptions.InvalidPath` for a 404 — the one case
+    where ``None`` (absence) is the correct, fail-closed answer. Every other
+    error (Forbidden, VaultDown, sealed, internal, network/TLS) is an outage or
+    auth failure and MUST NOT be treated as absence.
+    """
+    return isinstance(exc, hvac.exceptions.InvalidPath)
+
+
 @dataclass
 class BootstrapResult:
     url: str
@@ -81,7 +104,15 @@ class SecretsManager:
             if result and "data" in result and "data" in result["data"]:
                 return str(result["data"]["data"].get("value", ""))
         except Exception as exc:
+            if _is_genuine_not_found(exc):
+                # Secret genuinely does not exist — absence is the correct answer.
+                return None
+            # Outage / auth / TLS / network failure — fail CLOSED, do not
+            # masquerade as a missing secret.
             logger.error("Failed to resolve secret alias %s: %s", alias_name, exc)
+            raise SecretsUnavailableError(
+                f"secrets backend unavailable resolving alias {alias_name!r}: {exc}"
+            ) from exc
         return None
 
     def list_aliases(self) -> list[str]:
@@ -108,8 +139,20 @@ class SecretsManager:
             ext_token = self._config.external_token
             if ext_url is None or ext_token is None:
                 raise RuntimeError("OpenBao external URL/token not configured")
-            url = ext_url
-            token = ext_token
+            # Security: an external backend carries a bearer token over the wire.
+            # Refuse plaintext HTTP — sending the token in the clear would leak it
+            # to any on-path observer. Fail CLOSED rather than connect insecurely.
+            if not ext_url.startswith("https://"):
+                raise SecretsUnavailableError(
+                    "external OpenBao URL must use https:// — refusing to send "
+                    f"the auth token over plaintext transport: {ext_url!r}"
+                )
+            self._client = hvac.Client(
+                url=ext_url,
+                token=ext_token,
+                verify=self._config.external_tls_verify,
+            )
+            return
         elif self._local_bootstrap_result is not None:
             url = self._local_bootstrap_result.url
             token = self._local_bootstrap_result.token
@@ -198,8 +241,13 @@ class SecretsManager:
             )
             if result and "data" in result and "data" in result["data"]:
                 return dict[str, Any](result["data"]["data"])
-        except Exception:
-            return None
+        except Exception as exc:
+            if _is_genuine_not_found(exc):
+                return None
+            logger.error("Failed to read secret at %s: %s", path, exc)
+            raise SecretsUnavailableError(
+                f"secrets backend unavailable reading {path!r}: {exc}"
+            ) from exc
         return None
 
     def delete_secret(self, path: str) -> None:
@@ -222,8 +270,17 @@ class SecretsManager:
         image_ref = self._config.local_image
         try:
             stored = self.read_secret(f"image-pins/{image_ref}")
-        except Exception:
-            return None
+        except SecretsUnavailableError:
+            # Backend outage/auth failure — fail CLOSED. Returning None here would
+            # make a missing-pin look identical to an unreachable backend, which
+            # could let an unverified image update proceed.
+            raise
+        except Exception as exc:
+            if _is_genuine_not_found(exc):
+                return None
+            raise SecretsUnavailableError(
+                f"secrets backend unavailable scanning image pins for {image_ref!r}: {exc}"
+            ) from exc
         if stored is None:
             return None
         current_digest = str(stored.get("pinned_digest", ""))

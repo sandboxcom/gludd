@@ -1,0 +1,35 @@
+"""Admission gate for self-improvement todos.
+
+Caps how many self-improve todos may be open at once (runaway guard) and decides
+each admitted todo's initial status — defaulting to a human gate
+(approval_required) rather than auto-queuing self-generated work.
+"""
+
+from __future__ import annotations
+
+from dataclasses import dataclass
+from typing import Any
+
+from general_ludd.schemas.todo import TodoStatus
+
+
+@dataclass(frozen=True)
+class GateDecision:
+    admitted: bool
+    initial_status: str
+
+
+class SelfImproveGate:
+    def __init__(self, max_open: int = 10, auto_queue: bool = False) -> None:
+        self.max_open = max_open
+        self.auto_queue = auto_queue
+
+    def evaluate(self, todo: dict[str, Any], open_count: int) -> GateDecision:
+        if open_count >= self.max_open:
+            return GateDecision(admitted=False, initial_status="")
+        initial = (
+            TodoStatus.QUEUED.value
+            if self.auto_queue
+            else TodoStatus.APPROVAL_REQUIRED.value
+        )
+        return GateDecision(admitted=True, initial_status=initial)

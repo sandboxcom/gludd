@@ -9,6 +9,7 @@ class MCPServerConfig(BaseModel):
     args: list[str] = Field(default_factory=list)
     env: dict[str, str] = Field(default_factory=dict)
     env_aliases: dict[str, str] = Field(default_factory=dict)
+    optional_env_aliases: set[str] = Field(default_factory=set)
     url: str | None = None
     timeout_seconds: float = 30.0
     enabled: bool = True

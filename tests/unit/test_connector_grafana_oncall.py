@@ -6,16 +6,36 @@ Transport is fully MOCKED via ``httpx.MockTransport`` — no real network.
 from __future__ import annotations
 
 import json
+import socket
 from typing import Any
 
 import httpx
 import pytest
 
+from general_ludd.connectors import grafana_oncall as _gc
 from general_ludd.connectors.grafana_oncall import GrafanaOnCallSource
 
 _TOKEN = "grafana-secret-token-DO-NOT-LEAK"
 _ENV = "GRAFANA_ONCALL_TOKEN"
 _PUBLIC_BASE = "https://oncall.example-grafana.net"
+
+
+@pytest.fixture(autouse=True)
+def _public_dns(monkeypatch):
+    """Make the SSRF guard's DNS lookup deterministic in the sandbox.
+
+    The example base_url (``oncall.example-grafana.net``) does not resolve in
+    the test sandbox, which would make the fail-closed SSRF guard raise during
+    normal construction. Stub ``getaddrinfo`` to a stable PUBLIC IP so the guard
+    passes legitimately (the guard logic — including private-address rejection —
+    is exercised unchanged). Tests using literal IPs or ``allow_private=True``
+    never reach ``getaddrinfo`` and are unaffected.
+    """
+
+    def _fake_getaddrinfo(host, *args, **kwargs):
+        return [(socket.AF_INET, socket.SOCK_STREAM, 6, "", ("93.184.216.34", 443))]
+
+    monkeypatch.setattr(_gc.socket, "getaddrinfo", _fake_getaddrinfo)
 
 _CANNED = {
     "results": [

@@ -8,6 +8,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from general_ludd.mcp.config import MCPServerConfig
 
 
@@ -44,8 +46,14 @@ class TestMCPSecretResolution:
         resolved = resolve_mcp_env(cfg, secrets_mgr)
         assert resolved["GITHUB_PERSONAL_ACCESS_TOKEN"] == "ghp_abc123"
 
-    def test_resolve_env_aliases_unresolved_skipped(self):
+    def test_optional_env_aliases_defaults_empty(self):
+        cfg = MCPServerConfig(server_id="test", command=["echo"])
+        assert cfg.optional_env_aliases == set()
+
+    def test_resolve_required_alias_unresolved_raises(self):
+        """Fail closed: a required alias resolving to None must raise."""
         from general_ludd.mcp.secrets import resolve_mcp_env
+        from general_ludd.mcp.transport import MCPTransportError
 
         secrets_mgr = MagicMock()
         secrets_mgr.resolve.return_value = None
@@ -56,8 +64,31 @@ class TestMCPSecretResolution:
             env_aliases={"API_KEY": "missing_alias"},
         )
 
+        with pytest.raises(MCPTransportError):
+            resolve_mcp_env(cfg, secrets_mgr)
+
+    def test_resolve_optional_alias_unresolved_skipped(self):
+        """An optional unresolved alias is skipped; the rest still resolve."""
+        from general_ludd.mcp.secrets import resolve_mcp_env
+
+        secrets_mgr = MagicMock()
+        secrets_mgr.resolve.side_effect = lambda alias: {
+            "present_alias": "value_ok",
+        }.get(alias)
+
+        cfg = MCPServerConfig(
+            server_id="test",
+            command=["echo"],
+            env_aliases={
+                "OPTIONAL_KEY": "missing_alias",
+                "REQUIRED_KEY": "present_alias",
+            },
+            optional_env_aliases={"OPTIONAL_KEY"},
+        )
+
         resolved = resolve_mcp_env(cfg, secrets_mgr)
-        assert "API_KEY" not in resolved
+        assert "OPTIONAL_KEY" not in resolved
+        assert resolved["REQUIRED_KEY"] == "value_ok"
 
     def test_resolve_merges_static_env_with_resolved(self):
         from general_ludd.mcp.secrets import resolve_mcp_env

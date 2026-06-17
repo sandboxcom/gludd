@@ -142,6 +142,34 @@ class TestNormalizeJoinKeys:
 
 
 # --------------------------------------------------------------------------- #
+# normalize_join_keys: span / request correlation keys + Datadog tags folding
+# --------------------------------------------------------------------------- #
+class TestSpanAndRequestJoinKeys:
+    @pytest.mark.parametrize("alias", ["span_id", "x-b3-spanid", "span.id"])
+    def test_span_id_from_aliases(self, alias: str) -> None:
+        out = normalize_join_keys(_rec(**{alias: "s-123"}))
+        assert out["join"]["span_id"] == "s-123"
+
+    @pytest.mark.parametrize("alias", ["request_id", "correlation_id", "x-request-id"])
+    def test_request_id_from_aliases(self, alias: str) -> None:
+        out = normalize_join_keys(_rec(**{alias: "r-456"}))
+        assert out["join"]["request_id"] == "r-456"
+
+
+class TestDatadogTagsFolding:
+    def test_tags_list_folds_into_canonical_join_keys(self) -> None:
+        out = normalize_join_keys(_rec(tags=["host:web-01", "trace_id:t1", "service:checkout"]))
+        assert out["join"]["host"] == "web-01"
+        assert out["join"]["trace_id"] == "t1"
+        assert out["join"]["service"] == "checkout"
+
+    def test_direct_label_beats_tags_list_entry(self) -> None:
+        # A direct (non-tag) label of the same name always wins over the tag.
+        out = normalize_join_keys(_rec(service="real-service", tags=["service:from-tag"]))
+        assert out["join"]["service"] == "real-service"
+
+
+# --------------------------------------------------------------------------- #
 # Severity mapping
 # --------------------------------------------------------------------------- #
 class TestSeverityMapping:

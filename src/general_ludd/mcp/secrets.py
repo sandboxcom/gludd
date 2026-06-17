@@ -34,7 +34,11 @@ def resolve_mcp_env(
     """Resolve env_aliases from secrets manager and merge with static env.
 
     Returns a dict of environment variables ready for the MCP subprocess.
-    Secrets that cannot be resolved are silently skipped (logged as warning).
+
+    Fails closed: an env_alias that resolves to None raises MCPTransportError
+    so the server is never launched under-credentialed. The only exception is
+    aliases explicitly declared in ``config.optional_env_aliases``, which are
+    warned about and skipped.
     """
     resolved = dict(config.env)
 
@@ -48,11 +52,22 @@ def resolve_mcp_env(
                 env_var,
                 config.server_id,
             )
-        else:
+        elif env_var in config.optional_env_aliases:
             logger.warning(
-                "Could not resolve MCP env alias %s for server %s",
+                "Optional MCP env alias %s (%s) unresolved for server %s; skipping",
                 alias_name,
+                env_var,
                 config.server_id,
+            )
+        else:
+            # Lazy import to avoid an import cycle (transport imports config).
+            from general_ludd.mcp.transport import MCPTransportError
+
+            raise MCPTransportError(
+                f"Required MCP env alias {alias_name} ({env_var}) could not be "
+                f"resolved for server {config.server_id}; refusing to launch "
+                f"under-credentialed. Declare it in optional_env_aliases if it "
+                f"is truly optional."
             )
 
     return resolved

@@ -248,7 +248,13 @@ class FeatureVerifier:
         if "::" not in spec:
             return False, f"file: evidence malformed (missing ::): {spec}"
         path_part, symbol = spec.split("::", 1)
-        target = self._root / path_part
+        # Containment: a feature-database-derived path must never escape the repo
+        # root.  Resolve the joined path and require it to stay under the resolved
+        # root, fail-closed.  This blocks ``../`` traversal and absolute-path
+        # escapes BEFORE the file is read (so we never read an outside file).
+        target = (self._root / path_part).resolve()
+        if not target.is_relative_to(self._root.resolve()):
+            return False, "path escapes repo root"
         if not target.exists():
             return False, f"file not found: {path_part}"
         try:

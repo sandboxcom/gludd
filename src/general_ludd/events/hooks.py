@@ -33,6 +33,10 @@ class HookSystem:
     def __init__(self, event_bus: Any | None = None) -> None:
         self._hooks: dict[str, list[HookRegistration]] = {}
         self._next_cb_id = 0
+        # Previously accepted but dropped on the floor. Store it so fire() can
+        # mirror hook activity onto the event bus (a HookTriggeredEvent per
+        # event fired), giving subscribers visibility into hook execution.
+        self._event_bus = event_bus
 
     def register_callback(
         self, event_name: str, callback: Callable[..., Any], priority: int = 100
@@ -82,8 +86,18 @@ class HookSystem:
             ]
 
     def fire(self, event_name: str, payload: dict[str, Any]) -> int:
+        """Run every hook registered for ``event_name``.
+
+        Returns the number of hooks that ran *successfully*. A failing hook
+        does not block the others, but — unlike before — its failure is now
+        surfaced at ERROR (not silently warned-and-counted-as-noise), and the
+        aggregate failure count is logged so callers can detect partial
+        delivery. If an event bus was supplied, a ``HookTriggeredEvent`` is
+        published with the delivery tally.
+        """
         hooks = self._hooks.get(event_name, [])
         count = 0
+        failed = 0
         for hook in hooks:
             try:
                 if hook.hook_type == "callback" and hook.callback is not None:
@@ -93,8 +107,49 @@ class HookSystem:
                     self._fire_webhook(hook.webhook_config, event_name, payload)
                     count += 1
             except Exception as exc:
-                logger.warning("Hook %s error for event %s: %s", hook.hook_id, event_name, exc)
+                failed += 1
+                logger.error(
+                    "Hook %s failed for event %s: %s",
+                    hook.hook_id,
+                    event_name,
+                    exc,
+                    exc_info=True,
+                )
+
+        if failed:
+            logger.error(
+                "Hook event %s: %d/%d hook(s) failed",
+                event_name,
+                failed,
+                len(hooks),
+            )
+
+        self._publish_hook_triggered(event_name, succeeded=count, failed=failed)
         return count
+
+    def _publish_hook_triggered(self, event_name: str, *, succeeded: int, failed: int) -> None:
+        """Mirror hook activity onto the event bus, if one was supplied.
+
+        Best-effort: a misbehaving bus must never break hook delivery, so any
+        error here is logged rather than propagated.
+        """
+        bus = self._event_bus
+        if bus is None:
+            return
+        try:
+            from general_ludd.events.types import HookTriggeredEvent
+
+            event = HookTriggeredEvent(event_name=event_name)
+            event.payload["succeeded"] = succeeded
+            event.payload["failed"] = failed
+            bus.publish(event)
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.error(
+                "Failed to publish HookTriggeredEvent for %s: %s",
+                event_name,
+                exc,
+                exc_info=True,
+            )
 
     def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
         body = {"event": event_name, "payload": payload}

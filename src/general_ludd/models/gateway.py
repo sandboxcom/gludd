@@ -328,6 +328,16 @@ class ModelGateway:
         if self._budget_guard is not None:
             self._budget_guard.record_spend(cost)
 
+        # SUCCESS-RESET: a billed success is, by definition, a healthy call, so
+        # reset the breaker's consecutive-failure counter for this profile here —
+        # on EVERY entry path (direct call_model, single-flight, fallback). The
+        # previous reset lived only in call_model_with_retry/_call_fallback, so a
+        # plain call_model() success never cleared the breaker and a profile could
+        # stay tripped after it had already recovered. record_success is the
+        # inverse of the single failure recording done by record_timeout_on_failure.
+        if self._health_tracker is not None:
+            self._health_tracker.record_success(profile_id)
+
         if self._metrics_collector is not None and self._metrics_agent_id:
             self._metrics_collector.record_model_call(
                 agent_id=self._metrics_agent_id,
@@ -468,17 +478,22 @@ class ModelGateway:
             return bool(decision.should_retry)
 
         def _before_sleep(retry_state: tenacity.RetryCallState) -> None:
-            """Record health tracker event and perform policy-computed sleep."""
+            """Perform policy-computed backoff sleep between retry attempts.
+
+            DOUBLE-COUNT FIX: this callback used to also record a TimeoutEvent on
+            the health tracker. But the failing attempt has ALREADY recorded the
+            same failure exactly once: call_model -> _invoke_and_bill ->
+            record_timeout_on_failure (or the empty-200 guard) fires on the
+            provider exception before it propagates here. Recording it a second
+            time in _before_sleep double-counted every retryable failure, so the
+            breaker's consecutive counter advanced two-per-failure and tripped at
+            half the real failure_threshold. We now ONLY compute and perform the
+            backoff sleep here; the single source of truth for failure recording
+            is record_timeout_on_failure on the call_model path.
+            """
             exc = retry_state.outcome.exception() if retry_state.outcome else None
             if exc is not None and isinstance(exc, _retryable_exc_types):
                 kind = TimeoutClassifier.classify(exc)
-                if tracker is not None:
-                    tracker.record_event(TimeoutEvent(
-                        model_id=profile_id,
-                        kind=kind,
-                        timestamp=_time.monotonic(),
-                        duration_s=0.0,
-                    ))
                 wait_s = policy._compute_backoff(kind, _attempt_counter[0], None)
                 if wait_s > 0:
                     _time.sleep(wait_s)

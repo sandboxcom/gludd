@@ -36,12 +36,19 @@ def register(
     mcp_handler: Handler | None = None,
     skill_handler: Handler | None = None,
     collection_handler: Handler | None = None,
+    role: str | None = None,
 ) -> None:
     """Register /api/dispatch routes on ``app``.
 
     Handlers are injected from daemon.py.  When a handler is ``None`` the
     dispatcher will return a fail-closed error for that kind rather than
     crashing.
+
+    ``role`` is the acting role whose capability lattice gates every dispatch.
+    It defaults to ``None`` so the live HTTP endpoint is DENY-BY-DEFAULT for the
+    privileged kinds: an unbound dispatcher fails closed rather than routing
+    privileged tool-calls. Pass an explicit role (or ``UNRESTRICTED_ROLE``) to
+    widen this deliberately.
     """
 
     dispatcher = DynamicDispatcher(
@@ -49,6 +56,7 @@ def register(
         mcp_handler=mcp_handler,
         skill_handler=skill_handler,
         collection_handler=collection_handler,
+        role=role,
     )
 
     # Per-process ring buffer for recent dispatch history.

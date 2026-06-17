@@ -61,7 +61,7 @@ class TestSelfImprovePersistence:
                 f"self-improve todo not persisted; rows={titles}"
             )
             persisted = next(r for r in rows if r.title == "Add tests for x.py")
-            assert persisted.status == TodoStatus.BACKLOG.value
+            assert persisted.status == TodoStatus.APPROVAL_REQUIRED.value
 
         # The harness's in-memory enqueue must NOT be the persistence path.
         fake_harness.enqueue_todos.assert_not_called()

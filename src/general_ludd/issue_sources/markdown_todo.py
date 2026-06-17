@@ -71,7 +71,7 @@ class MarkdownTodoSource:
 
     def _derive_id(self, text: str) -> str:
         seed = f"{self._rel()}::{text}".encode()
-        return "md-" + hashlib.sha1(seed).hexdigest()[:12]
+        return "md-" + hashlib.sha1(seed, usedforsecurity=False).hexdigest()[:12]
 
     def _extract_id(self, text: str) -> tuple[str, str]:
         """Return ``(external_id, clean_title)`` for a checkbox's text."""

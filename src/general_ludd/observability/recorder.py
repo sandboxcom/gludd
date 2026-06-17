@@ -78,19 +78,29 @@ class AutoBenchmarkRecorder:
         last_span = trace.spans[-1]
         error_msg = last_span.error_message or ""
 
+        # Flatten the score dict into the real BenchmarkResultModel columns and
+        # pass a single positional ``data`` dict — BenchmarkRepository.record_result
+        # takes one dict and constructs BenchmarkResultModel(**data). The previous
+        # kwargs/``scores`` form did not match any column and raised TypeError, so
+        # every benchmark write was silently dropped (empty table -> no routing data).
+        data: dict[str, Any] = {
+            "model_profile_id": last_span.model_profile_id or "unknown",
+            "prompt_profile_id": last_span.prompt_profile_id,
+            "task_type": trace.work_type,
+            "completion_score": scores["completion"],
+            "code_quality_score": scores["code_quality"],
+            "instruction_adherence_score": scores["instruction"],
+            "token_efficiency_score": scores["token_efficiency"],
+            "success": success,
+            "input_tokens": trace.total_input_tokens,
+            "output_tokens": trace.total_tokens,
+            "cost_usd": trace.total_cost_usd,
+            "time_seconds": (last_span.duration_ms / 1000) if last_span.duration_ms > 0 else 0.0,
+            "error_message": error_msg,
+        }
+
         try:
-            await self._repo.record_result(
-                model_profile_id=last_span.model_profile_id or "unknown",
-                prompt_profile_id=last_span.prompt_profile_id,
-                task_type=trace.work_type,
-                scores=scores,
-                success=success,
-                input_tokens=trace.total_input_tokens,
-                output_tokens=trace.total_tokens,
-                cost_usd=trace.total_cost_usd,
-                time_seconds=(last_span.duration_ms / 1000) if last_span.duration_ms > 0 else 0.0,
-                error_message=error_msg,
-            )
+            await self._repo.record_result(data)
             logger.info(
                 "Benchmark recorded: trace=%s model=%s success=%s score=%.2f",
                 trace.trace_id,

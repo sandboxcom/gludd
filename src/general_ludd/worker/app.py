@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
 from typing import Any
@@ -11,18 +12,23 @@ from fastapi.responses import JSONResponse
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.job_invocation import (
+    _GENERATION_WORK_TYPES,
+    invoke_model_for_generation,
+    is_generation_work_type,
+)
 from general_ludd.schemas.job import JobSpec
+
+__all__ = [
+    "_GENERATION_WORK_TYPES",
+    "create_app",
+    "invoke_model_for_generation",
+    "is_generation_work_type",
+]
 
 logger = logging.getLogger(__name__)
 
 _runner: AnsibleRunnerAdapter | None = None
-
-# Work types whose execute job is a model-driven generation task. For these the
-# worker invokes the ModelGateway and feeds the generated output into the
-# playbook (and the job result) before running the playbook.
-_GENERATION_WORK_TYPES: frozenset[str] = frozenset(
-    {"code", "bug_fix", "test", "refactor", "docs", "prompt", "analysis", "security"}
-)
 
 
 def get_runner() -> AnsibleRunnerAdapter:
@@ -79,35 +85,14 @@ def _invoke_gateway_for_job(
     gateway: ModelGateway, job: JobSpec
 ) -> str | None:
     """Call the model for a generation job. Returns the generated text or None."""
-    if not job.prompt_text:
-        logger.info(
-            "Generation job %s has no prompt_text; skipping model call", job.job_id
-        )
-        return None
-    profile_id = job.model_profile or "default"
-    # Bound the prompt to the model's token window via the shared agent
-    # capabilities bundle (ContextCompactor + TokenWindowManager). The system
-    # turn is the skill body; the user turn is the task prompt.
-    from general_ludd.agents.capabilities import AgentCapabilities
-
-    caps = AgentCapabilities(primary_profile=profile_id)
-    system_prompt = job.skill_body or ""
-    history = [{"role": "user", "content": job.prompt_text}]
-    messages = [
-        m for m in caps.prepare_messages(system_prompt, history)
-        if m["content"].strip()
-    ]
-    try:
-        response = gateway.call_model(profile_id, messages=messages)
-        return response.content
-    except Exception as exc:
-        logger.warning(
-            "Model call failed for job %s (profile=%s): %s",
-            job.job_id,
-            profile_id,
-            exc,
-        )
-        return None
+    return invoke_model_for_generation(
+        gateway,
+        job_id=job.job_id,
+        work_type=job.work_type,
+        model_profile=job.model_profile,
+        prompt_text=job.prompt_text,
+        skill_body=job.skill_body,
+    )
 
 
 def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
@@ -203,7 +188,7 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
         # feed its output into the playbook extravars and the job result.
         model_response: str | None = None
         gw = application.state.gateway
-        if gw is not None and job.work_type in _GENERATION_WORK_TYPES:
+        if gw is not None and is_generation_work_type(job.work_type):
             model_response = _invoke_gateway_for_job(gw, job)
 
         runner = get_runner()
@@ -224,7 +209,8 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
             },
             shared_vars=None,
         )
-        runner_result = runner.run_playbook(
+        runner_result = await asyncio.to_thread(
+            runner.run_playbook,
             playbook_name=job.playbook,
             private_data_dir=dirs["root"],
             extravars={"model_response": model_response} if model_response is not None else None,

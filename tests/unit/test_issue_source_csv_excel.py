@@ -31,7 +31,12 @@ def _write_csv(tmp_path: Path, text: str = _CSV) -> Path:
 
 
 def _make(path: Path, **cfg: Any) -> CsvExcelSource:
-    return CsvExcelSource({"path": str(path), **cfg})
+    # Allowlist the file's own directory as the jail root so the path is
+    # accepted regardless of the gate's --basetemp (which may live under /tmp,
+    # not $TMPDIR). Callers may still override "root" via **cfg.
+    config: dict[str, Any] = {"path": str(path), "root": str(path.parent)}
+    config.update(cfg)
+    return CsvExcelSource(config)
 
 
 def test_source_name() -> None:
@@ -175,3 +180,64 @@ def test_xlsx_path_uses_openpyxl_when_available(
     assert len(records) == 1
     assert records[0]["external_id"] == "X-1"
     assert records[0]["title"] == "Excel item"
+
+
+# -- path-jail confinement (adversarial) --------------------------------- #
+#
+# CsvExcelSource confines config['path'] to the workspace jail (cwd + system
+# temp + an optional config['root'] / $GLUDD_WORKSPACE). A path that resolves
+# outside every allowed root is refused at construction with ValueError. Note
+# that tmp_path lives under the system temp dir, which is always allowlisted;
+# escape tests therefore target locations OUTSIDE temp (e.g. an absolute system
+# path) or constrain the jail to a subdir and resolve outside it.
+
+
+def test_jail_rejects_absolute_outside_workspace() -> None:
+    with pytest.raises(ValueError, match="workspace jail"):
+        CsvExcelSource({"path": "/etc/passwd"})
+
+
+def test_jail_rejects_traversal_escape_with_config_root(tmp_path: Path) -> None:
+    # Jail root is a subdir; the path uses ../ to climb above it AND above the
+    # system temp dir (which would otherwise allowlist it).
+    root = tmp_path / "jail"
+    root.mkdir()
+    escape = str(root / ".." / ".." / ".." / ".." / ".." / ".." / "etc" / "passwd")
+    with pytest.raises(ValueError, match="workspace jail"):
+        CsvExcelSource({"path": escape, "root": str(root)})
+
+
+def test_jail_rejects_symlink_escape(tmp_path: Path) -> None:
+    # A symlink inside the jail root pointing at an outside-of-workspace target.
+    root = tmp_path / "jail"
+    root.mkdir()
+    link = root / "sneaky.csv"
+    link.symlink_to("/etc/passwd")
+    with pytest.raises(ValueError, match="workspace jail"):
+        CsvExcelSource({"path": str(link), "root": str(root)})
+
+
+def test_jail_accepts_in_root_path_reads_and_writes(tmp_path: Path) -> None:
+    root = tmp_path / "jail"
+    root.mkdir()
+    p = root / "issues.csv"
+    p.write_text(_CSV, encoding="utf-8")
+    src = CsvExcelSource({"path": str(p), "root": str(root)})
+    records = src.fetch({})
+    assert [r["external_id"] for r in records] == ["T-1", "T-2", "T-3"]
+    assert src.write_back("T-1", Transition.DONE) is True
+    after = next(r for r in src.fetch({}) if r["external_id"] == "T-1")
+    assert after["status"] == "done"
+
+
+def test_jail_honors_gludd_workspace_env(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    workspace = tmp_path / "ws"
+    workspace.mkdir()
+    monkeypatch.setenv("GLUDD_WORKSPACE", str(workspace))
+    p = workspace / "issues.csv"
+    p.write_text(_CSV, encoding="utf-8")
+    # No config['root'] — the root comes from $GLUDD_WORKSPACE.
+    src = CsvExcelSource({"path": str(p)})
+    assert [r["external_id"] for r in src.fetch({})] == ["T-1", "T-2", "T-3"]

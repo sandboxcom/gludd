@@ -11,7 +11,7 @@ import logging
 from pathlib import Path
 from typing import Any
 
-from jinja2 import BaseLoader, Environment, FileSystemLoader
+from jinja2 import BaseLoader, Environment, FileSystemLoader, select_autoescape
 
 from general_ludd.events.types import TemplateUpdatedEvent
 
@@ -30,7 +30,7 @@ class PromptRegistry:
         self._loader: BaseLoader = (
             FileSystemLoader(template_dir) if template_dir else BaseLoader()
         )
-        self._env = Environment(loader=self._loader, autoescape=False)
+        self._env = Environment(loader=self._loader, autoescape=select_autoescape())
         self._event_bus = event_bus
 
     def register(self, name: str, template_text: str) -> None:
@@ -65,7 +65,7 @@ class PromptRegistry:
         for name in to_remove:
             del self._templates[name]
         self._loader = FileSystemLoader(self._template_dir) if self._template_dir else BaseLoader()
-        self._env = Environment(loader=self._loader, autoescape=False)
+        self._env = Environment(loader=self._loader, autoescape=select_autoescape())
         if self._event_bus:
             self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))
         return {"templates": discovered, "refreshed": True}

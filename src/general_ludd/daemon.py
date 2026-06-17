@@ -603,6 +603,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             todo_repo=None,
             task_return_repo=None,
             budget_guard=budget_guard,
+            model_gateway=model_gateway,
             mcp_client=None,
             mcp_tool_registry=None,
             event_bus=subsys["bus"],
@@ -614,6 +615,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "model_profiles": startup_config.get("model_profiles", []),
                 "rules": startup_config.get("rules", []),
                 "queues": getattr(uc, "queues", []) if uc else [],
+                "budget": getattr(uc, "budget", {}) if uc else {},
+                "self_improve": getattr(uc, "self_improve", {}) if uc else {},
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=_daemon_state,
@@ -709,11 +712,32 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
             async def _gateway_executor(task: AgentTask) -> str:
                 profile_id = "default"
+                budget_manager = getattr(app.state, "_budget_manager", None)
+                if budget_manager is not None:
+                    daily = budget_manager.check_daily_budget(0.0)
+                    if not daily.get("allowed", True):
+                        logger.warning(
+                            "Gateway executor deferred for %s: daily budget exhausted",
+                            task.task_id,
+                        )
+                        return "deferred:budget_exhausted"
+                    per_todo = budget_manager.check_todo_budget(task.task_id, 0.0)
+                    if not per_todo.get("allowed", True):
+                        logger.warning(
+                            "Gateway executor deferred for %s: per-todo budget exhausted",
+                            task.task_id,
+                        )
+                        return "deferred:budget_exhausted"
                 try:
                     result = model_gateway.call_model_with_retry(
                         profile_id,
                         [{"role": "user", "content": task.prompt}],
                     )
+                    if budget_manager is not None:
+                        budget_manager.record_spend(
+                            task.task_id,
+                            float(getattr(result, "cost_estimate", 0.0) or 0.0),
+                        )
                     return result.content
                 except Exception as exc:
                     logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
@@ -723,10 +747,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # pre-call gate.  When no limiter is configured this is a transparent
             # no-op wrapper.  projected_cost_usd=0.0 so zero-cost calls are never
             # deferred; callers may override by wrapping again with a real projection.
+            from general_ludd.infra.pricing import token_cost_usd
+
+            _projected_cost_usd = 0.0
+            _default_profile = model_gateway.get_profile("default")
+            if _default_profile is not None:
+                _projected_cost_usd = token_cost_usd(
+                    _default_profile.model_name or "__default__",
+                    min(_default_profile.max_input_tokens, 1000),
+                    _default_profile.max_output_tokens,
+                )
             dispatcher_executor = make_spend_guarded_executor(
                 executor=_gateway_executor,
                 spend_limiter=spend_limiter,
-                projected_cost_usd=0.0,  # conservative default; zero never defers
+                projected_cost_usd=_projected_cost_usd,
             )
 
         app.state._agent_dispatcher = AgentDispatcher(
@@ -1028,6 +1062,9 @@ def create_daemon_app(
         no_auth = bool(getattr(app.state, "_no_auth", False))
         require_auth = bool(getattr(app.state, "_require_auth", False))
         auth_degraded = no_auth and not require_auth
+        budget_manager = getattr(app.state, "_budget_manager", None)
+        budget_status = budget_manager.get_status() if budget_manager is not None else {}
+        budget_exhausted = bool(budget_status.get("paused", False))
         if degraded:
             return {
                 "status": "degraded",
@@ -1035,12 +1072,16 @@ def create_daemon_app(
                 "no_auth": no_auth,
                 "require_auth": require_auth,
                 "auth_degraded": auth_degraded,
+                "budget_exhausted": budget_exhausted,
+                "budget": budget_status,
             }
         return {
             "status": "healthy",
             "no_auth": no_auth,
             "require_auth": require_auth,
             "auth_degraded": auth_degraded,
+            "budget_exhausted": budget_exhausted,
+            "budget": budget_status,
         }
 
     @app.get("/readyz")
@@ -1206,5 +1247,11 @@ def create_daemon_app(
     spend.register(app, _daemon_state)
     from general_ludd.routers import coordination as _coord_router
     _coord_router.register(app, _daemon_state)
+
+    from general_ludd.routers.observe import wire_observability
+
+    _uc = (getattr(app.state, "_startup_config", {}) or {}).get("user_config")
+    _connector_cfg = getattr(_uc, "connectors", None) if _uc else None
+    wire_observability(app, _daemon_state, _connector_cfg)
 
     return app
