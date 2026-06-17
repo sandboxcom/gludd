@@ -9,18 +9,9 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
 from general_ludd.agents.registry import AgentRegistry
+from general_ludd.agents.types import AgentTask
 
 logger = logging.getLogger(__name__)
-
-
-@dataclass
-class AgentTask:
-    task_id: str
-    agent_name: str
-    description: str
-    prompt: str
-    parent_task_id: str | None = None
-    created_at: float = field(default_factory=time.time)
 
 
 @dataclass
@@ -71,6 +62,22 @@ class AgentDispatcher:
                 agent_name=task.agent_name,
                 status="failed",
                 output=f"Agent '{task.agent_name}' not found in registry",
+            )
+
+        if not config.enabled:
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=f"Agent '{task.agent_name}' is disabled",
+            )
+
+        if task.invoker_name and not self._registry.can_invoke(task.invoker_name, task.agent_name):
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=f"Permission denied: '{task.invoker_name}' cannot dispatch '{task.agent_name}'",
             )
 
         semaphore = self._get_semaphore(task.agent_name)
