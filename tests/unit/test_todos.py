@@ -30,4 +30,4 @@ class TestStatusEndpointFileStoreFailure:
             data = json.loads(resp.text)
             assert isinstance(data, dict)
             assert "version" in data
-            assert data["filestore_root"] == ""
+            assert data["filestore_available"] is False
