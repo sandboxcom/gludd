@@ -94,7 +94,7 @@ _ENDPOINTS: list[dict[str, Any]] = [
             "filestore_binaries": "array — bootstrapped binaries {name, version}",
             "binary_versions": "object — known binary versions {name: version}",
             "db_engine": "string — SQLAlchemy engine repr",
-            "db_url": "string — database URL",
+            "db_dialect": "string — database dialect (e.g. sqlite, postgresql)",
             "quality_gate": "object — last gate result {overall, passed_count, total_count}",
             "hardware": "object — probed hardware facts",
         },
@@ -179,7 +179,7 @@ _ENDPOINTS: list[dict[str, Any]] = [
         "method": "POST",
         "path": "/api/todos",
         "purpose": "Create a new task/todo. Returns the created todo object (HTTP 201).",
-        "auth_required": False,
+        "auth_required": True,
         "request_body": {
             "title": "string (required, 1-512 chars) — short task summary",
             "description": "string (optional, max 4096 chars) — detailed task description",
