@@ -1,7 +1,7 @@
 """Unit tests for event loop."""
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -257,6 +257,35 @@ class TestEventLoop:
         loop.tick = counting_tick
         await loop.run_forever(interval=0.01)
         assert iterations >= 3
+
+    def test_check_budget_or_skip_over_budget_returns_true(self):
+        loop, _ = _make_loop()
+        budget_guard = MagicMock()
+        budget_guard.check_all_limits.return_value = {"allowed": False, "reason": "limit hit"}
+        loop._budget_guard = budget_guard
+        with patch("general_ludd.event_loop.loop.logger") as mock_logger:
+            result = loop._check_budget_or_skip("execute", 5)
+        assert result is True
+        budget_guard.check_all_limits.assert_called_once()
+        mock_logger.warning.assert_called_once()
+        call_args = mock_logger.warning.call_args[0]
+        assert "execute" in call_args[1]
+        assert "limit hit" in call_args[2]
+
+    def test_check_budget_or_skip_under_budget_returns_false(self):
+        loop, _ = _make_loop()
+        budget_guard = MagicMock()
+        budget_guard.check_all_limits.return_value = {"allowed": True, "reason": ""}
+        loop._budget_guard = budget_guard
+        result = loop._check_budget_or_skip("return review", 3)
+        assert result is False
+        budget_guard.check_all_limits.assert_called_once()
+
+    def test_check_budget_or_skip_no_guard_returns_false(self):
+        loop, _ = _make_loop()
+        loop._budget_guard = None
+        result = loop._check_budget_or_skip("execute", 10)
+        assert result is False
 
     @pytest.mark.asyncio
     async def test_reconcile_decision_complete_backward_compat(self):
