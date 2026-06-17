@@ -2,6 +2,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from general_ludd.mcp._validators import strip_and_require_str
+
 
 class MCPServerConfig(BaseModel):
     server_id: str
@@ -15,14 +17,7 @@ class MCPServerConfig(BaseModel):
     enabled: bool = True
     project_id: str | None = None
 
-    @field_validator("server_id", mode="before")
-    @classmethod
-    def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("server_id must not be empty")
-        return v
+    _validate_server_id = strip_and_require_str("server_id")
 
     @field_validator("timeout_seconds")
     @classmethod
