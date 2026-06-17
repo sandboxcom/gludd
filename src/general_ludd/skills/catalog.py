@@ -12,6 +12,9 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
+from general_ludd.security.auth import is_path_within
+from general_ludd.security.sanitize import sanitize_skill_name
+
 logger = logging.getLogger(__name__)
 
 
@@ -71,10 +74,22 @@ class SkillCatalog:
         if entry is None:
             return None
 
+        # Path-confinement: sanitize the name and confirm the resolved write
+        # path stays within target_dir (mirrors RemoteSkillFetcher.install).
+        stem = sanitize_skill_name(name)
+        if stem is None:
+            logger.warning("Refusing skill with unsafe name: %r", name)
+            return None
+
         target = Path(target_dir)
         target.mkdir(parents=True, exist_ok=True)
 
-        skill_file = target / f"{name}.md"
+        # Defense in depth: confirm the resolved file stays inside target_dir.
+        if not is_path_within(str(target), f"{stem}.md"):
+            logger.warning("Refusing skill path escaping %s: %r", target_dir, name)
+            return None
+
+        skill_file = target / f"{stem}.md"
         skill_file.write_text(_build_skill_md(entry))
         logger.info("Downloaded skill %s to %s", name, skill_file)
         return skill_file
