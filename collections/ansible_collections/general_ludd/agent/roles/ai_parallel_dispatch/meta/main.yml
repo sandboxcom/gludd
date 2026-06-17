@@ -1,0 +1,23 @@
+---
+galaxy_info:
+  role_name: ai_parallel_dispatch
+  author: Agentic Harness Agent
+  description: >
+    Fan out multiple AI-model calls (gludd_model_call) in parallel using Ansible
+    native async (async:/poll:0 -> ajob ids) and barrier-join them with
+    async_status until ALL — or a REQUIRED subset — return. A promise system:
+    each dispatched call is a promise (ajob id); the barrier is the await.
+    In-flight concurrency is capped (max_in_flight) because the daemon's budget
+    gate is TOCTOU under unbounded fan-out. Per-call async timeout plus barrier
+    polling are kept under GLUDD_PLAYBOOK_TIMEOUT. Also ships a handler +
+    meta flush_handlers variant for the dispatch-then-join pattern.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

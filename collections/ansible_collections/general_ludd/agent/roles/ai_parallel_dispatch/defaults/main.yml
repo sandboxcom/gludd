@@ -1,0 +1,67 @@
+---
+# ai_parallel_dispatch role defaults — fan out N model calls in parallel and
+# barrier-join until all (or a required subset) return. All vars are commented.
+
+# ---- The fan-out set --------------------------------------------------------
+# List of call specs. Each item:
+#   name:          unique id for the call (used as result key + ajob register).
+#   prompt:        required prompt text.
+#   model_profile: explicit profile (mutually exclusive with route_task_type).
+#   route_task_type: adaptive routing key (mutually exclusive with model_profile).
+#   max_tokens:    per-call cap (defaults to dispatch_max_tokens below).
+#   required:      bool — must this call return for the join to succeed?
+# Example:
+#   dispatch_calls:
+#     - { name: planner,  prompt: "Plan X",   route_task_type: planning, required: true }
+#     - { name: reviewer, prompt: "Review X", model_profile: mock-profile, required: true }
+#     - { name: poet,     prompt: "Haiku X",  model_profile: mock-profile, required: false }
+dispatch_calls: []
+
+# ---- Concurrency cap (gateway budget is TOCTOU — never fire unbounded) -------
+# Max in-flight async jobs at once. The fan-out is batched: we launch at most
+# max_in_flight, barrier-join that batch, then launch the next. This bounds
+# concurrent /admin/models/call requests so the non-atomic check_budget/
+# record_spend window can never be raced by an unbounded burst.
+max_in_flight: 4
+
+# ---- Per-call async timeout + barrier polling -------------------------------
+# async_timeout: the `async:` value on each gludd_model_call (hard SIGTERM/KILL
+#   of the async job by ansible after this many seconds). MUST exceed the
+#   module's own request `timeout` (call_request_timeout) so the module, not the
+#   async wrapper, owns the deadline.
+# barrier_retries * barrier_delay = the longest the async_status barrier will
+#   poll one batch. Keep async_timeout AND (barrier_retries*barrier_delay)
+#   comfortably under GLUDD_PLAYBOOK_TIMEOUT (default 300s). With the defaults
+#   below a single batch is bounded by ~150s of polling, well under 300s, and
+#   leaves headroom for multiple batches when len(dispatch_calls) > max_in_flight.
+async_timeout: 150          # seconds; async: on each call task
+call_request_timeout: 120   # seconds; gludd_model_call's own request timeout
+barrier_retries: 60         # async_status retries per batch
+barrier_delay: 2            # seconds between async_status polls (60*2 = 120s)
+
+# ---- Required-subset join ---------------------------------------------------
+# Join policy. "all"      -> every dispatched call must finish (default).
+#             "required"  -> only calls flagged required:true must finish; the
+#                            barrier returns as soon as all required ids are done
+#                            (best-effort optional calls are harvested if ready).
+#             "any"       -> first call to finish satisfies the join.
+join_policy: "all"
+# If join_policy is "required" but NO call set required:true, treat every call
+# as required (fail-closed: never silently accept an empty required set).
+
+# ---- Model defaults ---------------------------------------------------------
+dispatch_max_tokens: 2048   # per-call max_tokens when a call omits its own
+
+# ---- Artifact output --------------------------------------------------------
+artifact_dir: "/tmp/gludd-ai-parallel-dispatch"
+
+# ---- Handler-variant toggle -------------------------------------------------
+# When true, ALSO run the handlers/flush_handlers demonstration variant
+# (tasks/flush_handlers_variant.yml). Off by default — async is the primary,
+# result-collecting mechanism; the handler variant is a fire-and-flush join with
+# weaker result collection (see that task file's header note).
+enable_handler_variant: false
+
+# ---- Daemon connectivity ----------------------------------------------------
+daemon_url: "http://localhost:8000"
+psk: ""   # prefer GLUDD_PSK env var

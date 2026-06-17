@@ -1,0 +1,105 @@
+---
+# dispatch_batch.yml — fan out ONE concurrency-capped batch then barrier-join it.
+# Included once per slice of <= max_in_flight calls. _apd_batch is the slice.
+
+# 1) FAN OUT: launch every call in this batch async + poll:0. Each returns an
+#    ansible_job_id immediately (the promise). register accumulates results
+#    across the loop in _apd_launch.results (one entry per call, same order).
+- name: "Launch batch {{ _apd_batch_idx }} async (poll:0 -> ajob ids)"
+  general_ludd.agent.gludd_model_call:
+    prompt: "{{ _apd_call.prompt }}"
+    model_profile: "{{ _apd_call.model_profile | default(omit) }}"
+    route_task_type: "{{ _apd_call.route_task_type | default(omit) }}"
+    max_tokens: "{{ _apd_call.max_tokens | default(dispatch_max_tokens) }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    timeout: "{{ call_request_timeout | int }}"
+  async: "{{ async_timeout | int }}"
+  poll: 0
+  loop: "{{ _apd_batch }}"
+  loop_control:
+    loop_var: _apd_call
+    label: "{{ _apd_call.name }}"
+  register: _apd_launch
+  no_log: "{{ psk | length > 0 }}"
+
+# 2) Pair each launched promise with its call spec (name + required flag) so the
+#    barrier knows which job ids are REQUIRED vs best-effort optional.
+#    zip yields [[launch_result, call_spec], ...]; we index '0'/'1' below.
+- name: "Build promise table for batch {{ _apd_batch_idx }}"
+  ansible.builtin.set_fact:
+    _apd_promises: "{{ _apd_launch.results | zip(_apd_batch) | list }}"
+
+- name: "Identify required job ids in batch {{ _apd_batch_idx }}"
+  ansible.builtin.set_fact:
+    _apd_required_jids: >-
+      {{ _apd_promises
+         | selectattr('1.name', 'in', _apd_required_names)
+         | map(attribute='0.ansible_job_id') | list }}
+    _apd_all_jids: >-
+      {{ _apd_promises | map(attribute='0.ansible_job_id') | list }}
+
+# Which job ids must the barrier wait for, per join_policy?
+#   all      -> every job id in the batch
+#   required -> only the required job ids in this batch
+#   any      -> satisfied as soon as one finishes (we still poll all, but the
+#               until breaks on the first finished)
+- name: "Select barrier wait-set for batch {{ _apd_batch_idx }}"
+  ansible.builtin.set_fact:
+    _apd_wait_jids: >-
+      {{ _apd_required_jids if join_policy == 'required' else _apd_all_jids }}
+
+# 3) BARRIER (the await): poll async_status for every job in the batch until the
+#    wait-set is satisfied. async_status is itself looped over all job ids; the
+#    `until` condition checks the WAIT-SET (required ids for 'required', all ids
+#    otherwise, >=1 finished for 'any'). retries*delay bounds the wait.
+- name: "Barrier-join batch {{ _apd_batch_idx }} (await promises)"
+  ansible.builtin.async_status:
+    jid: "{{ _apd_jid }}"
+  loop: "{{ _apd_all_jids }}"
+  loop_control:
+    loop_var: _apd_jid
+    label: "jid {{ _apd_jid }}"
+  register: _apd_poll
+  until: >-
+    {{
+      ( _apd_poll.results is defined ) and (
+        ( join_policy == 'any' and
+          (_apd_poll.results | selectattr('finished', 'defined') | selectattr('finished') | list | length) >= 1 )
+        or
+        ( join_policy != 'any' and
+          (_apd_poll.results
+             | selectattr('ansible_job_id', 'in', _apd_wait_jids)
+             | selectattr('finished', 'defined') | selectattr('finished')
+             | list | length) >= (_apd_wait_jids | length) )
+      )
+    }}
+  retries: "{{ barrier_retries | int }}"
+  delay: "{{ barrier_delay | int }}"
+  # Don't hard-fail the play if optional jobs never finished — the join-policy
+  # assert in main.yml is the single source of truth for success/failure.
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+
+# 4) HARVEST: fold every FINISHED, non-failed job's text/usage into _apd_results
+#    keyed by the call name. Optional jobs that timed out are simply absent.
+- name: "Harvest finished results from batch {{ _apd_batch_idx }}"
+  ansible.builtin.set_fact:
+    _apd_results: >-
+      {{ _apd_results | combine({
+           (item.1.name): {
+             'text': (item.0.text | default('')),
+             'model_profile_id': (item.0.model_profile_id | default('')),
+             'usage': (item.0.usage | default({})),
+             'required': (item.1.name in _apd_required_names),
+             'finished': true
+           }
+         }) }}
+  loop: "{{ _apd_poll.results | zip(_apd_batch) | list }}"
+  loop_control:
+    label: "{{ item.1.name }}"
+  when:
+    - item.0.finished is defined
+    - item.0.finished | bool
+    - not (item.0.failed | default(false) | bool)
+  no_log: "{{ psk | length > 0 }}"

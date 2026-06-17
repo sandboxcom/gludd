@@ -1,0 +1,49 @@
+---
+# ai_parallel_dispatch handlers — the "dispatch then flush_handlers" join variant.
+#
+# HONEST SCOPE NOTE (read before choosing this over async):
+#   Handlers are NOT a parallel executor. `meta: flush_handlers` runs notified
+#   handlers SEQUENTIALLY, in NOTIFY order, on the join host. So this variant's
+#   value is NOT wall-clock parallelism — it is the "defer work, then run it all
+#   at a single barrier point" pattern the user asked about: a dispatching task
+#   notifies one handler per call, and `flush_handlers` is the explicit JOIN that
+#   drains every deferred dispatch before the play proceeds.
+#
+#   To get ACTUAL parallel model calls here, each handler ALSO launches its
+#   gludd_model_call with async:/poll:0 (so the daemon round-trips overlap) and
+#   the post-flush task barrier-joins those job ids. Result COLLECTION is weaker
+#   than the primary async path: a handler's register is only reliably readable
+#   after flush, and handlers can't easily fold into one results dict mid-flush —
+#   so we persist each promise's job id to a fact file and re-join after flush.
+#   For full, ordered, per-call result harvesting prefer tasks/main.yml (async).
+
+- name: apd_dispatch_one
+  # One handler invocation per notify. Launches the model call async (poll:0) and
+  # records its job id to a shared fact list. flush_handlers runs these in notify
+  # order; the async: makes the in-flight daemon calls overlap despite that.
+  general_ludd.agent.gludd_model_call:
+    prompt: "{{ apd_handler_call.prompt }}"
+    model_profile: "{{ apd_handler_call.model_profile | default(omit) }}"
+    route_task_type: "{{ apd_handler_call.route_task_type | default(omit) }}"
+    max_tokens: "{{ apd_handler_call.max_tokens | default(dispatch_max_tokens) }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    timeout: "{{ call_request_timeout | int }}"
+  async: "{{ async_timeout | int }}"
+  poll: 0
+  register: apd_handler_launch
+  listen: "apd dispatch"
+  no_log: "{{ psk | length > 0 }}"
+
+- name: apd_record_jid
+  # Append the just-launched promise (job id + call name) to a run-scoped file so
+  # the post-flush barrier can await them. A file (not a fact) because handler
+  # set_fact ordering during flush is fragile across the notify loop.
+  ansible.builtin.lineinfile:
+    path: "{{ artifact_dir }}/handler_promises.jsonl"
+    create: true
+    mode: "0644"
+    line: >-
+      {{ {'name': apd_handler_call.name, 'jid': apd_handler_launch.ansible_job_id} | to_json }}
+  listen: "apd dispatch"
+  no_log: "{{ psk | length > 0 }}"

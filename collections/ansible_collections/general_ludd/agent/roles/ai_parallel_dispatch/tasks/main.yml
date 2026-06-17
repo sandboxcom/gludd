@@ -1,0 +1,108 @@
+---
+# ai_parallel_dispatch — PRIMARY mechanism: Ansible NATIVE async fan-out + barrier.
+#
+# Promise model:
+#   * Each gludd_model_call task launched with `async: <t>` + `poll: 0` returns
+#     IMMEDIATELY with an ansible_job_id — that id is the PROMISE.
+#   * The async_status barrier (until/retries/delay) is the AWAIT: it polls every
+#     promise's job file (~/.ansible_async) until it is `finished`.
+#
+# Why batched (NOT one unbounded loop of poll:0):
+#   The daemon gateway's budget cap is TOCTOU (check_budget then record_spend is
+#   not atomic; the generation path passes no estimated_cost), so an unbounded
+#   burst can blow the budget. We therefore launch at most `max_in_flight`
+#   promises, barrier-join that slice, then launch the next slice. Concurrency is
+#   hard-capped at max_in_flight regardless of len(dispatch_calls).
+#
+# Timeout budget (must fit inside GLUDD_PLAYBOOK_TIMEOUT, default 300s):
+#   per call:  async: {{ async_timeout }}   (>= call_request_timeout)
+#   per batch: barrier_retries * barrier_delay polling
+#   With defaults: 150s async, 120s polling per batch — both < 300s.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Validate dispatch inputs
+  ansible.builtin.assert:
+    that:
+      - dispatch_calls | length > 0
+      - dispatch_calls | map(attribute='name') | list | unique | length == dispatch_calls | length
+      - async_timeout | int >= call_request_timeout | int
+      - (barrier_retries | int * barrier_delay | float) < 300
+      - async_timeout | int < 300
+    fail_msg: >-
+      ai_parallel_dispatch inputs invalid: need >=1 call, unique names,
+      async_timeout >= call_request_timeout, and both async_timeout and
+      barrier_retries*barrier_delay under GLUDD_PLAYBOOK_TIMEOUT (300s).
+
+# Resolve the REQUIRED set up front (fail-closed: 'required' policy with no
+# call flagged required:true means EVERY call is required).
+- name: Compute required call-name set for the join
+  ansible.builtin.set_fact:
+    _apd_required_names: >-
+      {{ (dispatch_calls | selectattr('required', 'defined') | selectattr('required') | map(attribute='name') | list)
+         if (join_policy == 'required' and (dispatch_calls | selectattr('required', 'defined') | selectattr('required') | list | length) > 0)
+         else (dispatch_calls | map(attribute='name') | list) }}"
+    _apd_results: {}
+
+# Batch the fan-out: list of slices each of size <= max_in_flight.
+- name: Slice dispatch_calls into concurrency-capped batches
+  ansible.builtin.set_fact:
+    _apd_batches: >-
+      {{ dispatch_calls | batch(max_in_flight | int) | map('list') | list }}
+
+# ---- Per-batch fan-out + barrier (include_tasks loop) -----------------------
+- name: Dispatch + join each concurrency-capped batch
+  ansible.builtin.include_tasks: dispatch_batch.yml
+  loop: "{{ _apd_batches }}"
+  loop_control:
+    loop_var: _apd_batch
+    index_var: _apd_batch_idx
+    label: "batch {{ _apd_batch_idx }} ({{ _apd_batch | map(attribute='name') | join(',') }})"
+
+# ---- Join evaluation --------------------------------------------------------
+- name: Evaluate join policy over collected results
+  ansible.builtin.set_fact:
+    _apd_returned: "{{ _apd_results.keys() | list }}"
+    _apd_required_returned: "{{ _apd_required_names | select('in', _apd_results.keys() | list) | list }}"
+
+- name: Assert join satisfied
+  ansible.builtin.assert:
+    that:
+      - >-
+        (join_policy == 'all'      and (_apd_returned | length) == (dispatch_calls | length))
+        or
+        (join_policy == 'required' and (_apd_required_returned | length) == (_apd_required_names | length))
+        or
+        (join_policy == 'any'      and (_apd_returned | length) >= 1)
+    fail_msg: >-
+      join '{{ join_policy }}' NOT satisfied: returned={{ _apd_returned }},
+      required={{ _apd_required_names }}, required_returned={{ _apd_required_returned }}.
+    success_msg: >-
+      join '{{ join_policy }}' satisfied: {{ _apd_returned | length }}/{{ dispatch_calls | length }}
+      returned ({{ _apd_required_returned | length }}/{{ _apd_required_names | length }} required).
+
+- name: Write dispatch result artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'ai_parallel_dispatch',
+        'join_policy': join_policy,
+        'max_in_flight': max_in_flight | int,
+        'dispatched': dispatch_calls | map(attribute='name') | list,
+        'required': _apd_required_names,
+        'returned': _apd_returned,
+        'required_returned': _apd_required_returned,
+        'satisfied': true,
+        'results': _apd_results
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/ai_parallel_dispatch.json"
+    mode: "0644"
+
+# ---- Optional handler/flush_handlers demonstration variant -------------------
+- name: Run handler + flush_handlers variant (demonstration)
+  ansible.builtin.include_tasks: flush_handlers_variant.yml
+  when: enable_handler_variant | bool
