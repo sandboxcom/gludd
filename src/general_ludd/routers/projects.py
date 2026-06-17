@@ -5,7 +5,7 @@ from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
 from fastapi.responses import JSONResponse
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
 from general_ludd.db.repository import ProjectRepository
 from general_ludd.self_improve.harness import SelfImprovementHarness
@@ -15,12 +15,12 @@ from general_ludd.skills.registry import SkillRegistry
 
 
 class AddProjectRequest(BaseModel):
-    name: str
+    name: str = Field(min_length=1, max_length=255)
     weight: float
-    description: str = ""
-    repo_url: str = ""
-    workspace_path: str = ""
-    dispatch_mode: str = "active"
+    description: str = Field(default="", max_length=4096)
+    repo_url: str = Field(default="", max_length=2048)
+    workspace_path: str = Field(default="", max_length=1024)
+    dispatch_mode: str = Field(default="active", pattern=r"^(active|passive_external|worktree_monitor)$")
 
 
 class SetWeightRequest(BaseModel):
@@ -77,8 +77,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                             dispatch_mode=req.dispatch_mode,
                         )
                         await session.commit()
-                    except Exception:
-                        pass
+                    except Exception as persist_exc:
+                        ext["projects"].remove_project(project.project_id)
+                        raise HTTPException(
+                            status_code=500,
+                            detail="Failed to persist project; project was not saved.",
+                        ) from persist_exc
             return {
                 "project_id": project.project_id,
                 "name": project.name, "weight": project.weight,
@@ -88,6 +92,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "dispatch_mode": project.dispatch_mode,
                 "active": project.active,
             }
+        except HTTPException:
+            raise
         except Exception as exc:
             raise HTTPException(status_code=422, detail=str(exc)) from exc
 
