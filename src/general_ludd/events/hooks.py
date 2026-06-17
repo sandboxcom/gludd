@@ -8,7 +8,11 @@ from typing import Any
 
 import httpx
 
+from general_ludd.security import is_safe_fetch_url
+
 logger = logging.getLogger(__name__)
+
+MAX_WEBHOOK_RETRIES = 5
 
 
 @dataclass
@@ -152,15 +156,18 @@ class HookSystem:
             )
 
     def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
+        if not is_safe_fetch_url(config.url):
+            raise ValueError(f"Webhook URL blocked by security policy: {config.url}")
         body = {"event": event_name, "payload": payload}
         last_exc: Exception | None = None
-        for attempt in range(config.retry_count):
+        for attempt in range(min(max(1, config.retry_count), MAX_WEBHOOK_RETRIES)):
             try:
                 httpx.post(
                     config.url,
                     json=body,
                     headers=config.headers,
                     timeout=config.timeout_seconds,
+                    follow_redirects=False,
                 )
                 return
             except Exception as exc:
