@@ -4,10 +4,12 @@ from __future__ import annotations
 
 import enum
 from datetime import UTC, datetime
+from typing import ClassVar
 from uuid import uuid4
 
 from sqlalchemy import (
     Boolean,
+    CheckConstraint,
     DateTime,
     Float,
     ForeignKey,
@@ -116,6 +118,7 @@ class TodoModel(Base):
     __table_args__ = (
         Index("ix_todos_status_queue", "status", "queue"),
     )
+    __mapper_args__: ClassVar[dict] = {"version_id_col": version}
 
     events: Mapped[list[TodoEventModel]] = relationship(
         back_populates="todo",
@@ -188,7 +191,13 @@ class TaskDecisionModel(Base):
     __tablename__ = "task_decisions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    return_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    return_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("task_returns.return_id", ondelete="CASCADE"),
+        nullable=False,
+        unique=True,
+        index=True,
+    )
     project_id: Mapped[str | None] = mapped_column(
         String(32),
         ForeignKey("projects.project_id", ondelete="SET NULL"),
@@ -206,6 +215,16 @@ class TaskDecisionModel(Base):
     audit_notes: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     policy_flags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=_utcnow)
+
+    __table_args__ = (
+        CheckConstraint("length(evidence_refs) <= 65536", name="ck_task_decisions_evidence_refs_len"),
+        CheckConstraint("length(todo_updates) <= 65536", name="ck_task_decisions_todo_updates_len"),
+        CheckConstraint("length(child_todos) <= 65536", name="ck_task_decisions_child_todos_len"),
+        CheckConstraint("length(validation_requests) <= 65536", name="ck_task_decisions_validation_requests_len"),
+        CheckConstraint("length(git_requests) <= 65536", name="ck_task_decisions_git_requests_len"),
+        CheckConstraint("length(audit_notes) <= 65536", name="ck_task_decisions_audit_notes_len"),
+        CheckConstraint("length(policy_flags) <= 65536", name="ck_task_decisions_policy_flags_len"),
+    )
 
 
 class QueueModel(Base):
@@ -253,6 +272,7 @@ class AuditEventModel(Base):
 
     __table_args__ = (
         Index("ix_audit_events_entity", "entity_type", "entity_id"),
+        CheckConstraint("length(details) <= 65536", name="ck_audit_events_details_len"),
     )
 
 
