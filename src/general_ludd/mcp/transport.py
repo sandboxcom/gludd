@@ -142,11 +142,58 @@ def _validate_launch_command(cmd: list[str]) -> None:
 # (Python) is intentionally excluded — its pinning semantics differ.
 _NPM_FAMILY_LAUNCHERS = frozenset({"npm", "npx", "pnpm", "yarn", "bunx"})
 
+# Flags that redirect the working directory / prefix for npm-family and uvx
+# launchers.  Accepting these would let an attacker point the resolver at a
+# malicious local directory tree instead of the registry.
+# -C / --prefix / --cwd all change "where npm/uvx resolves packages from".
+_DIR_REDIRECT_FLAGS = frozenset({"-C", "--prefix", "--cwd"})
+
+# Pattern to split a ``--key=value``-style flag argument.
+_FLAG_ASSIGN_RE = re.compile(r"^(-[^=]+)=(.+)$", re.DOTALL)
+
+
+def _check_flag_for_smuggling(arg: str, launcher: str) -> None:
+    """Raise MCPTransportError if a flag-style arg smuggles a package spec or
+    path-escape.
+
+    Checked cases:
+    1. ``-C``, ``--prefix``, ``--cwd`` (directory-redirect flags) — rejected
+       outright; these re-root package resolution to an attacker-controlled dir.
+    2. ``--key=value`` where *value* contains ``@`` (package-version separator)
+       or shell metacharacters — rejected because the value embeds what looks
+       like a package spec or injection payload.  Example: ``--package=evil@latest``.
+
+    Benign flags (``-y``, ``--yes``, ``--no-audit``, etc.) pass unmodified.
+    """
+    # 1. Directory-redirect flags are unconditionally blocked.
+    # Strip any ``=value`` suffix for the name comparison.
+    flag_name = arg.split("=", 1)[0]
+    if flag_name in _DIR_REDIRECT_FLAGS:
+        raise MCPTransportError(
+            f"MCP flag {arg!r} for launcher {launcher!r} is a directory-redirect "
+            "flag (-C / --prefix / --cwd).  These re-root package resolution and "
+            "are not permitted in MCP server configs."
+        )
+
+    # 2. ``--key=value`` where value looks like a package spec or contains
+    #    shell metacharacters.
+    m = _FLAG_ASSIGN_RE.match(arg)
+    if m:
+        value = m.group(2)
+        if "@" in value or _SHELL_META_RE.search(value):
+            raise MCPTransportError(
+                f"MCP flag {arg!r} for launcher {launcher!r} embeds a package "
+                "spec or shell metacharacters in its value.  This looks like an "
+                "injection attempt (e.g. --package=evil@latest) and is refused."
+            )
+
 
 def _validate_package_spec(cmd: list[str], launcher: str) -> None:
     """Validate the package spec argument(s) for a remote-fetch launcher.
 
     Raises MCPTransportError if:
+    - A flag-style arg smuggles a package spec or path-escape (see
+      ``_check_flag_for_smuggling``).
     - The first non-flag argument (the package spec) contains shell metacharacters.
     - There are ONLY flag arguments (no package spec at all — likely injection).
     """
@@ -154,7 +201,8 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
     found_spec = False
     for arg in args_after_launcher:
         if arg.startswith("-"):
-            # It is a flag — skip.
+            # Flag — check for smuggling before skipping.
+            _check_flag_for_smuggling(arg, launcher)
             continue
         # This is the first non-flag arg: treat it as the package spec.
         found_spec = True
