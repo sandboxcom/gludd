@@ -26,18 +26,22 @@ max_in_flight: 4
 
 # ---- Per-call async timeout + barrier polling -------------------------------
 # async_timeout: the `async:` value on each gludd_model_call (hard SIGTERM/KILL
-#   of the async job by ansible after this many seconds). MUST exceed the
-#   module's own request `timeout` (call_request_timeout) so the module, not the
-#   async wrapper, owns the deadline.
-# barrier_retries * barrier_delay = the longest the async_status barrier will
-#   poll one batch. Keep async_timeout AND (barrier_retries*barrier_delay)
-#   comfortably under GLUDD_PLAYBOOK_TIMEOUT (default 300s). With the defaults
-#   below a single batch is bounded by ~150s of polling, well under 300s, and
-#   leaves headroom for multiple batches when len(dispatch_calls) > max_in_flight.
-async_timeout: 150          # seconds; async: on each call task
+#   of the async job by ansible after this many seconds). MUST be >= the module's
+#   own request `timeout` (call_request_timeout) so the module, not the async
+#   wrapper, owns the deadline.
+# barrier_retries * barrier_delay = the barrier polling window per batch (the
+#   OUTER retry loop in dispatch_batch.yml makes this PER-BATCH, not per-item).
+#   Two hard constraints the main.yml assert enforces:
+#     (1) window >= async_timeout — never abandon a promise before its async
+#         budget could let it finish (a 121s job under a 120s window was dropped).
+#     (2) ceil(N/max_in_flight) * max(window, async_timeout) < playbook_timeout —
+#         the SIGKILL ceiling.
+#   Defaults below: async 120s == window 120s (60*2). Per batch 120s; ceil(N/IF)
+#   batches sequential, all well under 300s.
+async_timeout: 120          # seconds; async: on each call task (== window below)
 call_request_timeout: 120   # seconds; gludd_model_call's own request timeout
-barrier_retries: 60         # async_status retries per batch
-barrier_delay: 2            # seconds between async_status polls (60*2 = 120s)
+barrier_retries: 60         # async_status sweeps per batch (outer retry loop)
+barrier_delay: 2            # seconds between sweeps (60*2 = 120s window)
 
 # Wall-clock ceiling the SUM-OVER-BATCHES assert checks against. Mirror the
 # operator's GLUDD_PLAYBOOK_TIMEOUT (default 300s; SIGKILL on the fork-child
@@ -64,7 +68,7 @@ artifact_dir: "/tmp/gludd-ai-parallel-dispatch"
 
 # ---- Handler-variant toggle -------------------------------------------------
 # When true, ALSO run the handlers/flush_handlers demonstration variant
-# (tasks/flush_handlers_variant.yml). Off by default — async is the primary,
+# (tasks/handler_barrier.yml). Off by default — async is the primary,
 # result-collecting mechanism; the handler variant is a fire-and-flush join with
 # weaker result collection (see that task file's header note).
 enable_handler_variant: false

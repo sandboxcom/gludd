@@ -1,0 +1,106 @@
+---
+# handler_barrier.yml — the handler + `meta: flush_handlers` join variant.
+# (Renamed from flush_handlers_variant.yml; main.yml includes this canonical name.)
+#
+# Flow:
+#   1. Reset the promise ledger file.
+#   2. Slice dispatch_calls into max_in_flight-sized WAVES. For each wave: notify
+#      the "apd dispatch" handler once per call (queued, not run), then a
+#      `meta: flush_handlers` BARRIER drains exactly that wave — each handler
+#      launches its model call async (poll:0) and appends its job id to the ledger.
+#      Flushing PER WAVE (not once at the end) is what caps concurrency: at most
+#      max_in_flight async model calls are in flight at any moment, so the handler
+#      path can no longer race the daemon's TOCTOU budget gate with an unbounded
+#      burst — the same guarantee the primary path gives. (Each flush only drains
+#      the handlers notified in that wave; a handler notified again in a later
+#      wave is re-run because notifications re-queue after a flush.)
+#   3. After all waves, read the ledger and async_status-join the recorded job
+#      ids (same await mechanics as the primary path).
+#
+# See handlers/main.yml header for why this is weaker than tasks/main.yml for
+# result collection (no required-subset early return — flush drains the whole
+# wave). This variant exists because the handler/flush_handlers approach was
+# explicitly requested; the async path in tasks/main.yml is the recommended
+# default for real fan-out.
+#
+# BUDGET NOTE: capping concurrency caps CONCURRENT spend, not TOTAL spend — every
+# launched async job (including best-effort optional calls) still runs to
+# completion on the host and consumes its budget even if a later join is already
+# satisfied; there is no daemon-side cancel. See README.md "Spend vs concurrency".
+
+- name: Reset handler promise ledger
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ artifact_dir }}/handler_promises.jsonl"
+    mode: "0644"
+
+# Slice into concurrency-capped waves (same batching as the primary path).
+- name: Slice dispatch_calls into max_in_flight-sized handler waves
+  ansible.builtin.set_fact:
+    _apd_h_waves: >-
+      {{ dispatch_calls | batch(max_in_flight | int) | map('list') | list }}
+
+# Per-wave: notify the wave's handlers then flush. Looping include_tasks keeps the
+# flush PER WAVE so concurrency stays capped at max_in_flight.
+- name: Dispatch + flush each concurrency-capped handler wave
+  ansible.builtin.include_tasks: handler_wave.yml
+  loop: "{{ _apd_h_waves }}"
+  loop_control:
+    loop_var: _apd_h_wave
+    index_var: _apd_h_wave_idx
+    label: "wave {{ _apd_h_wave_idx }} ({{ _apd_h_wave | map(attribute='name') | join(',') }})"
+
+# Re-join the launched promises after the flush barriers (handlers launched them
+# async; we now await completion exactly like the primary path).
+- name: Load handler promise ledger
+  ansible.builtin.slurp:
+    src: "{{ artifact_dir }}/handler_promises.jsonl"
+  register: _apd_h_raw
+
+- name: Parse promise ledger into job-id list
+  ansible.builtin.set_fact:
+    _apd_h_promises: >-
+      {{ (_apd_h_raw.content | b64decode).splitlines()
+         | select('match', '^\\s*\\{') | map('from_json') | list }}
+
+# Barrier-join the handler-launched promises. CORRECT idiom: `until` on a LOOPED
+# async_status references the PER-ITEM result (_apd_h_poll.finished), which IS
+# populated per iteration — so each promise is awaited until finished. (This is
+# the per-item scalar form; the aggregate-results bug that afflicted the primary
+# path does NOT apply here because we check the item's own .finished, not an
+# aggregate .results.) delay is float-coerced to match the primary path and the
+# budget assert — fractional sub-second delays are honoured, not truncated to 0.
+- name: Barrier-join handler-launched promises
+  ansible.builtin.async_status:
+    jid: "{{ _apd_h_item.jid }}"
+  loop: "{{ _apd_h_promises }}"
+  loop_control:
+    loop_var: _apd_h_item
+    label: "{{ _apd_h_item.name }} ({{ _apd_h_item.jid }})"
+  register: _apd_h_poll
+  until: _apd_h_poll.finished is defined and _apd_h_poll.finished
+  retries: "{{ barrier_retries | int }}"
+  delay: "{{ barrier_delay | float }}"
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Fold handler results into the shared results dict
+  ansible.builtin.set_fact:
+    _apd_results: >-
+      {{ _apd_results | default({}) | combine({
+           item.item.name: {
+             'text': (item.text | default('')),
+             'model_profile_id': (item.model_profile_id | default('')),
+             'usage': (item.usage | default({})),
+             'via': 'handler',
+             'finished': (item.finished | default(false) | bool)
+           }
+         }) }}
+  loop: "{{ _apd_h_poll.results | default([]) }}"
+  loop_control:
+    label: "{{ item.item.name }}"
+  when:
+    - item.finished is defined
+    - item.finished | bool
+    - not (item.failed | default(false) | bool)
+  no_log: "{{ psk | length > 0 }}"

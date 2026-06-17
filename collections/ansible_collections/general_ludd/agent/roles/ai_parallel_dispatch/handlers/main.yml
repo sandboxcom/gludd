@@ -16,6 +16,11 @@
 #   after flush, and handlers can't easily fold into one results dict mid-flush —
 #   so we persist each promise's job id to a fact file and re-join after flush.
 #   For full, ordered, per-call result harvesting prefer tasks/main.yml (async).
+#
+#   CONCURRENCY: handler_barrier.yml drives this in max_in_flight-sized WAVES
+#   (notify wave -> flush -> next wave), so at most max_in_flight async model
+#   calls are in flight at once — the handler path is concurrency-capped exactly
+#   like the primary path; it does NOT fan out len(dispatch_calls) at once.
 
 - name: apd_dispatch_one
   # One handler invocation per notify. Launches the model call async (poll:0) and

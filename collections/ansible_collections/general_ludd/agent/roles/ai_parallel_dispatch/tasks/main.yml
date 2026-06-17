@@ -16,8 +16,13 @@
 #
 # Timeout budget (must fit inside GLUDD_PLAYBOOK_TIMEOUT, default 300s):
 #   per call:  async: {{ async_timeout }}   (>= call_request_timeout)
-#   per batch: barrier_retries * barrier_delay polling
-#   With defaults: 150s async, 120s polling per batch — both < 300s.
+#   per batch wall-clock: max(barrier_retries*barrier_delay, async_timeout)
+#     — a launched async job keeps running up to async_timeout INDEPENDENT of how
+#       long we poll, so the per-batch cost is the LARGER of the two, not just the
+#       polling window. The barrier window must also be >= async_timeout, else we
+#       abandon a promise that could still finish (see the assert below).
+#   With defaults: async 120s, barrier window 120s -> 120s/batch; ceil(N/IF)
+#   batches run sequentially, all under 300s.
 
 - name: Create artifact directory
   ansible.builtin.file:
@@ -31,23 +36,37 @@
       - dispatch_calls | length > 0
       - dispatch_calls | map(attribute='name') | list | unique | length == dispatch_calls | length
       - async_timeout | int >= call_request_timeout | int
-      - (barrier_retries | int * barrier_delay | float) < (playbook_timeout | int)
+      - ((barrier_retries | int) * (barrier_delay | float)) < (playbook_timeout | int)
       - async_timeout | int < (playbook_timeout | int)
       - join_policy in ['all', 'required', 'any']
-      # SUM-OVER-BATCHES budget: batches run SEQUENTIALLY, so total wall-clock is
-      # ceil(N / max_in_flight) * (per-batch barrier wait). Prove that fits inside
-      # GLUDD_PLAYBOOK_TIMEOUT up front rather than only bounding a single batch.
+      # NO PREMATURE ABANDONMENT: the barrier polling window must be at least as
+      # long as the async job budget, else a promise that runs 121-150s is dropped
+      # by the harvest even though it could still finish. Make the await actually
+      # wait up to the async budget it launched.
+      - ((barrier_retries | int) * (barrier_delay | float)) >= (async_timeout | int)
+      # SUM-OVER-BATCHES budget: batches run SEQUENTIALLY. Per-batch wall-clock is
+      # max(barrier_retries*barrier_delay, async_timeout) — a launched async job
+      # keeps running up to async_timeout REGARDLESS of how long we poll, so the
+      # per-batch cost is the LARGER of the polling window and the async budget,
+      # not just the polling window. (With the >= constraint above the two are
+      # equal-or-window-bigger, so max == window, but we encode max() to stay
+      # correct even if an operator overrides the defaults.) The OUTER retry loop
+      # in dispatch_batch.yml makes the retry budget PER-BATCH (not per-item), so
+      # this product is the true bound. Prove it fits inside GLUDD_PLAYBOOK_TIMEOUT.
       - >-
         ((((dispatch_calls | length) + (max_in_flight | int) - 1) // (max_in_flight | int))
-         * ((barrier_retries | int) * (barrier_delay | float))) | int < (playbook_timeout | int)
+         * ([((barrier_retries | int) * (barrier_delay | float)) | int, async_timeout | int] | max))
+        < (playbook_timeout | int)
     fail_msg: >-
       ai_parallel_dispatch inputs invalid: need >=1 call, unique names, a valid
-      join_policy, async_timeout >= call_request_timeout, both async_timeout and
-      barrier_retries*barrier_delay under GLUDD_PLAYBOOK_TIMEOUT, AND
-      ceil(N/max_in_flight) sequential batches * (barrier_retries*barrier_delay)
-      under GLUDD_PLAYBOOK_TIMEOUT ({{ playbook_timeout }}s) — else the fork-child
-      group gets SIGKILLed mid-run. Lower barrier_retries/delay or raise
-      max_in_flight (fewer batches).
+      join_policy, async_timeout >= call_request_timeout, async_timeout under
+      GLUDD_PLAYBOOK_TIMEOUT, barrier window (barrier_retries*barrier_delay) BOTH
+      >= async_timeout (so promises aren't abandoned early) AND under
+      GLUDD_PLAYBOOK_TIMEOUT, AND ceil(N/max_in_flight) sequential batches *
+      max(barrier_window, async_timeout) under GLUDD_PLAYBOOK_TIMEOUT
+      ({{ playbook_timeout }}s) — else the fork-child group gets SIGKILLed
+      mid-run. Lower async_timeout/barrier_retries/delay or raise max_in_flight
+      (fewer batches).
 
 # Resolve the REQUIRED set up front (fail-closed: 'required' policy with no
 # call flagged required:true means EVERY call is required).
@@ -79,6 +98,11 @@
   ansible.builtin.set_fact:
     _apd_returned: "{{ _apd_results.keys() | list }}"
     _apd_required_returned: "{{ _apd_required_names | select('in', _apd_results.keys() | list) | list }}"
+    # Calls that were dispatched but never harvested (timed out before the barrier
+    # window, or finished-but-failed). Lets a consumer tell "all required returned,
+    # optionals dropped" apart from "everything returned".
+    _apd_dropped: >-
+      {{ dispatch_calls | map(attribute='name') | reject('in', _apd_results.keys() | list) | list }}
 
 - name: Assert join satisfied
   ansible.builtin.assert:
@@ -107,6 +131,7 @@
         'required': _apd_required_names,
         'returned': _apd_returned,
         'required_returned': _apd_required_returned,
+        'dropped': _apd_dropped,
         'satisfied': true,
         'results': _apd_results
       } | to_nice_json }}
@@ -115,5 +140,5 @@
 
 # ---- Optional handler/flush_handlers demonstration variant -------------------
 - name: Run handler + flush_handlers variant (demonstration)
-  ansible.builtin.include_tasks: flush_handlers_variant.yml
+  ansible.builtin.include_tasks: handler_barrier.yml
   when: enable_handler_variant | bool

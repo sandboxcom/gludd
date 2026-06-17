@@ -1,0 +1,23 @@
+---
+# handler_wave.yml — notify ONE concurrency-capped wave's handlers then flush.
+# Included once per max_in_flight-sized slice (_apd_h_wave) from handler_barrier.yml.
+# The flush at the end drains ONLY this wave, capping in-flight async model calls
+# at max_in_flight (no unbounded fan-out).
+
+- name: "Wave {{ _apd_h_wave_idx }}: notify a dispatch handler per call (queued)"
+  ansible.builtin.debug:
+    msg: "queued dispatch for {{ apd_handler_call.name }}"
+  changed_when: true
+  notify: "apd dispatch"
+  loop: "{{ _apd_h_wave }}"
+  loop_control:
+    loop_var: apd_handler_call
+    label: "{{ apd_handler_call.name }}"
+
+# THE PER-WAVE BARRIER: flush_handlers runs every handler notified in THIS wave
+# now, in notify order. Each handler launches its async model call (poll:0) and
+# appends its job id to the ledger. flush_handlers blocks until all notified
+# handlers in this wave have RUN (been launched) — a real barrier over the wave's
+# dispatch step, and the point at which concurrency is capped to the wave size.
+- name: "Wave {{ _apd_h_wave_idx }}: flush_handlers — drain this wave only"
+  ansible.builtin.meta: flush_handlers

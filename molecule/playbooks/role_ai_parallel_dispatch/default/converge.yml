@@ -19,9 +19,12 @@
         artifact_dir: "/tmp/gludd-ai-parallel-dispatch-{{ mock_port }}"
         max_in_flight: 2
         join_policy: "required"
+        # Barrier window (barrier_retries*barrier_delay = 60*1 = 60s) is >=
+        # async_timeout (60s), satisfying the no-premature-abandonment assert;
+        # ceil(5/2)=3 batches * max(60,60) = 180s < 300s playbook_timeout.
         async_timeout: 60
         call_request_timeout: 30
-        barrier_retries: 30
+        barrier_retries: 60
         barrier_delay: 1
         dispatch_calls:
           - name: planner

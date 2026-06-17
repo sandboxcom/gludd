@@ -1,0 +1,85 @@
+---
+# barrier_sweep.yml — ONE non-retrying poll pass over every job id in the batch.
+# Included from dispatch_batch.yml's outer retry loop. Each invocation:
+#   1. async_status-polls all jids ONCE (no until/retries here — the OUTER loop is
+#      the retry driver; that keeps the retry budget PER-BATCH, not per-item).
+#   2. Folds every newly-finished, non-failed job into the shared _apd_results.
+#   3. Recomputes the single boolean _apd_barrier_done over the WAIT-SET:
+#        any      -> >=1 job in the batch finished.
+#        all/req  -> every job in the wait-set finished.
+#      Once true, the outer loop's `when: not _apd_barrier_done` skips all
+#      remaining sweeps (true early-return for 'any'/'required').
+#   4. If not yet done AND this is not the last allowed sweep, pause barrier_delay
+#      so the total wait is bounded by barrier_retries * barrier_delay.
+
+- name: "Sweep {{ _apd_sweep_idx }}: poll all jids once (no per-item retry)"
+  ansible.builtin.async_status:
+    jid: "{{ _apd_jid }}"
+  loop: "{{ _apd_all_jids }}"
+  loop_control:
+    loop_var: _apd_jid
+    label: "jid {{ _apd_jid }}"
+  register: _apd_sweep
+  # NOTE: deliberately NO until/retries/delay — a single sweep. failed_when:false
+  # so a still-running (not-yet-finished) job doesn't fail the play; the join
+  # assert in main.yml is the single source of truth for success/failure.
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+
+# Harvest every finished, non-failed job seen THIS sweep into the shared dict.
+# combine() is idempotent across sweeps (a job already harvested just re-writes
+# the same entry), so re-harvesting on later passes is harmless.
+- name: "Sweep {{ _apd_sweep_idx }}: harvest finished, non-failed jobs"
+  ansible.builtin.set_fact:
+    _apd_results: >-
+      {{ _apd_results | combine({
+           (_apd_jid_name[item.ansible_job_id]): {
+             'text': (item.text | default('')),
+             'model_profile_id': (item.model_profile_id | default('')),
+             'usage': (item.usage | default({})),
+             'required': (_apd_jid_name[item.ansible_job_id] in _apd_required_names),
+             'finished': true
+           }
+         }) }}
+  loop: "{{ _apd_sweep.results | default([]) }}"
+  loop_control:
+    label: "{{ _apd_jid_name[item.ansible_job_id] | default(item.ansible_job_id) }}"
+  when:
+    - item.ansible_job_id is defined
+    - item.finished is defined
+    - item.finished | bool
+    - not (item.failed | default(false) | bool)
+  no_log: "{{ psk | length > 0 }}"
+
+# Recompute the single barrier predicate over the WAIT-SET (cross-job, aggregate —
+# the thing a per-item `until` could never express).
+- name: "Sweep {{ _apd_sweep_idx }}: recompute barrier predicate over wait-set"
+  ansible.builtin.set_fact:
+    _apd_barrier_done: >-
+      {{
+        (
+          (_apd_sweep.results | default([]))
+          | selectattr('finished', 'defined') | selectattr('finished')
+          | map(attribute='ansible_job_id') | list | length
+        ) >= 1
+        if join_policy == 'any'
+        else (
+          (
+            (_apd_sweep.results | default([]))
+            | selectattr('finished', 'defined') | selectattr('finished')
+            | selectattr('ansible_job_id', 'in', _apd_wait_jids)
+            | list | length
+          ) >= (_apd_wait_jids | length)
+        )
+      }}
+
+# Inter-sweep wait. Only when still unsatisfied AND more sweeps remain — so a
+# satisfied barrier returns immediately and the LAST sweep never trails a pause.
+# barrier_delay is float-coerced to match the main.yml budget assert (which uses
+# `| float`); fractional sub-second delays are honoured, not truncated to 0.
+- name: "Sweep {{ _apd_sweep_idx }}: wait barrier_delay before next poll"
+  ansible.builtin.wait_for:
+    timeout: "{{ barrier_delay | float }}"
+  when:
+    - not _apd_barrier_done
+    - (_apd_sweep_idx | int) < (barrier_retries | int)
