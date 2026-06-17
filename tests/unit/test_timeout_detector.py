@@ -907,3 +907,38 @@ class TestGatewayTimeoutIntegration:
                 "primary", [{"role": "user", "content": "hi"}],
             )
             assert result.model_name == "gpt-3.5-turbo"
+
+
+def test_non_retryable_kinds_constant_single_source() -> None:
+    """_NON_RETRYABLE_KINDS is the single source of truth for all three
+    decision points: the constant itself, TimeoutRetryPolicy.decide, and the
+    gateway retry predicates (which import and use it directly)."""
+    from general_ludd.models.timeout_detector import (
+        _NON_RETRYABLE_KINDS,
+        TimeoutKind,
+        TimeoutRetryPolicy,
+    )
+
+    # 1. The constant has exactly the expected members.
+    assert frozenset(
+        {TimeoutKind.AUTH_ERROR, TimeoutKind.CONTEXT_LENGTH, TimeoutKind.INVALID_REQUEST}
+    ) == _NON_RETRYABLE_KINDS
+
+    policy = TimeoutRetryPolicy()
+
+    # 2. Every kind IN the constant → should_retry is False (TimeoutRetryPolicy.decide).
+    for kind in _NON_RETRYABLE_KINDS:
+        decision = policy.decide(kind, 0)
+        assert decision.should_retry is False, (
+            f"expected should_retry=False for {kind!r} (non-retryable kind)"
+        )
+
+    # 3. Every kind NOT in the constant → should_retry is True at attempt 0
+    #    (still within max_retries=3, so policy hasn't exhausted retries yet).
+    retryable_kinds = [k for k in TimeoutKind if k not in _NON_RETRYABLE_KINDS]
+    assert retryable_kinds, "expected at least one retryable kind"
+    for kind in retryable_kinds:
+        decision = policy.decide(kind, 0)
+        assert decision.should_retry is True, (
+            f"expected should_retry=True for {kind!r} at attempt 0 (retryable kind)"
+        )
