@@ -189,6 +189,17 @@ class SpendLimiter:
         ``window_spend()`` call, so restoring stale records after a long
         downtime is safe.
 
+        Invalid records are DROPPED (not silently accepted) to prevent
+        cap-evasion attacks:
+
+        * Negative or non-finite ``cost_usd`` values would deflate the
+          rolling window total, effectively lifting the cap.  These are
+          logged and dropped.
+        * Future timestamps survive ``window_spend()`` pruning indefinitely
+          (their cutoff never arrives), so they could ghost-inflate the
+          window.  Future timestamps are clamped to ``now`` so they are
+          treated as current-window spend.
+
         Args:
             records: A list of ``(timestamp, cost_usd)`` tuples produced by
                      ``snapshot`` (or an equivalent persisted form).  ``None``
@@ -196,8 +207,32 @@ class SpendLimiter:
         """
         if not records:
             return
+        now = self._clock()
         with self._lock:
-            self._records.extend((float(ts), float(c)) for ts, c in records)
+            for raw_ts, raw_c in records:
+                ts = float(raw_ts)
+                c = float(raw_c)
+                if not math.isfinite(c) or c < 0:
+                    logger.warning(
+                        "SpendLimiter.restore: dropping invalid cost record "
+                        "(ts=%r, cost_usd=%r) — non-finite or negative cost "
+                        "would deflate window spend (cap-evasion guard).",
+                        ts,
+                        c,
+                    )
+                    continue
+                # Clamp future timestamps to now so they cannot ghost-survive
+                # window pruning indefinitely.
+                if ts > now:
+                    logger.warning(
+                        "SpendLimiter.restore: clamping future timestamp "
+                        "%r → %r for record (cost_usd=%r).",
+                        ts,
+                        now,
+                        c,
+                    )
+                    ts = now
+                self._records.append((ts, c))
 
     def window_spend(self, now: float | None = None) -> float:
         """Sum of all spend within the rolling window ending at ``now``.
