@@ -16,6 +16,7 @@ Politeness/safety properties, all enforced per hop:
 
 from __future__ import annotations
 
+import time
 from collections import deque
 from urllib.parse import urldefrag, urlsplit, urlunsplit
 
@@ -111,8 +112,18 @@ class PoliteCrawler:
         skipped_robots = 0
         blocked_hosts: set[str] = set()
         depth_reached = 0
+        deadline_exceeded = False
+
+        # Whole-crawl wall-clock budget: redirect chains, retries, rate-limit
+        # spacing and (clamped) crawl-delays all draw from ONE deadline so a large
+        # frontier can never run unbounded. Exceeding it stops the BFS cleanly with
+        # whatever was gathered so far (recorded in meta).
+        deadline = time.monotonic() + self._policy.overall_deadline
 
         while queue and len(results) < self._policy.max_pages:
+            if time.monotonic() >= deadline:
+                deadline_exceeded = True
+                break
             url, depth = queue.popleft()
             depth_reached = max(depth_reached, depth)
 
@@ -128,10 +139,14 @@ class PoliteCrawler:
                 continue
 
             # Crawl-delay -> rate limiter, then acquire a token (per-host spacing).
+            # CLAMP the delay to policy.max_crawl_delay so a hostile/misconfigured
+            # robots ``Crawl-delay: 86400`` can't turn politeness into a ~day hang.
             delay = self._robots.crawl_delay(url)
             host = urlsplit(url).netloc
             if delay:
-                self._rate.set_min_interval(host, delay)
+                self._rate.set_min_interval(
+                    host, min(delay, self._policy.max_crawl_delay)
+                )
             self._rate.acquire(host)
 
             page = fetch_parsed(
@@ -164,5 +179,6 @@ class PoliteCrawler:
                 "skipped_robots": skipped_robots,
                 "blocked_hosts": sorted(blocked_hosts),
                 "seed_registrable_domain": seed_reg,
+                "deadline_exceeded": deadline_exceeded,
             },
         )

@@ -42,9 +42,11 @@ def render_js(
         )
 
     if not policy.allow_render:
+        # DISTINCT error from a missing dependency: this is a policy choice the
+        # operator can flip (allow_render=True), not "install the [web] extra".
         return WebResult(
-            ok=False, url=url, error=WebError.RENDERER_UNAVAILABLE,
-            detail="render disabled by policy (policy.allow_render=False)",
+            ok=False, url=url, error=WebError.RENDER_DISABLED,
+            detail="render disabled by policy (set policy.allow_render=True to enable)",
             elapsed_ms=(time.monotonic() - t0) * 1000.0,
         )
 

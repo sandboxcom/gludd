@@ -20,16 +20,28 @@ from general_ludd.web.parse import parse_html
 from general_ludd.web.policy import DEFAULT_POLICY, WebPolicy
 from general_ludd.web.resilience import (
     CircuitOpenError,
+    RetryableStatusError,
     WebResilience,
     web_error_for,
 )
 from general_ludd.web.safe_fetch import SafeFetcher, SafeFetchError, _RawResponse
 from general_ludd.web.search import NullSearchProvider, SearchProvider
-from general_ludd.web.types import GatheredPage, WebError, WebResult
+from general_ludd.web.types import BlockSignal, GatheredPage, WebError, WebResult
 
 
 def _host_of(url: str) -> str:
     return urlsplit(url).netloc or url
+
+
+def _retry_after_header(headers: Mapping[str, str]) -> float | None:
+    """Parse a numeric ``Retry-After`` (seconds form) off a transient response."""
+    raw = headers.get("retry-after") or headers.get("Retry-After")
+    if not raw:
+        return None
+    try:
+        return float(raw)
+    except ValueError:
+        return None
 
 
 def _decode_body(raw: _RawResponse) -> str:
@@ -79,16 +91,36 @@ def fetch_raw(
     host = _host_of(url)
     t0 = time.monotonic()
 
+    def _attempt() -> tuple[_RawResponse, str, BlockSignal | None]:
+        # One fetch attempt INSIDE the resilience loop. A transient status (5xx or
+        # a 429 WITHOUT a captcha/bot-block marker) is raised as a
+        # RetryableStatusError so tenacity retries it with backoff AND the per-host
+        # breaker records the failure — closing the "retry transient 5xx/429"
+        # contract that a bare structured-return would silently violate. A
+        # marker-bearing challenge is a PERSISTENT block (retrying won't help), so
+        # it is returned terminally for the CAPTCHA_DETECTED path below.
+        attempt_raw = fetcher.fetch(url, method=method, headers=headers)
+        attempt_body = _decode_body(attempt_raw)
+        attempt_signal = detect_block(
+            attempt_raw.status, attempt_raw.headers, attempt_body
+        )
+        if attempt_signal is None and (
+            attempt_raw.status >= 500 or attempt_raw.status == 429
+        ):
+            raise RetryableStatusError(
+                attempt_raw.status,
+                retry_after=_retry_after_header(attempt_raw.headers),
+            )
+        return attempt_raw, attempt_body, attempt_signal
+
     try:
-        raw = resilience.run(host, lambda: fetcher.fetch(url, method=method, headers=headers))
+        raw, body, signal = resilience.run(host, _attempt)
     except Exception as exc:  # boundary: nothing escapes to the model
         return _error_result(url, exc, time.monotonic() - t0)
 
-    body = _decode_body(raw)
     elapsed = (time.monotonic() - t0) * 1000.0
     meta = {"redirect_chain": raw.redirect_chain}
 
-    signal = detect_block(raw.status, raw.headers, body)
     if signal is not None:
         return WebResult(
             ok=False,
@@ -259,6 +291,10 @@ def _error_result(url: str, exc: BaseException, elapsed_s: float) -> WebResult:
     if isinstance(exc, SafeFetchError):
         status = exc.partial_status
         final_url = exc.url
+    elif isinstance(exc, RetryableStatusError):
+        # Retries exhausted on a transient 5xx/429 — preserve the last status so
+        # the structured result still carries it.
+        status = exc.status
     elif isinstance(exc, httpx.HTTPStatusError):
         status = exc.response.status_code
     elif isinstance(exc, CircuitOpenError | socket.gaierror):

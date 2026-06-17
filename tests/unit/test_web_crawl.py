@@ -123,3 +123,50 @@ def test_crawl_ssrf_blocks_malicious_link_mid_crawl() -> None:
     result = crawler.crawl("https://example.com/")
     blocked = [g for g in result.results or [] if g.error == WebError.SSRF_BLOCKED]
     assert any("internal.example.com" in g.url for g in blocked)
+
+
+def test_crawl_delay_is_clamped() -> None:
+    """A hostile robots ``Crawl-delay: 86400`` (24h) must be CLAMPED to
+    policy.max_crawl_delay so politeness can't be weaponized into a ~day per-page
+    hang. We spy on the rate limiter to capture the interval actually applied."""
+    def handler(r: httpx.Request) -> httpx.Response:
+        if r.url.path == "/robots.txt":
+            return httpx.Response(
+                200,
+                text="User-agent: *\nCrawl-delay: 86400",
+                headers={"content-type": "text/plain"},
+            )
+        return httpx.Response(200, text=_page([]), headers={"content-type": "text/html"})
+
+    crawler = _crawler(handler, max_pages=1, max_depth=0, max_crawl_delay=5.0)
+    applied: list[float] = []
+    real_set = crawler._rate.set_min_interval
+
+    def spy(host: str, seconds: float) -> None:
+        applied.append(seconds)
+        real_set(host, seconds)
+
+    crawler._rate.set_min_interval = spy  # type: ignore[method-assign]
+    crawler.crawl("https://example.com/")
+    # The crawl-delay seen by the limiter is the CLAMP (5s), never the hostile 86400.
+    assert applied and max(applied) <= 5.0
+
+
+def test_crawl_stops_at_overall_deadline() -> None:
+    """A frontier that would otherwise keep going is stopped by the whole-crawl
+    wall-clock deadline; the aggregate result records deadline_exceeded."""
+    def handler(r: httpx.Request) -> httpx.Response:
+        if r.url.path == "/robots.txt":
+            return httpx.Response(404)
+        # Every page links to many fresh same-host pages -> unbounded frontier.
+        return httpx.Response(
+            200,
+            text=_page([f"https://example.com/{r.url.path}/{i}" for i in range(5)]),
+            headers={"content-type": "text/html"},
+        )
+
+    crawler = _crawler(handler, max_pages=10_000, max_depth=50, overall_deadline=0.0)
+    result = crawler.crawl("https://example.com/")
+    # A zero deadline stops the BFS at the first loop check.
+    assert result.meta["deadline_exceeded"] is True
+    assert len(result.results or []) == 0

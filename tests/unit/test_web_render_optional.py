@@ -41,7 +41,9 @@ def test_render_disabled_by_policy() -> None:
                            resolver=_public_resolver,
                            policy=WebPolicy()))
     assert result.ok is False
-    assert result.error == WebError.RENDERER_UNAVAILABLE
+    # DISTINCT from a missing dependency: a policy-disabled render reports
+    # RENDER_DISABLED so the caller knows to flip the policy, not install the extra.
+    assert result.error == WebError.RENDER_DISABLED
     assert "disabled by policy" in (result.detail or "")
 
 

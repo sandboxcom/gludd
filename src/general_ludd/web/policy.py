@@ -59,6 +59,11 @@ class WebPolicy(BaseModel):
     # -- rate limiting ----------------------------------------------------- #
     per_host_rps: float = 1.0
     per_host_burst: int = 2
+    #: Upper clamp (seconds) on a robots ``Crawl-delay`` the crawler will honor. A
+    #: hostile/misconfigured ``Crawl-delay: 86400`` would otherwise make the next
+    #: same-host acquire sleep up to a day; we cap it so politeness can never be
+    #: weaponized into a per-page hang. The overall_deadline also bounds the crawl.
+    max_crawl_delay: float = 30.0
 
     # -- timeouts / size --------------------------------------------------- #
     connect_timeout: float = 10.0

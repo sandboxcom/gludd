@@ -84,13 +84,51 @@ def test_fetch_raw_403_not_retried() -> None:
     assert calls["n"] == 1  # a 403 body is a terminal response, not retried
 
 
-def test_fetch_raw_5xx_structured() -> None:
+def test_fetch_raw_5xx_retried_then_structured() -> None:
+    # A 503 (no captcha marker) is a TRANSIENT server error: it must be retried
+    # with backoff (the "retry transient 5xx/429" contract), then — if it never
+    # recovers — surfaced as a structured HTTP_5XX. The fetcher returns a
+    # _RawResponse for any status, so the tool layer raises RetryableStatusError
+    # to re-enter the retry loop AND record a per-host breaker failure.
+    calls = {"n": 0}
     def handler(r: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
         return httpx.Response(503, text="down")
-    fetcher, res = _kit(handler)
+    fetcher, res = _kit(handler, max_attempts=3)
     result = fetch_raw("https://example.com/", fetcher=fetcher, resilience=res)
     assert result.ok is False
     assert result.error == WebError.HTTP_5XX
+    assert result.status == 503
+    assert calls["n"] > 1  # retried, not a one-shot terminal
+
+
+def test_fetch_raw_5xx_then_200_recovers() -> None:
+    # A transient 503 followed by a 200 must SUCCEED via retry (not surface the
+    # 503), proving the retry actually re-enters and recovers.
+    calls = {"n": 0}
+    def handler(r: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        if calls["n"] < 2:
+            return httpx.Response(503, text="warming up")
+        return httpx.Response(200, text="ok now", headers={"content-type": "text/plain"})
+    fetcher, res = _kit(handler, max_attempts=3)
+    result = fetch_raw("https://example.com/", fetcher=fetcher, resilience=res)
+    assert result.ok is True
+    assert result.status == 200
+    assert calls["n"] == 2  # one retry then success
+
+
+def test_fetch_raw_429_retried() -> None:
+    # A plain 429 (no captcha/bot-block marker) is transient rate-limiting and is
+    # retried; a marker-bearing 429 (see captcha test) is a persistent challenge.
+    calls = {"n": 0}
+    def handler(r: httpx.Request) -> httpx.Response:
+        calls["n"] += 1
+        return httpx.Response(429, text="slow down", headers={"retry-after": "0"})
+    fetcher, res = _kit(handler, max_attempts=3)
+    result = fetch_raw("https://example.com/", fetcher=fetcher, resilience=res)
+    assert result.ok is False
+    assert calls["n"] > 1  # retried with backoff
 
 
 def test_fetch_raw_captcha_detected() -> None:

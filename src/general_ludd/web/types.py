@@ -36,6 +36,10 @@ class WebError(enum.StrEnum):
     HTTP_5XX = "http_5xx"
     CIRCUIT_OPEN = "circuit_open"
     RENDERER_UNAVAILABLE = "renderer_unavailable"
+    #: DISTINCT from RENDERER_UNAVAILABLE: the renderer COULD run but the operator
+    #: policy disabled it (allow_render=False). Lets a caller tell "flip the
+    #: policy" apart from "install the [web] extra".
+    RENDER_DISABLED = "render_disabled"
     PROVIDER_UNCONFIGURED = "provider_unconfigured"
     RETRY_EXHAUSTED = "retry_exhausted"
     PARSE_ERROR = "parse_error"

@@ -54,14 +54,39 @@ class CircuitOpenError(Exception):
         self.host = host
 
 
+class RetryableStatusError(Exception):
+    """A transient HTTP status (5xx / non-challenge 429) worth retrying.
+
+    ``SafeFetcher.fetch`` returns a structured response for ANY status, so a 5xx /
+    429 would otherwise be recorded as a breaker SUCCESS and never retried. The
+    tool layer raises THIS for the transient-status subset so it re-enters the
+    tenacity loop (backoff) AND records a per-host breaker failure — closing the
+    "retry transient 5xx/429" contract and letting a constant-5xx host trip the
+    breaker. It carries the status (and any Retry-After) so the exhaustion path
+    can rebuild the full structured result with the correct backoff.
+    """
+
+    def __init__(self, status: int, *, retry_after: float | None = None) -> None:
+        super().__init__(f"retryable status {status}")
+        self.status = status
+        self.retry_after = retry_after
+
+
 def classify_exception(exc: BaseException, *, body: str | None = None) -> TimeoutKind:
     """Classify an exception into a :class:`TimeoutKind` for the web layer.
 
     A :class:`SafeFetchError` (SSRF/redirect) is deterministic and non-retryable;
-    everything else delegates to the audited :class:`TimeoutClassifier`.
+    a :class:`RetryableStatusError` maps to RATE_LIMITED (429) or PROVIDER_ERROR
+    (5xx); everything else delegates to the audited :class:`TimeoutClassifier`.
     """
     if isinstance(exc, SafeFetchError):
         return TimeoutKind.INVALID_REQUEST  # deterministic, never retried
+    if isinstance(exc, RetryableStatusError):
+        return (
+            TimeoutKind.RATE_LIMITED
+            if exc.status == 429
+            else TimeoutKind.PROVIDER_ERROR
+        )
     return TimeoutClassifier.classify(exc, response_body=body)
 
 
@@ -69,10 +94,12 @@ def is_retryable(exc: BaseException) -> bool:
     """True iff ``exc`` is a transient failure worth retrying.
 
     SSRF/redirect blocks and auth/4xx/invalid-request are NEVER retried; connect/
-    read timeouts, 5xx and 429 ARE.
+    read timeouts, 5xx and (non-challenge) 429 ARE.
     """
     if isinstance(exc, SafeFetchError):
         return False
+    if isinstance(exc, RetryableStatusError):
+        return True
     kind = classify_exception(exc)
     if kind in _NON_RETRYABLE_KINDS:
         return False
@@ -85,6 +112,8 @@ def web_error_for(exc: BaseException) -> WebError:
     """Map an exception to the structured :class:`WebError` for the tool layer."""
     if isinstance(exc, SafeFetchError):
         return exc.error
+    if isinstance(exc, RetryableStatusError):
+        return WebError.HTTP_4XX if exc.status == 429 else WebError.HTTP_5XX
     if isinstance(exc, CircuitOpenError):
         return WebError.CIRCUIT_OPEN
     if isinstance(exc, tenacity.RetryError):
@@ -106,7 +135,9 @@ def web_error_for(exc: BaseException) -> WebError:
 
 
 def _retry_after_seconds(exc: BaseException) -> float | None:
-    """Pull a Retry-After (seconds form) off an httpx 429/503 if present."""
+    """Pull a Retry-After (seconds form) off an httpx 429/503 / RetryableStatus."""
+    if isinstance(exc, RetryableStatusError):
+        return exc.retry_after
     if isinstance(exc, httpx.HTTPStatusError):
         ra = exc.response.headers.get("retry-after")
         if ra:
