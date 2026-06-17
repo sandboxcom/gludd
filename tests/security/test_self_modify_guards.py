@@ -336,6 +336,7 @@ class TestDispatchConsultsCapabilityLattice:
             collection_handler=_handler,
             mcp_handler=_handler,
             skill_handler=_handler,
+            web_handler=_handler,
             role=UNRESTRICTED_ROLE,
         )
         for kind in PRIVILEGED_KINDS:

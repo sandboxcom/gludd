@@ -98,24 +98,25 @@ _BUILTIN: dict[str, RoleCapabilities] = {
     "self_improve_agent": RoleCapabilities(
         role="self_improve_agent",
         collections_self_modify=True,
-        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill"}),
+        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill", "web"}),
     ),
     "self_research_agent": RoleCapabilities(
         role="self_research_agent",
         collections_self_modify=True,
-        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill"}),
+        # Self-research relies on the web toolkit to gather external context.
+        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill", "web"}),
     ),
-    # Ordinary coder: may dispatch roles/mcp/skills but NOT collections (no
+    # Ordinary coder: may dispatch roles/mcp/skills/web but NOT collections (no
     # self-modify), so it can never drive a collections write through dispatch.
     "coder": RoleCapabilities(
         role="coder",
         collections_self_modify=False,
-        dispatch_kinds=frozenset({"role", "mcp", "skill"}),
+        dispatch_kinds=frozenset({"role", "mcp", "skill", "web"}),
     ),
     "operator": RoleCapabilities(
         role="operator",
         collections_self_modify=False,
-        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill"}),
+        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill", "web"}),
     ),
     "report_status": RoleCapabilities(
         role="report_status",

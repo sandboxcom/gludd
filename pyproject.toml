@@ -72,6 +72,18 @@ observability = [
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
 ]
+# OPTIONAL web-toolkit extras: dynamic JS render (Playwright/Selenium headless-
+# local + remote-CDP + WebDriver-Grid) and rich HTML extraction (trafilatura).
+# These are the ONLY new deps the web toolkit adds and they are STRICTLY OPTIONAL:
+# nothing under src/general_ludd/web/ imports them at module scope — every backend
+# is lazy-imported INSIDE the render function under try/except ImportError, which
+# returns a structured RENDERER_UNAVAILABLE fallback. So `import general_ludd.web`
+# (and the whole test suite's collection-check) stays green with none installed.
+web = [
+    "playwright>=1.48.0",
+    "selenium>=4.25.0",
+    "trafilatura>=1.8.0",
+]
 
 [project.scripts]
 gludd = "general_ludd.cli:main"
