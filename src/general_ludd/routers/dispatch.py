@@ -25,6 +25,9 @@ logger = logging.getLogger(__name__)
 # Bounded ring-buffer for recent dispatch history (facts facet).
 _MAX_RECENT_DISPATCHES = 50
 
+# Hard cap on tool_calls per request to prevent unbounded dispatch loops.
+MAX_CALLS_PER_REQUEST = 20
+
 Handler = Callable[[str, dict[str, Any]], Any]
 
 
@@ -95,6 +98,11 @@ def register(
                     "Could not parse any tool calls from request body. "
                     "Expected {kind, name[, args]} or {tool_calls: [...]}"
                 ),
+            )
+        if len(calls) > MAX_CALLS_PER_REQUEST:
+            raise HTTPException(
+                status_code=422,
+                detail=f"too many tool_calls (max {MAX_CALLS_PER_REQUEST})",
             )
         results = dispatcher.dispatch_all(calls)
         _record(results)

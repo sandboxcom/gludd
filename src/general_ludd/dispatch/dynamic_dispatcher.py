@@ -135,14 +135,17 @@ def _parse_single(item: dict[str, Any]) -> ToolCall | None:
     if not isinstance(name_raw, str) or not name_raw:
         logger.debug("parse_tool_calls: skipping item without name: %s", item)
         return None
+    # Truncate caller-controlled strings before they flow into log lines and
+    # DispatchResult error strings (log-injection / unbounded-string guard).
+    name_str: str = name_raw[:256]
     # kind is required; if missing or wrong type treat as unknown so
     # dispatch fails-closed.
-    kind_str: str = str(kind_raw) if kind_raw is not None else "unknown"
+    kind_str: str = str(kind_raw)[:64] if kind_raw is not None else "unknown"
     args_raw = item.get("args", {})
     args: dict[str, Any] = args_raw if isinstance(args_raw, dict) else {}
     # We deliberately allow kind values not in the Literal union here so that
     # the dispatcher can handle them at dispatch time (fail-closed).
-    return ToolCall(kind=kind_str, name=name_raw, args=args)  # type: ignore[arg-type]
+    return ToolCall(kind=kind_str, name=name_str, args=args)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------

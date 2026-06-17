@@ -97,6 +97,9 @@ line-length = 120
 [tool.ruff.lint]
 select = ["E", "F", "I", "W", "UP", "B", "SIM", "RUF"]
 
+[tool.ruff.lint.isort]
+known-first-party = ["general_ludd"]
+
 [tool.mypy]
 python_version = "3.11"
 strict = true
