@@ -90,7 +90,7 @@ class LoadController:
             elif profile == ResourceProfile.HYBRID:
                 if snapshot.loadavg_10m > snapshot.logical_cpu_count:
                     excess = snapshot.loadavg_10m - snapshot.logical_cpu_count
-                    penalty = min(1.0, excess / snapshot.logical_cpu_count)
+                    penalty = min(1.0, excess / max(1, snapshot.logical_cpu_count))
                     buckets = max(1, int(buckets * (1 - penalty)))
                     outputs.throttle_reasons.append(
                         f"hybrid partial penalty: {queue.queue_name} penalty={penalty:.2f}"

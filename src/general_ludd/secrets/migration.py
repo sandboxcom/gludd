@@ -60,7 +60,12 @@ def migrate_profile_secrets(
             migrated_aliases.append(alias_name)
             logger.info("Migrated secret %s to vault path %s", alias_name, vault_path)
         except Exception as exc:
-            logger.warning("Failed to migrate %s: %s", alias_name, exc)
+            # Log only the exception TYPE, never str(exc): a vault/backend error
+            # message can embed the secret value being written (e.g. "value
+            # 'sk-...' rejected"), which would leak it into logs.
+            logger.warning(
+                "Failed to migrate %s: %s", alias_name, type(exc).__name__
+            )
             skipped.append(alias_name)
 
     return {

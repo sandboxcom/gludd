@@ -46,7 +46,15 @@ class AgentCapabilities:
     def prepare_messages(
         self, system_prompt: str, history: list[dict[str, str]]
     ) -> list[dict[str, str]]:
-        """Bound the conversation to the token budget via ContextCompactor."""
+        """Compact the conversation history via ContextCompactor.
+
+        Attempts to fit the prompt within the configured token budget by
+        dropping older turns when the compaction threshold is exceeded.
+        NOTE: an oversized system prompt or a single preserved message that
+        individually exceeds the budget passes through uncapped — the compactor
+        cannot split individual messages. Callers that need a hard cap must
+        truncate the system prompt before calling this method.
+        """
         msgs: list[ContextMessage] = [
             ContextMessage(
                 role="system",

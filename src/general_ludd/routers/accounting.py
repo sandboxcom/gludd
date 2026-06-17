@@ -128,9 +128,18 @@ async def _build_accountant(app: FastAPI, quota_usd: float = 0.0) -> Accountant:
                         def __init__(self, pid: str, info: dict[str, Any]) -> None:
                             self.project_id = pid
                             mu = info.get("model_usage", {})
-                            # Sum across all models for this agent
+                            # Sum real token counts across all models for this agent.
+                            # Prefer total_tokens; fall back to input+output separately;
+                            # last resort: total_calls*1000 (deprecated proxy).
                             self.tokens_used = sum(
-                                int(u.get("total_calls", 0)) * 1000
+                                int(
+                                    u.get("total_tokens")
+                                    or (
+                                        int(u.get("input_tokens", 0))
+                                        + int(u.get("output_tokens", 0))
+                                    )
+                                    or int(u.get("total_calls", 0)) * 1000
+                                )
                                 for u in (mu.values() if isinstance(mu, dict) else [])
                             )
                             self.usd_spent = float(info.get("total_cost_usd", 0.0))

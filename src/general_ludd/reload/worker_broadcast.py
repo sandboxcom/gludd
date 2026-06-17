@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import logging
+import os
 import time
 from dataclasses import dataclass, field
 from typing import Any
@@ -50,14 +51,25 @@ class WorkerBroadcaster:
         for wid in stale:
             self._workers.pop(wid, None)
 
+    @staticmethod
+    def _auth_headers() -> dict[str, str]:
+        """Attach the daemon PSK as a Bearer token so internal /admin POSTs are
+        accepted by a secured worker (GLUDD_REQUIRE_AUTH). Without this the
+        reload/model-sync broadcasts 401 silently and the fleet never converges.
+        Fail-open only when no PSK is configured (auth disabled)."""
+        psk = os.environ.get("GLUDD_PSK", "")
+        return {"Authorization": f"Bearer {psk}"} if psk else {}
+
     def broadcast_reload(self, scope: Any) -> list[BroadcastResult]:
         results = []
         scope_value = scope.value if hasattr(scope, "value") else str(scope)
+        headers = self._auth_headers()
         for w in self._workers.values():
             try:
                 resp = httpx.post(
                     f"{w.address}/admin/reload",
                     json={"scope": scope_value},
+                    headers=headers,
                     timeout=10.0,
                 )
                 results.append(BroadcastResult(worker_id=w.worker_id, success=resp.status_code == 200))
@@ -70,11 +82,13 @@ class WorkerBroadcaster:
         self, action: str, model_id: str, profile: dict[str, Any]
     ) -> list[BroadcastResult]:
         results = []
+        headers = self._auth_headers()
         for w in self._workers.values():
             try:
                 resp = httpx.post(
                     f"{w.address}/admin/models/sync",
                     json={"action": action, "model_id": model_id, "profile": profile},
+                    headers=headers,
                     timeout=10.0,
                 )
                 results.append(BroadcastResult(worker_id=w.worker_id, success=resp.status_code == 200))

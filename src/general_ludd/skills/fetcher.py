@@ -4,6 +4,7 @@ from __future__ import annotations
 import logging
 from dataclasses import dataclass
 from pathlib import Path
+from urllib.parse import quote
 
 import httpx
 
@@ -86,10 +87,22 @@ class GitHubSkillSource:
         return cls(owner=owner, repo=repo, branch=branch, subdir=subdir)
 
     def _api_url(self, path: str) -> str:
-        return f"{GITHUB_API_BASE}/repos/{self.owner}/{self.repo}/contents/{path}?ref={self.branch}"
+        # URL-encode every component so a branch/subdir/owner/repo carrying a
+        # '?' or '#' (extractable from a crafted GitHub URL) cannot inject a
+        # query/fragment and redirect the request. `path` keeps '/' so nested
+        # content paths survive; the rest are fully escaped.
+        return (
+            f"{GITHUB_API_BASE}/repos/{quote(self.owner, safe='')}/"
+            f"{quote(self.repo, safe='')}/contents/{quote(path, safe='/')}"
+            f"?ref={quote(self.branch, safe='')}"
+        )
 
     def _raw_url(self, path: str) -> str:
-        return f"{GITHUB_RAW_BASE}/{self.owner}/{self.repo}/{self.branch}/{path}"
+        return (
+            f"{GITHUB_RAW_BASE}/{quote(self.owner, safe='')}/"
+            f"{quote(self.repo, safe='')}/{quote(self.branch, safe='')}/"
+            f"{quote(path, safe='/')}"
+        )
 
     def list_skills(self) -> list[CatalogSkillEntry]:
         path = self.subdir.rstrip("/") if self.subdir else ""

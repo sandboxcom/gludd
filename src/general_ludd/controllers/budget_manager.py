@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import logging
 import math
+import threading
 import time
 from typing import Any
 
@@ -47,6 +48,7 @@ class BudgetManager:
         self._daily_spend: float = 0.0
         self._daily_start: float = time.monotonic()
         self._paused: bool = False
+        self._spend_lock = threading.Lock()
         # API cost estimation + local-resource gating are delegated to the
         # threshold-based BudgetController so this manager has a single source
         # for both monetary and compute-pressure budget decisions.
@@ -125,8 +127,11 @@ class BudgetManager:
         return {"allowed": True, "reason": "ok"}
 
     def record_spend(self, todo_id: str, amount: float) -> None:
-        self._todo_spend[todo_id] = self._todo_spend.get(todo_id, 0.0) + amount
-        self._daily_spend += amount
+        # Serialize the read-modify-write so concurrent spend records can't lose
+        # updates (the controller is shared across worker threads).
+        with self._spend_lock:
+            self._todo_spend[todo_id] = self._todo_spend.get(todo_id, 0.0) + amount
+            self._daily_spend += amount
 
     def get_status(self) -> dict[str, Any]:
         self._reset_daily_if_needed()
