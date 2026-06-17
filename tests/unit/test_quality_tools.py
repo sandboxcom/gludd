@@ -5,6 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 
+from general_ludd.quality.gate import QualityGateChecker
 from general_ludd.quality.tools import (
     CoverageResult,
     QualityGateResult,
@@ -12,6 +13,7 @@ from general_ludd.quality.tools import (
     check_python_coverage,
     check_quality_gates,
 )
+from general_ludd.schemas.quality_gate import PythonQualityGate, QualityGateConfig
 
 
 class TestCheckPythonCoverage:
@@ -42,6 +44,57 @@ class TestCheckPythonCoverage:
         assert result.line_coverage == 70.0
         assert result.target_line == 90.0
         assert result.target_branch == 80.0
+
+
+class TestPythonCoverageShimDelegation:
+    """The dict-based tools shim and the canonical pydantic-backed method must
+    agree on pass/fail for the same line/branch inputs and thresholds."""
+
+    def _params(self):
+        return [
+            (85.0, 75.0, 80.0, 70.0),  # both pass
+            (70.0, 60.0, 90.0, 80.0),  # line fails
+            (95.0, 60.0, 90.0, 80.0),  # branch fails
+            (90.0, 80.0, 90.0, 80.0),  # exactly at threshold
+            (89.99, 80.0, 90.0, 80.0),  # just below line
+        ]
+
+    def test_shim_agrees_with_method(self):
+        for line, branch, target_line, target_branch in self._params():
+            config = {
+                "python": {
+                    "enabled": True,
+                    "line_coverage_min_percent": target_line,
+                    "branch_coverage_min_percent": target_branch,
+                }
+            }
+            shim = check_python_coverage(config, line_coverage=line, branch_coverage=branch)
+
+            checker = QualityGateChecker(
+                QualityGateConfig(
+                    python=PythonQualityGate(
+                        enabled=True,
+                        line_coverage_min_percent=target_line,
+                        branch_coverage_min_percent=target_branch,
+                    )
+                )
+            )
+            method = checker.check_python_coverage(
+                coverage_percent=line, branch_percent=branch
+            )
+
+            assert shim.passes is method["passed"], (
+                f"shim/method disagree for line={line} branch={branch} "
+                f"target_line={target_line} target_branch={target_branch}: "
+                f"shim={shim.passes} method={method['passed']}"
+            )
+
+    def test_shim_uses_default_thresholds(self):
+        # No python config -> defaults (line 90, branch 80) from the canonical path.
+        result = check_python_coverage({}, line_coverage=95.0, branch_coverage=85.0)
+        assert result.target_line == 90.0
+        assert result.target_branch == 80.0
+        assert result.passes is True
 
 
 class TestCheckMoleculeCoverageTools:
