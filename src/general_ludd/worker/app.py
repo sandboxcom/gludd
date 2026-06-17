@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -209,12 +210,16 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
             },
             shared_vars=None,
         )
-        runner_result = await asyncio.to_thread(
-            runner.run_playbook,
-            playbook_name=job.playbook,
-            private_data_dir=dirs["root"],
-            extravars={"model_response": model_response} if model_response is not None else None,
-        )
+        try:
+            runner_result = await asyncio.to_thread(
+                runner.run_playbook,
+                playbook_name=job.playbook,
+                private_data_dir=dirs["root"],
+                extravars={"model_response": model_response} if model_response is not None else None,
+            )
+        except Exception:
+            shutil.rmtree(dirs["root"], ignore_errors=True)
+            raise
         return {
             "status": "created",
             "return_id": f"RET-{job.job_id}",
