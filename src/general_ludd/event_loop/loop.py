@@ -664,10 +664,22 @@ class EventLoop:
         if self._todo_repo is None:
             return
         project_id = self._tick_project_id()
+
+        # Derive the claim limit from the PID cap so we never set more rows
+        # ACTIVE than we will actually dispatch.  Without this, the dispatch
+        # phase truncates the Python list AFTER the DB write, leaving
+        # ACTIVE-undispatched rows that accumulate until the 15-min reaper.
+        hard_cap = 10  # matches claim_runnable default
+        pid_outputs = self._tick_state.get("pid_outputs")
+        if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
+            pid_cap = pid_outputs.desired_total_active_buckets
+            hard_cap = min(hard_cap, pid_cap)
+        claim_limit = hard_cap
+
         if project_id is not None:
-            claimed = await self._todo_repo.claim_runnable(project_id=project_id)
+            claimed = await self._todo_repo.claim_runnable(limit=claim_limit, project_id=project_id)
         else:
-            claimed = await self._todo_repo.claim_runnable()
+            claimed = await self._todo_repo.claim_runnable(limit=claim_limit)
         self._tick_state["claimed_todos"] = claimed
         # H15 (W2.5): record a bucket lease per claimed todo so a crashed tick's
         # work can be reclaimed once the lease expires.
