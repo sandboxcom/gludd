@@ -31,7 +31,7 @@ from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
 from general_ludd.scoring.router import AdaptiveRouter
-from general_ludd.security.auth import is_path_within
+from general_ludd.security.sanitize import is_path_within
 
 
 def _workspace_root(app: FastAPI) -> str:
@@ -75,7 +75,7 @@ def _confined_code_path(app: FastAPI, path: str) -> str:
             detail=f"path must be inside the workspace root: {path!r}",
         )
     roots = _allowed_code_roots(app)
-    if not any(is_path_within(root, path) for root in roots):
+    if not any(is_path_within(path, root) for root in roots):
         raise HTTPException(
             status_code=422,
             detail=f"path must be inside the workspace root: {path!r}",

@@ -8,7 +8,7 @@ from fastapi import FastAPI, HTTPException
 
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.integrity.scanner import FileIntegrityScanner, sign_change_openbao
-from general_ludd.security.auth import is_path_within
+from general_ludd.security.sanitize import is_path_within
 from general_ludd.validation.gap_analyzer import GapAnalyzer
 from general_ludd.validation.log_auditor import LogAuditor
 
@@ -47,7 +47,7 @@ def _confine_scan_paths(app: FastAPI, paths: list[Any]) -> list[str]:
     confined: list[str] = []
     for raw in paths:
         p = str(raw)
-        if not any(is_path_within(root, p) for root in roots):
+        if not any(is_path_within(p, root) for root in roots):
             raise HTTPException(
                 status_code=422,
                 detail=f"scan path escapes the allowed roots: {p!r}",
