@@ -93,6 +93,7 @@ class UserConfig(BaseSettings):
     database: dict[str, Any] = {}
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
+    connectors: list[dict[str, Any]] = []
     self_improve: dict[str, Any] = {}
     pipeline: PipelineConfigBlock = PipelineConfigBlock()
 
