@@ -873,6 +873,20 @@ git-merge-nc:
 	@[ -n "$(BR)" ] || { echo "Usage: make git-merge-nc BR=feature/xxx"; exit 1; }
 	@git merge --no-ff --no-commit "$(BR)" && echo "merged (uncommitted): $(BR)" || { echo "MERGE CONFLICT — aborting"; git merge --abort; exit 1; }
 
+# Merge an arbitrary commit hash (or any ref) with --no-ff. Leaves the merge
+# open on conflict so the caller can resolve and stage manually.
+# Usage: make git-merge-ref REF=<commit-hash>
+git-merge-ref:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-merge-ref REF=<commit-hash-or-branch>"; exit 1; }
+	@git merge --no-ff "$(REF)" && echo "merged: $(REF)" || echo "MERGE CONFLICT — resolve conflicts, stage, then commit"
+
+# Merge an arbitrary ref --no-ff --no-commit (for batching). Leaves merge
+# open on conflict so the caller can resolve before committing.
+# Usage: make git-merge-ref-nc REF=<commit-hash>
+git-merge-ref-nc:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-merge-ref-nc REF=<commit-hash-or-branch>"; exit 1; }
+	@git merge --no-ff --no-commit "$(REF)" && echo "merged (no-commit): $(REF)" || echo "MERGE CONFLICT — resolve conflicts, stage, then commit"
+
 wt-prune-force-merged:
 	@git worktree list --porcelain | awk '/^worktree /{print $$2}' | while read -r wt; do \
 		case "$$wt" in \
