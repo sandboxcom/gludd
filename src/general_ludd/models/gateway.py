@@ -14,7 +14,11 @@ from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
-from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutRetryPolicy
+from general_ludd.models.timeout_detector import (
+    _NON_RETRYABLE_KINDS,
+    TimeoutClassifier,
+    TimeoutRetryPolicy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -425,8 +429,6 @@ class ModelGateway:
 
         import httpx
 
-        from general_ludd.models.timeout_detector import TimeoutKind
-
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
@@ -468,11 +470,7 @@ class ModelGateway:
                 return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
-            if kind in (
-                TimeoutKind.AUTH_ERROR,
-                TimeoutKind.CONTEXT_LENGTH,
-                TimeoutKind.INVALID_REQUEST,
-            ):
+            if kind in _NON_RETRYABLE_KINDS:
                 return False
             decision = policy.decide(kind, _attempt_counter[0])
             return bool(decision.should_retry)
@@ -520,11 +518,7 @@ class ModelGateway:
                     except _retryable_exc_types as exc:
                         _last_exc[0] = exc
                         kind = TimeoutClassifier.classify(exc)
-                        if kind in (
-                TimeoutKind.AUTH_ERROR,
-                TimeoutKind.CONTEXT_LENGTH,
-                TimeoutKind.INVALID_REQUEST,
-            ):
+                        if kind in _NON_RETRYABLE_KINDS:
                             # Non-retryable: re-raise immediately. Do NOT record
                             # here — record_timeout_on_failure (via _invoke_and_bill)
                             # already recorded exactly one TimeoutEvent for this
