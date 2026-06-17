@@ -445,6 +445,17 @@ class EventLoop:
         except (TypeError, ValueError):
             return 0.0
 
+    def _check_budget_or_skip(self, phase_name: str, item_count: int) -> bool:
+        if self._budget_guard is None:
+            return False
+        check = self._budget_guard.check_all_limits(
+            estimated_cost=self._estimated_dispatch_cost(item_count)
+        )
+        if not check["allowed"]:
+            logger.warning("Budget exceeded, skipping %s dispatch: %s", phase_name, check["reason"])
+            return True
+        return False
+
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:
             return
@@ -454,14 +465,9 @@ class EventLoop:
 
     async def _phase_dispatch_return_review_jobs(self) -> None:
         claimed = self._tick_state.get("claimed_returns", [])
-        if self._budget_guard is not None:
-            check = self._budget_guard.check_all_limits(
-                estimated_cost=self._estimated_dispatch_cost(len(claimed))
-            )
-            if not check["allowed"]:
-                logger.warning("Budget exceeded, skipping return review dispatch: %s", check["reason"])
-                self._tick_metrics["returns_reviewed"] = 0
-                return
+        if self._check_budget_or_skip("return review", len(claimed)):
+            self._tick_metrics["returns_reviewed"] = 0
+            return
         for tr in claimed:
             await self._dispatch_review_job(tr)
         self._tick_metrics["returns_reviewed"] = len(claimed)
@@ -690,14 +696,9 @@ class EventLoop:
         cap = None
         if pid_outputs is not None and hasattr(pid_outputs, "desired_total_active_buckets"):
             cap = pid_outputs.desired_total_active_buckets
-        if self._budget_guard is not None:
-            check = self._budget_guard.check_all_limits(
-                estimated_cost=self._estimated_dispatch_cost(len(claimed))
-            )
-            if not check["allowed"]:
-                logger.warning("Budget exceeded, skipping execute dispatch: %s", check["reason"])
-                self._tick_metrics["todos_dispatched"] = 0
-                return
+        if self._check_budget_or_skip("execute", len(claimed)):
+            self._tick_metrics["todos_dispatched"] = 0
+            return
 
         # Apply PID cap.
         if cap is not None and len(claimed) > cap:
@@ -1351,14 +1352,7 @@ class EventLoop:
         return runnable
 
     async def reconcile_decision(self, decision: TaskDecision, todo: Todo) -> Todo:
-        if decision.decision == "complete":
-            todo.transition_to(TodoStatus.COMPLETE)
-        elif decision.decision == "needs_more_work":
-            todo.transition_to(TodoStatus.NEEDS_MORE_WORK)
-        elif decision.decision == "failed":
-            todo.transition_to(TodoStatus.FAILED)
-        elif decision.decision == "blocked":
-            todo.transition_to(TodoStatus.BLOCKED)
-        elif decision.decision == "manual_hold":
-            todo.transition_to(TodoStatus.MANUAL_HOLD)
+        status = self._decision_to_status(decision.decision)
+        if status is not None:
+            todo.transition_to(status)
         return todo
