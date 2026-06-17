@@ -11,7 +11,7 @@ import tenacity
 from pydantic import BaseModel, Field, field_validator
 
 from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
-from general_ludd.models.provider_registry import ProviderRegistry
+from general_ludd.models.provider_registry import PROVIDER_PACKAGE_ALLOWLIST, ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutRetryPolicy
@@ -76,6 +76,23 @@ class ModelProfile(BaseModel):
             v = v.strip()
         if not v:
             raise ValueError("model_profile_id must not be empty")
+        return v
+
+    @field_validator("provider_package")
+    @classmethod
+    def _provider_package_allowlisted(cls, v: str) -> str:
+        """Reject provider_package values not in the hardcoded allowlist.
+
+        This closes the RCE vector where a malicious config profile could set
+        ``provider_package: os`` and ``provider_class_hint: system`` to execute
+        arbitrary OS commands via importlib.import_module + getattr.
+        """
+        normalised = v.replace("_", "-").lower()
+        if normalised not in PROVIDER_PACKAGE_ALLOWLIST:
+            raise ValueError(
+                f"provider_package {v!r} is not in the allowlist. "
+                f"Allowed: {sorted(PROVIDER_PACKAGE_ALLOWLIST)}"
+            )
         return v
 
     @field_validator("context_window", "max_input_tokens", "max_output_tokens")
