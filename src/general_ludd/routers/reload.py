@@ -3,12 +3,19 @@ from __future__ import annotations
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
-from pydantic import BaseModel
+from pydantic import BaseModel, field_validator
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.daemon import _get_or_create_extended_subsystems, _get_or_create_subsystems
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
+from general_ludd.security import is_safe_fetch_url
+
+_FORBIDDEN_HEADERS: frozenset[str] = frozenset(
+    {"authorization", "host", "content-length", "transfer-encoding", "cookie"}
+)
+_MAX_HEADER_KEY_LEN = 1024
+_MAX_HEADER_VAL_LEN = 1024
 
 
 class ReloadRequest(BaseModel):
@@ -21,6 +28,38 @@ class RegisterHookRequest(BaseModel):
     headers: dict[str, str] | None = None
     retry_count: int = 1
     timeout_seconds: int = 10
+
+    @field_validator("url")
+    @classmethod
+    def _validate_url_ssrf(cls, v: str) -> str:
+        """Reject non-safe URLs at registration time (SSRF guard)."""
+        if not is_safe_fetch_url(v):
+            raise ValueError(
+                "url must use https and must not target loopback, link-local, "
+                "RFC-1918, or cloud-metadata addresses"
+            )
+        return v
+
+    @field_validator("headers")
+    @classmethod
+    def _validate_headers(cls, v: dict[str, str] | None) -> dict[str, str] | None:
+        """Reject forbidden headers and cap key/value lengths."""
+        if v is None:
+            return v
+        for key, val in v.items():
+            if len(key) > _MAX_HEADER_KEY_LEN:
+                raise ValueError(
+                    f"header key exceeds maximum length of {_MAX_HEADER_KEY_LEN}: {key!r}"
+                )
+            if len(val) > _MAX_HEADER_VAL_LEN:
+                raise ValueError(
+                    f"header value for {key!r} exceeds maximum length of {_MAX_HEADER_VAL_LEN}"
+                )
+            if key.lower() in _FORBIDDEN_HEADERS:
+                raise ValueError(
+                    f"header {key!r} is not permitted in webhook registrations"
+                )
+        return v
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
