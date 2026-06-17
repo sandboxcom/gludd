@@ -103,6 +103,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
                 health_tracker=app.state._health_tracker,
+                # B1: reuse the daemon's RunBudgetGuard (set on app.state during
+                # lifespan startup) so API-built gateways bill spend too. None
+                # when the daemon configured no budget — the gateway treats that
+                # as unlimited, preserving prior behavior.
+                budget_guard=getattr(app.state, "_budget_guard", None),
                 metrics_collector=metrics_collector,
             )
         gateway: ModelGateway = app.state._model_gateway
@@ -421,6 +426,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
                 health_tracker=app.state._health_tracker,
+                # B1: reuse the daemon's RunBudgetGuard so this admin-built
+                # gateway bills spend too (None => unlimited, prior behavior).
+                budget_guard=getattr(app.state, "_budget_guard", None),
             )
             app.state._model_gateway = gateway
 
@@ -456,6 +464,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             )
 
         messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+
+        # B5: pre-check the run budget BEFORE the paid call. /admin/models/call
+        # previously hit the provider with no gate. Mirror the daemon's
+        # _gateway_executor: refuse fail-closed (HTTP 429) when over budget.
+        # No guard configured => check_all_limits is skipped (prior behavior).
+        budget_guard = getattr(app.state, "_budget_guard", None)
+        if budget_guard is not None:
+            verdict = budget_guard.check_all_limits(0.0)
+            if not verdict.get("allowed", True):
+                from fastapi import HTTPException
+                raise HTTPException(
+                    status_code=429,
+                    detail=f"budget exceeded: {verdict.get('reason', 'over budget')}",
+                )
 
         try:
             import asyncio

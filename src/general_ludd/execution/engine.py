@@ -199,6 +199,34 @@ def _slugify(text: str, max_len: int = 40) -> str:
     return slug[:max_len]
 
 
+def _budget_pre_check(guard: Any, estimated_cost: float = 0.0) -> str | None:
+    """Pre-check a budget guard before a paid model call (B4).
+
+    Returns a denial reason string when the call must be refused, or None when
+    the call may proceed. Supports two guard shapes:
+
+    - RunBudgetGuard: ``check_all_limits(estimated_cost) -> {"allowed": bool,
+      "reason": str}``. Denied when ``allowed`` is falsey.
+    - SpendLimiter: ``try_charge(cost_usd, kind) -> bool``. Atomic check-and-
+      record; denied when it returns falsey.
+
+    A guard exposing neither method is treated as "allow" (forward-compatible,
+    never accidentally fail-closed on an unknown object).
+    """
+    check_all = getattr(guard, "check_all_limits", None)
+    if callable(check_all):
+        verdict = check_all(estimated_cost)
+        if not verdict.get("allowed", True):
+            return str(verdict.get("reason", "over budget"))
+        return None
+    try_charge = getattr(guard, "try_charge", None)
+    if callable(try_charge):
+        if not try_charge(estimated_cost, kind="execution_engine"):
+            return "spend limit exceeded"
+        return None
+    return None
+
+
 class ExecutionEngine:
     def __init__(
         self,
@@ -206,11 +234,16 @@ class ExecutionEngine:
         workspace_path: str = "/tmp/gludd-workspace",
         benchmark_recorder: Any = None,
         metrics_collector: Any = None,
+        budget_guard: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
         self._benchmark_recorder = benchmark_recorder
         self._metrics_collector = metrics_collector
+        # B4: optional RunBudgetGuard / SpendLimiter. When None (the default for
+        # all existing callers) the pre-check in execute() is a no-op, so prior
+        # behavior is preserved and no caller breaks.
+        self._budget_guard = budget_guard
         self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
 
@@ -249,6 +282,21 @@ class ExecutionEngine:
 
         system_prompt = _build_system_prompt(job)
         user_prompt = _build_user_prompt(job)
+
+        # B4: pre-check the budget BEFORE the paid call. ExecutionEngine.execute
+        # previously hit the gateway with no gate. When a guard is injected,
+        # refuse fail-closed; when None (default), this is a no-op so existing
+        # callers are unaffected. Supports both RunBudgetGuard.check_all_limits
+        # and SpendLimiter.try_charge.
+        if self._budget_guard is not None:
+            denied_reason = _budget_pre_check(self._budget_guard)
+            if denied_reason is not None:
+                self._record_metrics(job, success=False)
+                return TaskReturn(
+                    return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                    playbook=job.playbook or "code", queue=job.queue or "core",
+                    exit_code=1, result_summary=f"Budget exceeded: {denied_reason}",
+                )
 
         try:
             response = self._model_gateway.call_model(

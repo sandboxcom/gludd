@@ -42,6 +42,33 @@ def get_playbook_registry() -> set[str]:
     return set(get_runner().list_playbooks())
 
 
+def build_budget_guard_from_config() -> Any | None:
+    """Build a RunBudgetGuard from the worker's config, or None when unset.
+
+    Mirrors the daemon's construction (daemon.py ~556-564) reading the SAME
+    user-config ``budget`` block, so the stateless worker enforces the same run
+    budget the daemon does. Returns None when no budget is configured, which the
+    pre-check and the gateway both treat as "unlimited" (prior behavior).
+    """
+    try:
+        from general_ludd.config.loader import load_user_config
+
+        uc = load_user_config()
+        budget_data = getattr(uc, "budget", None) or {}
+        if not (budget_data and any(budget_data.values())):
+            return None
+        from general_ludd.controllers.budget import RunBudgetGuard
+
+        return RunBudgetGuard(
+            run_budget_usd=float(budget_data.get("daily_limit", float("inf"))),
+            run_timeout_seconds=float(budget_data.get("timeout_seconds", float("inf"))),
+            per_call_budget_usd=float(budget_data.get("per_task_limit", float("inf"))),
+        )
+    except Exception as exc:  # pragma: no cover - defensive config path
+        logger.warning("Worker budget guard construction failed: %s", exc)
+        return None
+
+
 def build_gateway_from_config() -> ModelGateway | None:
     """Build a ModelGateway from the worker's config, or None when unconfigured.
 
@@ -66,7 +93,13 @@ def build_gateway_from_config() -> ModelGateway | None:
             return None
         from general_ludd.secrets.env import EnvSecretsManager
 
-        return ModelGateway(profiles=profiles, secrets_manager=EnvSecretsManager())
+        # B1: thread the run budget guard into the worker's gateway so
+        # _invoke_and_bill's record_spend(cost) fires here too.
+        return ModelGateway(
+            profiles=profiles,
+            secrets_manager=EnvSecretsManager(),
+            budget_guard=build_budget_guard_from_config(),
+        )
     except Exception as exc:  # pragma: no cover - defensive config path
         logger.warning("Worker gateway construction failed: %s", exc)
         return None
@@ -95,7 +128,10 @@ def _invoke_gateway_for_job(
     )
 
 
-def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
+def create_app(
+    gateway: ModelGateway | None = _UNSET,
+    budget_guard: Any = _UNSET,
+) -> FastAPI:
     application = FastAPI(
         title="General Ludd Worker",
         version="0.1.0",
@@ -104,6 +140,13 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
     if gateway is _UNSET:
         gateway = build_gateway_from_config()
     application.state.gateway = gateway
+
+    # B3: budget guard for the /jobs/execute pre-check. Omitted → build from the
+    # same config; explicit None → no gate (prior behavior). Tests inject an
+    # exhausted guard to prove the paid call is refused.
+    if budget_guard is _UNSET:
+        budget_guard = build_budget_guard_from_config()
+    application.state._budget_guard = budget_guard
 
     # W5.6 (AUTH blocker): the worker runs arbitrary registered playbooks for any
     # caller who can reach the port. Enforce the same pre-shared-key the daemon
@@ -189,6 +232,18 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
         model_response: str | None = None
         gw = application.state.gateway
         if gw is not None and is_generation_work_type(job.work_type):
+            # B3: pre-check the run budget BEFORE the paid model call. The
+            # /jobs/execute handler previously called the model with no gate.
+            # Refuse fail-closed (HTTP 429) when over budget. No guard configured
+            # => no gate (prior behavior).
+            budget_guard = getattr(application.state, "_budget_guard", None)
+            if budget_guard is not None:
+                verdict = budget_guard.check_all_limits(0.0)
+                if not verdict.get("allowed", True):
+                    raise HTTPException(
+                        status_code=429,
+                        detail=f"budget exceeded: {verdict.get('reason', 'over budget')}",
+                    )
             model_response = _invoke_gateway_for_job(gw, job)
 
         runner = get_runner()
