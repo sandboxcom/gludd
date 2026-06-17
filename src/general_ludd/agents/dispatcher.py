@@ -9,7 +9,14 @@ from collections.abc import Callable, Coroutine
 from dataclasses import dataclass, field
 
 from general_ludd.agents.registry import AgentRegistry
-from general_ludd.agents.types import AgentTask
+from general_ludd.agents.types import AgentTask as AgentTask
+
+# Explicit re-export: AgentTask is defined in agents.types but
+# daemon_wiring / pipeline.daemon_adapters / agents.__init__ / daemon
+# all import it `from general_ludd.agents.dispatcher import AgentTask`.
+# Listing it in __all__ keeps that import path valid under mypy
+# --no-implicit-reexport.
+__all__ = ["AgentDispatcher", "AgentTask", "AgentTaskResult", "ExecutorFn"]
 
 logger = logging.getLogger(__name__)
 
