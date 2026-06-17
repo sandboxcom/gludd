@@ -51,3 +51,13 @@ class CloneResult:
     success: bool
     already_present: bool = False
     message: str = ""
+
+
+@dataclass
+class GatedCommitResult:
+    """Outcome of a gated commit/merge: the change is applied only if the gate
+    command exited 0; otherwise ``success`` is False and the tree is unchanged."""
+    success: bool
+    commit_sha: str | None = None
+    gate_returncode: int = 0
+    message: str = ""

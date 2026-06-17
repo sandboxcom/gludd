@@ -14,6 +14,7 @@ from urllib.parse import urlsplit
 from general_ludd.git_automation.locking import git_repo_lock
 from general_ludd.git_automation.types import (
     CloneResult,
+    GatedCommitResult,
     InitResult,
     MergeResult,
     PushResult,
@@ -546,6 +547,130 @@ class GitAutomation:
                 check=False,
             )
         return MergeResult(success=True, strategy=strategy, message=result.stdout.strip())
+
+    def gated_commit(
+        self, files: list[str], message: str, gate_cmd: list[str]
+    ) -> GatedCommitResult:
+        """Stage ``files``, run ``gate_cmd``, and commit ONLY if the gate passes.
+
+        The git operations go through :meth:`_run_git` (timeout + non-interactive
+        env); the caller-supplied ``gate_cmd`` (e.g. ``["make", "gate"]``) runs via
+        a raw ``subprocess.run`` with the same non-interactive env + timeout so a
+        misbehaving gate cannot hang the caller. Fail-closed: every path returns a
+        :class:`GatedCommitResult`, and no commit happens unless the gate returned 0
+        (this is the portable primitive behind the non-blocking gated git workflow —
+        the gate is NOT a rubber stamp).
+        """
+        try:
+            for f in files:
+                self._run_git("add", "--", f)
+        except subprocess.CalledProcessError as exc:
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=exc.returncode,
+                message=f"failed to stage files: {(exc.stderr or '').strip()}",
+            )
+        try:
+            gate = subprocess.run(
+                gate_cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
+        except subprocess.TimeoutExpired:
+            return GatedCommitResult(
+                success=False, gate_returncode=124, message="gate command timed out"
+            )
+        if gate.returncode != 0:
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=gate.returncode,
+                message=(gate.stderr or gate.stdout or "gate command failed").strip(),
+            )
+        try:
+            self._run_git("commit", "-m", message)
+            sha = self._run_git("rev-parse", "HEAD").stdout.strip()
+        except subprocess.CalledProcessError as exc:
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=0,
+                message=f"commit failed after gate passed: {(exc.stderr or '').strip()}",
+            )
+        return GatedCommitResult(
+            success=True, commit_sha=sha, gate_returncode=0, message="committed"
+        )
+
+    def gated_merge(
+        self, source: str, target: str, gate_cmd: list[str], strategy: str = "ff"
+    ) -> GatedCommitResult:
+        """Merge ``source`` into ``target`` and keep it ONLY if ``gate_cmd`` passes.
+
+        The gate validates the MERGED tree, so the merge is applied first and then
+        rolled back on gate failure/timeout. Rollback uses ``git reset --hard`` to
+        the captured pre-merge HEAD — a completed fast-forward merge leaves no
+        merge-in-progress for ``git merge --abort`` to undo, so abort alone would be
+        fail-OPEN. Fail-closed: a failed gate leaves ``target`` exactly at pre_sha.
+        """
+        _reject_leading_dash(source, kind="merge source ref")
+        _reject_leading_dash(target, kind="merge target ref")
+        try:
+            self._run_git("checkout", target, "--")
+            pre_sha = self._run_git("rev-parse", "HEAD").stdout.strip()
+        except subprocess.CalledProcessError as exc:
+            return GatedCommitResult(
+                success=False,
+                message=f"failed to checkout target {target!r}: {(exc.stderr or '').strip()}",
+            )
+        merge_args = ["merge"]
+        if strategy == "ff":
+            merge_args.append("--ff-only")
+        elif strategy == "no-ff":
+            merge_args.extend(["--no-ff", "-m", f"Merge {source} into {target}"])
+        elif strategy == "squash":
+            merge_args.append("--squash")
+        merge_args.extend(["--", source])
+        merge = self._run_git(*merge_args, check=False)
+        if merge.returncode != 0:
+            # Conflict / non-ff: clean up any in-progress merge and restore HEAD.
+            self._run_git("merge", "--abort", check=False)
+            self._run_git("reset", "--hard", pre_sha, check=False)
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=merge.returncode,
+                message=(merge.stderr or "merge failed").strip(),
+            )
+        if strategy == "squash":
+            self._run_git("commit", "-m", f"Merge {source} into {target} (squash)", check=False)
+        # The merge is applied (HEAD moved). Gate the merged tree; roll back on fail.
+        try:
+            gate = subprocess.run(
+                gate_cmd,
+                cwd=self.repo_path,
+                capture_output=True,
+                text=True,
+                check=False,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
+        except subprocess.TimeoutExpired:
+            self._run_git("reset", "--hard", pre_sha, check=False)
+            return GatedCommitResult(
+                success=False, gate_returncode=124, message="gate command timed out (rolled back)"
+            )
+        if gate.returncode != 0:
+            self._run_git("reset", "--hard", pre_sha, check=False)
+            return GatedCommitResult(
+                success=False,
+                gate_returncode=gate.returncode,
+                message=(gate.stderr or gate.stdout or "gate command failed").strip() + " (rolled back)",
+            )
+        sha = self._run_git("rev-parse", "HEAD").stdout.strip()
+        return GatedCommitResult(
+            success=True, commit_sha=sha, gate_returncode=0, message="merged"
+        )
 
     def create_release_tag(self, repo_path: str, fmt: str = "YYYYMMDDHHMMSS") -> str:
         now = datetime.now(tz=UTC)

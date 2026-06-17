@@ -2,6 +2,8 @@
 
 from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.git_automation.types import (
+    CloneResult,
+    GatedCommitResult,
     InitResult,
     MergeResult,
     PushResult,
@@ -10,6 +12,8 @@ from general_ludd.git_automation.types import (
 )
 
 __all__ = [
+    "CloneResult",
+    "GatedCommitResult",
     "GitAutomation",
     "InitResult",
     "MergeResult",
