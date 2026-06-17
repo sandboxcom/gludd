@@ -1003,7 +1003,9 @@ def create_daemon_app(
 
     _PUBLIC_PATHS = {
         "/healthz", "/readyz", "/api/status", "/api/todos", "/api/webmcp",
-        "/docs", "/openapi.json", "/redoc",
+        # Docs paths: listed explicitly — NO prefix/startswith to prevent bypass
+        # via paths like /docs-admin or /docsx that should require auth.
+        "/docs", "/docs/oauth2-redirect", "/openapi.json", "/redoc",
     }
 
     # AUTH-1: public access is (method, path)-aware. A path on the public list
@@ -1016,7 +1018,9 @@ def create_daemon_app(
     def _is_public(method: str, path: str) -> bool:
         if method.upper() not in _SAFE_METHODS:
             return False
-        return path in _PUBLIC_PATHS or path.startswith("/docs")
+        # Exact-match only — never use startswith("/docs") which would allow
+        # /docs-admin, /docsx, etc. to bypass auth.
+        return path in _PUBLIC_PATHS
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -1083,23 +1087,31 @@ def create_daemon_app(
         budget_status = budget_manager.get_status() if budget_manager is not None else {}
         budget_exhausted = bool(budget_status.get("paused", False))
         if degraded:
-            return {
+            body: dict[str, Any] = {
                 "status": "degraded",
-                "reason": str(degraded)[:200],
                 "no_auth": no_auth,
                 "require_auth": require_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
-                "budget": budget_status,
             }
-        return {
+            # PSK-gate: expose internal detail only to authenticated callers
+            # (callers that know the PSK). Without a PSK the daemon is in
+            # degraded-security mode anyway — omit these to avoid leaking
+            # internal state to unauthenticated observers.
+            if _psk:
+                body["reason"] = str(degraded)[:200]
+                body["budget"] = budget_status
+            return body
+        body = {
             "status": "healthy",
             "no_auth": no_auth,
             "require_auth": require_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
-            "budget": budget_status,
         }
+        if _psk:
+            body["budget"] = budget_status
+        return body
 
     @app.get("/readyz")
     async def readyz() -> Any:
@@ -1113,9 +1125,13 @@ def create_daemon_app(
 
         degraded = getattr(app.state, "_degraded", None)
         if degraded:
+            # PSK-gate: expose the degraded reason only to authenticated callers.
+            # Without a PSK, use a generic "degraded" to avoid leaking internal
+            # state to unauthenticated observers.
+            degraded_reason = str(degraded)[:200] if _psk else "degraded"
             return JSONResponse(
                 status_code=503,
-                content={"status": "degraded", "reason": str(degraded)[:200]},
+                content={"status": "degraded", "reason": degraded_reason},
             )
         # Check whether the event-loop task has completed/been cancelled
         el_task = getattr(app.state, "_event_loop_task", None)
