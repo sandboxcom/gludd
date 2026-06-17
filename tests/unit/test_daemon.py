@@ -120,9 +120,10 @@ class TestDaemonApp:
             assert "todos_total" in data
             assert "queue_depths" in data
             assert "tick_metrics" in data
-            assert "config_dir" in data
-            assert "config_files" in data
-            assert "filestore_root" in data
+            assert "config_file_count" in data
+            assert isinstance(data["config_file_count"], int)
+            assert "filestore_available" in data
+            assert isinstance(data["filestore_available"], bool)
             assert "filestore_binaries" in data
             assert "db_engine" in data
             assert "db_url" in data

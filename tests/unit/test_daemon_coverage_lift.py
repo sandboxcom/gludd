@@ -192,7 +192,7 @@ class TestApiStatusWithConfigDir:
             resp = await client.get("/api/status")
             assert resp.status_code == 200
             data = resp.json()
-            assert len(data["config_files"]) == 2
+            assert data["config_file_count"] == 2
 
 
 class TestApiListTodosWithStatusFilter:

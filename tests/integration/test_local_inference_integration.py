@@ -27,6 +27,7 @@ class TestLocalInferenceLifecycle:
             port=8001,
             gpu_layers=0,
             context_size=2048,
+            startup_timeout=0,  # skip readiness probe — no real server in CI
         )
         server = manager.create_server(config)
 
@@ -50,6 +51,7 @@ class TestLocalInferenceLifecycle:
             model_name="sshleifer/tiny-gpt2",
             host="localhost",
             port=8002,
+            startup_timeout=0,  # skip readiness probe — no real server in CI
         )
         server = manager.create_server(config)
 
@@ -79,13 +81,15 @@ class TestLocalInferenceLifecycle:
 
         mock_process = MagicMock()
         mock_process.returncode = None
-        mock_process.terminate = MagicMock()
+        mock_process.pid = 99999
         mock_process.wait = AsyncMock(return_value=0)
         server.process = mock_process
+        server.pid = 99999
         server.status = "running"
 
-        await manager.stop_server(server.server_id)
-        mock_process.terminate.assert_called_once()
+        with patch("os.killpg") as mock_killpg, patch("os.getpgid", return_value=99999):
+            await manager.stop_server(server.server_id)
+            mock_killpg.assert_called()
         assert server.status == "stopped"
 
 
