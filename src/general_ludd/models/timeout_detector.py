@@ -282,6 +282,13 @@ class ModelHealthTracker:
             }
 
 
+_NON_RETRYABLE_KINDS: frozenset[TimeoutKind] = frozenset({
+    TimeoutKind.AUTH_ERROR,
+    TimeoutKind.CONTEXT_LENGTH,
+    TimeoutKind.INVALID_REQUEST,
+})
+
+
 class TimeoutRetryPolicy:
     def __init__(
         self,
@@ -302,11 +309,7 @@ class TimeoutRetryPolicy:
         *,
         retry_after_seconds: float | None = None,
     ) -> RetryDecision:
-        if kind in (
-            TimeoutKind.AUTH_ERROR,
-            TimeoutKind.CONTEXT_LENGTH,
-            TimeoutKind.INVALID_REQUEST,
-        ):
+        if kind in _NON_RETRYABLE_KINDS:
             return RetryDecision(
                 should_retry=False,
                 reason=f"{kind.value} is not retryable",

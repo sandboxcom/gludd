@@ -293,3 +293,16 @@ class TestExampleConfigsAreValidYaml:
             assert "model_profile_id" in data, f"{fname} missing model_profile_id"
             assert "provider" in data, f"{fname} missing provider"
             assert "provider_package" in data, f"{fname} missing provider_package"
+
+
+def test_gateway_retry_uses_non_retryable_kinds_constant():
+    """call_model_with_retry references _NON_RETRYABLE_KINDS not inline sets."""
+    import inspect
+
+    import general_ludd.models.gateway as gw_mod
+
+    source = inspect.getsource(gw_mod)
+    # The constant must be referenced in gateway
+    assert "_NON_RETRYABLE_KINDS" in source
+    # The inline tuple pattern must not appear (all replaced by the constant)
+    assert "TimeoutKind.AUTH_ERROR,\n" not in source

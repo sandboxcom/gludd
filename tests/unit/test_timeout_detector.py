@@ -907,3 +907,13 @@ class TestGatewayTimeoutIntegration:
                 "primary", [{"role": "user", "content": "hi"}],
             )
             assert result.model_name == "gpt-3.5-turbo"
+
+
+def test_non_retryable_kinds_constant_is_complete():
+    """All three decision points use the same _NON_RETRYABLE_KINDS constant."""
+    from general_ludd.models.timeout_detector import _NON_RETRYABLE_KINDS, TimeoutKind
+
+    assert TimeoutKind.AUTH_ERROR in _NON_RETRYABLE_KINDS
+    assert TimeoutKind.CONTEXT_LENGTH in _NON_RETRYABLE_KINDS
+    assert TimeoutKind.INVALID_REQUEST in _NON_RETRYABLE_KINDS
+    assert len(_NON_RETRYABLE_KINDS) == 3
