@@ -174,8 +174,15 @@ class MarkdownTodoSource:
         assert m is not None  # parsed as a checkbox above
         text = m.group("text")
         if comment:
-            marker = f" <!--gludd:{comment}-->"
-            if marker.strip() not in text:
+            # Escape any '-->' in the caller comment so it can't terminate the
+            # HTML comment early and corrupt adjacent markup.
+            safe_comment = comment.replace("-->", "--&gt;")
+            marker = f" <!--gludd:{safe_comment}-->"
+            # Dedup on the FULL marker (incl. leading space): the old
+            # ``marker.strip()`` check failed to match a previously appended
+            # marker (which is stored WITH the leading space), so an identical
+            # re-applied comment was appended twice.
+            if marker not in text:
                 text = f"{text}{marker}"
         lines[line_idx] = f"{m.group('indent')}- [{new_mark}] {text}"
         self._write_lines(lines)

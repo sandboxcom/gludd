@@ -179,13 +179,13 @@ class TestApplyResults:
         r = DispatchResult(ok=True, kind="skill", name="my-skill", output="x")
         apply_results(store, [r])
         # key uses underscore
-        assert store.get("dispatch", "my_skill__ok") is True
+        assert store.get("dispatch", "my_DASH_skill__ok") is True
 
     def test_name_with_dot_is_normalised(self):
         store = VariableStore()
         r = DispatchResult(ok=True, kind="mcp", name="fs.read", output="data")
         apply_results(store, [r])
-        assert store.get("dispatch", "fs_read__ok") is True
+        assert store.get("dispatch", "fs_DOT_read__ok") is True
 
     def test_live_update_renders_correctly(self):
         """Full round-trip: dispatch → apply → render → reflected in next turn."""

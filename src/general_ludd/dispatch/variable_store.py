@@ -10,7 +10,8 @@ from __future__ import annotations
 import logging
 from typing import Any
 
-from jinja2 import Environment, Undefined, select_autoescape
+from jinja2 import Undefined, select_autoescape
+from jinja2.sandbox import SandboxedEnvironment
 
 from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
 
@@ -73,7 +74,13 @@ class VariableStore:
         Missing variables resolve to an empty string (not a hard error) so
         partial templates remain useful when only some vars are populated yet.
         """
-        env = Environment(undefined=Undefined, autoescape=select_autoescape())
+        # SandboxedEnvironment (not plain Environment): a dispatch result's
+        # output can carry attacker-influenced text, and render() evaluates the
+        # template against those vars. The sandbox blocks attribute access to
+        # dunders / globals so a `{{ ().__class__.__mro__ }}`-style SSTI payload
+        # cannot reach Python internals. Blocked access raises and is caught
+        # below (fail-open returns the raw template, never the evaluated escape).
+        env = SandboxedEnvironment(undefined=Undefined, autoescape=select_autoescape())
         ctx: dict[str, Any] = {**self.all_vars(), **extra}
         try:
             tmpl = env.from_string(template)
@@ -99,7 +106,7 @@ def apply_results(store: VariableStore, results: list[DispatchResult]) -> None:
     Also writes the latest result under the key ``dispatch__last``.
     """
     for result in results:
-        safe_name = result.name.replace(".", "_").replace("-", "_")
+        safe_name = result.name.replace(".", "_DOT_").replace("-", "_DASH_")
         store.set("dispatch", f"{safe_name}__ok", result.ok)
         store.set("dispatch", f"{safe_name}__output", result.output)
         store.set("dispatch", f"{safe_name}__error", result.error)
