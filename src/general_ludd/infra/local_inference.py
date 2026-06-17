@@ -166,23 +166,12 @@ class LocalInferenceManager:
 
     async def _start_slurm_server(self, server: LocalServer) -> LocalServer:
         adapter = SlurmAdapter()
-        # Validate before interpolating into the shell command string.
-        model = _validate_model(server.config.model_name or server.config.model_path)
-        host = _validate_host(server.config.host)
-        port = _validate_port(server.config.port)
-        extra_args = _validate_extra_args(list(server.config.extra_args))
-        if isinstance(server.config.gpu_layers, bool) or not isinstance(server.config.gpu_layers, int):
-            raise ValueError("gpu_layers must be an int")
-        if isinstance(server.config.context_size, bool) or not isinstance(server.config.context_size, int):
-            raise ValueError("context_size must be an int")
-        command = (
-            f"python3 -m llama_cpp.server "
-            f"--model {model} "
-            f"--host {host} "
-            f"--port {port} "
-            f"--n_gpu_layers {server.config.gpu_layers} "
-            f"--n_ctx {server.config.context_size}"
-        )
+        # Reuse _build_command(engine="slurm") for all validation + shell string
+        # construction — argv is ["sbatch", *extra_args, "--wrap", command_string].
+        argv = self._build_command(server.config)
+        # argv[-1] is the validated --wrap shell string; argv[1:-2] are extra_args.
+        command = argv[-1]
+        extra_args = argv[1:-2]  # tokens between "sbatch" and "--wrap"
         loop = asyncio.get_running_loop()
         job_id = await loop.run_in_executor(
             None,

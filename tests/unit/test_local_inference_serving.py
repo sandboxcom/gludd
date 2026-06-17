@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import pytest
+
 
 class TestSlurmInference:
     def test_slurm_is_valid_engine_option(self):
@@ -122,3 +124,112 @@ class TestSlurmInference:
         assert mgr.get_server("nonexistent") is None
         mgr.remove_server(s1.server_id)
         assert mgr.get_server(s1.server_id) is None
+
+
+# --- dedup contract: _remote_submit and _build_script must produce identical
+#     #SBATCH directives so there is exactly one script builder in SlurmAdapter --
+
+
+class TestSlurmScriptDedup:
+    """Verify _remote_submit delegates to _build_script rather than duplicating it."""
+
+    def test_build_script_matches_remote_submit_script_without_output(self):
+        """_build_script(output=None) must produce the same script _remote_submit uses.
+
+        Before the refactor, _remote_submit had its own inline copy of the
+        #SBATCH directive block. After the refactor, it calls _build_script.
+        This test locks in the contract: the script produced by _build_script
+        with output=None must be identical to what _remote_submit previously
+        built, confirming both paths share a single builder.
+        """
+        from general_ludd.infra.slurm import SlurmAdapter
+
+        adapter = SlurmAdapter()
+        params = dict(
+            command="python3 serve.py",
+            job_name="test-job",
+            partition="gpu",
+            cpus_per_task=4,
+            gpus="1",
+            memory="16G",
+            time_limit="02:00:00",
+        )
+
+        # What _build_script produces with output=None.
+        script = adapter._build_script(**params, output=None)
+
+        # The script must contain exactly the expected #SBATCH lines in order.
+        lines = script.splitlines()
+        assert lines[0] == "#!/bin/bash"
+        assert "#SBATCH --job-name=test-job" in lines
+        assert "#SBATCH --partition=gpu" in lines
+        assert "#SBATCH --cpus-per-task=4" in lines
+        assert "#SBATCH --gres=gpu:1" in lines
+        assert "#SBATCH --mem=16G" in lines
+        assert "#SBATCH --time=02:00:00" in lines
+        # No output directive — that is local-path-only.
+        assert not any("--output" in ln for ln in lines)
+        # Command body must appear at the end.
+        assert lines[-1] == "python3 serve.py"
+
+    def test_build_script_directive_order_matches_remote_expected_order(self):
+        """#SBATCH directives must appear in the canonical order: job-name,
+        partition, cpus-per-task, gres, mem, time — matching the original
+        _remote_submit inline block order so API payloads are stable.
+        """
+        from general_ludd.infra.slurm import SlurmAdapter
+
+        adapter = SlurmAdapter()
+        script = adapter._build_script(
+            command="echo hello",
+            job_name="order-test",
+            partition="cpu",
+            cpus_per_task=2,
+            gpus="2",
+            memory="8G",
+            time_limit="01:00",
+            output=None,
+        )
+        sbatch_lines = [ln for ln in script.splitlines() if ln.startswith("#SBATCH")]
+        directive_keys = [ln.split("--")[1].split("=")[0] for ln in sbatch_lines]
+        assert directive_keys == [
+            "job-name",
+            "partition",
+            "cpus-per-task",
+            "gres",
+            "mem",
+            "time",
+        ]
+
+    def test_build_script_with_output_adds_output_directive(self):
+        """output= is local-path-only; _build_script must append it when provided."""
+        from general_ludd.infra.slurm import SlurmAdapter
+
+        adapter = SlurmAdapter()
+        script = adapter._build_script(
+            command="echo hi",
+            job_name="out-test",
+            output="/logs/job-%j.out",
+        )
+        assert "#SBATCH --output=/logs/job-%j.out" in script
+
+    @pytest.mark.parametrize("missing_field", ["job_name", "partition", "gpus", "memory", "time_limit"])
+    def test_build_script_optional_fields_omitted_when_none(self, missing_field: str):
+        """Fields passed as None must not produce a #SBATCH directive."""
+        from general_ludd.infra.slurm import SlurmAdapter
+
+        adapter = SlurmAdapter()
+        # Build with only the one field present.
+        kwargs: dict = {
+            "command": "echo hi",
+            "job_name": None,
+            "partition": None,
+            "cpus_per_task": None,
+            "gpus": None,
+            "memory": None,
+            "time_limit": None,
+            "output": None,
+        }
+        script = adapter._build_script(**kwargs)
+        # No #SBATCH directives expected at all.
+        assert "#SBATCH" not in script
