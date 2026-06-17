@@ -273,22 +273,19 @@ class SlurmAdapter:
         memory: str | None = None,
         time_limit: str | None = None,
     ) -> str:
-        script_lines = ["#!/bin/bash"]
-        if job_name:
-            script_lines.append(f"#SBATCH --job-name={job_name}")
-        if partition:
-            script_lines.append(f"#SBATCH --partition={partition}")
-        if cpus_per_task is not None:
-            script_lines.append(f"#SBATCH --cpus-per-task={cpus_per_task}")
-        if gpus:
-            script_lines.append(f"#SBATCH --gres=gpu:{gpus}")
-        if memory:
-            script_lines.append(f"#SBATCH --mem={memory}")
-        if time_limit:
-            script_lines.append(f"#SBATCH --time={time_limit}")
-        script_lines.append("")
-        script_lines.append(command)
-        script = "\n".join(script_lines)
+        # Delegate script construction to _build_script (output=None — the REST
+        # path has no --output file; the directive ordering and shebang are
+        # identical to the local path so both stay in sync through one builder).
+        script = self._build_script(
+            command=command,
+            job_name=job_name,
+            partition=partition,
+            cpus_per_task=cpus_per_task,
+            gpus=gpus,
+            memory=memory,
+            time_limit=time_limit,
+            output=None,
+        )
 
         payload = {
             "script": script,

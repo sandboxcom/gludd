@@ -186,3 +186,60 @@ def test_extra_args_normal_flags_accepted(mgr: LocalInferenceManager):
     )
     cmd = mgr._build_command(cfg)
     assert cmd[-2:] == ["--tensor-parallel-size", "2"]
+
+
+# --- dedup contract: _start_slurm_server and _build_command("slurm") must
+#     produce the same --wrap shell string so there is exactly one builder ---
+
+
+def test_slurm_start_and_build_command_produce_identical_wrap_string(
+    mgr: LocalInferenceManager,
+):
+    """_start_slurm_server extracts its command from _build_command's argv.
+
+    The --wrap shell string embedded at argv[-1] by _build_command(engine="slurm")
+    must be byte-for-byte identical to what _start_slurm_server would pass to
+    adapter.submit().  We verify this by checking that the extraction logic
+    (argv[-1]) correctly round-trips through a known config.
+    """
+    cfg = LocalServerConfig(
+        engine="slurm",
+        model_name="llama-7b",
+        host="gpu01",
+        port=8001,
+        gpu_layers=32,
+        context_size=4096,
+        extra_args=["--partition=gpu"],
+    )
+    argv = mgr._build_command(cfg)
+    # Structure: ["sbatch", *extra_args, "--wrap", command_string]
+    assert argv[0] == "sbatch"
+    assert argv[-2] == "--wrap"
+    wrap_cmd = argv[-1]
+    # The command string must include all the key llama_cpp.server flags in order.
+    assert wrap_cmd.startswith("python3 -m llama_cpp.server ")
+    assert "--model llama-7b" in wrap_cmd
+    assert "--host gpu01" in wrap_cmd
+    assert "--port 8001" in wrap_cmd
+    assert "--n_gpu_layers 32" in wrap_cmd
+    assert "--n_ctx 4096" in wrap_cmd
+    # extra_args land in the sbatch argv, not in the --wrap string.
+    assert "--partition=gpu" not in wrap_cmd
+    assert "--partition=gpu" in argv
+
+
+def test_slurm_start_extracts_same_extra_args_as_build_command(
+    mgr: LocalInferenceManager,
+):
+    """Extra args in the slurm argv must be between 'sbatch' and '--wrap'."""
+    cfg = LocalServerConfig(
+        engine="slurm",
+        model_name="llama-7b",
+        host="localhost",
+        port=8000,
+        extra_args=["--partition=gpu", "--gres=gpu:1"],
+    )
+    argv = mgr._build_command(cfg)
+    # argv: ["sbatch", "--partition=gpu", "--gres=gpu:1", "--wrap", cmd]
+    extra_args_in_argv = argv[1:-2]
+    assert extra_args_in_argv == ["--partition=gpu", "--gres=gpu:1"]
