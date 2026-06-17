@@ -9,7 +9,7 @@ from typing import Any
 from pydantic import field_validator
 
 
-def strip_and_require_str(noun: str) -> classmethod:
+def strip_and_require_str(noun: str) -> Any:
     """Return a Pydantic ``field_validator`` that strips whitespace and rejects empty strings.
 
     Usage inside a Pydantic model::
@@ -37,4 +37,4 @@ def strip_and_require_str(noun: str) -> classmethod:
 
     # Wrap as a Pydantic field_validator for the given field name.
     # We use the noun as the field name — callers must ensure noun matches the field.
-    return field_validator(noun, mode="before")(_validator)  # type: ignore[return-value]
+    return field_validator(noun, mode="before")(_validator)

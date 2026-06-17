@@ -36,7 +36,7 @@ def _make_table(
     )
     for col in columns:
         name, style, ratio, min_w = col[0], col[1], col[2], col[3]
-        max_w: int | None = col[4] if len(col) == 5 else None  # type: ignore[misc]
+        max_w: int | None = col[4] if len(col) == 5 else None
         kwargs: dict[str, Any] = dict(style=style, no_wrap=True, ratio=ratio, min_width=min_w)
         if max_w is not None:
             kwargs["max_width"] = max_w
