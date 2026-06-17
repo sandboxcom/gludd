@@ -17,8 +17,15 @@ class AgentRegistry:
     def __init__(self) -> None:
         self._agents: dict[str, AgentConfig] = {}
         self._renderer = BehaviorRenderer()
+        self._sealed: bool = False
+
+    def seal(self) -> None:
+        """Prevent further registration. Call after construction is complete."""
+        self._sealed = True
 
     def register(self, config: AgentConfig) -> None:
+        if self._sealed:
+            raise RuntimeError("registry is sealed")
         self._agents[config.name] = config
 
     def get(self, name: str) -> AgentConfig | None:
@@ -125,4 +132,5 @@ def default_registry() -> AgentRegistry:
         behavior=subagent_behavior,
     ))
 
+    registry.seal()
     return registry
