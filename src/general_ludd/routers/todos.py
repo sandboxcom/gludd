@@ -184,9 +184,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         bare_binaries: list[dict[str, Any]] = []
         known_versions: dict[str, str] = {}
         filestore_root = ""
+        filestore_available = False
         try:
             store = FileStore()
             filestore_root = store.root_path
+            filestore_available = bool(store.root_path) and os.path.isdir(store.root_path)
             boot = BinaryBootstrapper(store=store)
             bare_binaries = [
                 {"name": b["binary_name"], "version": b.get("version", "?")}
@@ -209,10 +211,19 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "config_dir": config_dir,
             "config_files": config_paths,
             "filestore_root": filestore_root,
+            "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
-            "db_engine": str(getattr(app.state, "_db_engine", None)),
-            "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
+            "db_engine": (
+                getattr(app.state, "_db_engine", None).url.render_as_string(hide_password=True)
+                if getattr(app.state, "_db_engine", None) is not None
+                else str(None)
+            ),
+            "db_url": (
+                getattr(app.state, "_db_engine", None).url.render_as_string(hide_password=True)
+                if getattr(app.state, "_db_engine", None) is not None
+                else "sqlite"
+            ),
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
         }
