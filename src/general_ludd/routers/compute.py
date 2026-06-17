@@ -166,6 +166,130 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         app.state._compute_deployments.pop(instance_id, None)
         return {"destroyed": instance_id}
 
+    def _resource_dict(r: Any) -> dict[str, Any]:
+        return {
+            "source": r.source.value,
+            "id": r.id,
+            "region": r.region,
+            "gpu_type": r.gpu_type.value if r.gpu_type else None,
+            "gpu_count": r.gpu_count,
+            "vcpu": r.vcpu,
+            "mem_gb": r.mem_gb,
+            "cost_per_hour": r.cost_per_hour,
+            "available": r.available,
+            "endpoint_url": r.endpoint_url,
+            "labels": r.labels,
+        }
+
+    def _result_dict(res: Any) -> dict[str, Any]:
+        return {
+            "source": res.source.value,
+            "status": res.status.value,
+            "from_cache": res.from_cache,
+            "count": len(res.resources),
+            "error": res.error,
+            "resources": [_resource_dict(r) for r in res.resources],
+        }
+
+    @app.post("/admin/compute/discover")
+    async def admin_compute_discover(req: dict[str, Any] | None = None) -> dict[str, Any]:
+        # Never a 500 on offline: providers return structured OFFLINE/
+        # PROVIDER_UNAVAILABLE results, surfaced as-is.
+        from general_ludd.infra.discovery.base import DiscoverySource
+
+        ext = _get_or_create_extended_subsystems(app)
+        svc = ext.get("discovery")
+        if svc is None:
+            raise HTTPException(status_code=503, detail="discovery service unavailable")
+        source_str = (req or {}).get("source") if req else None
+        if source_str:
+            try:
+                source = DiscoverySource(source_str)
+            except ValueError:
+                raise HTTPException(
+                    status_code=422, detail=f"Unknown source: {source_str}"
+                ) from None
+            res = await svc.discover(source)
+            return {"results": [_result_dict(res)]}
+        results = await svc.discover_all()
+        return {"results": [_result_dict(r) for r in results.values()]}
+
+    @app.get("/admin/compute/discover")
+    async def admin_compute_discover_cached() -> dict[str, Any]:
+        ext = _get_or_create_extended_subsystems(app)
+        svc = ext.get("discovery")
+        if svc is None:
+            raise HTTPException(status_code=503, detail="discovery service unavailable")
+        out = []
+        for source in svc.sources:
+            cached = svc.cached(source)
+            if cached is not None:
+                out.append(_result_dict(cached))
+        return {"results": out}
+
+    @app.post("/admin/compute/select")
+    async def admin_compute_select(req: dict[str, Any]) -> dict[str, Any]:
+        import time
+
+        from general_ludd.infra.compute import GPUType
+        from general_ludd.infra.discovery.base import WorkSpec
+        from general_ludd.infra.discovery.selector import select_resource
+
+        ext = _get_or_create_extended_subsystems(app)
+        svc = ext.get("discovery")
+        if svc is None:
+            raise HTTPException(status_code=503, detail="discovery service unavailable")
+
+        ws_raw = req.get("work_spec") or {}
+        gpu_type_str = ws_raw.get("gpu_type")
+        gpu_type = None
+        if gpu_type_str:
+            try:
+                gpu_type = GPUType(gpu_type_str)
+            except ValueError:
+                raise HTTPException(
+                    status_code=422, detail=f"Unknown gpu_type: {gpu_type_str}"
+                ) from None
+        work_spec = WorkSpec(
+            model=ws_raw.get("model", ""),
+            needs_gpu=bool(ws_raw.get("needs_gpu", False)),
+            gpu_type=gpu_type,
+            gpu_count=int(ws_raw.get("gpu_count", 0)),
+            vcpu=int(ws_raw.get("vcpu", 0)),
+            mem_gb=float(ws_raw.get("mem_gb", 0.0)),
+            max_cost_usd=ws_raw.get("max_cost_usd"),
+            project_id=ws_raw.get("project_id"),
+        )
+        runtime_hours = float(req.get("runtime_hours", 1.0))
+
+        # Headroom = min(SpendLimiter.remaining, RunBudgetGuard remaining).
+        headroom = float("inf")
+        spend_limiter = getattr(app.state, "_spend_limiter", None)
+        if spend_limiter is not None:
+            headroom = min(headroom, spend_limiter.remaining(time.monotonic()))
+        guard = getattr(app.state, "_run_budget_guard", None)
+        if guard is not None:
+            check = guard.check_all_limits(0.0)
+            if check.get("allowed"):
+                rb = check.get("remaining_budget")
+                if isinstance(rb, int | float):
+                    headroom = min(headroom, float(rb))
+            else:
+                headroom = 0.0
+
+        candidates = svc.all_cached_resources()
+        pick = select_resource(
+            work_spec,
+            candidates,
+            headroom,
+            spend_limiter=spend_limiter,
+            runtime_hours=runtime_hours,
+        )
+        if pick is None:
+            return {"selected": None, "reason": "no budget-fitting resource"}
+        reg = svc.auto_register(pick, work_spec)
+        return {"selected": _resource_dict(pick), "registration": reg}
+
     @app.get("/api/deployments")
     async def list_deployments() -> dict[str, Any]:
         # W2.3 (M2): expose the persisted deployment registry.

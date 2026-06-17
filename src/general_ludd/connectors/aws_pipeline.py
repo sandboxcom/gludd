@@ -121,7 +121,7 @@ class AwsPipelineSource:
         no credentials are sourced from config.
         """
         try:
-            import boto3  # type: ignore[import-not-found]
+            import boto3
         except ImportError as exc:  # boto3 not installed
             raise RuntimeError("boto3 unavailable") from exc
         return boto3.client(service, region_name=self.region or None)

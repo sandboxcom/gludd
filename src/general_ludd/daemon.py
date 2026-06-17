@@ -802,6 +802,35 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:
                 logger.error("Pipeline startup failed (continuing degraded): %s", exc)
 
+        # --- compute discovery refresh loop (#compute-discovery), default-OFF -- #
+        # Mirrors the pipeline-controller pattern: a guarded asyncio task that
+        # only POPULATES the per-source cache (auto-registration happens at SELECT
+        # time). Gated on uc.compute_discovery.enabled / the env flag so base
+        # boot, tests, and the sandbox stay quiet (no silent always-on bg task).
+        app.state._compute_discovery_task = None
+        cd_cfg = getattr(uc, "compute_discovery", None) if uc else None
+        cd_enabled = bool(getattr(cd_cfg, "enabled", False)) or (
+            os.environ.get("GLUDD_COMPUTE_DISCOVERY_REFRESH", "").lower()
+            in ("1", "true", "yes")
+        )
+        if cd_enabled and getattr(app.state, "_discovery_service", None) is not None:
+            interval_s = float(getattr(cd_cfg, "interval_s", 300.0) or 300.0)
+
+            async def _discovery_refresh_loop() -> None:
+                svc = app.state._discovery_service
+                while True:
+                    # refresh_once() caches per source and NEVER raises; it also
+                    # emits a heartbeat log per tick (observability invariant).
+                    await svc.refresh_once()
+                    await asyncio.sleep(interval_s)
+
+            app.state._compute_discovery_task = asyncio.create_task(
+                _discovery_refresh_loop()
+            )
+            logger.info(
+                "Compute discovery refresh started (interval=%.0fs)", interval_s
+            )
+
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
@@ -845,6 +874,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if pipeline_controller is not None:
         with contextlib.suppress(Exception):
             await pipeline_controller.stop()
+    discovery_task = getattr(app.state, "_compute_discovery_task", None)
+    if discovery_task is not None:
+        discovery_task.cancel()
+        with contextlib.suppress(asyncio.CancelledError, Exception):
+            await discovery_task
     if event_loop is not None:
         event_loop.stop()
     if task is not None:
@@ -886,6 +920,22 @@ def _get_or_create_extended_subsystems(
         app.state._project_manager = seed_from_config(startup_cfg)
     if not hasattr(app.state, "_utilization_tracker") or app.state._utilization_tracker is None:
         app.state._utilization_tracker = UtilizationTracker()
+    if getattr(app.state, "_discovery_service", None) is None:
+        # Compute discovery service: pulls the SAME utilization tracker + the
+        # already-built secrets resolver (never constructs its own). Building it
+        # is cheap and SDK-free — providers lazy-import their SDK in discover().
+        from general_ludd.infra.discovery import (
+            DiscoveryService,
+            build_default_registry,
+        )
+
+        discovery_registry = build_default_registry(
+            getattr(app.state, "_secrets_resolver", None)
+        )
+        app.state._discovery_service = DiscoveryService(
+            registry=discovery_registry,
+            tracker=app.state._utilization_tracker,
+        )
     if not hasattr(app.state, "_model_registry") or app.state._model_registry is None:
         app.state._model_registry = ModelRegistry()
     if not hasattr(app.state, "_skill_registry") or app.state._skill_registry is None:
@@ -919,6 +969,7 @@ def _get_or_create_extended_subsystems(
         "metrics": app.state._metrics_collector,
         "projects": app.state._project_manager,
         "utilization": app.state._utilization_tracker,
+        "discovery": app.state._discovery_service,
         "model_registry": app.state._model_registry,
         "skill_registry": app.state._skill_registry,
         "adaptive_router": adaptive_router,
@@ -961,6 +1012,7 @@ def create_daemon_app(
     app.state._metrics_collector = None
     app.state._project_manager = None
     app.state._utilization_tracker = None
+    app.state._discovery_service = None
     app.state._model_registry = None
     app.state._skill_registry = None
     app.state._adaptive_router = None

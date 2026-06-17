@@ -56,7 +56,7 @@ def _default_client_factory(region: str | None) -> ClientFactory:
 
     def factory(service: str) -> Any:
         try:
-            import boto3  # type: ignore[import-not-found]  # lazy/guarded import
+            import boto3  # lazy/guarded import
         except ImportError as exc:  # boto3 not installed
             raise ImportError("boto3 unavailable") from exc
         if region:
