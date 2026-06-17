@@ -1,0 +1,61 @@
+{
+  "version": "1",
+  "items": [
+    {
+      "id": "mt-1",
+      "title": "mainthread_budget forcing-function hook",
+      "status": "done",
+      "evidence": "86d037a (18 tests)",
+      "notes": ""
+    },
+    {
+      "id": "mt-2",
+      "title": "floor reverted to 6 + buffer discipline",
+      "status": "done",
+      "evidence": "floor hooks :-6",
+      "notes": ""
+    },
+    {
+      "id": "mt-3",
+      "title": "gate concurrency collision: flock + per-run unique basetemp + cleanup trap",
+      "status": "in_progress",
+      "evidence": "",
+      "notes": "agent a949c699"
+    },
+    {
+      "id": "mt-4",
+      "title": "first-class tracked agent_liveness + floor_planner (was untracked)",
+      "status": "in_progress",
+      "evidence": "",
+      "notes": "agent a4a31a3f"
+    },
+    {
+      "id": "mt-5",
+      "title": "prevent subagents running unauthorized full gates",
+      "status": "open",
+      "evidence": "",
+      "notes": ""
+    },
+    {
+      "id": "mt-6",
+      "title": "agents rest mid-task with incomplete output: watchdog/re-poke",
+      "status": "open",
+      "evidence": "",
+      "notes": ""
+    },
+    {
+      "id": "mt-7",
+      "title": "predictive floor control / buffer maintenance (not reactive)",
+      "status": "open",
+      "evidence": "",
+      "notes": ""
+    },
+    {
+      "id": "mt-8",
+      "title": "Stop-hook enforcing this backlog (keep an agent assigned while items open)",
+      "status": "in_progress",
+      "evidence": "",
+      "notes": "this task seeds it; .claude hook wired by orchestrator"
+    }
+  ]
+}
