@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from general_ludd.schemas._validators import strip_nonempty
+
 
 class Queue(BaseModel):
     queue_name: str
@@ -25,10 +27,7 @@ class Queue(BaseModel):
     @field_validator("queue_name", mode="before")
     @classmethod
     def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("queue_name must not be empty")
+        v = strip_nonempty(v)  # strips + rejects empty
         import re
         if not re.match(r"^[a-z0-9_\-]+$", v):
             raise ValueError("queue_name must match ^[a-z0-9_\\-]+$")
