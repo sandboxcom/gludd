@@ -223,6 +223,19 @@ class SecretsManager:
         ]
         return new_secret_id
 
+    def _require_connected_for_read(self, context_label: str) -> None:
+        """Raise SecretsUnavailableError when the client has not been connected.
+
+        Using SecretsUnavailableError (rather than RuntimeError) ensures that
+        fail-closed callers catching SecretsUnavailableError (e.g.
+        scan_for_image_updates) correctly intercept a not-connected guard instead
+        of letting the RuntimeError propagate past their except clause.
+        """
+        if self._client is None:
+            raise SecretsUnavailableError(
+                f"secrets backend not connected for {context_label} (call connect() first)"
+            )
+
     def write_secret(self, path: str, value: dict[str, Any]) -> None:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
@@ -233,8 +246,7 @@ class SecretsManager:
         )
 
     def read_secret(self, path: str) -> dict[str, Any] | None:
-        if self._client is None:
-            raise RuntimeError("Not connected. Call connect() first.")
+        self._require_connected_for_read(context_label=f"reading {path!r}")
         try:
             result = self._client.secrets.kv.v2.read_secret_version(
                 path=path, mount_point=self._config.kv_mount
