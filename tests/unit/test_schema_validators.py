@@ -254,6 +254,20 @@ class TestRoutingCandidateValidators:
                 task_type=TaskType.FEATURE,
             )
 
+    def test_avg_cost_message_is_field_specific(self):
+        # Regression-lock: the field-specific message must survive any future
+        # validator consolidation. A generic "must be non-negative" is NOT enough.
+        with pytest.raises(ValidationError) as exc_info:
+            RoutingCandidate(
+                prompt_profile_id="p1",
+                model_profile_id="m1",
+                composite_score=0.5,
+                avg_cost_usd=-0.01,
+                sample_count=10,
+                task_type=TaskType.FEATURE,
+            )
+        assert "avg_cost_usd must be non-negative" in str(exc_info.value)
+
 
 class TestRoutingDecisionValidators:
     def test_valid(self):
@@ -305,6 +319,19 @@ class TestRoutingDecisionValidators:
             sample_count=0,
         )
         assert d.sample_count == 0
+
+    def test_estimated_cost_message_is_field_specific(self):
+        # Regression-lock: the field-specific message must survive any future
+        # validator consolidation. A generic "must be non-negative" is NOT enough.
+        with pytest.raises(ValidationError) as exc_info:
+            RoutingDecision(
+                selected_prompt_profile_id="p1",
+                selected_model_profile_id="m1",
+                composite_score=0.9,
+                estimated_cost_usd=-1.0,
+                sample_count=10,
+            )
+        assert "estimated_cost_usd must be non-negative" in str(exc_info.value)
 
 
 class TestQueueValidators:
