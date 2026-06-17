@@ -2155,249 +2155,247 @@ def _build_model_status_msg(servers: list[Any], downloaded: list[Any]) -> str:
     return f"Model services: {', '.join(parts)}"
 
 
-def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+def _read_source_arg(source_arg: str) -> str:
+    """If source_arg is a path to an existing file, return its contents; else return source_arg unchanged."""
+    import os as _os
 
-    t = Table(title="MCP Servers", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
-    t.add_column("Transport", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not servers:
-        t.add_row("No MCP servers", "", "")
-    else:
-        for s in servers:
-            status = str(s.get("status", "?"))
-            color = "green" if status == "active" else "red"
-            t.add_row(
-                str(s.get("name", "?")),
-                str(s.get("transport", "?")),
-                f"[{color}]{status}[/]",
-            )
-    return t
+    if source_arg and _os.path.isfile(source_arg):
+        try:
+            with open(source_arg) as _f:
+                return _f.read()
+        except OSError as e:
+            import sys
+
+            print(f"Cannot read source file: {e}", file=sys.stderr)
+            sys.exit(1)
+    return source_arg
+
+
+def _build_mcp_table(servers: list[dict[str, Any]], *, term_width: int = 80) -> Table:
+    def _fmt(s: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        status = str(s.get("status", "?"))
+        color = "green" if status == "active" else "red"
+        return (str(s.get("name", "?")), str(s.get("transport", "?")), f"[{color}]{status}[/]")
+
+    return _make_table(
+        "MCP Servers",
+        [("Name", "cyan", 2, 6, 40), ("Transport", "green", 1, 4, 20), ("Status", "yellow", 1, 4, 20)],
+        data=servers,
+        row_formatter=_fmt,
+        empty_msg="No MCP servers",
+        term_width=term_width,
+    )
 
 
 def _build_skills_table(skills: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(sk: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        installed = "yes" if sk.get("installed") else "no"
+        color = "green" if sk.get("installed") else "dim"
+        return (str(sk.get("name", "?")), str(sk.get("category", "")), f"[{color}]{installed}[/]")
 
-    t = Table(title="Skills", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
-    t.add_column("Category", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Installed", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
-    if not skills:
-        t.add_row("No skills", "", "")
-    else:
-        for sk in skills:
-            installed = "yes" if sk.get("installed") else "no"
-            color = "green" if sk.get("installed") else "dim"
-            t.add_row(
-                str(sk.get("name", "?")),
-                str(sk.get("category", "")),
-                f"[{color}]{installed}[/]",
-            )
-    return t
+    return _make_table(
+        "Skills",
+        [("Name", "cyan", 2, 6, 40), ("Category", "green", 1, 4, 20), ("Installed", "yellow", 1, 3, 20)],
+        data=skills,
+        row_formatter=_fmt,
+        empty_msg="No skills",
+        term_width=term_width,
+    )
 
 
 def _build_compute_table(endpoints: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(ep: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        status = str(ep.get("status", "?"))
+        color = "green" if status == "active" else "red"
+        return (str(ep.get("endpoint_id", "?")), str(ep.get("provider", "?")), f"[{color}]{status}[/]")
 
-    t = Table(title="Compute Endpoints", show_header=True, expand=True, title_justify="left")
-    t.add_column("ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
-    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not endpoints:
-        t.add_row("No endpoints", "", "")
-    else:
-        for ep in endpoints:
-            status = str(ep.get("status", "?"))
-            color = "green" if status == "active" else "red"
-            t.add_row(
-                str(ep.get("endpoint_id", "?")),
-                str(ep.get("provider", "?")),
-                f"[{color}]{status}[/]",
-            )
-    return t
+    return _make_table(
+        "Compute Endpoints",
+        [("ID", "cyan", 2, 6, 40), ("Provider", "green", 1, 4, 20), ("Status", "yellow", 1, 4, 20)],
+        data=endpoints,
+        row_formatter=_fmt,
+        empty_msg="No endpoints",
+        term_width=term_width,
+    )
 
 
 def _build_scores_table(scores: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(s: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        score_val = s.get("composite_score", 0)
+        color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
+        return (
+            str(s.get("prompt_profile", "?")),
+            str(s.get("model_profile", "?")),
+            str(s.get("task_type", "?")),
+            f"[{color}]{score_val:.2f}[/]",
+        )
 
-    t = Table(title="Benchmark Scores", show_header=True, expand=True, title_justify="left")
-    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("Task", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Score", style="bold", no_wrap=True, ratio=1, min_width=3, max_width=20)
-    if not scores:
-        t.add_row("No scores", "", "", "")
-    else:
-        for s in scores:
-            score_val = s.get("composite_score", 0)
-            color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
-            t.add_row(
-                str(s.get("prompt_profile", "?")),
-                str(s.get("model_profile", "?")),
-                str(s.get("task_type", "?")),
-                f"[{color}]{score_val:.2f}[/]",
-            )
-    return t
+    return _make_table(
+        "Benchmark Scores",
+        [
+            ("Prompt", "cyan", 2, 6, 30),
+            ("Model", "green", 2, 6, 30),
+            ("Task", "yellow", 1, 4, 20),
+            ("Score", "bold", 1, 3, 20),
+        ],
+        data=scores,
+        row_formatter=_fmt,
+        empty_msg="No scores",
+        term_width=term_width,
+    )
 
 
 def _build_leaderboard_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Leaderboard", show_header=True, expand=True, title_justify="left")
-    t.add_column("#", style="bold", no_wrap=True, ratio=1, min_width=3, max_width=20)
-    t.add_column("Prompt", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("Model", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("Score", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
+    # NOTE: empty sentinel goes in col-1 (not col-0), so we use the rows= path
+    # for the empty case and data+row_formatter for the non-empty case.
     if not entries:
-        t.add_row("", "No entries", "", "")
-    else:
-        for e in entries:
-            score_val = e.get("score", 0)
-            color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
-            t.add_row(
-                str(e.get("rank", "")),
-                str(e.get("prompt", "?")),
-                str(e.get("model", "?")),
-                f"[{color}]{score_val:.2f}[/]",
-            )
-    return t
+        return _make_table(
+            "Leaderboard",
+            [
+                ("#", "bold", 1, 3, 20),
+                ("Prompt", "cyan", 2, 6, 30),
+                ("Model", "green", 2, 6, 30),
+                ("Score", "yellow", 1, 3, 20),
+            ],
+            rows=[("", "No entries", "", "")],
+            term_width=term_width,
+        )
+
+    def _fmt(e: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        score_val = e.get("score", 0)
+        color = "green" if score_val >= 0.8 else "yellow" if score_val >= 0.6 else "red"
+        return (
+            str(e.get("rank", "")),
+            str(e.get("prompt", "?")),
+            str(e.get("model", "?")),
+            f"[{color}]{score_val:.2f}[/]",
+        )
+
+    return _make_table(
+        "Leaderboard",
+        [
+            ("#", "bold", 1, 3, 20),
+            ("Prompt", "cyan", 2, 6, 30),
+            ("Model", "green", 2, 6, 30),
+            ("Score", "yellow", 1, 3, 20),
+        ],
+        data=entries,
+        row_formatter=_fmt,
+        term_width=term_width,
+    )
 
 
 def _build_templates_table(templates: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(tp: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        task_types = tp.get("task_types", [])
+        types_str = ", ".join(str(tt) for tt in task_types) if isinstance(task_types, list) else str(task_types)
+        return (str(tp.get("name", "?")), types_str, str(tp.get("source", "")))
 
-    t = Table(title="Templates", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("Task Types", style="green", no_wrap=True, ratio=3, min_width=6, max_width=40)
-    t.add_column("Source", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not templates:
-        t.add_row("No templates", "", "")
-    else:
-        for tp in templates:
-            task_types = tp.get("task_types", [])
-            types_str = ", ".join(str(t) for t in task_types) if isinstance(task_types, list) else str(task_types)
-            t.add_row(
-                str(tp.get("name", "?")),
-                types_str,
-                str(tp.get("source", "")),
-            )
-    return t
+    return _make_table(
+        "Templates",
+        [("Name", "cyan", 2, 6, 30), ("Task Types", "green", 3, 6, 40), ("Source", "yellow", 1, 4, 20)],
+        data=templates,
+        row_formatter=_fmt,
+        empty_msg="No templates",
+        term_width=term_width,
+    )
 
 
 def _build_playbooks_table(playbooks: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(pb: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        status = str(pb.get("status", "?"))
+        color = "green" if status == "ready" else "yellow"
+        return (str(pb.get("name", "?")), str(pb.get("tasks", 0)), f"[{color}]{status}[/]")
 
-    t = Table(title="Playbooks", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=50)
-    t.add_column("Tasks", style="green", no_wrap=True, ratio=1, min_width=3, max_width=20)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not playbooks:
-        t.add_row("No playbooks", "", "")
-    else:
-        for pb in playbooks:
-            status = str(pb.get("status", "?"))
-            color = "green" if status == "ready" else "yellow"
-            t.add_row(
-                str(pb.get("name", "?")),
-                str(pb.get("tasks", 0)),
-                f"[{color}]{status}[/]",
-            )
-    return t
+    return _make_table(
+        "Playbooks",
+        [("Name", "cyan", 3, 6, 50), ("Tasks", "green", 1, 3, 20), ("Status", "yellow", 1, 4, 20)],
+        data=playbooks,
+        row_formatter=_fmt,
+        empty_msg="No playbooks",
+        term_width=term_width,
+    )
 
 
 def _build_quantization_table(entries: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(e: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        conf = e.get("confidence", 0)
+        color = "green" if conf >= 0.8 else "yellow" if conf >= 0.5 else "red"
+        return (
+            str(e.get("model_id", "?")),
+            str(e.get("precision", "?")),
+            f"[{color}]{conf:.2f}[/]",
+            str(e.get("source", "")),
+        )
 
-    t = Table(title="Quantization", show_header=True, expand=True, title_justify="left")
-    t.add_column("Model", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=40)
-    t.add_column("Precision", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Conf", style="yellow", no_wrap=True, ratio=1, min_width=3, max_width=20)
-    t.add_column("Source", style="dim", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not entries:
-        t.add_row("No data", "", "", "")
-    else:
-        for e in entries:
-            conf = e.get("confidence", 0)
-            color = "green" if conf >= 0.8 else "yellow" if conf >= 0.5 else "red"
-            t.add_row(
-                str(e.get("model_id", "?")),
-                str(e.get("precision", "?")),
-                f"[{color}]{conf:.2f}[/]",
-                str(e.get("source", "")),
-            )
-    return t
+    return _make_table(
+        "Quantization",
+        [
+            ("Model", "cyan", 3, 6, 40),
+            ("Precision", "green", 1, 4, 20),
+            ("Conf", "yellow", 1, 3, 20),
+            ("Source", "dim", 1, 4, 20),
+        ],
+        data=entries,
+        row_formatter=_fmt,
+        empty_msg="No data",
+        term_width=term_width,
+    )
 
 
 def _build_filestore_table(files: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(f: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        return (str(f.get("name", "?")), _fmt_size(f.get("size_bytes", 0)), str(f.get("type", "")))
 
-    t = Table(title="Filestore", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=3, min_width=6, max_width=50)
-    t.add_column("Size", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Type", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not files:
-        t.add_row("No files", "", "")
-    else:
-        for f in files:
-            size_bytes = f.get("size_bytes", 0)
-            t.add_row(
-                str(f.get("name", "?")),
-                _fmt_size(size_bytes),
-                str(f.get("type", "")),
-            )
-    return t
+    return _make_table(
+        "Filestore",
+        [("Name", "cyan", 3, 6, 50), ("Size", "green", 1, 4, 20), ("Type", "yellow", 1, 4, 20)],
+        data=files,
+        row_formatter=_fmt,
+        empty_msg="No files",
+        term_width=term_width,
+    )
 
 
 def _build_deployments_table(deployments: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(d: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        status = str(d.get("status", "?"))
+        color = "green" if status == "running" else "red" if status == "stopped" else "yellow"
+        return (str(d.get("name", "?")), str(d.get("provider", "?")), f"[{color}]{status}[/]")
 
-    t = Table(title="Deployments", show_header=True, expand=True, title_justify="left")
-    t.add_column("Name", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
-    t.add_column("Provider", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Status", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    if not deployments:
-        t.add_row("No deployments", "", "")
-    else:
-        for d in deployments:
-            status = str(d.get("status", "?"))
-            color = "green" if status == "running" else "red" if status == "stopped" else "yellow"
-            t.add_row(
-                str(d.get("name", "?")),
-                str(d.get("provider", "?")),
-                f"[{color}]{status}[/]",
-            )
-    return t
+    return _make_table(
+        "Deployments",
+        [("Name", "cyan", 2, 6, 40), ("Provider", "green", 1, 4, 20), ("Status", "yellow", 1, 4, 20)],
+        data=deployments,
+        row_formatter=_fmt,
+        empty_msg="No deployments",
+        term_width=term_width,
+    )
 
 
 def _build_slurm_table(jobs: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    _STATE_COLORS = {"COMPLETED": "green", "RUNNING": "cyan", "PENDING": "yellow"}
 
-    t = Table(title="Slurm Jobs", show_header=True, expand=True, title_justify="left")
-    t.add_column("Job ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("State", style="green", no_wrap=True, ratio=1, min_width=4, max_width=20)
-    t.add_column("Exit Code", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=15)
-    if not jobs:
-        t.add_row("No jobs", "", "")
-    else:
-        for j in jobs:
-            state = str(j.get("state", "?"))
-            state_colors = {
-                "COMPLETED": "green",
-                "RUNNING": "cyan",
-                "PENDING": "yellow",
-            }
-            color = state_colors.get(state, "red")
-            exit_code = str(j.get("exit_code", "")) if j.get("exit_code") is not None else ""
-            t.add_row(
-                str(j.get("job_id", "?")),
-                f"[{color}]{state}[/]",
-                exit_code,
-            )
-    return t
+    def _fmt(j: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        state = str(j.get("state", "?"))
+        color = _STATE_COLORS.get(state, "red")
+        exit_code = str(j.get("exit_code", "")) if j.get("exit_code") is not None else ""
+        return (str(j.get("job_id", "?")), f"[{color}]{state}[/]", exit_code)
+
+    return _make_table(
+        "Slurm Jobs",
+        [("Job ID", "cyan", 2, 6, 30), ("State", "green", 1, 4, 20), ("Exit Code", "yellow", 1, 4, 15)],
+        data=jobs,
+        row_formatter=_fmt,
+        empty_msg="No jobs",
+        term_width=term_width,
+    )
 
 
 def _build_health_table(data: dict[str, Any], *, term_width: int = 80) -> Table:
+    # NOTE: kept inline — dict.items() iteration with per-value truncation and a
+    # sentinel row with content in both cols doesn't fit cleanly into _make_table's
+    # data+row_formatter path (empty_msg only populates col-0).
     from rich.table import Table
 
     t = Table(title="Health", show_header=False, expand=True, title_justify="left")
@@ -2415,6 +2413,9 @@ def _build_health_table(data: dict[str, Any], *, term_width: int = 80) -> Table:
 
 
 def _build_selftest_table(data: dict[str, Any], *, term_width: int = 80) -> Table:
+    # NOTE: kept inline — three-way branch (no data / no results / per-result rows)
+    # is cleaner as direct Table construction than as a pre-processing step feeding
+    # _make_table.
     from rich.table import Table
 
     t = Table(title="Selftest", show_header=True, expand=True, title_justify="left")
@@ -2440,72 +2441,63 @@ def _build_selftest_table(data: dict[str, Any], *, term_width: int = 80) -> Tabl
 
 
 def _build_version_table(info: dict[str, Any], *, term_width: int = 80) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Version", show_header=False, expand=True, title_justify="left")
-    t.add_column("Key", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
-    t.add_column("Value", style="green", no_wrap=True, ratio=2, min_width=10, max_width=50)
-    rows = [
-        ("Version", str(info.get("version", "?"))),
-        ("Python", str(info.get("python_version", "?"))),
-        ("Platform", str(info.get("platform", "?"))),
-    ]
-    for key, val in rows:
-        t.add_row(key, val)
-    return t
+    return _make_table(
+        "Version",
+        [("Key", "cyan", 1, 6, 20), ("Value", "green", 2, 10, 50)],
+        rows=[
+            ("Version", str(info.get("version", "?"))),
+            ("Python", str(info.get("python_version", "?"))),
+            ("Platform", str(info.get("platform", "?"))),
+        ],
+        show_header=False,
+        term_width=term_width,
+    )
 
 
 def _build_loglevel_table(current_level: str, *, term_width: int = 80) -> Table:
-    from rich.table import Table
-
-    t = Table(title="Log Level", show_header=True, expand=True, title_justify="left")
-    t.add_column("Level", style="cyan", no_wrap=True, ratio=1, min_width=6, max_width=20)
-    t.add_column("Active", style="green", no_wrap=True, ratio=1, min_width=4, max_width=10)
-    for level in ("debug", "info", "warning", "error"):
-        marker = "[bold green]◄[/]" if level == current_level else ""
-        t.add_row(level, marker)
-    return t
+    return _make_table(
+        "Log Level",
+        [("Level", "cyan", 1, 6, 20), ("Active", "green", 1, 4, 10)],
+        rows=[
+            (level, "[bold green]◄[/]" if level == current_level else "")
+            for level in ("debug", "info", "warning", "error")
+        ],
+        term_width=term_width,
+    )
 
 
 def _build_discovered_table(profiles: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(p: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        enabled = p.get("enabled", True)
+        color = "green" if enabled else "red"
+        return (
+            str(p.get("model_profile_id", "?")),
+            str(p.get("display_name", "?")),
+            f"[{color}]{'yes' if enabled else 'no'}[/]",
+        )
 
-    t = Table(title="Discovered Models", show_header=True, expand=True, title_justify="left")
-    t.add_column("Profile ID", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
-    t.add_column("Display Name", style="green", no_wrap=True, ratio=2, min_width=6, max_width=30)
-    t.add_column("Enabled", style="yellow", no_wrap=True, ratio=1, min_width=4, max_width=10)
-    if not profiles:
-        t.add_row("No profiles", "", "")
-    else:
-        for p in profiles:
-            enabled = p.get("enabled", True)
-            color = "green" if enabled else "red"
-            t.add_row(
-                str(p.get("model_profile_id", "?")),
-                str(p.get("display_name", "?")),
-                f"[{color}]{'yes' if enabled else 'no'}[/]",
-            )
-    return t
+    return _make_table(
+        "Discovered Models",
+        [("Profile ID", "cyan", 2, 6, 40), ("Display Name", "green", 2, 6, 30), ("Enabled", "yellow", 1, 4, 10)],
+        data=profiles,
+        row_formatter=_fmt,
+        empty_msg="No profiles",
+        term_width=term_width,
+    )
 
 
 def _build_code_table(results: list[dict[str, Any]], *, term_width: int = 80) -> Table:
-    from rich.table import Table
+    def _fmt(r: dict[str, Any], idx: int, sel: int | None) -> tuple[str, ...]:
+        return (str(r.get("file", "?")), str(r.get("line", "")), str(r.get("text", ""))[:38])
 
-    t = Table(title="Code Intel", show_header=True, expand=True, title_justify="left")
-    t.add_column("File", style="cyan", no_wrap=True, ratio=2, min_width=6, max_width=40)
-    t.add_column("Line", style="green", no_wrap=True, ratio=1, min_width=3, max_width=8)
-    t.add_column("Text", style="yellow", no_wrap=True, ratio=3, min_width=6, max_width=40)
-    if not results:
-        t.add_row("Press [s] to search", "", "")
-    else:
-        for r in results:
-            text = str(r.get("text", ""))[:38]
-            t.add_row(
-                str(r.get("file", "?")),
-                str(r.get("line", "")),
-                text,
-            )
-    return t
+    return _make_table(
+        "Code Intel",
+        [("File", "cyan", 2, 6, 40), ("Line", "green", 1, 3, 8), ("Text", "yellow", 3, 6, 40)],
+        data=results,
+        row_formatter=_fmt,
+        empty_msg="Press [s] to search",
+        term_width=term_width,
+    )
 
 
 _DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
@@ -3001,17 +2993,8 @@ def _cmd_code_graph(args: argparse.Namespace) -> None:
     # read file contents when --source is a file path.
     try:
         params: dict[str, str] = {}
-        source_arg = getattr(args, "source", None) or ""
+        source_arg = _read_source_arg(getattr(args, "source", None) or "")
         if source_arg:
-            import os as _os
-
-            if _os.path.isfile(source_arg):
-                try:
-                    with open(source_arg) as _f:
-                        source_arg = _f.read()
-                except OSError as e:
-                    print(f"Cannot read source file: {e}", file=sys.stderr)
-                    sys.exit(1)
             params["source"] = source_arg
         if getattr(args, "language", None):
             params["language"] = str(args.language)
@@ -3032,17 +3015,8 @@ def _cmd_code_search(args: argparse.Namespace) -> None:
     # read file contents when --source is a file path.
     try:
         params: dict[str, str] = {}
-        source_arg = getattr(args, "source", None) or ""
+        source_arg = _read_source_arg(getattr(args, "source", None) or "")
         if source_arg:
-            import os as _os
-
-            if _os.path.isfile(source_arg):
-                try:
-                    with open(source_arg) as _f:
-                        source_arg = _f.read()
-                except OSError as e:
-                    print(f"Cannot read source file: {e}", file=sys.stderr)
-                    sys.exit(1)
             params["source"] = source_arg
         if getattr(args, "query", None):
             params["query"] = str(args.query)
