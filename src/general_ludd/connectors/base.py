@@ -24,6 +24,7 @@ Layers
 from __future__ import annotations
 
 import ipaddress
+import math
 import operator
 from typing import Any, Protocol, TypedDict, runtime_checkable
 from urllib.parse import urlsplit
@@ -94,6 +95,16 @@ def normalized_record(
     Connectors should funnel every backend row through this so the facade can
     rely on all eight keys being present.
     """
+    # Guard against NaN/Inf which are not JSON-serializable and cause downstream
+    # issues in sorting and aggregation.
+    if value is not None and not math.isfinite(value):
+        value = None
+    if ts is not None:
+        try:
+            ts_f = float(ts)
+            ts = None if not math.isfinite(ts_f) else ts_f
+        except (TypeError, ValueError):
+            ts = None
     return NormalizedRecord(
         ts=ts,
         source=source,
@@ -210,6 +221,7 @@ class Observability:
             wanted = set(kinds)
             sources = [s for s in self._registry.all() if s.KIND in wanted]
 
+        MAX_RECORDS = 50_000
         merged: list[dict[str, Any]] = []
         for source in sources:
             try:
@@ -227,6 +239,9 @@ class Observability:
                     )
                 )
                 merged.append(error_rec)
+            if len(merged) >= MAX_RECORDS:
+                merged = merged[:MAX_RECORDS]
+                break
 
         return self._sort_by_ts(merged)
 

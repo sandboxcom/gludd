@@ -485,7 +485,8 @@ def _config_family(config: dict[str, Any]) -> str:
     """Resolve a config's auth family: explicit key wins, else infer from its name."""
     explicit = _as_str(config.get("family") or config.get("auth_family"))
     if explicit is not None:
-        return explicit.lower()
+        _KNOWN_FAMILIES = frozenset(x.lower() for x in AUTH_FAMILY_PREFIXES) | {"unknown"}
+        return explicit.lower() if explicit.lower() in _KNOWN_FAMILIES else "unknown"
     for field in ("source", "name", "kind", "connector"):
         inferred = auth_family(config.get(field, ""))
         if inferred != "unknown":
