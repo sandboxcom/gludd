@@ -87,6 +87,12 @@ class ClickHouseStatsSource:
             logger.debug("httpx import failed: %s", exc)
             return None
 
+        from general_ludd.connectors.base import is_safe_endpoint
+
+        if not is_safe_endpoint(self._url):
+            self._driver_error = "unsafe endpoint"
+            logger.debug("url rejected by SSRF guard: %s", self._url)
+            return None
         password = os.environ.get(self._password_env, "")
         url = self._url
         user = self._user
