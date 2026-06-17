@@ -6,6 +6,8 @@ from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
 
+from general_ludd.schemas._validators import strip_nonempty
+
 
 class JobSpec(BaseModel):
     job_id: str
@@ -32,8 +34,4 @@ class JobSpec(BaseModel):
     @field_validator("job_id", "playbook", "queue", mode="before")
     @classmethod
     def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("field must not be empty")
-        return v
+        return strip_nonempty(v)

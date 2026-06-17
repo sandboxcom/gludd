@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field, field_validator
 
+from general_ludd.schemas._validators import percent_range
+
 
 class PythonQualityGate(BaseModel):
     enabled: bool = True
@@ -19,9 +21,7 @@ class PythonQualityGate(BaseModel):
     @field_validator("line_coverage_min_percent", "branch_coverage_min_percent")
     @classmethod
     def _percent_range(cls, v: float) -> float:
-        if not (0.0 <= v <= 100.0):
-            raise ValueError("coverage percent must be between 0.0 and 100.0")
-        return v
+        return percent_range(v)
 
 
 class MoleculeQualityGate(BaseModel):
@@ -40,9 +40,7 @@ class MoleculeQualityGate(BaseModel):
     @field_validator("coverage_min_percent")
     @classmethod
     def _percent_range(cls, v: float) -> float:
-        if not (0.0 <= v <= 100.0):
-            raise ValueError("coverage percent must be between 0.0 and 100.0")
-        return v
+        return percent_range(v)
 
     @field_validator("exemption_max_age_days")
     @classmethod
