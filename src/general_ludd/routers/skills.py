@@ -5,7 +5,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 
-from general_ludd.security.auth import is_path_within
+from general_ludd.security.sanitize import is_path_within
 from general_ludd.skills.catalog import SkillCatalog
 from general_ludd.skills.fetcher import (
     GitHubSkillSource,
@@ -120,7 +120,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # Sanitize the attacker-controlled skill name into a single safe path
         # segment, then confirm the resolved file stays inside the skills dir.
         stem = _safe_skill_filename(skill.name)
-        if stem is None or not is_path_within(target, f"{stem}.md"):
+        if stem is None or not is_path_within(f"{stem}.md", target):
             raise HTTPException(status_code=422, detail=f"Unsafe skill name: {skill.name!r}")
         skill_file = os.path.join(target, f"{stem}.md")
         content = build_skill_frontmatter(skill)
