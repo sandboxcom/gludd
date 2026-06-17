@@ -160,6 +160,10 @@ def test_no_auth_when_env_missing() -> None:
         "https://192.168.1.1:9200",
         "http://[::1]:9200",
         "https://0.0.0.0",
+        # Loopback / metadata by *name* (not IP literal) must also be rejected.
+        "http://localhost:9200",
+        "https://ip6-localhost",
+        "http://metadata.google.internal",
     ],
 )
 def test_internal_base_url_rejected(bad_url: str) -> None:

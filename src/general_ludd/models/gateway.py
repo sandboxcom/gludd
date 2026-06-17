@@ -14,7 +14,7 @@ from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
-from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutEvent, TimeoutRetryPolicy
+from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutRetryPolicy
 
 logger = logging.getLogger(__name__)
 
@@ -525,14 +525,11 @@ class ModelGateway:
                 TimeoutKind.CONTEXT_LENGTH,
                 TimeoutKind.INVALID_REQUEST,
             ):
-                            # Non-retryable: record and re-raise immediately.
-                            if tracker is not None:
-                                tracker.record_event(TimeoutEvent(
-                                    model_id=profile_id,
-                                    kind=kind,
-                                    timestamp=_time.monotonic(),
-                                    duration_s=0.0,
-                                ))
+                            # Non-retryable: re-raise immediately. Do NOT record
+                            # here — record_timeout_on_failure (via _invoke_and_bill)
+                            # already recorded exactly one TimeoutEvent for this
+                            # failure; a second record_event would double-count and
+                            # trip the breaker at half the configured threshold.
                             raise
                         raise
         except _retryable_exc_types as exc:

@@ -939,13 +939,13 @@ class EventLoop:
             # way the worker HTTP path does, then feed the generated text into
             # the playbook vars so the runner path is not a no-op generator.
             if self._model_gateway is not None and is_generation_work_type(
-                _safe_str(todo, "work_type")
+                _safe_str(todo, "work_type", "code") or "code"
             ):
                 model_response = await asyncio.to_thread(
                     invoke_model_for_generation,
                     self._model_gateway,
                     job_id=job_id,
-                    work_type=_safe_str(todo, "work_type"),
+                    work_type=_safe_str(todo, "work_type", "code") or "code",
                     model_profile=resolved_model_profile,
                     prompt_text=prompt_text,
                     skill_body=skill_body,

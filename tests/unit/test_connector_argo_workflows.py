@@ -133,6 +133,10 @@ def test_token_never_hardcoded() -> None:
         "http://10.96.0.1",  # typical k8s service CIDR
         "http://169.254.169.254",
         "http://[::1]",
+        # Loopback / metadata by *name* (not IP literal) must also be rejected.
+        "http://localhost",
+        "https://ip6-localhost",
+        "http://metadata.google.internal",
     ],
 )
 def test_internal_base_url_rejected_by_default(bad_url: str) -> None:
@@ -146,6 +150,9 @@ def test_internal_base_url_rejected_by_default(bad_url: str) -> None:
         "http://127.0.0.1",
         "http://10.96.0.1",
         "https://192.168.1.50:6443",
+        # The name-based denylist is also bypassed by the opt-in.
+        "http://localhost:2746",
+        "http://metadata.google.internal",
     ],
 )
 def test_internal_base_url_allowed_with_opt_in(internal_url: str) -> None:

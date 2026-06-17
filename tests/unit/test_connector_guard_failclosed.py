@@ -187,3 +187,29 @@ def test_read_passes_resolved_path_to_reader(tmp_path, monkeypatch):
 
     # The reader observed the fully resolved real target, not the symlink.
     assert seen == [os.path.realpath(str(target))]
+
+
+# --------------------------------------------------------------------------- #
+# gcp_asset_inventory — single-label (dot-less) internal hostname rejected
+# --------------------------------------------------------------------------- #
+def test_gcp_single_label_host_is_internal():
+    """A dot-less hostname like ``internal`` cannot be a public FQDN -> internal."""
+    from general_ludd.connectors.gcp_asset_inventory import _host_is_internal
+
+    assert _host_is_internal("internal") is True
+    assert _host_is_internal("metadata") is True  # already on the denylist
+    # a genuine public FQDN is NOT internal
+    assert _host_is_internal("cloudasset.googleapis.com") is False
+
+
+def test_gcp_validate_endpoint_rejects_single_label_host():
+    """The construction-time guard refuses a single-label endpoint host."""
+    from general_ludd.connectors.gcp_asset_inventory import _validate_endpoint
+
+    with pytest.raises(ValueError):
+        _validate_endpoint("https://internal/")
+    # a public FQDN endpoint is accepted
+    assert (
+        _validate_endpoint("https://cloudasset.googleapis.com")
+        == "https://cloudasset.googleapis.com"
+    )

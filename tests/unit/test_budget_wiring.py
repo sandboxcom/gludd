@@ -451,3 +451,25 @@ class TestBudgetManagerGatedExecutor:
         assert status["paused"] is True
         assert status["daily_limit"] == pytest.approx(0.10)
         assert status["daily_spend"] == pytest.approx(0.0)
+
+    @pytest.mark.asyncio
+    async def test_paused_clears_after_daily_window_rollover(self):
+        """Regression: a sticky pause must NOT survive the daily-window reset.
+
+        check_daily_budget previously returned early on ``if self._paused`` BEFORE
+        calling _reset_daily_if_needed(), so a single breach permanently blocked
+        every subsequent day (the kill switch never recovered). The fix reorders
+        the reset before the paused guard.
+        """
+        budget = BudgetManager(daily_limit_usd=1.0)
+        # Trip the sticky pause.
+        assert budget.check_daily_budget(2.0)["allowed"] is False
+        assert budget.get_status()["paused"] is True
+        # Roll the clock past the 24h window by back-dating the window start.
+        budget._daily_start -= 86_401
+        # After rollover the next check must reset + allow again.
+        result = budget.check_daily_budget(0.5)
+        assert result["allowed"] is True
+        status = budget.get_status()
+        assert status["paused"] is False
+        assert status["daily_spend"] == pytest.approx(0.0)

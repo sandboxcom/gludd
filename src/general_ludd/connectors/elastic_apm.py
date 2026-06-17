@@ -52,17 +52,35 @@ class SSRFError(ValueError):
     """Raised when ``base_url`` points at a blocked internal literal host."""
 
 
-def _is_blocked_ip(host: str) -> bool:
-    """True if ``host`` is an IP literal in a private/loopback/reserved range.
+# Hostnames that always resolve to the local machine or cloud-metadata service
+# and must be rejected regardless of whether they parse as IP literals.
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "metadata",
+        "metadata.google.internal",
+    }
+)
 
-    Hostnames (anything that is not a valid IP literal) return ``False`` — we do
-    not resolve DNS here; the guard only refuses *literal* internal addresses.
+
+def _is_blocked_ip(host: str) -> bool:
+    """True if ``host`` is a blocked hostname or an IP literal in a private/loopback/reserved range.
+
+    A literal-name denylist (localhost / metadata) is checked first; otherwise
+    any host that is not a valid IP literal returns ``False`` — we do not resolve
+    DNS here, the guard only refuses *literal* internal addresses and names.
     """
-    candidate = host.strip()
-    if candidate.startswith("[") and candidate.endswith("]"):
-        candidate = candidate[1:-1]  # IPv6 literal in a URL is bracketed
+    name = host.strip().lower().rstrip(".")
+    if not name:
+        return True
+    # Strip IPv6 brackets before the name check so "[::1]" matches correctly.
+    stripped = name[1:-1] if (name.startswith("[") and name.endswith("]")) else name
+    if stripped in _BLOCKED_HOSTNAMES:
+        return True
     try:
-        ip = ipaddress.ip_address(candidate)
+        ip = ipaddress.ip_address(stripped)
     except ValueError:
         return False
     return (

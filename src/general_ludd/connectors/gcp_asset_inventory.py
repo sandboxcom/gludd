@@ -70,6 +70,10 @@ def _host_is_internal(host: str) -> bool:
         ip = ipaddress.ip_address(h)
     except ValueError:
         # not an IP literal -> treat as a hostname
+        # Reject single-label (dot-less, colon-less) hostnames: they cannot be
+        # public FQDNs and are typically internal names (e.g. "internal").
+        if "." not in h and ":" not in h:
+            return True
         return h in _BLOCKED_HOSTNAMES
     return bool(
         ip.is_loopback

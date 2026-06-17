@@ -113,6 +113,10 @@ def test_token_never_hardcoded() -> None:
         "http://10.1.2.3",
         "http://169.254.0.1",
         "http://[fe80::1]",
+        # Loopback / metadata by *name* (not IP literal) must also be rejected.
+        "http://localhost",
+        "https://ip6-localhost",
+        "http://metadata.google.internal",
     ],
 )
 def test_internal_base_url_rejected(bad_url: str) -> None:

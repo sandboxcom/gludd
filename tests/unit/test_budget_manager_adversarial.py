@@ -263,11 +263,11 @@ def test_no_reset_just_before_window(monkeypatch: pytest.MonkeyPatch) -> None:
 
 
 def test_check_daily_triggers_rollover(monkeypatch: pytest.MonkeyPatch) -> None:
-    """check_daily_budget honors _paused BEFORE attempting a rollover.
+    """check_daily_budget resets the daily window BEFORE checking _paused.
 
-    Because check_daily_budget returns early on _paused, the first
-    post-rollover check still reports budget_exhausted; only a path that
-    actually runs _reset_daily_if_needed (e.g. get_status) clears the switch.
+    The reset runs first, so a sticky pause from a prior day is cleared at the
+    rollover boundary: the first post-rollover check succeeds rather than being
+    blocked by the stale pause (the bug this ordering fixes).
     """
     m = BudgetManager(daily_limit_usd=100.0)
     m.check_daily_budget(150.0)  # paused
@@ -279,9 +279,9 @@ def test_check_daily_triggers_rollover(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setattr(bm.time, "monotonic", lambda: base + 86400 + 5)
 
     res = m.check_daily_budget(1.0)
-    assert res["allowed"] is False
-    assert res["reason"] == "budget_exhausted"
-    # The kill switch is only cleared by a reset path that runs (get_status).
+    assert res["allowed"] is True
+    assert res["reason"] == "ok"
+    # The rollover cleared the sticky pause before the paused-check.
     assert m.get_status()["paused"] is False
 
 

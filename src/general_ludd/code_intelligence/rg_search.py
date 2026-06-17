@@ -107,7 +107,24 @@ class RgSearch:
             argv += ["-g", g]
         for t in types or []:
             argv += ["-t", t]
-        argv += list(flags or [])
+        # Allowlist: only these standalone boolean rg flags may be passed via
+        # `flags`. Value-taking filters (-g/--glob, -t/--type) are handled above
+        # via `globs`/`types`. Anything else is dropped with a warning so a caller
+        # (or untrusted config) can never inject arbitrary rg flags (e.g.
+        # --passthru, -e, --pre) past the `--` guard.
+        _SAFE_FLAGS = frozenset({
+            "-i", "--ignore-case",
+            "-w", "--word-regexp",
+            "-F", "--fixed-strings",
+            "--multiline",
+            "-U",
+            "-s", "--case-sensitive",
+        })
+        for flag in flags or []:
+            if flag in _SAFE_FLAGS:
+                argv.append(flag)
+            else:
+                logger.warning("rg_search: dropping disallowed flag %r", flag)
         argv += ["--", query, root]
         return argv
 
@@ -198,7 +215,10 @@ class RgSearch:
         if proc.returncode == 1:
             # No matches — a normal, non-error outcome.
             return RgResult(available=True, matches=[], returncode=1)
-        if proc.returncode >= 2:
+        if proc.returncode not in (0, 1):
+            # Any non-success, non-"no-match" code is an error — including a
+            # NEGATIVE code from a signal kill (e.g. -9 SIGKILL), which the old
+            # `>= 2` test let fall through into the (empty) match-parse path.
             return RgResult(
                 available=True,
                 matches=[],

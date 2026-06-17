@@ -248,3 +248,40 @@ def test_search_clean_runs_are_available(monkeypatch, rc):
 
     monkeypatch.setattr(subprocess, "run", fake_run)
     assert RgSearch().search("q").available is True
+
+
+# --- flag-injection allowlist + signal-kill return code ------------------
+
+
+def test_build_argv_drops_disallowed_flags(caplog):
+    """Only allowlisted boolean flags survive; injected flags are dropped."""
+    import logging
+
+    with caplog.at_level(logging.WARNING):
+        argv = RgSearch.build_argv(
+            "/bin/rg", "q", ".", flags=["-i", "--passthru", "--pre", "cat"]
+        )
+    # allowlisted flag survives
+    assert "-i" in argv
+    # injected rg flags (and a --pre value) are dropped before the -- separator
+    assert "--passthru" not in argv
+    assert "--pre" not in argv
+    assert "cat" not in argv
+    dd = argv.index("--")
+    assert argv[dd + 1] == "q"
+    assert any("--passthru" in m for m in caplog.messages)
+
+
+def test_search_negative_returncode_is_error(monkeypatch):
+    """A signal-killed rg (negative rc) must surface an error, not parse empty."""
+    monkeypatch.setattr(RgSearch, "_resolve_rg", lambda self: "/bin/rg")
+
+    def fake_run(*a, **k):
+        return SimpleNamespace(returncode=-9, stdout="", stderr="")
+
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    result = RgSearch().search("q")
+    assert result.available is True
+    assert result.matches == []
+    assert result.error  # surfaced, not silently swallowed
+    assert result.returncode == -9

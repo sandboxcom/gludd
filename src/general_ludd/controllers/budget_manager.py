@@ -89,9 +89,12 @@ class BudgetManager:
         return {"allowed": True, "reason": "ok"}
 
     def check_daily_budget(self, estimated_cost: float) -> dict[str, Any]:
+        # Reset BEFORE the paused check: a sticky pause from a prior day's breach
+        # must not survive the daily-window rollover (else the kill-switch never
+        # recovers and every subsequent day is blocked).
+        self._reset_daily_if_needed()
         if self._paused:
             return {"allowed": False, "reason": "budget_exhausted"}
-        self._reset_daily_if_needed()
         if self._daily_limit != float("inf") and _is_uncomputable(estimated_cost):
             # Fail CLOSED: an uncomputable cost under a real cap trips the
             # sticky kill switch rather than silently allowing the call.

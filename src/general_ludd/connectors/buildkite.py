@@ -40,18 +40,36 @@ class ConnectorError(RuntimeError):
     """Raised for configuration / transport problems specific to this connector."""
 
 
+# Hostnames that always resolve to the local machine or cloud-metadata service
+# and must be rejected regardless of whether they parse as IP literals.
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "metadata",
+        "metadata.google.internal",
+    }
+)
+
+
 def _host_is_private_literal(host: str) -> bool:
-    """True if ``host`` is an IP *literal* in a non-public range.
+    """True if ``host`` is an IP *literal* in a non-public range or a blocked hostname.
 
     Pure literal inspection — performs NO DNS resolution (a hostname that is not
-    already an IP literal is treated as public here; resolution-time SSRF is a
-    separate concern intentionally left to the transport layer).
+    already an IP literal and not in the blocked-name denylist is treated as
+    public here; resolution-time SSRF is a separate concern intentionally left
+    to the transport layer).
     """
-    candidate = host
-    if candidate.startswith("[") and candidate.endswith("]"):
-        candidate = candidate[1:-1]
+    name = host.strip().lower().rstrip(".")
+    if not name:
+        return True
+    # Strip IPv6 brackets before the name check so "[::1]" matches correctly.
+    stripped = name[1:-1] if (name.startswith("[") and name.endswith("]")) else name
+    if stripped in _BLOCKED_HOSTNAMES:
+        return True
     try:
-        ip = ipaddress.ip_address(candidate)
+        ip = ipaddress.ip_address(stripped)
     except ValueError:
         return False
     return (

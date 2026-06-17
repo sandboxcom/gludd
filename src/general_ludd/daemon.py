@@ -223,7 +223,16 @@ def build_secrets_resolver(
                         )
                         base = EnvSecretsManager(overrides=env_overrides)
                 except Exception as exc:
-                    logger.warning("OpenBao auto-mode: connection failed (%s), using env fallback", exc)
+                    _url = openbao_config.external_url or ""
+                    if _url.startswith("http://"):
+                        logger.error(
+                            "OpenBao auto-mode: rejected plaintext URL %r — "
+                            "external_url must use https:// to avoid leaking the auth "
+                            "token over unencrypted transport; falling back to env",
+                            _url,
+                        )
+                    else:
+                        logger.warning("OpenBao auto-mode: connection failed (%s), using env fallback", exc)
                     base = EnvSecretsManager(overrides=env_overrides)
             else:
                 logger.info("OpenBao auto-mode: no external URL configured, using env fallback")
@@ -710,18 +719,40 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 len(model_profiles),
             )
 
+            # W: event-loop-wiring (#27) — compute the per-call cost projection
+            # BEFORE defining _gateway_executor so the closure captures the real
+            # value for the BudgetManager pre-checks.  Both layers use this same
+            # projection: BudgetManager gates daily/per-todo ceilings against
+            # (cumulative actuals + this projection); SpendLimiter enforces the
+            # rolling-window soft cap atomically.  Passing 0.0 to BudgetManager
+            # made its pre-checks purely reactive (could only block AFTER a prior
+            # call's actual cost already crossed the limit, never the call that
+            # would itself exceed it).
+            from general_ludd.infra.pricing import token_cost_usd
+
+            _projected_cost_usd = 0.0
+            _default_profile = model_gateway.get_profile("default")
+            if _default_profile is not None:
+                _projected_cost_usd = token_cost_usd(
+                    _default_profile.model_name or "__default__",
+                    min(_default_profile.max_input_tokens, 1000),
+                    _default_profile.max_output_tokens,
+                )
+
             async def _gateway_executor(task: AgentTask) -> str:
                 profile_id = "default"
                 budget_manager = getattr(app.state, "_budget_manager", None)
                 if budget_manager is not None:
-                    daily = budget_manager.check_daily_budget(0.0)
+                    daily = budget_manager.check_daily_budget(_projected_cost_usd)
                     if not daily.get("allowed", True):
                         logger.warning(
                             "Gateway executor deferred for %s: daily budget exhausted",
                             task.task_id,
                         )
                         return "deferred:budget_exhausted"
-                    per_todo = budget_manager.check_todo_budget(task.task_id, 0.0)
+                    per_todo = budget_manager.check_todo_budget(
+                        task.task_id, _projected_cost_usd
+                    )
                     if not per_todo.get("allowed", True):
                         logger.warning(
                             "Gateway executor deferred for %s: per-todo budget exhausted",
@@ -743,20 +774,6 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
                     return f"Error: {exc}"
 
-            # W: event-loop-wiring (#27) — wrap gateway executor with SpendLimiter
-            # pre-call gate.  When no limiter is configured this is a transparent
-            # no-op wrapper.  projected_cost_usd=0.0 so zero-cost calls are never
-            # deferred; callers may override by wrapping again with a real projection.
-            from general_ludd.infra.pricing import token_cost_usd
-
-            _projected_cost_usd = 0.0
-            _default_profile = model_gateway.get_profile("default")
-            if _default_profile is not None:
-                _projected_cost_usd = token_cost_usd(
-                    _default_profile.model_name or "__default__",
-                    min(_default_profile.max_input_tokens, 1000),
-                    _default_profile.max_output_tokens,
-                )
             dispatcher_executor = make_spend_guarded_executor(
                 executor=_gateway_executor,
                 spend_limiter=spend_limiter,
