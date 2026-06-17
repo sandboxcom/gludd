@@ -107,3 +107,68 @@ class TestF3IssueIngestion:
         ingestor = GitHubIssueIngestor()
         assert ingestor.is_configured() is False
         assert await ingestor.poll_issues() == []
+
+    @pytest.mark.asyncio
+    async def test_pull_requests_are_skipped(self) -> None:
+        # GitHub's /issues endpoint also returns PRs (they carry a
+        # `pull_request` key). Those must never become work todos.
+        ingestor = GitHubIssueIngestor(owner="o", repo="r", label="gludd")
+        fake_items = [
+            {"id": 1, "number": 12, "title": "Real issue",
+             "body": "fix me", "labels": [{"name": "bug"}]},
+            {"id": 2, "number": 13, "title": "A pull request",
+             "body": "code", "labels": [{"name": "bug"}],
+             "pull_request": {"url": "https://api.github.com/.../pulls/13"}},
+        ]
+
+        async def _fake_fetch() -> list[dict[str, object]]:
+            return fake_items
+
+        with patch.object(ingestor, "_fetch_labeled_issues", _fake_fetch):
+            todos = await ingestor.poll_issues()
+
+        assert len(todos) == 1
+        assert todos[0]["title"] == "Real issue"
+        assert all(t["title"] != "A pull request" for t in todos)
+
+    @pytest.mark.asyncio
+    async def test_two_id_less_issues_both_ingest(self) -> None:
+        # Issues without an `id` must not collide on a shared sentinel
+        # dedup key — both distinct issues should ingest.
+        ingestor = GitHubIssueIngestor(owner="o", repo="r", label="gludd")
+        fake_issues = [
+            {"number": 21, "title": "First id-less", "body": "a",
+             "labels": [{"name": "bug"}]},
+            {"number": 22, "title": "Second id-less", "body": "b",
+             "labels": [{"name": "docs"}]},
+        ]
+
+        async def _fake_fetch() -> list[dict[str, object]]:
+            return fake_issues
+
+        with patch.object(ingestor, "_fetch_labeled_issues", _fake_fetch):
+            todos = await ingestor.poll_issues()
+
+        titles = sorted(t["title"] for t in todos)
+        assert titles == ["First id-less", "Second id-less"]
+        assert len(todos) == 2
+
+    @pytest.mark.asyncio
+    async def test_id_less_issue_still_dedups_on_repoll(self) -> None:
+        # The robust key must remain stable so re-polling stays idempotent
+        # even when `id` is absent.
+        ingestor = GitHubIssueIngestor(owner="o", repo="r", label="gludd")
+        fake_issues = [
+            {"number": 30, "title": "No id here", "body": "x",
+             "labels": [{"name": "bug"}]},
+        ]
+
+        async def _fake_fetch() -> list[dict[str, object]]:
+            return fake_issues
+
+        with patch.object(ingestor, "_fetch_labeled_issues", _fake_fetch):
+            first = await ingestor.poll_issues()
+            again = await ingestor.poll_issues()
+
+        assert len(first) == 1
+        assert again == []

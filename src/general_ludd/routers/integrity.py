@@ -22,16 +22,21 @@ def _scan_roots(app: FastAPI) -> list[str]:
     A caller-supplied scan path must resolve inside one of these roots; anything
     else (e.g. ``/etc``, ``/``, ``~/.ssh``) is refused. Pure env/attr reads — no
     blocking I/O.
+
+    The system temp directory is included so the endpoint can be used from tests
+    and for scanning user-supplied temporary artifacts.  On macOS the real path
+    differs from the symlink (/tmp -> /private/var/...); both are included.
     """
     import tempfile
 
+    tmp = tempfile.gettempdir()
     roots = [
         os.environ.get("GLUDD_WORKSPACE", ""),
         str(getattr(app.state, "_config_dir", "") or ""),
         os.path.expanduser("~/.config/gludd"),
         os.path.expanduser("~/.local/share/general-ludd"),
-        # Legitimate scratch location for integrity scans (still excludes /etc, ~/.ssh).
-        tempfile.gettempdir(),
+        tmp,
+        os.path.realpath(tmp),
     ]
     return [r for r in roots if r]
 

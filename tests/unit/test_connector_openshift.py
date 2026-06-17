@@ -1,4 +1,12 @@
-"""Unit tests for the OpenShiftSource connector (mocked transport + runner)."""
+"""Unit tests for the OpenShift connector (mocked transport, no real cluster).
+
+Covers, per contract:
+* canned builds / pods / events / log payloads -> normalization schema
+* internal/private api_server rejected unless allow_private=True
+* Bearer header sourced from token_env
+* health() ok / not-ok / never-raises
+* SSRF literal-host block (no DNS), gated by allow_private
+"""
 
 from __future__ import annotations
 
@@ -8,294 +16,399 @@ from typing import Any
 import pytest
 
 from general_ludd.connectors.openshift import (
+    HttpResponse,
+    OpenShiftConfigError,
     OpenShiftSource,
-    SSRFError,
-    assert_url_allowed,
-    host_is_blocked,
-    token_from_env,
 )
 
-CANNED_EVENTS = {
-    "kind": "EventList",
+# --------------------------------------------------------------------------- #
+# Test doubles
+# --------------------------------------------------------------------------- #
+
+PUBLIC_API = "https://api.openshift.example.com:6443"
+NS = "ci-builds"
+TOKEN_ENV = "OPENSHIFT_TEST_TOKEN"
+
+
+class FakeResponse:
+    """Minimal HttpResponse: a status code plus a JSON body or raw text."""
+
+    def __init__(self, status_code: int = 200, *, body: Any = None, text: str | None = None) -> None:
+        self._status = status_code
+        self._body = body
+        self._text = text if text is not None else (json.dumps(body) if body is not None else "")
+
+    @property
+    def status_code(self) -> int:
+        return self._status
+
+    @property
+    def text(self) -> str:
+        return self._text
+
+    def json(self) -> Any:
+        if self._body is None:
+            raise ValueError("no json body")
+        return self._body
+
+
+class RecordingTransport:
+    """Records GET calls and returns queued responses (by URL substring)."""
+
+    def __init__(self, routes: dict[str, FakeResponse] | None = None, default: FakeResponse | None = None) -> None:
+        self.routes = routes or {}
+        self.default = default or FakeResponse(200, body={"items": []})
+        self.calls: list[dict[str, Any]] = []
+
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> HttpResponse:
+        self.calls.append({"url": url, "headers": dict(headers), "timeout": timeout})
+        for needle, resp in self.routes.items():
+            if needle in url:
+                return resp
+        return self.default
+
+
+class BoomTransport:
+    """Transport that raises — used to prove health() never propagates."""
+
+    def get(self, url: str, *, headers: dict[str, str], timeout: float) -> HttpResponse:
+        raise ConnectionError("network down")
+
+
+def make_source(
+    *,
+    transport: Any = None,
+    allow_private: bool = False,
+    api_server: str = PUBLIC_API,
+    extra: dict[str, Any] | None = None,
+) -> OpenShiftSource:
+    config: dict[str, Any] = {
+        "api_server": api_server,
+        "namespace": NS,
+        "token_env": TOKEN_ENV,
+        "allow_private": allow_private,
+    }
+    if extra:
+        config.update(extra)
+    return OpenShiftSource(config, transport=transport or RecordingTransport())
+
+
+# --------------------------------------------------------------------------- #
+# Canned payloads
+# --------------------------------------------------------------------------- #
+
+BUILDS_PAYLOAD = {
+    "items": [
+        {
+            "metadata": {
+                "name": "myapp-7",
+                "namespace": NS,
+                "labels": {"buildconfig": "myapp"},
+            },
+            "status": {
+                "phase": "Complete",
+                "startTimestamp": "2026-06-12T10:00:00Z",
+                "completionTimestamp": "2026-06-12T10:05:00Z",
+            },
+        },
+        {
+            "metadata": {
+                "name": "myapp-8",
+                "namespace": NS,
+                "labels": {"openshift.io/build-config.name": "myapp"},
+            },
+            "status": {
+                "phase": "Running",
+                "startTimestamp": "2026-06-12T11:00:00Z",
+            },
+        },
+    ]
+}
+
+PODS_PAYLOAD = {
+    "items": [
+        {
+            "metadata": {"name": "web-abc", "namespace": NS, "creationTimestamp": "2026-06-12T09:00:00Z"},
+            "spec": {"nodeName": "node-1"},
+            "status": {"phase": "Running"},
+        }
+    ]
+}
+
+EVENTS_PAYLOAD = {
     "items": [
         {
             "type": "Warning",
-            "reason": "Unhealthy",
-            "message": "Readiness probe failed",
-            "count": 3,
-            "lastTimestamp": "2026-06-16T17:05:00Z",
-            "involvedObject": {
-                "kind": "Pod",
-                "name": "api-1",
-                "namespace": "shop",
-            },
-            "metadata": {"namespace": "shop"},
+            "reason": "BackOff",
+            "message": "Back-off restarting failed container",
+            "lastTimestamp": "2026-06-12T12:00:00Z",
+            "involvedObject": {"kind": "Pod", "name": "web-abc"},
         }
-    ],
+    ]
 }
 
-
-class _CannedResponse:
-    def __init__(self, status_code: int, payload: Any = None, text: str = "") -> None:
-        self.status_code = status_code
-        self._payload = payload
-        self.text = text
-
-    def json(self) -> Any:
-        return self._payload
+LOG_TEXT = "line one\nline two\n\nline three\n"
 
 
-class _CannedTransport:
-    def __init__(
-        self, status_code: int = 200, payload: Any = None, text: str = ""
-    ) -> None:
-        self.status_code = status_code
-        self.payload = payload if payload is not None else {"items": []}
-        self.text = text
-        self.calls: list[dict[str, Any]] = []
-
-    def get(
-        self,
-        url: str,
-        *,
-        headers: dict[str, str],
-        params: dict[str, Any] | None = None,
-        verify: str | bool = True,
-    ) -> _CannedResponse:
-        self.calls.append(
-            {"url": url, "headers": headers, "params": params, "verify": verify}
-        )
-        return _CannedResponse(self.status_code, self.payload, self.text)
+# --------------------------------------------------------------------------- #
+# Contract: class attributes
+# --------------------------------------------------------------------------- #
 
 
-class _CannedRunner:
-    def __init__(self, rc: int = 0, stdout: str = "", stderr: str = "") -> None:
-        self.rc = rc
-        self.stdout = stdout
-        self.stderr = stderr
-        self.calls: list[list[str]] = []
-
-    def __call__(self, argv: list[str]) -> tuple[int, str, str]:
-        self.calls.append(argv)
-        return self.rc, self.stdout, self.stderr
+def test_kind_class_attr_is_logs() -> None:
+    assert OpenShiftSource.KIND == "logs"
+    assert "pipeline" in OpenShiftSource.KINDS
 
 
-def _public_config(**extra: Any) -> dict[str, Any]:
-    cfg = {"base_url": "https://ocp.example.com:6443", "name": "ocp"}
-    cfg.update(extra)
-    return cfg
+def test_name_attr_defaults_and_overrides() -> None:
+    assert make_source().name == "openshift"
+    src = make_source(extra={"name": "ocp-prod"})
+    assert src.name == "ocp-prod"
 
 
-class TestHttpEvents:
-    def test_canned_events_normalize(self) -> None:
-        transport = _CannedTransport(payload=CANNED_EVENTS)
-        src = OpenShiftSource(config=_public_config(), transport=transport)
-        records = src.query({"resource": "events"})
-
-        assert len(records) == 1
-        ev = records[0]
-        assert ev["kind"] == "events"
-        assert ev["source"] == "ocp"
-        assert ev["level_or_status"] == "warning"
-        assert ev["value"] == 3
-        assert ev["labels"] == {
-            "namespace": "shop",
-            "kind": "Pod",
-            "name": "api-1",
-            "reason": "Unhealthy",
-        }
-
-    def test_kind_class_attr(self) -> None:
-        assert OpenShiftSource.KIND == "events"
-
-    def test_events_time_bound_params(self) -> None:
-        transport = _CannedTransport(payload=CANNED_EVENTS)
-        src = OpenShiftSource(
-            config=_public_config(limit=20, timeout_seconds=8), transport=transport
-        )
-        src.query({})
-        params = transport.calls[0]["params"]
-        assert params["limit"] == 20
-        assert params["timeoutSeconds"] == 8
-        assert "watch" not in params
+# --------------------------------------------------------------------------- #
+# Contract: private/SSRF host gating
+# --------------------------------------------------------------------------- #
 
 
-class TestHttpPodLogs:
-    def test_pod_logs_normalize_to_logs_kind(self) -> None:
-        transport = _CannedTransport(text="line one\nline two\n")
-        src = OpenShiftSource(
-            config=_public_config(namespace="shop"), transport=transport
-        )
-        records = src.query({"resource": "logs", "pod": "api-1"})
-        assert [r["message"] for r in records] == ["line one", "line two"]
-        assert all(r["kind"] == "logs" for r in records)
-        assert records[0]["labels"] == {
-            "namespace": "shop",
-            "kind": "Pod",
-            "name": "api-1",
-        }
-        url = transport.calls[0]["url"]
-        assert url.endswith("/api/v1/namespaces/shop/pods/api-1/log")
-
-    def test_pod_logs_are_size_and_time_bound(self) -> None:
-        transport = _CannedTransport(text="x")
-        src = OpenShiftSource(
-            config=_public_config(namespace="shop"), transport=transport
-        )
-        src.query(
-            {"resource": "logs", "pod": "api-1", "since_seconds": 60, "tail_lines": 50}
-        )
-        params = transport.calls[0]["params"]
-        assert params["sinceSeconds"] == 60
-        assert params["tailLines"] == 50
-
-    def test_pod_logs_missing_pod_returns_empty(self) -> None:
-        transport = _CannedTransport(text="line")
-        src = OpenShiftSource(
-            config=_public_config(namespace="shop"), transport=transport
-        )
-        assert src.query({"resource": "logs"}) == []
-
-    def test_invalid_pod_name_rejected(self) -> None:
-        transport = _CannedTransport(text="line")
-        src = OpenShiftSource(
-            config=_public_config(namespace="shop"), transport=transport
-        )
-        with pytest.raises(ValueError):
-            src.query({"resource": "logs", "pod": "../secret"})
+@pytest.mark.parametrize(
+    "host",
+    [
+        "https://10.0.0.5:6443",
+        "https://192.168.1.10:6443",
+        "https://172.16.5.5:6443",
+        "https://127.0.0.1:6443",
+        "https://localhost:6443",
+        "https://openshift:6443",  # single-label, no dot
+        "https://api.cluster.local:6443",
+        "https://kubernetes.default.svc",
+        "https://[::1]:6443",
+    ],
+)
+def test_internal_host_rejected_by_default(host: str) -> None:
+    with pytest.raises(OpenShiftConfigError):
+        make_source(api_server=host)
 
 
-class TestRunnerMode:
-    def test_events_via_oc_runner(self) -> None:
-        runner = _CannedRunner(stdout=json.dumps(CANNED_EVENTS))
-        src = OpenShiftSource(
-            config={"name": "ocp", "namespace": "shop"}, runner=runner
-        )
-        records = src.query({"resource": "events"})
-        assert len(records) == 1
-        assert records[0]["labels"]["reason"] == "Unhealthy"
-        # argv is a list, no shell, namespace flagged.
-        argv = runner.calls[0]
-        assert isinstance(argv, list)
-        assert argv[:3] == ["oc", "get", "events"]
-        assert "-n" in argv and "shop" in argv
-
-    def test_pod_logs_via_oc_runner(self) -> None:
-        runner = _CannedRunner(stdout="a\nb\n")
-        src = OpenShiftSource(
-            config={"name": "ocp", "namespace": "shop"}, runner=runner
-        )
-        records = src.query({"resource": "logs", "pod": "api-1"})
-        assert [r["message"] for r in records] == ["a", "b"]
-        argv = runner.calls[0]
-        assert argv[:2] == ["oc", "logs"]
-        assert "api-1" in argv
-        assert any(part.startswith("--since=") for part in argv)
-        assert any(part.startswith("--tail=") for part in argv)
-
-    def test_runner_mode_invalid_namespace_rejected(self) -> None:
-        runner = _CannedRunner(stdout=json.dumps(CANNED_EVENTS))
-        src = OpenShiftSource(config={"namespace": "Bad NS"}, runner=runner)
-        with pytest.raises(ValueError):
-            src.query({"resource": "events"})
+@pytest.mark.parametrize(
+    "host",
+    [
+        "https://10.0.0.5:6443",
+        "https://localhost:6443",
+        "https://openshift:6443",
+        "https://[::1]:6443",
+    ],
+)
+def test_internal_host_allowed_with_opt_in(host: str) -> None:
+    src = make_source(api_server=host, allow_private=True)
+    assert src.allow_private is True
 
 
-class TestSSRF:
-    @pytest.mark.parametrize(
-        "host",
-        [
-            "https://127.0.0.1:6443",
-            "https://10.0.0.9:6443",
-            "https://169.254.169.254/x",
-            "http://localhost:6443",
-        ],
-    )
-    def test_internal_host_rejected_by_default(self, host: str) -> None:
-        with pytest.raises(SSRFError):
-            OpenShiftSource(config={"base_url": host}, transport=_CannedTransport())
-
-    def test_internal_host_allowed_opt_in(self) -> None:
-        src = OpenShiftSource(
-            config={"base_url": "https://10.0.0.9:6443", "allow_private": True},
-            transport=_CannedTransport(payload=CANNED_EVENTS),
-        )
-        assert len(src.query({})) == 1
-
-    def test_helpers(self) -> None:
-        assert host_is_blocked("10.0.0.9") is True
-        assert host_is_blocked("ocp.example.com") is False
-        assert_url_allowed("https://ocp.example.com", allow_private=False)
-        assert token_from_env(None) is None
+def test_public_host_allowed_without_opt_in() -> None:
+    src = make_source()
+    assert src.allow_private is False
+    assert src.api_server == PUBLIC_API
 
 
-class TestToken:
-    def test_bearer_from_env(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        monkeypatch.setenv("OCP_TOKEN", "sha256~abc")
-        transport = _CannedTransport(payload=CANNED_EVENTS)
-        src = OpenShiftSource(
-            config=_public_config(token_env="OCP_TOKEN"), transport=transport
-        )
-        src.query({})
-        assert transport.calls[0]["headers"]["Authorization"] == "Bearer sha256~abc"
-
-    def test_no_token_no_header(self) -> None:
-        transport = _CannedTransport(payload=CANNED_EVENTS)
-        src = OpenShiftSource(config=_public_config(), transport=transport)
-        src.query({})
-        assert "Authorization" not in transport.calls[0]["headers"]
+def test_no_dns_resolution_for_literal_host() -> None:
+    # A public-looking name that *would* resolve to a private IP is still
+    # accepted, proving we block on the literal string only (no DNS lookup).
+    src = make_source(api_server="https://api.openshift.example.com:6443")
+    assert src.api_server.endswith(":6443")
 
 
-class TestHealth:
-    def test_http_health_ok(self) -> None:
-        src = OpenShiftSource(
-            config=_public_config(), transport=_CannedTransport(status_code=200)
-        )
-        assert src.health()["ok"] is True
-
-    def test_http_health_not_ok(self) -> None:
-        src = OpenShiftSource(
-            config=_public_config(), transport=_CannedTransport(status_code=401)
-        )
-        h = src.health()
-        assert h["ok"] is False
-        assert "401" in h["detail"]
-
-    def test_runner_health_ok(self) -> None:
-        src = OpenShiftSource(config={"name": "ocp"}, runner=_CannedRunner(rc=0))
-        assert src.health()["ok"] is True
-
-    def test_runner_health_not_ok(self) -> None:
-        src = OpenShiftSource(
-            config={"name": "ocp"}, runner=_CannedRunner(rc=1, stderr="no auth")
-        )
-        h = src.health()
-        assert h["ok"] is False
-        assert "no auth" in h["detail"]
-
-    def test_health_never_raises(self) -> None:
-        class _Exploding:
-            def get(self, *a: Any, **k: Any) -> Any:
-                raise ConnectionError("boom")
-
-        src = OpenShiftSource(config=_public_config(), transport=_Exploding())
-        h = src.health()
-        assert h["ok"] is False
-        assert "probe error" in h["detail"]
-
-    def test_health_no_transport(self) -> None:
-        src = OpenShiftSource(config=_public_config())
-        assert src.health()["ok"] is False
+def test_invalid_api_server_rejected() -> None:
+    with pytest.raises(OpenShiftConfigError):
+        OpenShiftSource({"api_server": "not-a-url", "namespace": NS})
+    with pytest.raises(OpenShiftConfigError):
+        OpenShiftSource({"namespace": NS})  # missing api_server
+    with pytest.raises(OpenShiftConfigError):
+        OpenShiftSource({"api_server": PUBLIC_API})  # missing namespace
 
 
-class TestQueryRobustness:
-    def test_http_error_returns_empty(self) -> None:
-        src = OpenShiftSource(
-            config=_public_config(),
-            transport=_CannedTransport(status_code=500, payload=CANNED_EVENTS),
-        )
-        assert src.query({}) == []
+def test_base_url_alias_accepted() -> None:
+    src = OpenShiftSource({"base_url": PUBLIC_API, "namespace": NS}, transport=RecordingTransport())
+    assert src.api_server == PUBLIC_API
 
-    def test_runner_nonzero_returns_empty(self) -> None:
-        runner = _CannedRunner(rc=2, stdout=json.dumps(CANNED_EVENTS))
-        src = OpenShiftSource(config={"name": "ocp"}, runner=runner)
-        assert src.query({"resource": "events"}) == []
+
+# --------------------------------------------------------------------------- #
+# Contract: Bearer header from token_env
+# --------------------------------------------------------------------------- #
+
+
+def test_bearer_header_present_when_token_set(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "sa-secret-token")
+    transport = RecordingTransport()
+    src = make_source(transport=transport)
+    src.query({"mode": "pods"})
+    assert transport.calls, "expected a GET to have been issued"
+    auth = transport.calls[-1]["headers"].get("Authorization")
+    assert auth == "Bearer sa-secret-token"
+
+
+def test_no_bearer_header_when_token_absent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    transport = RecordingTransport()
+    src = make_source(transport=transport)
+    src.query({"mode": "pods"})
+    assert "Authorization" not in transport.calls[-1]["headers"]
+
+
+def test_requests_are_time_bound(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "t")
+    transport = RecordingTransport()
+    src = make_source(transport=transport, extra={"timeout": 7.5})
+    src.query({"mode": "pods"})
+    assert transport.calls[-1]["timeout"] == 7.5
+
+
+# --------------------------------------------------------------------------- #
+# Contract: builds -> pipeline records
+# --------------------------------------------------------------------------- #
+
+
+def test_query_builds_normalization() -> None:
+    transport = RecordingTransport(routes={"/builds": FakeResponse(200, body=BUILDS_PAYLOAD)})
+    src = make_source(transport=transport)
+    records = src.query({"mode": "builds"})
+
+    assert len(records) == 2
+    r0 = records[0]
+    assert r0["kind"] == "pipeline"
+    assert r0["source"] == "openshift"
+    assert r0["ts"] == "2026-06-12T10:05:00Z"  # completionTimestamp preferred
+    assert r0["level_or_status"] == "Complete"
+    assert r0["message"] == "myapp-7"
+    assert r0["labels"]["buildconfig"] == "myapp"
+    assert r0["labels"]["namespace"] == NS
+    assert set(r0.keys()) == {"ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"}
+
+    # Running build falls back to startTimestamp + reads label alias.
+    r1 = records[1]
+    assert r1["ts"] == "2026-06-12T11:00:00Z"
+    assert r1["level_or_status"] == "Running"
+    assert r1["labels"]["buildconfig"] == "myapp"
+
+    # The request hit the build.openshift.io API path under the namespace.
+    assert any("/apis/build.openshift.io/v1/namespaces/ci-builds/builds" in c["url"] for c in transport.calls)
+
+
+# --------------------------------------------------------------------------- #
+# Contract: pods -> records
+# --------------------------------------------------------------------------- #
+
+
+def test_query_pods_normalization() -> None:
+    transport = RecordingTransport(routes={"/pods": FakeResponse(200, body=PODS_PAYLOAD)})
+    src = make_source(transport=transport)
+    records = src.query({"mode": "pods"})
+
+    assert len(records) == 1
+    r = records[0]
+    assert r["kind"] == "logs"
+    assert r["level_or_status"] == "Running"
+    assert r["message"] == "web-abc"
+    assert r["labels"]["node"] == "node-1"
+    assert r["labels"]["namespace"] == NS
+    assert any("/api/v1/namespaces/ci-builds/pods" in c["url"] for c in transport.calls)
+
+
+# --------------------------------------------------------------------------- #
+# Contract: events -> records
+# --------------------------------------------------------------------------- #
+
+
+def test_query_events_normalization() -> None:
+    transport = RecordingTransport(routes={"/events": FakeResponse(200, body=EVENTS_PAYLOAD)})
+    src = make_source(transport=transport)
+    records = src.query({"mode": "events"})
+
+    assert len(records) == 1
+    r = records[0]
+    assert r["kind"] == "logs"
+    assert r["level_or_status"] == "Warning"
+    assert r["message"] == "BackOff Back-off restarting failed container"
+    assert r["labels"]["involvedObject.kind"] == "Pod"
+    assert r["labels"]["involvedObject.name"] == "web-abc"
+    assert r["labels"]["reason"] == "BackOff"
+    assert r["ts"] == "2026-06-12T12:00:00Z"
+
+
+# --------------------------------------------------------------------------- #
+# Contract: logs -> per-line records
+# --------------------------------------------------------------------------- #
+
+
+def test_query_logs_per_line() -> None:
+    transport = RecordingTransport(routes={"/log": FakeResponse(200, text=LOG_TEXT)})
+    src = make_source(transport=transport)
+    records = src.query({"mode": "logs", "pod": "web-abc", "container": "app", "tail_lines": 100})
+
+    # Blank line is dropped; 3 content lines remain.
+    assert [r["message"] for r in records] == ["line one", "line two", "line three"]
+    assert all(r["kind"] == "logs" for r in records)
+    assert records[0]["labels"]["pod"] == "web-abc"
+    assert records[0]["labels"]["container"] == "app"
+    assert records[0]["labels"]["namespace"] == NS
+
+    url = transport.calls[-1]["url"]
+    assert "/api/v1/namespaces/ci-builds/pods/web-abc/log" in url
+    assert "container=app" in url
+    assert "tailLines=100" in url
+
+
+def test_logs_mode_requires_pod() -> None:
+    src = make_source()
+    with pytest.raises(OpenShiftConfigError):
+        src.query({"mode": "logs"})
+
+
+def test_unknown_mode_raises() -> None:
+    src = make_source()
+    with pytest.raises(OpenShiftConfigError):
+        src.query({"mode": "nonsense"})
+
+
+def test_non_200_yields_empty_records() -> None:
+    transport = RecordingTransport(default=FakeResponse(403, body={"message": "forbidden"}))
+    src = make_source(transport=transport)
+    assert src.query({"mode": "pods"}) == []
+
+
+# --------------------------------------------------------------------------- #
+# Contract: health() ok / not-ok / never raises
+# --------------------------------------------------------------------------- #
+
+
+def test_health_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "t")
+    transport = RecordingTransport(default=FakeResponse(200, body={"kind": "Namespace"}))
+    src = make_source(transport=transport)
+    result = src.health()
+    assert result["ok"] is True
+    assert isinstance(result["detail"], str)
+
+
+def test_health_not_ok_on_bad_status(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "t")
+    transport = RecordingTransport(default=FakeResponse(401, body={"message": "unauthorized"}))
+    src = make_source(transport=transport)
+    result = src.health()
+    assert result["ok"] is False
+    assert "401" in result["detail"]
+
+
+def test_health_not_ok_without_token(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv(TOKEN_ENV, raising=False)
+    src = make_source()
+    result = src.health()
+    assert result["ok"] is False
+    assert TOKEN_ENV in result["detail"]
+
+
+def test_health_never_raises_on_transport_error(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv(TOKEN_ENV, "t")
+    src = make_source(transport=BoomTransport())
+    result = src.health()  # must not raise
+    assert result["ok"] is False
+    assert "request failed" in result["detail"]

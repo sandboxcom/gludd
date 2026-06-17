@@ -1,271 +1,307 @@
-"""Thanos Querier metrics connector.
+"""Self-contained Thanos observability connector.
 
-Self-contained Prometheus-API source for a Thanos Querier. No imports from a
-connector base or sibling modules.
+Thanos exposes a Prometheus-compatible HTTP API (``/api/v1/query`` and
+``/api/v1/query_range``) in front of a federated set of Prometheus stores.
+This connector reads PromQL results from that API and normalizes every sample
+into a flat record. The HTTP transport is *injectable* so the connector can be
+driven entirely from mocked responses in tests (no real network, no DNS, no
+shell).
 
-Contract (see project connector spec):
-    - class attr KIND = 'metrics'
-    - instance attr ``name``
-    - __init__(config, transport=None) — fully config-driven
-    - secrets resolved from ``*_env`` keys, never inlined
-    - literal-host SSRF block on ``base_url`` (opt-in ``allow_private``)
-    - health() -> {'ok', 'detail'} and NEVER raises
-    - query(spec) -> list[dict] normalized records
-    - injectable HTTP transport (defaults to a stdlib urllib transport)
-    - time-bound requests; never uses shell
+Design constraints honoured here:
 
-Thanos-specific: the Querier accepts ``dedup`` and ``partial_response`` query
-params on /api/v1/query[_range]; an optional Bearer token is read from
-``token_env``.
+* No imports from sibling connectors, the package ``__init__``, or any
+  connector base class — this module stands alone.
+* SSRF protection blocks loopback / private / link-local / cloud-metadata
+  *literal* hosts on ``base_url``. We deliberately do **not** resolve DNS
+  (so no DNS-rebinding surface and no network at construction time), and we
+  **allow** ``http`` because Thanos query frontends are frequently exposed on
+  plain HTTP inside an allowlisted internal network.
+* ``health()`` never raises and returns ``{"ok", "detail"}``.
+  ``query()`` never raises: transport / protocol failures are surfaced as a
+  single normalized error record.
+* No ``shell=True`` and no subprocess use anywhere.
+* Every transport call is time-bound via an injected ``timeout``.
+
+Record shape (one dict per sample)::
+
+    {
+        "ts": float,                 # unix seconds of the sample
+        "source": str,               # connector name
+        "kind": "metrics",
+        "level_or_status": str,      # "" for data, "error" for failures
+        "message": str,              # "<__name__>{label="v", ...}"
+        "value": float,              # numeric sample value
+        "labels": dict[str, str],    # metric labels (incl. __name__)
+        "raw": Any,                  # original series/sample/payload
+    }
 """
 
 from __future__ import annotations
 
 import ipaddress
-import json
 import os
-import urllib.error
-import urllib.parse
-import urllib.request
-from typing import Any, Protocol, runtime_checkable
+import time
+from collections.abc import Callable
+from typing import Any
+from urllib.parse import urlsplit
+
+# Injectable transport signature: (url, params, headers, timeout) -> (status, json)
+HttpGet = Callable[..., "tuple[int, Any]"]
 
 KIND = "metrics"
 
-_DEFAULT_TIMEOUT = 30.0
+# Hostnames that must never be reached, regardless of IP resolution.
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "metadata",
+        "metadata.google.internal",
+        "metadata.goog",
+    }
+)
+
+_DEFAULT_TIMEOUT = 10.0
 
 
-@runtime_checkable
-class Transport(Protocol):
-    """Minimal injectable HTTP transport returning ``(status_code, body_text)``."""
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        body: bytes | None = None,
-        timeout: float = _DEFAULT_TIMEOUT,
-    ) -> tuple[int, str]:
-        ...
+def _strip_brackets(host: str) -> str:
+    # IPv6 literals arrive as "[::1]"
+    if host.startswith("[") and host.endswith("]"):
+        return host[1:-1]
+    return host
 
 
-class _UrllibTransport:
-    """Default transport backed by :mod:`urllib` (no third-party deps, no shell)."""
-
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        body: bytes | None = None,
-        timeout: float = _DEFAULT_TIMEOUT,
-    ) -> tuple[int, str]:
-        req = urllib.request.Request(url, data=body, method=method)
-        for key, value in (headers or {}).items():
-            req.add_header(key, value)
-        try:
-            with urllib.request.urlopen(req, timeout=timeout) as resp:
-                raw = resp.read()
-                return int(resp.status), raw.decode("utf-8", "replace")
-        except urllib.error.HTTPError as exc:
-            raw = exc.read() if hasattr(exc, "read") else b""
-            return int(exc.code), raw.decode("utf-8", "replace")
-
-
-class SSRFError(ValueError):
-    """Raised when ``base_url`` resolves to a private/loopback host."""
-
-
-def _is_private_host(host: str) -> bool:
-    """True if ``host`` is a literal private/loopback/link-local/reserved IP."""
-    candidate = host.strip("[]")
+def _is_blocked_ip(host: str) -> bool:
     try:
-        ip = ipaddress.ip_address(candidate)
+        ip = ipaddress.ip_address(_strip_brackets(host))
     except ValueError:
-        return host.lower() in {"localhost", "localhost.localdomain"}
+        return False
     return (
-        ip.is_private
-        or ip.is_loopback
+        ip.is_loopback
+        or ip.is_private
         or ip.is_link_local
         or ip.is_reserved
-        or ip.is_unspecified
         or ip.is_multicast
+        or ip.is_unspecified
+        or not ip.is_global
     )
 
 
-def _guard_base_url(base_url: str, allow_private: bool) -> str:
-    """Validate scheme + SSRF policy; return a normalized base_url (no trailing /)."""
-    parsed = urllib.parse.urlparse(base_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise SSRFError(f"unsupported scheme: {parsed.scheme!r}")
-    host = parsed.hostname or ""
+def _validate_base_url(base_url: str) -> str:
+    """Reject SSRF-prone literal hosts; return a normalized base_url.
+
+    Allows http and https only. Performs NO DNS resolution.
+    """
+    if not base_url or not isinstance(base_url, str):
+        raise ValueError("base_url is required")
+
+    parts = urlsplit(base_url)
+    if parts.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported scheme: {parts.scheme!r} (only http/https)")
+
+    host = (parts.hostname or "").strip().lower()
     if not host:
-        raise SSRFError("base_url has no host")
-    if not allow_private and _is_private_host(host):
-        raise SSRFError(f"refusing private/loopback host: {host!r} (set allow_private=True)")
+        raise ValueError("base_url has no host")
+
+    if host in _BLOCKED_HOSTNAMES:
+        raise ValueError(f"blocked host: {host!r}")
+
+    if _is_blocked_ip(host):
+        raise ValueError(f"blocked internal/metadata address: {host!r}")
+
+    # Normalize: drop trailing slash so endpoint joins are clean.
     return base_url.rstrip("/")
 
 
-def _coerce_ts(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
-
-
-def _coerce_value(value: Any) -> float | None:
-    try:
-        return float(value)
-    except (TypeError, ValueError):
-        return None
+def _fmt_labels(metric: dict[str, Any]) -> str:
+    """Render ``__name__{k="v", ...}`` with sorted, non-name labels."""
+    name = str(metric.get("__name__", ""))
+    pairs = sorted((k, v) for k, v in metric.items() if k != "__name__")
+    if not pairs:
+        return name
+    inner = ", ".join(f'{k}="{v}"' for k, v in pairs)
+    return f"{name}{{{inner}}}"
 
 
 class ThanosSource:
-    """Read records from a Thanos Querier (Prometheus HTTP API).
+    """A metrics source backed by the Thanos (Prometheus-compatible) HTTP API."""
 
-    Querying:
-        - ``GET {base_url}/api/v1/query`` (instant)
-        - ``GET {base_url}/api/v1/query_range`` (range)
-        - ``dedup`` and ``partial_response`` params forwarded when set
+    KIND = KIND
 
-    A normalized record has keys:
-        ts, source, kind, level_or_status, message, value, labels, raw
-    where ``message`` is the metric ``__name__`` and ``labels`` is the labelset.
-    """
+    def __init__(
+        self,
+        config: dict[str, Any],
+        http_get: HttpGet | None = None,
+        *,
+        timeout: float = _DEFAULT_TIMEOUT,
+    ) -> None:
+        if http_get is None:
+            raise ValueError("http_get transport must be injected")
 
-    KIND = "metrics"
+        base_url = config.get("base_url", "")
+        self._base_url = _validate_base_url(base_url)
+        # Bearer token is optional (Thanos may sit behind an auth proxy).
+        self._token_env = config.get("token_env")
+        self._http_get = http_get
+        self._timeout = float(timeout)
+        self.kind = KIND
+        host = urlsplit(self._base_url).netloc
+        self.name = config.get("name") or f"thanos:{host}"
 
-    def __init__(self, config: dict[str, Any], transport: Transport | None = None) -> None:
-        self.config: dict[str, Any] = dict(config or {})
-        self.name: str = str(self.config.get("name", "thanos"))
-        self.allow_private: bool = bool(self.config.get("allow_private", False))
-        self.base_url: str = _guard_base_url(
-            str(self.config["base_url"]), self.allow_private
-        )
-        self.timeout: float = float(self.config.get("timeout", _DEFAULT_TIMEOUT))
-        # Thanos query knobs (config-level defaults; spec can override).
-        self.dedup: bool | None = self.config.get("dedup")
-        self.partial_response: bool | None = self.config.get("partial_response")
-        self._transport: Transport = transport or _UrllibTransport()
+    # -- helpers ----------------------------------------------------------
 
-        # Optional Bearer token from env (never inline secrets).
-        self._token: str | None = None
-        token_env = self.config.get("token_env")
-        if token_env:
-            self._token = os.environ.get(str(token_env))
-
-    # -- internals ---------------------------------------------------------
-
-    def _auth_headers(self) -> dict[str, str]:
-        headers: dict[str, str] = {}
-        if self._token:
-            headers["Authorization"] = f"Bearer {self._token}"
+    def _headers(self) -> dict[str, str]:
+        headers: dict[str, str] = {"Accept": "application/json"}
+        if self._token_env:
+            token = os.environ.get(self._token_env)
+            if token:
+                headers["Authorization"] = f"Bearer {token}"
         return headers
 
-    @staticmethod
-    def _bool_param(value: bool) -> str:
-        return "true" if value else "false"
+    def _error_record(self, message: str, raw: Any) -> dict[str, Any]:
+        return {
+            "ts": time.time(),
+            "source": self.name,
+            "kind": KIND,
+            "level_or_status": "error",
+            "message": message,
+            "value": 0.0,
+            "labels": {},
+            "raw": raw,
+        }
 
-    def _get(self, path: str, params: dict[str, str]) -> tuple[int, str]:
-        query = urllib.parse.urlencode(params)
-        url = f"{self.base_url}{path}?{query}"
-        return self._transport.request(
-            "GET", url, headers=self._auth_headers(), timeout=self.timeout
-        )
+    def _sample_record(
+        self, metric: dict[str, Any], ts: Any, raw_value: Any, raw: Any
+    ) -> dict[str, Any]:
+        try:
+            value = float(raw_value)
+        except (TypeError, ValueError):
+            value = 0.0
+        try:
+            ts_f = float(ts)
+        except (TypeError, ValueError):
+            ts_f = 0.0
+        labels = {str(k): str(v) for k, v in metric.items()}
+        return {
+            "ts": ts_f,
+            "source": self.name,
+            "kind": KIND,
+            "level_or_status": "",
+            "message": _fmt_labels(metric),
+            "value": value,
+            "labels": labels,
+            "raw": raw,
+        }
 
-    def _records_from_payload(self, payload: dict[str, Any]) -> list[dict[str, Any]]:
-        if payload.get("status") != "success":
-            return []
-        data = payload.get("data") or {}
-        result_type = data.get("resultType")
-        results = data.get("result") or []
-        records: list[dict[str, Any]] = []
-        for series in results:
-            metric = dict(series.get("metric") or {})
-            name = metric.get("__name__", "")
-            labels = {k: v for k, v in metric.items() if k != "__name__"}
-            if result_type == "matrix":
-                points = series.get("values") or []
-            else:
-                single = series.get("value")
-                points = [single] if single else []
-            for point in points:
-                if not point or len(point) < 2:
-                    continue
-                ts = _coerce_ts(point[0])
-                val = _coerce_value(point[1])
-                records.append(
-                    {
-                        "ts": ts,
-                        "source": self.name,
-                        "kind": self.KIND,
-                        "level_or_status": "ok",
-                        "message": name,
-                        "value": val,
-                        "labels": labels,
-                        "raw": series,
-                    }
-                )
-        return records
-
-    def _apply_thanos_params(self, spec: dict[str, Any], params: dict[str, str]) -> None:
-        dedup = spec.get("dedup", self.dedup)
-        if dedup is not None:
-            params["dedup"] = self._bool_param(bool(dedup))
-        partial = spec.get("partial_response", self.partial_response)
-        if partial is not None:
-            params["partial_response"] = self._bool_param(bool(partial))
-
-    # -- public API --------------------------------------------------------
+    # -- public API -------------------------------------------------------
 
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
-        """Run an instant or range PromQL query and return normalized records.
+        """Run an instant or range PromQL query; return normalized records.
 
-        ``spec`` keys: query (required); start/end/step -> range; time -> instant;
-        dedup / partial_response override the config defaults.
+        Range mode is selected when ``start``/``end``/``step`` are present.
+        Never raises: failures become a single error record.
         """
-        promql = spec.get("query")
+        promql = spec.get("promql")
         if not promql:
-            return []
-        params: dict[str, str] = {"query": str(promql)}
-        is_range = any(k in spec and spec[k] is not None for k in ("start", "end", "step"))
+            return [self._error_record("missing 'promql' in spec", {"spec": spec})]
+
+        is_range = any(k in spec for k in ("start", "end", "step"))
         if is_range:
+            endpoint = "/api/v1/query_range"
+            params: dict[str, Any] = {"query": promql}
             for key in ("start", "end", "step"):
-                if spec.get(key) is not None:
-                    params[key] = str(spec[key])
-            path = "/api/v1/query_range"
+                if key in spec:
+                    params[key] = spec[key]
         else:
-            if spec.get("time") is not None:
-                params["time"] = str(spec["time"])
-            path = "/api/v1/query"
-        self._apply_thanos_params(spec, params)
+            endpoint = "/api/v1/query"
+            params = {"query": promql}
+            if "time" in spec:
+                params["time"] = spec["time"]
+
+        # Thanos-specific tuning knobs (deduplication, partial-response).
+        for key in ("dedup", "partial_response"):
+            if key in spec:
+                params[key] = spec[key]
+
+        url = f"{self._base_url}{endpoint}"
         try:
-            status, body = self._get(path, params)
-        except Exception:
-            return []
-        if status != 200 or not body:
-            return []
-        try:
-            payload = json.loads(body)
-        except (ValueError, TypeError):
-            return []
+            status, payload = self._http_get(
+                url, params=params, headers=self._headers(), timeout=self._timeout
+            )
+        except Exception as exc:  # surfaced as a record, never raised
+            return [self._error_record(f"transport error: {exc}", {"url": url})]
+
+        return self._normalize(status, payload)
+
+    def _normalize(self, status: int, payload: Any) -> list[dict[str, Any]]:
         if not isinstance(payload, dict):
-            return []
-        return self._records_from_payload(payload)
+            return [self._error_record(f"non-dict payload (status {status})", payload)]
+
+        if payload.get("status") != "success":
+            err = payload.get("error") or f"thanos returned status {status}"
+            return [self._error_record(str(err), payload)]
+
+        data = payload.get("data") or {}
+        result_type = data.get("resultType")
+        result = data.get("result")
+
+        records: list[dict[str, Any]] = []
+
+        if result_type == "vector":
+            for series in result or []:
+                metric = series.get("metric", {})
+                ts, raw_value = series.get("value", [0.0, "0"])
+                records.append(self._sample_record(metric, ts, raw_value, series))
+
+        elif result_type == "matrix":
+            for series in result or []:
+                metric = series.get("metric", {})
+                for ts, raw_value in series.get("values", []):
+                    records.append(self._sample_record(metric, ts, raw_value, series))
+
+        elif result_type == "scalar":
+            ts, raw_value = (result or [0.0, "0"])[:2]
+            records.append(self._sample_record({}, ts, raw_value, {"scalar": result}))
+
+        else:
+            return [
+                self._error_record(
+                    f"unsupported resultType: {result_type!r}", payload
+                )
+            ]
+
+        return records
 
     def health(self) -> dict[str, Any]:
-        """Probe the endpoint. Returns {'ok': bool, 'detail': str}; never raises."""
+        """Return ``{"ok", "detail"}``. Never raises.
+
+        Uses the cheap ``query=1`` instant query as a liveness probe (works on
+        every Thanos query API regardless of optional health endpoints).
+        """
+        url = f"{self._base_url}/api/v1/query"
         try:
-            params = {"query": "vector(1)"}
-            self._apply_thanos_params({}, params)
-            status, _ = self._get("/api/v1/query", params)
+            status, payload = self._http_get(
+                url,
+                params={"query": "1"},
+                headers=self._headers(),
+                timeout=self._timeout,
+            )
         except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"transport error: {exc}"}
-        if status == 200:
-            return {"ok": True, "detail": "ok"}
-        return {"ok": False, "detail": f"http status {status}"}
+            return {
+                "ok": False,
+                "detail": f"transport error: {exc}",
+                "source": self.name,
+            }
 
-
-__all__ = ["KIND", "SSRFError", "ThanosSource", "Transport"]
+        ok = (
+            isinstance(payload, dict)
+            and payload.get("status") == "success"
+            and 200 <= int(status) < 300
+        )
+        if ok:
+            detail = f"ok (status {status})"
+        elif isinstance(payload, dict):
+            detail = str(payload.get("error") or f"unhealthy (status {status})")
+        else:
+            detail = f"unhealthy (status {status})"
+        return {"ok": ok, "detail": detail, "source": self.name, "status": status}

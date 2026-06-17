@@ -30,6 +30,7 @@ Design notes
 from __future__ import annotations
 
 import logging
+import math
 import threading
 import time
 from collections.abc import Callable
@@ -250,5 +251,17 @@ class SpendLimiter:
         Returns:
             True when the dispatch should be deferred/skipped.
         """
+        # Fail CLOSED on a non-finite cost (#71). NaN compares False against
+        # every limit (``nan > x`` is False), so a naive ``spent + projected >
+        # limit`` check would wave a NaN/garbage cost straight through —
+        # effectively unlimited spend. A non-finite projected cost cannot be
+        # proven to fit the cap, so treat it as exceeding (defer/refuse).
+        if not math.isfinite(projected_usd):
+            logger.warning(
+                "SpendLimiter: non-finite projected cost (%r) treated as "
+                "OVER-LIMIT — failing closed.",
+                projected_usd,
+            )
+            return True
         spent = self.window_spend(now=now)
         return spent + projected_usd > self._limit_usd

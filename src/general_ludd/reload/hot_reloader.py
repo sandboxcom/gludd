@@ -23,6 +23,7 @@ from general_ludd.events.types import (
     SkillUpdatedEvent,
     TemplateUpdatedEvent,
 )
+from general_ludd.integration.safe_merge import safe_merge
 from general_ludd.security.capability_lattice import (
     CapabilityError,
     ProtectedPathError,
@@ -115,6 +116,7 @@ class HotReloader:
         candidate_source_path: str,
         health_check: Callable[[], bool] | None = None,
         role: str | None = None,
+        base_source_path: str | None = None,
     ) -> ReloadResult:
         """Hot-rotate a single leaf module's source over the live file.
 
@@ -128,8 +130,19 @@ class HotReloader:
              already-imported, file-backed module is eligible (a leaf with no
              in-flight state — the caller is responsible for that contract).
           2. Snapshot the live file bytes into a rollback buffer.
-          3. ``os.replace`` the candidate file over the live path (atomic on the
-             same filesystem) and ``importlib.reload`` the module.
+          2a. ANTI-CLOBBER (issue #70): when ``base_source_path`` — the snapshot
+             the candidate was generated against — is supplied, route the
+             file-application through :mod:`integration.safe_merge` instead of a
+             blind whole-file overwrite. If the LIVE file diverged from base via
+             a concurrent edit, a raw ``os.replace`` of the candidate would
+             silently REVERT that edit (the wt-sync clobber-bug class). We 3-way
+             merge ``base`` (ancestor) / live (``ours``) / candidate
+             (``theirs``): a disjoint divergence merges cleanly (both edits
+             kept), an OVERLAPPING divergence REFUSES the reload (fail-closed,
+             conflict surfaced) before any byte is written. Without a base the
+             API is unchanged — the candidate is swapped verbatim.
+          3. ``os.replace`` the merged-or-candidate bytes over the live path
+             (atomic on the same filesystem) and ``importlib.reload`` the module.
           4. Run the ``health_check`` gate (typically a ``/readyz`` poll that
              returns False when ``app.state._degraded`` or a 503 is seen). If it
              fails — or if the reload itself raised — restore the snapshot bytes,
@@ -188,12 +201,40 @@ class HotReloader:
                 scope, details, f"cannot read live module bytes: {exc}"
             )
 
-        # Swap candidate over live path + reload.
+        # Anti-clobber resolution (issue #70). Decide the EXACT bytes to write:
+        # either the candidate verbatim (no base, or no divergence) or a 3-way
+        # merge of base/live/candidate. An overlapping divergence returns None
+        # and a refusal — write nothing, leave the live module untouched.
         try:
             candidate_bytes = candidate.read_bytes()
+        except OSError as exc:
+            return self._code_reload_failure(
+                scope, details, f"cannot read candidate bytes: {exc}"
+            )
+
+        resolved_bytes = self._resolve_apply_bytes(
+            scope,
+            details,
+            base_source_path=base_source_path,
+            live_bytes=original_bytes,
+            candidate_bytes=candidate_bytes,
+        )
+        if resolved_bytes is None:
+            # An overlapping divergence: _resolve_apply_bytes recorded the
+            # conflict in details. No byte was written; the live module is left
+            # exactly as the concurrent edit left it (no rollback needed). Fail
+            # CLOSED — refuse rather than clobber or silently pick a side.
+            return self._code_reload_failure(
+                scope,
+                details,
+                details.get("merge_error", "reload refused: merge conflict"),
+            )
+
+        # Swap resolved bytes over live path + reload.
+        try:
             # Write via a temp + os.replace for an atomic same-dir swap.
             tmp_path = live_path.with_suffix(live_path.suffix + ".candidate.tmp")
-            tmp_path.write_bytes(candidate_bytes)
+            tmp_path.write_bytes(resolved_bytes)
             os.replace(tmp_path, live_path)
             self._invalidate_source_cache(live_path)
             importlib.reload(module)
@@ -247,6 +288,60 @@ class HotReloader:
         self._publish(ReloadCompletedEvent(scope=scope))
         details["rolled_back"] = False
         return ReloadResult(success=True, scope=scope, details=details)
+
+    def _resolve_apply_bytes(
+        self,
+        scope: str,
+        details: dict[str, Any],
+        *,
+        base_source_path: str | None,
+        live_bytes: bytes,
+        candidate_bytes: bytes,
+    ) -> bytes | None:
+        """Decide the bytes to write over the live file, anti-clobber (issue #70).
+
+        Returns the bytes to apply, or ``None`` to REFUSE the reload (overlapping
+        divergence). It writes nothing itself; the caller performs the swap.
+
+        * No ``base_source_path`` -> candidate verbatim (legacy blind swap).
+        * base == live (no concurrent edit) -> candidate verbatim.
+        * base/live/candidate undecodable as text -> candidate verbatim. A binary
+          leaf cannot be line-merged; the base-given guarantee only covers text.
+        * live diverged from base, DISJOINT from candidate -> 3-way merged bytes
+          (both edits preserved). ``details["merged"] = True``.
+        * live diverged from base, OVERLAPPING candidate -> ``None`` + a conflict
+          recorded in ``details`` (``conflict``, ``merge_error``). Fail-closed.
+        """
+        if base_source_path is None:
+            return candidate_bytes
+
+        try:
+            base_text = Path(base_source_path).read_bytes().decode("utf-8")
+            live_text = live_bytes.decode("utf-8")
+            candidate_text = candidate_bytes.decode("utf-8")
+        except (OSError, UnicodeDecodeError) as exc:
+            # Cannot read base or a side is non-text: the line-level merge does
+            # not apply. Fall back to the candidate verbatim rather than block a
+            # legitimate swap — the base path is an optional anti-clobber aid.
+            logger.debug("safe_merge skipped (unreadable/binary): %s", exc)
+            return candidate_bytes
+
+        # 3-way merge: base is the ancestor, the LIVE file is "ours" (it may hold
+        # a concurrent edit), the candidate is "theirs".
+        result = safe_merge(base_text, live_text, candidate_text)
+        details["merge_source"] = result.source
+
+        if result.conflict:
+            details["conflict"] = True
+            details["merge_error"] = (
+                "reload refused: candidate overlaps a concurrent edit to the "
+                "live file (3-way merge conflict) — refusing to clobber"
+            )
+            return None
+
+        if result.source == "merged":
+            details["merged"] = True
+        return result.text.encode("utf-8")
 
     def _restore_module_bytes(
         self, module: Any, live_path: Path, original_bytes: bytes

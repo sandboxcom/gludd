@@ -23,7 +23,69 @@ from __future__ import annotations
 import hmac
 import ipaddress
 import os
+from collections.abc import Mapping
+from dataclasses import dataclass
 from urllib.parse import urlsplit
+
+
+@dataclass(frozen=True)
+class AuthPosture:
+    """Resolved PSK auth posture for a daemon/worker surface.
+
+    Attributes:
+        psk:          The configured pre-shared key (empty string if none).
+        require_auth: Whether GLUDD_REQUIRE_AUTH opted into fail-closed mode.
+        no_auth:      Whether NO PSK is configured (``not psk``). When this is
+                      True *and* ``require_auth`` is True, the surface must
+                      fail closed (503) rather than serve unauthenticated.
+        surface:      Name of the surface this posture was resolved for
+                      (e.g. "worker", "daemon") — used only for logging.
+    """
+
+    psk: str
+    require_auth: bool
+    no_auth: bool
+    surface: str
+
+
+def load_auth_posture(
+    surface: str, env: Mapping[str, str] | None = None
+) -> AuthPosture:
+    """Resolve the shared PSK auth posture from the environment.
+
+    Reads ``GLUDD_PSK`` (the pre-shared key) and ``GLUDD_REQUIRE_AUTH`` (the
+    fail-closed opt-in) so the daemon and the worker derive an identical posture
+    and cannot drift. Emits the LOUD no-PSK startup warning when auth is required
+    but no key is configured. Performs no I/O beyond reading env + logging.
+    """
+    source = env if env is not None else os.environ
+    psk = (source.get("GLUDD_PSK", "") or "").strip()
+    require_auth = require_auth_env(source)
+    no_auth = not psk
+    if no_auth and require_auth:
+        import logging
+
+        logging.getLogger("general_ludd.security.auth").warning(
+            "GLUDD_REQUIRE_AUTH is set but no GLUDD_PSK configured for the %s "
+            "surface: failing CLOSED (503) on all non-public paths.",
+            surface,
+        )
+    return AuthPosture(
+        psk=psk, require_auth=require_auth, no_auth=no_auth, surface=surface
+    )
+
+
+def check_bearer_token(auth_header: str, expected: str) -> bool:
+    """Constant-time check of a ``Authorization: Bearer <token>`` header.
+
+    Extracts the token after the ``Bearer `` prefix and compares it to
+    ``expected`` via :func:`verify_psk` (hmac.compare_digest). Returns ``False``
+    for a missing/malformed header or an empty expected key.
+    """
+    if not auth_header or not auth_header.startswith("Bearer "):
+        return False
+    token = auth_header[len("Bearer ") :].strip()
+    return verify_psk(token, expected)
 
 
 def verify_psk(presented: str, expected: str) -> bool:
@@ -38,7 +100,7 @@ def verify_psk(presented: str, expected: str) -> bool:
     return hmac.compare_digest(presented, expected)
 
 
-def require_auth_env(env: dict[str, str] | None = None) -> bool:
+def require_auth_env(env: Mapping[str, str] | None = None) -> bool:
     """Return whether GLUDD_REQUIRE_AUTH requests a fail-closed posture."""
     source = env if env is not None else os.environ
     return source.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
@@ -130,86 +192,6 @@ def is_safe_fetch_url(url: str) -> bool:
     except ValueError:
         return False
     if parts.scheme.lower() != "https":
-        return False
-    if not parts.hostname:
-        return False
-    return not _host_is_blocked(parts.hostname)
-
-
-# git's "transport helper" prefixes and local-transport schemes that let a clone
-# URL run an arbitrary external program or read a local path. ``git clone
-# ext::<cmd>`` literally execs ``<cmd>``; ``file://`` and a bare local path read
-# the filesystem; ``git::`` invokes the git-remote-git helper. None of these are
-# a legitimate "clone a public repo" request, so they are refused outright.
-_DANGEROUS_CLONE_PREFIXES = (
-    "ext::",
-    "git::",
-    "fd::",
-    "file://",
-)
-# SSH command-injection markers: a malicious ssh-style clone URL can smuggle
-# ``-oProxyCommand=...`` (or any ``-o`` option) so that ``ssh`` runs an arbitrary
-# command on connect. We refuse any ssh clone URL carrying one of these.
-_SSH_INJECTION_MARKERS = (
-    "-o",
-    "proxycommand",
-)
-
-
-def is_safe_clone_url(url: str) -> bool:
-    """RCE/SSRF guard for ``git clone`` URLs. Reuses :func:`_host_is_blocked`.
-
-    Unlike :func:`is_safe_fetch_url` (https-only) a clone may legitimately use
-    plain ``git://`` as well as ``https``/``http`` to a *public* host. This guard
-    therefore allows exactly those, and refuses everything dangerous:
-
-      * git transport-helper / local-transport forms (``ext::``, ``git::``,
-        ``fd::``, ``file://``) and bare local filesystem paths — these can exec
-        an external program or read local files.
-      * ``ssh``/``scp``-style URLs that smuggle ``-o`` / ``ProxyCommand`` (ssh
-        command injection).
-      * ``http(s)`` / ``git`` URLs whose LITERAL host is a loopback /
-        link-local / RFC-1918 / cloud-metadata target (SSRF), via the shared
-        ``_host_is_blocked`` literal check (NO DNS, never blocks).
-
-    Performs NO DNS resolution and NO network I/O.
-    """
-    if not url or not isinstance(url, str):
-        return False
-    stripped = url.strip()
-    if not stripped:
-        return False
-    lowered = stripped.lower()
-    # 1. Transport-helper / local-transport prefixes are never legitimate.
-    for prefix in _DANGEROUS_CLONE_PREFIXES:
-        if lowered.startswith(prefix):
-            return False
-    # 2. A leading '-' would be parsed by git as an option, not a URL.
-    if stripped.startswith("-"):
-        return False
-    try:
-        parts = urlsplit(stripped)
-    except ValueError:
-        return False
-    scheme = parts.scheme.lower()
-    # 3. scp-style "user@host:path" (no scheme) — treat as ssh. urlsplit gives it
-    #    no scheme and no netloc. Allow only when it carries no injection marker
-    #    and looks like a real host:path (so a bare local path is NOT clonable).
-    if scheme in {"ssh", ""} and not parts.netloc:
-        after_at = stripped.split("@", 1)
-        if "@" not in stripped or ":" not in after_at[1]:
-            # Not an ssh host:path form (e.g. a bare local path) -> refuse.
-            return False
-        return all(marker not in lowered for marker in _SSH_INJECTION_MARKERS)
-    if scheme == "ssh":
-        if any(marker in lowered for marker in _SSH_INJECTION_MARKERS):
-            return False
-        host = parts.hostname
-        if not host:
-            return False
-        return not _host_is_blocked(host)
-    # 4. Network transports: only https / http / git, to a non-blocked host.
-    if scheme not in {"https", "http", "git"}:
         return False
     if not parts.hostname:
         return False

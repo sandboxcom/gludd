@@ -66,15 +66,29 @@ class TestChainConstruction:
         chain = ModelFailoverChain("")
         assert chain.get_chain() == [""]
 
-    def test_fallback_list_is_not_copied_defensively(self):
-        # NOTE: __init__ stores the caller's list by reference when it is truthy.
-        # Mutating the original list AFTER construction leaks into the chain.
-        # This documents a real sharp edge in the current implementation.
+    def test_fallback_list_is_copied_defensively(self):
+        # FIX (#71): __init__ copies the caller's list so a configured fallback
+        # list shared by reference cannot be corrupted by later mutation (or by
+        # a failover loop that .remove()/.pop()s the failed provider). Mutating
+        # the original list AFTER construction must NOT leak into the chain.
         fallbacks = ["f1"]
         chain = ModelFailoverChain("p", fallbacks)
         fallbacks.append("f2")
-        assert chain.get_chain() == ["p", "f1", "f2"], (
-            "current impl aliases the caller-supplied fallback list"
+        assert chain.get_chain() == ["p", "f1"], (
+            "impl must copy the caller-supplied fallback list, not alias it"
+        )
+
+    def test_internal_fallback_mutation_does_not_corrupt_configured_list(self):
+        # Regression for #71 failover aliasing: a failover that drops a provider
+        # (mutating the chain's internal fallback list) must not corrupt the
+        # caller's configured list — the next request still sees it in full.
+        configured = ["f1", "f2", "f3"]
+        chain = ModelFailoverChain("p", configured)
+        # Simulate a failover loop dropping a dead provider from the chain's
+        # own list. With the alias bug this would also mutate ``configured``.
+        chain._fallbacks.pop(0)
+        assert configured == ["f1", "f2", "f3"], (
+            "dropping a failed provider must not mutate the configured list"
         )
 
 

@@ -2,8 +2,45 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 from typing import Any
+
+
+def confine_workspace_path(base_dir: str, workspace_path: str) -> str:
+    """Resolve an untrusted ``workspace_path`` to a real path confined to ``base_dir``.
+
+    The unauthenticated add-project path lets a caller supply ``workspace_path``;
+    without this guard ``../../root/.ssh`` or an absolute ``/root/.ssh`` would let
+    a project plant directories anywhere on disk. We:
+
+      * refuse an absolute ``workspace_path`` (it must be a name under base_dir),
+      * refuse any ``..`` component (the traversal primitive),
+      * realpath-join it under base_dir and require the result stays under
+        ``realpath(base_dir) + os.sep`` (or equals base_dir),
+
+    returning the confined absolute path. Anything escaping base_dir raises
+    ``ValueError`` BEFORE any directory is created. Mirrors
+    ``git_automation.repo._reject_escaping_path``.
+    """
+    if os.path.isabs(workspace_path):
+        raise ValueError(
+            f"refusing absolute workspace_path (must be a name under base_dir): {workspace_path!r}"
+        )
+    norm = os.path.normpath(workspace_path)
+    parts = norm.replace("\\", "/").split("/")
+    if ".." in parts:
+        raise ValueError(
+            f"refusing workspace_path containing '..' traversal: {workspace_path!r}"
+        )
+    base_real = os.path.realpath(base_dir)
+    target = os.path.realpath(os.path.join(base_real, norm))
+    base_prefix = base_real.rstrip(os.sep) + os.sep
+    if target != base_real and not target.startswith(base_prefix):
+        raise ValueError(
+            f"refusing workspace_path that escapes base_dir {base_dir!r}: {workspace_path!r}"
+        )
+    return target
 
 
 class ProjectWorkspace:

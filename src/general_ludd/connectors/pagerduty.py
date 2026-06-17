@@ -1,228 +1,236 @@
 """PagerDuty incident-source connector.
 
-Self-contained: no imports from sibling connectors or a shared base. Pulls
-incidents from the PagerDuty REST API and normalizes them into the incident
-record shape used across gludd's incident sources.
+Self-contained: imports no sibling connector, base class, or package __init__
+helper. Transport is injectable for testing; production falls back to ``httpx``.
 
-SECURITY NOTES:
-  - The API token is read ONLY from the environment variable named by
-    ``config['token_env']`` (default ``PAGERDUTY_TOKEN``). It is never accepted
-    inline in config, never hardcoded, and never written to any record, label,
-    log line, or raised error message.
-  - ``base_url`` may be overridden in config (e.g. for an EU/region endpoint or a
-    test stub). Any override is SSRF-guarded: hosts that resolve to / look like
-    private, loopback, link-local, or non-public addresses are rejected unless
-    ``allow_private=True`` is explicitly set in config.
-  - HTTP requests are time-bound and never use a shell.
+Security notes:
+* The API token is read from the environment (``token_env``); it is never
+  hardcoded or accepted inline.
+* ``base_url`` is validated against a literal-host SSRF blocklist with no DNS
+  resolution, so loopback / link-local / private-range hosts are rejected.
+* All requests are time-bounded and never use a shell.
 """
 
 from __future__ import annotations
 
 import ipaddress
-import logging
 import os
-import socket
-from typing import Any
-from urllib.parse import urlsplit
+from typing import Any, Protocol, runtime_checkable
+from urllib.parse import urlparse
 
-import httpx
+DEFAULT_BASE_URL = "https://api.pagerduty.com"
+DEFAULT_TIMEOUT = 15.0
+ACCEPT_HEADER = "application/vnd.pagerduty+json;version=2"
 
-logger = logging.getLogger(__name__)
+# Literal hostnames that must never be reached.
+_BLOCKED_HOSTNAMES = frozenset(
+    {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "ip6-loopback",
+        "metadata",
+        "metadata.google.internal",
+    }
+)
 
-_DEFAULT_BASE_URL = "https://api.pagerduty.com"
-_DEFAULT_TOKEN_ENV = "PAGERDUTY_TOKEN"
-_DEFAULT_TIMEOUT = 15.0
-_DEFAULT_LIMIT = 100
+
+@runtime_checkable
+class HttpResponse(Protocol):
+    status_code: int
+
+    def json(self) -> Any: ...
+
+
+@runtime_checkable
+class HttpTransport(Protocol):
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = ...,
+        params: Any = ...,
+        timeout: float | None = ...,
+    ) -> HttpResponse: ...
+
+
+def _is_blocked_host(host: str) -> bool:
+    """Return True if *host* is a literal internal/loopback/link-local target.
+
+    No DNS resolution is performed: only the literal string is inspected.
+    Hostnames (non-IP) that are not in the explicit blocklist are allowed,
+    matching a "block known-internal literals, never resolve" policy.
+    """
+    host = host.strip().lower()
+    if not host:
+        return True
+    if host in _BLOCKED_HOSTNAMES:
+        return True
+    candidate = host
+    # Strip brackets from IPv6 literals like [::1].
+    if candidate.startswith("[") and candidate.endswith("]"):
+        candidate = candidate[1:-1]
+    try:
+        ip = ipaddress.ip_address(candidate)
+    except ValueError:
+        return False
+    return (
+        ip.is_loopback
+        or ip.is_link_local
+        or ip.is_private
+        or ip.is_reserved
+        or ip.is_multicast
+        or ip.is_unspecified
+    )
+
+
+def _validate_base_url(base_url: str) -> str:
+    parsed = urlparse(base_url)
+    if parsed.scheme not in {"http", "https"}:
+        raise ValueError(f"unsupported URL scheme: {parsed.scheme!r}")
+    host = parsed.hostname or ""
+    if _is_blocked_host(host):
+        raise ValueError(f"refusing to target internal/loopback host: {host!r}")
+    return base_url.rstrip("/")
+
+
+class _DefaultTransport:
+    """Lazy ``httpx`` wrapper, used only when no transport is injected."""
+
+    def get(
+        self,
+        url: str,
+        *,
+        headers: dict[str, str] | None = None,
+        params: Any = None,
+        timeout: float | None = None,
+    ) -> HttpResponse:
+        import httpx
+
+        return httpx.get(url, headers=headers, params=params, timeout=timeout)
 
 
 class PagerDutySource:
-    """Incident source backed by the PagerDuty REST API.
-
-    GET https://api.pagerduty.com/incidents?since=&until=&statuses[]=
-    Header: ``Authorization: Token token=<token>``
-    """
+    """Incident source backed by the PagerDuty REST API."""
 
     KIND = "incidents"
 
     def __init__(
         self,
-        config: dict[str, Any] | None = None,
-        transport: httpx.BaseTransport | None = None,
+        config: dict[str, Any],
+        *,
+        transport: HttpTransport | None = None,
     ) -> None:
-        config = dict(config or {})
-        self.name: str = str(config.get("name", "pagerduty"))
-        self._token_env: str = str(config.get("token_env", _DEFAULT_TOKEN_ENV))
-        self._timeout: float = float(config.get("timeout", _DEFAULT_TIMEOUT))
-        self._limit: int = int(config.get("limit", _DEFAULT_LIMIT))
-        self._allow_private: bool = bool(config.get("allow_private", False))
-        self._statuses: list[str] = list(
-            config.get("statuses", ["triggered", "acknowledged"])
+        self.config = dict(config)
+        self.name = str(self.config.get("name", "pagerduty"))
+        self.base_url = _validate_base_url(
+            str(self.config.get("base_url", DEFAULT_BASE_URL))
         )
+        self.token_env = str(self.config.get("token_env", "PAGERDUTY_TOKEN"))
+        self.timeout = float(self.config.get("timeout", DEFAULT_TIMEOUT))
+        self._transport: HttpTransport = transport or _DefaultTransport()
 
-        base_url = str(config.get("base_url", _DEFAULT_BASE_URL))
-        if base_url.rstrip("/") != _DEFAULT_BASE_URL:
-            # Only validate when the caller overrode the literal default host.
-            _guard_ssrf(base_url, allow_private=self._allow_private)
-        self._base_url: str = base_url.rstrip("/")
-        self._transport = transport
-
-    # -- secrets -----------------------------------------------------------
+    # -- internals --------------------------------------------------------
 
     def _token(self) -> str:
-        token = os.environ.get(self._token_env)
+        token = os.environ.get(self.token_env)
         if not token:
-            raise _MissingToken(
-                f"environment variable {self._token_env} is not set"
+            raise RuntimeError(
+                f"PagerDuty token not found in environment variable "
+                f"{self.token_env!r}"
             )
         return token
 
-    def _client(self) -> httpx.Client:
-        return httpx.Client(timeout=self._timeout, transport=self._transport)
+    def _headers(self) -> dict[str, str]:
+        return {
+            "Authorization": f"Token token={self._token()}",
+            "Accept": ACCEPT_HEADER,
+        }
 
-    # -- health ------------------------------------------------------------
-
-    def health(self) -> dict[str, Any]:
-        """Return ``{'ok': bool, 'detail': str}``. Never raises."""
-        try:
-            token = self._token()
-        except _MissingToken as exc:
-            return {"ok": False, "detail": str(exc)}
-        try:
-            with self._client() as client:
-                resp = client.get(
-                    f"{self._base_url}/incidents",
-                    headers=_auth_header(token),
-                    params={"limit": 1},
-                )
-            if resp.status_code == 200:
-                return {"ok": True, "detail": "pagerduty reachable"}
-            return {
-                "ok": False,
-                "detail": f"unexpected status {resp.status_code}",
-            }
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": _safe_err(exc)}
-
-    # -- query -------------------------------------------------------------
+    # -- public API -------------------------------------------------------
 
     def query(self, spec: dict[str, Any] | None = None) -> list[dict[str, Any]]:
-        """Fetch incidents and normalize to incident records."""
-        spec = dict(spec or {})
-        params: dict[str, Any] = {"limit": int(spec.get("limit", self._limit))}
+        spec = spec or {}
+        params: dict[str, Any] = {}
         if spec.get("since"):
-            params["since"] = str(spec["since"])
+            params["since"] = spec["since"]
         if spec.get("until"):
-            params["until"] = str(spec["until"])
-        statuses = list(spec.get("statuses", self._statuses))
-        if statuses:
-            params["statuses[]"] = statuses
+            params["until"] = spec["until"]
+        if spec.get("statuses"):
+            params["statuses[]"] = list(spec["statuses"])
+        if spec.get("service_ids"):
+            params["service_ids[]"] = list(spec["service_ids"])
 
-        token = self._token()
-        with self._client() as client:
-            resp = client.get(
-                f"{self._base_url}/incidents",
-                headers=_auth_header(token),
-                params=params,
+        resp = self._transport.get(
+            f"{self.base_url}/incidents",
+            headers=self._headers(),
+            params=params,
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"PagerDuty /incidents returned status {resp.status_code}"
             )
-            resp.raise_for_status()
-            payload = resp.json()
-
-        incidents = payload.get("incidents", []) if isinstance(payload, dict) else []
+        payload = resp.json() or {}
+        incidents = payload.get("incidents", []) or []
         return [self._normalize(inc) for inc in incidents]
 
+    def fetch_log_entries(self, incident_id: str) -> list[dict[str, Any]]:
+        resp = self._transport.get(
+            f"{self.base_url}/incidents/{incident_id}/log_entries",
+            headers=self._headers(),
+            params={},
+            timeout=self.timeout,
+        )
+        if resp.status_code >= 400:
+            raise RuntimeError(
+                f"PagerDuty log_entries returned status {resp.status_code}"
+            )
+        payload = resp.json() or {}
+        entries = payload.get("log_entries", []) or []
+        return list(entries)
+
+    def health(self) -> dict[str, Any]:
+        try:
+            resp = self._transport.get(
+                f"{self.base_url}/incidents",
+                headers=self._headers(),
+                params={"limit": 1},
+                timeout=self.timeout,
+            )
+        except Exception as exc:  # never raises
+            return {"ok": False, "detail": f"request failed: {exc}"}
+        status = getattr(resp, "status_code", 0)
+        if status >= 400:
+            return {"ok": False, "detail": f"http status {status}"}
+        return {"ok": True, "detail": f"http status {status}"}
+
+    # -- normalization ----------------------------------------------------
+
     def _normalize(self, inc: dict[str, Any]) -> dict[str, Any]:
-        service = (inc.get("service") or {}).get("summary")
-        policy = (inc.get("escalation_policy") or {}).get("summary")
-        assignments = inc.get("assignments") or []
-        assignee = None
-        if assignments:
-            assignee = (assignments[0].get("assignee") or {}).get("summary")
-        status = inc.get("status")
-        urgency = inc.get("urgency")
+        title = inc.get("title", "")
+        urgency = inc.get("urgency", "")
+        message = f"{title} (urgency={urgency})" if urgency else str(title)
+
+        service = inc.get("service") or {}
+        escalation = inc.get("escalation_policy") or {}
+        assignees = [
+            (a.get("assignee") or {}).get("summary", "")
+            for a in inc.get("assignments", []) or []
+        ]
+        labels = {
+            "id": inc.get("id", ""),
+            "service.summary": service.get("summary", ""),
+            "escalation_policy": escalation.get("summary", ""),
+            "assignees": ", ".join(a for a in assignees if a),
+        }
         return {
             "ts": inc.get("created_at"),
             "source": self.name,
             "kind": self.KIND,
-            "level_or_status": status or urgency,
-            "message": inc.get("title"),
+            "level_or_status": inc.get("status", ""),
+            "message": message,
             "value": None,
-            "labels": {
-                "service": service,
-                "urgency": urgency,
-                "escalation_policy": policy,
-                "incident_number": inc.get("incident_number"),
-                "assignee": assignee,
-            },
+            "labels": labels,
             "raw": inc,
         }
-
-
-# ---------------------------------------------------------------------------
-# helpers (module-private; not shared with sibling connectors)
-# ---------------------------------------------------------------------------
-
-
-class _MissingToken(RuntimeError):
-    """Raised internally when the configured token env var is absent."""
-
-
-def _auth_header(token: str) -> dict[str, str]:
-    return {
-        "Authorization": f"Token token={token}",
-        "Accept": "application/json",
-    }
-
-
-def _safe_err(exc: Exception) -> str:
-    """Best-effort error string that never leaks the request URL/credentials."""
-    return f"{type(exc).__name__}"
-
-
-def _guard_ssrf(base_url: str, *, allow_private: bool) -> None:
-    """Reject base URLs whose host is private/loopback unless opted in."""
-    if allow_private:
-        return
-    host = urlsplit(base_url).hostname
-    if not host:
-        raise ValueError("base_url has no host")
-
-    candidates: list[Any] = []
-    try:
-        candidates.append(ipaddress.ip_address(host))
-    except ValueError:
-        # Hostname, not a literal IP. Block obvious internal names outright, then
-        # best-effort resolve to catch hostnames that point at private targets.
-        # DNS failures are non-fatal (offline/test env): a name that cannot be
-        # resolved is left to the network layer rather than blocking a public host.
-        lowered = host.lower()
-        if lowered in {"localhost"} or lowered.endswith(
-            (".localhost", ".local", ".internal", ".lan", ".intranet", ".corp")
-        ):
-            raise ValueError(
-                f"base_url host {host!r} is an internal name "
-                "(set allow_private=True to override)"
-            ) from None
-        try:
-            infos = socket.getaddrinfo(host, None)
-        except OSError:
-            return
-        for info in infos:
-            addr = str(info[4][0])
-            try:
-                candidates.append(ipaddress.ip_address(addr.split("%")[0]))
-            except ValueError:
-                continue
-
-    for ip in candidates:
-        if (
-            ip.is_private
-            or ip.is_loopback
-            or ip.is_link_local
-            or ip.is_reserved
-            or ip.is_multicast
-            or ip.is_unspecified
-        ):
-            raise ValueError(
-                f"base_url host {host!r} resolves to a non-public address "
-                "(set allow_private=True to override)"
-            )

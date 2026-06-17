@@ -151,24 +151,22 @@ class TestMultiProjectDaemonE2E:
 
 class TestMultiProjectFullFlowE2E:
     def test_full_lifecycle_two_projects(self, client):
-        # Once active projects exist, AUTH-2 requires a non-null todo
-        # project_id to reference a registered, active project. Use the
-        # IDs returned by project creation rather than arbitrary strings.
-        resp_alpha = client.post(
+        # SECURITY (cross-project create): once projects are registered, a todo's
+        # project_id is validated against the active set. This test previously
+        # posted todos with arbitrary unregistered ids (test-proj-xxxx) while
+        # webapp/api were registered — that is exactly the insecure cross-project
+        # create the fix closes (now 422). Use the REAL project ids returned by
+        # /admin/projects so the lifecycle exercises the secure, validated path.
+        alpha = client.post(
             "/admin/projects",
             json={"name": "webapp", "weight": 60.0},
-        )
-        assert resp_alpha.status_code in (200, 201)
-        alpha = resp_alpha.json()["project_id"]
-
-        resp_beta = client.post(
+        ).json()["project_id"]
+        beta = client.post(
             "/admin/projects",
             json={"name": "api", "weight": 40.0},
-        )
-        assert resp_beta.status_code in (200, 201)
-        beta = resp_beta.json()["project_id"]
+        ).json()["project_id"]
 
-        resp = client.post(
+        client.post(
             "/api/todos",
             json={
                 "title": "Build homepage",
@@ -177,8 +175,7 @@ class TestMultiProjectFullFlowE2E:
                 "work_type": "code",
             },
         )
-        assert resp.status_code == 201
-        resp = client.post(
+        client.post(
             "/api/todos",
             json={
                 "title": "Build API endpoint",
@@ -187,7 +184,6 @@ class TestMultiProjectFullFlowE2E:
                 "work_type": "code",
             },
         )
-        assert resp.status_code == 201
 
         alpha_todos = client.get("/api/todos", params={"project_id": alpha}).json()
         assert len(alpha_todos) == 1

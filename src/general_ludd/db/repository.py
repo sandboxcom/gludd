@@ -5,7 +5,6 @@ import contextlib
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, cast
-from uuid import uuid4
 
 from sqlalchemy import select
 from sqlalchemy.exc import OperationalError
@@ -51,23 +50,24 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
 }
 
 
-def _is_sqlite_busy(exc: OperationalError) -> bool:
-    """True when an OperationalError is a SQLITE_BUSY ('database is locked').
-
-    SQLite raises this when a write cannot acquire the database lock under
-    contention. In the claim path it means "another caller is mid-write" — a
-    lost race to be skipped, not a fault to propagate. A non-lock
-    OperationalError (e.g. a schema error) returns False so it bubbles up.
-    """
-    return "database is locked" in str(exc).lower()
-
-
 class ConcurrencyError(Exception):
     pass
 
 
 class InvalidTransitionError(ConcurrencyError):
     pass
+
+
+def _is_locked_error(exc: OperationalError) -> bool:
+    """True when an OperationalError is SQLite's transient 'database is locked'.
+
+    SQLite has no row-level locks, so under concurrent claimers a guarded UPDATE
+    can raise SQLITE_BUSY -> OperationalError('database is locked') instead of
+    simply affecting zero rows. That is a *lost race*, not a real fault: the
+    losing claimer should skip the row, exactly as it would on rowcount == 0.
+    """
+    msg = str(getattr(exc, "orig", exc)).lower()
+    return "database is locked" in msg or "database table is locked" in msg
 
 
 class TodoRepository:
@@ -94,45 +94,40 @@ class TodoRepository:
         expected_version: int,
         project_id: str | None = None,
     ) -> TodoModel:
-        """Optimistically-locked, optionally project-scoped update.
+        from sqlalchemy import update as _update
 
-        The UPDATE is guarded on ``todo_id`` (+ project_id when given) AND
-        ``version == expected_version``. If a concurrent writer already bumped
-        the version (or the row is owned by a different project), the guarded
-        UPDATE affects zero rows and we raise :class:`ConcurrencyError` — the
-        loser never silently clobbers the winner.
-        """
-        from sqlalchemy import update as sa_update
-
+        todo = await self.get_by_id(todo_id, project_id=project_id)
+        if todo is None:
+            raise InvalidTransitionError(f"Todo {todo_id} not found")
+        if todo.version != expected_version:
+            raise ConcurrencyError(f"Version mismatch: expected {expected_version}, actual {todo.version}")
         now = datetime.now(UTC)
-        values = dict(updates)
-        values["version"] = expected_version + 1
-        values["updated_at"] = now
+        # Guarded conditional UPDATE: the version read above can go stale before
+        # this write commits. Carry the version (and scope) into the WHERE clause
+        # so a concurrent writer at the same version makes one of us affect zero
+        # rows -> ConcurrencyError, instead of silently losing an update.
         guard = (
-            sa_update(TodoModel)
+            _update(TodoModel)
             .where(
-                TodoModel.todo_id == todo_id,
+                TodoModel.id == todo.id,
                 TodoModel.version == expected_version,
             )
-            .values(**values)
         )
         if project_id is not None:
             guard = guard.where(TodoModel.project_id == project_id)
+        guard = guard.values(**updates, version=expected_version + 1, updated_at=now)
         res = await self._session.execute(guard)
         if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
-            # Row missing, wrong project scope, or version moved underneath us:
-            # the optimistic guard matched no row -> lost update.
             raise ConcurrencyError(
-                f"Concurrent update of todo {todo_id!r}: "
-                f"expected version {expected_version} (project={project_id!r})"
+                f"Lost update on todo {todo_id}: row changed concurrently "
+                f"(expected version {expected_version})"
             )
+        # Sync the in-memory ORM object to the committed values.
+        for key, value in updates.items():
+            setattr(todo, key, value)
+        todo.version = expected_version + 1
+        todo.updated_at = now
         await self._session.flush()
-        # Re-read so the returned ORM object reflects the committed values even
-        # if a stale copy was already in this session's identity map.
-        todo = await self.get_by_id(todo_id, project_id=project_id)
-        if todo is not None:
-            await self._session.refresh(todo)
-        assert todo is not None
         return todo
 
     async def list_by_status(
@@ -201,14 +196,16 @@ class TodoRepository:
             try:
                 res = await self._session.execute(guard)
             except OperationalError as exc:
-                if _is_sqlite_busy(exc):
-                    # SQLITE_BUSY ('database is locked') on the guarded UPDATE is a
-                    # LOST RACE under contention, not a fault: skip this row rather
-                    # than propagating the lock error to the caller.
-                    with contextlib.suppress(Exception):
-                        await self._session.refresh(todo)
-                    continue
-                raise
+                # SQLite has no row locks: a concurrent claimer can make the
+                # guarded UPDATE raise SQLITE_BUSY ('database is locked') instead
+                # of affecting zero rows. Treat that as a lost race exactly like
+                # rowcount == 0 — refresh our stale copy and skip — so "loser
+                # skips" still holds and a transient busy never aborts the claim.
+                if not _is_locked_error(exc):
+                    raise
+                with contextlib.suppress(Exception):
+                    await self._session.refresh(todo)
+                continue
             if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
                 # Lost the race: another caller already claimed this row. Drop our
                 # stale in-memory copy and skip it so it is never returned twice.
@@ -285,48 +282,45 @@ class TodoRepository:
         expected_version: int,
         project_id: str | None = None,
     ) -> TodoModel:
-        """Optimistically-locked, optionally project-scoped status transition.
-
-        Validates the transition is legal for the current status, then performs
-        a guarded UPDATE on ``version == expected_version`` (+ project_id when
-        given). A concurrent writer that already bumped the version — or a
-        wrong-project scope — makes the UPDATE affect zero rows and we raise
-        :class:`ConcurrencyError`.
-        """
-        from sqlalchemy import update as sa_update
+        from sqlalchemy import update as _update
 
         todo = await self.get_by_id(todo_id, project_id=project_id)
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
         if todo.version != expected_version:
-            raise ConcurrencyError(
-                f"Version mismatch: expected {expected_version}, actual {todo.version}"
-            )
+            raise ConcurrencyError(f"Version mismatch: expected {expected_version}, actual {todo.version}")
         current = TodoStatus(todo.status)
         allowed = VALID_TRANSITIONS.get(current, set())
         if new_status not in allowed:
-            raise InvalidTransitionError(
-                f"Invalid transition: {current.value} -> {new_status.value}"
-            )
+            raise InvalidTransitionError(f"Invalid transition: {current.value} -> {new_status.value}")
         now = datetime.now(UTC)
+        # Guarded conditional UPDATE keyed on the version AND the status we
+        # validated the transition against: a concurrent writer that moved the
+        # row out from under us (changing version or status) makes this affect
+        # zero rows -> ConcurrencyError, never a silent lost transition.
         guard = (
-            sa_update(TodoModel)
+            _update(TodoModel)
             .where(
-                TodoModel.todo_id == todo_id,
+                TodoModel.id == todo.id,
                 TodoModel.version == expected_version,
+                TodoModel.status == current.value,
             )
-            .values(status=new_status.value, version=expected_version + 1, updated_at=now)
         )
         if project_id is not None:
             guard = guard.where(TodoModel.project_id == project_id)
+        guard = guard.values(
+            status=new_status.value, version=expected_version + 1, updated_at=now
+        )
         res = await self._session.execute(guard)
         if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
             raise ConcurrencyError(
-                f"Concurrent transition of todo {todo_id!r}: "
-                f"expected version {expected_version} (project={project_id!r})"
+                f"Lost transition on todo {todo_id}: row changed concurrently "
+                f"(expected version {expected_version}, status {current.value})"
             )
+        todo.status = new_status.value
+        todo.version = expected_version + 1
+        todo.updated_at = now
         await self._session.flush()
-        await self._session.refresh(todo)
         return todo
 
 
@@ -431,12 +425,14 @@ class TaskReturnRepository:
             try:
                 res = await self._session.execute(guard)
             except OperationalError as exc:
-                if _is_sqlite_busy(exc):
-                    # SQLITE_BUSY on the guarded UPDATE == lost race: skip the row.
-                    with contextlib.suppress(Exception):
-                        await self._session.refresh(row)
-                    continue
-                raise
+                # SQLITE_BUSY under concurrent claimers == a lost race, not a
+                # fault: skip the row just as we would on rowcount == 0 so each
+                # return is still claimed by exactly one caller.
+                if not _is_locked_error(exc):
+                    raise
+                with contextlib.suppress(Exception):
+                    await self._session.refresh(row)
+                continue
             if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
                 # Lost the race: another caller already claimed this return.
                 await self._session.refresh(row)
@@ -548,75 +544,54 @@ class VariableNamespaceRepository:
     async def set_var(
         self, namespace: str, key: str, value: str, project_id: str | None = None
     ) -> VariableValueModel:
-        """Upsert a (namespace, key) variable using ON CONFLICT, race-safe.
-
-        Two concurrent FIRST writes of the same (namespace, project_id) would
-        otherwise both INSERT a namespace and one would raise IntegrityError on
-        the ``uq_namespace_project`` unique constraint (data loss). We instead
-        use SQLite ``INSERT ... ON CONFLICT DO UPDATE`` so the second writer
-        converges on the first writer's row instead of failing. The value insert
-        is upserted the same way on ``uq_variable_namespace_key`` (last writer
-        wins).
-        """
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-        now = datetime.now(UTC)
-        # --- Resolve / upsert the namespace row ---
-        # NOTE: under SQLite, NULL values are DISTINCT in a unique index, so the
-        # (namespace, project_id) ON CONFLICT only fires for a non-NULL scope.
-        # We therefore SELECT first (dedups the project_id IS NULL case) and only
-        # fall back to an ON CONFLICT insert when absent — that insert protects
-        # the concurrent non-NULL first-write race (converge, not IntegrityError).
-        ns_row = await self._session.execute(
-            select(VariableNamespaceModel).where(
-                VariableNamespaceModel.namespace == namespace,
-                VariableNamespaceModel.project_id == project_id,
-            )
+        # Resolve (or atomically create) the namespace. get-then-insert here is a
+        # TOCTOU race on the (namespace, project_id) unique key: two concurrent
+        # first-writers both see ns is None and both INSERT -> IntegrityError.
+        # ON CONFLICT DO NOTHING on the unique constraint makes the insert a no-op
+        # for the loser, who then re-reads the winner's row.
+        stmt = select(VariableNamespaceModel).where(
+            VariableNamespaceModel.namespace == namespace,
+            VariableNamespaceModel.project_id == project_id,
         )
-        ns = ns_row.scalar_one_or_none()
+        ns = (await self._session.execute(stmt)).scalar_one_or_none()
         if ns is None:
-            ns_ins = sqlite_insert(VariableNamespaceModel).values(
-                namespace=namespace, project_id=project_id
-            )
-            ns_ins = ns_ins.on_conflict_do_update(
-                index_elements=[
-                    VariableNamespaceModel.namespace,
-                    VariableNamespaceModel.project_id,
-                ],
-                set_={"updated_at": now},
-            )
-            await self._session.execute(ns_ins)
-            await self._session.flush()
-            ns_row = await self._session.execute(
-                select(VariableNamespaceModel).where(
-                    VariableNamespaceModel.namespace == namespace,
-                    VariableNamespaceModel.project_id == project_id,
+            ns_insert = (
+                sqlite_insert(VariableNamespaceModel)
+                .values(namespace=namespace, project_id=project_id)
+                .on_conflict_do_nothing(
+                    index_elements=["namespace", "project_id"]
                 )
             )
-            ns = ns_row.scalar_one()
+            await self._session.execute(ns_insert)
+            await self._session.flush()
+            ns = (await self._session.execute(stmt)).scalar_one()
 
-        # --- Upsert the value row (idempotent on uq_variable_namespace_key) ---
-        val_ins = sqlite_insert(VariableValueModel).values(
-            namespace_id=ns.id, key=key, value=value
-        )
-        val_ins = val_ins.on_conflict_do_update(
-            index_elements=[
-                VariableValueModel.namespace_id,
-                VariableValueModel.key,
-            ],
-            set_={"value": value, "updated_at": now},
-        )
-        await self._session.execute(val_ins)
-        await self._session.flush()
-        row_res = await self._session.execute(
-            select(VariableValueModel).where(
-                VariableValueModel.namespace_id == ns.id,
-                VariableValueModel.key == key,
+        # Upsert the value on the (namespace_id, key) unique key. on_conflict_do_update
+        # closes the get-then-insert TOCTOU: a concurrent first-write no longer
+        # raises IntegrityError (and is no longer silently lost) — last writer wins.
+        now = datetime.now(UTC)
+        val_insert = (
+            sqlite_insert(VariableValueModel)
+            .values(namespace_id=ns.id, key=key, value=value, updated_at=now)
+            .on_conflict_do_update(
+                index_elements=["namespace_id", "key"],
+                set_={"value": value, "updated_at": now},
             )
         )
-        row = row_res.scalar_one()
-        # Ensure the returned ORM object reflects the just-written value even if
-        # a stale copy was already cached in this session's identity map.
+        await self._session.execute(val_insert)
+        await self._session.flush()
+        row = (
+            await self._session.execute(
+                select(VariableValueModel).where(
+                    VariableValueModel.namespace_id == ns.id,
+                    VariableValueModel.key == key,
+                )
+            )
+        ).scalar_one()
+        # on_conflict_do_update bypasses the identity map; refresh so a previously
+        # loaded value row reflects the just-committed value.
         await self._session.refresh(row)
         return row
 
@@ -730,28 +705,27 @@ class PromptProfileRepository:
         self._session = session
 
     async def upsert(self, data: dict[str, Any]) -> PromptProfileModel:
-        """Upsert keyed by the unique ``name`` using ON CONFLICT, race-safe.
-
-        Two concurrent first-writes of the same name would otherwise both INSERT
-        and the loser would raise IntegrityError on the unique ``name``. We use
-        SQLite ``INSERT ... ON CONFLICT(name) DO UPDATE`` so the second writer
-        converges on the existing row (last writer wins) instead of failing.
-        """
         from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-        values = dict(data)
-        values.setdefault("id", f"pp-{uuid4().hex[:8]}")
+        # Upsert on the unique ``name`` key. The old get-then-insert was a TOCTOU
+        # race: two concurrent first-writers for the same name both saw None and
+        # both INSERTed -> IntegrityError (one write lost). on_conflict_do_update
+        # makes the conflicting write an UPDATE instead, so concurrent first-writes
+        # converge (last writer wins) with no IntegrityError.
+        now = datetime.now(UTC)
+        values = {**data, "updated_at": now}
         update_cols = {k: v for k, v in values.items() if k not in ("id", "name")}
-        update_cols["updated_at"] = datetime.now(UTC)
-        ins = sqlite_insert(PromptProfileModel).values(**values)
-        ins = ins.on_conflict_do_update(
-            index_elements=[PromptProfileModel.name],
-            set_=update_cols,
+        stmt = (
+            sqlite_insert(PromptProfileModel)
+            .values(**values)
+            .on_conflict_do_update(index_elements=["name"], set_=update_cols)
         )
-        await self._session.execute(ins)
+        await self._session.execute(stmt)
         await self._session.flush()
         row = await self.get_by_name(data["name"])
-        assert row is not None
+        assert row is not None  # just upserted
+        # Core INSERT ... ON CONFLICT bypasses the ORM identity map; refresh any
+        # already-loaded instance so callers see the committed (updated) values.
         await self._session.refresh(row)
         return row
 
@@ -833,10 +807,26 @@ class ProjectRepository:
         return list(result.scalars().all())
 
     async def deactivate(self, project_id: str) -> None:
+        from sqlalchemy import update as _update
+
+        # Single guarded UPDATE rather than read-then-mutate: the read-modify-write
+        # form lets a concurrent writer's change be lost between the SELECT and the
+        # ORM flush. Guarding on active == True also makes a double-deactivate a
+        # detectable no-op instead of a silent clobber.
+        guard = (
+            _update(ProjectModel)
+            .where(
+                ProjectModel.project_id == project_id,
+                ProjectModel.active.is_(True),
+            )
+            .values(active=False)
+        )
+        await self._session.execute(guard)
+        await self._session.flush()
+        # Keep any already-loaded ORM instance consistent with the committed row.
         project = await self.get_by_id(project_id)
         if project is not None:
-            project.active = False
-            await self._session.flush()
+            await self._session.refresh(project)
 
 
 BROADCAST_RECIPIENT = "broadcast"
@@ -895,39 +885,28 @@ class AgentMessageRepository:
         return [r for r in rows if not self._is_expired(r, now)]
 
     async def ack(self, message_id: str) -> AgentMessageModel | None:
-        """Mark a message read with a guarded, first-writer-wins UPDATE.
-
-        Only the FIRST ack stamps ``read_at`` (the UPDATE is guarded on
-        ``read_at IS NULL``); a concurrent second ack matches zero rows and
-        leaves the original timestamp intact (no clobber). The stamp is a
-        tz-aware UTC datetime so it compares equal to a tz-aware expected value,
-        and we normalize the returned value to tz-aware UTC in case the SQLite
-        round-trip yielded a naive datetime.
-        """
-        from sqlalchemy import update as sa_update
+        """Mark a message read. Returns the row, or None if it does not exist."""
+        from sqlalchemy import update as _update
 
         row = await self.get_by_id(message_id)
         if row is None:
             return None
+        # Guarded conditional UPDATE on read_at IS NULL: the read-then-mutate form
+        # let two concurrent acks both see read_at None and both write, clobbering
+        # the first ack's timestamp. Guarding on read_at IS NULL means only the
+        # first ack writes; a later ack affects zero rows and leaves it untouched.
         now = datetime.now(UTC)
         guard = (
-            sa_update(AgentMessageModel)
+            _update(AgentMessageModel)
             .where(
                 AgentMessageModel.id == message_id,
                 AgentMessageModel.read_at.is_(None),
             )
             .values(read_at=now)
         )
-        res = await self._session.execute(guard)
+        await self._session.execute(guard)
         await self._session.flush()
-        if (res.rowcount or 0) == 1:  # type: ignore[attr-defined]  # CursorResult at runtime
-            # We won the ack race: reflect the stamp on the in-memory object.
-            row.read_at = now
-        else:
-            # Lost the race (or already read): re-read the committed timestamp.
-            await self._session.refresh(row)
-        if row.read_at is not None and row.read_at.tzinfo is None:
-            row.read_at = row.read_at.replace(tzinfo=UTC)
+        await self._session.refresh(row)
         return row
 
     async def purge_expired(self) -> int:
@@ -1018,31 +997,27 @@ class FeatureRepository:
         for key, val in data.items():
             if key in json_fields:
                 serialized[key] = self._serialize(val)
-            elif key == "status" and isinstance(val, FeatureStatus):
-                # Core INSERT needs the column's string value, not the enum.
-                serialized[key] = val.value
             else:
                 serialized[key] = val
 
-        # Race-safe upsert keyed by the unique ``name``: two concurrent
-        # first-writes converge via ON CONFLICT(name) DO UPDATE instead of one
-        # raising IntegrityError.
-        serialized.setdefault("id", f"FEAT-{uuid4().hex[:8].upper()}")
-        update_cols = {
-            k: v for k, v in serialized.items() if k not in ("id", "name")
-        }
-        ins = sqlite_insert(FeatureModel).values(**serialized)
+        # Upsert on the unique ``name`` key. get-then-insert was a TOCTOU race
+        # (two concurrent first-writes -> IntegrityError, one silently lost);
+        # on_conflict_do_update turns the conflicting write into an UPDATE so
+        # concurrent first-writes converge instead of raising.
+        update_cols = {k: v for k, v in serialized.items() if k not in ("id", "name")}
+        stmt = sqlite_insert(FeatureModel).values(**serialized)
         if update_cols:
-            ins = ins.on_conflict_do_update(
-                index_elements=[FeatureModel.name],
-                set_=update_cols,
+            stmt = stmt.on_conflict_do_update(
+                index_elements=["name"], set_=update_cols
             )
         else:
-            ins = ins.on_conflict_do_nothing(index_elements=[FeatureModel.name])
-        await self._session.execute(ins)
+            stmt = stmt.on_conflict_do_nothing(index_elements=["name"])
+        await self._session.execute(stmt)
         await self._session.flush()
         row = await self.get_by_name(data["name"])
-        assert row is not None
+        assert row is not None  # just upserted
+        # The core INSERT ... ON CONFLICT bypasses the ORM identity map, so a row
+        # already loaded this session is stale after the UPDATE — refresh it.
         await self._session.refresh(row)
         return row
 
@@ -1056,15 +1031,29 @@ class FeatureRepository:
         """Update status, optional verified_at, and persist the verify-detail JSON."""
         import json as _json
 
+        from sqlalchemy import update as _update
+
         row = await self.get_by_id(feature_id)
         if row is None:
             raise KeyError(f"Feature {feature_id!r} not found")
-        row.status = status.value
+        # Single guarded UPDATE keyed on id instead of read-modify-write: the
+        # ORM dirty-write form lets a concurrent status write be lost between the
+        # SELECT above and the flush. Only the columns actually supplied are set.
+        values: dict[str, Any] = {"status": status.value}
         if verified_at is not None:
-            row.verified_at = verified_at
+            values["verified_at"] = verified_at
         if detail is not None:
-            row.last_verify_detail = _json.dumps(detail)
+            values["last_verify_detail"] = _json.dumps(detail)
+        guard = (
+            _update(FeatureModel)
+            .where(FeatureModel.id == feature_id)
+            .values(**values)
+        )
+        res = await self._session.execute(guard)
+        if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
+            raise KeyError(f"Feature {feature_id!r} not found")
         await self._session.flush()
+        await self._session.refresh(row)
         return row
 
     # ------------------------------------------------------------------

@@ -1,0 +1,173 @@
+"""Observability router — make the connector layer reachable over HTTP (#72/#73).
+
+Exposes a small, least-privilege HTTP surface over a
+:class:`general_ludd.connectors.registry.ConnectorRegistry`:
+
+- ``GET  /api/observe/sources`` — list every operator-registered source
+  (metadata only: ``{name, kind, family}`` + a ``by_kind`` grouping). NEVER
+  returns secrets or env-var names.
+- ``GET  /api/observe/health``  — ``health()`` across every source (never
+  raises; an unreachable backend is reported, not an exception).
+- ``POST /api/observe/query``   — run ``query(spec)`` on ONE source addressed by
+  its registered ``name``. The request body is ``{source, spec}``; there is no
+  ``url`` field, so a caller can never steer the daemon at an arbitrary host.
+
+Security posture (least-privilege + SSRF-safe)
+----------------------------------------------
+- These paths are **PSK-gated, NOT public** — exactly like ``/api/facts`` (the
+  daemon's auth middleware applies; the integration pass must NOT add any of
+  these paths to ``_PUBLIC_PATHS``). The router registers no public bypass.
+- Egress targets are **only** the sources an operator registered via config.
+  ``POST /api/observe/query`` selects a connector by its registered NAME; an
+  unknown name is a ``404`` (no fallthrough to a fetch). This is the SSRF
+  firewall — there is no request-supplied URL anywhere in the surface.
+- Inputs are validated by a pydantic model; ``spec`` is a bounded dict that is
+  handed to the connector's own ``query`` (each connector re-applies its own
+  literal-host SSRF guard to its CONFIGURED backend URL).
+
+Daemon hookup (do NOT apply this wave — integration pass owns it)
+-----------------------------------------------------------------
+``wire_observability(app, daemon_state, config)`` builds the registry from an
+operator config list and registers this router in ONE call. The hookup in
+``src/general_ludd/daemon.py`` (inside ``create_daemon_app`` / ``register_*``,
+alongside ``facts.register(app, _daemon_state)`` near line 1082) is exactly two
+lines::
+
+    from general_ludd.routers.observe import wire_observability   # line 1
+    wire_observability(app, _daemon_state, _connector_config)     # line 2
+
+where ``_connector_config`` is the operator's list of connector entries (e.g.
+loaded from ``config/connectors.yml``); pass ``[]`` to register the router with
+no sources. ``register_all`` in ``routers/__init__.py`` would gain the same two
+lines if hookup is centralized there instead. No edit to ``daemon.py`` /
+``daemon_wiring.py`` / ``routers/__init__.py`` is made in this wave.
+"""
+
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+from fastapi import FastAPI, HTTPException
+from pydantic import BaseModel, Field
+
+from general_ludd.connectors.registry import ConnectorRegistry
+
+logger = logging.getLogger(__name__)
+
+
+class ObserveQueryRequest(BaseModel):
+    """Body for ``POST /api/observe/query``.
+
+    ``source`` is the *registered name* of an operator-configured connector —
+    never a URL. ``spec`` is the bounded query payload handed to that
+    connector's own ``query(spec)``. Unknown extra fields (e.g. a smuggled
+    ``url``) are ignored by pydantic's default and never reach the connector.
+    """
+
+    source: str = Field(min_length=1, max_length=256)
+    spec: dict[str, Any] = Field(default_factory=dict)
+
+
+def _get_registry(app: FastAPI) -> ConnectorRegistry | None:
+    reg = getattr(app.state, "_connector_registry", None)
+    return reg if isinstance(reg, ConnectorRegistry) else None
+
+
+def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+    """Register the observe routes on ``app``.
+
+    Reads the live :class:`ConnectorRegistry` from ``app.state._connector_registry``
+    at request time (so it works whether the registry was wired before or after
+    this call). When no registry is present every endpoint degrades to an empty
+    result rather than erroring — a daemon with no connectors configured is a
+    valid, safe state.
+    """
+
+    @app.get("/api/observe/sources")
+    async def observe_sources() -> dict[str, Any]:
+        """List operator-registered sources (metadata only — no secrets)."""
+        reg = _get_registry(app)
+        if reg is None:
+            return {"sources": [], "by_kind": {}, "count": 0}
+        sources = reg.list_sources()
+        return {
+            "sources": sources,
+            "by_kind": reg.by_kind(),
+            "count": len(sources),
+        }
+
+    @app.get("/api/observe/health")
+    async def observe_health() -> dict[str, Any]:
+        """Probe ``health()`` across every registered source (never raises)."""
+        reg = _get_registry(app)
+        if reg is None:
+            return {"health": {}, "count": 0}
+        health = reg.health_all()
+        return {"health": health, "count": len(health)}
+
+    @app.post("/api/observe/query")
+    async def observe_query(req: ObserveQueryRequest) -> dict[str, Any]:
+        """Run ``query(spec)`` on the NAMED, operator-registered source.
+
+        ``404`` when the name is not a registered source — there is no
+        request-supplied URL, so this cannot be steered at an arbitrary host.
+        """
+        reg = _get_registry(app)
+        if reg is None or reg.get(req.source) is None:
+            raise HTTPException(
+                status_code=404,
+                detail=f"no registered observability source named {req.source!r}",
+            )
+        records = reg.query(req.source, req.spec)
+        return {
+            "source": req.source,
+            "records": records,
+            "count": len(records),
+        }
+
+
+def wire_observability(
+    app: FastAPI,
+    daemon_state: dict[str, Any],
+    config: list[dict[str, Any]] | None,
+    *,
+    factories: dict[str, Any] | None = None,
+) -> ConnectorRegistry:
+    """Build the connector registry from ``config`` and register the router.
+
+    This is the single daemon hookup point: it constructs a
+    :class:`ConnectorRegistry` from the operator's connector config list, stores
+    it on ``app.state._connector_registry`` (so ``/api/facts`` or other consumers
+    can reach it), and registers the observe routes — all in one call.
+
+    Parameters
+    ----------
+    app:
+        The FastAPI app to register routes on.
+    daemon_state:
+        The daemon's shared state dict (passed through to :func:`register`).
+    config:
+        The operator's list of connector config entries (each a dict with
+        ``name`` / ``kind`` / a selector + ``*_env`` secret NAMES). ``None`` or
+        ``[]`` registers the router with no sources.
+    factories:
+        Optional explicit ``{key: class}`` map for entries that select a
+        connector via a ``factory`` key (used by tests / pre-imported classes).
+
+    Returns the built registry (also stored on ``app.state``).
+    """
+    registry = ConnectorRegistry.from_config(config, factories=factories)
+    app.state._connector_registry = registry
+    register(app, daemon_state)
+    if registry.errors():
+        logger.warning(
+            "wire_observability: %d connector config entr(ies) skipped: %s",
+            len(registry.errors()),
+            [e.get("name") for e in registry.errors()],
+        )
+    logger.info(
+        "wire_observability: registered observe router with %d source(s)",
+        len(registry.names()),
+    )
+    return registry

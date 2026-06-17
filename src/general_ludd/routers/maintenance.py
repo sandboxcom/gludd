@@ -52,10 +52,23 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # ingestor's output so it can feed the intake queue.
         from general_ludd.git_automation.issue_ingestor import GitHubIssueIngestor
 
+        owner = str(payload.get("owner", ""))
+        repo = str(payload.get("repo", ""))
+        label = str(payload.get("label", "gludd"))
+        # Dedup must survive across requests: a fresh ingestor is built per
+        # request, so its per-instance _seen_ids would always be empty and
+        # every poll would re-emit all issues. Persist a per-(owner/repo/label)
+        # seen-id set in the daemon state and hand it to the ingestor.
+        store: dict[str, set[int | str]] = _daemon_state.setdefault(
+            "issue_ingestor_seen_ids", {}
+        )
+        seen = store.setdefault(f"{owner}/{repo}#{label}", set())
+
         ingestor = GitHubIssueIngestor(
-            owner=str(payload.get("owner", "")),
-            repo=str(payload.get("repo", "")),
-            label=str(payload.get("label", "gludd")),
+            owner=owner,
+            repo=repo,
+            label=label,
+            seen_ids=seen,
         )
         new_todos = await ingestor.poll_issues()
         return {"new_todos": new_todos, "count": len(new_todos)}

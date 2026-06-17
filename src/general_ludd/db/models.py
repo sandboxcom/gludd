@@ -520,3 +520,53 @@ class BenchmarkResultModel(Base):
         Index("ix_benchmark_task_model", "task_type", "model_profile_id"),
         Index("ix_benchmark_task_prompt", "task_type", "prompt_profile_id"),
     )
+
+
+def _gen_memory_id() -> str:
+    return f"mem-{uuid4().hex[:12]}"
+
+
+class MemoryRecordModel(Base):
+    """Persistent agent-memory record (#38 G1).
+
+    A long-term, queryable store of facts/feedback/references that roles and
+    agents accumulate across runs — analogous to a coding-agent's long-term
+    memory. Additive table: it participates in the shared ``Base.metadata``
+    so ``create_all`` picks it up without a heavy migration, and it is fully
+    backward-compatible with existing databases (a new table is simply added).
+
+    Scope isolation is enforced at the store layer via ``scope`` + ``scope_key``
+    (e.g. project id) so memories recorded for project A are never returned to
+    project B.
+    """
+
+    __tablename__ = "memory_records"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_memory_id)
+    # scope: "project" | "global" | "role"
+    scope: Mapped[str] = mapped_column(String(16), nullable=False, default="global", index=True)
+    # scope_key disambiguates within a scope: project_id for project scope,
+    # role name for role scope, "" for global. Combined with scope it gives the
+    # isolation boundary used by search/summarize.
+    scope_key: Mapped[str] = mapped_column(String(128), nullable=False, default="", index=True)
+    # kind: "fact" | "feedback" | "reference"
+    kind: Mapped[str] = mapped_column(String(16), nullable=False, default="fact", index=True)
+    text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # tags/labels stored as a JSON array of strings.
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    source: Mapped[str] = mapped_column(String(256), nullable=False, default="")
+    # Pluggable hook for future semantic search: a JSON array of floats, or NULL
+    # when no embedding has been computed. Kept here so the schema is forward
+    # compatible without a migration when embeddings are wired in.
+    embedding: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    last_used_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+
+    __table_args__ = (
+        Index("ix_memory_scope", "scope", "scope_key"),
+        Index("ix_memory_scope_kind", "scope", "scope_key", "kind"),
+    )

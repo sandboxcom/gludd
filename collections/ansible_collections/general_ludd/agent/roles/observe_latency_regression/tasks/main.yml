@@ -1,0 +1,92 @@
+---
+# observe_latency_regression — detect a service latency regression across sources.
+#
+# Workflow
+#   1. Validate the target service.
+#   2. Call GluddObserve.timeline over metrics+traces in the window.
+#   3. Flag in-window samples whose value >= latency_threshold_s; if the over-
+#      threshold fraction exceeds regression_fraction, verdict = "regressed".
+#   4. Write the verdict + offending samples to an artifact.
+#
+# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+#   op=timeline -> GluddObserve.timeline(window=kinds, start, end, spec)
+#   returning ansible_facts.gludd_observe.records (time-ordered normalized records).
+
+- name: Validate target service present
+  ansible.builtin.fail:
+    msg: "observe_latency_regression requires 'service'"
+  when: service | length == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Latency regression lifecycle
+  block:
+
+    - name: Build latency timeline across metrics + traces
+      general_ludd.agent.gludd_observe:
+        op: timeline
+        role: "{{ capability_role }}"
+        window: "{{ observe_kinds }}"
+        start: "{{ start | default(omit, true) }}"
+        end: "{{ end | default(omit, true) }}"
+        spec: "{{ query_spec }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: tl
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Select over-threshold samples for the service
+      ansible.builtin.set_fact:
+        latency_breaches: >-
+          {{ (tl.ansible_facts.gludd_observe.records | default([]))
+             | selectattr('value', 'defined')
+             | selectattr('value', 'ge', latency_threshold_s | float)
+             | list }}
+        latency_total: "{{ (tl.ansible_facts.gludd_observe.records | default([])) | length }}"
+      when: not ansible_check_mode
+
+    - name: Write regression artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_latency_regression',
+            'service': service,
+            'latency_threshold_s': latency_threshold_s,
+            'sample_count': latency_total | int,
+            'breach_count': latency_breaches | length,
+            'verdict': (
+              'regressed'
+              if (latency_total | int) > 0
+                 and ((latency_breaches | length) / (latency_total | int))
+                     >= (regression_fraction | float)
+              else 'within_budget'
+            ),
+            'breaches': latency_breaches[:50],
+            'source_errors': tl.ansible_facts.gludd_observe.errors | default([])
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_latency_regression.json"
+        mode: "0644"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_latency_regression',
+            'status': 'failed',
+            'service': service
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_latency_regression.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "observe_latency_regression failed for {{ service }} — see {{ artifact_dir }}"

@@ -38,10 +38,14 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 import general_ludd.daemon as daemon_mod
+import general_ludd.security.auth as auth_mod
 from general_ludd.daemon import create_daemon_app
 
 _PSK = "redteam-psk-supersecret-value"
 _DAEMON_SRC = Path(inspect.getfile(daemon_mod)).read_text()
+# A-1's constant-time compare now lives in the SHARED security.auth helper so
+# the daemon and worker auth surfaces cannot drift; assert against it too.
+_AUTH_SRC = Path(inspect.getfile(auth_mod)).read_text()
 
 
 def _client(app):
@@ -52,9 +56,16 @@ def _client(app):
 
 class TestA1ConstantTime:
     def test_source_uses_hmac_compare_digest(self):
-        assert "hmac.compare_digest" in _DAEMON_SRC, (
+        # The compare now lives in the shared security.auth helper (used by both
+        # the daemon and the worker), and the daemon calls it via
+        # check_bearer_token.
+        assert "hmac.compare_digest" in _AUTH_SRC, (
             "A-1: PSK auth must use hmac.compare_digest for a constant-time "
             "comparison; a plain `token != _psk` leaks the secret via timing."
+        )
+        assert "check_bearer_token" in _DAEMON_SRC, (
+            "A-1: the daemon must route its PSK check through the shared "
+            "constant-time check_bearer_token helper."
         )
 
     def test_source_has_no_nonconstant_psk_compare(self):

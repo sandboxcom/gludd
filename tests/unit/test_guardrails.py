@@ -512,3 +512,73 @@ class TestNoTrackedPrivateKeys:
         forbidden = {"sandboxcom_github_rsa", "sandboxcom_github_rsa.pub"}
         leaked = forbidden & tracked
         assert not leaked, f"Key files are tracked in git: {leaked}"
+
+
+def test_cost_cap_fails_closed():
+    """#69/#59 regression guard — the scoring router's cost cap fails CLOSED.
+
+    This is the ``guard_test_id`` named by the ``fail_open_cost_cap`` bug class
+    in ``general_ludd.quality.bug_class_registry``: if the adaptive router's
+    cost cap ever regresses to fail-open (returning an over-budget model when no
+    candidate fits, or letting a NaN/inf cost slip past the cap), this test goes
+    red. The cap must DENY spend it cannot prove is under budget — fall back to
+    the safe default model instead of selecting the over-cap candidate.
+    """
+    import asyncio
+    from unittest.mock import AsyncMock
+
+    from general_ludd.scoring.router import AdaptiveRouter
+
+    def _repo(avg_cost: float) -> AsyncMock:
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            side_effect=lambda task_type=None: [
+                {
+                    "prompt_profile_id": "pp-x",
+                    "model_profile_id": "over-budget-model",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_cost": avg_cost,
+                    "composite_score": 0.9,
+                },
+            ]
+        )
+        return repo
+
+    from general_ludd.schemas.benchmark import TaskType
+
+    async def _route(avg_cost: float):
+        router = AdaptiveRouter(benchmark_repo=_repo(avg_cost), min_samples=3)
+        return await router.route(
+            task_type=TaskType.BUG_FIX,
+            default_model_profile="safe-default",
+            max_cost_usd=0.01,
+        )
+
+    # 1. Over the numeric cap with no cheaper fit -> fail closed to default.
+    over = asyncio.run(_route(0.10))
+    assert over.selected_model_profile_id == "safe-default", (
+        "cost cap regressed to FAIL-OPEN: returned over-budget model instead "
+        "of the safe default"
+    )
+    assert over.fallback is True
+    assert over.estimated_cost_usd <= 0.01
+
+    # 2. NaN cost must be treated as over-cap (nan > cap is False, so a naive
+    #    comparison would let it through).
+    nan = asyncio.run(_route(float("nan")))
+    assert nan.selected_model_profile_id == "safe-default"
+
+    # 3. inf cost must be treated as over-cap.
+    inf = asyncio.run(_route(float("inf")))
+    assert inf.selected_model_profile_id == "safe-default"
+
+    # 4. The bug-class registry's guard_test_id must point at THIS test.
+    from general_ludd.quality.bug_class_registry import DEFAULT_BUG_CLASSES
+
+    cap_class = next(
+        c for c in DEFAULT_BUG_CLASSES if c.id == "fail_open_cost_cap"
+    )
+    assert cap_class.guard_test_id == (
+        "tests/unit/test_guardrails.py::test_cost_cap_fails_closed"
+    )

@@ -118,30 +118,22 @@ def _print_guard_gaps(classes: list[BugClass], known_ids: set[str]) -> list[BugC
     return gaps
 
 
-def _print_backlog_verdicts(repo_root: Path, *, attempt_import: bool = True) -> None:
+def _print_backlog_verdicts(repo_root: Path) -> None:
     """Print BacklogAuditor task verdicts if the auditor is importable.
 
     Lazy, guarded import: another agent owns ``backlog_auditor.py`` and it may
-    not exist yet. We never hard-depend on it. When ``attempt_import`` is
-    ``False`` the standalone notice is printed without trying the import — this
-    lets callers exercise the standalone path deterministically.
+    not exist yet. We never hard-depend on it.
     """
     print("\n" + "=" * 72)
     print("BACKLOG VERDICTS")
     print("=" * 72)
-    if not attempt_import:
-        print(
-            "\n(BacklogAuditor not importable — skipping task verdicts. "
-            "The sweep + guard report above is standalone.)"
-        )
-        return
     try:
         from general_ludd.validation.backlog_auditor import (  # type: ignore  # noqa: PLC0415
             BacklogAuditor,
         )
     except ImportError:
         print(
-            "\n(BacklogAuditor not importable — skipping task verdicts. "
+            "\n(BacklogAuditor not importable yet — skipping task verdicts. "
             "The sweep + guard report above is standalone.)"
         )
         return
@@ -172,7 +164,6 @@ def run_report(
     collect: bool = True,
     classes: list[BugClass] | None = None,
     known_test_ids: set[str] | None = None,
-    include_backlog: bool = True,
 ) -> int:
     """Run the full verbose audit. Returns a process exit code.
 
@@ -187,13 +178,6 @@ def run_report(
     known_test_ids:
         Override the collected pytest node ids (used by tests). When provided,
         pytest collection is skipped entirely regardless of ``collect``.
-    include_backlog:
-        When ``True`` (default), attempt the lazy/guarded ``BacklogAuditor``
-        import and print task verdicts (or a "not importable" notice when the
-        auditor is absent). When ``False``, the verdicts section prints the
-        standalone notice unconditionally — used to exercise the standalone
-        contract deterministically regardless of whether the auditor module
-        happens to exist in the checkout.
     """
     classes = list(DEFAULT_BUG_CLASSES) if classes is None else list(classes)
     occurrences = sweep(repo_root, classes)
@@ -211,7 +195,7 @@ def run_report(
         )
     gaps = _print_guard_gaps(classes, known_ids)
 
-    _print_backlog_verdicts(repo_root, attempt_import=include_backlog)
+    _print_backlog_verdicts(repo_root)
 
     print("\n" + "=" * 72)
     print(

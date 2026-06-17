@@ -1,0 +1,290 @@
+"""ConnectorRegistry — make the ~50 connectors in this package reachable.
+
+The package already ships ~50 self-contained connectors (``prometheus.py``,
+``datadog.py``, ``okta.py``, ...), each exposing the ``base.Source`` contract
+(a ``KIND`` class attr, a config-driven ``__init__`` that reads secrets only
+from ``*_env`` env-var NAMES, ``health()`` and ``query(spec)``). Until now there
+was no single place that an operator's config list could be turned into a set of
+*live, named* sources the daemon can fan queries across — so the connectors were
+built but unreachable (#72/#73).
+
+:class:`ConnectorRegistry` is that wiring point. Given an operator-supplied
+config list it discovers + instantiates connectors, groups them by ``KIND``, and
+offers ``list_sources()`` / ``get()`` / ``by_kind()`` / ``health_all()`` /
+``query(name, spec)``.
+
+Security posture (least-privilege + SSRF-safe)
+----------------------------------------------
+- **Operator-registered sources only.** Every reachable source comes from the
+  operator's config list. A caller addresses a source by its *registered name*;
+  there is no code path that takes a raw URL from a request and turns it into an
+  egress target. ``query()``'s signature is ``(name, spec)`` — deliberately
+  URL-free — so a request can never steer the daemon at an arbitrary host. The
+  per-connector ``is_safe_endpoint`` / literal-host SSRF guards still apply to
+  the *configured* backend URLs; this layer simply guarantees no *new* targets
+  can be introduced at query time.
+- **No raw secrets, ever.** Config entries carry only ``*_env`` env-var NAMES.
+  Secret VALUES are resolved by each connector from ``os.environ`` at call time,
+  never stored on the registry and never surfaced by :meth:`list_sources`.
+- **Best-effort + total build.** A malformed/unconstructable entry is recorded
+  in :meth:`errors` and skipped; it never aborts the whole build. ``health_all``
+  and ``query`` never propagate a connector exception — failures become error
+  records / ``{"ok": False, ...}`` dicts.
+
+Discovery
+---------
+Each config entry selects a connector class one of three ways (first wins):
+
+1. ``factory``: a key into an explicit ``factories`` map passed to
+   :meth:`from_config` (used by tests and by callers that pre-import classes);
+2. ``class``: a fully-qualified ``"module.path:ClassName"`` (or
+   ``"module.path.ClassName"``) dotted path, imported lazily;
+3. ``module`` (+ optional ``class_name``): a module under
+   ``general_ludd.connectors`` whose single ``*Source`` class is used.
+
+The chosen class is called as ``Class(config)`` — matching every connector's
+``__init__(self, config, ...)`` signature (transport/http args default to a real
+implementation or are injectable per-connector for tests).
+"""
+
+from __future__ import annotations
+
+import contextlib
+import importlib
+import logging
+from typing import Any, Protocol, runtime_checkable
+
+from general_ludd.connectors.normalize import auth_family
+
+logger = logging.getLogger(__name__)
+
+_CONNECTORS_PKG = "general_ludd.connectors"
+
+
+@runtime_checkable
+class _SourceLike(Protocol):
+    """Structural view of a connector instance (mirrors base.Source)."""
+
+    name: str
+    KIND: str
+
+    def health(self) -> dict[str, Any]: ...
+
+    def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]: ...
+
+
+# A class (or any callable) that builds a source from a config dict.
+SourceFactory = Any
+
+
+class ConnectorRegistry:
+    """A name -> live connector map built from an operator config list."""
+
+    def __init__(self) -> None:
+        self._sources: dict[str, _SourceLike] = {}
+        self._meta: dict[str, dict[str, Any]] = {}
+        self._errors: list[dict[str, Any]] = []
+
+    # -- construction ------------------------------------------------------ #
+    @classmethod
+    def from_config(
+        cls,
+        configs: list[dict[str, Any]] | None,
+        *,
+        factories: dict[str, SourceFactory] | None = None,
+    ) -> ConnectorRegistry:
+        """Build a registry from a list of connector config dicts.
+
+        Each ``config`` MUST carry a ``name`` and ``kind`` and a selector
+        (``factory`` / ``class`` / ``module``). It carries connector settings
+        including ``*_env`` secret NAMES — never raw secret values. A bad entry
+        is recorded in :meth:`errors` and skipped.
+        """
+        reg = cls()
+        factories = factories or {}
+        for config in configs or []:
+            reg._build_one(config, factories)
+        return reg
+
+    def _build_one(
+        self, config: dict[str, Any], factories: dict[str, SourceFactory]
+    ) -> None:
+        if not isinstance(config, dict):
+            self._errors.append({"name": None, "error": "config is not a dict"})
+            return
+        name = str(config.get("name") or "").strip()
+        if not name:
+            self._errors.append({"name": None, "error": "config missing 'name'"})
+            return
+        try:
+            factory = self._resolve_factory(config, factories)
+        except Exception as exc:  # discovery failure — skip, never abort
+            self._errors.append({"name": name, "error": f"discovery: {exc}"})
+            return
+        try:
+            source = factory(config)
+        except Exception as exc:  # construction failure — skip, never abort
+            self._errors.append({"name": name, "error": f"construct: {exc}"})
+            return
+
+        kind = str(getattr(source, "KIND", config.get("kind") or "unknown"))
+        # Operator config's name is authoritative for addressing the source.
+        with contextlib.suppress(Exception):  # pragma: no cover - read-only name
+            source.name = name
+        self._sources[name] = source
+        self._meta[name] = {
+            "name": name,
+            "kind": kind,
+            "family": _family_for(name, config),
+        }
+
+    @staticmethod
+    def _resolve_factory(
+        config: dict[str, Any], factories: dict[str, SourceFactory]
+    ) -> SourceFactory:
+        """Pick the connector class for one config entry (factory/class/module)."""
+        key = config.get("factory")
+        if key is not None:
+            if key not in factories:
+                raise KeyError(f"unknown factory {key!r}")
+            return factories[key]
+
+        dotted = config.get("class")
+        if isinstance(dotted, str) and dotted:
+            return _import_dotted(dotted)
+
+        module = config.get("module")
+        if isinstance(module, str) and module:
+            mod_path = module if "." in module else f"{_CONNECTORS_PKG}.{module}"
+            mod = importlib.import_module(mod_path)
+            class_name = config.get("class_name")
+            if isinstance(class_name, str) and class_name:
+                return getattr(mod, class_name)
+            return _single_source_class(mod, mod_path)
+
+        raise ValueError("config has no 'factory', 'class', or 'module' selector")
+
+    # -- read surface ------------------------------------------------------ #
+    def list_sources(self) -> list[dict[str, Any]]:
+        """Return per-source metadata ``{name, kind, family}`` — NEVER secrets."""
+        return [dict(self._meta[name]) for name in self._sources]
+
+    def get(self, name: str) -> _SourceLike | None:
+        """Return the live source registered under ``name``, or ``None``."""
+        return self._sources.get(name)
+
+    def names(self) -> list[str]:
+        """Return every registered source name (registration order)."""
+        return list(self._sources)
+
+    def by_kind(self) -> dict[str, list[str]]:
+        """Return ``{kind: [name, ...]}`` grouping of registered sources."""
+        grouped: dict[str, list[str]] = {}
+        for name, meta in self._meta.items():
+            grouped.setdefault(str(meta["kind"]), []).append(name)
+        return grouped
+
+    def errors(self) -> list[dict[str, Any]]:
+        """Return the list of build errors (entries that were skipped)."""
+        return list(self._errors)
+
+    # -- health ------------------------------------------------------------ #
+    def health_all(self) -> dict[str, dict[str, Any]]:
+        """Probe ``health()`` on every source. Never raises.
+
+        A source whose ``health()`` itself raises is reported as
+        ``{"ok": False, "error": ...}`` rather than aborting the sweep.
+        """
+        out: dict[str, dict[str, Any]] = {}
+        for name, source in self._sources.items():
+            try:
+                result = source.health()
+                if not isinstance(result, dict):
+                    result = {"ok": bool(result)}
+            except Exception as exc:  # health must never abort the sweep
+                result = {"ok": False, "source": name, "error": str(exc)}
+            out[name] = result
+        return out
+
+    # -- query ------------------------------------------------------------- #
+    def query(self, name: str, spec: dict[str, Any]) -> list[dict[str, Any]]:
+        """Run ``query(spec)`` on the OPERATOR-REGISTERED source ``name``.
+
+        ``name`` MUST be a source the operator registered via config — there is
+        no URL parameter, so a caller can never steer this at an arbitrary host
+        (the SSRF firewall). An unknown name raises :class:`KeyError`. A
+        connector exception is captured as a single error record, never raised.
+        """
+        source = self._sources.get(name)
+        if source is None:
+            raise KeyError(f"no registered source named {name!r}")
+        spec = spec if isinstance(spec, dict) else {}
+        try:
+            records = source.query(spec)
+        except Exception as exc:  # surface as a record, never raise
+            return [
+                {
+                    "ts": None,
+                    "source": name,
+                    "kind": str(getattr(source, "KIND", "unknown")),
+                    "level_or_status": "error",
+                    "message": f"query failed: {exc}",
+                    "value": None,
+                    "labels": {},
+                    "raw": str(exc),
+                }
+            ]
+        return list(records) if records is not None else []
+
+
+# --------------------------------------------------------------------------- #
+# Discovery helpers
+# --------------------------------------------------------------------------- #
+def _family_for(name: str, config: dict[str, Any]) -> str:
+    """Classify a source's auth family from its name, then config selectors.
+
+    Tries the registered ``name`` first (an operator often names a source after
+    its backend, e.g. ``prod-datadog``), then the ``factory`` / ``module`` /
+    ``class`` selector token. Returns ``"unknown"`` when nothing matches.
+    """
+    family = auth_family(name)
+    if family != "unknown":
+        return family
+    for field in ("factory", "module", "class", "class_name", "kind"):
+        value = config.get(field)
+        if isinstance(value, str) and value:
+            inferred = auth_family(value)
+            if inferred != "unknown":
+                return inferred
+    return "unknown"
+
+
+def _import_dotted(dotted: str) -> SourceFactory:
+    """Import a ``module.path:ClassName`` or ``module.path.ClassName`` target."""
+    if ":" in dotted:
+        mod_path, _, class_name = dotted.partition(":")
+    else:
+        mod_path, _, class_name = dotted.rpartition(".")
+    if not mod_path or not class_name:
+        raise ValueError(f"malformed class path {dotted!r}")
+    mod = importlib.import_module(mod_path)
+    return getattr(mod, class_name)
+
+
+def _single_source_class(mod: Any, mod_path: str) -> SourceFactory:
+    """Return the module's single ``*Source`` class, or raise if ambiguous."""
+    candidates = [
+        obj
+        for attr, obj in vars(mod).items()
+        if attr.endswith("Source")
+        and isinstance(obj, type)
+        and getattr(obj, "__module__", None) == mod_path
+    ]
+    if len(candidates) == 1:
+        return candidates[0]
+    if not candidates:
+        raise ValueError(f"no *Source class in {mod_path!r}")
+    raise ValueError(
+        f"ambiguous: {mod_path!r} has {len(candidates)} *Source classes "
+        f"(set 'class_name')"
+    )

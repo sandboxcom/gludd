@@ -15,11 +15,173 @@ import asyncio
 import contextlib
 import json
 import os
+import re
 import shutil
 from typing import Any
 
 from general_ludd.mcp.config import MCPServerConfig
 from general_ludd.mcp.registry import MCPTool
+
+# Package managers / runtimes that are explicitly permitted as MCP launchers.
+# Anything not on this list is rejected by default (operator can opt out via
+# GLUDD_MCP_ALLOW_ANY_EXEC=1).
+_MCP_EXEC_ALLOWLIST = frozenset(
+    {"npx", "npm", "pnpm", "yarn", "uvx", "python", "python3", "node"}
+)
+
+# Package managers that fetch-and-run code from a remote index.
+_NPM_FAMILY_LAUNCHERS = frozenset({"npx", "npm", "pnpm", "yarn"})
+# pip-style runners that also download from a remote index.
+_UVX_FAMILY_LAUNCHERS = frozenset({"uvx"})
+# All launchers that need package-spec injection validation.
+_REMOTE_FETCH_LAUNCHERS = _NPM_FAMILY_LAUNCHERS | _UVX_FAMILY_LAUNCHERS
+
+# Shell metacharacters that must never appear in a package spec or binary name
+# passed to a remote-fetch launcher. These would be harmless in exec()-land
+# (no shell expansion), but their presence strongly suggests an injection
+# attempt — refuse early rather than relying on the exec layer to be safe.
+_SHELL_META_RE = re.compile(r"[;&|$`\\<>()\s]")
+
+
+def _strip_suffix(name: str) -> str:
+    """Remove a Windows-style .cmd/.exe/.bat/.ps1 suffix from an executable name."""
+    return re.sub(r"\.(cmd|exe|bat|ps1)$", "", name)
+
+
+# Pattern for a concrete npm version pin: ``pkg@<number>`` or ``pkg@<n.n.n>``
+# (including pre-release and build metadata). Rejects ``@latest``, ``@^1.x``,
+# ``@~1.0`` and any other range or tag specifiers so only exact versions pass.
+_VERSION_PINNED_RE = re.compile(
+    r"@"                      # version separator
+    r"(?!latest$|next$)"      # NOT the special "latest"/"next" dist-tags
+    r"\d"                     # must start with a digit (not ^, ~, >, <, =, *, etc.)
+    r"[0-9a-zA-Z.\-+]*$"      # allow semver-compat chars (pre-release + build meta)
+)
+
+
+def _is_version_pinned_spec(spec: str) -> bool:
+    """Return True iff ``spec`` is a concretely version-pinned npm package spec.
+
+    Accepts:
+    * ``pkg@1.2.3`` — simple semver pin
+    * ``@scope/pkg@2026.1.26`` — scoped package with date-based version
+    * ``pkg@2`` — major-only pin (still concrete, not a range)
+
+    Rejects:
+    * ``pkg`` — bare name (no version)
+    * ``@scope/pkg`` — scoped, no version
+    * ``pkg@latest`` / ``pkg@next`` — dist-tags (float, not pinned)
+    * ``pkg@^1.0.0`` / ``pkg@~1.0.0`` / ``pkg@>=1.0`` — semver ranges
+    """
+    # The last '@' (after stripping a leading '@' for scoped packages) is the
+    # version separator for npm. For scoped packages like ``@scope/pkg@ver`` the
+    # last '@' is the right one; for plain ``pkg@ver`` it's the only one.
+    if not spec:
+        return False
+    # Strip a leading '@' that's part of the scope, then look for the LAST '@'.
+    remainder = spec.lstrip("@")
+    at_pos = remainder.rfind("@")
+    if at_pos < 0:
+        # No version separator at all.
+        return False
+    version_part = remainder[at_pos:]   # includes the leading '@'
+    return bool(_VERSION_PINNED_RE.match(version_part))
+
+
+def _launcher_basename(cmd0: str) -> str:
+    """Normalised (lowercase, suffix-stripped) basename of argv[0]."""
+    return _strip_suffix(os.path.basename(cmd0).lower())
+
+
+def _validate_launch_command(cmd: list[str]) -> None:
+    """Validate ``cmd`` before spawning an MCP subprocess.  Fail closed on any
+    policy violation.
+
+    Checks (in order):
+    1. Empty argv → MCPTransportError("empty …")
+    2. Executable basename must be on the allowlist (or GLUDD_MCP_ALLOW_ANY_EXEC=1).
+    3. Executable must resolve via ``shutil.which`` or be an existing absolute path.
+    4. For remote-fetch launchers (npx/npm/pnpm/yarn/uvx): every non-flag token
+       that acts as a package spec must not contain shell metacharacters.  An arg
+       that consists ENTIRELY of ``-…`` tokens (no package spec at all) is also
+       rejected, since a bare ``npx --some-flag`` with no package name is
+       semantically broken and likely injection.
+    """
+    if not cmd:
+        raise MCPTransportError(
+            "Refusing to spawn MCP subprocess: empty command (argv is empty)."
+        )
+
+    launcher = _launcher_basename(cmd[0])
+    allow_any = os.environ.get("GLUDD_MCP_ALLOW_ANY_EXEC", "").strip() in {
+        "1", "true", "yes",
+    }
+
+    if not allow_any and launcher not in _MCP_EXEC_ALLOWLIST:
+        raise MCPTransportError(
+            f"Executable {cmd[0]!r} (basename {launcher!r}) is not in the MCP "
+            f"executable allowlist {sorted(_MCP_EXEC_ALLOWLIST)}. Set "
+            "GLUDD_MCP_ALLOW_ANY_EXEC=1 to opt out of this check."
+        )
+
+    # Resolve the executable — accept absolute paths that exist on disk.
+    resolved = shutil.which(cmd[0])
+    if resolved is None and not os.path.isfile(cmd[0]):
+        raise MCPTransportError(
+            f"MCP executable {cmd[0]!r} could not be resolved on PATH and is "
+            "not an existing absolute path.  Check the MCP server config."
+        )
+
+    # Package-spec injection guard for remote-fetch launchers.
+    if launcher in _REMOTE_FETCH_LAUNCHERS:
+        _validate_package_spec(cmd, launcher)
+
+
+# JS npm-family launchers whose package spec MUST be version-pinned (a mutable
+# dist-tag / range / bare name is a supply-chain substitution risk). uvx
+# (Python) is intentionally excluded — its pinning semantics differ.
+_NPM_FAMILY_LAUNCHERS = frozenset({"npm", "npx", "pnpm", "yarn", "bunx"})
+
+
+def _validate_package_spec(cmd: list[str], launcher: str) -> None:
+    """Validate the package spec argument(s) for a remote-fetch launcher.
+
+    Raises MCPTransportError if:
+    - The first non-flag argument (the package spec) contains shell metacharacters.
+    - There are ONLY flag arguments (no package spec at all — likely injection).
+    """
+    args_after_launcher = cmd[1:]
+    found_spec = False
+    for arg in args_after_launcher:
+        if arg.startswith("-"):
+            # It is a flag — skip.
+            continue
+        # This is the first non-flag arg: treat it as the package spec.
+        found_spec = True
+        if _SHELL_META_RE.search(arg):
+            raise MCPTransportError(
+                f"MCP package spec {arg!r} for launcher {launcher!r} contains "
+                "shell metacharacters. This looks like an injection attempt and "
+                "is refused."
+            )
+        # Supply-chain pin: a JS npm-family remote fetch MUST resolve to a
+        # concrete version, so a mutable dist-tag / range / bare name cannot be
+        # swapped for a malicious version at fetch time.
+        if launcher in _NPM_FAMILY_LAUNCHERS and not _is_version_pinned_spec(arg):
+            raise MCPTransportError(
+                f"MCP package spec {arg!r} for launcher {launcher!r} is not "
+                "version-pinned (bare name, dist-tag, or range). Pin it to a "
+                "concrete version (e.g. pkg@1.2.3) — refused for supply-chain safety."
+            )
+        # Only the first non-flag arg is the package spec; rest are server args.
+        break
+
+    if not found_spec:
+        # No non-flag arg found — no package spec supplied.
+        raise MCPTransportError(
+            f"MCP launcher {launcher!r} has no package spec argument (only flags "
+            "were found). Provide a package name to fetch/run."
+        )
 
 # Cap on how many non-matching (interleaved) JSON-RPC frames we will skip while
 # waiting for our request's response before giving up. Bounds the read loop so a
@@ -33,149 +195,9 @@ _MAX_INTERLEAVE_SKIPS = 100
 # declared `env`/resolved secrets are passed. Finding 2.
 _ENV_ALLOWLIST = ("PATH", "HOME", "LANG", "LC_ALL", "TMPDIR")
 
-# Known MCP server runtimes. The executable that gets exec'd must have one of
-# these basenames unless the operator explicitly opts out via
-# GLUDD_MCP_ALLOW_ANY_EXEC=1. This is a launch-time guard against a poisoned /
-# typo'd config exec'ing an arbitrary binary (e.g. /bin/sh) on the host.
-# Finding #65.
-_EXEC_ALLOWLIST = frozenset(
-    {
-        "npx",
-        "uvx",
-        "uv",
-        "python",
-        "python3",
-        "node",
-        "deno",
-        "bunx",
-        "bun",
-    }
-)
-
-# Env flag operators set to run a non-allowlisted MCP runtime on purpose.
-_ALLOW_ANY_EXEC_ENV = "GLUDD_MCP_ALLOW_ANY_EXEC"
-
-# Package-fetching runtimes whose first non-flag argument is a package spec
-# (npx <pkg>, uvx <pkg>, uv tool run <pkg>). That spec is validated to block
-# leading-dash flag injection and shell metacharacters even though the command
-# is never shell-interpreted — a metacharacter-laden spec is a config smell and
-# some runtimes re-shell their args internally. Finding #65.
-_PACKAGE_RUNTIMES = frozenset({"npx", "uvx", "bunx"})
-
-# Characters that have no business in a package spec. Their presence indicates
-# either an injection attempt or a malformed config; reject fail-closed.
-_SHELL_METACHARACTERS = frozenset(';&|`$<>(){}[]!*?~\n\r\t \\"\'')
-
 
 class MCPTransportError(Exception):
     pass
-
-
-def _executable_basename(exe: str) -> str:
-    """Basename of the executable, stripped of any directory and extension."""
-    base = os.path.basename(exe)
-    root, _ext = os.path.splitext(base)
-    return root or base
-
-
-def _validate_package_spec(runtime: str, spec: str) -> None:
-    """Reject injection-y package specs handed to npx/uvx/bunx.
-
-    The first non-flag argument to a package-fetching runtime is a package
-    name/spec. A leading dash turns it into a flag (e.g. ``npx --foo``), and
-    shell metacharacters indicate an injection attempt or malformed config.
-    """
-    if spec.startswith("-"):
-        raise MCPTransportError(
-            f"{runtime} package spec {spec!r} looks like a flag "
-            f"(leading '-'); refusing to launch (flag-injection guard)"
-        )
-    bad = sorted(set(spec) & _SHELL_METACHARACTERS)
-    if bad:
-        raise MCPTransportError(
-            f"{runtime} package spec {spec!r} contains disallowed "
-            f"character(s) {bad!r}; refusing to launch"
-        )
-
-
-# Flags accepted before the package spec for package-fetching runtimes. We keep
-# this deliberately tight (npx -y / --yes, uvx --from <X>, etc.); anything else
-# is treated as an attempt to slip arbitrary flags past the package guard.
-_PACKAGE_RUNTIME_SAFE_FLAGS = frozenset(
-    {"-y", "--yes", "-q", "--quiet", "--from", "-p", "--python"}
-)
-
-
-def _validate_package_runtime_args(runtime: str, args: list[str]) -> None:
-    """Locate and validate the package spec for a package-fetching runtime.
-
-    Walks the leading flags (only a tight allowlist of known-safe flags is
-    tolerated) and validates the first positional argument as the package spec.
-    A package runtime invoked with no package spec at all is rejected.
-    """
-    i = 0
-    while i < len(args):
-        arg = args[i]
-        if not arg.startswith("-"):
-            _validate_package_spec(runtime, arg)
-            return
-        # A leading-dash token here is a flag; only known-safe flags may appear
-        # before the package spec.
-        if arg not in _PACKAGE_RUNTIME_SAFE_FLAGS:
-            raise MCPTransportError(
-                f"{runtime} package spec {arg!r} looks like a flag "
-                f"(leading '-'); refusing to launch (flag-injection guard)"
-            )
-        # `--from <X>` / `-p <X>` style flags consume the next token.
-        if arg in {"--from", "-p", "--python"}:
-            i += 2
-        else:
-            i += 1
-    raise MCPTransportError(
-        f"{runtime} invoked without a package spec; refusing to launch"
-    )
-
-
-def _validate_launch_command(argv: list[str]) -> None:
-    """Validate the full argv before it is exec'd. Finding #65.
-
-    - reject empty argv;
-    - enforce the executable-basename allowlist (opt-out via env flag);
-    - require the executable to resolve on PATH (or exist as an absolute path);
-    - validate the package spec for package-fetching runtimes.
-
-    The command is ALWAYS passed as an argv list to create_subprocess_exec and
-    is never shell-interpreted; this function adds defense-in-depth on top.
-    """
-    if not argv or not argv[0]:
-        raise MCPTransportError("MCP launch command is empty; refusing to launch")
-
-    exe = argv[0]
-    basename = _executable_basename(exe)
-
-    allow_any = os.environ.get(_ALLOW_ANY_EXEC_ENV, "") == "1"
-    if not allow_any and basename not in _EXEC_ALLOWLIST:
-        allowed = ", ".join(sorted(_EXEC_ALLOWLIST))
-        raise MCPTransportError(
-            f"executable {exe!r} (basename {basename!r}) is not in the MCP "
-            f"executable allowlist ({allowed}); set "
-            f"{_ALLOW_ANY_EXEC_ENV}=1 to override"
-        )
-
-    # The executable must actually exist. shutil.which resolves bare names on
-    # PATH; an absolute/relative path is accepted only if it exists.
-    if os.path.sep in exe or (os.path.altsep and os.path.altsep in exe):
-        resolved = exe if os.path.exists(exe) else None
-    else:
-        resolved = shutil.which(exe)
-    if resolved is None:
-        raise MCPTransportError(
-            f"executable {exe!r} could not be resolved on PATH; "
-            f"refusing to launch"
-        )
-
-    if basename in _PACKAGE_RUNTIMES:
-        _validate_package_runtime_args(basename, argv[1:])
 
 
 class MCPStdioClient:
@@ -326,9 +348,8 @@ class MCPStdioClient:
 
     async def start(self) -> None:
         cmd = (self._config.command or []) + self._config.args
-        # Finding #65: validate the argv (never shell-interpreted) before exec:
-        # non-empty, allowlisted executable that resolves on PATH, and a clean
-        # package spec for npx/uvx-style runtimes.
+        # LAUNCH VALIDATION: fail closed BEFORE spawning — check allowlist,
+        # PATH resolution, and package-spec injection in one go.
         _validate_launch_command(cmd)
         env = self._build_env()
 

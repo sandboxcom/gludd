@@ -1,0 +1,58 @@
+---
+# gludd_update role defaults — SAFE-BY-DEFAULT (report-only unless write_back)
+#
+# Turns an operator "update gludd: <text>" request into a PRIORITIZED todo via
+# gludd_db todo_create. Mirrors the operator CLI scripts/gludd_update.py.
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Artifact output (the rendered todo spec is also written here for audit)
+artifact_dir: "/tmp/gludd-update"
+
+# The operator request. Either the full "update gludd: <text>" form OR the bare
+# body — the role strips a leading "update gludd:" prefix if present.
+update_request: "update gludd: improve the system"
+
+# ── Plan classification → priority ───────────────────────────────────────────
+# Part 3 of #81 only owns the operator surface; the real UpdateRequestRouter
+# (parts 1/2) classifies the request into a target kind. Until the daemon /api
+# endpoint wires the router in, the role accepts the classified kind directly so
+# it can derive the same priority ladder the CLI uses:
+#   config / yaml → high   (fast-track; no review)
+#   role          → medium (no review)
+#   code / other  → low    (needs_review = true)
+update_target_kind: "config"
+
+# Priority ladder (must match scripts/gludd_update.py). Keyed by target kind;
+# anything not listed falls through to update_priority_default (= low).
+update_priority_map:
+  config: high
+  yaml: high
+  yml: high
+  role: medium
+  code: low
+update_priority_default: low
+
+# Kinds that mutate the agent's own code → flagged for human review.
+update_review_kinds:
+  - code
+
+# ── Capability (#44 default-DENY policy) ─────────────────────────────────────
+# capability_role names the logical capability this role exercises. The db ops it
+# needs are declared here for audit/policy review; gludd_db gates the op against
+# the per-role capability policy (default-DENY), so the operator must ensure the
+# effective role passed to gludd_db is granted todo_create. By default we route
+# the create as `operator` (a built-in role the policy grants todo_create), while
+# recording gludd_update as the intended capability label.
+capability_role: gludd_update
+capability_db_ops:
+  - todo_create
+# The role actually handed to gludd_db's capability gate. Defaults to a built-in
+# role granted todo_create so the create is not denied out of the box; override
+# to capability_role once the policy config grants gludd_update todo_create.
+db_capability_role: operator
+
+# SAFE-BY-DEFAULT: do NOT create a todo in gludd_db unless explicitly enabled.
+write_back: false

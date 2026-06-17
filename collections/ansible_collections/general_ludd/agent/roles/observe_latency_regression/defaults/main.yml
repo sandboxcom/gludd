@@ -1,0 +1,35 @@
+---
+# observe_latency_regression role defaults
+#
+# Detect a latency regression for a service: pull metric samples (and the traces
+# behind them) over a window, build a time-ordered timeline, and flag samples
+# whose latency exceeds a threshold.
+
+# Service under investigation (matched against the canonical 'service' join key).
+service: ""
+
+# KINDs to gather: latency lives in metrics, attributed via traces.
+observe_kinds:
+  - metrics
+  - traces
+
+# Time window (epoch seconds). Both optional; omit for "all available".
+start: ~
+end: ~
+
+# Latency threshold (seconds) — samples at/above this are regressions.
+latency_threshold_s: 1.0
+
+# Fraction of in-window samples over threshold that escalates to "regressed".
+regression_fraction: 0.1
+
+# Backend query spec (e.g. the PromQL selecting the latency metric).
+query_spec:
+  promql: ""
+
+artifact_dir: "/tmp/gludd-observe-latency-regression"
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+capability_role: "observe_latency_regression"

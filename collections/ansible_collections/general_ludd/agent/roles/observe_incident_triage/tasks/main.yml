@@ -1,0 +1,80 @@
+---
+# observe_incident_triage — triage a live incident across observability sources.
+#
+# Workflow
+#   1. Validate the incident seed.
+#   2. Call the GluddObserve facade (via the gludd_observe module) to correlate
+#      the incident: pull logs/traces/metrics/events in a window around the seed
+#      and group them on a shared trace_id.
+#   3. Summarize the largest correlated group (the blast radius) into an artifact.
+#
+# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+#   The role calls a thin Ansible module `general_ludd.agent.gludd_observe`
+#   that constructs GluddObserve over the daemon's ConnectorRegistry and invokes:
+#       op=correlate_incident  -> GluddObserve.correlate_incident(seed, kinds, by, window_s)
+#   returning ansible_facts.gludd_observe.groups = { join_value: [records...] }.
+#   Until that module lands the logic is exercised in check mode + unit tests
+#   (tests/unit/test_observe_facade.py).
+
+- name: Validate incident seed present
+  ansible.builtin.fail:
+    msg: "observe_incident_triage requires 'incident_seed' with labels.trace_id"
+  when: incident_seed | length == 0
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Incident triage lifecycle
+  block:
+
+    - name: Correlate incident across observability sources
+      general_ludd.agent.gludd_observe:
+        op: correlate_incident
+        role: "{{ capability_role }}"
+        seed: "{{ incident_seed }}"
+        kinds: "{{ observe_kinds }}"
+        by: "{{ correlate_by }}"
+        window_s: "{{ window_s }}"
+        spec: "{{ query_spec }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: triage
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Write triage artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_incident_triage',
+            'seed_trace_id': incident_seed.labels.trace_id | default(''),
+            'correlate_by': correlate_by,
+            'window_s': window_s,
+            'group_count': (triage.ansible_facts.gludd_observe.groups | default({})) | length,
+            'groups': triage.ansible_facts.gludd_observe.groups | default({}),
+            'source_errors': triage.ansible_facts.gludd_observe.errors | default([])
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_incident_triage.json"
+        mode: "0644"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_incident_triage',
+            'status': 'failed',
+            'seed_trace_id': incident_seed.labels.trace_id | default('')
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_incident_triage.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "observe_incident_triage failed — see {{ artifact_dir }}"

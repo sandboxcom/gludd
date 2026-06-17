@@ -14,9 +14,9 @@ provisioner:
 verifier:
   name: ansible
 scenario:
-  # self_improve_propose creates a fresh auto/self-improve/candidate worktree+branch
-  # each run; a second converge would fail on "branch already exists". That is by
-  # design (non-idempotent), so drop the idempotence step.
+  # self_improve_propose creates a REAL git worktree and runs an agent over HTTP;
+  # the worktree branch already exists after the first converge, so a second
+  # converge is not idempotent. Skip the idempotence step.
   test_sequence:
     - dependency
     - cleanup

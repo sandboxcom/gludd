@@ -1,0 +1,32 @@
+---
+# observe_saturation_capacity role defaults
+#
+# Capacity check: pull saturation metrics (cpu/mem/queue depth) across the fleet,
+# build the service<->host topology, and flag hosts/services whose saturation
+# exceeds a threshold.
+
+# KINDs that carry saturation signal.
+observe_kinds:
+  - metrics
+
+# Time window (epoch seconds).
+start: ~
+end: ~
+
+# Saturation threshold (0..1 utilisation, or the metric's native scale) above
+# which a sample is "saturated".
+saturation_threshold: 0.85
+
+# How many saturated samples on a host escalate it to "at_capacity".
+saturated_sample_min: 3
+
+# Backend query spec (e.g. PromQL selecting the saturation metric).
+query_spec:
+  promql: ""
+
+artifact_dir: "/tmp/gludd-observe-saturation-capacity"
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+capability_role: "observe_saturation_capacity"

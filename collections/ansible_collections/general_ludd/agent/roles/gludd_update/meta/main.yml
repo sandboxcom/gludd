@@ -1,0 +1,20 @@
+---
+galaxy_info:
+  role_name: gludd_update
+  author: Agentic Harness Agent
+  description: >
+    Operator self-update surface (#81 part 3). Turns an
+    "update gludd: <text>" request (update_request) into a PRIORITIZED todo via
+    gludd_db todo_create. Priority is derived from the request's target kind:
+    config/yaml -> high (fast-track), role -> medium, code -> low + needs_review.
+    SAFE-BY-DEFAULT: report-only unless write_back:true.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

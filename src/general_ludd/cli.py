@@ -685,17 +685,9 @@ def _cmd_daemon(args: argparse.Namespace) -> None:
 
     install_project_log_filter()
 
-    # Path args are optional; treat anything that isn't a non-empty string as
-    # absent. A real argparse Namespace yields None when unset, but defending
-    # against non-string attrs keeps _build_daemon_env's path validation from
-    # mistaking an unset/non-str value for an injection attempt.
-    def _opt_path(name: str) -> str | None:
-        value = getattr(args, name, None)
-        return value if isinstance(value, str) and value else None
-
-    config_dir = _opt_path("config_dir")
-    templates_dir = _opt_path("templates_dir")
-    playbooks_dir = _opt_path("playbooks_dir")
+    config_dir = getattr(args, "config_dir", None)
+    templates_dir = getattr(args, "templates_dir", None)
+    playbooks_dir = getattr(args, "playbooks_dir", None)
 
     bind_host = args.host
     psk = ""

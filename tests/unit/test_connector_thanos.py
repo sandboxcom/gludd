@@ -1,203 +1,281 @@
-"""Unit tests for ThanosSource (mocked transport, no network)."""
+"""Unit tests for the Thanos observability connector.
+
+Self-contained: imports only the connector module under test and uses an
+injectable, fully-mocked HTTP transport (no real network, no DNS, no shell).
+"""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
 
-from general_ludd.connectors.thanos import KIND, SSRFError, ThanosSource
+from general_ludd.connectors.thanos import ThanosSource
 
-VECTOR_PAYLOAD = {
-    "status": "success",
-    "data": {
-        "resultType": "vector",
-        "result": [
-            {
-                "metric": {"__name__": "http_requests", "code": "200"},
-                "value": [1700000000, "42"],
-            }
-        ],
-    },
-}
-
-MATRIX_PAYLOAD = {
-    "status": "success",
-    "data": {
-        "resultType": "matrix",
-        "result": [
-            {
-                "metric": {"__name__": "cpu", "node": "n1"},
-                "values": [[1700000000, "1.0"], [1700000060, "2.0"]],
-            }
-        ],
-    },
-}
-
-ERROR_PAYLOAD = {"status": "error", "error": "store unavailable"}
-EMPTY_PAYLOAD = {"status": "success", "data": {"resultType": "vector", "result": []}}
+# ---------------------------------------------------------------------------
+# Mock transport
+# ---------------------------------------------------------------------------
 
 
-class FakeTransport:
-    def __init__(self, status: int = 200, body: str = "", raises: BaseException | None = None):
-        self.status = status
-        self.body = body
-        self.raises = raises
+class RecordingTransport:
+    """Records calls and returns a queued (status, json) tuple per call.
+
+    Contract: http_get(url, params, headers, timeout) -> (status:int, json).
+    """
+
+    def __init__(self, responses: list[tuple[int, Any]]) -> None:
+        self._responses = list(responses)
         self.calls: list[dict[str, Any]] = []
 
-    def request(
+    def __call__(
         self,
-        method: str,
         url: str,
-        *,
+        params: dict[str, Any] | None = None,
         headers: dict[str, str] | None = None,
-        body: bytes | None = None,
-        timeout: float = 30.0,
-    ) -> tuple[int, str]:
+        timeout: float | None = None,
+    ) -> tuple[int, Any]:
         self.calls.append(
-            {"method": method, "url": url, "headers": headers or {}, "body": body, "timeout": timeout}
+            {
+                "url": url,
+                "params": params or {},
+                "headers": headers or {},
+                "timeout": timeout,
+            }
         )
-        if self.raises is not None:
-            raise self.raises
-        return self.status, self.body
+        if not self._responses:
+            raise AssertionError("transport called more times than responses queued")
+        return self._responses.pop(0)
 
 
-def _src(transport: FakeTransport, **extra: Any) -> ThanosSource:
-    config = {"name": "thanos", "base_url": "https://thanos.example.com", **extra}
-    return ThanosSource(config, transport=transport)
-
-
-def test_kind_attrs() -> None:
-    assert KIND == "metrics"
-    assert ThanosSource.KIND == "metrics"
-
-
-def test_name_attr() -> None:
-    assert _src(FakeTransport(200, "{}")).name == "thanos"
-
-
-@pytest.mark.parametrize(
-    "url",
-    ["http://127.0.0.1:9090", "http://10.1.2.3", "http://localhost", "http://[::1]"],
-)
-def test_private_host_rejected(url: str) -> None:
-    with pytest.raises(SSRFError):
-        ThanosSource({"base_url": url}, transport=FakeTransport())
-
-
-def test_private_host_allowed_opt_in() -> None:
-    src = ThanosSource(
-        {"base_url": "http://10.1.2.3", "allow_private": True},
-        transport=FakeTransport(200, "{}"),
-    )
-    assert src.base_url == "http://10.1.2.3"
-
-
-def test_query_instant_vector_normalized() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    records = _src(t).query({"query": "http_requests"})
-    assert len(records) == 1
-    r = records[0]
-    assert r["kind"] == "metrics"
-    assert r["source"] == "thanos"
-    assert r["message"] == "http_requests"
-    assert r["value"] == 42.0
-    assert r["ts"] == 1700000000.0
-    assert r["labels"] == {"code": "200"}
-    assert set(r) == {
-        "ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"
+def vector_payload() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "vector",
+            "result": [
+                {
+                    "metric": {"__name__": "up", "job": "api", "instance": "h1:9090"},
+                    "value": [1718000000.0, "1"],
+                },
+                {
+                    "metric": {"__name__": "up", "job": "db", "instance": "h2:9090"},
+                    "value": [1718000000.0, "0"],
+                },
+            ],
+        },
     }
-    assert "/api/v1/query?" in t.calls[0]["url"]
 
 
-def test_query_range_matrix() -> None:
-    t = FakeTransport(200, json.dumps(MATRIX_PAYLOAD))
-    records = _src(t).query({"query": "cpu", "start": 1, "end": 2, "step": 60})
-    assert [r["value"] for r in records] == [1.0, 2.0]
-    assert "/api/v1/query_range?" in t.calls[0]["url"]
+def matrix_payload() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": {"__name__": "rate_req", "job": "api"},
+                    "values": [[1718000000.0, "10"], [1718000060.0, "12.5"]],
+                }
+            ],
+        },
+    }
 
 
-def test_dedup_and_partial_response_params_forwarded() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t).query({"query": "cpu", "dedup": True, "partial_response": False})
-    url = t.calls[0]["url"]
-    assert "dedup=true" in url
-    assert "partial_response=false" in url
+def error_payload() -> dict[str, Any]:
+    return {"status": "error", "errorType": "bad_data", "error": "invalid query"}
 
 
-def test_config_level_dedup_default_applied() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t, dedup=True).query({"query": "cpu"})
-    assert "dedup=true" in t.calls[0]["url"]
+GOOD_URL = "https://thanos.internal.example.com:10902"
 
 
-def test_no_thanos_params_when_unset() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t).query({"query": "cpu"})
-    url = t.calls[0]["url"]
-    assert "dedup" not in url
-    assert "partial_response" not in url
+# ---------------------------------------------------------------------------
+# Construction / contract
+# ---------------------------------------------------------------------------
 
 
-def test_empty_result_returns_empty() -> None:
-    t = FakeTransport(200, json.dumps(EMPTY_PAYLOAD))
-    assert _src(t).query({"query": "cpu"}) == []
+def test_kind_and_name_and_construction():
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=RecordingTransport([]))
+    assert ThanosSource.KIND == "metrics"
+    assert src.kind == "metrics"
+    assert isinstance(src.name, str) and src.name
 
 
-def test_error_payload_returns_empty() -> None:
-    t = FakeTransport(200, json.dumps(ERROR_PAYLOAD))
-    assert _src(t).query({"query": "cpu"}) == []
+def test_requires_injected_transport():
+    with pytest.raises(ValueError):
+        ThanosSource({"base_url": GOOD_URL})
 
 
-def test_http_error_returns_empty() -> None:
-    assert _src(FakeTransport(502, "bad gateway")).query({"query": "cpu"}) == []
+# ---------------------------------------------------------------------------
+# Auth from env
+# ---------------------------------------------------------------------------
 
 
-def test_malformed_json_returns_empty() -> None:
-    assert _src(FakeTransport(200, "<<<")).query({"query": "cpu"}) == []
+def test_token_env_injects_bearer_header(monkeypatch):
+    monkeypatch.setenv("THANOS_TOKEN", "s3cret")
+    t = RecordingTransport([(200, vector_payload())])
+    src = ThanosSource({"base_url": GOOD_URL, "token_env": "THANOS_TOKEN"}, http_get=t)
+    src.query({"promql": "up"})
+    assert t.calls[0]["headers"].get("Authorization") == "Bearer s3cret"
 
 
-def test_missing_query_no_request() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    assert _src(t).query({}) == []
-    assert t.calls == []
-
-
-def test_transport_exception_returns_empty() -> None:
-    assert _src(FakeTransport(raises=RuntimeError("x"))).query({"query": "cpu"}) == []
-
-
-def test_bearer_token_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("THANOS_TOKEN", "tok-abc-123")
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t, token_env="THANOS_TOKEN").query({"query": "cpu"})
-    assert t.calls[0]["headers"].get("Authorization") == "Bearer tok-abc-123"
-
-
-def test_no_auth_without_token_env() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t).query({"query": "cpu"})
+def test_missing_token_env_is_tolerated(monkeypatch):
+    monkeypatch.delenv("THANOS_TOKEN", raising=False)
+    t = RecordingTransport([(200, vector_payload())])
+    src = ThanosSource({"base_url": GOOD_URL, "token_env": "THANOS_TOKEN"}, http_get=t)
+    src.query({"promql": "up"})
     assert "Authorization" not in t.calls[0]["headers"]
 
 
-def test_health_ok() -> None:
-    assert _src(FakeTransport(200, json.dumps(EMPTY_PAYLOAD))).health()["ok"] is True
+def test_timeout_is_passed_to_transport():
+    t = RecordingTransport([(200, vector_payload())])
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t, timeout=3.5)
+    src.query({"promql": "up"})
+    assert t.calls[0]["timeout"] == 3.5
 
 
-def test_health_not_ok() -> None:
-    h = _src(FakeTransport(500, "err")).health()
-    assert h["ok"] is False
-    assert "500" in h["detail"]
+# ---------------------------------------------------------------------------
+# SSRF literal-host blocking (no DNS)
+# ---------------------------------------------------------------------------
 
 
-def test_health_never_raises() -> None:
-    h = _src(FakeTransport(raises=ConnectionError("refused"))).health()
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://127.0.0.1:10902",
+        "https://localhost:10902",
+        "http://[::1]:10902",
+        "http://169.254.169.254/api/v1/query",
+        "http://10.0.0.5:10902",
+        "http://192.168.1.10:10902",
+        "http://172.16.0.9:10902",
+        "http://0.0.0.0:10902",
+        "http://metadata.google.internal/",
+    ],
+)
+def test_ssrf_rejects_internal_hosts(bad_url):
+    with pytest.raises(ValueError):
+        ThanosSource({"base_url": bad_url}, http_get=RecordingTransport([]))
+
+
+def test_ssrf_rejects_non_http_scheme():
+    with pytest.raises(ValueError):
+        ThanosSource({"base_url": "file:///etc/passwd"}, http_get=RecordingTransport([]))
+
+
+def test_ssrf_allows_external_host():
+    src = ThanosSource(
+        {"base_url": "http://thanos.example.com:10902"},
+        http_get=RecordingTransport([]),
+    )
+    assert src.name
+
+
+# ---------------------------------------------------------------------------
+# query() normalization
+# ---------------------------------------------------------------------------
+
+
+def test_query_vector_per_sample_normalization():
+    t = RecordingTransport([(200, vector_payload())])
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t)
+    records = src.query({"promql": "up"})
+
+    assert t.calls[0]["url"] == f"{GOOD_URL}/api/v1/query"
+    assert t.calls[0]["params"]["query"] == "up"
+    assert len(records) == 2
+
+    r0 = records[0]
+    assert r0["kind"] == "metrics"
+    assert r0["source"] == src.name
+    assert r0["value"] == 1.0
+    assert isinstance(r0["value"], float)
+    assert r0["ts"] == 1718000000.0
+    assert r0["labels"] == {"__name__": "up", "job": "api", "instance": "h1:9090"}
+    assert r0["message"] == 'up{instance="h1:9090", job="api"}'
+    assert r0["level_or_status"] == ""
+    assert records[1]["value"] == 0.0
+
+
+def test_query_matrix_uses_range_endpoint_and_expands_samples():
+    t = RecordingTransport([(200, matrix_payload())])
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t)
+    records = src.query(
+        {"promql": "rate_req", "start": 1718000000.0, "end": 1718000060.0, "step": "60s"}
+    )
+    assert t.calls[0]["url"] == f"{GOOD_URL}/api/v1/query_range"
+    assert len(records) == 2
+    assert records[0]["value"] == 10.0
+    assert records[1]["value"] == 12.5
+
+
+def test_query_passes_thanos_dedup_param():
+    t = RecordingTransport([(200, vector_payload())])
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t)
+    src.query({"promql": "up", "dedup": "true"})
+    assert t.calls[0]["params"]["dedup"] == "true"
+
+
+# ---------------------------------------------------------------------------
+# query() error handling
+# ---------------------------------------------------------------------------
+
+
+def test_query_error_payload_returns_error_record():
+    t = RecordingTransport([(400, error_payload())])
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t)
+    records = src.query({"promql": "bad{"})
+    assert len(records) == 1
+    assert records[0]["level_or_status"] == "error"
+    assert "invalid query" in records[0]["message"]
+
+
+def test_query_missing_promql_returns_error_record():
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=RecordingTransport([]))
+    records = src.query({})
+    assert len(records) == 1
+    assert records[0]["level_or_status"] == "error"
+
+
+def test_query_transport_exception_yields_error_record_not_raise():
+    def boom(url, params=None, headers=None, timeout=None):
+        raise RuntimeError("connection refused")
+
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=boom)
+    records = src.query({"promql": "up"})
+    assert len(records) == 1
+    assert records[0]["level_or_status"] == "error"
+    assert "connection refused" in records[0]["message"]
+
+
+# ---------------------------------------------------------------------------
+# health()
+# ---------------------------------------------------------------------------
+
+
+def test_health_ok_returns_ok_and_detail():
+    t = RecordingTransport(
+        [(200, {"status": "success", "data": {"resultType": "scalar", "result": [1.0, "1"]}})]
+    )
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t)
+    h = src.health()
+    assert h["ok"] is True
+    assert "detail" in h
+    assert isinstance(h["detail"], str)
+
+
+def test_health_not_ok_on_error_payload():
+    t = RecordingTransport([(500, error_payload())])
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=t)
+    h = src.health()
     assert h["ok"] is False
     assert "detail" in h
 
 
-def test_timeout_passed_through() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t, timeout=3.0).query({"query": "cpu"})
-    assert t.calls[0]["timeout"] == 3.0
+def test_health_never_raises_on_transport_exception():
+    def boom(url, params=None, headers=None, timeout=None):
+        raise RuntimeError("dns/socket failure")
+
+    src = ThanosSource({"base_url": GOOD_URL}, http_get=boom)
+    h = src.health()
+    assert h["ok"] is False
+    assert "dns/socket failure" in h["detail"]

@@ -7,6 +7,13 @@ provisioner:
   env:
     ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
     GLUDD_MOCK_PORT: "8840"
+    # gludd_reload runs in-process and importlib.import_module()s the live leaf
+    # module by dotted name, so the leaf package's PARENT dir must be on the
+    # module subprocess sys.path. prepare.yml writes the throwaway leaf package
+    # under this exact dir. (general_ludd itself is already importable from the
+    # installed venv — only the throwaway leaf needs PYTHONPATH.) The reverted
+    # scenario failed precisely because it never provided this import-clean path.
+    PYTHONPATH: "/tmp/gludd-reload-8840"
   playbooks:
     prepare: default/prepare.yml
     converge: default/converge.yml
@@ -14,9 +21,9 @@ provisioner:
 verifier:
   name: ansible
 scenario:
-  # gludd_reload mutates the live module file in-place (swap + reload + rollback).
-  # The second converge run would observe the rolled-back/restored byte state, so
-  # the result is not meaningfully idempotent. Skip the idempotence step.
+  # A hot code swap mutates the live leaf file on disk; a second converge would
+  # start from the already-swapped (then rolled-back) state, so the run is not
+  # meaningfully idempotent. Skip the idempotence step.
   test_sequence:
     - dependency
     - cleanup

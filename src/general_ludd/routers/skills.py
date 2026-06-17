@@ -11,6 +11,7 @@ from general_ludd.skills.fetcher import (
     GitHubSkillSource,
     RemoteSkillFetcher,
     _safe_skill_filename,
+    build_skill_frontmatter,
 )
 
 
@@ -78,6 +79,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         url = req.get("url", "")
         if not url:
             raise HTTPException(status_code=422, detail="url required")
+        # SSRF guard: reject non-https or internal-host URLs before any network
+        # call, returning 422 so the caller gets a meaningful validation error
+        # rather than a 404 from the fetcher silently refusing the URL.
+        from general_ludd.security.sanitize import is_safe_fetch_url
+
+        if not is_safe_fetch_url(url):
+            raise HTTPException(
+                status_code=422,
+                detail=f"URL rejected by SSRF guard (must be https and not a local/internal host): {url}",
+            )
         config_dir = getattr(app.state, "_config_dir", None) or "/etc/general-ludd"
         target = os.path.join(config_dir, "skills")
         fetcher = RemoteSkillFetcher()
@@ -93,7 +104,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         branch = req.get("branch", "main")
         if not repo or not skill_path:
             raise HTTPException(status_code=422, detail="repo and path required")
-        src = GitHubSkillSource.from_url(f"https://github.com/{repo}")
+        try:
+            src = GitHubSkillSource.from_url(f"https://github.com/{repo}")
+        except ValueError as exc:
+            # repo without an 'owner/repo' slash -> clean 422, not an
+            # unhandled IndexError 500.
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
         src.branch = branch
         skill = src.download_skill(skill_path)
         if skill is None:
@@ -107,7 +123,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if stem is None or not is_path_within(target, f"{stem}.md"):
             raise HTTPException(status_code=422, detail=f"Unsafe skill name: {skill.name!r}")
         skill_file = os.path.join(target, f"{stem}.md")
-        content = f"---\nname: {skill.name}\ndescription: {skill.description}\n---\n\n{skill.body}\n"
+        content = build_skill_frontmatter(skill)
         with open(skill_file, "w") as f:
             f.write(content)
         return {"installed": skill_file, "name": skill.name, "source": f"github:{repo}"}

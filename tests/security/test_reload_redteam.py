@@ -19,7 +19,6 @@ BUG #2 (MEDIUM): reload rollback is not guaranteed / is fail-open in places.
 
 from __future__ import annotations
 
-import contextlib
 import textwrap
 from pathlib import Path
 
@@ -217,6 +216,8 @@ def test_reload_code_module_no_health_check_swaps_on_import_only(
         with pytest.MonkeyPatch.context() as _:
             pass
         if "livepkg.leaf" in sys.modules:
+            import contextlib
+
             with contextlib.suppress(Exception):
                 importlib.reload(sys.modules["livepkg.leaf"])
         if str(live_src) in sys.path:
@@ -300,6 +301,8 @@ def test_rollback_does_not_verify_restored_module(tmp_path: Path) -> None:
     finally:
         live_module_path.write_text("MARK = 'original'\n")
         if "rbpkg.leaf" in sys.modules:
+            import contextlib
+
             with contextlib.suppress(Exception):
                 importlib.reload(sys.modules["rbpkg.leaf"])
         if str(live_src) in sys.path:

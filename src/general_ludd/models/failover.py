@@ -21,7 +21,14 @@ class ModelFailoverChain:
         backoff_seconds: float = 2.0,
     ) -> None:
         self._primary = primary_profile
-        self._fallbacks = fallback_profiles or []
+        # Copy the caller-supplied list (#71): a configured fallback list is
+        # frequently shared by reference across requests/chains. Storing it by
+        # reference means any later mutation of the source — or a failover loop
+        # that .remove()/.pop()s the failed provider off this chain — would
+        # silently corrupt the configured list, so the NEXT request no longer
+        # sees the full set. Take a per-instance copy so the chain owns its own
+        # list and the configured one is never mutated.
+        self._fallbacks = list(fallback_profiles) if fallback_profiles else []
         self._max_retries = max_retries
         self._backoff = backoff_seconds
         self._failover_events: list[dict[str, Any]] = []

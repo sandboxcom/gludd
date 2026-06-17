@@ -15,6 +15,25 @@ class ObservabilityConfig(BaseModel):
     service_name: str = "general-ludd"
 
 
+class PipelineConfigBlock(BaseModel):
+    """User-facing config for the 3-lane multitask+merge pipeline (#77).
+
+    Mirrors :class:`general_ludd.pipeline.state.PipelineConfig`. Default OFF so
+    the daemon never starts the pipeline unless explicitly enabled via
+    ``pipeline.enabled: true`` (or ``GLUDD_PIPELINE__ENABLED=true``).
+    """
+
+    enabled: bool = False
+    floor: int = 1
+    target: int = 3
+    gate_debounce_s: float = 30.0
+    max_worktrees: int = 6
+    dispatch_interval_s: float = 0.5
+    integrate_interval_s: float = 0.5
+    gate_poll_interval_s: float = 0.5
+    heartbeat_interval_s: float = 5.0
+
+
 class _YamlSettingsSource(PydanticBaseSettingsSource):
     """Custom settings source that reads from a YAML file.
 
@@ -75,6 +94,7 @@ class UserConfig(BaseSettings):
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
     self_improve: dict[str, Any] = {}
+    pipeline: PipelineConfigBlock = PipelineConfigBlock()
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:

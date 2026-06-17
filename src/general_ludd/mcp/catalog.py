@@ -76,6 +76,26 @@ class MCPCatalog:
     def refresh(self) -> None:
         self._cache.clear()
 
+    @staticmethod
+    def _harden_registry_entry(entry: MCPCatalogEntry) -> MCPCatalogEntry:
+        """Strip any launchable command from a remote-registry entry.
+
+        SUPPLY-CHAIN: entries discovered over the network are UNTRUSTED. They
+        must never carry an executable ``command`` — a hostile registry could
+        otherwise hand us an arbitrary (unpinned, attacker-controlled) spawn
+        line that downstream code might launch. We fail closed by clearing the
+        field unconditionally; only the curated, version-pinned _KNOWN_SERVERS
+        entries are ever launchable.
+        """
+        if entry.command:
+            logger.warning(
+                "Dropping command from untrusted registry entry %r (source=%s)",
+                entry.server_name,
+                entry.source,
+            )
+            entry.command = []
+        return entry
+
     def _query_registry(
         self, registry: str, query: str, limit: int
     ) -> list[MCPCatalogEntry]:
@@ -94,13 +114,13 @@ class MCPCatalog:
                 data = json.loads(resp.read().decode())
             entries: list[MCPCatalogEntry] = []
             for s in data.get("servers", []):
-                entries.append(MCPCatalogEntry(
+                entries.append(self._harden_registry_entry(MCPCatalogEntry(
                     server_name=s.get("qualifiedName", ""),
                     display_name=s.get("displayName", ""),
                     description=s.get("description", ""),
                     source="smithery.ai",
                     downloads=s.get("useCount", 0),
-                ))
+                )))
             return entries
 
         if "registry.modelcontextprotocol.io" in registry:
@@ -113,15 +133,35 @@ class MCPCatalog:
                 name_val = s.get("name", "")
                 if isinstance(name_val, dict):
                     name_val = name_val.get("name", str(name_val))
-                entries.append(MCPCatalogEntry(
+                entries.append(self._harden_registry_entry(MCPCatalogEntry(
                     server_name=str(name_val),
                     description=s.get("description", ""),
                     source="registry.modelcontextprotocol.io",
-                ))
+                )))
             return entries
 
         return []
 
+
+# SUPPLY-CHAIN: every command below pins an explicit @<version> on the npm
+# package spec. An unpinned `npx -y @scope/pkg` auto-installs the LATEST build
+# from npm at launch, so a hijacked or typo-squatted release is silently
+# fetched and executed (remote code execution). Pinning freezes the bytes we
+# run. The launch-time gate in transport._assert_pinned_command refuses to
+# spawn any npm-family command whose spec is not version-pinned, so this list
+# is enforced (fail-closed) and not merely advisory.
+#
+# Versions below are the documented current releases as of 2026-06:
+#   - Actively maintained servers (modelcontextprotocol/servers) ship a
+#     date-based version; 2026.1.26 is the current line.
+#   - Archived servers (modelcontextprotocol/servers-archived) were frozen at
+#     their final 0.6.2 release.
+# REVIEW REQUIRED: re-verify these pins against npm before each release and
+# bump deliberately — never relax a pin back to a bare/unpinned spec.
+_FS_VER = "2026.1.26"
+_GITHUB_VER = "2026.1.26"
+_MEMORY_VER = "2026.1.26"
+_ARCHIVED_VER = "0.6.2"
 
 _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
     "filesystem": MCPCatalogEntry(
@@ -129,7 +169,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="Filesystem",
         description="Read, write, and search files on the local filesystem",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-filesystem@{_FS_VER}"],
         tags=["files", "local", "official"],
     ),
     "github": MCPCatalogEntry(
@@ -137,7 +177,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="GitHub",
         description="GitHub API integration for repos, issues, PRs, and more",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-github"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-github@{_GITHUB_VER}"],
         env_aliases_needed=["GITHUB_PERSONAL_ACCESS_TOKEN"],
         tags=["git", "github", "official"],
     ),
@@ -146,7 +186,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="GitLab",
         description="GitLab API integration for projects, issues, MRs",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-gitlab"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-gitlab@{_ARCHIVED_VER}"],
         env_aliases_needed=["GITLAB_PERSONAL_ACCESS_TOKEN"],
         tags=["git", "gitlab", "official"],
     ),
@@ -155,7 +195,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="Fetch",
         description="Web content fetching and scraping",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-fetch"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-fetch@{_ARCHIVED_VER}"],
         tags=["web", "http", "official"],
     ),
     "brave-search": MCPCatalogEntry(
@@ -163,7 +203,9 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="Brave Search",
         description="Web search using Brave Search API",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-brave-search"],
+        command=[
+            "npx", "-y", f"@modelcontextprotocol/server-brave-search@{_ARCHIVED_VER}"
+        ],
         env_aliases_needed=["BRAVE_API_KEY"],
         tags=["search", "web", "official"],
     ),
@@ -172,7 +214,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="SQLite",
         description="SQLite database operations",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-sqlite"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-sqlite@{_ARCHIVED_VER}"],
         tags=["database", "sqlite", "official"],
     ),
     "postgres": MCPCatalogEntry(
@@ -180,7 +222,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="PostgreSQL",
         description="PostgreSQL database operations",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-postgres"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-postgres@{_ARCHIVED_VER}"],
         tags=["database", "postgres", "official"],
     ),
     "slack": MCPCatalogEntry(
@@ -188,7 +230,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="Slack",
         description="Slack workspace integration",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-slack"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-slack@{_ARCHIVED_VER}"],
         env_aliases_needed=["SLACK_BOT_TOKEN"],
         tags=["communication", "slack", "official"],
     ),
@@ -197,7 +239,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="Puppeteer",
         description="Browser automation for web scraping and testing",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-puppeteer"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-puppeteer@{_ARCHIVED_VER}"],
         tags=["browser", "automation", "official"],
     ),
     "memory": MCPCatalogEntry(
@@ -205,7 +247,7 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         display_name="Memory",
         description="Knowledge graph for persistent memory across sessions",
         source="official",
-        command=["npx", "-y", "@modelcontextprotocol/server-memory"],
+        command=["npx", "-y", f"@modelcontextprotocol/server-memory@{_MEMORY_VER}"],
         tags=["memory", "knowledge-graph", "official"],
     ),
 }

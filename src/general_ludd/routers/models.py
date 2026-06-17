@@ -47,25 +47,41 @@ def _workspace_root(app: FastAPI) -> str:
     )
 
 
-def _confined_code_path(app: FastAPI, path: str) -> str:
-    """Validate ``path`` is inside the workspace root or raise 422.
+def _allowed_code_roots(app: FastAPI) -> list[str]:
+    """All roots inside which a code-analysis path is permitted.
 
-    Refuses absolute paths and ``../`` escapes so /admin/code/* cannot be used to
-    read arbitrary files (e.g. /etc/passwd, ~/.ssh/id_rsa) off the host.
+    Includes the workspace root AND the system temp directory so tests (and
+    legit callers that score files in tmpdir) work without being blocked.
+    Out-of-bounds paths (e.g. /etc, /root, ~/.ssh) are still rejected.
     """
     import tempfile
 
-    # The workspace root plus the system temp dir (a legitimate scratch location
-    # an operator analyzes files from). Sensitive host paths (/etc, ~/.ssh, /root)
-    # remain outside both roots and are refused.
     roots = [_workspace_root(app), tempfile.gettempdir()]
-    for r in roots:
-        if path and is_path_within(r, path):
-            return os.path.realpath(os.path.join(os.path.realpath(r), path))
-    raise HTTPException(
-        status_code=422,
-        detail=f"path must be inside the workspace or temp root: {path!r}",
-    )
+    # Also honour the real path so macOS /tmp -> /private/var/... resolves.
+    roots += [os.path.realpath(r) for r in roots]
+    return [r for r in roots if r]
+
+
+def _confined_code_path(app: FastAPI, path: str) -> str:
+    """Validate ``path`` is inside an allowed root or raise 422.
+
+    Refuses ``../`` escapes and paths outside the workspace root or the system
+    temp directory so /admin/code/* cannot be used to read arbitrary files
+    (e.g. /etc/passwd, ~/.ssh/id_rsa) off the host.
+    """
+    if not path:
+        raise HTTPException(
+            status_code=422,
+            detail=f"path must be inside the workspace root: {path!r}",
+        )
+    roots = _allowed_code_roots(app)
+    if not any(is_path_within(root, path) for root in roots):
+        raise HTTPException(
+            status_code=422,
+            detail=f"path must be inside the workspace root: {path!r}",
+        )
+    # Return the realpath of the candidate for callers that open the file.
+    return os.path.realpath(path)
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:

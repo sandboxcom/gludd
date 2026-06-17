@@ -379,6 +379,33 @@ class TestSkillRenderer:
         result = render_skill("", {})
         assert result == ""
 
+    def test_ssti_object_graph_payload_blocked(self):
+        """An SSTI payload reaching builtins via the object graph must be
+        blocked by the sandbox — the renderer wraps the jinja SecurityError in
+        SkillRenderError (fail-closed), not rendered."""
+        from general_ludd.skills.renderer import SkillRenderError, render_skill
+
+        payload = "{{ ().__class__.__mro__ }}"
+        with pytest.raises(SkillRenderError):
+            render_skill(payload, {})
+
+    def test_ssti_builtins_access_blocked(self):
+        """Attribute traversal to reach ``__builtins__`` / subclasses must be
+        blocked at render time (raised as SkillRenderError, fail-closed)."""
+        from general_ludd.skills.renderer import SkillRenderError, render_skill
+
+        payload = "{{ ''.__class__.__base__.__subclasses__() }}"
+        with pytest.raises(SkillRenderError):
+            render_skill(payload, {})
+
+    def test_sandbox_preserves_legitimate_filters(self):
+        """Normal templating — variable substitution + a builtin filter the
+        skills rely on — must still work under the sandbox."""
+        from general_ludd.skills.renderer import render_skill
+
+        result = render_skill("{{ name | upper }}", {"name": "ludd"})
+        assert result == "LUDD"
+
 
 class TestGluddDbOpContract:
     """Every ``op:`` a role passes to gludd_db must be a declared argspec choice.

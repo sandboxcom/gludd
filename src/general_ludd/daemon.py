@@ -427,6 +427,53 @@ def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
         logger.error("EventLoop task exited unexpectedly without exception")
 
 
+def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
+    """Construct a PipelineController bound to real daemon subsystems (#77).
+
+    Translates the user-facing ``pipeline`` config block into the internal
+    ``PipelineConfig`` and wires the dispatch/merge/gate callables via the
+    pipeline daemon adapters. The repo merged into is the process's git root
+    (cwd); disk-pressure back-pressure uses the same floor as ``disk-guard``.
+    The default gate is a conservative no-op-green (the real gate is the
+    separate ``make gate`` pipeline); operators wire a stricter gate callable
+    by replacing it on the returned controller before start.
+    """
+    from general_ludd.pipeline.controller import PipelineController
+    from general_ludd.pipeline.daemon_adapters import (
+        make_disk_ok,
+        make_dispatch_fn,
+        make_merge_fn,
+    )
+    from general_ludd.pipeline.state import PipelineConfig
+
+    repo_path = os.getcwd()
+    cfg = PipelineConfig(
+        enabled=True,
+        floor=int(getattr(pipeline_cfg, "floor", 1)),
+        target=int(getattr(pipeline_cfg, "target", 3)),
+        gate_debounce_s=float(getattr(pipeline_cfg, "gate_debounce_s", 30.0)),
+        max_worktrees=int(getattr(pipeline_cfg, "max_worktrees", 6)),
+        dispatch_interval_s=float(getattr(pipeline_cfg, "dispatch_interval_s", 0.5)),
+        integrate_interval_s=float(getattr(pipeline_cfg, "integrate_interval_s", 0.5)),
+        gate_poll_interval_s=float(getattr(pipeline_cfg, "gate_poll_interval_s", 0.5)),
+        heartbeat_interval_s=float(getattr(pipeline_cfg, "heartbeat_interval_s", 5.0)),
+    )
+
+    async def _gate_green() -> bool:
+        # Conservative default: the in-process pipeline does not run the full
+        # ~16-min suite on the event loop. A stricter gate callable can be
+        # injected by an operator before start(); the lane treats True as green.
+        return True
+
+    return PipelineController(
+        cfg,
+        make_dispatch_fn(dispatcher),
+        make_merge_fn(repo_path),
+        _gate_green,
+        disk_ok=make_disk_ok(repo_path),
+    )
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -687,6 +734,23 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             executor=dispatcher_executor,
         )
 
+        # --- 3-lane multitask+merge pipeline (#77), behind config flag ----- #
+        # Default OFF: only starts when pipeline.enabled is true. Owns its own
+        # dispatch/integrate/gate asyncio tasks + heartbeat. The daemon owns the
+        # repo it merges into (the process cwd's git root).
+        app.state._pipeline_controller = None
+        pipeline_cfg = getattr(uc, "pipeline", None) if uc else None
+        if pipeline_cfg is not None and getattr(pipeline_cfg, "enabled", False):
+            try:
+                pipeline_controller = _build_pipeline_controller(
+                    pipeline_cfg, app.state._agent_dispatcher,
+                )
+                await pipeline_controller.start()
+                app.state._pipeline_controller = pipeline_controller
+                logger.info("Pipeline (#77) started: 3 lanes + heartbeat")
+            except Exception as exc:
+                logger.error("Pipeline startup failed (continuing degraded): %s", exc)
+
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
@@ -726,6 +790,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
     if getattr(app.state, "_degraded", None):
         logger.warning("Daemon is running in degraded mode: %s", app.state._degraded)
+    pipeline_controller = getattr(app.state, "_pipeline_controller", None)
+    if pipeline_controller is not None:
+        with contextlib.suppress(Exception):
+            await pipeline_controller.stop()
     if event_loop is not None:
         event_loop.stop()
     if task is not None:
@@ -853,8 +921,6 @@ def create_daemon_app(
     from general_ludd.hardware.probe import probe_hardware
     app.state._hardware = probe_hardware()
 
-    import hmac
-
     _psk = os.environ.get("GLUDD_PSK", "")
     app.state._psk = _psk
     # A-3: opt-in fail-closed. Default stays open-but-warned for back-compat
@@ -929,9 +995,11 @@ def create_daemon_app(
             )
             if not _is_public(method, path):
                 auth = request.headers.get("Authorization", "")
-                token = auth.removeprefix("Bearer ").strip() if auth.startswith("Bearer ") else ""
-                # A-1: constant-time comparison to prevent timing attacks.
-                if not token or not hmac.compare_digest(token, _psk):
+                # A-1: constant-time comparison via the shared check_bearer_token
+                # helper (hmac.compare_digest) to prevent timing side-channels.
+                from general_ludd.security.auth import check_bearer_token
+
+                if not check_bearer_token(auth, _psk):
                     from fastapi.responses import JSONResponse
 
                     app.state._stats_responses += 1

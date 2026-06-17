@@ -1,0 +1,113 @@
+---
+# observe_deploy_correlator — did this deploy cause a regression?
+#
+# Workflow
+#   1. Validate the deploy seed (must carry ts + labels.commit).
+#   2. query_sources for the BEFORE window [ts-window_s, ts) and the AFTER window
+#      [ts, ts+window_s) across metrics/logs/incidents.
+#   3. Compare error/incident volume after vs before; if the ratio exceeds
+#      regression_ratio, the deploy is suspected-cause.
+#   4. Write the comparison to an artifact.
+#
+# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+#   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
+#       returning ansible_facts.gludd_observe.records
+
+- name: Validate deploy seed present
+  ansible.builtin.fail:
+    msg: "observe_deploy_correlator requires 'deploy_seed' with ts + labels.commit"
+  when: deploy_seed | length == 0 or deploy_seed.ts is not defined
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Deploy correlation lifecycle
+  block:
+
+    - name: Gather telemetry BEFORE the deploy
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: "{{ capability_role }}"
+        kinds: "{{ observe_kinds }}"
+        spec: "{{ query_spec }}"
+        start: "{{ (deploy_seed.ts | float) - (window_s | float) }}"
+        end: "{{ deploy_seed.ts | float }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: before
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Gather telemetry AFTER the deploy
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: "{{ capability_role }}"
+        kinds: "{{ observe_kinds }}"
+        spec: "{{ query_spec }}"
+        start: "{{ deploy_seed.ts | float }}"
+        end: "{{ (deploy_seed.ts | float) + (window_s | float) }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: after
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Count error/incident volume each side
+      ansible.builtin.set_fact:
+        errors_before: >-
+          {{ (before.ansible_facts.gludd_observe.records | default([]))
+             | selectattr('level_or_status', 'in', ['error', 'critical', 'failed'])
+             | list | length }}
+        errors_after: >-
+          {{ (after.ansible_facts.gludd_observe.records | default([]))
+             | selectattr('level_or_status', 'in', ['error', 'critical', 'failed'])
+             | list | length }}
+      when: not ansible_check_mode
+
+    - name: Write correlation artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_deploy_correlator',
+            'commit': deploy_seed.labels.commit | default(''),
+            'service': deploy_seed.labels.service | default(''),
+            'window_s': window_s,
+            'errors_before': errors_before | int,
+            'errors_after': errors_after | int,
+            'regression_ratio': regression_ratio,
+            'verdict': (
+              'suspected_cause'
+              if (errors_before | int) > 0
+                 and ((errors_after | int) / (errors_before | int))
+                     >= (regression_ratio | float)
+              else ('new_errors_after_deploy'
+                    if (errors_before | int) == 0 and (errors_after | int) > 0
+                    else 'no_regression')
+            ),
+            'source_errors': (before.ansible_facts.gludd_observe.errors | default([]))
+                             + (after.ansible_facts.gludd_observe.errors | default([]))
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_deploy_correlator.json"
+        mode: "0644"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_deploy_correlator',
+            'status': 'failed',
+            'commit': deploy_seed.labels.commit | default('')
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_deploy_correlator.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "observe_deploy_correlator failed — see {{ artifact_dir }}"

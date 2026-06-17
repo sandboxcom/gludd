@@ -573,6 +573,30 @@ commit-bootstrap:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
+# Commit staged changes using a message FILE (avoids shell quoting of multi-line
+# messages with angle-bracket emails). Enforces the SAME fresh+green gate guard
+# as `git-commit` (a bare `git commit -F` would otherwise bypass it). Usage:
+#   make git-commit-file FILE=/tmp/msg.txt
+git-commit-file:
+	@[ -n "$(FILE)" ] || { echo "Usage: make git-commit-file FILE=path"; exit 1; }
+	@echo "Running pre-commit collection check..."
+	@$(MAKE) --no-print-directory collect-check
+	@echo "Collection OK. Checking gate status..."
+	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
+	@for check in lint typecheck collect test smoke; do \
+		if ! grep -q "^$${check} PASS" .gate-status; then \
+			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
+		fi; \
+	done
+	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+	NOW=$$(date +%s); \
+	AGE=$$((NOW - EPOCH)); \
+	if [ $$AGE -gt 1800 ]; then \
+		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
+	fi
+	@echo "Gate fresh and green. Committing (message file)..."
+	@git commit -F "$(FILE)"
+
 smoke:
 	@echo "=== SMOKE TEST: real daemon boot ==="
 	@PORT=$$(python3 -c "import socket; s=socket.socket(); s.bind(('',0)); print(s.getsockname()[1]); s.close()") && \
@@ -608,9 +632,21 @@ install-hooks:
 scan-conflicts:
 	@$(PYTHON) scripts/scan_conflicts.py
 
+# Observability into the agent-floor guardrail (#79/#78): prints the maintained
+# inc/dec counter AND the GROUND-TRUTH count of live subagents (harness task
+# .output files appended within the last 90s). If the counter is "(missing)" or
+# disagrees with ground-truth, the floor hooks are not firing / are mis-wired.
+floor-status:
+	@printf '[floor-status] maintained counter: '
+	@cat "$${TMPDIR:-/tmp}/claude-agent-floor.count" 2>/dev/null || cat /tmp/claude-agent-floor.count 2>/dev/null || echo "(MISSING in both \$$TMPDIR and /tmp)"
+	@$(PYTHON) -c "import os,glob,time; b='/private/tmp/claude-%d/-Users-shawnwilson-gludd'%os.getuid(); ss=sorted(glob.glob(b+'/*/'),key=os.path.getmtime,reverse=True); t=(ss[0]+'tasks') if ss else None; fs=glob.glob(t+'/*.output') if t and os.path.isdir(t) else []; now=time.time(); live=[f for f in fs if now-os.path.getmtime(f)<90]; print('[floor-status] ground-truth live agents (output mtime <90s): %d  of %d total task files  (dir=%s)'%(len(live),len(fs),t))"
+
 scan-secrets-baseline:
-	@$(UV) run detect-secrets scan --all-files --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' 2>/dev/null > .secrets.baseline || true
-	@echo "Secrets baseline created in .secrets.baseline"
+	@echo "[scan-secrets-baseline] scanning tracked files with detect-secrets (no per-file stream; typically 30-90s on this repo)..."
+	@$(UV) run detect-secrets scan --exclude-files 'sandboxcom_github_rsa|sandboxcom_github_rsa.pub' > .secrets.baseline.tmp
+	@$(PYTHON) -c "import json; d=json.load(open('.secrets.baseline.tmp')); print('[scan-secrets-baseline] OK: valid JSON, %d files carry flagged (baselined) secrets' % len(d.get('results', {})))"
+	@mv -f .secrets.baseline.tmp .secrets.baseline
+	@echo "[scan-secrets-baseline] wrote .secrets.baseline ($$(wc -c < .secrets.baseline | tr -d ' ') bytes) -- stage it with: make git-add FILES='.secrets.baseline'"
 
 clean-hooks:
 	@rm -f .git/hooks/pre-commit.legacy .git/hooks/pre-push.legacy scripts/githooks/pre-commit scripts/githooks/pre-push
@@ -677,14 +713,73 @@ wt-import:
 # Usage: make wt-sync SRC=/abs/path/to/worktree-root
 wt-sync:
 	@[ -n "$(SRC)" ] || { echo "Usage: make wt-sync SRC=<worktree-root>"; exit 1; }
-	@cd "$(SRC)" && { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u | while read -r f; do \
+	@REFUSED=0; cd "$(SRC)" && { git diff --name-only HEAD; git ls-files --others --exclude-standard; } | sort -u | while read -r f; do \
 		case "$$f" in \
-			.venv/*|*.pyc|.gate-status|.gate-failed|REDTEAM_*|*.log) continue;; \
+			.venv/*|*.pyc|.gate-status|.gate-failed|REDTEAM_*|*.log|*/__init__.py|__init__.py) continue;; \
 		esac; \
+		dst="/Users/shawnwilson/gludd/$$f"; \
+		if [ -f "$$dst" ] && git -C /Users/shawnwilson/gludd ls-files --error-unmatch "$$f" >/dev/null 2>&1 && ! git -C /Users/shawnwilson/gludd diff --quiet HEAD -- "$$f"; then \
+			if ! cmp -s "$(SRC)/$$f" "$$dst"; then \
+				echo "  ⛔ REFUSED (CLOBBER GUARD): $$f is locally-modified vs HEAD in main; whole-file copy would lose those edits. Use: make wt-apply SRC=$(SRC) FILES=$$f"; \
+				continue; \
+			fi; \
+		fi; \
 		mkdir -p "/Users/shawnwilson/gludd/$$(dirname "$$f")"; \
-		cp "$(SRC)/$$f" "/Users/shawnwilson/gludd/$$f" && echo "  synced $$f"; \
+		cp "$(SRC)/$$f" "$$dst" && echo "  synced $$f"; \
 	done
-	@echo "wt-sync done: $(SRC)"
+	@echo "wt-sync done: $(SRC) (clobber-guard active: locally-modified files are refused, use wt-apply)"
+
+# Bulk wt-sync a LIST of worktrees (each goes through the clobber-guard + __init__ skip).
+# Tolerant: a missing/failed worktree is skipped, the rest continue. Usage:
+#   make wt-sync-all SRCS='wt1 wt2 ...'
+wt-sync-all:
+	@[ -n "$(SRCS)" ] || { echo "Usage: make wt-sync-all SRCS='wt1 wt2 ...'"; exit 1; }
+	@for wt in $(SRCS); do \
+		if [ -d "$$wt" ]; then echo "=== wt-sync $$wt ==="; $(MAKE) --no-print-directory wt-sync SRC="$$wt" || echo "  (wt-sync failed for $$wt, continuing)"; \
+		else echo "  skip (missing): $$wt"; fi; \
+	done
+	@echo "wt-sync-all done"
+
+# 3-WAY apply ONLY specific files' uncommitted diff from a worktree onto main —
+# for files that ALSO have local batch edits (whole-file wt-sync would clobber).
+# The worktree shares main's object store, so the HEAD base blob is available and
+# git 3-way merges the agent's hunks with the batch's, marking only true overlaps.
+# Usage: make wt-apply SRC=<worktree-root> FILES='path1 path2'
+wt-apply:
+	@[ -n "$(SRC)" ] || { echo "Usage: make wt-apply SRC=<worktree-root> FILES='...'"; exit 1; }
+	@[ -n "$(FILES)" ] || { echo "Usage: make wt-apply SRC=<worktree-root> FILES='...'"; exit 1; }
+	@cd "$(SRC)" && git diff HEAD -- $(FILES) > /tmp/gludd-wt-apply.patch
+	@if [ ! -s /tmp/gludd-wt-apply.patch ]; then echo "wt-apply: empty diff for $(FILES) (untracked? use wt-sync/hand-merge)"; exit 1; fi
+	@git -C /Users/shawnwilson/gludd apply --3way --verbose /tmp/gludd-wt-apply.patch \
+		&& echo "wt-apply OK (3-way): $(FILES)" \
+		|| { echo "wt-apply CONFLICT/FAIL — patch at /tmp/gludd-wt-apply.patch; resolve by hand"; exit 1; }
+
+# Bulk force-remove integrated worktrees (reclaims source + ~320MB venv each).
+# Only call with worktrees whose work is already synced/applied into main.
+# Usage: make wt-remove-many SRCS='wt1 wt2 ...'
+wt-remove-many:
+	@[ -n "$(SRCS)" ] || { echo "Usage: make wt-remove-many SRCS='wt1 wt2 ...'"; exit 1; }
+	@for wt in $(SRCS); do git worktree remove --force "$$wt" 2>/dev/null && echo "  removed: $$wt" || echo "  skip/fail: $$wt"; done
+	@echo "wt-remove-many done"
+
+# Drain the WHOLE integrate+reclaim lane (#62) in one command: for every agent
+# worktree, wt-sync its uncommitted changes into main (clobber-guarded) then
+# reclaim it. Skip any worktree whose id contains a KEEP token (still-running
+# agents) so live work is never destroyed. This is the standing loop that keeps
+# the orchestrator from falling behind completed subagents.
+# Usage: make wt-reap KEEP='a86c88e5 ae182e55'   (KEEP optional)
+wt-reap:
+	@keep="$(KEEP)"; reaped=0; kept=0; \
+	for wt in /Users/shawnwilson/gludd/.claude/worktrees/agent-*; do \
+		[ -d "$$wt" ] || continue; \
+		id=$$(basename "$$wt"); skip=0; \
+		for k in $$keep; do case "$$id" in *$$k*) skip=1;; esac; done; \
+		if [ "$$skip" = 1 ]; then echo "  KEEP (running): $$id"; kept=$$((kept+1)); continue; fi; \
+		echo "=== reap $$id ==="; \
+		$(MAKE) --no-print-directory wt-sync SRC="$$wt"; \
+		git worktree remove --force "$$wt" 2>/dev/null && { echo "  reclaimed $$id"; reaped=$$((reaped+1)); } || echo "  (reclaim skip $$id)"; \
+	done; \
+	echo "wt-reap done: reaped $$reaped, kept $$kept running; run 'make test-count' when the tree is quiet"
 
 # Read-only: list a worktree's uncommitted changed files (for planning a sync).
 wt-changed:

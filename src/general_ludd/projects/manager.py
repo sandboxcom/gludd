@@ -172,8 +172,6 @@ def materialize_project_workspace(
     repo_url: str,
     workspace_path: str,
     base_dir: str = "/tmp/gludd-workspaces",
-    *,
-    allow_local: bool = False,
 ) -> str | None:
     """Clone ``repo_url`` into the project's workspace ``repo`` directory.
 
@@ -181,67 +179,45 @@ def materialize_project_workspace(
     repo_url is actually checked out. This uses the real ``GitAutomation.clone``
     (idempotent) — no ad-hoc shelling out.
 
-    SECURITY (#56): the ``repo_url`` and ``workspace_path`` are CALLER-SUPPLIED
-    (POST /admin/projects) and were previously passed straight to ``git clone``
-    and the filesystem. That allowed:
-
-      * RCE/SSRF via the clone URL — ``ext::``/``git::`` transport helpers exec
-        an external program, ``file://`` reads local files, ssh URLs can smuggle
-        ``-oProxyCommand=...``, and http(s)/git URLs to loopback / RFC-1918 /
-        cloud-metadata hosts let the daemon be used as an SSRF proxy.
-      * Path traversal via ``workspace_path`` — a ``../`` value escaped the
-        intended workspace root and could plant a checkout anywhere on disk.
-
-    Both inputs are now validated up front and a violation raises ``ValueError``
-    (the router turns that into HTTP 422). The clone URL is checked with
-    :func:`is_safe_clone_url` and the workspace path is confined under
-    ``base_dir`` with :func:`is_path_within`.
-
     Returns the path to the materialized repo checkout, or ``None`` when there is
-    no repo_url to clone. On clone failure (network/bad-remote) returns ``None``
-    and logs a warning (the project still exists; it simply has no checkout yet);
-    a SECURITY rejection, by contrast, RAISES so the request fails closed (422).
-
-    ``allow_local`` (keyword-only, default ``False``) relaxes the URL guard to
-    permit ``file://`` / local fixture repos. It exists ONLY for test fixtures
-    and trusted internal callers; the HTTP admin path must never set it.
+    no repo_url to clone. On clone failure returns ``None`` and logs a warning
+    (the project still exists; it simply has no checkout yet).
     """
     if not repo_url:
         return None
 
-    from general_ludd.git_automation.repo import GitAutomation
-    from general_ludd.projects.workspace import ProjectWorkspace
-    from general_ludd.security.auth import is_path_within, is_safe_clone_url
+    from general_ludd.git_automation.repo import GitAutomation, reject_unsafe_repo_url
+    from general_ludd.projects.workspace import ProjectWorkspace, confine_workspace_path
 
-    # --- Bug A (RCE/SSRF): validate the clone URL BEFORE it reaches git clone. ---
-    if not (allow_local or is_safe_clone_url(repo_url)):
-        raise ValueError(
-            f"refusing unsafe clone URL (transport-helper / file / ssh-injection "
-            f"/ internal-host): {repo_url!r}"
-        )
+    # SECURITY: this is reachable unauthenticated (POST /admin/projects and DB
+    # restore). Refuse a dangerous repo_url (ext:: RCE, file://, SSRF host) BEFORE
+    # any git.clone — fail closed by returning None so nothing is ever cloned.
+    try:
+        safe_url = reject_unsafe_repo_url(repo_url)
+    except ValueError as exc:
+        logger.warning("Refusing unsafe repo_url %r: %s", repo_url, exc)
+        return None
 
-    # --- Bug B (traversal): confine an explicit workspace_path under base_dir. ---
-    # An empty workspace_path is derived safely below (base_dir/<id>); only a
-    # caller-supplied path needs the jail. is_path_within rejects absolute paths
-    # and ``../`` escapes (realpath + commonpath).
-    if workspace_path and not is_path_within(base_dir, workspace_path):
-        raise ValueError(
-            f"refusing workspace_path that escapes the projects root "
-            f"{base_dir!r}: {workspace_path!r}"
-        )
-
-    # Derive the workspace; an explicit workspace_path wins, else base_dir/<derived>.
+    # SECURITY: confine an untrusted workspace_path to base_dir (reject absolute /
+    # '..' escape) BEFORE ensure_dirs(), so no directory is ever created outside
+    # base_dir. An empty workspace_path falls back to a fixed in-base name.
     ws_pid = workspace_path or "default"
+    try:
+        confined_root = confine_workspace_path(base_dir, workspace_path or "default")
+    except ValueError as exc:
+        logger.warning("Refusing unsafe workspace_path %r: %s", workspace_path, exc)
+        return None
+
     ws = ProjectWorkspace(
         project_id=ws_pid,
         base_dir=base_dir,
-        workspace_path=workspace_path or None,
+        workspace_path=confined_root,
     )
     ws.ensure_dirs()
     repo_dir = str(ws.repo_dir)
 
     git = GitAutomation()
-    result = git.clone(repo_url, repo_dir)
+    result = git.clone(safe_url, repo_dir)
     if not result.success:
         logger.warning(
             "Failed to materialize workspace for %s: %s", repo_url, result.message

@@ -1,0 +1,89 @@
+---
+# observe_security_signal — cross-source security signal correlation.
+#
+# Workflow
+#   1. query_sources for audit events + security logs + incidents in the window.
+#   2. Correlate by host (lateral-movement clustering); rank groups by volume.
+#   3. A host group at/above signal_min_group_size is a suspicious cluster.
+#   4. Write ranked clusters to an artifact.
+#
+# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+#   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
+#   op=correlate     -> normalize.correlate(records, by)
+#       returning ansible_facts.gludd_observe.groups = { host: [records...] }
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Security signal lifecycle
+  block:
+
+    - name: Gather + correlate security telemetry
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: "{{ capability_role }}"
+        kinds: "{{ observe_kinds }}"
+        spec: "{{ query_spec }}"
+        start: "{{ start | default(omit, true) }}"
+        end: "{{ end | default(omit, true) }}"
+        correlate_by: "{{ correlate_by }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: sec
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Rank correlated clusters by signal volume
+      ansible.builtin.set_fact:
+        # dict2items -> [{join_value, records}]; sort by group size descending.
+        signal_clusters: >-
+          {{ (sec.ansible_facts.gludd_observe.groups | default({}))
+             | dict2items(key_name='join_value', value_name='records')
+             | sort(attribute='records', reverse=True) }}
+      when: not ansible_check_mode
+
+    - name: Flag clusters at/above the signal threshold (suspicious)
+      ansible.builtin.set_fact:
+        # json_query length(records) keeps only big-enough clusters; project the
+        # join_value (host/actor) of each suspicious cluster.
+        suspicious_clusters: >-
+          {{ signal_clusters | default([])
+             | json_query('[?length(records) >= `' ~ (signal_min_group_size | int) ~ '`].join_value') }}
+      when: not ansible_check_mode
+
+    - name: Write security signal artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_security_signal',
+            'correlate_by': correlate_by,
+            'min_severity': min_severity,
+            'signal_min_group_size': signal_min_group_size,
+            'suspicious_clusters': suspicious_clusters | default([]),
+            'cluster_count': signal_clusters | default([]) | length,
+            'clusters': (signal_clusters | default([]))[:20],
+            'source_errors': sec.ansible_facts.gludd_observe.errors | default([])
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_security_signal.json"
+        mode: "0644"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_security_signal',
+            'status': 'failed'
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_security_signal.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "observe_security_signal failed — see {{ artifact_dir }}"

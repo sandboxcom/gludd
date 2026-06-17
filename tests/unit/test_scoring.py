@@ -367,6 +367,118 @@ class TestAdaptiveRouter:
         assert decision.reason == "cost_constrained"
 
     @pytest.mark.asyncio
+    async def test_route_cost_cap_fails_closed_when_no_model_fits(self):
+        # #69/#59: when the best model is over the cap AND no cheaper candidate
+        # fits under the cap, the router must FAIL CLOSED — fall back to the
+        # default model, never silently return the over-budget best.
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            side_effect=lambda task_type=None: [
+                {
+                    "prompt_profile_id": "pp-expensive",
+                    "model_profile_id": "gpt4",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_cost": 0.10,
+                    "composite_score": 0.9,
+                },
+            ]
+        )
+        router = AdaptiveRouter(benchmark_repo=repo, min_samples=3)
+        decision = await router.route(
+            task_type=TaskType.BUG_FIX,
+            default_model_profile="safe-default",
+            max_cost_usd=0.01,
+        )
+        # Must NOT select the over-budget model.
+        assert decision.selected_model_profile_id != "gpt4"
+        assert decision.selected_model_profile_id == "safe-default"
+        assert decision.fallback is True
+        assert decision.estimated_cost_usd <= 0.01
+        assert "cost" in decision.reason
+
+    @pytest.mark.asyncio
+    async def test_route_cost_cap_nan_treated_as_over_cap(self):
+        # A NaN avg_cost must be treated as OVER the cap (fail closed), not
+        # slip through because `nan > cap` is False.
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            side_effect=lambda task_type=None: [
+                {
+                    "prompt_profile_id": "pp-nan",
+                    "model_profile_id": "nan-cost-model",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_cost": float("nan"),
+                    "composite_score": 0.9,
+                },
+            ]
+        )
+        router = AdaptiveRouter(benchmark_repo=repo, min_samples=3)
+        decision = await router.route(
+            task_type=TaskType.BUG_FIX,
+            default_model_profile="safe-default",
+            max_cost_usd=0.05,
+        )
+        assert decision.selected_model_profile_id == "safe-default"
+        assert decision.fallback is True
+
+    @pytest.mark.asyncio
+    async def test_route_cost_cap_inf_treated_as_over_cap(self):
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            side_effect=lambda task_type=None: [
+                {
+                    "prompt_profile_id": "pp-inf",
+                    "model_profile_id": "inf-cost-model",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_cost": float("inf"),
+                    "composite_score": 0.9,
+                },
+            ]
+        )
+        router = AdaptiveRouter(benchmark_repo=repo, min_samples=3)
+        decision = await router.route(
+            task_type=TaskType.BUG_FIX,
+            default_model_profile="safe-default",
+            max_cost_usd=0.05,
+        )
+        assert decision.selected_model_profile_id == "safe-default"
+        assert decision.fallback is True
+
+    @pytest.mark.asyncio
+    async def test_route_cost_cap_falls_back_to_cheaper_when_one_fits(self):
+        # Sanity: when a cheaper candidate DOES fit, the existing
+        # cost_constrained path is preserved (no regression).
+        repo = AsyncMock()
+        repo.get_aggregate_scores = AsyncMock(
+            side_effect=lambda task_type=None: [
+                {
+                    "prompt_profile_id": "pp-expensive",
+                    "model_profile_id": "gpt4",
+                    "task_type": "bug_fix",
+                    "sample_count": 10,
+                    "avg_cost": 0.10,
+                    "composite_score": 0.9,
+                },
+                {
+                    "prompt_profile_id": "pp-cheap",
+                    "model_profile_id": "local",
+                    "task_type": "bug_fix",
+                    "sample_count": 5,
+                    "avg_cost": 0.001,
+                    "composite_score": 0.7,
+                },
+            ]
+        )
+        router = AdaptiveRouter(benchmark_repo=repo, min_samples=3)
+        decision = await router.route(task_type=TaskType.BUG_FIX, max_cost_usd=0.01)
+        assert decision.selected_prompt_profile_id == "pp-cheap"
+        assert decision.reason == "cost_constrained"
+        assert decision.fallback is False
+
+    @pytest.mark.asyncio
     async def test_leaderboard(self):
         repo = AsyncMock()
         repo.get_aggregate_scores = AsyncMock(

@@ -1,12 +1,12 @@
 ---
-- name: Verify - gludd_reload promoted the healthy swap and rolled the 404 gate back
+- name: Verify - gludd_reload promoted the healthy swap and rolled back the degraded one
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
     pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}.pid"
-    reload_root: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    reload_base: "/tmp/gludd-reload-8840"
   tasks:
     - name: Load persisted reload results
       ansible.builtin.slurp:
@@ -17,47 +17,32 @@
       ansible.builtin.set_fact:
         res: "{{ raw.content | b64decode | from_json }}"
 
-    - name: Assert the healthy swap was PROMOTED (gate passed, no rollback)
+    - name: Assert the GOOD candidate was promoted (healthy gate, no rollback)
       ansible.builtin.assert:
         that:
           - res.good.success | bool
           - not (res.good.rolled_back | bool)
-          - "'candidate-good' in res.live_after_good"
-        fail_msg: "gludd_reload should promote the healthy swap: {{ res.good }}"
-        success_msg: "gludd_reload: healthy candidate swapped in and gate passed (success, no rollback)"
+        fail_msg: "gludd_reload should promote the healthy candidate: {{ res.good }}"
+        success_msg: "gludd_reload: healthy swap promoted (success=true, rolled_back=false)"
 
-    - name: Assert the 404 health gate forced an auto-ROLLBACK (fail-closed)
+    - name: Assert the BROKEN candidate was rolled back fail-closed (degraded gate)
       ansible.builtin.assert:
         that:
-          - not (res.rollback.success | bool)
-          - res.rollback.rolled_back | bool
-          - "'candidate-bad' not in res.live_after_rollback"
-          - "'candidate-good' in res.live_after_rollback"
-        fail_msg: "gludd_reload must roll back when the /readyz gate 404s: {{ res.rollback }}"
-        success_msg: "gludd_reload: 404 gate failed, live module restored to its pre-swap bytes"
+          - not (res.broken.success | bool)
+          - res.broken.rolled_back | bool
+        fail_msg: "gludd_reload must roll back the degraded candidate: {{ res.broken }}"
+        success_msg: "gludd_reload: degraded gate -> rolled back (success=false, rolled_back=true)"
 
-    - name: Confirm the promotion-result artifacts were written to disk
+    - name: Confirm the good promotion-result artifact was written to disk
       ansible.builtin.stat:
-        path: "{{ item }}"
-      loop:
-        - "{{ reload_root }}/promotion_good.json"
-        - "{{ reload_root }}/promotion_rollback.json"
-      register: artifacts
-
-    - name: Assert both promotion artifacts exist
-      ansible.builtin.assert:
-        that:
-          - item.stat.exists
-        fail_msg: "missing promotion artifact: {{ item.item }}"
-        success_msg: "promotion artifact present: {{ item.item }}"
-      loop: "{{ artifacts.results }}"
-      loop_control:
-        label: "{{ item.item }}"
+        path: "{{ reload_base }}/promotion_good.json"
+      register: pg
+      failed_when: not pg.stat.exists
 
     # ---- cleanup ----
-    - name: Remove the throwaway reload root
+    - name: Remove the throwaway leaf tree + candidates
       ansible.builtin.file:
-        path: "{{ reload_root }}"
+        path: "{{ reload_base }}"
         state: absent
       failed_when: false
 

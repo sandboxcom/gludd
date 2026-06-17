@@ -2,9 +2,10 @@
 
 These tests assert the CURRENT real behavior of
 ``general_ludd.controllers.budget_manager.BudgetManager`` as-is (no source
-edits). Where the current behavior is a genuine bug (e.g. fail-OPEN on an
-unknown/NaN cost when it should fail-CLOSED), the test is marked ``xfail`` with
-a clear reason so the suite stays green while still documenting the defect.
+edits). The kill switch fails CLOSED on an uncomputable (NaN/unknown)
+estimated cost under a real cap: such a cost is rejected (and, for the daily
+check, trips the sticky ``_paused`` switch) rather than silently slipping
+through the always-False NaN comparison.
 
 Behavior map (read from source):
   * check_todo_budget(todo, est): strict ``>`` boundary; at-limit ALLOWED,
@@ -289,54 +290,63 @@ def test_check_daily_triggers_rollover(monkeypatch: pytest.MonkeyPatch) -> None:
 # --------------------------------------------------------------------------
 
 
-@pytest.mark.xfail(
-    reason=(
-        "FAIL-OPEN BUG: an unknown/NaN estimated cost passes the per-todo "
-        "kill switch. `current + NaN > limit` is always False, so "
-        "check_todo_budget ALLOWS the call. A budget kill switch should "
-        "fail CLOSED (block) on an uncomputable cost. Reported, not fixed "
-        "(source is out of scope for this test agent)."
-    ),
-    strict=True,
-)
 def test_todo_nan_cost_should_fail_closed() -> None:
+    """An uncomputable (NaN) per-todo cost fails CLOSED: the call is blocked.
+
+    `current + NaN > limit` is always False, which would silently fail the
+    kill switch OPEN. The source guards against this via `_is_uncomputable`
+    and rejects the call when a real (finite) per-todo cap is set.
+    """
     m = BudgetManager(per_todo_limit_usd=10.0)
     res = m.check_todo_budget("t1", math.nan)
-    # Desired (fail-closed) behavior: blocked. Currently it is allowed.
+    # Fail-closed behavior: blocked, with an explicit failed-closed reason.
     assert res["allowed"] is False
+    assert "failed closed" in res["reason"]
 
 
-@pytest.mark.xfail(
-    reason=(
-        "FAIL-OPEN BUG: an unknown/NaN estimated cost passes the DAILY "
-        "kill switch. `_daily_spend + NaN > _daily_limit` is always False, "
-        "so check_daily_budget ALLOWS the call and never trips _paused. "
-        "Should fail CLOSED. Reported, not fixed."
-    ),
-    strict=True,
-)
 def test_daily_nan_cost_should_fail_closed() -> None:
+    """An uncomputable (NaN) daily cost fails CLOSED and trips the kill switch.
+
+    `_daily_spend + NaN > _daily_limit` is always False, which would silently
+    fail the daily kill switch OPEN. The source instead detects the
+    uncomputable cost, blocks the call, and sets the sticky `_paused` switch.
+    """
     m = BudgetManager(daily_limit_usd=100.0)
     res = m.check_daily_budget(math.nan)
     assert res["allowed"] is False
+    assert "failed closed" in res["reason"]
     assert m.get_status()["paused"] is True
 
 
-def test_todo_nan_cost_current_behavior_is_fail_open() -> None:
-    """Document the CURRENT (buggy) fail-open behavior so it is pinned."""
+def test_todo_nan_cost_is_not_recorded_when_failing_closed() -> None:
+    """A rejected NaN per-todo cost must not leak into recorded spend.
+
+    Failing closed means the call is blocked AND no phantom spend is booked;
+    check_todo_budget is non-mutating, so daily_spend stays at zero.
+    """
     m = BudgetManager(per_todo_limit_usd=10.0)
     res = m.check_todo_budget("t1", math.nan)
-    # Current behavior: NaN comparison is False -> "allowed".
-    assert res["allowed"] is True
+    # Fail-closed: NaN is rejected, not silently allowed.
+    assert res["allowed"] is False
+    # And nothing is recorded by the (non-mutating) check.
+    assert m.get_status()["daily_spend"] == 0.0
 
 
-def test_daily_nan_cost_current_behavior_is_fail_open() -> None:
-    """Document the CURRENT (buggy) fail-open behavior so it is pinned."""
+def test_daily_nan_cost_is_rejected_and_pauses_stickily() -> None:
+    """A NaN daily cost fails closed: blocked, paused, and the pause is sticky.
+
+    Once the uncomputable cost trips the kill switch, even a subsequent $0
+    estimate is rejected as budget_exhausted until a reset path runs.
+    """
     m = BudgetManager(daily_limit_usd=100.0)
     res = m.check_daily_budget(math.nan)
-    assert res["allowed"] is True
-    # And the kill switch is NOT tripped.
-    assert m.get_status()["paused"] is False
+    assert res["allowed"] is False
+    # The kill switch IS tripped (fail-closed).
+    assert m.get_status()["paused"] is True
+    # And the pause is sticky: a clean $0 estimate is still rejected.
+    follow = m.check_daily_budget(0.0)
+    assert follow["allowed"] is False
+    assert follow["reason"] == "budget_exhausted"
 
 
 def test_infinite_cost_fails_closed_on_finite_limit() -> None:

@@ -15,12 +15,16 @@ class GitHubIssueIngestor:
         repo: str = "",
         label: str = "gludd",
         poll_interval_seconds: float = 300.0,
+        seen_ids: set[int | str] | None = None,
     ) -> None:
         self._owner = owner
         self._repo = repo
         self._label = label
         self._poll_interval = poll_interval_seconds
-        self._seen_ids: set[int] = set()
+        # Accept an externally-owned seen-id store so dedup can PERSIST across
+        # ingestor instances (the maintenance router builds a fresh ingestor
+        # per request). Default to a private set for standalone use.
+        self._seen_ids: set[int | str] = seen_ids if seen_ids is not None else set()
 
     def is_configured(self) -> bool:
         return bool(self._owner and self._repo)
@@ -31,7 +35,13 @@ class GitHubIssueIngestor:
         issues = await self._fetch_labeled_issues()
         new_todos: list[dict[str, Any]] = []
         for issue in issues:
-            issue_id = issue.get("id", 0)
+            # GitHub's /issues endpoint returns both issues and PRs; PRs carry a
+            # `pull_request` key and must never become work todos.
+            if "pull_request" in issue:
+                continue
+            # Use `id` for dedup when present; fall back to `number` so two
+            # distinct id-less issues don't collide on the same sentinel key.
+            issue_id = issue.get("id") or f"number:{issue.get('number', '')}"
             if issue_id in self._seen_ids:
                 continue
             self._seen_ids.add(issue_id)
@@ -65,11 +75,20 @@ class GitHubIssueIngestor:
 
     async def _fetch_labeled_issues(self) -> list[dict[str, Any]]:
         import json
+        from urllib.parse import quote, urlencode
         from urllib.request import Request, urlopen
 
+        # Escape request-supplied owner/repo/label. Unescaped interpolation let
+        # a value like label="a&state=closed" smuggle extra query params (and
+        # owner/repo with "/" or ".." traverse the path). quote(safe="") on the
+        # path segments and urlencode on the query close that injection.
+        owner = quote(self._owner, safe="")
+        repo = quote(self._repo, safe="")
+        query = urlencode(
+            {"labels": self._label, "state": "open", "per_page": 50}
+        )
         url = (
-            f"https://api.github.com/repos/{self._owner}/{self._repo}/issues"
-            f"?labels={self._label}&state=open&per_page=50"
+            f"https://api.github.com/repos/{owner}/{repo}/issues?{query}"
         )
         try:
             req = Request(url)

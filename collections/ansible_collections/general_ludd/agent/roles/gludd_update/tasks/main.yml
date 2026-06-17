@@ -1,0 +1,105 @@
+---
+# gludd_update role — turn an operator "update gludd: <text>" request into a
+# PRIORITIZED todo (via gludd_db todo_create).
+#
+# This is the Ansible counterpart of scripts/gludd_update.py: it derives the same
+# priority ladder (config/yaml → high, role → medium, code → low + needs-review)
+# and creates the todo through the daemon HTTP API (never raw SQLite).
+#
+# SAFE-BY-DEFAULT: report-only unless write_back=true.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ── Parse the request body (strip a leading "update gludd:" prefix) ──────────
+
+- name: Derive the request body from update_request
+  ansible.builtin.set_fact:
+    _gu_body: >-
+      {{
+        (update_request | regex_replace('^(?i)\s*update gludd:\s*', ''))
+        | regex_replace('\s+', ' ') | trim
+      }}
+
+- name: Fail when the request body is empty
+  ansible.builtin.assert:
+    that:
+      - _gu_body | length > 0
+    fail_msg: >-
+      update_request must contain text after the 'update gludd:' prefix
+      (got: {{ update_request | to_json }})
+
+- name: Build a concise todo title from the request body
+  ansible.builtin.set_fact:
+    _gu_title: "update gludd: {{ _gu_body | truncate(80, True, '...') }}"
+
+# ── Derive priority + needs_review from the classified target kind ───────────
+
+- name: Normalise the target kind
+  ansible.builtin.set_fact:
+    _gu_kind: "{{ (update_target_kind | default('') | lower) }}"
+
+- name: Derive priority from the target kind
+  ansible.builtin.set_fact:
+    _gu_priority: >-
+      {{ update_priority_map[_gu_kind]
+         | default(update_priority_default) }}
+    _gu_needs_review: "{{ _gu_kind in update_review_kinds }}"
+
+# ── Optionally create the prioritized todo via gludd_db ──────────────────────
+# The op is gludd_db's `todo_create`, gated by the #44 per-role capability
+# policy. db_capability_role must be a role the policy grants todo_create; the
+# logical capability label is capability_role (gludd_update).
+
+- name: Create prioritized todo in gludd_db (write_back=true only)
+  general_ludd.agent.gludd_db:
+    op: "todo_create"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    role: "{{ db_capability_role }}"
+    title: "{{ _gu_title }}"
+    description: >-
+      Operator self-update request (gludd_update).
+      Request: {{ _gu_body }}
+      Target kind: {{ _gu_kind }}.
+      {% if _gu_needs_review | bool %}NEEDS REVIEW: code self-modification.{% endif %}
+    work_type: "self_update"
+    queue: "core"
+    priority: "{{ _gu_priority }}"
+  register: _gu_todo_result
+  no_log: "{{ psk | length > 0 }}"
+  when:
+    - write_back | bool
+    - not ansible_check_mode
+
+# ── Write an audit artifact of the emitted todo spec ─────────────────────────
+
+- name: Write JSON todo-spec artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'gludd_update',
+        'status': 'completed',
+        'title': _gu_title,
+        'request_text': _gu_body,
+        'target_kind': _gu_kind,
+        'priority': _gu_priority,
+        'needs_review': _gu_needs_review | bool,
+        'work_type': 'self_update',
+        'capability_role': capability_role,
+        'capability_db_ops': capability_db_ops,
+        'write_back': write_back | bool
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/gludd_update.json"
+    mode: "0644"
+
+- name: Report update-request triage completion
+  ansible.builtin.debug:
+    msg: >-
+      gludd_update triaged: '{{ _gu_title }}'
+      kind={{ _gu_kind }} priority={{ _gu_priority }}
+      needs_review={{ _gu_needs_review | bool }}
+      write_back={{ write_back | bool }}

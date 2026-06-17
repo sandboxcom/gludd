@@ -7,10 +7,28 @@ When breached, sets todo to BLOCKED and healthz reports budget_exhausted.
 from __future__ import annotations
 
 import logging
+import math
 import time
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+
+def _is_uncomputable(cost: float) -> bool:
+    """True when an estimated cost cannot be reasoned about against a cap.
+
+    NaN (and any non-numeric value coerced to it) makes every ``>`` comparison
+    return False, which would silently fail the kill switch OPEN. We treat such
+    an uncomputable cost as a hard signal to fail CLOSED. ``+inf`` is finite
+    enough to compare normally (it exceeds any finite cap), so it is NOT flagged
+    here and flows through the ordinary comparison.
+    """
+    try:
+        return math.isnan(float(cost))
+    except (TypeError, ValueError):
+        # A value that will not even coerce to float is, by definition,
+        # uncomputable -> fail closed.
+        return True
 
 
 class BudgetManager:
@@ -50,6 +68,15 @@ class BudgetManager:
 
     def check_todo_budget(self, todo_id: str, estimated_cost: float) -> dict[str, Any]:
         current = self._todo_spend.get(todo_id, 0.0)
+        if self._per_todo_limit != float("inf") and _is_uncomputable(estimated_cost):
+            # Fail CLOSED: an uncomputable cost under a real cap must block.
+            return {
+                "allowed": False,
+                "reason": (
+                    "Per-todo budget check failed closed: "
+                    "uncomputable (NaN/unknown) estimated cost"
+                ),
+            }
         if current + estimated_cost > self._per_todo_limit:
             return {
                 "allowed": False,
@@ -65,6 +92,17 @@ class BudgetManager:
         if self._paused:
             return {"allowed": False, "reason": "budget_exhausted"}
         self._reset_daily_if_needed()
+        if self._daily_limit != float("inf") and _is_uncomputable(estimated_cost):
+            # Fail CLOSED: an uncomputable cost under a real cap trips the
+            # sticky kill switch rather than silently allowing the call.
+            self._paused = True
+            return {
+                "allowed": False,
+                "reason": (
+                    "Daily budget check failed closed: "
+                    "uncomputable (NaN/unknown) estimated cost"
+                ),
+            }
         if self._daily_spend + estimated_cost > self._daily_limit:
             self._paused = True
             return {

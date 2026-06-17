@@ -14,6 +14,7 @@ These tests prove four bypasses are closed:
 
 from __future__ import annotations
 
+import math
 import threading
 
 import pytest
@@ -79,6 +80,33 @@ class TestUnknownCostFailsClosed:
     def test_cap_configured_reflects_positive_limit(self) -> None:
         sl, _ = _make_limiter(0.01, 3600.0)
         assert sl.cap_configured is True
+
+
+class TestNaNInfCostFailsClosed:
+    """#71 — a NaN/inf projected cost must FAIL CLOSED, not fail open.
+
+    NaN compares False against every limit (``nan > limit`` is False), so a
+    naive ``spent + projected > limit`` check waves an unbounded/garbage cost
+    straight through (unlimited spend). The limiter must treat any non-finite
+    cost as over-limit and refuse it.
+    """
+
+    @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+    def test_would_exceed_true_for_non_finite_cost(self, bad: float) -> None:
+        sl, clock = _make_limiter(10.0, 3600.0)
+        clock[0] = 1.0
+        # Even with the window empty, a non-finite projected cost must be
+        # treated as exceeding the cap (cannot prove it fits).
+        assert sl.would_exceed(bad) is True
+
+    @pytest.mark.parametrize("bad", [math.nan, math.inf, -math.inf])
+    def test_try_charge_refuses_non_finite_cost(self, bad: float) -> None:
+        sl, clock = _make_limiter(10.0, 3600.0)
+        clock[0] = 1.0
+        # A NaN/inf cost is BLOCKED (fail closed) and nothing is recorded —
+        # otherwise the rolling window would be poisoned with a non-finite sum.
+        assert sl.try_charge(bad, kind="token") is False
+        assert sl.window_spend() == pytest.approx(0.0)
 
 
 class TestConcurrentChargesRespectCap:

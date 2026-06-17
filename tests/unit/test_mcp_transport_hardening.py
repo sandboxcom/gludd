@@ -25,7 +25,7 @@ from general_ludd.mcp.transport import MCPStdioClient, MCPTransportError
 def _make_config(**overrides: object) -> MCPServerConfig:
     defaults: dict = {
         "server_id": "harden-server",
-        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+        "command": ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.26"],
         "args": ["/tmp"],
         "env": {},
     }
@@ -69,7 +69,7 @@ class TestNoShellInterpretation:
         mock_shell.assert_not_called()
         # argv is passed as separate positional args (a list), never a string.
         pos_args, _ = mock_exec.call_args
-        assert list(pos_args) == ["npx", "-y", "@modelcontextprotocol/server-filesystem", "/tmp"]
+        assert list(pos_args) == ["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.26", "/tmp"]
 
 
 class TestEmptyArgv:
@@ -107,7 +107,7 @@ class TestExecutableAllowlist:
     async def test_allowed_runtimes_pass(self):
         # Each runtime invoked in its canonical, legitimate form.
         invocations = {
-            "npx": ["npx", "-y", "@scope/server"],
+            "npx": ["npx", "-y", "@scope/server@1.0.0"],
             "uvx": ["uvx", "mcp-server-git"],
             "python": ["python", "-m", "srv"],
             "python3": ["python3", "-m", "srv"],
@@ -161,7 +161,7 @@ class TestPackageSpecInjection:
     async def test_npx_dash_y_then_package_ok(self):
         # `npx -y <pkg>` is the canonical legitimate form and must pass.
         config = _make_config(
-            command=["npx", "-y", "@modelcontextprotocol/server-filesystem"],
+            command=["npx", "-y", "@modelcontextprotocol/server-filesystem@2026.1.26"],
             args=["/tmp"],
         )
         proc = _ok_proc()

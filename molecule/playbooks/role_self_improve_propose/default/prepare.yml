@@ -1,9 +1,11 @@
 ---
-# Role scenario prepare: start the mock daemon AND build a throwaway git repo so the
-# role's REAL gludd_worktree call (general_ludd.git_automation) creates a genuine git
-# worktree against a disposable local repo. Only the daemon is mocked: gludd_introspect
-# reads the mock's /api/facts codebase block and gludd_agent_run hits /admin/models/call.
-- name: Prepare - mock daemon + throwaway git repo for self_improve_propose
+# self_improve_propose prepare:
+#   1. Start the reusable mock daemon (serves /api/facts codebase block for
+#      gludd_introspect and /admin/models/call for gludd_agent_run).
+#   2. Seed a throwaway git repo with an initial commit so gludd_worktree can
+#      create a REAL isolated candidate worktree off it. The role was reverted in
+#      CI precisely because it had no real seeded repo/worktree — this provides it.
+- name: Prepare - mock daemon + seeded throwaway git repo for self_improve_propose
   hosts: localhost
   connection: local
   gather_facts: false
@@ -11,7 +13,7 @@
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
     pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}.pid"
-    repo_path: "/tmp/gludd-mock-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    repo_path: "/tmp/gludd-self-improve-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
     worktree_base: "/tmp/gludd-self-improve-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
   tasks:
     - name: Launch mock daemon (background, nohup)
@@ -33,7 +35,7 @@
       retries: 20
       delay: 0.5
 
-    - name: Remove any stale throwaway repo + worktree base
+    - name: Remove any stale throwaway repo + candidate worktree
       ansible.builtin.file:
         path: "{{ item }}"
         state: absent
@@ -45,13 +47,14 @@
       ansible.builtin.shell:
         cmd: |
           set -e
-          mkdir -p "{{ repo_path }}"
+          mkdir -p "{{ repo_path }}/src/general_ludd/util"
           cd "{{ repo_path }}"
           git init -q
           git config user.email "mock@molecule.local"
           git config user.name "Molecule Mock"
           git config commit.gpgsign false
           echo "seed" > README.md
-          git add README.md
+          echo "def helpers():\n    return 1" > src/general_ludd/util/helpers.py
+          git add -A
           git commit -q -m "seed commit"
       changed_when: true

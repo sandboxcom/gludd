@@ -12,7 +12,9 @@ from __future__ import annotations
 from typing import Any
 
 try:
-    from jinja2 import Environment, StrictUndefined, UndefinedError
+    from jinja2 import StrictUndefined, UndefinedError
+    from jinja2.exceptions import SecurityError
+    from jinja2.sandbox import SandboxedEnvironment
 
     _HAS_JINJA2 = True
 except ImportError:  # pragma: no cover
@@ -20,7 +22,8 @@ except ImportError:  # pragma: no cover
 
 
 class SkillRenderError(ValueError):
-    """Raised when a skill template references an undefined variable."""
+    """Raised when a skill template references an undefined variable or
+    attempts a sandbox-forbidden (SSTI/RCE) operation."""
 
 
 def render_skill(body: str, variables: dict[str, Any] | None = None) -> str:
@@ -41,7 +44,10 @@ def render_skill(body: str, variables: dict[str, Any] | None = None) -> str:
     Raises
     ------
     SkillRenderError
-        If a variable referenced in the template is not in ``variables``.
+        If a variable referenced in the template is not in ``variables``, or
+        the template attempts a sandbox-forbidden operation (SSTI/RCE attempt
+        such as ``{{ ''.__class__.__mro__ }}`` or
+        ``{{ cycler.__init__.__globals__ }}``).
     ImportError
         If ``jinja2`` is not available.
     """
@@ -53,9 +59,19 @@ def render_skill(body: str, variables: dict[str, Any] | None = None) -> str:
 
     vars_dict = dict(variables or {})
 
-    env = Environment(undefined=StrictUndefined, autoescape=False)
+    # SandboxedEnvironment (not the bare Environment) because skill bodies can be
+    # untrusted/remote (fetched via execution/engine.py + the remote fetcher).
+    # A bare Environment lets a malicious template reach Python internals
+    # (``{{ ''.__class__.__mro__[1].__subclasses__() }}``,
+    # ``{{ cycler.__init__.__globals__['os'].popen(...) }}``) => SSTI -> RCE.
+    # The sandbox raises SecurityError on those unsafe attribute/global accesses.
+    env = SandboxedEnvironment(undefined=StrictUndefined, autoescape=False)
     try:
         template = env.from_string(body)
         return template.render(**vars_dict)
+    except SecurityError as exc:
+        raise SkillRenderError(
+            f"Skill template attempted a sandbox-forbidden operation: {exc}"
+        ) from exc
     except UndefinedError as exc:
         raise SkillRenderError(f"Skill template references undefined variable: {exc}") from exc

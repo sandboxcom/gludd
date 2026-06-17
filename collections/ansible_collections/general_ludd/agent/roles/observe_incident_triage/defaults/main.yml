@@ -1,0 +1,38 @@
+---
+# observe_incident_triage role defaults
+#
+# Triage a live incident by pulling the logs/traces/metrics/events around the
+# incident seed and correlating them on a shared trace_id.
+
+# The incident seed: a normalized incident record (or the subset the facade
+# needs: ts + labels carrying a trace_id/service). Required.
+#   { "ts": <epoch>, "labels": {"trace_id": "...", "service": "..."} }
+incident_seed: {}
+
+# KINDs to pull around the incident. Incident-adjacent telemetry.
+observe_kinds:
+  - logs
+  - traces
+  - metrics
+  - events
+
+# Canonical join key to correlate on (see connectors.normalize join keys:
+# trace_id / host / service / severity).
+correlate_by: "trace_id"
+
+# Half-window (seconds) of telemetry to gather on each side of the incident ts.
+window_s: 300
+
+# Free-form query spec forwarded to every source's query() (backend-specific).
+query_spec: {}
+
+# Where to write the triage artifact.
+artifact_dir: "/tmp/gludd-observe-incident-triage"
+
+# Daemon connectivity (the gludd_observe module talks to the configured
+# connector registry via the daemon).
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Capability identity (least-privilege; default-DENY policy in capability_policy).
+capability_role: "observe_incident_triage"

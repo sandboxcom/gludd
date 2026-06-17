@@ -1,0 +1,37 @@
+---
+# observe_error_spike_rca role defaults
+#
+# Root-cause an error spike: gather error/critical logs + traces + events in a
+# window, correlate them by trace_id, and surface the largest error group as the
+# likely root cause.
+
+# Optional service scope (canonical 'service' join key). Empty => fleet-wide.
+service: ""
+
+# KINDs that carry error signal.
+observe_kinds:
+  - logs
+  - traces
+  - events
+
+# Correlate the spike on this join key.
+correlate_by: "trace_id"
+
+# Time window (epoch seconds).
+start: ~
+end: ~
+
+# Minimum canonical severity to count toward the spike (debug<info<warn<error<critical).
+min_severity: "error"
+
+# Spike threshold: a correlated group with >= this many error records is a candidate.
+spike_min_group_size: 5
+
+query_spec: {}
+
+artifact_dir: "/tmp/gludd-observe-error-spike-rca"
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+capability_role: "observe_error_spike_rca"

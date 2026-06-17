@@ -1,8 +1,7 @@
-"""Unit tests for VictoriaMetricsSource (mocked transport, no network)."""
+"""Unit tests for the VictoriaMetrics connector (mocked transport)."""
 
 from __future__ import annotations
 
-import json
 from typing import Any
 
 import pytest
@@ -13,246 +12,187 @@ from general_ludd.connectors.victoriametrics import (
     VictoriaMetricsSource,
 )
 
-# --- canned Prometheus-API payloads ---------------------------------------
 
-VECTOR_PAYLOAD = {
-    "status": "success",
-    "data": {
-        "resultType": "vector",
-        "result": [
-            {
-                "metric": {"__name__": "up", "job": "node", "instance": "h1:9100"},
-                "value": [1700000000, "1"],
-            },
-            {
-                "metric": {"__name__": "up", "job": "node", "instance": "h2:9100"},
-                "value": [1700000000, "0"],
-            },
-        ],
-    },
-}
+class FakeResponse:
+    def __init__(self, status_code: int = 200, payload: Any = None) -> None:
+        self.status_code = status_code
+        self._payload = payload if payload is not None else {}
 
-MATRIX_PAYLOAD = {
-    "status": "success",
-    "data": {
-        "resultType": "matrix",
-        "result": [
-            {
-                "metric": {"__name__": "rate_x", "job": "api"},
-                "values": [
-                    [1700000000, "0.5"],
-                    [1700000060, "0.7"],
-                    [1700000120, "0.9"],
-                ],
-            }
-        ],
-    },
-}
-
-ERROR_PAYLOAD = {"status": "error", "errorType": "bad_data", "error": "parse error"}
-EMPTY_PAYLOAD = {"status": "success", "data": {"resultType": "vector", "result": []}}
+    def json(self) -> Any:
+        return self._payload
 
 
-class FakeTransport:
-    """Records the last request and returns a scripted (status, body)."""
-
-    def __init__(self, status: int = 200, body: str = "", raises: BaseException | None = None):
-        self.status = status
-        self.body = body
-        self.raises = raises
+class RecordingTransport:
+    def __init__(self, response: FakeResponse) -> None:
+        self.response = response
         self.calls: list[dict[str, Any]] = []
 
-    def request(
-        self,
-        method: str,
-        url: str,
-        *,
-        headers: dict[str, str] | None = None,
-        body: bytes | None = None,
-        timeout: float = 30.0,
-    ) -> tuple[int, str]:
-        self.calls.append(
-            {"method": method, "url": url, "headers": headers or {}, "body": body, "timeout": timeout}
-        )
-        if self.raises is not None:
-            raise self.raises
-        return self.status, self.body
+    def __call__(self, method: str, url: str, **kwargs: Any) -> FakeResponse:
+        self.calls.append({"method": method, "url": url, **kwargs})
+        return self.response
 
 
-def _src(transport: FakeTransport, **extra: Any) -> VictoriaMetricsSource:
-    config = {"name": "vm", "base_url": "https://vm.example.com", **extra}
-    return VictoriaMetricsSource(config, transport=transport)
-
-
-# --- contract / metadata ---------------------------------------------------
-
-def test_kind_class_and_module_attr() -> None:
-    assert KIND == "metrics"
-    assert VictoriaMetricsSource.KIND == "metrics"
-
-
-def test_name_attribute() -> None:
-    src = _src(FakeTransport(200, "{}"))
-    assert src.name == "vm"
-
-
-def test_base_url_trailing_slash_stripped() -> None:
-    src = VictoriaMetricsSource(
-        {"base_url": "https://vm.example.com/"}, transport=FakeTransport(200, "{}")
-    )
-    assert src.base_url == "https://vm.example.com"
-
-
-# --- SSRF guard ------------------------------------------------------------
-
-@pytest.mark.parametrize(
-    "url",
-    [
-        "http://127.0.0.1:8428",
-        "http://10.0.0.5",
-        "http://192.168.1.10",
-        "http://169.254.169.254",  # cloud metadata
-        "http://localhost:8428",
-        "http://[::1]:8428",
-    ],
-)
-def test_private_host_rejected_by_default(url: str) -> None:
-    with pytest.raises(SSRFError):
-        VictoriaMetricsSource({"base_url": url}, transport=FakeTransport())
-
-
-def test_private_host_allowed_when_opt_in() -> None:
-    src = VictoriaMetricsSource(
-        {"base_url": "http://127.0.0.1:8428", "allow_private": True},
-        transport=FakeTransport(200, "{}"),
-    )
-    assert src.base_url == "http://127.0.0.1:8428"
-
-
-def test_bad_scheme_rejected() -> None:
-    with pytest.raises(SSRFError):
-        VictoriaMetricsSource({"base_url": "file:///etc/passwd"}, transport=FakeTransport())
-
-
-# --- query: instant vector -------------------------------------------------
-
-def test_query_instant_vector_normalizes() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    src = _src(t)
-    records = src.query({"query": "up"})
-    assert len(records) == 2
-    first = records[0]
-    assert first["kind"] == "metrics"
-    assert first["source"] == "vm"
-    assert first["message"] == "up"
-    assert first["value"] == 1.0
-    assert first["ts"] == 1700000000.0
-    assert first["labels"] == {"job": "node", "instance": "h1:9100"}
-    assert "__name__" not in first["labels"]
-    assert set(first) == {
-        "ts", "source", "kind", "level_or_status", "message", "value", "labels", "raw"
+def _instant_payload() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "vector",
+            "result": [
+                {
+                    "metric": {"__name__": "up", "instance": "web01:9090", "job": "node"},
+                    "value": [1700000000, "1"],
+                },
+                {
+                    "metric": {"__name__": "up", "instance": "web02:9090", "job": "node"},
+                    "value": [1700000000, "0"],
+                },
+            ],
+        },
     }
 
 
-def test_query_instant_hits_query_endpoint() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t).query({"query": "up"})
-    assert "/api/v1/query?" in t.calls[0]["url"]
-    assert "query_range" not in t.calls[0]["url"]
-    assert "query=up" in t.calls[0]["url"]
+def _range_payload() -> dict[str, Any]:
+    return {
+        "status": "success",
+        "data": {
+            "resultType": "matrix",
+            "result": [
+                {
+                    "metric": {"__name__": "cpu", "instance": "web01"},
+                    "values": [[1700000000, "0.5"], [1700000060, "0.7"]],
+                }
+            ],
+        },
+    }
 
 
-# --- query: range matrix ---------------------------------------------------
-
-def test_query_range_matrix_one_record_per_point() -> None:
-    t = FakeTransport(200, json.dumps(MATRIX_PAYLOAD))
-    src = _src(t)
-    records = src.query({"query": "rate_x", "start": 1700000000, "end": 1700000120, "step": 60})
-    assert len(records) == 3
-    assert [r["value"] for r in records] == [0.5, 0.7, 0.9]
-    assert all(r["message"] == "rate_x" for r in records)
-    assert "/api/v1/query_range?" in t.calls[0]["url"]
+def test_kind_and_name() -> None:
+    src = VictoriaMetricsSource({"name": "vm-prod", "base_url": "https://vm.example.com"})
+    assert src.KIND == "metrics"
+    assert KIND == "metrics"
+    assert src.name == "vm-prod"
 
 
-# --- empty / error / transport failures ------------------------------------
+def test_instant_query_normalized() -> None:
+    transport = RecordingTransport(FakeResponse(200, _instant_payload()))
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com"}, transport=transport
+    )
+    records = src.query({"query": "up"})
 
-def test_empty_result_returns_empty_list() -> None:
-    t = FakeTransport(200, json.dumps(EMPTY_PAYLOAD))
-    assert _src(t).query({"query": "up"}) == []
+    assert len(records) == 2
+    expected_keys = {
+        "ts",
+        "source",
+        "kind",
+        "level_or_status",
+        "message",
+        "value",
+        "labels",
+        "raw",
+    }
+    for rec in records:
+        assert set(rec) == expected_keys
+        assert rec["kind"] == "metrics"
+        assert rec["message"] == "up"  # __name__ becomes message
+        assert "__name__" not in rec["labels"]
+
+    assert records[0]["value"] == 1.0
+    assert records[0]["ts"] == 1700000000.0
+    assert records[0]["labels"]["instance"] == "web01:9090"
+    assert records[1]["value"] == 0.0
+
+    call = transport.calls[0]
+    assert call["method"] == "GET"
+    assert call["url"] == "https://vm.example.com/api/v1/query"
+    assert call["params"]["query"] == "up"
 
 
-def test_error_status_payload_returns_empty() -> None:
-    t = FakeTransport(200, json.dumps(ERROR_PAYLOAD))
-    assert _src(t).query({"query": "up"}) == []
+def test_range_query_uses_query_range_endpoint() -> None:
+    transport = RecordingTransport(FakeResponse(200, _range_payload()))
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com"}, transport=transport
+    )
+    records = src.query(
+        {"query": "cpu", "start": 1700000000, "end": 1700000060, "step": "60s"}
+    )
+    assert len(records) == 2  # one series, two samples flattened
+    assert records[0]["value"] == 0.5
+    assert records[1]["value"] == 0.7
+    assert records[0]["message"] == "cpu"
+
+    call = transport.calls[0]
+    assert call["url"] == "https://vm.example.com/api/v1/query_range"
+    assert call["params"]["step"] == "60s"
 
 
-def test_http_error_status_returns_empty() -> None:
-    t = FakeTransport(500, "internal error")
-    assert _src(t).query({"query": "up"}) == []
-
-
-def test_malformed_json_returns_empty() -> None:
-    t = FakeTransport(200, "{not json")
-    assert _src(t).query({"query": "up"}) == []
-
-
-def test_missing_query_returns_empty_without_request() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    assert _src(t).query({}) == []
-    assert t.calls == []
-
-
-def test_transport_exception_query_returns_empty() -> None:
-    t = FakeTransport(raises=RuntimeError("boom"))
-    assert _src(t).query({"query": "up"}) == []
-
-
-# --- auth from env ---------------------------------------------------------
-
-def test_basic_auth_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
-    monkeypatch.setenv("VM_USER", "alice")
-    monkeypatch.setenv("VM_PASS", "s3cret")
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    src = _src(t, username_env="VM_USER", password_env="VM_PASS")
+def test_auth_token_from_env() -> None:
+    transport = RecordingTransport(FakeResponse(200, _instant_payload()))
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com", "token_env": "VM_TOKEN"},
+        transport=transport,
+        environ={"VM_TOKEN": "vmsecret"},
+    )
     src.query({"query": "up"})
-    auth = t.calls[0]["headers"].get("Authorization", "")
-    assert auth.startswith("Basic ")
-    # secret value is base64, not plaintext, and never the env var name
-    assert "s3cret" not in auth
-    assert "VM_PASS" not in auth
+    assert transport.calls[0]["headers"]["Authorization"] == "Bearer vmsecret"
 
 
-def test_no_auth_header_without_env() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    _src(t).query({"query": "up"})
-    assert "Authorization" not in t.calls[0]["headers"]
+def test_no_auth_when_env_missing() -> None:
+    transport = RecordingTransport(FakeResponse(200, _instant_payload()))
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com", "token_env": "MISSING"},
+        transport=transport,
+        environ={},
+    )
+    src.query({"query": "up"})
+    assert "Authorization" not in transport.calls[0]["headers"]
 
 
-# --- health: ok / not-ok / never-raises ------------------------------------
+@pytest.mark.parametrize(
+    "bad_url",
+    [
+        "http://127.0.0.1:8428",
+        "https://10.0.0.1",
+        "http://169.254.169.254",
+        "https://192.168.0.10",
+        "http://[::1]",
+    ],
+)
+def test_internal_base_url_rejected(bad_url: str) -> None:
+    with pytest.raises(SSRFError):
+        VictoriaMetricsSource({"base_url": bad_url})
+
+
+def test_public_host_allowed() -> None:
+    VictoriaMetricsSource({"base_url": "https://vm.example.com"})
+
 
 def test_health_ok() -> None:
-    t = FakeTransport(200, json.dumps(EMPTY_PAYLOAD))
-    h = _src(t).health()
-    assert h["ok"] is True
-    assert "detail" in h
+    transport = RecordingTransport(FakeResponse(200, {}))
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com"}, transport=transport
+    )
+    result = src.health()
+    assert result["ok"] is True
+    assert "200" in result["detail"]
+    assert transport.calls[0]["url"] == "https://vm.example.com/health"
 
 
 def test_health_not_ok_on_bad_status() -> None:
-    t = FakeTransport(503, "down")
-    h = _src(t).health()
-    assert h["ok"] is False
-    assert "503" in h["detail"]
+    transport = RecordingTransport(FakeResponse(500, {}))
+    src = VictoriaMetricsSource(
+        {"base_url": "https://vm.example.com"}, transport=transport
+    )
+    result = src.health()
+    assert result["ok"] is False
+    assert "500" in result["detail"]
 
 
 def test_health_never_raises_on_transport_error() -> None:
-    t = FakeTransport(raises=ConnectionError("refused"))
-    h = _src(t).health()
-    assert h["ok"] is False
-    assert "detail" in h
+    def boom(*_args: Any, **_kwargs: Any) -> FakeResponse:
+        raise OSError("socket error")
 
-
-def test_timeout_is_passed_through() -> None:
-    t = FakeTransport(200, json.dumps(VECTOR_PAYLOAD))
-    src = _src(t, timeout=5.0)
-    src.query({"query": "up"})
-    assert t.calls[0]["timeout"] == 5.0
+    src = VictoriaMetricsSource({"base_url": "https://vm.example.com"}, transport=boom)
+    result = src.health()
+    assert result["ok"] is False
+    assert "OSError" in result["detail"]

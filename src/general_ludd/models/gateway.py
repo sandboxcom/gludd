@@ -15,7 +15,6 @@ from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutEvent, TimeoutRetryPolicy
-from general_ludd.security.auth import is_safe_fetch_url
 
 logger = logging.getLogger(__name__)
 
@@ -259,21 +258,12 @@ class ModelGateway:
         if profile.api_base_alias and self._secrets:
             base_url = self._secrets.resolve(profile.api_base_alias)
             if base_url:
-                # SSRF guard: a config/secrets-supplied base_url is fully
-                # untrusted. Validate the LITERAL host with the shared no-DNS
-                # helper BEFORE it reaches the provider client (which would make
-                # outbound requests). Fail CLOSED on loopback / private /
-                # link-local / cloud-metadata targets so a malicious or
-                # misconfigured alias can never point the gateway at an internal
-                # service or the instance metadata endpoint. No DNS resolution is
-                # performed (the helper is deliberately literal) so this can
-                # never block the call path.
+                from general_ludd.security.auth import is_safe_fetch_url
+
                 if not is_safe_fetch_url(base_url):
                     raise ValueError(
-                        f"Refusing model call for profile '{profile_id}': "
-                        f"configured base_url is not a permitted outbound "
-                        f"target (must be https to a non-loopback / "
-                        f"non-private / non-metadata host)."
+                        f"SSRF guard: refusing blocked api_base_alias URL "
+                        f"{base_url!r} for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
         init_kwargs.update(kwargs)

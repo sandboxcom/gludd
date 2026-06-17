@@ -1,0 +1,319 @@
+"""The self-update apply ladder (issue #81).
+
+Given a :class:`~general_ludd.self_update.model.SelfUpdatePlan`, decide *whether*
+and *how* to land it, fail-closed at every rung. The ladder, in preference
+order:
+
+  (a) **config/var/template edit** — the preferred path. Hot-reloadable, no
+      Python touched, may auto-apply (no human approval) when nothing protected
+      is involved and validation passes.
+  (b) **scaffold a new role/connector/profile** from a template — new files
+      only, never an in-place edit of guard surface.
+  (c) **guarded real-code change** — always requires explicit approval AND a
+      green validate (lint/type) before landing.
+
+Every rung is gated by the SAME guards the live daemon uses:
+
+  * :func:`general_ludd.security.capability_lattice.is_protected_path` /
+    :func:`~...capability_lattice.check_self_modification` — a request that
+    targets a guardrail / policy / permission / security / settings file is
+    REFUSED outright (the critical guarantee), regardless of tier or approval,
+    unless an explicit ``approval_token`` is present (and even then a hard
+    deny-listed guard stem is still refused — see :func:`_is_hard_denied`).
+  * a validate gate (lint/type) that must pass before any code-tier change
+    lands.
+
+Every decision — applied, deferred-for-approval, or refused — writes an audit
+record so a self-improvement loop can never mutate the system invisibly.
+"""
+
+from __future__ import annotations
+
+import time
+from collections.abc import Callable
+from dataclasses import dataclass, field
+from typing import Any
+
+from general_ludd.security.capability_lattice import (
+    CapabilityError,
+    ProtectedPathError,
+    check_self_modification,
+    is_protected_path,
+)
+from general_ludd.self_update.model import ApplyTier, ChangeKind, SelfUpdatePlan, SelfUpdateRequest
+
+#: Path substrings that are NEVER auto-applicable even WITH an approval token —
+#: the harness control surface. Mutating these would let a self-update disable
+#: the guards that constrain it, so they are hard-denied at this layer too
+#: (defence in depth on top of the capability lattice).
+_HARD_DENY_SUBSTRINGS: tuple[str, ...] = (
+    "/.opencode/",
+    "/.claude/",
+    "settings.json",
+    "settings.local.json",
+)
+
+
+class ApplyOutcome:
+    """Terminal outcomes of an apply attempt."""
+
+    APPLIED = "applied"
+    AWAITING_APPROVAL = "awaiting_approval"
+    REFUSED = "refused"
+    VALIDATION_FAILED = "validation_failed"
+
+
+@dataclass(frozen=True)
+class AuditRecord:
+    """The immutable record written for every apply decision.
+
+    Attributes:
+        outcome: One of :class:`ApplyOutcome`.
+        subsystem: The plan's target subsystem (string value).
+        change_kind: The plan's change kind (string value).
+        apply_tier: The *effective* tier after guard evaluation (may be
+            ``refused`` even if the plan proposed config/code).
+        target_files: The files the decision concerned.
+        requested_by: Who filed the originating request.
+        reason: Human-readable explanation (why applied / deferred / refused).
+        approved: Whether an approval token was honoured for this decision.
+        timestamp: Unix epoch seconds the decision was made.
+    """
+
+    outcome: str
+    subsystem: str
+    change_kind: str
+    apply_tier: str
+    target_files: tuple[str, ...]
+    requested_by: str
+    reason: str
+    approved: bool = False
+    timestamp: float = field(default_factory=lambda: time.time())
+
+    def as_dict(self) -> dict[str, Any]:
+        """JSON-friendly mapping (for AuditEventRepository.details)."""
+        return {
+            "outcome": self.outcome,
+            "subsystem": self.subsystem,
+            "change_kind": self.change_kind,
+            "apply_tier": self.apply_tier,
+            "target_files": list(self.target_files),
+            "requested_by": self.requested_by,
+            "reason": self.reason,
+            "approved": self.approved,
+            "timestamp": self.timestamp,
+        }
+
+
+@dataclass(frozen=True)
+class ApplyResult:
+    """The result of :func:`apply_plan`: the outcome + its audit record."""
+
+    outcome: str
+    audit: AuditRecord
+    landed_files: tuple[str, ...] = field(default_factory=tuple)
+
+    @property
+    def applied(self) -> bool:
+        return self.outcome == ApplyOutcome.APPLIED
+
+
+def _is_hard_denied(path: str) -> bool:
+    norm = (path or "").replace("\\", "/").lower()
+    return any(sub in norm for sub in _HARD_DENY_SUBSTRINGS)
+
+
+def _any_protected(target_files: tuple[str, ...], role: str | None) -> str | None:
+    """Return the first target path that the guards refuse, else ``None``.
+
+    Consults BOTH :func:`is_protected_path` (the guard deny-list) and
+    :func:`check_self_modification` (which additionally raises for a
+    collections/ self-modify the role may not perform). Fail-closed: any guard
+    objection short-circuits to that path.
+    """
+    for path in target_files:
+        if is_protected_path(path) or _is_hard_denied(path):
+            return path
+        try:
+            check_self_modification(path, role)
+        except (ProtectedPathError, CapabilityError):
+            return path
+    return None
+
+
+#: A validate callable returns (ok, detail). Default is a no-op that PASSES only
+#: when explicitly provided — see apply_plan's contract for code-tier.
+ValidateFn = Callable[[SelfUpdatePlan], tuple[bool, str]]
+AuditSink = Callable[[AuditRecord], None]
+
+
+def apply_plan(
+    plan: SelfUpdatePlan,
+    request: SelfUpdateRequest,
+    *,
+    role: str | None = None,
+    validate: ValidateFn | None = None,
+    audit_sink: AuditSink | None = None,
+    auto_apply_config: bool = True,
+) -> ApplyResult:
+    """Run the apply ladder for ``plan`` and emit an audit record.
+
+    Decision order (fail-closed):
+
+    1. **Protected-path / guard refusal (the critical gate).** If ANY target
+       file is a protected guardrail/policy/permission/security/settings path
+       — or a collections/ self-modify the role may not perform — the request
+       is REFUSED. A hard-deny path (``.claude``/``.opencode``/settings) is
+       refused even with an approval token; any other protected path is refused
+       UNLESS an explicit ``approval_token`` is present on the request.
+    2. **Unknown / unroutable.** An UNKNOWN subsystem or change-kind, or a tier
+       with no concrete target files where files are required, is deferred for
+       approval (never auto-applied).
+    3. **Tier ladder.**
+         * CONFIG  -> auto-apply (when ``auto_apply_config`` and not protected),
+           after validation if a validator is supplied.
+         * SCAFFOLD -> auto-apply new files (validation if supplied).
+         * CODE    -> ALWAYS requires approval; with approval, must pass
+           ``validate`` (a missing validator fails closed -> VALIDATION_FAILED).
+
+    The ``role`` is threaded into the capability lattice so a role lacking
+    ``collections_self_modify`` cannot drive a collections write through here.
+    """
+    role = role or request.requested_by
+    has_approval = bool(request.approval_token)
+
+    def _emit(record: AuditRecord) -> ApplyResult:
+        if audit_sink is not None:
+            audit_sink(record)
+        landed = (
+            record.target_files
+            if record.outcome == ApplyOutcome.APPLIED
+            else ()
+        )
+        return ApplyResult(outcome=record.outcome, audit=record, landed_files=landed)
+
+    def _record(outcome: str, tier: ApplyTier, reason: str, approved: bool = False) -> AuditRecord:
+        return AuditRecord(
+            outcome=outcome,
+            subsystem=plan.subsystem.value,
+            change_kind=plan.change_kind.value,
+            apply_tier=tier.value,
+            target_files=plan.target_files,
+            requested_by=request.requested_by,
+            reason=reason,
+            approved=approved,
+        )
+
+    # --- 1. Protected-path / guard refusal (the critical gate) -------------
+    offending = _any_protected(plan.target_files, role)
+    if offending is not None:
+        if _is_hard_denied(offending) or not has_approval:
+            return _emit(
+                _record(
+                    ApplyOutcome.REFUSED,
+                    ApplyTier.REFUSED,
+                    f"refused: target {offending!r} is a protected "
+                    f"guardrail/policy/security/settings path "
+                    f"({'hard-deny' if _is_hard_denied(offending) else 'no approval token'})",
+                )
+            )
+        # A non-hard-deny protected path WITH an explicit approval token still
+        # routes through the code-tier approval gate below (never auto-applies).
+        plan = SelfUpdatePlan(
+            subsystem=plan.subsystem,
+            change_kind=ChangeKind.CODE_CHANGE,
+            target_files=plan.target_files,
+            apply_tier=ApplyTier.CODE,
+            requires_approval=True,
+            rationale=plan.rationale + " | escalated: approved protected-path edit",
+            confidence=plan.confidence,
+        )
+
+    # --- 2. Unknown / unroutable -> defer for approval ---------------------
+    if plan.subsystem.value == "unknown" or plan.change_kind is ChangeKind.UNKNOWN:
+        return _emit(
+            _record(
+                ApplyOutcome.AWAITING_APPROVAL,
+                plan.apply_tier,
+                "deferred: unroutable request (unknown subsystem/change-kind) "
+                "— requires operator approval + manual targeting",
+            )
+        )
+
+    # --- 3. Tier ladder ----------------------------------------------------
+    if plan.apply_tier in (ApplyTier.CONFIG, ApplyTier.SCAFFOLD):
+        if not plan.target_files:
+            return _emit(
+                _record(
+                    ApplyOutcome.AWAITING_APPROVAL,
+                    plan.apply_tier,
+                    "deferred: no concrete target file resolved — refusing to "
+                    "auto-apply without a target",
+                )
+            )
+        if validate is not None:
+            ok, detail = validate(plan)
+            if not ok:
+                return _emit(
+                    _record(
+                        ApplyOutcome.VALIDATION_FAILED,
+                        plan.apply_tier,
+                        f"validation failed before landing: {detail}",
+                    )
+                )
+        if not auto_apply_config:
+            return _emit(
+                _record(
+                    ApplyOutcome.AWAITING_APPROVAL,
+                    plan.apply_tier,
+                    "deferred: auto-apply disabled by caller",
+                )
+            )
+        return _emit(
+            _record(
+                ApplyOutcome.APPLIED,
+                plan.apply_tier,
+                f"auto-applied {plan.apply_tier.value}-tier change "
+                f"(hot-reloadable, no protected path involved)",
+                approved=has_approval,
+            )
+        )
+
+    # CODE tier: always requires approval.
+    if not has_approval:
+        return _emit(
+            _record(
+                ApplyOutcome.AWAITING_APPROVAL,
+                ApplyTier.CODE,
+                "deferred: code-tier change requires explicit operator approval",
+            )
+        )
+    # Approved code change: must pass validate; a missing validator fails closed.
+    if validate is None:
+        return _emit(
+            _record(
+                ApplyOutcome.VALIDATION_FAILED,
+                ApplyTier.CODE,
+                "refused: approved code change has no validate gate "
+                "(fail-closed — unverified code is never landed)",
+                approved=True,
+            )
+        )
+    ok, detail = validate(plan)
+    if not ok:
+        return _emit(
+            _record(
+                ApplyOutcome.VALIDATION_FAILED,
+                ApplyTier.CODE,
+                f"validation failed before landing: {detail}",
+                approved=True,
+            )
+        )
+    return _emit(
+        _record(
+            ApplyOutcome.APPLIED,
+            ApplyTier.CODE,
+            "applied approved + validated code-tier change",
+            approved=True,
+        )
+    )

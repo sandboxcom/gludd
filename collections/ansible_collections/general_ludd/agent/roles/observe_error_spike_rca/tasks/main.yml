@@ -1,0 +1,89 @@
+---
+# observe_error_spike_rca — root-cause an error spike across observability sources.
+#
+# Workflow
+#   1. Gather error-bearing logs/traces/events in the window via query_sources.
+#   2. Correlate them by trace_id into groups; rank groups by size.
+#   3. The largest group at/above spike_min_group_size is the candidate root cause.
+#   4. Write ranked candidates to an artifact.
+#
+# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+#   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
+#       returning ansible_facts.gludd_observe.records
+#   op=correlate     -> normalize.correlate(records, by)
+#       returning ansible_facts.gludd_observe.groups
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Error spike RCA lifecycle
+  block:
+
+    - name: Gather + correlate error-bearing telemetry
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: "{{ capability_role }}"
+        kinds: "{{ observe_kinds }}"
+        spec: "{{ query_spec }}"
+        start: "{{ start | default(omit, true) }}"
+        end: "{{ end | default(omit, true) }}"
+        correlate_by: "{{ correlate_by }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: spike
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Rank correlated groups by error volume
+      ansible.builtin.set_fact:
+        rca_candidates: >-
+          {{ (spike.ansible_facts.gludd_observe.groups | default({}))
+             | dict2items(key_name='trace_id', value_name='records')
+             | map('combine', {})
+             | list
+             | sort(attribute='records', reverse=True) }}
+      when: not ansible_check_mode
+
+    - name: Write RCA artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_error_spike_rca',
+            'service': service,
+            'min_severity': min_severity,
+            'spike_min_group_size': spike_min_group_size,
+            'candidate_count': rca_candidates | default([]) | length,
+            'root_cause_candidate': (
+              (rca_candidates | default([]) | first).trace_id
+              if (rca_candidates | default([])) | length > 0
+                 and ((rca_candidates | first).records | length)
+                     >= (spike_min_group_size | int)
+              else ''
+            ),
+            'candidates': (rca_candidates | default([]))[:20],
+            'source_errors': spike.ansible_facts.gludd_observe.errors | default([])
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_error_spike_rca.json"
+        mode: "0644"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_error_spike_rca',
+            'status': 'failed',
+            'service': service
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_error_spike_rca.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "observe_error_spike_rca failed — see {{ artifact_dir }}"

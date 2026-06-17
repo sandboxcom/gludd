@@ -1,0 +1,36 @@
+---
+# observe_deploy_correlator role defaults
+#
+# Correlate a deploy (a pipeline/CI event with a commit) against the telemetry
+# that followed it: did error/incident volume rise after the deploy landed?
+
+# The deploy seed: a pipeline record carrying ts + labels.commit (+ service).
+#   { "ts": <epoch>, "labels": {"commit": "<sha>", "service": "..."} }
+deploy_seed: {}
+
+# KINDs to compare before/after the deploy.
+observe_kinds:
+  - pipeline
+  - metrics
+  - logs
+  - incidents
+
+# Correlate on the deploy commit (matches normalize 'commit'-style labels via
+# query); secondary correlation by trace_id for incident drill-down.
+correlate_by: "commit"
+
+# Comparison window (seconds) before and after the deploy ts.
+window_s: 900
+
+# Fractional rise in error/incident volume (after vs before) that flags the
+# deploy as suspected-cause.
+regression_ratio: 1.5
+
+query_spec: {}
+
+artifact_dir: "/tmp/gludd-observe-deploy-correlator"
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+capability_role: "observe_deploy_correlator"

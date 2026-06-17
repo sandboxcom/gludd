@@ -52,7 +52,9 @@ def _role_scenario(role: str) -> str:
 
 # --- The shrinking checklist -------------------------------------------------
 # Modules that DO NOT yet have a dedicated test_<module> molecule scenario.
-# Empty: every gludd_* module now has a dedicated test_gludd_* scenario.
+# Empty: every gludd_* module now has a dedicated test_gludd_* scenario,
+# including gludd_reload (re-added under #47 with an import-clean PYTHONPATH +
+# /readyz health gate so the HotReloader hot-swap + degraded rollback both run).
 _NOT_YET_COVERED_MODULES: set[str] = set()
 # All other gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
@@ -71,8 +73,17 @@ _NOT_YET_COVERED_MODULES: set[str] = set()
 #   gludd_reload      -> test_gludd_reload       (port 8840, in-proc HotReloader: healthy swap + 404-gate rollback)
 
 # Roles that DO NOT yet have a role_<name> molecule scenario.
-# Empty: every role under the collection now has a role_<name> scenario.
-_NOT_YET_COVERED_ROLES: set[str] = set()
+# New roles added in the observability batch (W-observe) that don't yet have
+# molecule scenarios — tracked here as the shrinking checklist.
+_NOT_YET_COVERED_ROLES: set[str] = {
+    "gludd_update",
+    "observe_deploy_correlator",
+    "observe_error_spike_rca",
+    "observe_incident_triage",
+    "observe_latency_regression",
+    "observe_saturation_capacity",
+    "observe_security_signal",
+}
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)
 #   audit_dependencies    -> role_audit_dependencies    (8786, gludd_facts+gludd_agent_run -> artifact)

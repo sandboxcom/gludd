@@ -1,63 +1,37 @@
 ---
-# Exercise the REAL gludd_reload module (in-proc HotReloader) twice against the
-# throwaway leaf module on its own PYTHONPATH:
-#   1) HEALTHY SWAP: rotate _candidate_good with health_url -> /healthz (200).
-#      The health gate passes, so the swap is promoted: success=true,
-#      rolled_back=false, and the live file now holds the candidate bytes.
-#   2) 404-GATE ROLLBACK: rotate _candidate_bad with health_url -> /readyz, a path
-#      the mock has no route for (404). A non-200 gate is unhealthy, so the module
-#      restores the original bytes: success=false, rolled_back=true, and the live
-#      file is byte-for-byte what it was before this second swap (the good bytes).
-# PYTHONPATH is set on the play so the module's in-proc importlib.import_module can
-# resolve the throwaway leaf without touching any general_ludd source.
-- name: Converge - gludd_reload healthy swap + 404-gate rollback
+# Exercise the REAL gludd_reload module twice against the live throwaway leaf:
+#   1. GOOD candidate + healthy /readyz gate  -> success=true,  rolled_back=false
+#   2. BROKEN candidate + degraded gate        -> success=false, rolled_back=true
+# Each call runs the HotReloader in-process and importlib.reloads the leaf.
+- name: Converge - run gludd_reload (healthy swap, then degraded rollback)
   hosts: localhost
   connection: local
   gather_facts: false
-  environment:
-    PYTHONPATH: "{{ reload_root }}:{{ lookup('env', 'PYTHONPATH') | default('', true) }}"
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
-    reload_root: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
-    live_path: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}/gluddreload_leaf.py"
+    reload_base: "/tmp/gludd-reload-8840"
   tasks:
-    - name: Healthy swap — rotate the good candidate behind a passing /healthz gate
+    - name: Hot-rotate the GOOD candidate (healthy /readyz gate -> promote)
       general_ludd.agent.gludd_reload:
-        module_name: "gluddreload_leaf"
-        candidate_source_path: "{{ reload_root }}/_candidate_good.py"
-        health_url: "http://127.0.0.1:{{ mock_port }}/healthz"
-        health_timeout: 5.0
-        result_path: "{{ reload_root }}/promotion_good.json"
-      register: reload_good
-
-    - name: Capture the live file bytes AFTER the healthy swap (should be the good candidate)
-      ansible.builtin.slurp:
-        src: "{{ live_path }}"
-      register: live_after_good
-
-    - name: 404-gate rollback — rotate a candidate behind a /readyz gate the mock 404s
-      general_ludd.agent.gludd_reload:
-        module_name: "gluddreload_leaf"
-        candidate_source_path: "{{ reload_root }}/_candidate_bad.py"
+        module_name: "gludd_reload_leaf.leaf"
+        candidate_source_path: "{{ reload_base }}/candidate_good.py"
         health_url: "http://127.0.0.1:{{ mock_port }}/readyz"
         health_timeout: 5.0
-        result_path: "{{ reload_root }}/promotion_rollback.json"
-      register: reload_rollback
+        result_path: "{{ reload_base }}/promotion_good.json"
+      register: reload_good
 
-    - name: Capture the live file bytes AFTER the rolled-back swap
-      ansible.builtin.slurp:
-        src: "{{ live_path }}"
-      register: live_after_rollback
+    - name: Hot-rotate the BROKEN candidate (degraded gate -> rollback)
+      general_ludd.agent.gludd_reload:
+        module_name: "gludd_reload_leaf.leaf"
+        candidate_source_path: "{{ reload_base }}/candidate_broken.py"
+        health_url: "http://127.0.0.1:{{ mock_port }}/readyz-degraded"
+        health_timeout: 5.0
+        result_path: "{{ reload_base }}/promotion_broken.json"
+      register: reload_broken
 
-    - name: Persist both results + live-byte snapshots for verify
+    - name: Persist both reload results for verify
       ansible.builtin.copy:
-        content: >-
-          {{ {
-            'good': reload_good,
-            'rollback': reload_rollback,
-            'live_after_good': (live_after_good.content | b64decode),
-            'live_after_rollback': (live_after_rollback.content | b64decode)
-          } | to_nice_json }}
+        content: "{{ {'good': reload_good, 'broken': reload_broken} | to_nice_json }}"
         dest: "/tmp/gludd-mock-{{ mock_port }}-reload.json"
         mode: "0644"
 
@@ -65,4 +39,4 @@
       ansible.builtin.debug:
         msg:
           - "good.success={{ reload_good.success }} rolled_back={{ reload_good.rolled_back }}"
-          - "rollback.success={{ reload_rollback.success }} rolled_back={{ reload_rollback.rolled_back }}"
+          - "broken.success={{ reload_broken.success }} rolled_back={{ reload_broken.rolled_back }}"

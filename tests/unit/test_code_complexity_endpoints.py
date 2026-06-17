@@ -75,18 +75,17 @@ class TestCodeComplexityEndpoint:
             os.unlink(path)
 
     def test_complexity_nonexistent_file(self) -> None:
+        # SECURITY (path confinement): /nonexistent/file.py is an absolute path
+        # OUTSIDE the workspace/temp/config roots. Previously score_file() would
+        # open ANY absolute path (arbitrary-file read); the endpoint now confines
+        # the path and rejects an out-of-root path with 422 before opening it.
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
         client = TestClient(app)
 
-        # In-tree (temp-root) path that does not exist: confinement allows it,
-        # and a missing file must still degrade gracefully to loc==0 (not 422/500).
-        missing = os.path.join(tempfile.gettempdir(), "gludd-nonexistent-file.py")
-        resp = client.post("/admin/code/complexity", json={"path": missing})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["score"]["loc"] == 0
+        resp = client.post("/admin/code/complexity", json={"path": "/nonexistent/file.py"})
+        assert resp.status_code == 422
 
 
 class TestSuggestModelEndpoint:
@@ -135,14 +134,13 @@ class TestSuggestModelEndpoint:
             os.unlink(path)
 
     def test_suggest_model_nonexistent_file(self) -> None:
+        # SECURITY (path confinement): an absolute path outside the
+        # workspace/temp/config roots is rejected 422 before score_file() opens
+        # it (was 200 with an arbitrary-file read of any absolute path).
         from general_ludd.daemon import create_daemon_app
 
         app = create_daemon_app()
         client = TestClient(app)
 
-        missing = os.path.join(tempfile.gettempdir(), "gludd-nonexistent-file.py")
-        resp = client.post("/admin/code/suggest-model", json={"path": missing})
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["complexity"]["loc"] == 0
-        assert data["model_recommendation"]["fallback"] is True
+        resp = client.post("/admin/code/suggest-model", json={"path": "/nonexistent/file.py"})
+        assert resp.status_code == 422

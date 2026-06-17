@@ -1,0 +1,36 @@
+---
+# observe_security_signal role defaults
+#
+# Surface a cross-source security signal: gather audit events (e.g. Okta),
+# security-relevant logs, and incidents in a window, correlate them by host (or
+# actor), and flag hosts with clustered high-severity security activity.
+
+# KINDs that carry security signal.
+observe_kinds:
+  - events
+  - logs
+  - incidents
+
+# Correlate the signal on this join key (host clusters lateral movement; switch
+# to "service" or "trace_id" for request-scoped signals).
+correlate_by: "host"
+
+# Time window (epoch seconds).
+start: ~
+end: ~
+
+# Minimum canonical severity to count (debug<info<warn<error<critical).
+min_severity: "warn"
+
+# A correlated host/actor group with >= this many signal records is suspicious.
+signal_min_group_size: 3
+
+# Optional event-type allow/deny filtering forwarded to sources (backend-specific).
+query_spec: {}
+
+artifact_dir: "/tmp/gludd-observe-security-signal"
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+capability_role: "observe_security_signal"

@@ -194,6 +194,22 @@ class TestRouterHealthAwareRouting:
         repo = MagicMock()
         repo.get_aggregate_scores = _return_rows
 
-        router = AdaptiveRouter(benchmark_repo=repo, health_tracker=tracker)
-        decision = await router.route(TaskType.BUG_FIX, max_cost_usd=0.05)
-        assert decision.selected_model_profile_id == "expensive-ok"
+        router = AdaptiveRouter(
+            benchmark_repo=repo,
+            health_tracker=tracker,
+            min_samples=3,
+        )
+        decision = await router.route(
+            TaskType.BUG_FIX,
+            default_model_profile="default",
+            max_cost_usd=0.05,
+        )
+        # The cheap candidate (0.02, fits the 0.05 cap) is UNHEALTHY and must be
+        # skipped. The only healthy candidate (expensive-ok, 0.08) is OVER the
+        # cap, so there is no in-budget healthy option. #69/#59: the cost cap
+        # must FAIL CLOSED here — fall back to the default, never return the
+        # over-budget expensive-ok and never the dead cheap one.
+        assert decision.selected_model_profile_id == "default"
+        assert decision.selected_model_profile_id != "cheap-but-dead"
+        assert decision.fallback is True
+        assert decision.reason == "cost_cap_no_fit"

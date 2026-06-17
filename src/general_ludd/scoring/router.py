@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import datetime
 from typing import Any
 
@@ -44,7 +45,9 @@ class AdaptiveRouter:
     ) -> RoutingDecision:
         best = await self._get_best_from_history(task_type)
         if best is not None:
-            if max_cost_usd is not None and best.avg_cost_usd > max_cost_usd:
+            if max_cost_usd is not None and self._exceeds_cap(
+                best.avg_cost_usd, max_cost_usd
+            ):
                 cheaper = await self._get_cheapest_for_task(task_type, max_cost_usd)
                 if cheaper is not None:
                     return RoutingDecision(
@@ -56,6 +59,19 @@ class AdaptiveRouter:
                         fallback=False,
                         reason="cost_constrained",
                     )
+                # FAIL CLOSED (#69/#59): the best is over the cap and no cheaper
+                # candidate fits under budget. Never return the over-cap best —
+                # deny spend we cannot prove is in budget and fall back to the
+                # safe default model.
+                return RoutingDecision(
+                    selected_prompt_profile_id=default_prompt_profile,
+                    selected_model_profile_id=default_model_profile,
+                    composite_score=0.0,
+                    estimated_cost_usd=0.0,
+                    sample_count=0,
+                    fallback=True,
+                    reason="cost_cap_no_fit",
+                )
             return RoutingDecision(
                 selected_prompt_profile_id=best.prompt_profile_id,
                 selected_model_profile_id=best.model_profile_id,
@@ -76,6 +92,19 @@ class AdaptiveRouter:
             reason="insufficient_historical_data",
         )
 
+    @staticmethod
+    def _exceeds_cap(cost: float, cap: float) -> bool:
+        """True if ``cost`` is over ``cap`` — treating non-finite cost as over.
+
+        A NaN or inf ``avg_cost`` must be treated as OVER the cap (fail closed):
+        ``nan > cap`` and ``inf`` comparisons would otherwise let an unprovable
+        cost slip through. Any cost we cannot prove is finite-and-under-budget is
+        rejected.
+        """
+        if not math.isfinite(cost):
+            return True
+        return cost > cap
+
     async def _get_best_from_history(
         self, task_type: TaskType
     ) -> RoutingCandidate | None:
@@ -92,7 +121,10 @@ class AdaptiveRouter:
             model_id = agg["model_profile_id"]
             if (
                 self._health_tracker is not None
-                and not self._health_tracker.is_healthy(model_id)
+                # admit_probe=False: this is a candidate-filtering status read,
+                # not a call attempt — it must NOT consume the single half-open
+                # probe slot (that belongs to the actual gateway call).
+                and not self._health_tracker.is_healthy(model_id, admit_probe=False)
             ):
                 continue
             composite = float(agg.get("composite_score", 0.0))
@@ -135,12 +167,15 @@ class AdaptiveRouter:
             if sample_count < self._min_samples:
                 continue
             avg_cost = float(agg.get("avg_cost", 0.0))
-            if avg_cost > max_cost:
+            if self._exceeds_cap(avg_cost, max_cost):
                 continue
             model_id = agg["model_profile_id"]
             if (
                 self._health_tracker is not None
-                and not self._health_tracker.is_healthy(model_id)
+                # admit_probe=False: this is a candidate-filtering status read,
+                # not a call attempt — it must NOT consume the single half-open
+                # probe slot (that belongs to the actual gateway call).
+                and not self._health_tracker.is_healthy(model_id, admit_probe=False)
             ):
                 continue
             composite = float(agg.get("composite_score", 0.0))

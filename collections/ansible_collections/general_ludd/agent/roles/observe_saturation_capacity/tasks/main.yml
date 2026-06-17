@@ -1,0 +1,91 @@
+---
+# observe_saturation_capacity — fleet capacity / saturation check.
+#
+# Workflow
+#   1. query_sources for saturation metrics in the window.
+#   2. topology() to map service<->host adjacency.
+#   3. Flag samples whose value >= saturation_threshold; group by host; a host
+#      with >= saturated_sample_min breaches is "at_capacity".
+#   4. Write the topology + at-capacity hosts to an artifact.
+#
+# Facade interface (DEFERRED WIRING — gludd_observe module, #73 next wave)
+#   op=query_sources -> GluddObserve.query_sources(kinds, spec, start, end)
+#   op=topology      -> GluddObserve.topology(kinds, spec)
+#       returning ansible_facts.gludd_observe.topology = {services, hosts}
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Saturation / capacity lifecycle
+  block:
+
+    - name: Pull saturation metrics
+      general_ludd.agent.gludd_observe:
+        op: query_sources
+        role: "{{ capability_role }}"
+        kinds: "{{ observe_kinds }}"
+        spec: "{{ query_spec }}"
+        start: "{{ start | default(omit, true) }}"
+        end: "{{ end | default(omit, true) }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: sat
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Build service/host topology
+      general_ludd.agent.gludd_observe:
+        op: topology
+        role: "{{ capability_role }}"
+        kinds: "{{ observe_kinds }}"
+        spec: "{{ query_spec }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: topo
+      no_log: "{{ psk | length > 0 }}"
+      when: not ansible_check_mode
+
+    - name: Select saturated samples
+      ansible.builtin.set_fact:
+        saturated_samples: >-
+          {{ (sat.ansible_facts.gludd_observe.records | default([]))
+             | selectattr('value', 'defined')
+             | selectattr('value', 'ge', saturation_threshold | float)
+             | list }}
+      when: not ansible_check_mode
+
+    - name: Write capacity artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_saturation_capacity',
+            'saturation_threshold': saturation_threshold,
+            'saturated_sample_min': saturated_sample_min,
+            'saturated_sample_count': saturated_samples | default([]) | length,
+            'saturated_samples': (saturated_samples | default([]))[:50],
+            'topology': topo.ansible_facts.gludd_observe.topology | default({'services': {}, 'hosts': {}}),
+            'source_errors': sat.ansible_facts.gludd_observe.errors | default([])
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_saturation_capacity.json"
+        mode: "0644"
+      when: not ansible_check_mode
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'observe_saturation_capacity',
+            'status': 'failed'
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/observe_saturation_capacity.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play
+      ansible.builtin.fail:
+        msg: "observe_saturation_capacity failed — see {{ artifact_dir }}"

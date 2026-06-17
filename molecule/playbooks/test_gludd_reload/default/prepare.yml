@@ -1,19 +1,17 @@
 ---
-# gludd_reload runs the REAL HotReloader IN-PROCESS: it imports a live, file-backed
-# leaf module by dotted name, os.replace's a candidate source over the live path,
-# importlib.reload's it, then runs a health gate (a /readyz-style poll). On a failed
-# gate the original bytes are restored. To exercise this honestly WITHOUT mutating
-# any general_ludd source, prepare builds a throwaway importable package on its own
-# PYTHONPATH root:
-#   reloadroot/gluddreload_leaf.py   -- the LIVE leaf module (importable, file-backed)
-#   reloadroot/_candidate_good.py    -- a healthy candidate to swap in (gate passes)
-#   reloadroot/_candidate_bad.py     -- a candidate to swap in for the 404-gate case
-# The mock daemon is started so the health gate has a real HTTP endpoint:
-#   health_url -> http://127.0.0.1:<port>/healthz  -> 200      => healthy swap
-#   health_url -> http://127.0.0.1:<port>/readyz   -> 404      => gate fails, rollback
-# (The mock has no /readyz route, so it answers 404 — a non-200 status the module's
-#  health check treats as unhealthy, forcing the documented auto-rollback.)
-- name: Prepare - throwaway importable leaf + candidates + mock daemon for gludd_reload
+# gludd_reload runs the REAL HotReloader in-process: it imports a live leaf
+# module by dotted name, os.replaces a candidate source over its __file__,
+# importlib.reloads it, then runs a health gate (a /readyz poll) and rolls back
+# on failure. Prepare:
+#   1. Starts the reusable mock daemon (serves the /readyz + /readyz-degraded
+#      health endpoints the two reload calls poll; also satisfies the
+#      module-scenario "must launch the mock daemon" coverage rule).
+#   2. Writes a throwaway, importable, file-backed leaf package onto PYTHONPATH
+#      (set in molecule.yml to /tmp/gludd-reload-8840) so HotReloader can import
+#      and hot-rotate it without touching any real general_ludd module.
+#   3. Writes a GOOD candidate (swaps cleanly) and a BROKEN candidate (still
+#      imports, but the degraded health gate will reject it -> rollback).
+- name: Prepare - mock daemon + importable throwaway leaf for gludd_reload
   hosts: localhost
   connection: local
   gather_facts: false
@@ -21,7 +19,10 @@
     project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
     pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}.pid"
-    reload_root: "/tmp/gludd-reload-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8840', true) }}"
+    # MUST match PYTHONPATH in molecule.yml so the leaf is importable in the
+    # module subprocess.
+    reload_base: "/tmp/gludd-reload-8840"
+    pkg_dir: "/tmp/gludd-reload-8840/gludd_reload_leaf"
   tasks:
     - name: Launch mock daemon (background, nohup)
       ansible.builtin.shell:
@@ -42,43 +43,58 @@
       retries: 20
       delay: 0.5
 
-    - name: Remove any stale reload root (+ its bytecode cache)
+    - name: Confirm the /readyz health gate is reachable
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/readyz"
+        method: GET
+        status_code: 200
+
+    - name: Remove any stale throwaway leaf tree + candidate sources
       ansible.builtin.file:
-        path: "{{ reload_root }}"
+        path: "{{ reload_base }}"
         state: absent
 
-    - name: Create the reload root (a fresh PYTHONPATH entry)
+    - name: Create the throwaway leaf package dir (on PYTHONPATH)
       ansible.builtin.file:
-        path: "{{ reload_root }}"
+        path: "{{ pkg_dir }}"
         state: directory
         mode: "0755"
 
-    - name: Write the LIVE leaf module (importable, file-backed; VERSION=='live')
+    - name: Make the throwaway dir a package
       ansible.builtin.copy:
-        dest: "{{ reload_root }}/gluddreload_leaf.py"
+        dest: "{{ pkg_dir }}/__init__.py"
+        mode: "0644"
+        content: ""
+
+    - name: Write the LIVE leaf module (v1 — the one HotReloader will rotate)
+      ansible.builtin.copy:
+        dest: "{{ pkg_dir }}/leaf.py"
         mode: "0644"
         content: |
-          VERSION = "live"
+          VERSION = "v1"
+
 
           def value() -> int:
               return 1
 
-    - name: Write the HEALTHY candidate source (swap target for the passing gate)
+    - name: Write a GOOD candidate (imports clean — healthy gate -> promoted)
       ansible.builtin.copy:
-        dest: "{{ reload_root }}/_candidate_good.py"
+        dest: "{{ reload_base }}/candidate_good.py"
         mode: "0644"
         content: |
-          VERSION = "candidate-good"
+          VERSION = "v2"
+
 
           def value() -> int:
               return 2
 
-    - name: Write the candidate source used for the 404-gate rollback case
+    - name: Write a BROKEN candidate (imports clean — degraded gate -> rolled back)
       ansible.builtin.copy:
-        dest: "{{ reload_root }}/_candidate_bad.py"
+        dest: "{{ reload_base }}/candidate_broken.py"
         mode: "0644"
         content: |
-          VERSION = "candidate-bad"
+          VERSION = "v2-broken"
+
 
           def value() -> int:
-              return 99
+              return 999
