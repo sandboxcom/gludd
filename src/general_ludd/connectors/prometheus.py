@@ -34,6 +34,7 @@ Record shape (one dict per sample)::
 from __future__ import annotations
 
 import ipaddress
+import math
 import os
 import time
 from collections.abc import Callable
@@ -44,6 +45,8 @@ from urllib.parse import urlsplit
 HttpGet = Callable[..., "tuple[int, Any]"]
 
 KIND = "metrics"
+
+MAX_RESULT_SIZE = 10_000
 
 # Hostnames that must never be reached, regardless of IP resolution.
 _BLOCKED_HOSTNAMES = frozenset(
@@ -173,6 +176,8 @@ class PrometheusSource:
     ) -> dict[str, Any]:
         try:
             value = float(raw_value)
+            if not math.isfinite(value):
+                value = 0.0
         except (TypeError, ValueError):
             value = 0.0
         try:
@@ -242,14 +247,34 @@ class PrometheusSource:
 
         if result_type == "vector":
             for series in result or []:
+                if len(records) >= MAX_RESULT_SIZE:
+                    records.append(
+                        self._error_record(
+                            f"truncated: result exceeded {MAX_RESULT_SIZE} records",
+                            {"truncated": True},
+                        )
+                    )
+                    break
                 metric = series.get("metric", {})
                 ts, raw_value = series.get("value", [0.0, "0"])
                 records.append(self._sample_record(metric, ts, raw_value, series))
 
         elif result_type == "matrix":
+            outer_break = False
             for series in result or []:
+                if outer_break:
+                    break
                 metric = series.get("metric", {})
                 for ts, raw_value in series.get("values", []):
+                    if len(records) >= MAX_RESULT_SIZE:
+                        records.append(
+                            self._error_record(
+                                f"truncated: result exceeded {MAX_RESULT_SIZE} records",
+                                {"truncated": True},
+                            )
+                        )
+                        outer_break = True
+                        break
                     records.append(self._sample_record(metric, ts, raw_value, series))
 
         elif result_type == "scalar":
