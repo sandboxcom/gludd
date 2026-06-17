@@ -8,7 +8,9 @@ from general_ludd.secrets.manager import (
     ImageUpdateCandidate,
     SecretAlias,
     SecretsManager,
+    SecretsUnavailableError,
 )
+from general_ludd.secrets.protocol import SecretsManagerProtocol
 
 __all__ = [
     "AppRoleCreds",
@@ -18,4 +20,6 @@ __all__ = [
     "OpenBaoConfig",
     "SecretAlias",
     "SecretsManager",
+    "SecretsManagerProtocol",
+    "SecretsUnavailableError",
 ]

@@ -39,6 +39,46 @@ def _is_genuine_not_found(exc: BaseException) -> bool:
     return isinstance(exc, hvac.exceptions.InvalidPath)
 
 
+def _read_kv_secret(
+    client: Any,
+    path: str,
+    mount: str,
+    context_label: str,
+) -> dict[str, Any] | None:
+    """Perform a KV-v2 read and apply the unified error-handling policy.
+
+    Returns the ``data.data`` dict when the secret exists, ``None`` when the
+    path genuinely does not exist (hvac ``InvalidPath`` / 404), and raises
+    :class:`SecretsUnavailableError` for every other failure (outage, auth,
+    TLS, network) so callers fail CLOSED rather than silently treating an
+    unreachable backend as an absent secret.
+
+    ``context_label`` is embedded in the error message to help operators
+    identify which lookup failed (e.g. ``"alias 'db_password'"`` or
+    ``"path 'myapp/config'"``).
+
+    Security: the *value* of any resolved secret is NEVER included in log
+    messages or exception text.
+    """
+    try:
+        result = client.secrets.kv.v2.read_secret_version(
+            path=path, mount_point=mount
+        )
+        if result and "data" in result and "data" in result["data"]:
+            return dict(result["data"]["data"])
+    except Exception as exc:
+        if _is_genuine_not_found(exc):
+            # Secret genuinely does not exist — absence is the correct answer.
+            return None
+        # Outage / auth / TLS / network failure — fail CLOSED, do not
+        # masquerade as a missing secret.
+        logger.error("Failed to read KV secret (%s): %s", context_label, exc)
+        raise SecretsUnavailableError(
+            f"secrets backend unavailable for {context_label}: {exc}"
+        ) from exc
+    return None
+
+
 @dataclass
 class BootstrapResult:
     url: str
@@ -97,22 +137,14 @@ class SecretsManager:
         if self._client is None:
             logger.warning("No secrets client configured for alias %s", alias_name)
             return None
-        try:
-            result = self._client.secrets.kv.v2.read_secret_version(
-                path=alias.path, mount_point=alias.mount
-            )
-            if result and "data" in result and "data" in result["data"]:
-                return str(result["data"]["data"].get("value", ""))
-        except Exception as exc:
-            if _is_genuine_not_found(exc):
-                # Secret genuinely does not exist — absence is the correct answer.
-                return None
-            # Outage / auth / TLS / network failure — fail CLOSED, do not
-            # masquerade as a missing secret.
-            logger.error("Failed to resolve secret alias %s: %s", alias_name, exc)
-            raise SecretsUnavailableError(
-                f"secrets backend unavailable resolving alias {alias_name!r}: {exc}"
-            ) from exc
+        data = _read_kv_secret(
+            self._client,
+            alias.path,
+            alias.mount,
+            context_label=f"alias {alias_name!r}",
+        )
+        if data is not None:
+            return str(data.get("value", ""))
         return None
 
     def list_aliases(self) -> list[str]:
@@ -235,20 +267,12 @@ class SecretsManager:
     def read_secret(self, path: str) -> dict[str, Any] | None:
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
-        try:
-            result = self._client.secrets.kv.v2.read_secret_version(
-                path=path, mount_point=self._config.kv_mount
-            )
-            if result and "data" in result and "data" in result["data"]:
-                return dict[str, Any](result["data"]["data"])
-        except Exception as exc:
-            if _is_genuine_not_found(exc):
-                return None
-            logger.error("Failed to read secret at %s: %s", path, exc)
-            raise SecretsUnavailableError(
-                f"secrets backend unavailable reading {path!r}: {exc}"
-            ) from exc
-        return None
+        return _read_kv_secret(
+            self._client,
+            path,
+            self._config.kv_mount,
+            context_label=f"path {path!r}",
+        )
 
     def delete_secret(self, path: str) -> None:
         if self._client is None:
@@ -268,19 +292,11 @@ class SecretsManager:
 
     def scan_for_image_updates(self) -> ImageUpdateCandidate | None:
         image_ref = self._config.local_image
-        try:
-            stored = self.read_secret(f"image-pins/{image_ref}")
-        except SecretsUnavailableError:
-            # Backend outage/auth failure — fail CLOSED. Returning None here would
-            # make a missing-pin look identical to an unreachable backend, which
-            # could let an unverified image update proceed.
-            raise
-        except Exception as exc:
-            if _is_genuine_not_found(exc):
-                return None
-            raise SecretsUnavailableError(
-                f"secrets backend unavailable scanning image pins for {image_ref!r}: {exc}"
-            ) from exc
+        # read_secret already converts InvalidPath->None and other errors->
+        # SecretsUnavailableError via _read_kv_secret, so SecretsUnavailableError
+        # propagates directly (fail CLOSED — backend outage must not be silently
+        # treated as a missing pin, which would let an unverified image update proceed).
+        stored = self.read_secret(f"image-pins/{image_ref}")
         if stored is None:
             return None
         current_digest = str(stored.get("pinned_digest", ""))
