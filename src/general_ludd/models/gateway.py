@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 import threading
 from dataclasses import dataclass, field
 from typing import Any, Protocol
@@ -88,8 +89,8 @@ class ModelProfile(BaseModel):
     @field_validator("cost_per_input_token", "cost_per_output_token", "run_budget_usd")
     @classmethod
     def _non_negative_float(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("must be non-negative")
+        if not math.isfinite(v) or v < 0:
+            raise ValueError("must be finite non-negative")
         return v
 
 
@@ -514,8 +515,10 @@ class ModelGateway:
                     _attempt_counter[0] = attempt.retry_state.attempt_number
                     try:
                         result = self.call_model(profile_id, messages, **kwargs)
-                        if tracker is not None:
-                            tracker.record_success(profile_id)
+                        # NOTE: record_success is already called inside
+                        # _invoke_and_bill (via call_model) on every billed
+                        # success. A second call here would double-count and
+                        # trip the breaker at half the configured threshold.
                         return result
                     except _retryable_exc_types as exc:
                         _last_exc[0] = exc
