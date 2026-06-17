@@ -36,7 +36,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
-        molecule-clean plan ps-gludd kill-stale
+        molecule-clean plan ps-gludd kill-stale kill-gate-force
 
 help:
 	@echo "Usage: make [target]"
@@ -247,19 +247,18 @@ gate:
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@echo "[gate $$(date +%H:%M:%S)] phase 4/5 test (full suite, streams below; ~16 min) ..."
 	@printf "test " >> .gate-status
-	@# --basetemp pins this run's pytest tmp root so a CONCURRENT pytest (another
-	@# gate, a stray worker) can no longer trigger pytest's keep-last-3 rotation and
-	@# delete this run's popen-gwN worker dirs out from under it — the root cause of
-	@# the "208 errors: FileNotFoundError popen-gwN" cascade. tee streams progress to
-	@# stdout (so a backgrounded gate is observable live, not a black box) AND to the
-	@# log; the rc file preserves pytest's true exit through the pipe (sh $$? after a
-	@# pipe is tee's, not pytest's).
-	@rm -rf /tmp/gludd-gate-basetemp; \
-	( $(UV) run python -m pytest tests/ $(_XD) -q --basetemp=/tmp/gludd-gate-basetemp; echo $$? > /tmp/gludd-gate-rc ) 2>&1 | tee /tmp/gludd-test-gate.txt; \
-	EXIT=$$(cat /tmp/gludd-gate-rc 2>/dev/null || echo 1); \
-	if [ "$$EXIT" -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
-		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
-	fi
+	@# Delegate to scripts/run_gate.sh which provides:
+	@#   (1) exclusive non-blocking flock on /tmp/gludd-gate.lock — a concurrent
+	@#       gate is REJECTED immediately rather than silently corrupting shared tmp;
+	@#   (2) per-run unique basetemp (mktemp -d /tmp/gludd-gate-XXXXXX) so even if
+	@#       the lock were bypassed two runs cannot collide on pytest's popen-gwN dirs;
+	@#   (3) EXIT/INT/TERM trap that removes the unique basetemp and releases the lock
+	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
+	@# run_gate.sh writes "PASS 0" or "FAIL non-zero-exit" to .gate-status itself
+	@# and touches .gate-failed on failure, so we only need to propagate its exit.
+	@bash scripts/run_gate.sh; EXIT=$$?; \
+	if [ "$$EXIT" -ne 0 ] && [ ! -f .gate-failed ]; then touch .gate-failed; fi; \
+	exit $$EXIT
 	@echo "[gate $$(date +%H:%M:%S)] phase 5/5 smoke (real daemon boot) ..."
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
@@ -332,6 +331,23 @@ kill-stale:
 		echo "  KILLED stale orphan: $$pid $$cmd"; \
 	done; \
 	echo "[kill-stale] done"
+
+# Force-kill any running gate: send SIGTERM to the process that owns the gate
+# lock, then remove the lock and any gludd-gate-XXXXXX tmp dirs so the next
+# `make gate` can start cleanly. Use when `make kill-stale` is too conservative.
+kill-gate-force:
+	@echo "[kill-gate-force] reading lock owner from /tmp/gludd-gate.lock ..."
+	@HOLDER=$$(cat /tmp/gludd-gate.lock 2>/dev/null || echo ""); \
+	if [ -n "$$HOLDER" ] && kill -0 "$$HOLDER" 2>/dev/null; then \
+		echo "[kill-gate-force] killing PID $$HOLDER"; \
+		kill -TERM "$$HOLDER" 2>/dev/null || true; sleep 1; \
+		kill -KILL "$$HOLDER" 2>/dev/null || true; \
+	else \
+		echo "[kill-gate-force] no live gate process found in lock file"; \
+	fi
+	@rm -f /tmp/gludd-gate.lock /tmp/gludd-gate.lock.*.tmp
+	@rm -rf /tmp/gludd-gate-[A-Za-z0-9]* 2>/dev/null || true
+	@echo "[kill-gate-force] lock + tmp dirs removed"
 
 # STALL WATCHDOG — run a long command under active no-progress + max-runtime
 # supervision so a hang can NEVER sit silently forever. Streams the command's
