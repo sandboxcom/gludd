@@ -7,6 +7,7 @@ from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
+from sqlalchemy.engine.url import make_url
 
 from general_ludd import __version__
 from general_ludd.db.repository import TodoRepository
@@ -103,7 +104,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         queue: str | None = None,
         status: str | None = None,
         project_id: str | None = None,
+        limit: int = 100,
     ) -> list[dict[str, Any]]:
+        limit = max(1, min(limit, 500))
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
@@ -111,7 +114,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 todos = await repo.list_all(
                     queue=queue, status=status, project_id=project_id,
                 )
-                return [_todo_to_dict(t) for t in todos]
+                return [_todo_to_dict(t) for t in todos][:limit]
         results = list(_daemon_state["todos"])
         if queue is not None:
             results = [t for t in results if t.get("queue") == queue]
@@ -119,7 +122,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             results = [t for t in results if t.get("status") == status]
         if project_id is not None:
             results = [t for t in results if t.get("project_id") == project_id]
-        return results
+        return results[:limit]
 
     @app.get("/api/todos/{todo_id}")
     async def api_get_todo(todo_id: str) -> dict[str, Any]:
@@ -175,18 +178,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 todo_count += 1
 
         config_dir = getattr(app.state, "_config_dir", None)
-        config_paths: list[str] = []
+        config_file_count = 0
         if config_dir and os.path.isdir(config_dir):
             for f in sorted(os.listdir(config_dir)):
                 if f.endswith(".yml") or f.endswith(".yaml"):
-                    config_paths.append(os.path.join(config_dir, f))
+                    config_file_count += 1
 
         bare_binaries: list[dict[str, Any]] = []
         known_versions: dict[str, str] = {}
-        filestore_root = ""
+        filestore_available = False
         try:
             store = FileStore()
-            filestore_root = store.root_path
+            filestore_available = bool(store.root_path)
             boot = BinaryBootstrapper(store=store)
             bare_binaries = [
                 {"name": b["binary_name"], "version": b.get("version", "?")}
@@ -195,6 +198,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             known_versions = boot.get_known_versions()
         except Exception:
             pass
+
+        _raw_url = getattr(getattr(app.state, "_db_engine", None), "url", None)
+        if _raw_url is not None:
+            _db_url_safe = make_url(str(_raw_url)).render_as_string(hide_password=True)
+        else:
+            _db_url_safe = "sqlite"
 
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
@@ -206,13 +215,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "todos_total": todo_count,
             "queue_depths": queue_depths,
             "tick_metrics": elapsed,
-            "config_dir": config_dir,
-            "config_files": config_paths,
-            "filestore_root": filestore_root,
+            "config_file_count": config_file_count,
+            "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
             "db_engine": str(getattr(app.state, "_db_engine", None)),
-            "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
+            "db_url": _db_url_safe,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
         }
