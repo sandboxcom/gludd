@@ -7,6 +7,8 @@ from enum import StrEnum
 
 from pydantic import BaseModel, Field, field_validator
 
+from general_ludd.schemas._validators import non_negative_float, non_negative_int, strip_nonempty
+
 
 class TaskType(StrEnum):
     BUG_FIX = "bug_fix"
@@ -42,11 +44,7 @@ class PromptProfile(BaseModel):
     @field_validator("id", "name", "prompt_text", mode="before")
     @classmethod
     def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("field must not be empty")
-        return v
+        return strip_nonempty(v)
 
 
 class BenchmarkScores(BaseModel):
@@ -98,16 +96,12 @@ class BenchmarkResult(BaseModel):
     @field_validator("time_seconds", "cost_usd")
     @classmethod
     def _non_negative_float(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("must be non-negative")
-        return v
+        return non_negative_float(v)
 
     @field_validator("input_tokens", "output_tokens")
     @classmethod
     def _non_negative_int(cls, v: int) -> int:
-        if v < 0:
-            raise ValueError("must be non-negative")
-        return v
+        return non_negative_int(v)
 
 
 class RoutingCandidate(BaseModel):
@@ -128,9 +122,7 @@ class RoutingCandidate(BaseModel):
     @field_validator("avg_cost_usd")
     @classmethod
     def _cost_non_negative(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("avg_cost_usd must be non-negative")
-        return v
+        return non_negative_float(v)
 
     @field_validator("sample_count")
     @classmethod
@@ -159,9 +151,7 @@ class RoutingDecision(BaseModel):
     @field_validator("estimated_cost_usd")
     @classmethod
     def _cost_non_negative(cls, v: float) -> float:
-        if v < 0:
-            raise ValueError("estimated_cost_usd must be non-negative")
-        return v
+        return non_negative_float(v)
 
     @field_validator("sample_count")
     @classmethod

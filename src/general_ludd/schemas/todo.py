@@ -8,6 +8,8 @@ from uuid import uuid4
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
+from general_ludd.schemas._validators import strip_nonempty
+
 
 class TodoStatus(enum.StrEnum):
     BACKLOG = "backlog"
@@ -135,11 +137,7 @@ class Todo(BaseModel):
     @field_validator("title", "queue", mode="before")
     @classmethod
     def _strip_and_require(cls, v: str) -> str:
-        if isinstance(v, str):
-            v = v.strip()
-        if not v:
-            raise ValueError("field must not be empty")
-        return v
+        return strip_nonempty(v)
 
     @field_validator("confidence")
     @classmethod
