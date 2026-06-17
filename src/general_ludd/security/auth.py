@@ -111,7 +111,7 @@ def require_auth_env(env: Mapping[str, str] | None = None) -> bool:
     }
 
 
-def is_path_within(base: str, candidate: str) -> bool:
+def is_join_within(base: str, candidate: str) -> bool:
     """True iff ``candidate`` resolves to a path inside ``base``.
 
     ``candidate`` is joined onto ``base`` first, so a relative path is taken
@@ -129,6 +129,10 @@ def is_path_within(base: str, candidate: str) -> bool:
         # Mixed drives, embedded NULs, etc. -> treat as not contained.
         return False
     return common == base_real
+
+
+# Back-compat alias
+is_path_within = is_join_within
 
 
 def _host_is_blocked(host: str) -> bool:
