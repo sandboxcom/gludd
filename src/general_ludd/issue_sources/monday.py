@@ -37,7 +37,7 @@ class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
     attacker-controlled 3xx responses that point at internal endpoints.
     """
 
-    def redirect_request(  # type: ignore[override]
+    def redirect_request(
         self,
         req: urllib.request.Request,
         fp: Any,
