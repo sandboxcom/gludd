@@ -19,15 +19,26 @@ allowlist and the IP-reblock are mandatory so this relaxed path can never reopen
 the hole the main client closes.  The render TARGET url is always guarded with
 the full :func:`_guard_url`.
 
+DNS-REBIND PINNING (closes the rebind hole on the CRITICAL render path): screening
+the hostname is not enough because Playwright/Selenium then do their OWN DNS
+resolution and a rebinding resolver can hand them a fresh internal IP.  So we do
+not merely screen-then-connect-by-name: ``_guard_remote_endpoint`` returns the
+screened IP set and we REWRITE the CDP/Grid endpoint to dial the screened IP
+LITERAL (host swapped to the vetted address), so the browser connects to exactly
+the address we screened — never re-resolving the hostname.  The same screened-IP
+literal is recorded for the target so a post-render peer/host mismatch is
+detectable.  A connect failure still returns a structured RenderResult.
+
 Every backend call has an explicit connect timeout and is wrapped so a failure
 returns a structured :class:`RenderResult` — never a hang, never a raise.
 """
 
 from __future__ import annotations
 
+import ipaddress
 import time
 from collections.abc import Callable
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from urllib.parse import urlsplit
 
 from general_ludd.web.results import RenderResult, WebError
@@ -35,6 +46,7 @@ from general_ludd.web.ssrf_client import (
     OfflineResolveError,
     SSRFBlocked,
     _guard_url,
+    _screen_ip,
     resolve_and_screen,
 )
 
@@ -60,14 +72,27 @@ class RenderConfig:
     screenshot_path: str | None = None
     engine: str = "playwright"  # playwright | selenium
     remote_host_allowlist: list[str] = field(default_factory=list)
+    #: Populated by render_page AFTER the SSRF screen: the endpoint rewritten to
+    #: dial a screened IP LITERAL (DNS-rebind pin). Backends MUST connect to this,
+    #: never to the un-pinned cfg.endpoint hostname.
+    pinned_endpoint: str | None = field(default=None, repr=False)
+    #: Populated by render_page AFTER screening the TARGET url: the set of screened
+    #: IP literals the target host resolved to. The Playwright backend re-screens
+    #: the ACTUAL peer the browser connected to against this set (rebind defence on
+    #: the navigation path, where the browser does its own DNS).
+    target_screened_ips: list[str] = field(default_factory=list, repr=False)
 
 
-def _guard_remote_endpoint(endpoint: str, allowlist: list[str]) -> None:
+def _guard_remote_endpoint(endpoint: str, allowlist: list[str]) -> tuple[str, list[str]]:
     """Relaxed-scheme SSRF guard for a remote-debug / Grid endpoint.
 
     Allows http/ws (CDP/Grid are not https) BUT still resolve-screens every IP
     AND requires the host on the allowlist.  Raises :class:`SSRFBlocked` (or
     :class:`OfflineResolveError`) on any violation.
+
+    Returns ``(original_host, screened_ips)`` so the caller can PIN the browser
+    connect to a screened IP literal instead of letting Playwright/Selenium
+    re-resolve the hostname (the DNS-rebind hole).
     """
     if not endpoint:
         raise SSRFBlocked("remote mode requires an endpoint", kind="string")
@@ -91,7 +116,29 @@ def _guard_remote_endpoint(endpoint: str, allowlist: list[str]) -> None:
         )
     port = parts.port if parts.port is not None else (443 if parts.scheme == "https" else 80)
     # Mandatory IP re-screen: localhost:9222 et al are BLOCKED even if allowlisted.
-    resolve_and_screen(host, port)
+    screened = resolve_and_screen(host, port)
+    return host, screened
+
+
+def _pin_endpoint_host(endpoint: str, original_host: str, pin_ip: str) -> str:
+    """Rewrite ``endpoint``'s host to the screened IP LITERAL ``pin_ip``.
+
+    Preserves scheme (including ws/wss), port, path, query.  The browser then
+    dials the vetted IP directly and CANNOT re-resolve ``original_host`` to a
+    rebind-supplied internal address.  An IPv6 literal is bracketed.
+    """
+    parts = urlsplit(endpoint.strip())
+    try:
+        is_v6 = isinstance(ipaddress.ip_address(pin_ip), ipaddress.IPv6Address)
+    except ValueError:
+        is_v6 = False
+    hostlit = f"[{pin_ip}]" if is_v6 else pin_ip
+    netloc = hostlit if parts.port is None else f"{hostlit}:{parts.port}"
+    if parts.username:
+        userinfo = parts.username + (f":{parts.password}" if parts.password else "")
+        netloc = f"{userinfo}@{netloc}"
+    rebuilt = parts._replace(netloc=netloc)
+    return rebuilt.geturl()
 
 
 def render_page(
@@ -115,22 +162,31 @@ def render_page(
             elapsed_s=round(time.monotonic() - started, 4),
         )
 
-    # 1. SSRF-guard the TARGET url (full string + DNS + IP screen) ALWAYS.
+    # 1. SSRF-guard the TARGET url (full string + DNS + IP screen) ALWAYS, and
+    #    record the screened IPs so the backend can re-screen the actual peer the
+    #    browser opens (the navigation-path rebind defence).
     try:
-        _guard_url(url)
+        target_screened = _guard_url(url)
     except SSRFBlocked as exc:
         return _err(WebError.SSRF_BLOCKED, exc, cfg, started)
     except OfflineResolveError as exc:
         return _err(WebError.OFFLINE, exc, cfg, started)
+    cfg = replace(cfg, target_screened_ips=target_screened)
 
-    # 2. SSRF-guard the remote endpoint (relaxed scheme + allowlist + IP reblock).
+    # 2. SSRF-guard the remote endpoint (relaxed scheme + allowlist + IP reblock)
+    #    AND pin: rewrite the endpoint to dial the screened IP literal so the
+    #    browser cannot re-resolve the hostname to a rebind-supplied internal IP.
     if cfg.mode in ("remote_cdp", "webdriver_remote"):
         try:
-            _guard_remote_endpoint(cfg.endpoint or "", cfg.remote_host_allowlist)
+            ep_host, ep_screened = _guard_remote_endpoint(
+                cfg.endpoint or "", cfg.remote_host_allowlist
+            )
         except SSRFBlocked as exc:
             return _err(WebError.SSRF_BLOCKED, exc, cfg, started)
         except OfflineResolveError as exc:
             return _err(WebError.OFFLINE, exc, cfg, started)
+        pinned = _pin_endpoint_host(cfg.endpoint or "", ep_host, ep_screened[0])
+        cfg = replace(cfg, pinned_endpoint=pinned)
 
     # 3. Run the backend (injectable for tests; otherwise lazy-import the engine).
     try:
@@ -164,6 +220,30 @@ class _RendererUnavailable(Exception):
     """Lazy import of a browser backend failed (extra not installed)."""
 
 
+def _assert_peer_screened(resp: object, screened: list[str]) -> None:
+    """Re-screen the actual peer a Playwright navigation connected to.
+
+    ``resp.server_addr()`` (Playwright) returns the remote ``{ipAddress, port}``
+    the browser actually dialed.  If that address is internal/metadata, or is not
+    in the pre-screened set we vetted, raise :class:`SSRFBlocked` — catching a
+    DNS-rebind that handed the BROWSER a different (internal) IP than gludd's
+    getaddrinfo screen saw.  A missing/None address FAILS CLOSED.
+    """
+    if resp is None:
+        return  # no navigation response (e.g. about:blank) — nothing dialed
+    server_addr = getattr(resp, "server_addr", None)
+    addr = server_addr() if callable(server_addr) else None
+    if not addr:
+        raise SSRFBlocked(
+            "could not read browser peer address — failing closed", kind="peer",
+        )
+    peer_ip = str(addr.get("ipAddress") if isinstance(addr, dict) else addr)
+    if not _screen_ip(peer_ip) or (screened and peer_ip not in screened):
+        raise SSRFBlocked(
+            f"browser connected to unscreened peer {peer_ip!r}", kind="peer",
+        )
+
+
 def _render_playwright(url: str, cfg: RenderConfig) -> _BackendResult:
     try:
         from playwright.sync_api import sync_playwright  # type: ignore[import-not-found]
@@ -175,7 +255,10 @@ def _render_playwright(url: str, cfg: RenderConfig) -> _BackendResult:
     connect_ms = int(cfg.connect_timeout * 1000)
     with sync_playwright() as p:
         if cfg.mode == "remote_cdp":
-            browser = p.chromium.connect_over_cdp(cfg.endpoint, timeout=connect_ms)
+            # Connect to the SCREENED-IP-pinned endpoint (DNS-rebind defence):
+            # never the un-pinned hostname.
+            endpoint = cfg.pinned_endpoint or cfg.endpoint
+            browser = p.chromium.connect_over_cdp(endpoint, timeout=connect_ms)
         else:
             browser = p.chromium.launch(headless=True)
         try:
@@ -185,6 +268,10 @@ def _render_playwright(url: str, cfg: RenderConfig) -> _BackendResult:
             )
             page = ctx.new_page()
             resp = page.goto(url, timeout=timeout_ms, wait_until="load")
+            # Navigation-path rebind defence: re-screen the ACTUAL peer the browser
+            # connected to (the browser did its own DNS for the target). If it is
+            # not a screened public address, abort before reading any content.
+            _assert_peer_screened(resp, cfg.target_screened_ips)
             html = page.content()
             text = page.inner_text("body") if page.query_selector("body") else ""
             screenshot = None
@@ -213,11 +300,21 @@ def _render_selenium(url: str, cfg: RenderConfig) -> _BackendResult:
     options.add_argument(f"--window-size={cfg.viewport[0]},{cfg.viewport[1]}")
     options.add_argument(f"--user-agent={cfg.user_agent}")
     if cfg.mode == "webdriver_remote":
-        driver = webdriver.Remote(command_executor=cfg.endpoint, options=options)
+        # Connect to the SCREENED-IP-pinned Grid endpoint (DNS-rebind defence):
+        # never the un-pinned hostname.
+        command_executor = cfg.pinned_endpoint or cfg.endpoint
+        driver = webdriver.Remote(command_executor=command_executor, options=options)
     else:
         driver = webdriver.Chrome(options=options)
     try:
         driver.set_page_load_timeout(cfg.timeout)
+        # NOTE (residual): the Selenium/WebDriver protocol exposes NO API for the
+        # target navigation's remote peer IP, so unlike the Playwright backend we
+        # cannot post-connect re-screen the TARGET peer here. The Grid ENDPOINT is
+        # already pinned to a screened IP literal (cfg.pinned_endpoint) so the Grid
+        # itself cannot be rebound; the target pre-screen (_guard_url) is the
+        # guarantee for the navigation. Operators needing target-peer pinning on
+        # the navigation path should prefer the Playwright backend.
         driver.get(url)
         html = driver.page_source
         text = driver.find_element("tag name", "body").text

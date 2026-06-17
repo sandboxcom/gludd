@@ -302,3 +302,107 @@ def test_screen_ip_predicate():
     assert sc._screen_ip("169.254.169.254") is False
     assert sc._screen_ip("::1") is False
     assert sc._screen_ip("not-an-ip") is False
+
+
+# -- (issue 2) IPv4-mapped IPv6 bypass of the metadata literals ----------------
+
+def test_screen_ip_v4mapped_alibaba_metadata_blocked():
+    """::ffff:100.100.100.200 must be BLOCKED (was a bypass: public-looking
+    literal, only in the string set, and the mapped form misses the raw match)."""
+    assert sc._screen_ip("100.100.100.200") is False
+    assert sc._screen_ip("::ffff:100.100.100.200") is False
+    # bracketed form (as it may arrive from a sockaddr) also blocked.
+    assert sc._screen_ip("[::ffff:100.100.100.200]") is False
+
+
+def test_screen_ip_v4mapped_aws_metadata_blocked():
+    assert sc._screen_ip("::ffff:169.254.169.254") is False
+
+
+def test_screen_ip_v4mapped_private_blocked():
+    assert sc._screen_ip("::ffff:10.0.0.1") is False
+    assert sc._screen_ip("::ffff:127.0.0.1") is False
+
+
+def test_screen_ip_v4mapped_public_allowed():
+    assert sc._screen_ip("::ffff:93.184.216.34") is True
+
+
+def test_dns_resolving_to_v4mapped_metadata_blocked(monkeypatch):
+    """A host resolving to the IPv4-mapped Alibaba metadata literal is blocked."""
+
+    def _mapped(host, *a, **k):
+        return [(socket.AF_INET6, socket.SOCK_STREAM, 6, "", ("::ffff:100.100.100.200", 443, 0, 0))]
+
+    monkeypatch.setattr(sc.socket, "getaddrinfo", _mapped)
+    res = _client(lambda r: httpx.Response(200)).fetch(_URL)
+    assert res.ok is False
+    assert res.error == WebError.SSRF_BLOCKED
+
+
+# -- (issue 1) true IP pinning in _PinnedTransport -----------------------------
+
+def test_pinned_transport_rewrites_connect_host_to_screened_ip():
+    """The pinned transport must dial the screened IP LITERAL (not re-resolve the
+    hostname) while preserving the original Host header + SNI for TLS."""
+    seen = {}
+
+    def _fake_super(s, r):
+        seen["host"] = r.url.host
+        seen["header_host"] = r.headers.get("Host")
+        seen["sni"] = r.extensions.get("sni_hostname")
+        return httpx.Response(200, text="ok", request=r, extensions={})
+
+    t = sc._PinnedTransport("example.com", [_PUBLIC_IP], verify=True)
+    orig = httpx.HTTPTransport.handle_request
+    httpx.HTTPTransport.handle_request = lambda s, r: _fake_super(s, r)
+    try:
+        req = httpx.Request("GET", "https://example.com/page")
+        sc._PinnedTransport.handle_request(t, req)
+    finally:
+        httpx.HTTPTransport.handle_request = orig
+    assert seen["host"] == _PUBLIC_IP  # dialed the screened IP literal
+    assert seen["header_host"] == "example.com"  # Host preserved
+    assert seen["sni"] == "example.com"  # SNI preserved for TLS verification
+
+
+def test_pinned_transport_skips_rewrite_for_ip_literal_host():
+    """When the URL host is already the screened IP, no rewrite/SNI is needed."""
+    seen = {}
+
+    def _fake_super(s, r):
+        seen["host"] = r.url.host
+        seen["sni"] = r.extensions.get("sni_hostname")
+        return httpx.Response(200, request=r, extensions={})
+
+    t = sc._PinnedTransport(_PUBLIC_IP, [_PUBLIC_IP], verify=True)
+    orig = httpx.HTTPTransport.handle_request
+    httpx.HTTPTransport.handle_request = lambda s, r: _fake_super(s, r)
+    try:
+        req = httpx.Request("GET", f"https://{_PUBLIC_IP}/page")
+        sc._PinnedTransport.handle_request(t, req)
+    finally:
+        httpx.HTTPTransport.handle_request = orig
+    assert seen["host"] == _PUBLIC_IP
+    assert seen["sni"] is None  # no SNI override when already an IP literal
+
+
+def test_pinned_transport_peer_mismatch_fails_closed():
+    """If the actual connected peer is NOT in the screened set, abort (SSRFBlocked)."""
+
+    class _Stream:
+        def get_extra_info(self, name):
+            return ("10.0.0.7", 443)  # internal peer not in screened set
+
+    def _fake_super(s, r):
+        return httpx.Response(200, request=r, extensions={"network_stream": _Stream()})
+
+    t = sc._PinnedTransport("example.com", [_PUBLIC_IP], verify=True)
+    orig = httpx.HTTPTransport.handle_request
+    httpx.HTTPTransport.handle_request = lambda s, r: _fake_super(s, r)
+    try:
+        req = httpx.Request("GET", "https://example.com/page")
+        with pytest.raises(sc.SSRFBlocked):
+            sc._PinnedTransport.handle_request(t, req)
+    finally:
+        httpx.HTTPTransport.handle_request = orig

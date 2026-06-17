@@ -45,6 +45,15 @@ def registrable_domain(host: str) -> str:
 
     Handles the common multi-label suffixes above; otherwise falls back to the
     last two labels.  Lowercased; an empty/IP host returns itself.
+
+    KNOWN APPROXIMATION (documented v1 trade-off — no ``tldextract``/real PSL dep):
+    ``_MULTI_SUFFIXES`` is a hand-curated subset, so two unrelated hosts under an
+    UNLISTED multi-label public suffix (e.g. ``foo.s3.amazonaws.com`` vs
+    ``bar.s3.amazonaws.com``, or ``*.something.gov.tr``) may be judged
+    same-registrable-domain (and so crawled together), or a legitimate same-site
+    host be judged off-domain.  Operators who need exact same-site confinement
+    MUST set :attr:`CrawlPolicy.allowed_domains` (which overrides this heuristic
+    entirely) and/or :attr:`CrawlPolicy.allow_subdomains`.
     """
     h = (host or "").strip().lower().rstrip(".")
     if not h:
@@ -142,10 +151,21 @@ class Crawler:
         self._robots = RobotsCache(self._client)
         self._buckets: dict[str, TokenBucket] = {}
 
-    def _bucket(self, host: str) -> TokenBucket:
+    def _bucket(self, host: str, url: str = "") -> TokenBucket:
         b = self._buckets.get(host)
         if b is None:
-            b = TokenBucket(rate=self.policy.per_host_rps, capacity=max(1.0, self.policy.per_host_rps))
+            rate = self.policy.per_host_rps
+            # POLITENESS: honor a robots.txt Crawl-delay. A site asking for
+            # "Crawl-delay: 10" must be hit no faster than 1/10 rps, so the
+            # effective rate is min(configured rps, 1/crawl_delay). The bucket is
+            # created ONCE per host (after robots is loaded), so the delay is read
+            # here and baked into the host's rate for the whole crawl.
+            if self.policy.respect_robots and url:
+                with contextlib.suppress(Exception):
+                    delay = self._robots.crawl_delay(url)
+                    if delay and delay > 0:
+                        rate = min(rate, 1.0 / float(delay))
+            b = TokenBucket(rate=rate, capacity=max(1.0, rate))
             self._buckets[host] = b
         return b
 
@@ -204,7 +224,7 @@ class Crawler:
 
             host = (urlsplit(url).hostname or "").lower()
             stats.hosts.add(host)
-            waited = self._bucket(host).take(
+            waited = self._bucket(host, url).take(
                 max_wait=self.policy.rate_limit_max_wait,
                 sleep=self.policy.rate_limit_sleep,
             )

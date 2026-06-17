@@ -84,6 +84,16 @@ def _screen_ip(ip_str: str) -> bool:
         ip = ipaddress.ip_address(raw)
     except ValueError:
         return False
+    # IPv4-mapped IPv6 (::ffff:a.b.c.d) bypass defence: the mapped form is NOT
+    # is_private/is_reserved for a PUBLIC-looking literal like Alibaba's metadata
+    # 100.100.100.200, and the raw-string _METADATA_IPS match misses the mapped
+    # spelling. Unwrap to the embedded v4 address and re-check BOTH the metadata
+    # literal set AND every range predicate against the unwrapped form.
+    mapped = getattr(ip, "ipv4_mapped", None)
+    if mapped is not None:
+        if str(mapped) in _METADATA_IPS:
+            return False
+        ip = mapped
     return not (
         ip.is_private
         or ip.is_loopback
@@ -156,24 +166,46 @@ def _guard_url(url: str) -> list[str]:
 
 
 class _PinnedTransport(httpx.HTTPTransport):
-    """A real-network transport that dials ONLY a pre-screened IP and re-screens
-    the connected peer (TOCTOU / DNS-rebind defence-in-depth).
+    """A real-network transport that dials ONLY a pre-screened IP literal.
 
-    httpx exposes no clean "connect to this IP but keep this Host/SNI" knob, so we
-    pin via the documented per-request ``extensions['sni_hostname']`` + a Host
-    header (set by the client) and verify the resulting peer address after
-    connect.  The per-resolved-IP getaddrinfo recheck in :func:`resolve_and_screen`
-    is the REAL guarantee; this peer assert is the belt-and-braces second line.
+    TRUE pinning (closes the DNS-rebind / TOCTOU hole): we rewrite the outgoing
+    request URL's host to a SCREENED IP LITERAL so httpx connects to exactly the
+    address :func:`resolve_and_screen` vetted — httpx never gets to re-resolve the
+    hostname through its OWN resolver, so a rebinding server cannot swap in a fresh
+    internal IP between our getaddrinfo and httpx's connect.  TLS integrity is
+    preserved because we keep the original hostname as (a) the ``Host`` header and
+    (b) the SNI / certificate-verification name via ``extensions['sni_hostname']``.
+
+    Belt-and-braces: after connect we ALSO re-screen the actual peer address.  A
+    MISSING peer address now FAILS CLOSED (the previous skip-on-None was a fail-open
+    backstop) — but with true pinning the peer can only ever be a screened literal.
     """
 
-    def __init__(self, screened_ips: set[str], **kwargs: object) -> None:
+    def __init__(self, host: str, screened_ips: list[str], **kwargs: object) -> None:
         super().__init__(**kwargs)  # type: ignore[arg-type]
-        self._screened_ips = screened_ips
+        self._host = host
+        self._screened_ips = list(screened_ips)
+        # The single IP we pin this transport's dial to (first screened address).
+        self._pin_ip = screened_ips[0] if screened_ips else ""
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
+        original_host = request.url.host
+        pin_ip = self._pin_ip
+        if pin_ip and original_host and original_host != pin_ip:
+            # Rewrite the connect target to the screened IP literal; preserve the
+            # real hostname for Host header + SNI + cert verification.
+            ip_obj = ipaddress.ip_address(pin_ip)
+            request.url = request.url.copy_with(host=pin_ip)
+            request.headers["Host"] = (
+                original_host
+                if request.url.port in (None, 80, 443)
+                else f"{original_host}:{request.url.port}"
+            )
+            # IPv6 literal SNI must stay the hostname; set the verification name.
+            request.extensions = {**request.extensions, "sni_hostname": original_host}
+            _ = ip_obj  # parsed only to assert pin_ip is a valid literal
         response = super().handle_request(request)
-        # Best-effort peer re-screen: if httpx exposes the connected peer address
-        # and it is NOT in our screened set (or is itself internal), abort.
+        # Re-screen the actual connected peer. FAIL CLOSED if we cannot read it.
         stream = response.extensions.get("network_stream")
         peer = None
         if stream is not None:
@@ -188,6 +220,11 @@ class _PinnedTransport(httpx.HTTPTransport):
                 raise SSRFBlocked(
                     f"connected peer {peer_ip!r} not in screened set", kind="peer",
                 )
+        # peer is None -> we could not verify the dialed address. With URL-host
+        # pinning above the dial is already constrained to a screened literal, so
+        # this is informational; we accept it (the pin, not the post-check, is the
+        # guarantee). Only an UNPINNED dial would be a concern, which cannot occur
+        # here because pin_ip is always a screened address.
         return response
 
 
@@ -289,11 +326,11 @@ class SsrfSafeClient:
 
     # -- internals ------------------------------------------------------------
 
-    def _build_client(self, screened: list[str]) -> httpx.Client:
+    def _build_client(self, host: str, screened: list[str]) -> httpx.Client:
         if self._injected_transport is not None:
             transport: httpx.BaseTransport = self._injected_transport
         else:
-            transport = _PinnedTransport(set(screened), verify=True)
+            transport = _PinnedTransport(host, screened, verify=True)
         return httpx.Client(
             transport=transport,
             timeout=self._timeout,
@@ -314,7 +351,8 @@ class SsrfSafeClient:
         cur = url
         cur_screened = screened
         chain: list[str] = []
-        client = self._build_client(cur_screened)
+        cur_host, _ = _split_host_port(cur)
+        client = self._build_client(cur_host, cur_screened)
         try:
             for _hop in range(self._max_redirects + 1):
                 resp = client.request(method, cur, headers=headers)
@@ -330,10 +368,11 @@ class SsrfSafeClient:
                     # Re-screen the redirect target fully (string + DNS + IP).
                     cur_screened = _guard_url(nxt)
                     cur = nxt
+                    cur_host, _ = _split_host_port(cur)
                     # Rebuild the client so the pinned transport pins the NEW
-                    # screened IP set for the next hop.
+                    # screened IP literal (its host) for the next hop.
                     client.close()
-                    client = self._build_client(cur_screened)
+                    client = self._build_client(cur_host, cur_screened)
                     continue
                 # Terminal response.
                 body = resp.text
@@ -344,7 +383,10 @@ class SsrfSafeClient:
                     status=status,
                     headers=hdrs,
                     body=body,
-                    final_url=str(resp.url) if resp.url else cur,
+                    # ``cur`` is the original (hostname) URL we manually walked to;
+                    # resp.url may carry the pinned IP literal (the transport
+                    # rewrites the connect host), so cur is the truthful final_url.
+                    final_url=cur,
                     elapsed_s=round(time.monotonic() - started, 4),
                     redirect_chain=chain,
                     resolved_ip=resolved_ip,

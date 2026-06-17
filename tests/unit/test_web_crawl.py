@@ -15,6 +15,8 @@ from general_ludd.web.crawl import (
     registrable_domain,
 )
 from general_ludd.web.ratelimit import TokenBucket
+from general_ludd.web.results import RawFetchResult, WebError
+from general_ludd.web.robots import RobotsCache
 
 _PUBLIC_IP = "93.184.216.34"
 
@@ -174,3 +176,83 @@ def test_crawl_rate_limited_skip():
     res = crawler.crawl()
     # With a 1-token bucket and no sleeping, later same-host pages hit rate_limit
     assert res.stats["rate_limited"] >= 1
+
+
+# -- (issue 4) robots.txt Crawl-delay is honored by the host bucket -----------
+
+def test_crawl_delay_caps_host_rate():
+    """A robots Crawl-delay:10 must drop the effective rate to <= 1/10 rps even
+    when the configured per_host_rps is much higher."""
+    robots = "User-agent: *\nCrawl-delay: 10\n"
+    crawler = Crawler(
+        ["https://example.com/"],
+        policy=_policy(respect_robots=True, per_host_rps=1000.0, max_depth=1),
+        transport=_site_transport(robots_body=robots),
+    )
+    # Trigger robots load (can_fetch) then build the bucket through the crawler.
+    assert crawler._robots.can_fetch(crawler.policy.user_agent, "https://example.com/") is True
+    bucket = crawler._bucket("example.com", "https://example.com/")
+    # Effective rate is min(1000, 1/10) = 0.1 rps.
+    assert bucket._rate == pytest.approx(0.1)
+
+
+def test_crawl_delay_absent_uses_configured_rate():
+    robots = "User-agent: *\nDisallow: /private\n"  # no Crawl-delay
+    crawler = Crawler(
+        ["https://example.com/"],
+        policy=_policy(respect_robots=True, per_host_rps=5.0, max_depth=1),
+        transport=_site_transport(robots_body=robots),
+    )
+    crawler._robots.can_fetch(crawler.policy.user_agent, "https://example.com/")
+    bucket = crawler._bucket("example.com", "https://example.com/")
+    assert bucket._rate == pytest.approx(5.0)
+
+
+# -- (issue 6) robots fetch that trips the breaker -> SKIP (deny), not allow-all
+
+class _FakeClient:
+    """Stand-in SsrfSafeClient: returns a queued RawFetchResult per fetch call."""
+
+    def __init__(self, results):
+        self._results = list(results)
+        self.calls = 0
+
+    def fetch(self, url, **kw):
+        self.calls += 1
+        if self._results:
+            return self._results.pop(0)
+        return RawFetchResult(ok=False, error=WebError.OFFLINE)
+
+
+def test_robots_circuit_open_denies_host():
+    """A CIRCUIT_OPEN robots fetch must make can_fetch return False (skip the
+    failing host) rather than fall through to allow-all."""
+    client = _FakeClient([RawFetchResult(ok=False, error=WebError.CIRCUIT_OPEN)])
+    cache = RobotsCache(client)  # type: ignore[arg-type]
+    assert cache.can_fetch("ua", "https://example.com/page") is False
+
+
+def test_robots_circuit_open_retries_after_recovery():
+    """The CIRCUIT_OPEN skip is NOT cached forever: a later fetch (breaker cooled)
+    re-loads a real allow-all 404 policy and the host is crawlable again."""
+    client = _FakeClient([
+        RawFetchResult(ok=False, error=WebError.CIRCUIT_OPEN),   # 1st: tripped -> deny
+        RawFetchResult(ok=False, error=WebError.OFFLINE, status=404),  # 2nd: 404 allow-all
+    ])
+    cache = RobotsCache(client)  # type: ignore[arg-type]
+    assert cache.can_fetch("ua", "https://example.com/page") is False
+    # Second call re-fetches (not cached) and now allows.
+    assert cache.can_fetch("ua", "https://example.com/page") is True
+    assert client.calls == 2
+
+
+def test_robots_404_allows_all():
+    client = _FakeClient([RawFetchResult(ok=False, error=WebError.OFFLINE, status=404)])
+    cache = RobotsCache(client)  # type: ignore[arg-type]
+    assert cache.can_fetch("ua", "https://example.com/page") is True
+
+
+def test_robots_ssrf_blocked_denies_all():
+    client = _FakeClient([RawFetchResult(ok=False, error=WebError.SSRF_BLOCKED)])
+    cache = RobotsCache(client)  # type: ignore[arg-type]
+    assert cache.can_fetch("ua", "https://example.com/page") is False

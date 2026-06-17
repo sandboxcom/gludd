@@ -193,6 +193,11 @@ lint-fix:
 typecheck:
 	@$(UV) run mypy src
 
+# Targeted mypy on just the web toolkit package (proves the web/* changes are
+# type-clean independent of pre-existing errors in unrelated modules).
+typecheck-web:
+	@$(UV) run mypy src/general_ludd/web
+
 test:
 	@$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
 
@@ -1228,6 +1233,14 @@ git-checkout:
 git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
+
+# Check out a SHA into a NEW local branch in THIS worktree (used when the source
+# feature branch is already occupied by another worktree). Usage:
+#   make git-checkout-sha SHA=06be3a1 BR=fix/web-toolkit-review
+git-checkout-sha:
+	@if [ -z "$(SHA)" ] || [ -z "$(BR)" ]; then echo "Usage: make git-checkout-sha SHA=<sha> BR=<new-branch>"; exit 1; fi
+	@git checkout -b "$(BR)" "$(SHA)"
+	@echo "Checked out $(SHA) into new branch $(BR)"
 
 feature-start:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-start MSG='feature/short-name'"; exit 1; fi
