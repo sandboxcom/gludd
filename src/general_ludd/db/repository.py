@@ -30,6 +30,46 @@ from general_ludd.db.models import (
 )
 from general_ludd.schemas.todo import TodoStatus
 
+# ---------------------------------------------------------------------------
+# Module-level helpers
+# ---------------------------------------------------------------------------
+
+_S = Any  # SQLAlchemy Select / Update statement (type alias for brevity)
+
+
+def _scope(stmt: _S, model_cls: Any, project_id: str | None) -> _S:
+    """Conditionally narrow *stmt* to a single project.
+
+    Appends ``WHERE model_cls.project_id == project_id`` only when
+    *project_id* is not None.  This eliminates the 20+ inline guard blocks
+    that previously appeared across every repository method.
+    """
+    if project_id is not None:
+        stmt = stmt.where(model_cls.project_id == project_id)
+    return stmt
+
+
+def _count_by_fields(rows: list[Any], *field_names: str) -> tuple[dict[str, int], ...]:
+    """Tally rows into one counter dict per *field_name*.
+
+    Returns a tuple of ``{value: count}`` dicts in the same order as
+    *field_names*.  Used by :meth:`TodoRepository.status_summary` and
+    :meth:`TaskReturnRepository.work_summary` to replace the near-identical
+    counting loops that existed in each method.
+
+    Example::
+
+        by_status, by_queue, by_work_type = _count_by_fields(
+            rows, "status", "queue", "work_type"
+        )
+    """
+    counters: list[dict[str, int]] = [{} for _ in field_names]
+    for row in rows:
+        for i, name in enumerate(field_names):
+            val = getattr(row, name)
+            counters[i][val] = counters[i].get(val, 0) + 1
+    return tuple(counters)
+
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BACKLOG: {TodoStatus.QUEUED},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
@@ -82,8 +122,7 @@ class TodoRepository:
 
     async def get_by_id(self, todo_id: str, project_id: str | None = None) -> TodoModel | None:
         stmt = select(TodoModel).where(TodoModel.todo_id == todo_id)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -113,8 +152,7 @@ class TodoRepository:
                 TodoModel.version == expected_version,
             )
         )
-        if project_id is not None:
-            guard = guard.where(TodoModel.project_id == project_id)
+        guard = _scope(guard, TodoModel, project_id)
         guard = guard.values(**updates, version=expected_version + 1, updated_at=now)
         res = await self._session.execute(guard)
         if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
@@ -134,8 +172,7 @@ class TodoRepository:
         self, status: TodoStatus, project_id: str | None = None
     ) -> list[TodoModel]:
         stmt = select(TodoModel).where(TodoModel.status == status.value)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -150,8 +187,7 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.queue == queue)
         if status is not None:
             stmt = stmt.where(TodoModel.status == status)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -159,8 +195,7 @@ class TodoRepository:
         self, work_type: str, project_id: str | None = None
     ) -> list[TodoModel]:
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -178,8 +213,7 @@ class TodoRepository:
         from sqlalchemy import update
 
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         stmt = stmt.limit(limit)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
@@ -242,8 +276,7 @@ class TodoRepository:
         stmt = select(func.count()).select_from(TodoModel).where(
             TodoModel.status == TodoStatus.ACTIVE.value
         )
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         result = await self._session.execute(stmt)
         return result.scalar() or 0
 
@@ -251,18 +284,12 @@ class TodoRepository:
         """Aggregate todo facts: counts by status / queue / work_type, oldest age,
         backlog size. Reused by the /api/facts aggregation endpoint."""
         stmt = select(TodoModel)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        stmt = _scope(stmt, TodoModel, project_id)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
-        by_status: dict[str, int] = {}
-        by_queue: dict[str, int] = {}
-        by_work_type: dict[str, int] = {}
+        by_status, by_queue, by_work_type = _count_by_fields(rows, "status", "queue", "work_type")
         oldest_created: datetime | None = None
         for r in rows:
-            by_status[r.status] = by_status.get(r.status, 0) + 1
-            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
-            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
             created = r.created_at
             if created is not None:
                 if created.tzinfo is None:
@@ -315,8 +342,7 @@ class TodoRepository:
                 TodoModel.status == current.value,
             )
         )
-        if project_id is not None:
-            guard = guard.where(TodoModel.project_id == project_id)
+        guard = _scope(guard, TodoModel, project_id)
         guard = guard.values(
             status=new_status.value, version=expected_version + 1, updated_at=now
         )
@@ -354,17 +380,10 @@ class TaskReturnRepository:
         Task returns represent dispatched work; this is the "work" facet of
         /api/facts. Reused, not duplicated, by the facts endpoint."""
         stmt = select(TaskReturnModel)
-        if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        stmt = _scope(stmt, TaskReturnModel, project_id)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
-        by_status: dict[str, int] = {}
-        by_queue: dict[str, int] = {}
-        by_work_type: dict[str, int] = {}
-        for r in rows:
-            by_status[r.status] = by_status.get(r.status, 0) + 1
-            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
-            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
+        by_status, by_queue, by_work_type = _count_by_fields(rows, "status", "queue", "work_type")
         return {
             "total": len(rows),
             "by_status": by_status,
@@ -377,8 +396,7 @@ class TaskReturnRepository:
     ) -> dict[str, Any]:
         """Recent returns + success/failure rates (exit_code 0 == success)."""
         stmt = select(TaskReturnModel)
-        if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        stmt = _scope(stmt, TaskReturnModel, project_id)
         stmt = stmt.order_by(TaskReturnModel.created_at.desc())
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
@@ -415,8 +433,7 @@ class TaskReturnRepository:
         from sqlalchemy import update
 
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
-        if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
+        stmt = _scope(stmt, TaskReturnModel, project_id)
         stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(limit)
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
@@ -1154,8 +1171,7 @@ class SpendRepository:
             List of :class:`SpendRecordModel` rows ordered by ``ts`` ascending.
         """
         stmt = select(SpendRecordModel).where(SpendRecordModel.ts >= since_epoch)
-        if project_id is not None:
-            stmt = stmt.where(SpendRecordModel.project_id == project_id)
+        stmt = _scope(stmt, SpendRecordModel, project_id)
         stmt = stmt.order_by(SpendRecordModel.ts.asc())
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
@@ -1179,8 +1195,7 @@ class SpendRepository:
         stmt = select(func.sum(SpendRecordModel.cost_usd)).where(
             SpendRecordModel.ts >= since_epoch
         )
-        if project_id is not None:
-            stmt = stmt.where(SpendRecordModel.project_id == project_id)
+        stmt = _scope(stmt, SpendRecordModel, project_id)
         result = await self._session.execute(stmt)
         total: float | None = result.scalar_one_or_none()
         return float(total) if total is not None else 0.0
@@ -1207,8 +1222,7 @@ class RoleRunRepository:
     async def count_by_role(self, project_id: str | None = None) -> dict[str, int]:
         """Return {role: count} for the given project_id (or all if None)."""
         stmt = select(RoleRunModel)
-        if project_id is not None:
-            stmt = stmt.where(RoleRunModel.project_id == project_id)
+        stmt = _scope(stmt, RoleRunModel, project_id)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         counts: dict[str, int] = {}
@@ -1218,7 +1232,6 @@ class RoleRunRepository:
 
     async def list_all(self, project_id: str | None = None) -> list[RoleRunModel]:
         stmt = select(RoleRunModel)
-        if project_id is not None:
-            stmt = stmt.where(RoleRunModel.project_id == project_id)
+        stmt = _scope(stmt, RoleRunModel, project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
