@@ -186,6 +186,16 @@ class TestTaskReturnModel:
 
 class TestTaskDecisionModel:
     async def test_create_task_decision(self, async_session: AsyncSession):
+        # Parent TaskReturnModel required now that return_id has a FK constraint.
+        tr = TaskReturnModel(
+            return_id="R-001",
+            job_id="J-001",
+            playbook="noop.yml",
+            queue="core",
+        )
+        async_session.add(tr)
+        await async_session.flush()
+
         td = TaskDecisionModel(
             return_id="R-001",
             matched_todo_id="TODO-ABCD1234",
