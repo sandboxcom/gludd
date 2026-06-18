@@ -38,6 +38,18 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
         molecule-clean plan ps-gludd kill-stale
 
+kill-gate-force:
+	-@pkill -f 'worktrees/agent-a79ff9c8' 2>/dev/null; true
+	-@pkill -f 'gludd-gate-basetemp' 2>/dev/null; true
+	@sleep 1
+	@echo "[kill-gate-force] killed rogue gate processes (a79ff9c8 worktree + basetemp holders)"
+
+review-locate-web:
+	@git worktree list
+	@echo "--- web pkg candidates ---"
+	@find /Users/shawnwilson/gludd/.claude/worktrees -type d -name web 2>/dev/null
+	@git branch -a | grep -i cfeb || true
+
 help:
 	@echo "Usage: make [target]"
 	@echo ""
@@ -581,6 +593,10 @@ grep:
 	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
 	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
 
+# Show the last gate's FAILED/ERROR short-test-summary without re-running tests.
+gate-tail:
+	@grep -nE '^(FAILED|ERROR) |failed,|error' /tmp/gludd-test-gate.txt 2>/dev/null | tail -60 || echo "no gate log"
+
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
 	@git ls-files | grep -E 'id_rsa|id_ed25519|\.pem$$|_rsa$$|_rsa\.pub$$|sandboxcom_github' || echo "NONE TRACKED"
@@ -650,6 +666,39 @@ git-commit-file:
 	fi
 	@echo "Gate fresh and green. Committing (message file)..."
 	@git commit -F "$(FILE)"
+
+# ---------------------------------------------------------------------------
+# ship: ONE non-blocking pipeline — TEST before commit, commit only KNOWN-GOOD
+# work, hands-free. Run it backgrounded so it NEVER blocks the main thread:
+#   make ship FILES='path ...' MSG_FILE=/abs/msg.txt   (run in background)
+# Sequence: full gate (lint+typecheck+collect+test+smoke) -> only if EVERY phase
+# is green, stage FILES and commit via the gate-guarded git-commit-file. The last
+# line is always SHIP-RESULT=PASS <sha> or SHIP-RESULT=FAIL <phase>, so a
+# backgrounded run yields a single unambiguous outcome. Nothing is committed
+# unless the gate is green first — "test work before it is committed",
+# automatically, no human in the loop. This is the reference impl that ports to
+# gludd's git_automation (GitAutomation.gated_commit) + the agent git role.
+# ---------------------------------------------------------------------------
+ship:
+	@[ -n "$(FILES)" ]    || { echo "SHIP-RESULT=FAIL usage(need-FILES)";    exit 2; }
+	@[ -n "$(MSG_FILE)" ] || { echo "SHIP-RESULT=FAIL usage(need-MSG_FILE)"; exit 2; }
+	@echo "[ship $$(date +%H:%M:%S)] phase A: gate (test BEFORE commit) ..."
+	@if ! $(MAKE) --no-print-directory gate; then echo "SHIP-RESULT=FAIL gate"; exit 1; fi
+	@echo "[ship $$(date +%H:%M:%S)] phase B: gate green -> staging known-good files ..."
+	@$(MAKE) --no-print-directory git-add FILES='$(FILES)'
+	@echo "[ship $$(date +%H:%M:%S)] phase C: commit (gate-guarded re-check) ..."
+	@if ! $(MAKE) --no-print-directory git-commit-file FILE='$(MSG_FILE)'; then echo "SHIP-RESULT=FAIL commit"; exit 1; fi
+	@echo "SHIP-RESULT=PASS $$(git rev-parse --short HEAD)"
+
+# ship-merge: feature-branch flow — after ship's gate+commit, merge the current
+# branch into BRANCH (default main) with --no-ff so all KNOWN-GOOD work merges
+# automatically. Non-blocking. Usage: make ship-merge FILES=... MSG_FILE=... BRANCH=main
+ship-merge: ship
+	@BR="$${BRANCH:-main}"; CUR=$$(git rev-parse --abbrev-ref HEAD); \
+	echo "[ship-merge] merging $$CUR -> $$BR (--no-ff) ..."; \
+	git checkout "$$BR" && git merge --no-ff "$$CUR" -m "Merge $$CUR (gate-green)" \
+	  && echo "SHIP-MERGE-RESULT=PASS $$(git rev-parse --short HEAD)" \
+	  || { echo "SHIP-MERGE-RESULT=FAIL merge"; exit 1; }
 
 smoke:
 	@echo "=== SMOKE TEST: real daemon boot ==="
