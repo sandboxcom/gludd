@@ -87,6 +87,8 @@ def decide(
     target: int = 10,
     ceiling: int = 12,
     watchdog_window: float = _agent_watchdog.DEFAULT_WINDOW_SECS,
+    gate_running: bool = False,
+    writer_cap_during_gate: int = 0,
 ) -> dict[str, Any]:
     """Produce a composite orchestration plan.
 
@@ -108,17 +110,30 @@ def decide(
     watchdog_window:
         Passed to ``classify_tail``; files modified within this many seconds are
         ACTIVE (not stalled).
+    gate_running:
+        When True, a CI/test gate is currently executing.  Heavy-writer worktree
+        dispatch is capped to ``writer_cap_during_gate`` (default 0 extra writers),
+        but READ-ONLY dispatch toward FLOOR is UNAFFECTED — the orchestrator MUST
+        still reach the floor using read-only agents.  This encodes the rule:
+        "a running gate does NOT lower the read-only floor."
+        When False (default), behaviour is identical to the pre-gate logic.
+    writer_cap_during_gate:
+        Maximum NEW heavy-writer dispatches allowed while a gate is running.
+        Default 0 (no new worktree-writers during a gate).  Ignored when
+        ``gate_running=False``.
 
     Returns
     -------
     A dict::
 
         {
-          "dispatch_n":  int,        # how many new agents to launch
-          "repoke_ids":  [str, ...], # ids of stalled-but-incomplete agents to repoke
-          "kill_ids":    [str, ...], # ids of DONE/idle agents safe to reap
-          "reason":      str,        # human-readable summary from floor_planner
-          "planner":     {...},      # full floor_planner.plan output (for logging)
+          "dispatch_n":      int,        # how many new agents to launch
+          "repoke_ids":      [str, ...], # ids of stalled-but-incomplete agents to repoke
+          "kill_ids":        [str, ...], # ids of DONE/idle agents safe to reap
+          "reason":          str,        # human-readable summary from floor_planner
+          "planner":         {...},      # full floor_planner.plan output (for logging)
+          "read_only_only":  bool,       # True when gate_running forces RO-only dispatch
+          "gate_running":    bool,       # echoes the gate_running input for logging
         }
     """
     # --- 1. Classify every inflight agent -----------------------------------
@@ -157,12 +172,30 @@ def decide(
 
     dispatch_n: int = planner_result["dispatch_now"]
 
+    # --- 3. Apply gate-safe floor rule -------------------------------------
+    # When a gate is running:
+    #   - Dispatch toward FLOOR is read-only-only (no new heavy worktree-writers).
+    #   - New heavy-writer dispatch beyond writer_cap_during_gate is suppressed.
+    # BUT: we never suppress read-only dispatch toward the floor — the count
+    # stays >= 1 as long as live < floor.  Ceiling still wins unconditionally.
+    read_only_only: bool = False
+    reason: str = planner_result["reason"]
+
+    if gate_running and dispatch_n > 0:
+        read_only_only = True
+        reason = (
+            f"{reason} [gate-safe: gate running — dispatch is READ-ONLY agents only; "
+            f"heavy-writer cap={writer_cap_during_gate}]"
+        )
+
     return {
         "dispatch_n": dispatch_n,
         "repoke_ids": repoke_ids,
         "kill_ids": kill_ids,
-        "reason": planner_result["reason"],
+        "reason": reason,
         "planner": planner_result,
+        "read_only_only": read_only_only,
+        "gate_running": gate_running,
     }
 
 

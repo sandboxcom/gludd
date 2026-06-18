@@ -289,6 +289,113 @@ class TestResultShape:
 
 
 # ---------------------------------------------------------------------------
+# 9. Gate-safe floor rule (gate_running=True)
+# ---------------------------------------------------------------------------
+#
+# THE BUG BEING GUARDED: orchestrator sat at 5 live agents "to protect the
+# gate" instead of dispatching read-only agents to reach the floor of 6.
+# A running gate must NOT suppress read-only floor dispatch.
+
+class TestGateSafeFloor:
+    def test_gate_running_below_floor_still_dispatches(self) -> None:
+        """live=5, floor=6, gate_running=True -> dispatch_n >= 1 (the core regression)."""
+        result = decide(
+            live_agents=5,
+            inflight=[],
+            floor=6,
+            target=10,
+            ceiling=12,
+            gate_running=True,
+        )
+        assert result["dispatch_n"] >= 1, (
+            "A running gate must NOT suppress read-only floor dispatch. "
+            f"Got dispatch_n={result['dispatch_n']}"
+        )
+
+    def test_gate_running_below_floor_marks_read_only(self) -> None:
+        """live=5, floor=6, gate_running=True -> plan is marked read_only_only=True."""
+        result = decide(
+            live_agents=5,
+            inflight=[],
+            floor=6,
+            target=10,
+            ceiling=12,
+            gate_running=True,
+        )
+        assert result["read_only_only"] is True
+        assert "gate" in result["reason"].lower()
+
+    def test_gate_running_false_unchanged_behavior(self) -> None:
+        """gate_running=False (default) -> same result as not passing the arg."""
+        result_default = decide(live_agents=5, inflight=[], floor=6, target=10, ceiling=12)
+        result_explicit = decide(live_agents=5, inflight=[], floor=6, target=10, ceiling=12, gate_running=False)
+        assert result_default["dispatch_n"] == result_explicit["dispatch_n"]
+        assert result_default["reason"] == result_explicit["reason"]
+        assert result_explicit["read_only_only"] is False
+
+    def test_gate_running_at_ceiling_still_zero(self) -> None:
+        """Ceiling always wins: gate_running=True with live>=ceiling -> dispatch_n=0."""
+        result = decide(
+            live_agents=12,
+            inflight=[],
+            floor=6,
+            target=10,
+            ceiling=12,
+            gate_running=True,
+        )
+        assert result["dispatch_n"] == 0
+        assert "ceiling" in result["reason"]
+
+    def test_gate_running_above_ceiling_still_zero(self) -> None:
+        """Ceiling wins even when well above it: gate_running=True, live=15 -> dispatch_n=0."""
+        result = decide(
+            live_agents=15,
+            inflight=[],
+            floor=6,
+            target=10,
+            ceiling=12,
+            gate_running=True,
+        )
+        assert result["dispatch_n"] == 0
+
+    def test_gate_running_caps_read_only_only_flag(self) -> None:
+        """gate_running=True with dispatch recommended -> read_only_only is True (writer suppressed)."""
+        result = decide(
+            live_agents=3,
+            inflight=[],
+            floor=6,
+            target=10,
+            ceiling=12,
+            gate_running=True,
+            writer_cap_during_gate=0,
+        )
+        assert result["read_only_only"] is True
+        # dispatch_n still > 0 (floor not yet reached)
+        assert result["dispatch_n"] > 0
+
+    def test_gate_running_echoed_in_result(self) -> None:
+        """The returned dict echoes gate_running for logging purposes."""
+        result_on = decide(live_agents=5, inflight=[], floor=6, target=10, ceiling=12, gate_running=True)
+        result_off = decide(live_agents=5, inflight=[], floor=6, target=10, ceiling=12, gate_running=False)
+        assert result_on["gate_running"] is True
+        assert result_off["gate_running"] is False
+
+    def test_gate_running_in_band_read_only_only_false(self) -> None:
+        """When live is in band (no dispatch needed), read_only_only stays False even with gate."""
+        result = decide(
+            live_agents=8,
+            inflight=[],
+            floor=6,
+            target=8,
+            ceiling=12,
+            gate_running=True,
+        )
+        # No dispatch needed -> read_only_only stays False
+        assert result["dispatch_n"] == 0
+        assert result["read_only_only"] is False
+
+
+# ---------------------------------------------------------------------------
 # 8. CLI (main) wrapper
 # ---------------------------------------------------------------------------
 

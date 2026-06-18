@@ -37,7 +37,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        floor-plan
+        floor-plan write-gate-safe-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -1588,3 +1588,13 @@ audit-findings:
 
 release-validate:
 	@$(UV) run python -c "import json; from general_ludd.runtime.release_orchestrator import build_and_validate_release as b; from general_ludd import __version__ as v; print(json.dumps(b(version=v, output_dir='dist', build_container=False), indent=2))"
+
+# Write the gate-safe version of agent_floor_stop.sh into this worktree's
+# .claude/hooks/ directory.  The gate-safe rule: a running gate does NOT lower
+# the read-only floor -- only heavy worktree-writers are capped.  This target
+# writes the updated content via python3 (reading from scripts/gen_gate_safe_hook.py)
+# and sets execute permissions.  It is idempotent.
+write-gate-safe-hook:
+	@mkdir -p .claude/hooks
+	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
+	@echo "write-gate-safe-hook done"
