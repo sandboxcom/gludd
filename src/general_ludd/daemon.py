@@ -80,6 +80,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "mcp_servers": {},
         "task_definitions": [],
         "model_profiles": [],
+        "connectors": [],
     }
 
     if config_dir is None:
@@ -161,6 +162,34 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     profiles_dir = cdir / "model_profiles"
     if profiles_dir.is_dir():
         cfg["model_profiles"] = load_model_profiles(profiles_dir=str(profiles_dir))
+
+    # Load connector config — honours two sources, last-write-wins:
+    #   1. The ``connectors`` key inside ``general-ludd.yml`` (already merged
+    #      into the UserConfig at this point via the ``connectors`` field).
+    #   2. A standalone ``connectors.yml`` in the config dir, which overrides
+    #      the embedded key when both are present.  The file MUST contain a
+    #      top-level ``connectors`` key whose value is a list of connector
+    #      entries.  This mirrors the pattern used by ``binary_paths.yml`` and
+    #      ``mcp_servers/*.yml``.
+    uc_connectors = list(getattr(cfg.get("user_config"), "connectors", []) or [])
+    if uc_connectors:
+        cfg["connectors"] = uc_connectors
+
+    conn_path = cdir / "connectors.yml"
+    if conn_path.exists():
+        try:
+            with open(conn_path) as f:
+                conn_data = yaml.safe_load(f) or {}
+            file_connectors = conn_data.get("connectors") or []
+            if isinstance(file_connectors, list) and file_connectors:
+                cfg["connectors"] = file_connectors
+                logger.info(
+                    "Loaded %d connector(s) from %s",
+                    len(file_connectors),
+                    conn_path,
+                )
+        except Exception as exc:
+            logger.warning("Failed to load connectors config %s: %s", conn_path, exc)
 
     return cfg
 
@@ -1289,8 +1318,14 @@ def create_daemon_app(
 
     from general_ludd.routers.observe import wire_observability
 
-    _uc = (getattr(app.state, "_startup_config", {}) or {}).get("user_config")
-    _connector_cfg = getattr(_uc, "connectors", None) if _uc else None
+    # Prefer the pre-merged "connectors" key from load_startup_config (which
+    # honours both general-ludd.yml and connectors.yml with the file taking
+    # precedence).  Fall back to _uc.connectors for backwards compat.
+    _startup_cfg = getattr(app.state, "_startup_config", {}) or {}
+    _connector_cfg: list[dict[str, Any]] | None = _startup_cfg.get("connectors") or None
+    if _connector_cfg is None:
+        _uc = _startup_cfg.get("user_config")
+        _connector_cfg = list(getattr(_uc, "connectors", None) or []) or None
     wire_observability(app, _daemon_state, _connector_cfg)
 
     return app

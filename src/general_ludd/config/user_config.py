@@ -95,6 +95,7 @@ class UserConfig(BaseSettings):
     queues: list[dict[str, Any]] = []
     self_improve: dict[str, Any] = {}
     pipeline: PipelineConfigBlock = PipelineConfigBlock()
+    connectors: list[dict[str, Any]] = []
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:
