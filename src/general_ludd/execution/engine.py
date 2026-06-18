@@ -158,12 +158,19 @@ class ExecutionEngine:
         benchmark_recorder: Any = None,
         metrics_collector: Any = None,
         budget_guard: Any = None,
+        spend_limiter: Any = None,
+        session_factory: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
         self._benchmark_recorder = benchmark_recorder
         self._metrics_collector = metrics_collector
         self._budget_guard = budget_guard
+        # P4: SpendLimiter integration — pre-dispatch cap check + post-call record
+        self._spend_limiter = spend_limiter
+        # session_factory is an async SQLAlchemy sessionmaker used to persist
+        # spend_records rows after a metered call completes.
+        self._session_factory = session_factory
         self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
 
@@ -214,6 +221,128 @@ class ExecutionEngine:
         except Exception:
             pass
 
+    def _spend_pre_check(self, projected_cost_usd: float) -> str | None:
+        """Check SpendLimiter before a metered model call.
+
+        Returns a denial string if the call would exceed the rolling-window
+        budget, or None if the call is allowed (or no limiter is configured).
+
+        The check uses ``would_exceed`` (read-only) rather than ``try_charge``
+        so the budget is NOT consumed until we know the actual cost.  Actual
+        cost is recorded after the call via ``_spend_record``.
+        """
+        if self._spend_limiter is None:
+            return None
+        try:
+            import math
+            if not math.isfinite(projected_cost_usd) or projected_cost_usd < 0:
+                return None  # non-finite: skip the check, let gateway handle it
+            if self._spend_limiter.would_exceed(projected_cost_usd):
+                remaining = self._spend_limiter.remaining()
+                logger.warning(
+                    "SpendLimiter: denying dispatch — projected=%.6f USD "
+                    "remaining=%.6f USD",
+                    projected_cost_usd,
+                    remaining,
+                )
+                return (
+                    f"spend limit exceeded: projected={projected_cost_usd:.6f} USD "
+                    f"remaining={remaining:.6f} USD"
+                )
+        except Exception as exc:
+            logger.warning("SpendLimiter pre-check error (allowing): %s", exc)
+        return None
+
+    def _spend_record_actual(
+        self,
+        cost_usd: float,
+        *,
+        model: str | None = None,
+        project_id: str | None = None,
+        job_id: str | None = None,
+    ) -> None:
+        """Record the actual cost of a completed metered call.
+
+        Records into the in-memory SpendLimiter AND schedules an async task to
+        persist a ``spend_records`` DB row via the session_factory (if available).
+
+        This is called AFTER a successful model call so the limiter accumulates
+        real spend.  The check+deny above uses ``would_exceed`` (read-only) and
+        this method performs the actual write, making the two steps independent
+        and allowing the limiter to accurately track cumulative spend across calls.
+        """
+        import math
+        import time
+
+        if not math.isfinite(cost_usd) or cost_usd < 0:
+            logger.warning(
+                "SpendLimiter: skipping record for non-finite/negative cost %r",
+                cost_usd,
+            )
+            return
+
+        # 1. Record into the in-memory rolling-window limiter.
+        if self._spend_limiter is not None:
+            try:
+                self._spend_limiter.record(
+                    cost_usd, kind="token", model=model, project_id=project_id
+                )
+                logger.debug(
+                    "SpendLimiter: recorded %.6f USD (model=%s, job=%s)",
+                    cost_usd,
+                    model,
+                    job_id,
+                )
+            except Exception as exc:
+                logger.warning("SpendLimiter.record() failed: %s", exc)
+
+        # 2. Persist to spend_records DB (fire-and-forget async task).
+        if self._session_factory is not None and cost_usd > 0:
+            ts_now = time.time()
+
+            async def _persist_spend(
+                sf: Any,
+                ts: float,
+                c: float,
+                m: str | None,
+                pid: str | None,
+            ) -> None:
+                try:
+                    from general_ludd.db.repository import SpendRepository
+                    async with sf() as session:
+                        repo = SpendRepository(session)
+                        await repo.add(
+                            ts=ts,
+                            cost_usd=c,
+                            kind="token",
+                            model=m,
+                            project_id=pid,
+                        )
+                        await session.commit()
+                except Exception as exc:
+                    logger.warning(
+                        "spend_records persist failed (non-fatal): %s", exc
+                    )
+
+            try:
+                task = asyncio.create_task(
+                    _persist_spend(
+                        self._session_factory,
+                        ts_now,
+                        cost_usd,
+                        model,
+                        project_id,
+                    )
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except RuntimeError:
+                # No running event loop (e.g. called from a sync test context).
+                # Log and move on — the in-memory record above is sufficient.
+                logger.debug(
+                    "No event loop for spend_records persist (cost recorded in-memory only)"
+                )
+
     def execute(self, job: JobSpec) -> TaskReturn:
         return_id = f"RET-{job.job_id}-{uuid.uuid4().hex[:6]}"
 
@@ -242,12 +371,33 @@ class ExecutionEngine:
                 exit_code=1, result_summary=f"Budget check failed: {denial}",
             )
 
+        # P4: SpendLimiter pre-dispatch check.  Use a projected cost of 0.0 here
+        # (conservative — we don't know the actual cost until the call returns).
+        # The limiter is ENFORCED with the actual cost after the call via
+        # _spend_record_actual(); this pre-check uses would_exceed() so it can
+        # deny when the window is already exhausted without a projected amount.
+        spend_denial = self._spend_pre_check(0.0)
+        if spend_denial is not None:
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary=f"Spend limit exceeded: {spend_denial}",
+            )
+
         try:
             response = self._model_gateway.call_model(
                 system_prompt=system_prompt, user_prompt=user_prompt,
             )
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
+            # P4: Record actual cost into SpendLimiter + persist to spend_records.
+            actual_cost = float(getattr(response, "cost_estimate", 0.0) or 0.0)
+            self._spend_record_actual(
+                actual_cost,
+                model=getattr(job, "model_profile", None),
+                project_id=getattr(job, "project_id", None),
+                job_id=job.job_id,
+            )
         except Exception as exc:
             self._record_metrics(job, success=False)
             return TaskReturn(
