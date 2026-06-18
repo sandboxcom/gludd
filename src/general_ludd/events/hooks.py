@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import asyncio
+import functools
 import logging
 import uuid
 from collections.abc import Callable
@@ -9,6 +11,47 @@ from typing import Any
 import httpx
 
 logger = logging.getLogger(__name__)
+
+# Secret key patterns — if any of these substrings appear in a payload key
+# (case-insensitive), the key is stripped before the payload is forwarded to
+# an external webhook endpoint (credential-exfil prevention).
+_SECRET_PATTERNS: tuple[str, ...] = (
+    "api_key",
+    "token",
+    "secret",
+    "password",
+    "credential",
+    "authorization",
+)
+
+
+def _redact_payload(payload: dict[str, Any], _depth: int = 0) -> dict[str, Any]:
+    """Return a redacted copy of *payload* with secret-looking keys removed.
+
+    A key is considered sensitive when its lower-cased name contains any of
+    the substrings listed in ``_SECRET_PATTERNS``.  All other keys are passed
+    through unchanged.
+
+    Recursion: dict values are redacted recursively; list values have each
+    element redacted if it is a dict.  A depth cap of 10 prevents pathological
+    recursion on deeply nested structures.
+    """
+    if _depth > 10:
+        return payload
+    result: dict[str, Any] = {}
+    for k, v in payload.items():
+        if any(pattern in k.lower() for pattern in _SECRET_PATTERNS):
+            continue
+        if isinstance(v, dict):
+            result[k] = _redact_payload(v, _depth + 1)
+        elif isinstance(v, list):
+            result[k] = [
+                _redact_payload(item, _depth + 1) if isinstance(item, dict) else item
+                for item in v
+            ]
+        else:
+            result[k] = v
+    return result
 
 
 @dataclass
@@ -152,20 +195,41 @@ class HookSystem:
             )
 
     def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
-        body = {"event": event_name, "payload": payload}
+        # Fix A: strip credential keys before forwarding.
+        body = {"event": event_name, "payload": _redact_payload(payload)}
+        # Fix C: clamp retry_count so misconfigured values can't cause DoS.
+        retry_count = min(max(1, config.retry_count), 5)
         last_exc: Exception | None = None
-        for attempt in range(config.retry_count):
+        for attempt in range(retry_count):
             try:
-                httpx.post(
-                    config.url,
-                    json=body,
-                    headers=config.headers,
-                    timeout=config.timeout_seconds,
-                )
+                # Fix B: if called from inside a running event loop, offload the
+                # blocking network call to a thread-pool executor so the loop
+                # isn't frozen.  Fall back to a direct (blocking) call when there
+                # is no running loop (normal sync context).
+                try:
+                    loop = asyncio.get_running_loop()
+                    loop.run_in_executor(
+                        None,
+                        functools.partial(
+                            httpx.post,
+                            config.url,
+                            json=body,
+                            headers=config.headers,
+                            timeout=config.timeout_seconds,
+                        ),
+                    )
+                    return
+                except RuntimeError:
+                    httpx.post(
+                        config.url,
+                        json=body,
+                        headers=config.headers,
+                        timeout=config.timeout_seconds,
+                    )
                 return
             except Exception as exc:
                 last_exc = exc
-                logger.warning("Webhook attempt %d/%d failed: %s", attempt + 1, config.retry_count, exc)
+                logger.warning("Webhook attempt %d/%d failed: %s", attempt + 1, retry_count, exc)
         if last_exc is not None:
             raise last_exc
 

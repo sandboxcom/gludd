@@ -136,3 +136,49 @@ class TestLoadMCPConfig:
     def test_load_mcp_config_missing_file_returns_empty(self):
         configs = load_mcp_config("/nonexistent/path/mcp.yml")
         assert configs == {}
+
+
+class TestCallToolConfusedDeputyGuard:
+    """F2: call_tool must reject tool names not registered for that server."""
+
+    @pytest.mark.asyncio
+    async def test_call_tool_rejects_unregistered_tool(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from general_ludd.mcp.client import MCPClient
+        from general_ludd.mcp.transport import MCPTransportError
+
+        registry = MCPToolRegistry()
+        registry.register_tool("srv", MCPTool(name="allowed_tool"))
+
+        config = {"srv": MCPServerConfig(server_id="srv", command=["echo"])}
+        client = MCPClient(configs=config, registry=registry)
+
+        mock_transport = MagicMock()
+        mock_transport.call_tool = AsyncMock()
+        client._transports["srv"] = mock_transport
+
+        with pytest.raises(MCPTransportError, match="not registered"):
+            await client.call_tool("srv", "evil_tool", {})
+
+        mock_transport.call_tool.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_call_tool_allows_registered_tool(self):
+        from unittest.mock import AsyncMock, MagicMock
+
+        from general_ludd.mcp.client import MCPClient
+
+        registry = MCPToolRegistry()
+        registry.register_tool("srv", MCPTool(name="allowed_tool"))
+
+        config = {"srv": MCPServerConfig(server_id="srv", command=["echo"])}
+        client = MCPClient(configs=config, registry=registry)
+
+        mock_transport = MagicMock()
+        mock_transport.call_tool = AsyncMock(return_value={"result": "ok"})
+        client._transports["srv"] = mock_transport
+
+        result = await client.call_tool("srv", "allowed_tool", {"arg": 1})
+        assert result == {"result": "ok"}
+        mock_transport.call_tool.assert_awaited_once_with("allowed_tool", {"arg": 1})

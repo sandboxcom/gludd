@@ -1,7 +1,8 @@
 from __future__ import annotations
 
+import json
 import os
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -31,7 +32,7 @@ from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
 from general_ludd.scoring.router import AdaptiveRouter
-from general_ludd.security.auth import is_path_within
+from general_ludd.security.sanitize import is_path_within
 
 
 def _workspace_root(app: FastAPI) -> str:
@@ -75,13 +76,37 @@ def _confined_code_path(app: FastAPI, path: str) -> str:
             detail=f"path must be inside the workspace root: {path!r}",
         )
     roots = _allowed_code_roots(app)
-    if not any(is_path_within(root, path) for root in roots):
+    if not any(is_path_within(path, root) for root in roots):
         raise HTTPException(
             status_code=422,
             detail=f"path must be inside the workspace root: {path!r}",
         )
     # Return the realpath of the candidate for callers that open the file.
     return os.path.realpath(path)
+
+
+async def _parse_request_body(request: Request) -> dict[str, Any]:
+    body = await request.json() if hasattr(request, "json") else {}
+    if isinstance(body, str):
+        body = json.loads(body)
+    return body
+
+
+def _serialize_discovered_profile(p: dict[str, Any], *, include_enabled: bool = False) -> dict[str, Any]:
+    result = {
+        "model_profile_id": p["model_profile_id"],
+        "model_name": p["model_name"],
+        "display_name": p.get("display_name", p["model_name"]),
+        "cost_per_input_token": p["cost_per_input_token"],
+        "cost_per_output_token": p["cost_per_output_token"],
+        "context_window": p["context_window"],
+        "is_free": p.get("is_free", False),
+        "role_names": p["role_names"],
+        "quality_class": p["quality_class"],
+    }
+    if include_enabled:
+        result["enabled"] = p.get("enabled", True)
+    return result
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -152,20 +177,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "provider": provider,
             "discovered_count": len(scraped),
             "generated_profiles": len(profiles),
-            "models": [
-                {
-                    "model_profile_id": p["model_profile_id"],
-                    "model_name": p["model_name"],
-                    "display_name": p.get("display_name", p["model_name"]),
-                    "cost_per_input_token": p["cost_per_input_token"],
-                    "cost_per_output_token": p["cost_per_output_token"],
-                    "context_window": p["context_window"],
-                    "is_free": p.get("is_free", False),
-                    "role_names": p["role_names"],
-                    "quality_class": p["quality_class"],
-                }
-                for p in ranked
-            ],
+            "models": [_serialize_discovered_profile(p) for p in ranked],
         }
 
     @app.get("/admin/models/discovered")
@@ -174,21 +186,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if profiles is None:
             return {"profiles": []}
         return {
-            "profiles": [
-                {
-                    "model_profile_id": p["model_profile_id"],
-                    "model_name": p["model_name"],
-                    "display_name": p.get("display_name", p["model_name"]),
-                    "cost_per_input_token": p["cost_per_input_token"],
-                    "cost_per_output_token": p["cost_per_output_token"],
-                    "context_window": p["context_window"],
-                    "is_free": p.get("is_free", False),
-                    "role_names": p["role_names"],
-                    "quality_class": p["quality_class"],
-                    "enabled": p.get("enabled", True),
-                }
-                for p in profiles
-            ]
+            "profiles": [_serialize_discovered_profile(p, include_enabled=True) for p in profiles]
         }
 
     @app.get("/admin/observability/comparison")
@@ -208,11 +206,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/code/blocks")
     async def admin_code_blocks(request: Request) -> dict[str, Any]:
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
         source = body.get("source", "")
         language = body.get("language", "python")
         extractor = ASTBlockExtractor()
@@ -318,11 +312,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/code/complexity")
     async def admin_code_complexity(request: Request) -> dict[str, Any]:
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
         path = body.get("path", "")
         safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
@@ -335,11 +325,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/code/suggest-model")
     async def admin_code_suggest_model(request: Request) -> dict[str, Any]:
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
         path = body.get("path", "")
         safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
@@ -390,15 +376,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         Auth: same PSK as other admin routes (enforced by middleware).
         """
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
 
         prompt: str = body.get("prompt", "")
         if not prompt:
-            from fastapi import HTTPException
             raise HTTPException(status_code=422, detail="prompt is required")
 
         model_profile_id: str | None = body.get("model_profile")
@@ -406,6 +387,39 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # max_tokens available for future use when gateway exposes token limits per-call
         _max_tokens: int = int(body.get("max_tokens", 2048))
         del _max_tokens  # currently unused — call_model controls this via profile config
+
+        # B5: budget gate — fail-closed when guard exhausted or degraded startup.
+        _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
+        _budget_guard = getattr(app.state, "_budget_guard", _BUDGET_UNSET)
+        _fail_closed_degraded = os.environ.get(
+            "GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if _budget_guard is _BUDGET_UNSET and _fail_closed_degraded:
+            raise HTTPException(
+                status_code=503,
+                detail="budget guard unavailable (degraded startup); GLUDD_BUDGET_FAIL_CLOSED_DEGRADED=1",
+            )
+        _guard_active = (
+            _budget_guard is not _BUDGET_UNSET
+            and _budget_guard is not None
+            and hasattr(_budget_guard, "check_all_limits")
+        )
+        if _guard_active:
+            try:
+                _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
+            except Exception as _exc:
+                raise HTTPException(
+                    status_code=503, detail=f"budget check raised: {_exc}"
+                ) from _exc
+            if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
+                _reason = (
+                    _verdict.get("reason", "budget exhausted")
+                    if isinstance(_verdict, dict)
+                    else "non-dict"
+                )
+                raise HTTPException(
+                    status_code=429, detail=f"budget exhausted: {_reason}"
+                )
 
         # Resolve the gateway — use app.state if available, else build a minimal one
         gateway: ModelGateway | None = getattr(app.state, "_model_gateway", None)
@@ -449,7 +463,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             used_profile_id = available_profiles[0].model_profile_id
         else:
             # No profiles configured — return a clear error
-            from fastapi import HTTPException
             raise HTTPException(
                 status_code=503,
                 detail="No model profiles configured. Add a profile via POST /admin/models first.",
@@ -470,5 +483,4 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "usage": dict(response.usage_metadata) if response.usage_metadata else {},
             }
         except Exception as exc:
-            from fastapi import HTTPException
             raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc

@@ -210,10 +210,6 @@ class EventLoop:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
         self._adaptive_router = adaptive_router
 
-    def _resolve_prompt_text(self, todo: Any) -> str | None:
-        profile_name = _safe_str(todo, "prompt_profile")
-        return _resolve_prompt_text_static(self._prompt_registry, profile_name)
-
     async def _append_message_queue_section(
         self, prompt_text: str | None, todo: Any, project_id: str | None
     ) -> str | None:
@@ -911,8 +907,6 @@ class EventLoop:
             self._prompt_registry, resolved_prompt_profile,
             project_templates_dir=project_templates_dir, **task_context,
         )
-        if prompt_text is None:
-            prompt_text = self._resolve_prompt_text(todo)
         prompt_text = await self._append_message_queue_section(
             prompt_text, todo, project_id_val,
         )
@@ -949,6 +943,7 @@ class EventLoop:
                     model_profile=resolved_model_profile,
                     prompt_text=prompt_text,
                     skill_body=skill_body,
+                    budget_guard=self._budget_guard,
                 )
             else:
                 model_response = None

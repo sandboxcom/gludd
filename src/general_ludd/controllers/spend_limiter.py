@@ -95,14 +95,28 @@ class SpendLimiter:
         """Record a spend event.
 
         Args:
-            cost_usd:   Amount spent in USD.
+            cost_usd:   Amount spent in USD.  Must be a finite, non-negative
+                        value; negative or non-finite values are programming
+                        errors (or abuse attempts) and raise ``ValueError``
+                        fail-closed rather than silently poisoning the window
+                        sum or deflating the cap.
             kind:       Resource kind (e.g. ``"token"``, ``"infra"``).
             at:         Override the record timestamp (useful in tests).
                         Defaults to the injected clock's current value.
             model:      Optional model identifier (informational, not used in
                         rolling-window math).
             project_id: Optional project scope (informational).
+
+        Raises:
+            ValueError: If ``cost_usd`` is negative or non-finite (NaN / inf).
         """
+        if not isinstance(cost_usd, (int, float)):
+            return
+        if not math.isfinite(cost_usd) or cost_usd < 0:
+            raise ValueError(
+                f"SpendLimiter.record(): cost_usd must be a finite non-negative value, "
+                f"got {cost_usd!r}. Negative or non-finite costs are not permitted."
+            )
         ts = at if at is not None else self._clock()
         with self._lock:
             self._records.append((ts, cost_usd))
@@ -197,7 +211,27 @@ class SpendLimiter:
         if not records:
             return
         with self._lock:
-            self._records.extend((float(ts), float(c)) for ts, c in records)
+            valid = []
+            for ts, c in records:
+                if not isinstance(ts, (int, float)) or not isinstance(c, (int, float)):
+                    continue
+                ts_f, c_f = float(ts), float(c)
+                if not math.isfinite(c_f) or c_f < 0:
+                    logger.warning(
+                        "SpendLimiter.restore: dropping record with invalid cost %r (ts=%r) — "
+                        "negative or non-finite costs are not permitted.",
+                        c_f,
+                        ts_f,
+                    )
+                    continue
+                if not math.isfinite(ts_f):
+                    logger.warning(
+                        "SpendLimiter.restore: dropping record with non-finite timestamp %r — skipping.",
+                        ts_f,
+                    )
+                    continue
+                valid.append((ts_f, c_f))
+            self._records.extend(valid)
 
     def window_spend(self, now: float | None = None) -> float:
         """Sum of all spend within the rolling window ending at ``now``.
@@ -256,6 +290,8 @@ class SpendLimiter:
         # limit`` check would wave a NaN/garbage cost straight through —
         # effectively unlimited spend. A non-finite projected cost cannot be
         # proven to fit the cap, so treat it as exceeding (defer/refuse).
+        if not isinstance(projected_usd, (int, float)):
+            return True
         if not math.isfinite(projected_usd):
             logger.warning(
                 "SpendLimiter: non-finite projected cost (%r) treated as "

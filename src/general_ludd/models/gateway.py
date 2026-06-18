@@ -14,7 +14,11 @@ from general_ludd.events.types import ModelAddedEvent, ModelRemovedEvent
 from general_ludd.models.provider_registry import ProviderRegistry
 from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
-from general_ludd.models.timeout_detector import TimeoutClassifier, TimeoutRetryPolicy
+from general_ludd.models.timeout_detector import (
+    _NON_RETRYABLE_KINDS,
+    TimeoutClassifier,
+    TimeoutRetryPolicy,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -425,8 +429,6 @@ class ModelGateway:
 
         import httpx
 
-        from general_ludd.models.timeout_detector import TimeoutKind
-
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
@@ -468,11 +470,7 @@ class ModelGateway:
                 return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
-            if kind in (
-                TimeoutKind.AUTH_ERROR,
-                TimeoutKind.CONTEXT_LENGTH,
-                TimeoutKind.INVALID_REQUEST,
-            ):
+            if kind in _NON_RETRYABLE_KINDS:
                 return False
             decision = policy.decide(kind, _attempt_counter[0])
             return bool(decision.should_retry)
@@ -520,11 +518,7 @@ class ModelGateway:
                     except _retryable_exc_types as exc:
                         _last_exc[0] = exc
                         kind = TimeoutClassifier.classify(exc)
-                        if kind in (
-                TimeoutKind.AUTH_ERROR,
-                TimeoutKind.CONTEXT_LENGTH,
-                TimeoutKind.INVALID_REQUEST,
-            ):
+                        if kind in _NON_RETRYABLE_KINDS:
                             # Non-retryable: re-raise immediately. Do NOT record
                             # here — record_timeout_on_failure (via _invoke_and_bill)
                             # already recorded exactly one TimeoutEvent for this
@@ -687,6 +681,31 @@ class ModelGateway:
             f"All profiles in fallback chain failed for '{profile_id}'"
         )
 
+    def _notify_profile_change(
+        self,
+        event: Any,
+        hook_name: str,
+        hook_payload: dict[str, Any],
+        action: str,
+        model_id: str,
+        broadcast_payload: dict[str, Any],
+    ) -> None:
+        """Publish event, fire hook, and broadcast a profile add/remove notification.
+
+        Centralises the three-step fan-out that both add_profile and
+        remove_profile require, keeping the order and exception handling
+        identical in both callers.
+        """
+        if self._event_bus:
+            self._event_bus.publish(event)
+        if self._hooks:
+            self._hooks.fire(hook_name, hook_payload)
+        if self._broadcaster:
+            try:
+                self._broadcaster.broadcast_model_update(action, model_id, broadcast_payload)
+            except Exception as exc:
+                logger.warning("Worker broadcast failed for model %s: %s", action, exc)
+
     def add_profile(
         self,
         model_id: str,
@@ -706,25 +725,23 @@ class ModelGateway:
             **{k: v for k, v in kwargs.items() if k in ModelProfile.model_fields},
         )
         self._profiles[model_id] = profile
-        if self._event_bus:
-            self._event_bus.publish(ModelAddedEvent(model_id=model_id, profile=profile.model_dump()))
-        if self._hooks:
-            self._hooks.fire("on_model_added", {"model_id": model_id, "profile": profile.model_dump()})
-        if self._broadcaster:
-            try:
-                self._broadcaster.broadcast_model_update("add", model_id, profile.model_dump())
-            except Exception as exc:
-                logger.warning("Worker broadcast failed for model add: %s", exc)
+        self._notify_profile_change(
+            event=ModelAddedEvent(model_id=model_id, profile=profile.model_dump()),
+            hook_name="on_model_added",
+            hook_payload={"model_id": model_id, "profile": profile.model_dump()},
+            action="add",
+            model_id=model_id,
+            broadcast_payload=profile.model_dump(),
+        )
         return profile
 
     def remove_profile(self, model_id: str) -> None:
         self._profiles.pop(model_id, None)
-        if self._event_bus:
-            self._event_bus.publish(ModelRemovedEvent(model_id=model_id))
-        if self._hooks:
-            self._hooks.fire("on_model_removed", {"model_id": model_id})
-        if self._broadcaster:
-            try:
-                self._broadcaster.broadcast_model_update("remove", model_id, {})
-            except Exception as exc:
-                logger.warning("Worker broadcast failed for model remove: %s", exc)
+        self._notify_profile_change(
+            event=ModelRemovedEvent(model_id=model_id),
+            hook_name="on_model_removed",
+            hook_payload={"model_id": model_id},
+            action="remove",
+            model_id=model_id,
+            broadcast_payload={},
+        )

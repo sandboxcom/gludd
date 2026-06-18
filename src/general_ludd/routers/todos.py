@@ -184,9 +184,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         bare_binaries: list[dict[str, Any]] = []
         known_versions: dict[str, str] = {}
         filestore_root = ""
+        filestore_available = False
         try:
             store = FileStore()
             filestore_root = store.root_path
+            filestore_available = bool(store.root_path) and os.path.isdir(store.root_path)
             boot = BinaryBootstrapper(store=store)
             bare_binaries = [
                 {"name": b["binary_name"], "version": b.get("version", "?")}
@@ -200,6 +202,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         qg = _daemon_state.get("quality_gate", {})
         if not qg:
             qg = {"overall": "not_run", "passed_count": 0, "total_count": 0}
+        _db_engine = getattr(app.state, "_db_engine", None)
+        _db_url_str: str
+        _db_engine_str: str
+        if _db_engine is not None:
+            _db_url_str = _db_engine.url.render_as_string(hide_password=True)
+            _db_engine_str = _db_url_str
+        else:
+            _db_url_str = "sqlite"
+            _db_engine_str = str(_db_engine)  # "None"
         return {
             "version": __version__,
             "uptime_ticks": elapsed.get("total_ticks", 0),
@@ -209,10 +220,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "config_dir": config_dir,
             "config_files": config_paths,
             "filestore_root": filestore_root,
+            "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
-            "db_engine": str(getattr(app.state, "_db_engine", None)),
-            "db_url": str(getattr(getattr(app.state, "_db_engine", None), "url", "sqlite")),
+            "db_engine": _db_engine_str,
+            "db_url": _db_url_str,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
         }

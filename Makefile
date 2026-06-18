@@ -1,11 +1,15 @@
 MSG ?=
 FILES ?=
 TESTFILE ?=
+REF ?=
+TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
 PYTHON := python3
 UV := uv
+export VIRTUAL_ENV := $(CURDIR)/.venv
+export UV_PROJECT_ENVIRONMENT := $(CURDIR)/.venv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 # Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
@@ -35,8 +39,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-        git-tracked-keys git-ls-tracked git-history-file dist-path-check \
-        molecule-clean plan ps-gludd kill-stale
+        git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
+        molecule-clean plan ps-gludd kill-stale kill-gate-force \
+        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -55,6 +60,8 @@ help:
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
+	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  sast                  Run bandit SAST"
@@ -112,11 +119,13 @@ help:
 	@echo "  git-push-sandboxcom   Push to sandboxcom/gludd mirror"
 	@echo "  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd"
 	@echo "  git-fetch-sandboxcom  Fetch from sandboxcom/gludd"
+	@echo "  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green"
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
+	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
 
 skeleton:
 	@$(PYTHON) scripts/skeleton.py
@@ -180,6 +189,11 @@ version:
 check-uv:
 	@command -v $(UV) >/dev/null 2>&1 || (echo "uv not found"; exit 1)
 	@$(UV) --version
+
+venv-check:
+	@echo "VIRTUAL_ENV=$(VIRTUAL_ENV)"
+	@echo "UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENVIRONMENT)"
+	@$(UV) run python -c "import sys; print('sys.executable=' + sys.executable)"
 
 check-pytest:
 	@$(UV) run python -c "import pytest; print(f'pytest {pytest.__version__}')"
@@ -247,19 +261,18 @@ gate:
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
 	@echo "[gate $$(date +%H:%M:%S)] phase 4/5 test (full suite, streams below; ~16 min) ..."
 	@printf "test " >> .gate-status
-	@# --basetemp pins this run's pytest tmp root so a CONCURRENT pytest (another
-	@# gate, a stray worker) can no longer trigger pytest's keep-last-3 rotation and
-	@# delete this run's popen-gwN worker dirs out from under it — the root cause of
-	@# the "208 errors: FileNotFoundError popen-gwN" cascade. tee streams progress to
-	@# stdout (so a backgrounded gate is observable live, not a black box) AND to the
-	@# log; the rc file preserves pytest's true exit through the pipe (sh $$? after a
-	@# pipe is tee's, not pytest's).
-	@rm -rf /tmp/gludd-gate-basetemp; \
-	( $(UV) run python -m pytest tests/ $(_XD) -q --basetemp=/tmp/gludd-gate-basetemp; echo $$? > /tmp/gludd-gate-rc ) 2>&1 | tee /tmp/gludd-test-gate.txt; \
-	EXIT=$$(cat /tmp/gludd-gate-rc 2>/dev/null || echo 1); \
-	if [ "$$EXIT" -eq 0 ]; then echo "PASS 0" >> .gate-status; else \
-		echo "FAIL non-zero-exit" >> .gate-status && touch .gate-failed; \
-	fi
+	@# Delegate to scripts/run_gate.sh which provides:
+	@#   (1) exclusive non-blocking flock on /tmp/gludd-gate.lock — a concurrent
+	@#       gate is REJECTED immediately rather than silently corrupting shared tmp;
+	@#   (2) per-run unique basetemp (mktemp -d /tmp/gludd-gate-XXXXXX) so even if
+	@#       the lock were bypassed two runs cannot collide on pytest's popen-gwN dirs;
+	@#   (3) EXIT/INT/TERM trap that removes the unique basetemp and releases the lock
+	@#       on any exit, preventing orphan-holds-lock / tmp-leak after a kill.
+	@# run_gate.sh writes "PASS 0" or "FAIL non-zero-exit" to .gate-status itself
+	@# and touches .gate-failed on failure, so we only need to propagate its exit.
+	@bash scripts/run_gate.sh; EXIT=$$?; \
+	if [ "$$EXIT" -ne 0 ] && [ ! -f .gate-failed ]; then touch .gate-failed; fi; \
+	exit $$EXIT
 	@echo "[gate $$(date +%H:%M:%S)] phase 5/5 smoke (real daemon boot) ..."
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
@@ -333,6 +346,26 @@ kill-stale:
 	done; \
 	echo "[kill-stale] done"
 
+# Force-kill any running gate: send SIGTERM to the process that owns the gate
+# lock, then remove the lock and any gludd-gate-XXXXXX tmp dirs so the next
+# `make gate` can start cleanly. Use when `make kill-stale` is too conservative.
+kill-gate-force:
+	@echo "[kill-gate-force] reading lock owner from /tmp/gludd-gate.lock ..."
+	@HOLDER=$$(cat /tmp/gludd-gate.lock 2>/dev/null || echo ""); \
+	if [ -n "$$HOLDER" ] && kill -0 "$$HOLDER" 2>/dev/null; then \
+		echo "[kill-gate-force] killing PID $$HOLDER"; \
+		kill -TERM "$$HOLDER" 2>/dev/null || true; sleep 1; \
+		kill -KILL "$$HOLDER" 2>/dev/null || true; \
+	else \
+		echo "[kill-gate-force] no live gate process found in lock file"; \
+	fi
+	@rm -f /tmp/gludd-gate.lock /tmp/gludd-gate.lock.*.tmp
+	@rm -rf /tmp/gludd-gate-[A-Za-z0-9]* 2>/dev/null || true
+	@echo "[kill-gate-force] lock + tmp dirs removed"
+
+ship-async:
+	@bash scripts/ship_async.sh $(REF) $(TARGET)
+
 # STALL WATCHDOG — run a long command under active no-progress + max-runtime
 # supervision so a hang can NEVER sit silently forever. Streams the command's
 # output to LOG; every 10s it checks (a) how long since LOG last grew (idle) and
@@ -341,6 +374,14 @@ kill-stale:
 # RESULT= line — so the supervising task COMPLETES (and notifies) instead of
 # leaving anyone waiting on a dead run. Emits a heartbeat each cycle.
 #   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' STALL_SECS=180 MAX_SECS=3600
+BASE ?=
+BRANCHES ?=
+MERGE_STRATEGY ?= stop-on-conflict
+MANIFEST ?= /tmp/gludd-gated-merge-manifest.txt
+
+gated-merge:
+	@BASE='$(BASE)' BRANCHES='$(BRANCHES)' MERGE_STRATEGY='$(MERGE_STRATEGY)' MANIFEST='$(MANIFEST)' bash scripts/gated_merge.sh
+
 STALL_SECS ?= 180
 MAX_SECS ?= 3600
 run-watched:
@@ -533,6 +574,10 @@ git-init:
 	@git config user.email "agent@general-ludd.local" || true
 	@git config user.name "General Ludd Agent" || true
 
+git-hard-reset:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-hard-reset REF=<ref>"; exit 1; }
+	@git reset --hard $(REF)
+
 status-snapshot:
 	@python3 scripts/status_snapshot.py
 
@@ -563,6 +608,21 @@ untrack:
 git-rm:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm FILES='path ...'"; exit 1; }
 	@git rm -r $(FILES) && echo "git-removed: $(FILES)"
+
+# Read-only ancestor check: exit=0 means A is a strict ancestor of B (ff-only valid).
+# Usage: make git-is-ancestor A=<commit> B=<commit>
+git-is-ancestor:
+	@[ -n "$(A)" ] && [ -n "$(B)" ] || { echo "Usage: make git-is-ancestor A=<commit> B=<commit>"; exit 1; }
+	@git merge-base --is-ancestor $(A) $(B); echo "exit=$$?"
+
+# Read-only rev-list counts for ff-only check.
+# Usage: make git-revlist-count A=<old> B=<new>
+# Prints: commits unique to A (must be 0 for ff) and commits B is ahead of A.
+git-revlist-count:
+	@[ -n "$(A)" ] && [ -n "$(B)" ] || { echo "Usage: make git-revlist-count A=<old> B=<new>"; exit 1; }
+	@echo "commits unique to A (B..A, must be 0 for ff-only):"; git rev-list --count $(B)..$(A)
+	@echo "commits B is ahead of A (A..B, should be >0):"; git rev-list --count $(A)..$(B)
+	@echo "--- commits unique to A (would be lost on ff) ---"; git log --oneline $(B)..$(A) || true
 
 # Revert working-tree changes for specific files: tracked files -> HEAD version,
 # untracked files -> deleted. Used to back a synced-but-broken agent change out
@@ -698,6 +758,19 @@ floor-status:
 	@printf '[floor-status] maintained counter: '
 	@cat "$${TMPDIR:-/tmp}/claude-agent-floor.count" 2>/dev/null || cat /tmp/claude-agent-floor.count 2>/dev/null || echo "(MISSING in both \$$TMPDIR and /tmp)"
 	@$(PYTHON) scripts/agent_liveness.py
+
+# Composite orchestration decision: reads a JSON state blob (counts + ages +
+# tails) and prints a structured plan (dispatch_n, repoke_ids, kill_ids, reason).
+# Composes floor_planner + agent_liveness + agent_watchdog into one command.
+# Usage: echo '{"live":4,"inflight":[...],"floor":6,"target":10,"ceiling":12}' | make floor-plan
+# Or:    make floor-plan STATE=/tmp/state.json
+STATE ?=
+floor-plan:
+	@if [ -n "$(STATE)" ]; then \
+		$(UV) run python scripts/floor_controller.py "$(STATE)"; \
+	else \
+		$(UV) run python scripts/floor_controller.py; \
+	fi
 
 scan-secrets-baseline:
 	@echo "[scan-secrets-baseline] scanning tracked files with detect-secrets (no per-file stream; typically 30-90s on this repo)..."
@@ -1558,3 +1631,29 @@ audit-findings:
 
 release-validate:
 	@$(UV) run python -c "import json; from general_ludd.runtime.release_orchestrator import build_and_validate_release as b; from general_ludd import __version__ as v; print(json.dumps(b(version=v, output_dir='dist', build_container=False), indent=2))"
+
+# ---------------------------------------------------------------------------
+# Non-blocking async gate (.gate-status: RUNNING/PASS/FAIL, flock-guarded)
+# ---------------------------------------------------------------------------
+# Launch the gate fully detached — main thread returns immediately.
+# A second call is refused (flock-exclusive) if one is already running.
+# Override GATE_CMD to inject a fake gate in tests (default: scripts/run_gate.sh).
+# STATUS_FILE / LOCK_FILE can also be overridden for test isolation.
+gate-async:
+	@bash scripts/gate_async.sh "$(REF)"
+
+# Print the current .gate-status file (RUNNING/PASS/FAIL).
+gate-status:
+	@if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status found)"; fi
+
+# ---------------------------------------------------------------------------
+# Activate the BLOCKING gate-safe agent-floor Stop hook (#79/#78)
+# ---------------------------------------------------------------------------
+# Regenerates .claude/hooks/agent_floor_stop.sh from scripts/gen_gate_safe_hook.py.
+# The generator is the sanctioned writer of the hook (do NOT hand-edit the hook).
+# Gate-safe rule: a running gate does NOT lower the read-only floor -- only heavy
+# worktree-writers are capped during a gate. Idempotent; sets execute permissions.
+write-gate-safe-hook:
+	@mkdir -p .claude/hooks
+	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
+	@echo "write-gate-safe-hook done"

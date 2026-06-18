@@ -21,11 +21,16 @@ the URL string and matches the literal host against deny patterns only.
 from __future__ import annotations
 
 import hmac
-import ipaddress
 import os
 from collections.abc import Mapping
 from dataclasses import dataclass
-from urllib.parse import urlsplit
+
+# Re-exported so existing ``from general_ludd.security.auth import
+# is_path_within`` call sites keep importing it from here; the canonical
+# realpath jail now lives in ``security.sanitize`` (one implementation).
+from general_ludd.security.sanitize import is_path_within as is_path_within
+from general_ludd.security.ssrf import host_is_blocked
+from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
 
 
 @dataclass(frozen=True)
@@ -111,70 +116,16 @@ def require_auth_env(env: Mapping[str, str] | None = None) -> bool:
     }
 
 
-def is_path_within(base: str, candidate: str) -> bool:
-    """True iff ``candidate`` resolves to a path inside ``base``.
-
-    ``candidate`` is joined onto ``base`` first, so a relative path is taken
-    relative to the base while an ABSOLUTE candidate replaces the base entirely
-    (the classic escape) — which this function then catches via ``commonpath``.
-    Both paths are passed through ``realpath`` so symlink and ``../`` escapes are
-    resolved before comparison. Pure string/filesystem-metadata work only; no
-    network, no blocking.
-    """
-    try:
-        base_real = os.path.realpath(base)
-        full = os.path.realpath(os.path.join(base_real, candidate))
-        common = os.path.commonpath([base_real, full])
-    except (ValueError, OSError):
-        # Mixed drives, embedded NULs, etc. -> treat as not contained.
-        return False
-    return common == base_real
-
-
 def _host_is_blocked(host: str) -> bool:
     """LITERAL deny check for a URL host — no DNS, no network.
 
-    Blocks empty hosts, loopback names, the cloud metadata endpoint, and any
-    host that is *already* a private / loopback / link-local / reserved IP
-    literal. Hostnames that are not IP literals are NOT resolved (that would be
-    blocking DNS and is the documented hang risk); they pass the IP checks and
-    are only caught by the explicit name blocklist below.
+    Thin wrapper over the canonical :func:`general_ludd.security.ssrf.
+    host_is_blocked` so this module's historical name stays importable while the
+    blocklist lives in exactly one place. Blocks empty hosts, loopback/metadata
+    names, the literal metadata IPs, and any host that is already a private /
+    loopback / link-local / reserved / multicast / unspecified IP literal.
     """
-    host = host.strip().lower()
-    if not host:
-        return True
-    # Strip an IPv6 bracket wrapper, e.g. "[::1]" -> "::1".
-    if host.startswith("[") and host.endswith("]"):
-        host = host[1:-1]
-    # Explicit name blocklist (cloud metadata + loopback names).
-    blocked_names = {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-        "instance-data",
-    }
-    if host in blocked_names:
-        return True
-    # The AWS/GCP/Azure metadata service literal.
-    if host in {"169.254.169.254", "100.100.100.200"}:
-        return True
-    # If the host is an IP literal, reject private / loopback / link-local /
-    # reserved / multicast / unspecified ranges (covers RFC-1918, 127/8, ::1,
-    # fc00::/7, fe80::/10, etc.). Non-literal hostnames raise ValueError and
-    # fall through — we never resolve them.
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return False
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return host_is_blocked(host)
 
 
 def is_safe_fetch_url(url: str) -> bool:
@@ -182,17 +133,11 @@ def is_safe_fetch_url(url: str) -> bool:
 
     Returns ``True`` only when the URL is well-formed, uses the ``https`` scheme,
     and its LITERAL host is not a loopback / link-local / RFC-1918 / metadata
-    target. Performs NO DNS resolution and NO network I/O, so it is safe to call
-    on any hot path and can never block.
+    target. Delegates the host/scheme decision to the canonical
+    :func:`general_ludd.security.ssrf.is_url_blocked` with an https-only scheme
+    allowlist. Performs NO DNS resolution and NO network I/O, so it is safe to
+    call on any hot path and can never block.
     """
     if not url or not isinstance(url, str):
         return False
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return False
-    if parts.scheme.lower() != "https":
-        return False
-    if not parts.hostname:
-        return False
-    return not _host_is_blocked(parts.hostname)
+    return not _is_url_blocked(url, scheme_allowlist={"https"})

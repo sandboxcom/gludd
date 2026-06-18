@@ -20,6 +20,7 @@ class AgentTask:
     description: str
     prompt: str
     parent_task_id: str | None = None
+    invoker: str | None = None
     created_at: float = field(default_factory=time.time)
 
 
@@ -71,6 +72,21 @@ class AgentDispatcher:
                 agent_name=task.agent_name,
                 status="failed",
                 output=f"Agent '{task.agent_name}' not found in registry",
+            )
+
+        if not config.enabled:
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=f"Agent '{task.agent_name}' is disabled",
+            )
+        if task.invoker is not None and not self._registry.can_invoke(task.invoker, task.agent_name):
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=f"Agent '{task.invoker}' is not permitted to invoke '{task.agent_name}'",
             )
 
         semaphore = self._get_semaphore(task.agent_name)

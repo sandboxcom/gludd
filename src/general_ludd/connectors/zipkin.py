@@ -24,12 +24,13 @@ One record is emitted per span. Zipkin span ``duration`` is in microseconds.
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import urllib.parse
 import urllib.request
 from typing import Any, Protocol, runtime_checkable
+
+from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["HttpResponse", "SsrfError", "ZipkinSource"]
 
@@ -69,33 +70,15 @@ class _UrllibTransport:
             return HttpResponse(status, body)
 
 
-def _host_is_private(host: str) -> bool:
-    """True if *host* is a literal private/internal address (no DNS lookup)."""
-    bare = host.strip("[]")
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        lowered = host.lower()
-        return lowered in {"localhost", "localhost.localdomain"}
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _guard_base_url(base_url: str, *, allow_private: bool) -> str:
+    if not allow_private and is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        raise SsrfError(f"blocked private/internal host: {base_url!r}")
+    # Scheme check still applies even when allow_private is True.
     parsed = urllib.parse.urlparse(base_url)
     if parsed.scheme not in {"http", "https"}:
         raise SsrfError(f"unsupported url scheme: {parsed.scheme!r}")
-    host = parsed.hostname
-    if not host:
+    if not parsed.hostname:
         raise SsrfError(f"no host in base_url: {base_url!r}")
-    if not allow_private and _host_is_private(host):
-        raise SsrfError(f"blocked private/internal host: {host!r}")
     return base_url.rstrip("/")
 
 

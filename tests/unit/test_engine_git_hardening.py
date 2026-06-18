@@ -1,8 +1,9 @@
-"""Security hardening tests for the inline git helpers in execution/engine.py.
+"""Security hardening tests for the git helpers in execution/engine.py.
 
-The four helpers (``_is_git_repo``, ``_git_create_branch``, ``_git_commit``,
-``_git_current_branch``) shell out to git. They MUST be hardened the same way
-``git_automation/repo.py::_run_git`` is:
+After the delegation refactor the four helpers (``_is_git_repo``,
+``_git_create_branch``, ``_git_commit``, ``_git_current_branch``) delegate to
+``GitAutomation`` in ``general_ludd.git_automation.repo``.  All hardening
+properties are therefore inherited from ``GitAutomation._run_git``:
 
   * bounded ``timeout=`` so a hung remote / credential prompt cannot stall the
     daemon forever,
@@ -11,9 +12,12 @@ The four helpers (``_is_git_repo``, ``_git_create_branch``, ``_git_commit``,
   * every invocation serialized under ``git_repo_lock`` so concurrent roles
     cannot race on ``.git/index.lock``, and
   * ``_git_create_branch`` must reject a dash-leading branch name BEFORE exec
-    (option injection) and place ``--`` before the branch positional.
+    (option injection) and place ``--`` before the branch positional (delegated
+    to ``GitAutomation.create_branch`` which already enforces both).
 
-These tests pin each property and assert fail-closed behaviour on timeout.
+Tests patch the subprocess and lock at their actual call sites inside
+``general_ludd.git_automation.repo`` / ``general_ludd.git_automation.locking``
+rather than at engine-module level, because engine now delegates to those.
 """
 
 from __future__ import annotations
@@ -25,6 +29,7 @@ from unittest import mock
 
 import pytest
 
+import general_ludd.git_automation.repo as _repo_mod
 from general_ludd.execution import engine
 from general_ludd.git_automation.repo import _GIT_TIMEOUT_SECONDS, _NON_INTERACTIVE_GIT_ENV
 
@@ -39,11 +44,11 @@ def _ok_run(*, returncode: int = 0, stdout: str = "") -> mock.Mock:
     return cp
 
 
-# --- timeout is passed -----------------------------------------------------
+# --- timeout is passed (via GitAutomation._run_git) ------------------------
 
 
 def test_is_git_repo_passes_timeout_and_env() -> None:
-    with mock.patch.object(engine.subprocess, "run", return_value=_ok_run()) as run:
+    with mock.patch.object(_repo_mod.subprocess, "run", return_value=_ok_run()) as run:
         engine._is_git_repo("/some/repo")
     assert run.call_count == 1
     kwargs = run.call_args.kwargs
@@ -53,7 +58,7 @@ def test_is_git_repo_passes_timeout_and_env() -> None:
 
 
 def test_create_branch_passes_timeout_and_env() -> None:
-    with mock.patch.object(engine.subprocess, "run", return_value=_ok_run()) as run:
+    with mock.patch.object(_repo_mod.subprocess, "run", return_value=_ok_run()) as run:
         assert engine._git_create_branch("/some/repo", "feature/x") is True
     kwargs = run.call_args.kwargs
     assert kwargs["timeout"] == _GIT_TIMEOUT_SECONDS
@@ -63,7 +68,7 @@ def test_create_branch_passes_timeout_and_env() -> None:
 
 def test_current_branch_passes_timeout_and_env() -> None:
     with mock.patch.object(
-        engine.subprocess, "run", return_value=_ok_run(stdout="main\n")
+        _repo_mod.subprocess, "run", return_value=_ok_run(stdout="main\n")
     ) as run:
         assert engine._git_current_branch("/some/repo") == "main"
     kwargs = run.call_args.kwargs
@@ -74,7 +79,7 @@ def test_current_branch_passes_timeout_and_env() -> None:
 
 def test_commit_passes_timeout_and_env_on_every_call() -> None:
     with mock.patch.object(
-        engine.subprocess, "run", return_value=_ok_run(stdout="abcdef1234\n")
+        _repo_mod.subprocess, "run", return_value=_ok_run(stdout="abcdef1234\n")
     ) as run:
         sha = engine._git_commit("/some/repo", "msg")
     assert sha == "abcdef12"
@@ -86,7 +91,7 @@ def test_commit_passes_timeout_and_env_on_every_call() -> None:
             assert call.kwargs["env"][key] == val
 
 
-# --- lock is used ----------------------------------------------------------
+# --- lock is used (via git_automation.locking.git_repo_lock) ---------------
 
 
 @contextmanager
@@ -96,39 +101,46 @@ def _tracking_lock(seen: list[str], path: str):
 
 
 def test_each_helper_acquires_the_repo_lock() -> None:
-    for fn, args in (
-        (engine._is_git_repo, ("/repo-a",)),
-        (engine._git_create_branch, ("/repo-b", "feature/y")),
-        (engine._git_commit, ("/repo-c", "m")),
-        (engine._git_current_branch, ("/repo-d",)),
+    for fn, args, min_lock_count in (
+        (engine._is_git_repo, ("/repo-a",), 1),
+        (engine._git_create_branch, ("/repo-b", "feature/y"), 1),
+        # _git_commit: add + commit + rev-parse = 3 _run_git calls → 3 lock acquisitions
+        (engine._git_commit, ("/repo-c", "m"), 3),
+        (engine._git_current_branch, ("/repo-d",), 1),
     ):
         seen: list[str] = []
         with (
             mock.patch.object(
-                engine, "git_repo_lock",
-                side_effect=lambda p, s=seen: _tracking_lock(s, p),
+                _repo_mod, "git_repo_lock",
+                side_effect=lambda p, _s=seen, **kw: _tracking_lock(_s, p),
             ),
             mock.patch.object(
-                engine.subprocess, "run",
+                _repo_mod.subprocess, "run",
                 return_value=_ok_run(stdout="deadbeef\n"),
             ),
         ):
             fn(*args)
-        assert seen == [args[0]], f"{fn.__name__} did not lock its repo path"
+        assert len(seen) >= min_lock_count, (
+            f"{fn.__name__} did not acquire the repo lock (seen={seen!r})"
+        )
+        # Every lock acquisition must be for the expected repo path.
+        assert all(p == args[0] for p in seen), (
+            f"{fn.__name__} acquired lock for wrong path: {seen!r}"
+        )
 
 
 # --- dash-leading branch rejected (never reaches subprocess) ---------------
 
 
 def test_create_branch_rejects_leading_dash_without_exec() -> None:
-    with mock.patch.object(engine.subprocess, "run") as run:
+    with mock.patch.object(_repo_mod.subprocess, "run") as run:
         result = engine._git_create_branch("/repo", "--upload-pack=evil")
     assert result is False
     run.assert_not_called()  # refused BEFORE any git exec
 
 
 def test_create_branch_adds_end_of_options_separator() -> None:
-    with mock.patch.object(engine.subprocess, "run", return_value=_ok_run()) as run:
+    with mock.patch.object(_repo_mod.subprocess, "run", return_value=_ok_run()) as run:
         engine._git_create_branch("/repo", "feature/x")
     argv = run.call_args.args[0]
     assert argv[:3] == ["git", "checkout", "-b"]
@@ -142,7 +154,7 @@ def test_create_branch_adds_end_of_options_separator() -> None:
 
 def test_is_git_repo_fails_closed_on_timeout() -> None:
     with mock.patch.object(
-        engine.subprocess, "run",
+        _repo_mod.subprocess, "run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60),
     ):
         assert engine._is_git_repo("/repo") is False
@@ -150,7 +162,7 @@ def test_is_git_repo_fails_closed_on_timeout() -> None:
 
 def test_create_branch_fails_closed_on_timeout() -> None:
     with mock.patch.object(
-        engine.subprocess, "run",
+        _repo_mod.subprocess, "run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60),
     ):
         assert engine._git_create_branch("/repo", "feature/x") is False
@@ -158,7 +170,7 @@ def test_create_branch_fails_closed_on_timeout() -> None:
 
 def test_commit_fails_closed_on_timeout() -> None:
     with mock.patch.object(
-        engine.subprocess, "run",
+        _repo_mod.subprocess, "run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60),
     ):
         assert engine._git_commit("/repo", "msg") is None
@@ -166,7 +178,7 @@ def test_commit_fails_closed_on_timeout() -> None:
 
 def test_current_branch_fails_closed_on_timeout() -> None:
     with mock.patch.object(
-        engine.subprocess, "run",
+        _repo_mod.subprocess, "run",
         side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60),
     ):
         assert engine._git_current_branch("/repo") == "unknown"

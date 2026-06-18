@@ -17,11 +17,12 @@ Security posture:
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import parse_qs, urlparse, urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 
 @runtime_checkable
@@ -59,9 +60,6 @@ class Transport(Protocol):
         ...
 
 
-_PRIVATE_HOSTNAMES = frozenset(
-    {"localhost", "localhost.localdomain", "ip6-localhost", "ip6-loopback"}
-)
 # Matches an Okta System Log `Link: <url>; rel="next"` header entry.
 _LINK_NEXT_RE = re.compile(r'<([^>]+)>\s*;\s*rel="next"', re.IGNORECASE)
 
@@ -85,30 +83,6 @@ def _default_transport(
         timeout=timeout,
     )
     return resp
-
-
-def _is_private_host(host: str) -> bool:
-    """Return True if ``host`` is a literal private/loopback/link-local target.
-
-    Only literal hostnames are evaluated; DNS is never resolved here (a literal
-    SSRF block, as specified by the contract).
-    """
-    bare = host.strip().strip("[]").lower()
-    if not bare:
-        return True
-    if bare in _PRIVATE_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(bare)
-    except ValueError:
-        return False
-    return bool(
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-    )
 
 
 class OktaSource:
@@ -165,7 +139,7 @@ class OktaSource:
         if parsed.scheme not in ("http", "https"):
             raise ValueError(f"okta: unsupported URL scheme: {parsed.scheme!r}")
         host = parsed.hostname or ""
-        if not self.allow_private and _is_private_host(host):
+        if not self.allow_private and is_url_blocked(url, scheme_allowlist=("http", "https")):
             raise ValueError(
                 f"okta: refusing private/loopback host {host!r} "
                 "(set allow_private=True to override)"

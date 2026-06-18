@@ -2,10 +2,12 @@
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import re
 from urllib.parse import urlparse
+
+from general_ludd.security.ssrf import _ip_addr_is_blocked, host_is_blocked
+from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
 
 _PATH_TRAVERSAL = re.compile(r"(?:\.\./|\.\.\\)")
 _ABSOLUTE_PATH = re.compile(r"^/|^[A-Za-z]:\\")
@@ -80,14 +82,21 @@ def confine_path(candidate: str, root: str) -> str | None:
     """Resolve ``candidate`` and confirm it stays within ``root``.
 
     Returns the real (symlink-resolved, absolute) path when it is ``root`` or a
-    descendant of ``root``; otherwise ``None``. Both sides are passed through
-    ``os.path.realpath`` so symlink and ``..`` escapes are defeated. An empty
-    candidate or root returns ``None`` (fail closed).
+    descendant of ``root``; otherwise ``None``. A RELATIVE ``candidate`` is
+    joined onto ``root`` first (so e.g. a bare ``"name.md"`` is taken relative to
+    the confinement root, not the process CWD); an ABSOLUTE candidate is resolved
+    as-is and then caught by the descendant check if it escapes. Both sides are
+    passed through ``os.path.realpath`` so symlink and ``..`` escapes are
+    defeated. An empty candidate or root returns ``None`` (fail closed).
     """
     if not candidate or not root:
         return None
     real_root = os.path.realpath(root)
-    real_candidate = os.path.realpath(candidate)
+    # Join a relative candidate onto the root so a bare basename is confined
+    # relative to root rather than the process CWD; os.path.join leaves an
+    # absolute candidate unchanged (it replaces real_root), which the descendant
+    # check below then rejects if it escapes — the classic absolute-path escape.
+    real_candidate = os.path.realpath(os.path.join(real_root, candidate))
     try:
         if (
             os.path.commonpath([real_root, real_candidate]) != real_root
@@ -132,11 +141,14 @@ def is_safe_fetch_url(url: str) -> bool:
     and its LITERAL host is not a loopback / link-local / RFC-1918 / metadata
     target. Performs NO DNS resolution and NO network I/O.
 
-    Delegates to :func:`general_ludd.security.auth.is_safe_fetch_url`.
+    Delegates to the canonical :func:`general_ludd.security.ssrf.is_url_blocked`
+    with an https-only scheme allowlist — the same primitive
+    :func:`general_ludd.security.auth.is_safe_fetch_url` uses, so the two can
+    never drift.
     """
-    from general_ludd.security.auth import is_safe_fetch_url as _auth_is_safe
-
-    return _auth_is_safe(url)
+    if not url or not isinstance(url, str):
+        return False
+    return not _is_url_blocked(url, scheme_allowlist={"https"})
 
 
 def workspace_roots(*extra: str | None) -> list[str]:
@@ -162,25 +174,10 @@ def workspace_roots(*extra: str | None) -> list[str]:
     return roots
 
 
-# Hosts that must never be reachable via an arbitrary-URL fetch (SSRF). The
-# RFC-1918 / link-local / loopback ranges are checked numerically below; these
-# are the literal names that resolve to them or to cloud metadata services.
-_BLOCKED_HOSTNAMES = {
-    "localhost",
-    "metadata",
-    "metadata.google.internal",
-}
-
-
-def _ip_is_blocked(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+# Backwards-compatible alias: the canonical numeric SSRF classifier now lives in
+# ``general_ludd.security.ssrf``. Kept importable under the historical name so
+# any caller of ``sanitize._ip_is_blocked`` keeps working.
+_ip_is_blocked = _ip_addr_is_blocked
 
 
 def validate_fetch_url(url: str) -> str | None:
@@ -191,8 +188,16 @@ def validate_fetch_url(url: str) -> str | None:
     * non-``https`` schemes (no ``http``, ``file``, ``gopher``, ``ftp`` …);
     * a missing hostname;
     * loopback/private/link-local/reserved/multicast literal IPs (v4 and v6),
-      including ``169.254.169.254`` (cloud metadata);
-    * the literal hostnames ``localhost`` and the GCP metadata host.
+      including the cloud metadata IPs ``169.254.169.254`` and
+      ``100.100.100.200``;
+    * the literal metadata/loopback hostnames (``localhost``,
+      ``localhost.localdomain``, ``metadata``, ``metadata.google.internal``,
+      ``instance-data``).
+
+    The host decision is delegated to the canonical
+    :func:`general_ludd.security.ssrf.host_is_blocked`, so this guard now blocks
+    the SAME hostile set as every other entrypoint (previously it missed
+    ``localhost.localdomain`` / ``instance-data`` / ``100.100.100.200``).
 
     Hostnames that are not IP literals are allowed through (DNS is not resolved
     here); callers MUST also disable redirect following so a public host cannot
@@ -209,13 +214,6 @@ def validate_fetch_url(url: str) -> str | None:
     host = (parsed.hostname or "").strip()
     if not host:
         return None
-    if host.lower() in _BLOCKED_HOSTNAMES:
-        return None
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # Not an IP literal — a DNS name. Allow (cannot resolve safely here).
-        return url
-    if _ip_is_blocked(ip):
+    if host_is_blocked(host):
         return None
     return url

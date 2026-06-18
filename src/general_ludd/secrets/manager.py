@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +16,11 @@ from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.secrets.config import OpenBaoConfig
 
 logger = logging.getLogger(__name__)
+
+_PERMITTED_MOUNTS: frozenset[str] = frozenset(
+    os.environ.get("GLUDD_PERMITTED_MOUNTS", "secret,kv").split(",")
+)
+_PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_/-]*$")
 
 
 class SecretsUnavailableError(RuntimeError):
@@ -88,6 +95,15 @@ class SecretsManager:
         self._secret_id_accessors: dict[str, list[str]] = {}
 
     def register_alias(self, alias: SecretAlias) -> None:
+        if not _PATH_RE.match(alias.path) or ".." in alias.path.split("/"):
+            raise ValueError(
+                f"invalid secret path {alias.path!r}: must match "
+                r"^[A-Za-z0-9_][A-Za-z0-9_/-]*$ with no '..' segment"
+            )
+        if alias.mount not in _PERMITTED_MOUNTS:
+            raise ValueError(
+                f"mount {alias.mount!r} not in permitted mounts {sorted(_PERMITTED_MOUNTS)}"
+            )
         self._aliases[alias.alias] = alias
 
     def resolve(self, alias_name: str) -> str | None:
@@ -109,9 +125,9 @@ class SecretsManager:
                 return None
             # Outage / auth / TLS / network failure — fail CLOSED, do not
             # masquerade as a missing secret.
-            logger.error("Failed to resolve secret alias %s: %s", alias_name, exc)
+            logger.error("Failed to resolve secret alias %s: %s", alias_name, type(exc).__name__)
             raise SecretsUnavailableError(
-                f"secrets backend unavailable resolving alias {alias_name!r}: {exc}"
+                f"secrets backend unavailable resolving alias {alias_name!r}: {type(exc).__name__}"
             ) from exc
         return None
 
@@ -214,7 +230,7 @@ class SecretsManager:
             except Exception as exc:
                 logger.warning(
                     "Failed to destroy old secret_id accessor for role %s: %s",
-                    role_name, exc,
+                    role_name, type(exc).__name__,
                 )
         # Retain only accessors minted by this rotation (i.e. drop the destroyed ones).
         current = self._secret_id_accessors.get(role_name, [])
@@ -222,6 +238,19 @@ class SecretsManager:
             a for a in current if a not in old_accessors
         ]
         return new_secret_id
+
+    def _require_connected_for_read(self, context_label: str) -> None:
+        """Raise SecretsUnavailableError when the client has not been connected.
+
+        Using SecretsUnavailableError (rather than RuntimeError) ensures that
+        fail-closed callers catching SecretsUnavailableError (e.g.
+        scan_for_image_updates) correctly intercept a not-connected guard instead
+        of letting the RuntimeError propagate past their except clause.
+        """
+        if self._client is None:
+            raise SecretsUnavailableError(
+                f"secrets backend not connected for {context_label} (call connect() first)"
+            )
 
     def write_secret(self, path: str, value: dict[str, Any]) -> None:
         if self._client is None:
@@ -233,8 +262,7 @@ class SecretsManager:
         )
 
     def read_secret(self, path: str) -> dict[str, Any] | None:
-        if self._client is None:
-            raise RuntimeError("Not connected. Call connect() first.")
+        self._require_connected_for_read(context_label=f"reading {path!r}")
         try:
             result = self._client.secrets.kv.v2.read_secret_version(
                 path=path, mount_point=self._config.kv_mount
@@ -244,9 +272,9 @@ class SecretsManager:
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None
-            logger.error("Failed to read secret at %s: %s", path, exc)
+            logger.error("Failed to read secret at %s: %s", path, type(exc).__name__)
             raise SecretsUnavailableError(
-                f"secrets backend unavailable reading {path!r}: {exc}"
+                f"secrets backend unavailable reading {path!r}: {type(exc).__name__}"
             ) from exc
         return None
 
@@ -279,7 +307,7 @@ class SecretsManager:
             if _is_genuine_not_found(exc):
                 return None
             raise SecretsUnavailableError(
-                f"secrets backend unavailable scanning image pins for {image_ref!r}: {exc}"
+                f"secrets backend unavailable scanning image pins for {image_ref!r}: {type(exc).__name__}"
             ) from exc
         if stored is None:
             return None

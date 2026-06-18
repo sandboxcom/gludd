@@ -23,12 +23,13 @@ sibling connectors).
 from __future__ import annotations
 
 import base64
-import ipaddress
 import json
 import os
 import urllib.request
 from typing import Protocol, TypedDict
 from urllib.parse import quote, urlencode, urlparse
+
+from general_ludd.security.ssrf import is_url_blocked
 
 # (status_code, parsed_json_body) — the transport contract.
 HttpResponse = tuple[int, object]
@@ -38,9 +39,6 @@ _DEFAULT_TIMEOUT_S = 10.0
 
 # Sentinel for builds with no result yet (in-progress / aborted-null).
 _UNKNOWN_STATUS = "UNKNOWN"
-
-# Host names that always denote the local machine.
-_BLOCKED_HOSTNAMES = frozenset({"localhost", "localhost.localdomain", "ip6-localhost"})
 
 
 class HttpGet(Protocol):
@@ -60,45 +58,6 @@ class Record(TypedDict):
     value: None
     labels: dict[str, object]
     raw: dict[str, object]
-
-
-def _is_blocked_host(host: str) -> bool:
-    """Return True if *host* is a literal internal/loopback/metadata target.
-
-    Performs NO DNS resolution — only literal IP parsing and a small name
-    denylist. A hostname that is not a literal IP and not in the denylist is
-    treated as external (a public Jenkins behind a DNS name is allowed).
-    """
-    if not host:
-        return True
-
-    name = host.strip().lower()
-    # Strip IPv6 brackets, e.g. "[::1]" -> "::1".
-    if name.startswith("[") and name.endswith("]"):
-        name = name[1:-1]
-
-    if name in _BLOCKED_HOSTNAMES:
-        return True
-
-    try:
-        ip = ipaddress.ip_address(name)
-    except ValueError:
-        # Not a literal IP address — treat as an external DNS name. We do NOT
-        # resolve it (no DNS), so we cannot inspect what it points at.
-        return False
-
-    # Block the cloud-metadata service explicitly (also covered by link_local).
-    if str(ip) == "169.254.169.254":
-        return True
-
-    return bool(
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_unspecified
-        or ip.is_multicast
-    )
 
 
 def _default_http_get(url: str, headers: dict[str, str]) -> HttpResponse:
@@ -130,10 +89,11 @@ class JenkinsSource:
             raise ValueError("base_url is required")
 
         parsed = urlparse(base_url)
-        if parsed.scheme not in ("http", "https"):
-            raise ValueError(f"base_url must be http(s), got {parsed.scheme!r}")
-        if _is_blocked_host(parsed.hostname or ""):
-            raise ValueError(f"base_url host blocked by SSRF policy (internal/loopback/private): {parsed.hostname!r}")
+        if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+            raise ValueError(
+                "base_url blocked by SSRF policy (bad scheme, missing host, or internal/loopback/private):"
+                f" {base_url!r}"
+            )
 
         self.base_url = base_url
         self._parsed = parsed

@@ -206,6 +206,25 @@ def _handle_connection_error(exc: Exception, daemon_url: str) -> None:
     sys.exit(1)
 
 
+def _http_call(
+    method: str,
+    url: str,
+    *,
+    json: Any = None,
+    params: Any = None,
+    timeout: float = 10.0,
+    ok_codes: tuple[int, ...] = (200,),
+) -> Any:
+    try:
+        resp = httpx.request(method, url, json=json, params=params, timeout=timeout)
+        if resp.status_code in ok_codes:
+            return resp.json()
+        print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
+        sys.exit(1)
+    except Exception as exc:
+        _handle_connection_error(exc, url)
+
+
 def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.ArgumentParser]]:
     parser = argparse.ArgumentParser(
         prog="gludd",
@@ -749,16 +768,8 @@ def _cmd_add(args: argparse.Namespace) -> None:
     }
     if getattr(args, "project", None):
         payload["project_id"] = args.project
-    try:
-        resp = httpx.post(f"{args.daemon_url}/api/todos", json=payload, timeout=10.0)
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            print(json.dumps(data, indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/api/todos", json=payload, timeout=10.0, ok_codes=(200, 201))
+    print(json.dumps(data, indent=2))
 
 
 def _gather_offline_status(config_dir: str | None = None) -> dict[str, Any]:
@@ -916,10 +927,10 @@ def _cmd_status(args: argparse.Namespace) -> None:
             data = resp.json()
             print(f"General Ludd Agent v{data.get('version', 'unknown')}  [daemon running]")
             print("\u2500" * 72)
-            print(f"Config dir:  {data.get('config_dir', 'not set')}")
-            for cf in data.get("config_files", []):
-                print(f"  \u251c\u2500 {cf}")
-            print(f"Filestore:   {data.get('filestore_root', '')}")
+            cfg_count = data.get("config_file_count")
+            print(f"Config files: {cfg_count if cfg_count is not None else 'unknown'}")
+            fs_avail = data.get("filestore_available")
+            print(f"Filestore:   {'available' if fs_avail else 'unavailable'}")
             bins = data.get("filestore_binaries", [])
             versions = data.get("binary_versions", {})
             if versions:
@@ -968,40 +979,18 @@ def _cmd_list(args: argparse.Namespace) -> None:
         params["status"] = args.status
     if getattr(args, "project", None):
         params["project_id"] = args.project
-    try:
-        resp = httpx.get(f"{args.daemon_url}/api/todos", params=params, timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/api/todos", params=params, timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_log_level(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(f"{args.daemon_url}/admin/log-level", json={"level": args.level}, timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"Log level changed to {data['level']}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/log-level", json={"level": args.level}, timeout=10.0)
+    print(f"Log level changed to {data['level']}")
 
 
 def _cmd_deployments(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/api/deployments", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/api/deployments", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_version(args: argparse.Namespace) -> None:
@@ -1011,15 +1000,8 @@ def _cmd_version(args: argparse.Namespace) -> None:
 
 
 def _cmd_health(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/healthz", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/healthz", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_project_add(args: argparse.Namespace) -> None:
@@ -1094,51 +1076,34 @@ def _cmd_project_remove(args: argparse.Namespace) -> None:
 
 
 def _cmd_models_search(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/models/search",
-            json={"query": args.query, "limit": args.limit},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                print("No models found.")
-                return
-            for r in results:
-                print(f"  {r['model_id']}")
-                if r.get("pipeline_tag"):
-                    print(f"    Task: {r['pipeline_tag']}")
-                if r.get("downloads") is not None:
-                    print(f"    Downloads: {r['downloads']:,}")
-                print()
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/models/search",
+        json={"query": args.query, "limit": args.limit}, timeout=30.0,
+    )
+    results = data.get("results", [])
+    if not results:
+        print("No models found.")
+        return
+    for r in results:
+        print(f"  {r['model_id']}")
+        if r.get("pipeline_tag"):
+            print(f"    Task: {r['pipeline_tag']}")
+        if r.get("downloads") is not None:
+            print(f"    Downloads: {r['downloads']:,}")
+        print()
 
 
 def _cmd_models_downloaded(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/models/downloaded", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            models = data.get("profiles", data.get("models", []))
-            if not models:
-                print("No models downloaded.")
-                return
-            for m in models:
-                print(f"  {m['model_id']}")
-                print(f"    Path: {m.get('local_path', 'N/A')}")
-                print(f"    Engine: {m.get('engine', 'N/A')}")
-                print()
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/models/downloaded", timeout=10.0)
+    models = data.get("profiles", data.get("models", []))
+    if not models:
+        print("No models downloaded.")
+        return
+    for m in models:
+        print(f"  {m['model_id']}")
+        print(f"    Path: {m.get('local_path', 'N/A')}")
+        print(f"    Engine: {m.get('engine', 'N/A')}")
+        print()
 
 
 def _cmd_models_discover(args: argparse.Namespace) -> None:
@@ -1176,75 +1141,42 @@ def _cmd_models_discover(args: argparse.Namespace) -> None:
 
 
 def _cmd_models_discovered(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/models/discovered",
-            timeout=10.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            profiles = data.get("profiles", [])
-            if not profiles:
-                print("No auto-discovered models. Run 'gludd models discover' first.")
-                return
-            print(f"Discovered profiles: {len(profiles)}")
-            for p in profiles:
-                enabled = "[enabled]" if p.get("enabled", True) else "[disabled]"
-                print(f"  {p['display_name']} ({p['model_profile_id']}) {enabled}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/models/discovered", timeout=10.0)
+    profiles = data.get("profiles", [])
+    if not profiles:
+        print("No auto-discovered models. Run 'gludd models discover' first.")
+        return
+    print(f"Discovered profiles: {len(profiles)}")
+    for p in profiles:
+        enabled = "[enabled]" if p.get("enabled", True) else "[disabled]"
+        print(f"  {p['display_name']} ({p['model_profile_id']}) {enabled}")
 
 
 def _cmd_models_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/models", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            models = data.get("profiles", data.get("models", []))
-            if models:
-                for m in models:
-                    print(f"  {m.get('model_id', '?'):<30} {m.get('provider', '?'):<12} {m.get('model', '?')}")
-            else:
-                print("No models registered.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/models", timeout=10.0)
+    models = data.get("profiles", data.get("models", []))
+    if models:
+        for m in models:
+            print(f"  {m.get('model_id', '?'):<30} {m.get('provider', '?'):<12} {m.get('model', '?')}")
+    else:
+        print("No models registered.")
 
 
 def _cmd_models_add(args: argparse.Namespace) -> None:
-    try:
-        payload: dict[str, Any] = {
-            "model_id": args.model_id,
-            "provider": args.provider,
-            "model": args.model,
-        }
-        if args.api_key_env:
-            payload["api_key_env"] = args.api_key_env
-        resp = httpx.post(f"{args.daemon_url}/admin/models", json=payload, timeout=10.0)
-        if resp.status_code in (200, 201):
-            print(f"Model added: {args.model_id}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    payload: dict[str, Any] = {
+        "model_id": args.model_id,
+        "provider": args.provider,
+        "model": args.model,
+    }
+    if args.api_key_env:
+        payload["api_key_env"] = args.api_key_env
+    _http_call("POST", f"{args.daemon_url}/admin/models", json=payload, timeout=10.0, ok_codes=(200, 201))
+    print(f"Model added: {args.model_id}")
 
 
 def _cmd_models_remove(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.delete(f"{args.daemon_url}/admin/models/{args.model_id}", timeout=10.0)
-        if resp.status_code == 200:
-            print(f"Model removed: {args.model_id}")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    _http_call("DELETE", f"{args.daemon_url}/admin/models/{args.model_id}", timeout=10.0)
+    print(f"Model removed: {args.model_id}")
 
 
 def _cmd_local_serve(args: argparse.Namespace) -> None:
@@ -1257,195 +1189,107 @@ def _cmd_local_serve(args: argparse.Namespace) -> None:
         "gpu_layers": args.gpu_layers,
         "context_size": args.context_size,
     }
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/local-inference/start",
-            json=payload,
-            timeout=30.0,
-        )
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            print(json.dumps(data, indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/local-inference/start",
+        json=payload, timeout=30.0, ok_codes=(200, 201),
+    )
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_worktree_scan(args: argparse.Namespace) -> None:
-    try:
-        url = f"{args.daemon_url}/admin/worktree/scan"
-        params: dict[str, str] = {}
-        if args.path:
-            params["watch_paths"] = args.path
-        resp = httpx.post(url, params=params, timeout=30.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            todos = data.get("todos", [])
-            tracked = data.get("tracked_count", 0)
-            print(f"Tracked worktrees: {tracked}")
-            print(f"Abandoned worktrees with todos: {len(todos)}")
-            for todo in todos:
-                print(f"  - {todo['title']} ({todo['queue']})")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    params: dict[str, str] = {}
+    if args.path:
+        params["watch_paths"] = args.path
+    data = _http_call("POST", f"{args.daemon_url}/admin/worktree/scan", params=params, timeout=30.0)
+    todos = data.get("todos", [])
+    tracked = data.get("tracked_count", 0)
+    print(f"Tracked worktrees: {tracked}")
+    print(f"Abandoned worktrees with todos: {len(todos)}")
+    for todo in todos:
+        print(f"  - {todo['title']} ({todo['queue']})")
 
 
 def _cmd_worktree_status(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/worktree/status",
-            timeout=10.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            wts = data.get("tracked_worktrees", [])
-            print(f"Tracked worktrees: {len(wts)}")
-            for wt in wts:
-                status_line = f"  {wt['path']}"
-                if wt["todo_id"]:
-                    status_line += f" [todo: {wt['todo_id']}]"
-                if wt["has_agents_md"]:
-                    status_line += " [AGENTS.md]"
-                print(status_line)
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/worktree/status", timeout=10.0)
+    wts = data.get("tracked_worktrees", [])
+    print(f"Tracked worktrees: {len(wts)}")
+    for wt in wts:
+        status_line = f"  {wt['path']}"
+        if wt["todo_id"]:
+            status_line += f" [todo: {wt['todo_id']}]"
+        if wt["has_agents_md"]:
+            status_line += " [AGENTS.md]"
+        print(status_line)
 
 
 def _cmd_mcp_search(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/mcp/catalog/search",
-            json={"query": args.query, "limit": 20},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                print("No MCP servers found.")
-                return
-            print(f"{'name':<30} {'description':<50} {'source':<20}")
-            print("-" * 100)
-            for r in results:
-                name = r.get("server_name", "N/A")[:29]
-                description = r.get("description", "")[:49]
-                source = r.get("source", "")[:19]
-                print(f"{name:<30} {description:<50} {source:<20}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/mcp/catalog/search",
+        json={"query": args.query, "limit": 20}, timeout=30.0,
+    )
+    results = data.get("results", [])
+    if not results:
+        print("No MCP servers found.")
+        return
+    print(f"{'name':<30} {'description':<50} {'source':<20}")
+    print("-" * 100)
+    for r in results:
+        name = r.get("server_name", "N/A")[:29]
+        description = r.get("description", "")[:49]
+        source = r.get("source", "")[:19]
+        print(f"{name:<30} {description:<50} {source:<20}")
 
 
 def _cmd_mcp_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/mcp/catalog/servers", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            servers = data.get("servers", [])
-            if not servers:
-                print("No MCP servers known.")
-                return
-            for s in servers:
-                print(f"  {s}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/mcp/catalog/servers", timeout=10.0)
+    servers = data.get("servers", [])
+    if not servers:
+        print("No MCP servers known.")
+        return
+    for s in servers:
+        print(f"  {s}")
 
 
 def _cmd_mcp_info(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/mcp/catalog/servers/{args.name}",
-            timeout=10.0,
-        )
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/mcp/catalog/servers/{args.name}", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_skills_search(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/skills/catalog/search",
-            json={"query": args.query, "limit": 20},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            results = data.get("results", [])
-            if not results:
-                print("No skills found.")
-                return
-            print(f"{'name':<25} {'description':<40} {'category':<15} {'tags':<30}")
-            print("-" * 110)
-            for r in results:
-                name = r.get("name", "N/A")[:24]
-                description = r.get("description", "")[:39]
-                category = r.get("category", "")[:14]
-                tags = ", ".join(r.get("tags", []))[:29]
-                print(f"{name:<25} {description:<40} {category:<15} {tags:<30}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/skills/catalog/search",
+        json={"query": args.query, "limit": 20}, timeout=30.0,
+    )
+    results = data.get("results", [])
+    if not results:
+        print("No skills found.")
+        return
+    print(f"{'name':<25} {'description':<40} {'category':<15} {'tags':<30}")
+    print("-" * 110)
+    for r in results:
+        name = r.get("name", "N/A")[:24]
+        description = r.get("description", "")[:39]
+        category = r.get("category", "")[:14]
+        tags = ", ".join(r.get("tags", []))[:29]
+        print(f"{name:<25} {description:<40} {category:<15} {tags:<30}")
 
 
 def _cmd_skills_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/skills/catalog", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/skills/catalog", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_skills_install(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/skills/catalog/install",
-            json={"name": args.name},
-            timeout=30.0,
-        )
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            print(f"Installed to: {data.get('installed', 'N/A')}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/skills/catalog/install",
+        json={"name": args.name}, timeout=30.0, ok_codes=(200, 201),
+    )
+    print(f"Installed to: {data.get('installed', 'N/A')}")
 
 
 def _cmd_compute_endpoints(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/compute/endpoints", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/compute/endpoints", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_compute_register(args: argparse.Namespace) -> None:
@@ -1455,19 +1299,11 @@ def _cmd_compute_register(args: argparse.Namespace) -> None:
         "model": args.model,
         "max_concurrent": args.max_concurrent,
     }
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/compute/endpoints",
-            json=payload,
-            timeout=10.0,
-        )
-        if resp.status_code in (200, 201):
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/compute/endpoints",
+        json=payload, timeout=10.0, ok_codes=(200, 201),
+    )
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_compute_unregister(args: argparse.Namespace) -> None:
@@ -1501,74 +1337,43 @@ def _cmd_compute_launch(args: argparse.Namespace) -> None:
     }
     if args.region:
         payload["region"] = args.region
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/compute/deploy",
-            json=payload,
-            timeout=300.0,
-        )
-        if resp.status_code in (200, 201):
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/compute/deploy",
+        json=payload, timeout=300.0, ok_codes=(200, 201),
+    )
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_scores(args: argparse.Namespace) -> None:
-    try:
-        params = {}
-        if args.task_type:
-            params["task_type"] = args.task_type
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/benchmark/scores",
-            params=params,
-            timeout=10.0,
-        )
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    params = {}
+    if args.task_type:
+        params["task_type"] = args.task_type
+    data = _http_call("GET", f"{args.daemon_url}/admin/benchmark/scores", params=params, timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_leaderboard(args: argparse.Namespace) -> None:
-    try:
-        params = {}
-        if args.task_type:
-            params["task_type"] = args.task_type
-        resp = httpx.get(
-            f"{args.daemon_url}/admin/benchmark/leaderboard",
-            params=params,
-            timeout=10.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            entries = data.get("leaderboard", [])
-            if not entries:
-                print("No benchmark data yet. Run tasks to accumulate scores.")
-                return
-            print(
-                f"{'rank':<5} {'prompt':<25} {'model':<20} "
-                f"{'score':<8} {'cost':<10} {'samples':<8} {'task_type':<15}"
-            )
-            print("-" * 100)
-            for i, e in enumerate(entries, 1):
-                prompt = (e.get("prompt_profile_id") or "default")[:24]
-                model = e.get("model_profile_id", "")[:19]
-                score = f"{e.get('composite_score', 0):.3f}"
-                cost = f"${e.get('avg_cost_usd', 0):.4f}"
-                samples = str(e.get("sample_count", 0))
-                tt = e.get("task_type", "")[:14]
-                print(f"{i:<5} {prompt:<25} {model:<20} {score:<8} {cost:<10} {samples:<8} {tt:<15}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    params = {}
+    if args.task_type:
+        params["task_type"] = args.task_type
+    data = _http_call("GET", f"{args.daemon_url}/admin/benchmark/leaderboard", params=params, timeout=10.0)
+    entries = data.get("leaderboard", [])
+    if not entries:
+        print("No benchmark data yet. Run tasks to accumulate scores.")
+        return
+    print(
+        f"{'rank':<5} {'prompt':<25} {'model':<20} "
+        f"{'score':<8} {'cost':<10} {'samples':<8} {'task_type':<15}"
+    )
+    print("-" * 100)
+    for i, e in enumerate(entries, 1):
+        prompt = (e.get("prompt_profile_id") or "default")[:24]
+        model = e.get("model_profile_id", "")[:19]
+        score = f"{e.get('composite_score', 0):.3f}"
+        cost = f"${e.get('avg_cost_usd', 0):.4f}"
+        samples = str(e.get("sample_count", 0))
+        tt = e.get("task_type", "")[:14]
+        print(f"{i:<5} {prompt:<25} {model:<20} {score:<8} {cost:<10} {samples:<8} {tt:<15}")
 
 
 def _cmd_help(args: argparse.Namespace) -> None:
@@ -1652,33 +1457,22 @@ def _cmd_filestore_binaries(args: argparse.Namespace) -> None:
 
 
 def _cmd_selftest(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/selftest",
-            timeout=120.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("podman_available"):
-                print("Container runtime: podman (available)")
-            else:
-                print("Container runtime: podman NOT available — some tests skipped")
-            print(f"Scenarios run:    {data.get('scenarios_run', 0)}")
-            print(f"Scenarios passed: {data.get('scenarios_passed', 0)}")
-            if data.get("errors"):
-                print(f"Errors:           {len(data['errors'])}")
-                for e in data["errors"]:
-                    print(f"  {e}")
-            for r in data.get("results", []):
-                status = "PASS" if r.get("passed") else "FAIL"
-                print(f"  [{status}] {r.get('scenario', 'unknown')}")
-            if not data.get("success"):
-                sys.exit(1)
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/selftest", timeout=120.0)
+    if data.get("podman_available"):
+        print("Container runtime: podman (available)")
+    else:
+        print("Container runtime: podman NOT available — some tests skipped")
+    print(f"Scenarios run:    {data.get('scenarios_run', 0)}")
+    print(f"Scenarios passed: {data.get('scenarios_passed', 0)}")
+    if data.get("errors"):
+        print(f"Errors:           {len(data['errors'])}")
+        for e in data["errors"]:
+            print(f"  {e}")
+    for r in data.get("results", []):
+        status = "PASS" if r.get("passed") else "FAIL"
+        print(f"  [{status}] {r.get('scenario', 'unknown')}")
+    if not data.get("success"):
+        sys.exit(1)
 
 
 def _scale_col(term_width: int, fraction: float, min_w: int = 4) -> int:
@@ -2796,204 +2590,99 @@ def _cmd_tui(args: argparse.Namespace) -> None:
 
 
 def _cmd_hooks_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/hooks", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            hooks = data.get("hooks", [])
-            if hooks:
-                for h in hooks:
-                    print(f"  {h.get('hook_id', '?'):<20} {h.get('event_name', '?'):<20} {h.get('url', '?')}")
-            else:
-                print("No hooks registered.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/hooks", timeout=10.0)
+    hooks = data.get("hooks", [])
+    if hooks:
+        for h in hooks:
+            print(f"  {h.get('hook_id', '?'):<20} {h.get('event_name', '?'):<20} {h.get('url', '?')}")
+    else:
+        print("No hooks registered.")
 
 
 def _cmd_hooks_register(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/hooks",
-            json={"event_name": args.event, "url": args.handler},
-            timeout=10.0,
-        )
-        if resp.status_code in (200, 201):
-            data = resp.json()
-            print(f"Hook registered: {data.get('hook_id', '?')}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/hooks",
+        json={"event_name": args.event, "url": args.handler},
+        timeout=10.0, ok_codes=(200, 201),
+    )
+    print(f"Hook registered: {data.get('hook_id', '?')}")
 
 
 def _cmd_hooks_delete(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.delete(f"{args.daemon_url}/admin/hooks/{args.hook_id}", timeout=10.0)
-        if resp.status_code == 200:
-            print(f"Hook deleted: {args.hook_id}")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    _http_call("DELETE", f"{args.daemon_url}/admin/hooks/{args.hook_id}", timeout=10.0)
+    print(f"Hook deleted: {args.hook_id}")
 
 
 def _cmd_workers_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/workers", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            workers = data.get("workers", [])
-            if workers:
-                for w in workers:
-                    print(f"  {w.get('worker_id', '?'):<20} {w.get('address', '?'):<30} {w.get('last_seen', '?')}")
-            else:
-                print("No workers registered.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/workers", timeout=10.0)
+    workers = data.get("workers", [])
+    if workers:
+        for w in workers:
+            print(f"  {w.get('worker_id', '?'):<20} {w.get('address', '?'):<30} {w.get('last_seen', '?')}")
+    else:
+        print("No workers registered.")
 
 
 def _cmd_workers_ping(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(f"{args.daemon_url}/admin/workers/ping", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            print(json.dumps(data, indent=2))
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/workers/ping", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_agents_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/agents", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            agents = data.get("agents", [])
-            if agents:
-                for a in agents:
-                    print(f"  {a.get('agent_id', '?'):<20} {a.get('status', '?'):<12} {a.get('model', '?')}")
-            else:
-                print("No agents configured.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/agents", timeout=10.0)
+    agents = data.get("agents", [])
+    if agents:
+        for a in agents:
+            print(f"  {a.get('agent_id', '?'):<20} {a.get('status', '?'):<12} {a.get('model', '?')}")
+    else:
+        print("No agents configured.")
 
 
 def _cmd_metrics_cost(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/metrics/cost", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/metrics/cost", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_metrics_report(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/metrics/report", timeout=10.0)
-        if resp.status_code == 200:
-            print(json.dumps(resp.json(), indent=2))
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/metrics/report", timeout=10.0)
+    print(json.dumps(data, indent=2))
 
 
 def _cmd_reload(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/reload",
-            json={"scope": args.scope},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"Reloaded: {data.get('scope', args.scope)}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/reload", json={"scope": args.scope}, timeout=30.0)
+    print(f"Reloaded: {data.get('scope', args.scope)}")
 
 
 def _cmd_templates_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/templates", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            templates = data.get("templates", [])
-            if templates:
-                for t in templates:
-                    print(f"  {t}")
-            else:
-                print("No templates found.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/templates", timeout=10.0)
+    templates = data.get("templates", [])
+    if templates:
+        for t in templates:
+            print(f"  {t}")
+    else:
+        print("No templates found.")
 
 
 def _cmd_templates_refresh(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(f"{args.daemon_url}/admin/templates/refresh", timeout=30.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            tmpls = data.get("templates", [])
-            print(f"Refreshed: {len(tmpls)} templates")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/templates/refresh", timeout=30.0)
+    tmpls = data.get("templates", [])
+    print(f"Refreshed: {len(tmpls)} templates")
 
 
 def _cmd_playbooks_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/playbooks", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            playbooks = data.get("playbooks", [])
-            if playbooks:
-                for p in playbooks:
-                    print(f"  {p}")
-            else:
-                print("No playbooks found.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/playbooks", timeout=10.0)
+    playbooks = data.get("playbooks", [])
+    if playbooks:
+        for p in playbooks:
+            print(f"  {p}")
+    else:
+        print("No playbooks found.")
 
 
 def _cmd_playbooks_refresh(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(f"{args.daemon_url}/admin/playbooks/refresh", timeout=30.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            pbs = data.get("playbooks", [])
-            print(f"Refreshed: {len(pbs)} playbooks")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/playbooks/refresh", timeout=30.0)
+    pbs = data.get("playbooks", [])
+    print(f"Refreshed: {len(pbs)} playbooks")
 
 
 def _cmd_code_graph(args: argparse.Namespace) -> None:
@@ -3065,61 +2754,36 @@ def _cmd_code_search(args: argparse.Namespace) -> None:
 
 
 def _cmd_quantization_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/quantization", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            models = data.get("profiles", data.get("models", []))
-            if models:
-                for m in models:
-                    prec = m.get("precision", "unknown")
-                    conf = m.get("confidence", 0)
-                    print(f"  {m.get('model_id', '?')}  prec={prec}  conf={conf:.2f}")
-            else:
-                print("No quantization data available. Use 'detect' to scan models.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/quantization", timeout=10.0)
+    models = data.get("profiles", data.get("models", []))
+    if models:
+        for m in models:
+            prec = m.get("precision", "unknown")
+            conf = m.get("confidence", 0)
+            print(f"  {m.get('model_id', '?')}  prec={prec}  conf={conf:.2f}")
+    else:
+        print("No quantization data available. Use 'detect' to scan models.")
 
 
 def _cmd_quantization_detect(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(
-            f"{args.daemon_url}/admin/quantization/detect",
-            json={"model_id": args.model_id},
-            timeout=30.0,
-        )
-        if resp.status_code == 200:
-            data = resp.json()
-            mid = data.get("model_id", "?")
-            prec = data.get("precision", "unknown")
-            conf = data.get("confidence", 0)
-            print(f"  {mid}  prec={prec}  conf={conf:.2f}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call(
+        "POST", f"{args.daemon_url}/admin/quantization/detect",
+        json={"model_id": args.model_id}, timeout=30.0,
+    )
+    mid = data.get("model_id", "?")
+    prec = data.get("precision", "unknown")
+    conf = data.get("confidence", 0)
+    print(f"  {mid}  prec={prec}  conf={conf:.2f}")
 
 
 def _cmd_quantization_drift_check(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.post(f"{args.daemon_url}/admin/quantization/drift-check", timeout=30.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            if data.get("drift_detected"):
-                print(f"Drift detected in {len(data.get('drifted_models', []))} model(s)")
-                for m in data.get("drifted_models", []):
-                    print(f"  {m.get('model_id')}: {m.get('old_precision')} -> {m.get('new_precision')}")
-            else:
-                print("No drift detected.")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/quantization/drift-check", timeout=30.0)
+    if data.get("drift_detected"):
+        print(f"Drift detected in {len(data.get('drifted_models', []))} model(s)")
+        for m in data.get("drifted_models", []):
+            print(f"  {m.get('model_id')}: {m.get('old_precision')} -> {m.get('new_precision')}")
+    else:
+        print("No drift detected.")
 
 
 def _cmd_integrity_scan(args: argparse.Namespace) -> None:
@@ -3222,18 +2886,10 @@ def _cmd_integrity_reject(args: argparse.Namespace) -> None:
 
 
 def _cmd_integrity_log(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/integrity/log", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            for entry in data.get("entries", []):
-                print(f"[{entry.get('timestamp','?')}] {entry.get('action')}: {entry.get('path')}")
-                print(f"  Reason: {entry.get('reason')}  Signer: {entry.get('signer')}")
-        else:
-            print(f"Error: {resp.status_code}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/integrity/log", timeout=10.0)
+    for entry in data.get("entries", []):
+        print(f"[{entry.get('timestamp','?')}] {entry.get('action')}: {entry.get('path')}")
+        print(f"  Reason: {entry.get('reason')}  Signer: {entry.get('signer')}")
 
 
 def _load_config_editor() -> dict[str, Any]:
@@ -3320,17 +2976,9 @@ def _cmd_ansible_builtins(args: argparse.Namespace) -> None:
 
 
 def _cmd_slurm_status(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/slurm/status", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            available = data.get("available", False)
-            print(f"Slurm available: {available}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/slurm/status", timeout=10.0)
+    available = data.get("available", False)
+    print(f"Slurm available: {available}")
 
 
 def _cmd_slurm_submit(args: argparse.Namespace) -> None:
@@ -3347,63 +2995,32 @@ def _cmd_slurm_submit(args: argparse.Namespace) -> None:
         payload["memory"] = args.memory
     if args.time_limit:
         payload["time_limit"] = args.time_limit
-    try:
-        resp = httpx.post(f"{args.daemon_url}/admin/slurm/submit", json=payload, timeout=30.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"Submitted job: {data['job_id']}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("POST", f"{args.daemon_url}/admin/slurm/submit", json=payload, timeout=30.0)
+    print(f"Submitted job: {data['job_id']}")
 
 
 def _cmd_slurm_job(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs/{args.job_id}", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            print(f"Job ID:    {data['job_id']}")
-            print(f"State:     {data['state']}")
-            exit_code = data.get("exit_code")
-            if exit_code is not None:
-                print(f"Exit code: {exit_code}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/slurm/jobs/{args.job_id}", timeout=10.0)
+    print(f"Job ID:    {data['job_id']}")
+    print(f"State:     {data['state']}")
+    exit_code = data.get("exit_code")
+    if exit_code is not None:
+        print(f"Exit code: {exit_code}")
 
 
 def _cmd_slurm_cancel(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.delete(f"{args.daemon_url}/admin/slurm/jobs/{args.job_id}", timeout=10.0)
-        if resp.status_code == 200:
-            print(f"Cancelled job: {args.job_id}")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    _http_call("DELETE", f"{args.daemon_url}/admin/slurm/jobs/{args.job_id}", timeout=10.0)
+    print(f"Cancelled job: {args.job_id}")
 
 
 def _cmd_slurm_list(args: argparse.Namespace) -> None:
-    try:
-        resp = httpx.get(f"{args.daemon_url}/admin/slurm/jobs", timeout=10.0)
-        if resp.status_code == 200:
-            data = resp.json()
-            jobs = data.get("jobs", [])
-            if jobs:
-                for j in jobs:
-                    print(f"  {j.get('job_id', '?'):<12} {j.get('state', '?'):<15} {j.get('exit_code', '')}")
-            else:
-                print("No Slurm jobs found.")
-        else:
-            print(f"Error: {resp.status_code} {resp.text}", file=sys.stderr)
-            sys.exit(1)
-    except Exception as exc:
-        _handle_connection_error(exc, args.daemon_url)
+    data = _http_call("GET", f"{args.daemon_url}/admin/slurm/jobs", timeout=10.0)
+    jobs = data.get("jobs", [])
+    if jobs:
+        for j in jobs:
+            print(f"  {j.get('job_id', '?'):<12} {j.get('state', '?'):<15} {j.get('exit_code', '')}")
+    else:
+        print("No Slurm jobs found.")
 
 
 if __name__ == "__main__":

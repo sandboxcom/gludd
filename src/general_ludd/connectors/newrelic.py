@@ -24,12 +24,13 @@ No shell, no ``shell=True``, no base-class / sibling / package imports.
 
 from __future__ import annotations
 
-import ipaddress
 import json as _json
 import os
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["NewRelicSource"]
 
@@ -57,60 +58,14 @@ Transport = Callable[..., _Response]
 # --------------------------------------------------------------------------- #
 # SSRF: literal-host denylist (NO DNS resolution)
 # --------------------------------------------------------------------------- #
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
-
-
-def _host_is_internal_literal(host: str) -> bool:
-    """Return True if *host* is an obviously-internal literal address/name.
-
-    This performs NO DNS resolution. A non-IP hostname is rejected only when it
-    matches a small literal denylist; everything else (including public API
-    hostnames) is permitted. IP literals are checked structurally against the
-    private/loopback/link-local/reserved ranges.
-    """
-    h = host.strip().lower().rstrip(".")
-    if not h:
-        return True
-    if h in _BLOCKED_HOSTNAMES:
-        return True
-
-    # Strip IPv6 brackets if present, e.g. "[::1]".
-    candidate = h[1:-1] if h.startswith("[") and h.endswith("]") else h
-    try:
-        ip = ipaddress.ip_address(candidate)
-    except ValueError:
-        # Not an IP literal -> treated as a (non-resolved) hostname.
-        return False
-
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _validate_api_url(api_url: str) -> str:
     """Validate scheme/host of *api_url*; raise ValueError if unsafe.
 
     Returns the normalized url string on success.
     """
-    parts = urlsplit(api_url)
-    if parts.scheme not in ("http", "https"):
-        raise ValueError(f"api_url scheme must be http(s): {api_url!r}")
-    host = parts.hostname
-    if not host:
-        raise ValueError(f"api_url has no host: {api_url!r}")
-    if _host_is_internal_literal(host):
+    if is_url_blocked(api_url, scheme_allowlist=("http", "https")):
+        parts = urlsplit(api_url)
+        host = parts.hostname or ""
         raise ValueError(f"api_url host is internal / blocked: {host!r}")
     return api_url
 

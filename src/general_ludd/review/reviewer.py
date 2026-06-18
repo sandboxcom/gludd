@@ -24,11 +24,13 @@ class ReturnReviewer:
         model_profile_id: str = "default",
         router: ModelRouter | None = None,
         conversations: dict[str, Conversation] | None = None,
+        budget_guard: Any = None,
     ) -> None:
         self._gateway = gateway
         self._registry = prompt_registry
         self._model_profile_id = model_profile_id
         self._router = router
+        self._budget_guard = budget_guard
         self._conversations: dict[str, Conversation] = (
             conversations if conversations is not None else {}
         )
@@ -135,6 +137,12 @@ class ReturnReviewer:
             profile_id = self._router.resolve_role("return_review")
             if profile_id is not None:
                 self._model_profile_id = profile_id
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        denial = budget_pre_check(self._budget_guard)
+        if denial is not None:
+            logger.warning("Budget pre-check denied in reviewer: %s", denial)
+            return None, f"Budget denied: {denial}"
         try:
             response = self._gateway.call_model(
                 self._model_profile_id,

@@ -90,6 +90,64 @@ def test_read_secret_returns_none_on_genuine_not_found() -> None:
     assert mgr.read_secret("some/path") is None
 
 
+# --- not-connected guard: SecretsUnavailableError, not RuntimeError --------
+
+
+def test_read_secret_not_connected_raises_secrets_unavailable() -> None:
+    """read_secret must raise SecretsUnavailableError, not RuntimeError, when
+    no client has been connected.  Fail-closed callers catching
+    SecretsUnavailableError would silently miss a bare RuntimeError."""
+    mgr = SecretsManager()  # no client
+    with pytest.raises(SecretsUnavailableError):
+        mgr.read_secret("some/path")
+
+
+def test_read_secret_not_connected_does_not_raise_runtime_error() -> None:
+    """Explicit negative: must NOT surface RuntimeError for not-connected."""
+    mgr = SecretsManager()  # no client
+    with pytest.raises(SecretsUnavailableError):
+        mgr.read_secret("any/path")
+    # If we reach here without RuntimeError the guard is correct.
+
+
+def test_scan_for_image_updates_not_connected_raises_secrets_unavailable() -> None:
+    """scan_for_image_updates calls read_secret, so a not-connected manager
+    must also surface SecretsUnavailableError rather than RuntimeError."""
+    mgr = SecretsManager()  # no client
+    with pytest.raises(SecretsUnavailableError):
+        mgr.scan_for_image_updates()
+
+
+# --- error message content -------------------------------------------------
+
+
+def test_resolve_error_message_contains_resolving_alias() -> None:
+    """resolve() error message must say 'resolving alias' so callers logging the
+    error can distinguish it from a read_secret failure."""
+    exc = hvac.exceptions.VaultDown("sealed")
+    mgr = SecretsManager(client=_client_raising(exc))
+    mgr.register_alias(SecretAlias("mykey", "path/to/mykey"))
+    with pytest.raises(SecretsUnavailableError, match="resolving alias"):
+        mgr.resolve("mykey")
+
+
+def test_read_secret_error_message_contains_reading() -> None:
+    """read_secret() error message must say 'reading' (not 'path') so the
+    context label matches the documented behaviour."""
+    exc = hvac.exceptions.Forbidden("403")
+    mgr = SecretsManager(client=_client_raising(exc))
+    with pytest.raises(SecretsUnavailableError, match="reading"):
+        mgr.read_secret("some/path")
+
+
+def test_read_secret_not_connected_message_contains_reading() -> None:
+    """The not-connected guard in read_secret must also embed 'reading' in the
+    error message so callers get consistent context."""
+    mgr = SecretsManager()  # no client
+    with pytest.raises(SecretsUnavailableError, match="reading"):
+        mgr.read_secret("my/secret")
+
+
 # --- scan_for_image_updates() ----------------------------------------------
 
 
