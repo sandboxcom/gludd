@@ -9,7 +9,14 @@ from general_ludd.secrets import EnvSecretsManager
 class TestZaiSecretsResolution:
     def teardown_method(self, method):
         """Clean up env vars after each test."""
-        for key in ("ZAI_API_KEY", "zai_api_key", "ZAI_BASE_URL", "zai_api_base", "ZAI_API_BASE"):
+        for key in (
+            "ZAI_API_KEY",
+            "zai_api_key",
+            "ZAI_BASE_URL",
+            "zai_api_base",
+            "ZAI_API_BASE",
+            "GLUDD_PSK",
+        ):
             os.environ.pop(key, None)
 
     def test_zai_api_key_uppercase_env_resolves(self):

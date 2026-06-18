@@ -129,6 +129,10 @@ asyncio_default_fixture_loop_scope = "function"
 # (e.g. a TUI input-feed that never reaches quit on headless Linux).
 timeout = 180
 timeout_method = "signal"
+markers = [
+    "e2e: end-to-end harness tests (dogfood scenarios; may require live keys)",
+    "live_zai: tests that require a live z.ai/GLM key (deselected in CI default)",
+]
 
 [tool.coverage.run]
 source = ["general_ludd"]
