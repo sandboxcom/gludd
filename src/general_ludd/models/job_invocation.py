@@ -10,7 +10,7 @@ is the single source of that logic so the two surfaces cannot drift.
 from __future__ import annotations
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
     from general_ludd.models.gateway import ModelGateway
@@ -38,6 +38,7 @@ def invoke_model_for_generation(
     model_profile: str | None,
     prompt_text: str | None,
     skill_body: str | None,
+    budget_guard: Any = None,
 ) -> str | None:
     """Call the model for a generation job. Returns the generated text or None.
 
@@ -51,6 +52,20 @@ def invoke_model_for_generation(
             "Generation job %s has no prompt_text; skipping model call", job_id
         )
         return None
+    if budget_guard is not None and hasattr(budget_guard, "check_all_limits"):
+        try:
+            verdict = budget_guard.check_all_limits(estimated_cost=0.0)
+        except Exception as exc:
+            logger.warning("Budget pre-check raised for job %s: %s", job_id, exc)
+            return None
+        if not isinstance(verdict, dict) or not verdict.get("allowed", False):
+            reason = (
+                verdict.get("reason", "budget exhausted")
+                if isinstance(verdict, dict)
+                else "non-dict"
+            )
+            logger.warning("Budget denied for job %s: %s", job_id, reason)
+            return None
     profile_id = model_profile or "default"
     # Bound the prompt to the model's token window via the shared agent
     # capabilities bundle (ContextCompactor + TokenWindowManager). The system

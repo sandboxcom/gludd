@@ -398,7 +398,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         prompt: str = body.get("prompt", "")
         if not prompt:
-            from fastapi import HTTPException
             raise HTTPException(status_code=422, detail="prompt is required")
 
         model_profile_id: str | None = body.get("model_profile")
@@ -406,6 +405,39 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # max_tokens available for future use when gateway exposes token limits per-call
         _max_tokens: int = int(body.get("max_tokens", 2048))
         del _max_tokens  # currently unused — call_model controls this via profile config
+
+        # B5: budget gate — fail-closed when guard exhausted or degraded startup.
+        _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
+        _budget_guard = getattr(app.state, "_budget_guard", _BUDGET_UNSET)
+        _fail_closed_degraded = os.environ.get(
+            "GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if _budget_guard is _BUDGET_UNSET and _fail_closed_degraded:
+            raise HTTPException(
+                status_code=503,
+                detail="budget guard unavailable (degraded startup); GLUDD_BUDGET_FAIL_CLOSED_DEGRADED=1",
+            )
+        _guard_active = (
+            _budget_guard is not _BUDGET_UNSET
+            and _budget_guard is not None
+            and hasattr(_budget_guard, "check_all_limits")
+        )
+        if _guard_active:
+            try:
+                _verdict = _budget_guard.check_all_limits(estimated_cost=0.0)
+            except Exception as _exc:
+                raise HTTPException(
+                    status_code=503, detail=f"budget check raised: {_exc}"
+                ) from _exc
+            if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
+                _reason = (
+                    _verdict.get("reason", "budget exhausted")
+                    if isinstance(_verdict, dict)
+                    else "non-dict"
+                )
+                raise HTTPException(
+                    status_code=429, detail=f"budget exhausted: {_reason}"
+                )
 
         # Resolve the gateway — use app.state if available, else build a minimal one
         gateway: ModelGateway | None = getattr(app.state, "_model_gateway", None)
@@ -449,7 +481,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             used_profile_id = available_profiles[0].model_profile_id
         else:
             # No profiles configured — return a clear error
-            from fastapi import HTTPException
             raise HTTPException(
                 status_code=503,
                 detail="No model profiles configured. Add a profile via POST /admin/models first.",
@@ -470,5 +501,4 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "usage": dict(response.usage_metadata) if response.usage_metadata else {},
             }
         except Exception as exc:
-            from fastapi import HTTPException
             raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc

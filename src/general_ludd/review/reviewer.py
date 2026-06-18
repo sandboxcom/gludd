@@ -24,11 +24,13 @@ class ReturnReviewer:
         model_profile_id: str = "default",
         router: ModelRouter | None = None,
         conversations: dict[str, Conversation] | None = None,
+        budget_guard: Any = None,
     ) -> None:
         self._gateway = gateway
         self._registry = prompt_registry
         self._model_profile_id = model_profile_id
         self._router = router
+        self._budget_guard = budget_guard
         self._conversations: dict[str, Conversation] = (
             conversations if conversations is not None else {}
         )
@@ -135,6 +137,19 @@ class ReturnReviewer:
             profile_id = self._router.resolve_role("return_review")
             if profile_id is not None:
                 self._model_profile_id = profile_id
+        if self._budget_guard is not None and hasattr(self._budget_guard, "check_all_limits"):
+            try:
+                verdict = self._budget_guard.check_all_limits(estimated_cost=0.0)
+            except Exception as exc:
+                logger.warning("Budget pre-check raised in reviewer: %s", exc)
+                return None, f"budget check raised: {exc}"
+            if not isinstance(verdict, dict) or not verdict.get("allowed", False):
+                reason = (
+                    verdict.get("reason", "budget exhausted")
+                    if isinstance(verdict, dict)
+                    else "budget check returned non-dict"
+                )
+                return None, f"Budget denied: {reason}"
         try:
             response = self._gateway.call_model(
                 self._model_profile_id,

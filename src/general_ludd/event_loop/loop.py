@@ -949,6 +949,7 @@ class EventLoop:
                     model_profile=resolved_model_profile,
                     prompt_text=prompt_text,
                     skill_body=skill_body,
+                    budget_guard=self._budget_guard,
                 )
             else:
                 model_response = None
