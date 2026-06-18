@@ -39,7 +39,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook
+        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
+        branch-from
 
 help:
 	@echo "Usage: make [target]"
@@ -1295,6 +1296,15 @@ feature-start:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-start MSG='feature/short-name'"; exit 1; fi
 	@git checkout -b "$(MSG)"
 	@echo "Created and switched to branch: $(MSG)"
+
+# Create and switch to BRANCH branching off FROM (not HEAD).
+# Usage: make branch-from BRANCH=feature/my-branch FROM=feature/base-branch
+BRANCH ?=
+FROM ?=
+branch-from:
+	@if [ -z "$(BRANCH)" ] || [ -z "$(FROM)" ]; then echo "Usage: make branch-from BRANCH=<new-branch> FROM=<base-branch>"; exit 1; fi
+	@git checkout -b "$(BRANCH)" "$(FROM)"
+	@echo "Created and switched to branch: $(BRANCH) (based on $(FROM))"
 
 feature-done:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make feature-done MSG='feature/short-name'"; exit 1; fi
