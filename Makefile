@@ -36,7 +36,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
-        molecule-clean plan ps-gludd kill-stale kill-gate-force
+        molecule-clean plan ps-gludd kill-stale kill-gate-force \
+        gate-async gate-status
 
 help:
 	@echo "Usage: make [target]"
@@ -55,6 +56,8 @@ help:
 	@echo "  qa                    Run lint + typecheck + test + healthcheck"
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
+	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
+	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
 	@echo "  sast                  Run bandit SAST"
@@ -1574,3 +1577,17 @@ audit-findings:
 
 release-validate:
 	@$(UV) run python -c "import json; from general_ludd.runtime.release_orchestrator import build_and_validate_release as b; from general_ludd import __version__ as v; print(json.dumps(b(version=v, output_dir='dist', build_container=False), indent=2))"
+
+# ---------------------------------------------------------------------------
+# Non-blocking async gate (.gate-status: RUNNING/PASS/FAIL, flock-guarded)
+# ---------------------------------------------------------------------------
+# Launch the gate fully detached — main thread returns immediately.
+# A second call is refused (flock-exclusive) if one is already running.
+# Override GATE_CMD to inject a fake gate in tests (default: scripts/run_gate.sh).
+# STATUS_FILE / LOCK_FILE can also be overridden for test isolation.
+gate-async:
+	@bash scripts/gate_async.sh "$(REF)"
+
+# Print the current .gate-status file (RUNNING/PASS/FAIL).
+gate-status:
+	@if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status found)"; fi
