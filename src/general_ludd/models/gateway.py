@@ -651,7 +651,13 @@ class ModelGateway:
     ) -> ModelResponse | None:
         try:
             return self.call_model(profile_id, messages, **kwargs)
-        except (ValueError, ImportError):
+        except ValueError as exc:
+            # D-05: budget rejections must not be silently swallowed — re-raise
+            # so the caller (call_model_with_fallback) can propagate them.
+            if "over budget" in str(exc):
+                raise
+            return None
+        except ImportError:
             return None
 
     def call_model_with_fallback(
@@ -662,9 +668,15 @@ class ModelGateway:
         fallback_profiles: list[str] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        result = self._try_call_model(profile_id, messages, **kwargs)
-        if result is not None:
-            return result
+        # D-04: gate primary on health tracker before attempting call
+        primary_healthy = (
+            self._health_tracker is None
+            or self._health_tracker.is_healthy(profile_id)
+        )
+        if primary_healthy:
+            result = self._try_call_model(profile_id, messages, **kwargs)
+            if result is not None:
+                return result
 
         fallback_ids: list[str] = fallback_profiles or []
         if not fallback_ids:
@@ -672,10 +684,19 @@ class ModelGateway:
             if profile is not None:
                 fallback_ids = list(profile.fallback_profiles)
 
-        for fb_id in fallback_ids:
-            result = self._try_call_model(fb_id, messages, **kwargs)
-            if result is not None:
-                return result
+        # D-04: route fallback walk through _walk_fallbacks (health-gated)
+        result, last_exc = self._walk_fallbacks(fallback_ids, messages, **kwargs)
+        if result is not None:
+            return result
+
+        # If primary was tripped AND all fallbacks open/failed → clear error
+        if not primary_healthy:
+            raise ValueError(
+                f"All circuits open for fallback chain '{profile_id}'"
+            )
+
+        if last_exc is not None:
+            raise last_exc from None
 
         raise ValueError(
             f"All profiles in fallback chain failed for '{profile_id}'"
