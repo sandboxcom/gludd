@@ -233,7 +233,7 @@ class ExecutionEngine:
             if not isinstance(verdict, dict):
                 return "budget check returned non-dict"
             if not verdict.get("allowed", False):
-                return verdict.get("reason", "budget exhausted")
+                return str(verdict.get("reason", "budget exhausted"))
             return None
         if hasattr(guard, "try_charge"):
             try:
@@ -243,7 +243,7 @@ class ExecutionEngine:
             if not isinstance(verdict, dict):
                 return "budget check returned non-dict"
             if not verdict.get("allowed", False):
-                return verdict.get("reason", "budget exhausted")
+                return str(verdict.get("reason", "budget exhausted"))
             return None
         return "budget guard has unknown interface"
 

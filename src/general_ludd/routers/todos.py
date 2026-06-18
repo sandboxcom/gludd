@@ -215,13 +215,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
             "db_engine": (
-                getattr(app.state, "_db_engine", None).url.render_as_string(hide_password=True)
-                if getattr(app.state, "_db_engine", None) is not None
+                _db_eng.url.render_as_string(hide_password=True)
+                if (_db_eng := getattr(app.state, "_db_engine", None)) is not None
                 else str(None)
             ),
             "db_url": (
-                getattr(app.state, "_db_engine", None).url.render_as_string(hide_password=True)
-                if getattr(app.state, "_db_engine", None) is not None
+                _db_eng2.url.render_as_string(hide_password=True)
+                if (_db_eng2 := getattr(app.state, "_db_engine", None)) is not None
                 else "sqlite"
             ),
             "quality_gate": qg,
