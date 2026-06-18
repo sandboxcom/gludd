@@ -32,9 +32,9 @@
     {
       "id": "mt-5",
       "title": "prevent subagents running unauthorized full gates",
-      "status": "open",
-      "evidence": "",
-      "notes": ""
+      "status": "done",
+      "evidence": "81e5a67 (16 tests, 4 new subagent-guard tests green)",
+      "notes": "run_gate.sh refuses when CLAUDE_AGENT_ID or GLUDD_SUBAGENT set unless GLUDD_GATE_AUTHORIZED=1"
     },
     {
       "id": "mt-6",
