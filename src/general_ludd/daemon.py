@@ -562,6 +562,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     run_timeout_seconds=float(budget_data.get("timeout_seconds", float("inf"))),
                     per_call_budget_usd=float(budget_data.get("per_task_limit", float("inf"))),
                 )
+        app.state._budget_guard = budget_guard
 
         # Build the model gateway once (H4/H12): both the in-process reviewer and
         # the agent dispatcher reuse the SAME gateway instance.
@@ -590,6 +591,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 gateway=model_gateway,
                 prompt_registry=prompt_registry,
                 router=ext.get("adaptive_router"),
+                budget_guard=budget_guard,
             )
 
         # H2 (W3.7): self-improvement interval comes from config; 0 disables it.
