@@ -354,3 +354,106 @@ class TestDirectDispatch:
         await loop._dispatch_review_job(tr)
         http_client.post.assert_called_once()
         assert "return-review" in http_client.post.call_args[0][0]
+
+
+class TestBuildExecutionEngine:
+    """Tests for _build_execution_engine: P4-activation wiring.
+
+    The helper must ALWAYS succeed (no-op when P4 params are absent) and
+    MUST pass spend_limiter + session_factory when the ExecutionEngine
+    signature accepts them.
+
+    Merge-ordering note: the xfail test below proves that once the P4 branch
+    (feature/p4-spend-limiter-record-enforce) lands and ExecutionEngine gains
+    ``spend_limiter`` + ``session_factory`` params, those are wired through
+    automatically — no further daemon change required.  KEEP the xfail; flip
+    it to a regular pass after confirming P4 is merged and the params exist.
+    """
+
+    def test_build_execution_engine_returns_engine_instance(self):
+        """_build_execution_engine always returns an ExecutionEngine (no-op guard)."""
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _build_execution_engine
+        from general_ludd.execution.engine import ExecutionEngine
+
+        app = FastAPI()
+        # Pre-set state as the lifespan does.
+        app.state._spend_limiter = None
+        app.state._session_factory = None
+
+        engine = _build_execution_engine(app)
+        assert isinstance(engine, ExecutionEngine)
+
+    def test_build_execution_engine_with_spend_limiter_on_state(self):
+        """spend_limiter on app.state is forwarded when the param exists."""
+        import inspect
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _build_execution_engine
+        from general_ludd.execution.engine import ExecutionEngine
+
+        # If the current ExecutionEngine does NOT accept spend_limiter, this
+        # test is vacuously correct — the helper just omits it, so the engine
+        # constructs fine.  The important case is post-P4 (see xfail below).
+        app = FastAPI()
+        mock_limiter = MagicMock()
+        app.state._spend_limiter = mock_limiter
+        app.state._session_factory = None
+
+        engine = _build_execution_engine(app)
+        assert isinstance(engine, ExecutionEngine)
+
+        sig = inspect.signature(ExecutionEngine.__init__)
+        if "spend_limiter" in sig.parameters:
+            # Post-P4: the engine must have received our limiter.
+            assert engine._spend_limiter is mock_limiter  # type: ignore[attr-defined]
+
+    @pytest.mark.xfail(
+        reason=(
+            "ExecutionEngine on this branch does NOT yet have spend_limiter / "
+            "session_factory params — they live on feature/p4-spend-limiter-record-enforce. "
+            "Merge that branch first, then this xfail becomes a pass."
+        ),
+        strict=True,
+    )
+    def test_build_execution_engine_wires_spend_limiter_and_session_factory(self):
+        """Post-P4: engine is constructed WITH spend_limiter + session_factory.
+
+        This test is the binding contract: once P4 merges and ExecutionEngine
+        grows those params, the daemon helper must pass them — cost
+        recording/enforcement becomes live without any further daemon change.
+
+        xfail(strict=True): expected to FAIL on the pre-P4 branch; will XPASS
+        (and turn green) after P4 is merged.  Do NOT remove the xfail
+        decorator until you have confirmed both params are in the signature.
+        """
+        import inspect
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _build_execution_engine
+        from general_ludd.execution.engine import ExecutionEngine
+
+        app = FastAPI()
+        mock_limiter = MagicMock()
+        mock_factory = MagicMock()
+        app.state._spend_limiter = mock_limiter
+        app.state._session_factory = mock_factory
+
+        engine = _build_execution_engine(app)
+
+        sig = inspect.signature(ExecutionEngine.__init__)
+        # This assertion drives the xfail: it fails when the params are absent.
+        assert "spend_limiter" in sig.parameters, (
+            "ExecutionEngine.__init__ does not have 'spend_limiter' — "
+            "merge feature/p4-spend-limiter-record-enforce first"
+        )
+        assert "session_factory" in sig.parameters, (
+            "ExecutionEngine.__init__ does not have 'session_factory' — "
+            "merge feature/p4-spend-limiter-record-enforce first"
+        )
+        # Confirm the values were actually forwarded.
+        assert engine._spend_limiter is mock_limiter  # type: ignore[attr-defined]
+        assert engine._session_factory is mock_factory  # type: ignore[attr-defined]

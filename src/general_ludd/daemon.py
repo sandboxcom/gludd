@@ -504,6 +504,58 @@ def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
     )
 
 
+def _build_execution_engine(app: FastAPI) -> Any:
+    """Construct an ExecutionEngine wired to the daemon's SpendLimiter + session_factory.
+
+    This is the P4-activation wiring: the P4 branch added ``spend_limiter`` and
+    ``session_factory`` to ``ExecutionEngine.__init__`` so the engine records real
+    per-call cost and enforces the rolling-window spend cap.  Without this helper
+    those params remain unwired and the engine is inert with respect to cost
+    tracking/enforcement.
+
+    Merge-ordering note: this commit MUST be applied AFTER the P4 branch
+    (``feature/p4-spend-limiter-record-enforce``) is merged, because the current
+    ``ExecutionEngine.__init__`` on *this* branch does not yet accept
+    ``spend_limiter`` or ``session_factory``.  The helper detects this with an
+    ``inspect.signature`` check and falls back to the base constructor so startup
+    is never broken; the test for this path is marked ``xfail`` until P4 merges.
+
+    Args:
+        app: The live FastAPI application whose state holds ``_spend_limiter`` and
+             ``_session_factory`` (set during ``_lifespan`` before this is called).
+
+    Returns:
+        A constructed ``ExecutionEngine`` instance.
+    """
+    import inspect
+
+    from general_ludd.execution.engine import ExecutionEngine
+
+    spend_limiter = getattr(app.state, "_spend_limiter", None)
+    session_factory = getattr(app.state, "_session_factory", None)
+
+    sig = inspect.signature(ExecutionEngine.__init__)
+    params = set(sig.parameters)
+
+    kwargs: dict[str, Any] = {}
+    if "spend_limiter" in params:
+        kwargs["spend_limiter"] = spend_limiter
+    if "session_factory" in params:
+        kwargs["session_factory"] = session_factory
+
+    engine = ExecutionEngine(**kwargs)
+    _has_p4 = bool(kwargs)
+    logger.info(
+        "ExecutionEngine constructed: spend_limiter_wired=%s session_factory_wired=%s "
+        "(P4 params present=%s — merge feature/p4-spend-limiter-record-enforce first "
+        "to activate cost recording/enforcement)",
+        "spend_limiter" in kwargs,
+        "session_factory" in kwargs,
+        _has_p4,
+    )
+    return engine
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -806,6 +858,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             registry=registry,
             executor=dispatcher_executor,
         )
+
+        # P4-activation: construct ExecutionEngine with spend_limiter +
+        # session_factory so cost recording/enforcement is live once the P4
+        # branch (feature/p4-spend-limiter-record-enforce) is merged.  The
+        # helper is a no-op guard: when the current ExecutionEngine.__init__
+        # doesn't accept those params (pre-P4 merge), they are omitted and the
+        # engine starts unconfigured for cost tracking (which is the current
+        # behaviour — no regression).
+        app.state._execution_engine = _build_execution_engine(app)
 
         # --- 3-lane multitask+merge pipeline (#77), behind config flag ----- #
         # Default OFF: only starts when pipeline.enabled is true. Owns its own
