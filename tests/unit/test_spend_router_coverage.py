@@ -11,6 +11,8 @@ router registered and app.state primed), mirroring test_daemon_endpoint_coverage
 
 from __future__ import annotations
 
+import time
+
 import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
@@ -121,3 +123,90 @@ class TestSpendConfigure:
             json={"limit_usd": 5.0, "window_seconds": -1.0},
         )
         assert resp.status_code == 422
+
+
+class TestSpendConfigurePreservesHistory:
+    """Security tests: POST /api/spend/configure must NOT reset spend history.
+
+    D-33: replacing app.state._spend_limiter with an empty-records SpendLimiter
+    lets any PSK-holder wipe the rolling-window spend mid-window, evading the cap
+    by reconfiguring it.  The fix: carry old limiter records into the new limiter
+    via old.snapshot() → new.restore(...) so prior spend still counts.
+    """
+
+    def test_configure_preserves_prior_spend_records(
+        self, app: FastAPI, client: TestClient
+    ) -> None:
+        """Spend recorded BEFORE configure must appear in the new limiter's records.
+
+        We check _records directly (not window_spend()) to avoid any clock-domain
+        mismatch between the old fake clock and the new limiter's real monotonic
+        clock: if the test machine's monotonic clock is far ahead of the fake ts,
+        window_spend() would prune the records even if they were carried over.
+        Checking _records length asserts that the history transfer happened at all.
+        """
+        # Prime the limiter with spend using a real-time-anchored timestamp so
+        # the record survives window_spend() pruning under the real clock.
+        now_ts = time.monotonic()
+        old_limiter = SpendLimiter(limit_usd=10.0, window_seconds=3600.0)
+        old_limiter.record(8.0, kind="token", at=now_ts)
+        app.state._spend_limiter = old_limiter
+
+        # Reconfigure — the endpoint must carry records over.
+        resp = client.post(
+            "/api/spend/configure",
+            json={"limit_usd": 20.0, "window_seconds": 3600.0},
+        )
+        assert resp.status_code == 200
+
+        new_limiter = app.state._spend_limiter
+        assert isinstance(new_limiter, SpendLimiter)
+        # The raw record list must be non-empty: history was carried over.
+        assert len(new_limiter._records) > 0, (
+            "Spend history was wiped on reconfigure — cap-reset evasion is possible."
+        )
+        # And the carried-over record has cost=8.0.
+        assert any(c == pytest.approx(8.0) for _, c in new_limiter._records)
+
+    def test_configure_old_spend_counts_against_new_cap(
+        self, app: FastAPI, client: TestClient
+    ) -> None:
+        """Old spend + new lower cap must correctly trip would_exceed().
+
+        Records are anchored to time.monotonic() so they remain within the
+        new limiter's 3600-second rolling window.
+        """
+        now_ts = time.monotonic()
+        old_limiter = SpendLimiter(limit_usd=100.0, window_seconds=3600.0)
+        # Record 9 USD of spend while the old cap was 100 USD.
+        old_limiter.record(9.0, kind="token", at=now_ts)
+        app.state._spend_limiter = old_limiter
+
+        # Reconfigure to a 10 USD cap — the 9 USD already spent must count.
+        resp = client.post(
+            "/api/spend/configure",
+            json={"limit_usd": 10.0, "window_seconds": 3600.0},
+        )
+        assert resp.status_code == 200
+
+        new_limiter = app.state._spend_limiter
+        # 2 USD projected would exceed 10 - 9 = 1 USD remaining.
+        assert new_limiter.would_exceed(2.0) is True, (
+            "New limiter ignores pre-configure spend — cap-reset evasion is possible."
+        )
+
+    def test_configure_without_prior_limiter_starts_empty(
+        self, app: FastAPI, client: TestClient
+    ) -> None:
+        """When there is no existing limiter, configure starts with zero spend."""
+        # No pre-existing limiter on app.state.
+        if hasattr(app.state, "_spend_limiter"):
+            del app.state._spend_limiter
+
+        resp = client.post(
+            "/api/spend/configure",
+            json={"limit_usd": 5.0, "window_seconds": 60.0},
+        )
+        assert resp.status_code == 200
+        new_limiter = app.state._spend_limiter
+        assert new_limiter.window_spend() == pytest.approx(0.0)
