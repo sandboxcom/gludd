@@ -4,8 +4,59 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+from general_ludd.budget_guard_check import budget_pre_check
+
 # ---------------------------------------------------------------------------
-# Helpers
+# Concrete guard classes for budget_pre_check unit tests
+# ---------------------------------------------------------------------------
+
+class TryChargeOnlyGuard:
+    """Guard that only exposes try_charge (no check_all_limits)."""
+
+    def __init__(self, *, allowed: bool, reason: str = "quota exceeded") -> None:
+        self._allowed = allowed
+        self._reason = reason
+
+    def try_charge(self, cost: float) -> dict:
+        if self._allowed:
+            return {"allowed": True}
+        return {"allowed": False, "reason": self._reason}
+
+
+class CheckAllLimitsGuard:
+    """Guard that exposes check_all_limits."""
+
+    def __init__(self, *, allowed: bool, reason: str = "budget exhausted") -> None:
+        self._allowed = allowed
+        self._reason = reason
+
+    def check_all_limits(self, estimated_cost: float) -> dict:
+        if self._allowed:
+            return {"allowed": True}
+        return {"allowed": False, "reason": self._reason}
+
+
+class RaisingConcreteGuard:
+    """Guard whose check_all_limits raises."""
+
+    def check_all_limits(self, estimated_cost: float) -> dict:
+        raise RuntimeError("exploded")
+
+
+class NonDictConcreteGuard:
+    """Guard whose check_all_limits returns a non-dict."""
+
+    def check_all_limits(self, estimated_cost: float):
+        return "not-a-dict"
+
+
+class UnknownInterfaceGuard:
+    """Guard with neither check_all_limits nor try_charge."""
+    pass
+
+
+# ---------------------------------------------------------------------------
+# Helpers (MagicMock-based, used by engine/reviewer/B5 tests)
 # ---------------------------------------------------------------------------
 
 def _exhausted_guard(reason: str = "daily limit reached") -> MagicMock:
@@ -372,3 +423,135 @@ class TestB5ModelCallBudgetGate:
         client = self._client_with_profiles(_missing_allowed_guard())
         resp = client.post("/admin/models/call", json={"prompt": "hello"})
         assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Direct tests for shared budget_pre_check (concrete guard classes)
+# ---------------------------------------------------------------------------
+
+class TestBudgetPreCheckDirect:
+    def test_none_guard_returns_none(self):
+        assert budget_pre_check(None) is None
+
+    def test_check_all_limits_allowed_returns_none(self):
+        guard = CheckAllLimitsGuard(allowed=True)
+        assert budget_pre_check(guard) is None
+
+    def test_check_all_limits_denied_returns_reason(self):
+        guard = CheckAllLimitsGuard(allowed=False, reason="over limit")
+        result = budget_pre_check(guard)
+        assert result == "over limit"
+
+    def test_try_charge_allowed_returns_none(self):
+        guard = TryChargeOnlyGuard(allowed=True)
+        assert budget_pre_check(guard) is None
+
+    def test_try_charge_denied_returns_reason(self):
+        guard = TryChargeOnlyGuard(allowed=False, reason="quota exceeded")
+        result = budget_pre_check(guard)
+        assert result == "quota exceeded"
+
+    def test_unknown_interface_returns_error(self):
+        guard = UnknownInterfaceGuard()
+        result = budget_pre_check(guard)
+        assert result == "budget guard has unknown interface"
+
+    def test_check_all_limits_raises_returns_error_string(self):
+        guard = RaisingConcreteGuard()
+        result = budget_pre_check(guard)
+        assert result is not None
+        assert result.startswith("budget check raised:")
+
+    def test_check_all_limits_non_dict_returns_error(self):
+        guard = NonDictConcreteGuard()
+        result = budget_pre_check(guard)
+        assert result == "budget check returned non-dict"
+
+
+# ---------------------------------------------------------------------------
+# Reviewer integration tests using TryChargeOnlyGuard
+# ---------------------------------------------------------------------------
+
+class TestReviewerWithTryChargeGuard:
+    def _make_reviewer(self, guard):
+        from general_ludd.review.reviewer import ReturnReviewer
+        gateway = MagicMock()
+        registry = MagicMock()
+        registry.render.return_value = "some prompt"
+        reviewer = ReturnReviewer(
+            gateway=gateway,
+            prompt_registry=registry,
+            budget_guard=guard,
+        )
+        return reviewer, gateway
+
+    def test_try_charge_denied_returns_none_and_no_gateway_call(self):
+        guard = TryChargeOnlyGuard(allowed=False, reason="quota exceeded")
+        reviewer, gateway = self._make_reviewer(guard)
+        result, err = reviewer._call_model("some prompt")
+        assert result is None
+        assert err is not None
+        assert "Budget denied" in err
+        gateway.call_model.assert_not_called()
+
+    def test_try_charge_allowed_calls_gateway(self):
+        guard = TryChargeOnlyGuard(allowed=True)
+        reviewer, gateway = self._make_reviewer(guard)
+        mock_response = MagicMock()
+        mock_response.content = "model output"
+        gateway.call_model.return_value = mock_response
+        result, err = reviewer._call_model("some prompt")
+        assert result == "model output"
+        assert err is None
+        gateway.call_model.assert_called_once()
+
+
+# ---------------------------------------------------------------------------
+# Job invocation integration tests using TryChargeOnlyGuard
+# ---------------------------------------------------------------------------
+
+class TestJobInvocationWithTryChargeGuard:
+    def _make_gateway(self):
+        gateway = MagicMock()
+        mock_response = MagicMock()
+        mock_response.content = "generated text"
+        gateway.call_model.return_value = mock_response
+        return gateway
+
+    def test_try_charge_denied_returns_none_and_no_gateway_call(self):
+        from general_ludd.models.job_invocation import invoke_model_for_generation
+        guard = TryChargeOnlyGuard(allowed=False, reason="quota exceeded")
+        gateway = self._make_gateway()
+        result = invoke_model_for_generation(
+            gateway,
+            job_id="job-123",
+            work_type="code",
+            model_profile="default",
+            prompt_text="do something",
+            skill_body=None,
+            budget_guard=guard,
+        )
+        assert result is None
+        gateway.call_model.assert_not_called()
+
+    def test_try_charge_allowed_proceeds(self):
+        from general_ludd.models.job_invocation import invoke_model_for_generation
+        guard = TryChargeOnlyGuard(allowed=True)
+        gateway = self._make_gateway()
+        with patch("general_ludd.agents.capabilities.AgentCapabilities") as MockCaps:
+            caps_instance = MagicMock()
+            caps_instance.prepare_messages.return_value = [
+                {"role": "user", "content": "do something"}
+            ]
+            MockCaps.return_value = caps_instance
+            result = invoke_model_for_generation(
+                gateway,
+                job_id="job-456",
+                work_type="code",
+                model_profile="default",
+                prompt_text="do something",
+                skill_body=None,
+                budget_guard=guard,
+            )
+        assert result == "generated text"
+        gateway.call_model.assert_called_once()
