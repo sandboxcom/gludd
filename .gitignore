@@ -36,3 +36,14 @@ id_dsa
 *.pfx
 
 scripts/scan-secrets.py
+
+# ── Claude Code harness: transient / machine-local items ─────────────────────
+# Committed (safe to track): .claude/hooks/  .claude/settings.json  .claude/workflows/
+# Ignored (transient or machine-local):
+.claude/worktrees/          # agent git worktrees (~320MB venv each; huge + ephemeral)
+.claude/statsig/            # telemetry / machine-local SDK state
+.claude/todos/              # machine-local task state
+.claude/shell-snapshots/    # machine-local shell history snapshots
+.claude/projects/           # machine-local project memory
+.claude/settings.local.json # machine-local permission overrides (keep settings.json)
+# ─────────────────────────────────────────────────────────────────────────────

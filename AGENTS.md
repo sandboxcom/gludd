@@ -244,6 +244,170 @@ This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — `tool.execute.before` checks
 - `tests/unit/test_guardrails.py` — guardrail existence and behavior tests
 
+## CRITICAL: "Fix" Means Repair, Never Disable
+
+**When the user asks you to FIX something, "fix" means: make the feature WORK
+as intended. It NEVER means disable, remove, downgrade, stub out, comment out,
+or weaken the feature. Disabling a feature the user asked you to fix is itself a
+NEW BUG — and you must NEVER introduce a bug.**
+
+This was a direct user mandate (2026-06-18) after the agent was told "fix the
+stop-hook errors" and responded by making the hooks *advisory* (deleting the
+enforcement) instead of fixing the actual error. That turned a working-but-noisy
+feature into a non-working feature — a regression dressed up as a fix.
+
+### The distinction (internalize this)
+
+- "It errors / is noisy / fires too often" = the feature is **malfunctioning**.
+  The fix is to repair the malfunction while **keeping the feature's purpose
+  intact**. (Stop-hook threw `exit 1` every turn → the bug was the `exit 1`
+  error path, NOT the blocking. Fix = block cleanly via `{"decision":"block"}` +
+  `exit 0`. The enforcement STAYS.)
+- "Disable X" / "turn off X" / "make X advisory" = an **explicit** instruction to
+  remove behavior. Only do this when the user says so in those words.
+
+### Forbidden "fixes" (every one is a bug you introduced)
+
+- Feature throws an error → ❌ disable the feature. ✅ Fix the error path; keep the feature.
+- Check is too strict / noisy → ❌ delete the check. ✅ Narrow it so it fires only on real violations; keep enforcing.
+- Test fails → ❌ weaken/delete the assertion or `xfail` it. ✅ Fix the code so the assertion passes (security assertions especially — NEVER weaken).
+- Hook/guardrail is disruptive → ❌ make it advisory / empty its body. ✅ Repair the disruption (the error/exit code/false-positive); keep it enforcing.
+- Endpoint leaks/over-matches → ❌ remove the endpoint. ✅ Fix the logic; keep the endpoint serving its real purpose.
+
+### Before claiming something is "fixed"
+
+1. Does the feature still DO what it was built to do? If you removed/weakened its
+   core behavior, you did NOT fix it — you broke it. Revert and repair instead.
+2. Did you introduce any NEW failure mode (disabled enforcement, dropped a case,
+   widened access)? If yes, that is a bug — the work is not done.
+3. Prove it: the repaired feature must demonstrably still work (a passing test /
+   a run that shows the behavior firing), not just "no longer errors."
+
+Overlaps with and strengthens the **Guardrail Integrity Policy** above, but is
+broader: it applies to EVERY feature, not only guardrails. Enforced by this
+section, `.opencode/plugin/enforce-make.ts`, and the `enforce-floor.ts` plugin.
+
+## CRITICAL: Release Cut = Update the README Status Table
+
+**Every release MUST go through `make release-cut TAG='...' MSG='...'`.  Direct use
+of `make git-push-sandboxcom` + `make git-tag-push` without running `release-cut`
+first is a policy violation — it bypasses the README currency gate.**
+
+### Rule
+
+Before any release tag is pushed, the README.md **Feature & Task Completion Status
+table** and its `**Status as of <version>**` line MUST be refreshed to reflect the
+version being cut.  This is enforced as a hard gate, not documentation:
+
+1. **`scripts/check_readme_status_current.py`** — reads `pyproject.toml` (or the
+   `TAG` argument), finds the `Status as of <version>` line in README.md, and
+   exits non-zero with a clear error message if they do not match.  Accepts an
+   optional `TAG` positional argument (`v0.1.0-alpha.2` or `0.1.0-alpha.2`; the
+   leading `v` is normalized away for comparison).
+
+2. **`make check-readme-status [TAG='...']`** — runs the script.  Use this to
+   check readiness before committing.
+
+3. **`make release-cut TAG='...' MSG='...'`** — the single release command.
+   Runs in order and aborts on the first failure:
+   1. `check-readme-status` → README stale = ABORT (unskippable)
+   2. `git-push-sandboxcom` → push master branch
+   3. `git-tag-push` → create annotated tag + push (triggers CI release job)
+   4. `release-view` → confirm the published GitHub Release
+
+### What "update the status table" means
+
+Before running `make release-cut`:
+- Edit README.md → find the **Feature & Task Completion Status** table.
+- Update every row that changed since the last release.
+- Change (or add) the `**Status as of v<old>**` line to `**Status as of v<new> — <date>**`.
+- Commit the README change in the same release-bump commit as `pyproject.toml` /
+  `src/general_ludd/__init__.py` / `CHANGELOG.md`.
+
+### Why this is a hard gate, not documentation
+
+The hooks-over-memory principle: memory and documentation are ignored under time
+pressure; machine enforcement is not.  A stale README status table has been a
+repeated gap after large feature batches.  The gate makes it structurally
+impossible to skip.
+
+### Enforcement
+
+- `scripts/check_readme_status_current.py` — enforcing script (exits non-zero + clear message)
+- `make check-readme-status` — callable target
+- `make release-cut` — the only sanctioned release command; gate is step 1/4
+- This AGENTS.md section — proactive instruction
+
+## CRITICAL: Agent At-Rest / Re-Dispatch Policy
+
+**An agent "coming to rest" does NOT mean it is incomplete.** "At rest" =
+the subagent finished its turn and returned its final result (the `<result>` in
+the completion notification IS its deliverable). Auto-redispatching a *completed*
+agent re-runs finished work, wastes tokens, and can loop forever. So "always
+re-dispatch on rest" is INCORRECT as a blanket rule.
+
+**Classify by STATUS, not by the rest event, and act:**
+
+| Status | Meaning | Action |
+|---|---|---|
+| `completed` + deliverable present | Finished the assignment | **Accept.** Do not re-dispatch. Use the result. |
+| `completed` + deliverable partial/wrong | Stopped short of the ask | **Resume** via `SendMessage` (keeps its context — cheaper than fresh) with the specific gap, OR re-dispatch if context is stale. |
+| `failed` / stalled / "no progress for Ns" / died | Genuinely incomplete | **Re-dispatch with backoff** (this IS the [[transient-error-retry-with-backoff]] rule). Never abandon the work. |
+| killed by transient API error (529/429/503) | Overload, not done | **Re-dispatch after backoff** (exponential if it repeats). |
+
+The floor hook keeps the POOL full; this policy decides what to do with each
+agent's *result*. They are independent: a completed agent correctly drains the
+pool (the floor hook then asks for a refill of NEW work, not a re-run of the old).
+
+**Path to automate (optional):** a watcher could scan task statuses and
+auto-re-queue only `status==failed`/stalled tasks with a per-task max-retry cap
+(e.g. 3) and exponential backoff — never `completed` ones, and never without a
+cap (or it loops). Until that exists, the orchestrator applies the table above on
+each completion notification.
+
+**"Come to rest" — what the status means + the ZOMBIE rule.** A task/agent at
+rest is NOT "in error" by default: the harness marks it `completed` (it returned
+normally — its deliverable is the `<result>`) or `failed` (it died: stalled,
+errored, or was killed). So: `completed` ≠ redo; `failed` ≠ abandon. Re-dispatch
+only `failed`/stalled WORK, with a max-retry cap + backoff. Two hard rules from a
+real incident (2026-06-18):
+1. **A background task that "completed" may have been KILLED, not finished** —
+   check its actual exit code / result content, never infer success from the rest
+   event alone. (A gate's `.gate-status` test line / pytest summary is the truth.)
+2. **NEVER arm a self-relaunching watcher for a long task.** A gate-marshal
+   subagent armed `marshal-full-suite` + `marshal-wait-report` watchers that
+   re-launched a `-n auto` gate every time it "completed" — it respawned ~6×, each
+   OOM-killing the host, and killing the gate process alone didn't stop it (had to
+   `TaskStop` the watcher tasks + remove the worktree). A long task that outlives a
+   subagent's turn must be owned by the MAIN LOOP via `run_in_background`
+   (re-invoked exactly once on exit), not a subagent that rests-and-relaunches.
+   Subagent gate/build runs that exceed one turn: rely on polling their
+   `.gate-status`/artifact, and never wire an auto-relaunch.
+
+## CRITICAL: Never Block on Questions — Default to Action
+
+**You MUST NOT interrupt work to ask the user a blocking question.** When you
+hit a decision point, choose the most reasonable option yourself, state the
+assumption you are making in one line, and PROCEED. The user redirects you if
+they disagree — that is cheaper than a blocking question that stalls the work.
+
+This was a direct, repeated user directive (2026-06-18): "stop asking questions
+that interrupt work." A passive memory ([[gludd-never-block-on-questions]]) did
+not stop the relapse, so it is now ENFORCED by a hook.
+
+- **Enforcement:** `.claude/hooks/no_blocking_questions_pretool.sh` is a
+  `PreToolUse(AskUserQuestion)` guardrail that DENIES the AskUserQuestion tool
+  (clean `permissionDecision:deny` JSON + exit 0, never a hook error; fail-open).
+  Registered in `.claude/settings.json`. It is context-efficient — it only fires
+  when a blocking question is actually attempted.
+- **What to do instead:** decide → state the assumption → act. If new information
+  changes the right call, change course and say so. Surface options *alongside*
+  continued work, never as a gate in front of it.
+- **The rare exception** (truly destructive/irreversible external action the user
+  has not pre-authorized): state the plan and the risk and proceed with the safe
+  default, or note it and keep going — still do not block. If the user has already
+  authorized the action (e.g. "push to GitHub"), just do it.
+
 ## CRITICAL: Bash Command Policy
 
 **You MUST only run `make <target>` commands in bash. Never run any other command directly.**
@@ -496,6 +660,58 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 This is enforced by:
 - This AGENTS.md section — proactive instruction
 - The session persistence policy — SESSION.md tracks known gaps
+
+## Model Utilization — Keep Sonnet Dominant
+
+**Standing rule:** `sonnet` is the cost-efficient default model.  The user wants a
+sonnet-dominant dispatch ratio.  The hook operates in two modes:
+
+### Default mode (10%-band)
+
+When sonnet falls more than 10 percentage points below the combined other-model share in
+recent dispatches, the hook emits an advisory nudge to rebalance toward sonnet.
+
+### Time-bound 2:1 target mode
+
+A stricter 2:1 sonnet target (67%) can be activated for a fixed duration using:
+
+```
+make set-sonnet-target HOURS=24 SHARE=0.67
+```
+
+This writes `.claude/sonnet_ratio_target` with a `target_share` and `until_epoch`.
+While the window is active (i.e. `now < until_epoch`), the hook enforces `target_share`
+instead of the 10%-band.  The target auto-expires — no cleanup needed.
+
+- **Config file:** `.claude/sonnet_ratio_target`
+- **Format:** `{"target_share": 0.67, "until_epoch": <unix-timestamp>}`
+- **Env override:** `GLUDD_SONNET_TARGET_CONFIG` overrides the config file path;
+  `GLUDD_SONNET_TARGET_SHARE` overrides `target_share` for that invocation.
+- **Auto-expiry:** once `until_epoch` is passed, the hook silently reverts to 10%-band mode.
+
+**How this is enforced (3-layer guardrail):**
+
+1. **Hook** — `.claude/hooks/model_utilization_pretool.sh` (`PreToolUse` / `Agent` matcher):
+   - Maintains a rolling window of the last 20 model dispatches in `/tmp/gludd-model-util.json`.
+   - Appends the current dispatch's model *before* computing shares (so it counts).
+   - **Time-bound mode** (active window): if `sonnet_share < target_share` → emits a
+     time-bound advisory nudge with "target is N% (2:1) until YYYY-MM-DD HH:MM".
+   - **Default mode** (expired/absent config): if `sonnet_share < non_share − 0.10` →
+     emits the standard band advisory nudge.
+   - Silent when sonnet is healthy.  Fail-open on any error.
+2. **Settings** — registered in `.claude/settings.json` under `PreToolUse` with
+   `"matcher": "Agent"` alongside `agent_ceiling_pretool.sh` and `disk_discipline_pretool.sh`.
+3. **Prompt** (this section) — proactive instruction to prefer `sonnet` and treat the
+   nudge as a rebalancing signal, not noise.
+
+**What to do when the nudge appears:** Use `model:'sonnet'` for the next N dispatches
+that do not specifically require a stronger model (e.g. complex multi-file synthesis →
+`opus`; simple file reads / research → `sonnet` or `haiku`).  Return to the default
+(`sonnet`) once the window re-balances.
+
+**Do NOT** suppress, ignore, or remove the nudge — it is a utilization signal, not an
+error.  Removing the hook without addressing the utilization imbalance is a guardrail
+integrity violation (see "Guardrail Integrity Policy" above).
 
 ## Multitasking / Blockers
 

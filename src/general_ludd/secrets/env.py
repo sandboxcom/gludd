@@ -28,6 +28,13 @@ _ALLOWLIST_PATTERNS: tuple[re.Pattern[str], ...] = (
     re.compile(r"^GLUDD_SECRET_", re.IGNORECASE),
 )
 
+# Explicit env-var name aliases: lowercase gateway alias → uppercase env var name.
+# Handles cases where the gateway's canonical alias differs from the user-exported
+# var name (e.g. gateway uses "zai_api_base" but user exports "ZAI_BASE_URL").
+_ENV_VAR_ALIASES: dict[str, str] = {
+    "zai_api_base": "ZAI_BASE_URL",
+}
+
 
 class EnvSecretsManager:
     """Resolve secrets from environment variables or an explicit overrides dict.
@@ -67,7 +74,22 @@ class EnvSecretsManager:
         # Ambient env is only consulted for allowlisted names. This is the
         # S-1 fix: GLUDD_PSK / arbitrary process env vars no longer leak.
         if self._is_allowlisted(alias_name):
-            return os.environ.get(alias_name)
+            val = os.environ.get(alias_name)
+            if val is None:
+                # Fallback 1: user may have exported the uppercase form (e.g.
+                # ZAI_API_KEY) while the gateway uses the lowercase alias (e.g.
+                # zai_api_key). Only try if the upper name also passes the
+                # allowlist — never let uppercase bypass the security gate.
+                upper = alias_name.upper()
+                if upper != alias_name and self._is_allowlisted(upper):
+                    val = os.environ.get(upper)
+            if val is None and alias_name in _ENV_VAR_ALIASES:
+                # Fallback 2: explicit alias mapping (e.g. zai_api_base →
+                # ZAI_BASE_URL). Allowlist-checked before reading.
+                env_var = _ENV_VAR_ALIASES[alias_name]
+                if self._is_allowlisted(env_var):
+                    val = os.environ.get(env_var)
+            return val
         return None
 
     def list_aliases(self) -> list[str]:

@@ -18,44 +18,44 @@
     {
       "id": "mt-3",
       "title": "gate concurrency collision: flock + per-run unique basetemp + cleanup trap",
-      "status": "in_progress",
-      "evidence": "",
-      "notes": "agent a949c699"
+      "status": "done",
+      "evidence": "scripts/run_gate.sh: flock lock + per-run mktemp basetemp + EXIT/INT/TERM cleanup trap; tests/unit/test_gate_concurrency.py",
+      "notes": "on master via wave3 merge"
     },
     {
       "id": "mt-4",
       "title": "first-class tracked agent_liveness + floor_planner (was untracked)",
-      "status": "in_progress",
-      "evidence": "",
-      "notes": "agent a4a31a3f"
+      "status": "done",
+      "evidence": "scripts/agent_liveness.py + scripts/floor_planner.py now tracked; tests/unit/test_agent_liveness.py + tests/unit/test_floor_planner.py",
+      "notes": "on master via wave3 merge"
     },
     {
       "id": "mt-5",
       "title": "prevent subagents running unauthorized full gates",
-      "status": "open",
-      "evidence": "",
-      "notes": ""
+      "status": "done",
+      "evidence": "scripts/run_gate.sh:35-40 subagent guard (CLAUDE_AGENT_ID/GLUDD_SUBAGENT requires GLUDD_GATE_AUTHORIZED=1); tests/unit/test_gate_concurrency.py subagent-guard tests",
+      "notes": "on master via wave3 merge"
     },
     {
       "id": "mt-6",
       "title": "agents rest mid-task with incomplete output: watchdog/re-poke",
-      "status": "open",
-      "evidence": "",
-      "notes": ""
+      "status": "done",
+      "evidence": "scripts/agent_watchdog.py classify/scan/redispatch (capped backoff) + tests/unit/test_agent_watchdog.py",
+      "notes": "on master via wave3 merge; at-rest policy codified in AGENTS.md + memory"
     },
     {
       "id": "mt-7",
       "title": "predictive floor control / buffer maintenance (not reactive)",
-      "status": "open",
-      "evidence": "",
-      "notes": ""
+      "status": "done",
+      "evidence": "scripts/floor_planner.py + scripts/floor_controller.py controller on master; predictive (expected_completions_soon/buffer) on feature/floor-predictive-controller @ 68700c2 (44 tests), alpha.3 cascade",
+      "notes": "built+tested; predictive enhancement merges in alpha.3 cascade"
     },
     {
       "id": "mt-8",
       "title": "Stop-hook enforcing this backlog (keep an agent assigned while items open)",
-      "status": "in_progress",
-      "evidence": "",
-      "notes": "this task seeds it; .claude hook wired by orchestrator"
+      "status": "done",
+      "evidence": ".claude/hooks/multitasking_backlog_stop.sh enforcing (JSON-block decision + exit 0) + scripts/multitasking_backlog_check.py + tests/unit/test_multitasking_backlog.py",
+      "notes": "enforcing this very turn"
     }
   ]
 }

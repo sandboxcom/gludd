@@ -41,7 +41,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook
+        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
+        test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
+        git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom
 
 help:
 	@echo "Usage: make [target]"
@@ -1657,3 +1659,542 @@ write-gate-safe-hook:
 	@mkdir -p .claude/hooks
 	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
 	@echo "write-gate-safe-hook done"
+
+# ---------------------------------------------------------------------------
+# Comprehensive hook test suite (supersedes test-stop-hooks)
+# ---------------------------------------------------------------------------
+# Runs ALL .claude/hooks/*.sh under many stdin/env scenarios and verifies:
+#   1. exit code is always 0   (non-zero = "hook error" shown to user)
+#   2. stdout is empty OR valid JSON  (malformed stdout = harness parse error)
+#   3. stderr has no Python traceback  (leaked traceback = visible hook error)
+#
+# The classic bug this catches: a Stop hook doing `exit 1` instead of
+# {"decision":"block"} + exit 0. That single mistake shows "stop hook error"
+# on every turn-end.  This test would have caught it.
+#
+# Also retained: the original test-stop-hooks cases (a-e) so CI history is
+# not broken.  `make test-hooks` calls test-stop-hooks internally.
+#
+# Helper: _hook_case LABEL HOOK_CMD STDIN ENV_OVERRIDES EXPECT_EXIT EXPECT_DECISION
+#   EXPECT_DECISION: "block" | "noblock" | "any" (just valid-JSON-or-empty)
+#
+# Implementation: pure POSIX sh in a single @recipe (Makefile constraint).
+# Each case is numbered; FAIL lines include the case label so triage is instant.
+test-hooks:
+	@echo "========================================================"
+	@echo "  make test-hooks -- comprehensive hook safety suite"
+	@echo "  Invariants: exit=0  stdout=empty-or-valid-JSON  no traceback"
+	@echo "========================================================"
+	@OVERALL=PASS; \
+	_jv() { s=$$(cat); [ -z "$$s" ] && return 0; printf '%s' "$$s" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; }; \
+	_tb() { grep -q 'Traceback\|^Error' /tmp/gludd-hook-stderr.txt 2>/dev/null && echo "TRACEBACK" || echo "CLEAN"; }; \
+	echo ""; echo "--- GROUP 1: agent_floor_stop.sh (Stop hook) ---"; \
+	echo "[1a] FLOOR=999 active=false -> exit=0, decision=block"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | CLAUDE_AGENT_FLOOR=999 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/agent_floor_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$OUT stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [1a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  INFO [1a]: empty (fail-open, no task-dir -- acceptable in test env)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("decision")=="block"' 2>/dev/null; then echo "  PASS [1a]: decision=block exit=0"; \
+	else echo "  FAIL [1a]: stdout present but decision!=block or invalid JSON"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [1a]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[1b] stop_hook_active=true -> exit=0, no block (escape)"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":true}' | CLAUDE_AGENT_FLOOR=999 bash .claude/hooks/agent_floor_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [1b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [1b]: empty exit=0 (escape)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("decision")!="block"' 2>/dev/null; then echo "  PASS [1b]: no block exit=0"; \
+	else echo "  FAIL [1b]: block despite stop_hook_active=true"; OVERALL=FAIL; fi; \
+	\
+	echo "[1c] FLOOR=0 live=5 -> exit=0, no block"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | CLAUDE_AGENT_FLOOR=0 FLOOR_LIVE_OVERRIDE=5 bash .claude/hooks/agent_floor_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [1c]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [1c]: empty exit=0 (floor=0)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("decision")!="block"' 2>/dev/null; then echo "  PASS [1c]: no block"; \
+	else echo "  FAIL [1c]: unexpected block FLOOR=0"; OVERALL=FAIL; fi; \
+	\
+	echo "[1d] empty stdin -> exit=0 (fail-open)"; \
+	OUT=$$(printf '' | CLAUDE_AGENT_FLOOR=999 bash .claude/hooks/agent_floor_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC"; [ $$RC -eq 0 ] && echo "  PASS [1d]" || { echo "  FAIL [1d]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo "[1e] garbage stdin -> exit=0 (fail-open)"; \
+	OUT=$$(printf 'NOT JSON AT ALL' | CLAUDE_AGENT_FLOOR=999 bash .claude/hooks/agent_floor_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC"; [ $$RC -eq 0 ] && echo "  PASS [1e]" || { echo "  FAIL [1e]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo "[1f] FLOOR=999 CEILING=12 -> band display not 999-12 (clamped)"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | CLAUDE_AGENT_FLOOR=999 CLAUDE_AGENT_CEILING=12 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/agent_floor_stop.sh 2>/dev/null); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || echo "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("decision="+str(d.get("decision"))+" reason_has_999-12="+str("999-12" in d.get("reason","")))' 2>/dev/null || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [1f]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  INFO [1f]: empty (fail-open, no task-dir)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "999-12" not in d.get("reason","")' 2>/dev/null; then echo "  PASS [1f]: band not inverted"; \
+	else echo "  FAIL [1f]: 999-12 in reason or invalid JSON"; OVERALL=FAIL; fi; \
+	\
+	echo ""; echo "--- GROUP 2: multitasking_backlog_stop.sh (Stop hook) ---"; \
+	echo "[2a] stop_hook_active=true -> exit=0, no block"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":true}' | bash .claude/hooks/multitasking_backlog_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [2a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [2a]: empty exit=0 (escape)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("decision")!="block"' 2>/dev/null; then echo "  PASS [2a]: no block"; \
+	else echo "  FAIL [2a]: unexpected block with escape active"; OVERALL=FAIL; fi; \
+	\
+	echo "[2b] stop_hook_active=false (real backlog) -> exit=0, empty-or-valid-JSON"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | bash .claude/hooks/multitasking_backlog_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; SERR=$$(cat /tmp/gludd-hook-stderr.txt); \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("JSON ok decision="+str(d.get("decision","allow")))' 2>/dev/null || echo "INVALID_JSON: $$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [2b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [2b]: empty (allow/fail-open)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [2b]: valid JSON"; \
+	else echo "  FAIL [2b]: invalid JSON stdout"; OVERALL=FAIL; fi; \
+	printf '%s' "$$SERR" | grep -q 'Traceback' && { echo "  FAIL [2b]: traceback in stderr"; OVERALL=FAIL; } || true; \
+	\
+	echo "[2c] empty stdin -> exit=0"; \
+	OUT=$$(printf '' | bash .claude/hooks/multitasking_backlog_stop.sh 2>/dev/null); RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [2c]: exit=0" || { echo "  FAIL [2c]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo "[2d] nonexistent backlog path -> exit=0 (fail-open)"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_MT_BACKLOG=/nonexistent/x.json bash .claude/hooks/multitasking_backlog_stop.sh 2>/dev/null); RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [2d]: exit=0" || { echo "  FAIL [2d]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 3: session_start_orchestrate.sh (SessionStart) ---"; \
+	echo "[3a] normal run -> exit=0, stdout is empty OR valid JSON (NOT raw plaintext)"; \
+	OUT=$$(bash .claude/hooks/session_start_orchestrate.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; SERR=$$(cat /tmp/gludd-hook-stderr.txt); \
+	echo "  exit=$$RC stdout_len=$$(printf '%s' "$$OUT" | wc -c | tr -d ' ') stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [3a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [3a]: empty stdout (fail-open)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [3a]: valid JSON (not raw plaintext)"; \
+	else echo "  FAIL [3a]: non-JSON stdout -- this causes session-start hook error"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [3a]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 4: agent_floor_dec.sh (SubagentStop) ---"; \
+	echo "[4a] FLOOR=999 live=0 (breach path) -> exit=0, valid JSON"; \
+	OUT=$$(printf '%s' '{}' | CLAUDE_AGENT_FLOOR=999 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/agent_floor_dec.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("JSON ok keys="+str(list(d.keys())))' 2>/dev/null || echo "INVALID: $$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [4a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  INFO [4a]: empty (fail-open, no task-dir)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [4a]: valid JSON"; \
+	else echo "  FAIL [4a]: invalid JSON (printf format bug)"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [4a]: traceback"; OVERALL=FAIL; }; \
+	\
+	echo "[4b] FLOOR=6 live=10 (healthy path) -> exit=0, valid JSON"; \
+	OUT=$$(printf '%s' '{}' | CLAUDE_AGENT_FLOOR=6 FLOOR_LIVE_OVERRIDE=10 bash .claude/hooks/agent_floor_dec.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin); print("JSON ok")' 2>/dev/null || echo "INVALID: $$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [4b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  INFO [4b]: empty (fail-open)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [4b]: valid JSON (healthy-path)"; \
+	else echo "  FAIL [4b]: invalid JSON"; OVERALL=FAIL; fi; \
+	\
+	echo ""; echo "--- GROUP 5: enforce_make_bash.sh (PreToolUse/Bash) ---"; \
+	echo "[5a] make command -> allow (empty or non-deny JSON)"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make test"}}' | bash .claude/hooks/enforce_make_bash.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=allow)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [5a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [5a]: empty = allow"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")!="deny"' 2>/dev/null; then echo "  PASS [5a]: no deny"; \
+	else echo "  FAIL [5a]: unexpected deny for make command"; OVERALL=FAIL; fi; \
+	\
+	echo "[5b] ls command -> deny (exit=0, permissionDecision=deny)"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"ls -la"}}' | bash .claude/hooks/enforce_make_bash.sh 2>/dev/null); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [5b]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [5b]: deny exit=0"; \
+	else echo "  FAIL [5b]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[5c] empty stdin -> exit=0 (fail-open)"; \
+	printf '' | bash .claude/hooks/enforce_make_bash.sh >/dev/null 2>&1; RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [5c]" || { echo "  FAIL [5c]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo "[5d] garbage stdin -> exit=0 (fail-open)"; \
+	printf 'NOT JSON' | bash .claude/hooks/enforce_make_bash.sh >/dev/null 2>&1; RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [5d]" || { echo "  FAIL [5d]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 6: floor_pretool / floor_posttool / mainthread_budget ---"; \
+	echo "[6a] floor_pretool FLOOR=999 live=0 -> exit=0, valid JSON"; \
+	OUT=$$(printf '%s' '{"tool_name":"Read","hook_event_name":"PreToolUse"}' | CLAUDE_AGENT_FLOOR=999 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/agent_floor_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [6a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ] || printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [6a]: exit=$$RC stdout valid"; \
+	else echo "  FAIL [6a]: invalid JSON: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[6b] floor_posttool FLOOR=999 live=0 -> exit=0, valid JSON"; \
+	OUT=$$(printf '%s' '{"tool_name":"Read","hook_event_name":"PostToolUse"}' | CLAUDE_AGENT_FLOOR=999 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/agent_floor_posttool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [6b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ] || printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [6b]: exit=$$RC stdout valid"; \
+	else echo "  FAIL [6b]: invalid JSON: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[6c] mainthread_budget streak=20 live=0 -> exit=0, valid JSON"; \
+	printf '20\n' > /tmp/gludd-mainthread-streak-hooktest; \
+	OUT=$$(printf '%s' '{"tool_name":"Read","hook_event_name":"PostToolUse"}' | GLUDD_MAINTHREAD_STREAK_FILE=/tmp/gludd-mainthread-streak-hooktest GLUDD_MAINTHREAD_THRESHOLD=8 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/mainthread_budget.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	rm -f /tmp/gludd-mainthread-streak-hooktest; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [6c]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ] || printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [6c]: exit=$$RC stdout valid"; \
+	else echo "  FAIL [6c]: invalid JSON: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo ""; echo "--- GROUP 7: agent_ceiling_pretool.sh (PreToolUse/Agent) ---"; \
+	echo "[7a] live >= CEILING -> exit=0, valid JSON hookSpecificOutput only"; \
+	OUT=$$(printf '%s' '{"tool_name":"Agent"}' | CLAUDE_AGENT_CEILING=5 FLOOR_LIVE_OVERRIDE=10 bash .claude/hooks/agent_ceiling_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty)' || printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("JSON ok keys="+str(list(d.keys())))' 2>/dev/null || echo "INVALID: $$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [7a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ] || printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [7a]: valid JSON or empty"; \
+	else echo "  FAIL [7a]: invalid JSON"; OVERALL=FAIL; fi; \
+	\
+	echo "[7b] live < CEILING -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_name":"Agent"}' | CLAUDE_AGENT_CEILING=12 FLOOR_LIVE_OVERRIDE=3 bash .claude/hooks/agent_ceiling_pretool.sh 2>/dev/null); RC=$$?; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [7b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [7b]: empty (below ceiling)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [7b]: valid JSON (ok)"; \
+	else echo "  FAIL [7b]: non-empty invalid JSON"; OVERALL=FAIL; fi; \
+	\
+	echo ""; echo "--- GROUP 8: disk_discipline_pretool.sh (PreToolUse/Agent) ---"; \
+	echo "[8a] SILENT: non-worktree Agent call -> exit=0, empty stdout"; \
+	OUT=$$(printf '%s' '{"tool_input":{"isolation":"none","prompt":"hello"}}' | bash .claude/hooks/disk_discipline_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [8a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [8a]: silent on non-worktree agent"; \
+	else echo "  FAIL [8a]: emitted output for non-worktree agent (should be silent)"; OVERALL=FAIL; fi; \
+	\
+	echo "[8b] SILENT: worktree Agent, healthy disk + venvs under cap -> exit=0, empty stdout"; \
+	OUT=$$(printf '%s' '{"tool_input":{"isolation":"worktree","prompt":"do work"}}' | \
+	  GLUDD_DISK_FREE_OVERRIDE=50.0 GLUDD_VENV_COUNT_OVERRIDE=2 GLUDD_DISK_DANGER_GB=2.5 GLUDD_WORKTREE_CAP=6 \
+	  bash .claude/hooks/disk_discipline_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [8b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [8b]: silent on healthy-disk worktree agent"; \
+	else echo "  FAIL [8b]: emitted output when disk healthy (should be silent)"; OVERALL=FAIL; fi; \
+	\
+	echo "[8c] DENY: worktree Agent, HARD FLOOR breach (< 1GB free) -> exit=0, permissionDecision=deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"isolation":"worktree","prompt":"do work"}}' | \
+	  GLUDD_DISK_FREE_OVERRIDE=0.4 GLUDD_VENV_COUNT_OVERRIDE=2 GLUDD_DISK_HARD_FLOOR_GB=1.0 \
+	  bash .claude/hooks/disk_discipline_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [8c]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [8c]: deny exit=0 on ENOSPC-imminent"; \
+	else echo "  FAIL [8c]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[8d] WARN (advisory, not deny): worktree Agent, disk in danger zone (1.5GB, between floor 1.0 and danger 2.5) -> exit=0, additionalContext present, NOT deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"isolation":"worktree","prompt":"do work"}}' | \
+	  GLUDD_DISK_FREE_OVERRIDE=1.5 GLUDD_VENV_COUNT_OVERRIDE=2 GLUDD_DISK_HARD_FLOOR_GB=1.0 GLUDD_DISK_DANGER_GB=2.5 \
+	  bash .claude/hooks/disk_discipline_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC decision=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); print("deny" if hs.get("permissionDecision")=="deny" else "advisory" if hs.get("additionalContext") else "empty")' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [8d]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); assert hs.get("additionalContext") and hs.get("permissionDecision") != "deny"' 2>/dev/null; then echo "  PASS [8d]: advisory (not deny) in danger zone"; \
+	else echo "  FAIL [8d]: expected advisory additionalContext (not deny); got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[8e] WARN: worktree Agent, venv count >= CAP -> exit=0, advisory emitted"; \
+	OUT=$$(printf '%s' '{"tool_input":{"isolation":"worktree","prompt":"do work"}}' | \
+	  GLUDD_DISK_FREE_OVERRIDE=50.0 GLUDD_VENV_COUNT_OVERRIDE=7 GLUDD_WORKTREE_CAP=6 GLUDD_DISK_DANGER_GB=2.5 GLUDD_DISK_HARD_FLOOR_GB=1.0 \
+	  bash .claude/hooks/disk_discipline_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC has_output=$$([ -n "$$OUT" ] && echo yes || echo no)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [8e]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -n "$$OUT" ] && printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [8e]: valid JSON advisory for venv-cap breach"; \
+	else echo "  FAIL [8e]: expected valid JSON advisory; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[8f] FAIL-OPEN: garbage stdin -> exit=0, empty"; \
+	OUT=$$(printf 'NOT JSON' | bash .claude/hooks/disk_discipline_pretool.sh 2>/dev/null); RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [8f]: fail-open on garbage stdin" || { echo "  FAIL [8f]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 9: guardrail_integrity_edit_pretool.sh (PreToolUse/Edit) ---"; \
+	echo "[9a] SILENT: edit to a non-hook file (src/) -> exit=0, empty stdout"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/src/general_ludd/foo.py","old_string":"def bar(): pass","new_string":"def bar(): return 1"}}' | bash .claude/hooks/guardrail_integrity_edit_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [9a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [9a]: silent on non-hook-file edit"; \
+	else echo "  FAIL [9a]: emitted output for non-hook file (should be silent)"; OVERALL=FAIL; fi; \
+	\
+	echo "[9b] SILENT: edit to hook file that KEEPS enforcement token in new_string -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/.claude/hooks/some_hook.sh","old_string":"exit 1  # old path","new_string":"exit 1  # new path"}}' | bash .claude/hooks/guardrail_integrity_edit_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [9b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [9b]: silent when enforcement token kept in new_string"; \
+	else echo "  FAIL [9b]: emitted output (should be silent — enforcement preserved)"; OVERALL=FAIL; fi; \
+	\
+	echo "[9c] DENY: edit to hook file strips exit 1 entirely -> exit=0, permissionDecision=deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/.claude/hooks/enforce_make_bash.sh","old_string":"exit 1  # block","new_string":"echo advisory only"}}' | bash .claude/hooks/guardrail_integrity_edit_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [9c]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [9c]: deny on enforcement-stripping hook edit"; \
+	else echo "  FAIL [9c]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[9d] DENY: edit to plugin .ts file strips throw new Error -> exit=0, permissionDecision=deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/.opencode/plugin/enforce-make.ts","old_string":"throw new Error(\"BLOCKED\")","new_string":"console.log(\"warning only\")"}}' | bash .claude/hooks/guardrail_integrity_edit_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [9d]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [9d]: deny on enforcement-stripping plugin edit"; \
+	else echo "  FAIL [9d]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[9e] SILENT: old_string has NO enforcement token (normal refactor) -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/.claude/hooks/some_hook.sh","old_string":"echo hello","new_string":"echo goodbye"}}' | bash .claude/hooks/guardrail_integrity_edit_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [9e]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [9e]: silent when old_string had no enforcement token"; \
+	else echo "  FAIL [9e]: should be silent (no enforcement token in old_string)"; OVERALL=FAIL; fi; \
+	\
+	echo "[9f] FAIL-OPEN: garbage stdin -> exit=0, empty"; \
+	OUT=$$(printf 'NOT JSON' | bash .claude/hooks/guardrail_integrity_edit_pretool.sh 2>/dev/null); RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [9f]: fail-open on garbage stdin" || { echo "  FAIL [9f]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 10: gate_concurrency_pretool.sh (PreToolUse/Bash) ---"; \
+	echo "[10a] SILENT: non-gate Bash command -> exit=0, empty stdout"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make lint"}}' | bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [10a]: silent on non-gate command (make lint)"; \
+	else echo "  FAIL [10a]: emitted output for non-gate command (should be silent)"; OVERALL=FAIL; fi; \
+	\
+	echo "[10b] SILENT: make gate command, NO pytest running -> exit=0, empty stdout"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make gate"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=0 GLUDD_GATE_BASETEMP=/tmp/nonexistent-basetemp-hooktest-$$$$ \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [10b]: silent when no pytest running"; \
+	else echo "  FAIL [10b]: emitted output when no pytest running (should be silent)"; OVERALL=FAIL; fi; \
+	\
+	echo "[10c] DENY: make gate command, pytest IS running (override) -> exit=0, permissionDecision=deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make gate"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10c]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [10c]: deny when pytest already running"; \
+	else echo "  FAIL [10c]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[10d] DENY: make test command (not just gate) -> deny when pytest running"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make test"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10d]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [10d]: deny on make test with pytest running"; \
+	else echo "  FAIL [10d]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[10e] SILENT: make git-status (not a test command) -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make git-status"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10e]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [10e]: silent on make git-status (not a test target)"; \
+	else echo "  FAIL [10e]: emitted output for non-gate command (should be silent)"; OVERALL=FAIL; fi; \
+	\
+	echo "[10f] FAIL-OPEN: garbage stdin -> exit=0, empty"; \
+	OUT=$$(printf 'NOT JSON' | GLUDD_GATE_PYTEST_RUNNING=1 bash .claude/hooks/gate_concurrency_pretool.sh 2>/dev/null); RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [10f]: fail-open on garbage stdin" || { echo "  FAIL [10f]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 11: no_blocking_questions_pretool.sh (PreToolUse/AskUserQuestion) ---"; \
+	echo "[11a] AskUserQuestion tool-input -> exit=0, permissionDecision=deny, valid JSON"; \
+	OUT=$$(printf '%s' '{"tool_name":"AskUserQuestion","tool_input":{"question":"Should I proceed?","options":["Yes","No"]}}' | bash .claude/hooks/no_blocking_questions_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR') stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [11a]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); assert hs.get("permissionDecision")=="deny", "decision="+str(hs.get("permissionDecision")); assert hs.get("hookEventName")=="PreToolUse"; assert hs.get("permissionDecisionReason")' 2>/dev/null; then echo "  PASS [11a]: deny exit=0 valid JSON with reason + hookEventName"; \
+	else echo "  FAIL [11a]: expected deny with PreToolUse hookEventName + reason; got: $$OUT"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [11a]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[11b] empty stdin -> exit=0, permissionDecision=deny, valid JSON (every question denied)"; \
+	OUT=$$(printf '' | bash .claude/hooks/no_blocking_questions_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [11b]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [11b]: deny exit=0 on empty stdin"; \
+	else echo "  FAIL [11b]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [11b]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[11c] garbage stdin -> exit=0, valid JSON (fail-open to deny, no traceback)"; \
+	OUT=$$(printf 'NOT JSON AT ALL' | bash .claude/hooks/no_blocking_questions_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout_valid=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin); print("yes")' 2>/dev/null || echo 'no') stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [11c]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [11c]: exit=0 valid JSON on garbage stdin"; \
+	else echo "  FAIL [11c]: expected valid JSON stdout; got: $$OUT"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [11c]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 12: model_utilization_pretool.sh (PreToolUse/Agent) time-bound 2:1 target ---"; \
+	_MU_STATE=/tmp/gludd-hooktest-model-util-$$$$.json; \
+	_MU_CFG=/tmp/gludd-hooktest-model-util-cfg-$$$$.json; \
+	_MU_FUTURE=$$(python3 -c 'import time; print(int(time.time()) + 3600)'); \
+	_MU_PAST=$$(python3 -c 'import time; print(int(time.time()) - 3600)'); \
+	\
+	echo "[12a] NUDGE: active 2:1 window + sonnet below 67% -> emits additionalContext with 'target is' and 'MODEL-UTIL'"; \
+	printf '%s\n' '{"history":["opus","opus","opus","opus","opus","opus","opus","opus","opus","opus"]}' > "$$_MU_STATE"; \
+	printf '%s\n' "{\"target_share\": 0.67, \"until_epoch\": $$_MU_FUTURE}" > "$$_MU_CFG"; \
+	OUT=$$(printf '%s' '{"tool_input":{"model":"opus","prompt":"do something"}}' | \
+	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
+	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC"; \
+	echo "  has_additionalContext=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("hookSpecificOutput",{}).get("additionalContext") else "no")' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [12a]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); ac=hs.get("additionalContext",""); assert ac, "no additionalContext"; assert "MODEL-UTIL" in ac, "missing MODEL-UTIL"; assert "target is" in ac, "missing target is"; assert hs.get("permissionDecision") != "deny", "must not deny"' 2>/dev/null; then echo "  PASS [12a]: time-bound nudge present (MODEL-UTIL + target is), no deny, exit=0"; \
+	else echo "  FAIL [12a]: expected additionalContext with MODEL-UTIL and target is; got: $$OUT"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [12a]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[12b] SILENT: active 2:1 window + sonnet >= 67% -> exit=0, empty stdout"; \
+	printf '%s\n' '{"history":["sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet"]}' > "$$_MU_STATE"; \
+	printf '%s\n' "{\"target_share\": 0.67, \"until_epoch\": $$_MU_FUTURE}" > "$$_MU_CFG"; \
+	OUT=$$(printf '%s' '{"tool_input":{"model":"sonnet","prompt":"do something"}}' | \
+	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
+	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [12b]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [12b]: silent (sonnet at/above 2:1 target), exit=0"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("hookSpecificOutput",{}).get("additionalContext"), "should be silent"' 2>/dev/null; then echo "  PASS [12b]: no nudge when sonnet healthy under active window"; \
+	else echo "  FAIL [12b]: emitted nudge when sonnet at/above target; got: $$OUT"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [12b]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[12c] EXPIRED WINDOW: reverts to 10%-band; opus-heavy -> old nudge fires (has non-sonnet); sonnet-heavy -> silent"; \
+	printf '%s\n' '{"history":["opus","opus","opus","opus","opus","opus","opus","opus","opus","opus"]}' > "$$_MU_STATE"; \
+	printf '%s\n' "{\"target_share\": 0.67, \"until_epoch\": $$_MU_PAST}" > "$$_MU_CFG"; \
+	OUT=$$(printf '%s' '{"tool_input":{"model":"opus","prompt":"do something"}}' | \
+	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
+	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC"; \
+	echo "  has_additionalContext=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("hookSpecificOutput",{}).get("additionalContext") else "no")' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [12c-nudge]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); ac=hs.get("additionalContext",""); assert ac, "no additionalContext"; assert "MODEL-UTIL" in ac, "missing MODEL-UTIL"; assert "non-sonnet" in ac, "missing non-sonnet (band mode)"' 2>/dev/null; then echo "  PASS [12c-nudge]: expired window -> band nudge with non-sonnet (not target-is)"; \
+	else echo "  FAIL [12c-nudge]: expected band nudge with non-sonnet; got: $$OUT"; OVERALL=FAIL; fi; \
+	printf '%s\n' '{"history":["sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet"]}' > "$$_MU_STATE"; \
+	OUT2=$$(printf '%s' '{"tool_input":{"model":"sonnet","prompt":"do something"}}' | \
+	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
+	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC2=$$?; \
+	if [ $$RC2 -ne 0 ]; then echo "  FAIL [12c-silent]: exit $$RC2"; OVERALL=FAIL; \
+	elif [ -z "$$OUT2" ]; then echo "  PASS [12c-silent]: silent when sonnet healthy (expired window)"; \
+	elif printf '%s' "$$OUT2" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert not d.get("hookSpecificOutput",{}).get("additionalContext")' 2>/dev/null; then echo "  PASS [12c-silent]: no nudge when healthy after expiry"; \
+	else echo "  FAIL [12c-silent]: emitted nudge when sonnet healthy after expiry; got: $$OUT2"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [12c]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[12d] FAIL-OPEN: malformed/empty stdin -> exit=0, no Traceback in stderr"; \
+	printf '' | GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
+	  bash .claude/hooks/model_utilization_pretool.sh >/tmp/gludd-hooktest-12d-out.txt 2>/tmp/gludd-hook-stderr.txt; RC=$$?; \
+	echo "  exit=$$RC"; \
+	OUT=$$(cat /tmp/gludd-hooktest-12d-out.txt); SERR=$$(cat /tmp/gludd-hook-stderr.txt); \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [12d]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ] || printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [12d]: exit=0, stdout empty or valid JSON"; \
+	else echo "  FAIL [12d]: non-zero exit or invalid stdout"; OVERALL=FAIL; fi; \
+	printf '%s' "$$SERR" | grep -q 'Traceback' && { echo "  FAIL [12d]: Traceback in stderr"; OVERALL=FAIL; } || true; \
+	printf '%s' "$$SERR" | grep -q 'Traceback' || echo "  PASS [12d-notraceback]: no Traceback in stderr"; \
+	rm -f "$$_MU_STATE" "$$_MU_CFG" /tmp/gludd-hooktest-12d-out.txt; \
+	\
+	echo ""; \
+	echo "========================================================"; \
+	echo "  test-hooks OVERALL: $$OVERALL"; \
+	echo "========================================================"; \
+	[ "$$OVERALL" = "PASS" ] || exit 1
+
+# ---------------------------------------------------------------------------
+# set-sonnet-target: write .claude/sonnet_ratio_target with a time-bound 2:1
+# sonnet target.  Until the window expires, model_utilization_pretool.sh uses
+# target_share instead of the 10%-band default.
+# Usage: make set-sonnet-target [HOURS=24] [SHARE=0.67]
+# ---------------------------------------------------------------------------
+HOURS ?= 24
+SHARE ?= 0.67
+set-sonnet-target:
+	@python3 -c "\
+import json, time; \
+until = int(time.time()) + int('$(HOURS)') * 3600; \
+cfg = {'target_share': float('$(SHARE)'), 'until_epoch': until}; \
+open('.claude/sonnet_ratio_target', 'w').write(json.dumps(cfg)); \
+from datetime import datetime; \
+print('[set-sonnet-target] wrote .claude/sonnet_ratio_target'); \
+print('  target_share=$(SHARE)  until=' + datetime.fromtimestamp(until).strftime('%Y-%m-%d %H:%M') + '  ($(HOURS)h from now)') \
+"
+
+# Legacy alias -- preserved so existing CI targets / muscle memory still work.
+test-stop-hooks: test-hooks
+
+# ---------------------------------------------------------------------------
+# Release-cut gate: README Feature & Task Completion Status table must be
+# updated before every release.  See AGENTS.md "Release Cut = Update the README
+# Status Table" and scripts/check_readme_status_current.py.
+# ---------------------------------------------------------------------------
+
+# Verify that README.md's "Status as of <version>" line matches the release version.
+# Usage:
+#   make check-readme-status               # reads version from pyproject.toml
+#   make check-readme-status TAG='v0.1.0-alpha.2'   # explicit tag override
+check-readme-status:
+	@echo "[check-readme-status] checking README status table ..."
+	@$(UV) run python scripts/check_readme_status_current.py $(if $(TAG),$(TAG),)
+
+# THE release command.  Enforces README currency before pushing anything.
+# Usage: make release-cut TAG='v0.1.0-alpha.2' MSG='v0.1.0-alpha.2 — first alpha'
+# Steps (in order, abort on first failure):
+#   1. check-readme-status  — README Feature & Task Completion Status table must match TAG
+#   2. git-push-sandboxcom  — push master branch to sandboxcom/gludd
+#   3. git-tag-push         — create annotated tag + push (triggers CI release job)
+#   4. release-view         — confirm the published GitHub Release
+release-cut:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG='v0.1.0-alpha.N' MSG='...'"; exit 1; }
+	@echo "[release-cut] step 1/4 — check README status table is current for $(TAG) ..."
+	@$(MAKE) --no-print-directory check-readme-status TAG='$(TAG)' || { \
+		echo ""; \
+		echo "RELEASE ABORTED: README Feature & Task Completion Status table is stale."; \
+		echo "  Update README.md 'Status as of $(TAG)' line and the status table, then retry."; \
+		exit 1; \
+	}
+	@echo "[release-cut] step 2/4 — push master branch to sandboxcom ..."
+	@$(MAKE) --no-print-directory git-push-sandboxcom
+	@echo "[release-cut] step 3/4 — create and push annotated tag $(TAG) ..."
+	@$(MAKE) --no-print-directory git-tag-push TAG='$(TAG)' MSG='$(MSG)'
+	@echo "[release-cut] step 4/4 — confirm published release ..."
+	@$(MAKE) --no-print-directory release-view TAG='$(TAG)'
+	@echo ""
+	@echo "release-cut COMPLETE: $(TAG) pushed and confirmed."
+
+# ---------------------------------------------------------------------------
+# True fast-forward without re-running the gate
+# ---------------------------------------------------------------------------
+# git-ff-only: fast-forward-ONLY merge of REF into the CURRENT branch.
+#
+# CAVEAT: this target SKIPS the gate entirely by design.  It MUST only be used
+# when REF has already been confirmed green by a separate gate run.  The whole
+# point is to land master at an already-gated tip without paying the ~3hr
+# re-gate cost that ship-async incurs.
+#
+# Fails loudly (non-zero exit) if REF is not a fast-forward ancestor of HEAD —
+# i.e. it refuses to create a merge commit, exactly like `git merge --ff-only`.
+# Prints before and after HEAD so the result is observable in the log.
+#
+# Usage: make git-ff-only REF=<commit-or-branch>
+git-ff-only:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-ff-only REF=<commit-or-branch>"; exit 1; }
+	@echo "[git-ff-only] BEFORE: $$(git rev-parse HEAD)"
+	@git merge --ff-only "$(REF)"
+	@echo "[git-ff-only] AFTER:  $$(git rev-parse HEAD)"
+
+# ship-ff: convenience wrapper — checkout TARGET then ff-only merge REF.
+# Prints before/after HEAD so callers can verify the operation.
+#
+# CAVEAT: same gate-skip caveat as git-ff-only above — only call this when REF
+# is already confirmed green by an independent gate run.
+#
+# Usage: make ship-ff REF=<commit-or-branch> [TARGET=master]
+ship-ff:
+	@[ -n "$(REF)" ] || { echo "Usage: make ship-ff REF=<commit-or-branch> [TARGET=master]"; exit 1; }
+	@echo "[ship-ff] checking out $(TARGET) ..."
+	@git checkout "$(TARGET)"
+	@echo "[ship-ff] BEFORE: $$(git rev-parse HEAD)"
+	@git merge --ff-only "$(REF)"
+	@echo "[ship-ff] AFTER:  $$(git rev-parse HEAD)"
+	@echo "[ship-ff] $(TARGET) is now at $(REF)"
+
+# ---------------------------------------------------------------------------
+# git-worktree-list / git-worktree-remove: manage agent worktrees make-only.
+#
+# WHY git-worktree-remove EXISTS (2026-06-18): a rested gate-marshal subagent
+# left a worktree whose background `-n auto` gate kept RESPAWNING (OOM-killing the
+# host) — a zombie loop. `make kill-gate-force` kills the gate process but the
+# worktree relaunches it; removing the worktree is the only durable stop, and
+# there was no make-only way to do it. This is the missing tool, not a process to
+# babysit. `--force` removes it even with the gate's files open, which kills the
+# relaunch source.
+# Usage: make git-worktree-remove WT='.claude/worktrees/agent-XXXX'
+# ---------------------------------------------------------------------------
+git-worktree-list:
+	@git worktree list
+
+git-worktree-remove:
+	@[ -n "$(WT)" ] || { echo "Usage: make git-worktree-remove WT='.claude/worktrees/agent-XXXX'"; exit 1; }
+	@echo "[git-worktree-remove] removing worktree $(WT) (force) ..."
+	@git worktree remove --force "$(WT)" 2>/dev/null && echo "[git-worktree-remove] removed $(WT)" || echo "[git-worktree-remove] remove failed/absent; pruning registrations"
+	@git worktree prune
+	@echo "[git-worktree-remove] done"
+
+git-ls-remote-sandboxcom:
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom

@@ -236,3 +236,16 @@ All premature-stop incidents and process failures are tracked here.
 - **Why guardrail failed**: Agent treated the push as a natural stopping point and sent a summary. The `write` tool workaround for the TDD guardrail was already known from prior fixes, but the agent rationalized that a summary was a valid deliverable.
 - **Root cause**: Agent treats push/commit milestones as completion signals. Pushing is not completing — it's checkpointing.
 - **Fix applied**: This BUGS.md entry. Immediately continued fixing benchmark entry using `make fix-benchmark-mock` target, then burned 4 more entries (secrets resolver, preflight, BinaryPathResolver).
+
+### 2026-06-18 — Stop hook errors every turn (hook exit-code + plaintext stdout)
+
+- **What**: The harness showed a "hook error" on every turn. Two distinct root causes were conflated across several turns. (1) Stop hooks (`agent_floor_stop.sh`, `multitasking_backlog_stop.sh`) used `exit 1` to signal a block — but a non-zero exit from a Stop hook is interpreted as a HOOK ERROR, not a clean block. (2) The actual recurring error: `session_start_orchestrate.sh` emitted raw plaintext via `cat <<EOF`; the harness requires hook stdout to be empty-or-valid-JSON, so it threw a JSON parse error on every session start.
+- **Fix applied**: Block via `{"decision":"block"}` JSON (Stop hooks) or `{"permissionDecision":"deny"}` JSON (PreToolUse hooks), built with `python3 -c 'import json; ...'`, exit 0, fail-open on any error. Wrapped `session_start_orchestrate.sh` output in valid JSON. Also fixed `agent_floor_dec.sh` printf fragility and `agent_ceiling_pretool.sh` dual-key output.
+- **Root-cause guardrail**: Added `make test-hooks` (20+ cases) asserting every hook emits empty-or-valid-JSON + exits 0 across all input paths (empty/garbage stdin, missing fields, triggered/not-triggered, env overrides). This test suite would have caught all three failure modes before shipping.
+- **Lesson**: Every hook needs explicit all-path testing before shipping. Non-zero hook exit = HOOK ERROR in all hook types — only the payload JSON controls the decision.
+
+### 2026-06-18 — "Fix interpreted as disable" (agent process failure)
+
+- **What**: User said "fix the stop hook errors." Agent responded by making the hooks advisory (deleted enforcement logic) instead of repairing the broken exit/output path. This turned a working-but-erroring feature into a non-working one — a regression disguised as a fix.
+- **Fix applied**: Reverted to enforcing behavior (JSON-block + exit 0). Codified "Fix Means Repair, Never Disable" in AGENTS.md and memory. A PreToolUse(Edit) hook (`guardrail_integrity_edit_pretool.sh`) is being wired to block edits that strip all enforcement tokens from hooks or plugins.
+- **Lesson**: "Fix X" means make X work correctly. It NEVER means disable X, weaken X, or delete the enforcement path. Disabling a feature you were asked to fix is a new, separate bug. If the fix approach is unclear, state the ambiguity and default to repairing, not removing.

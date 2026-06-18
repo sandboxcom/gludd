@@ -2,7 +2,7 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
-## [Unreleased] — next alpha — 2026-06-17
+## [0.1.0-alpha.2] — 2026-06-18
 
 Integration wave.
 

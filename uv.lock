@@ -1909,7 +1909,7 @@ wheels = [
 
 [[package]]
 name = "general-ludd-agent"
-version = "0.1.0a202606120000"
+version = "0.1.0a2"
 source = { editable = "." }
 dependencies = [
     { name = "aiosqlite" },

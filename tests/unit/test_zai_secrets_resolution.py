@@ -1,0 +1,45 @@
+"""Tests for ZAI secrets resolution — uppercase env var fallback (Bug 1 + Bug 2)."""
+from __future__ import annotations
+
+import os
+
+from general_ludd.secrets import EnvSecretsManager
+
+
+class TestZaiSecretsResolution:
+    def teardown_method(self, method):
+        """Clean up env vars after each test."""
+        for key in ("ZAI_API_KEY", "zai_api_key", "ZAI_BASE_URL", "zai_api_base", "ZAI_API_BASE"):
+            os.environ.pop(key, None)
+
+    def test_zai_api_key_uppercase_env_resolves(self):
+        """Bug 1: ZAI_API_KEY (uppercase) resolves via lowercase alias zai_api_key."""
+        os.environ["ZAI_API_KEY"] = "test-key-uppercase"
+        mgr = EnvSecretsManager()
+        assert mgr.resolve("zai_api_key") == "test-key-uppercase"
+
+    def test_zai_base_url_env_resolves_as_api_base(self):
+        """Bug 2: ZAI_BASE_URL resolves via alias zai_api_base."""
+        os.environ["ZAI_BASE_URL"] = "https://test.example.com/v4"
+        mgr = EnvSecretsManager()
+        assert mgr.resolve("zai_api_base") == "https://test.example.com/v4"
+
+    def test_lowercase_alias_direct_env_still_works(self):
+        """Regression: lowercase env var still resolves (existing path not broken)."""
+        os.environ["zai_api_key"] = "direct-key-lowercase"  # noqa: SIM112
+        mgr = EnvSecretsManager()
+        assert mgr.resolve("zai_api_key") == "direct-key-lowercase"
+
+    def test_override_takes_precedence_over_env(self):
+        """Explicit set() always wins over ambient env."""
+        os.environ["ZAI_API_KEY"] = "env-key"
+        mgr = EnvSecretsManager()
+        mgr.set("zai_api_key", "override-key")
+        assert mgr.resolve("zai_api_key") == "override-key"
+
+    def test_non_allowlisted_name_still_blocked(self):
+        """Security regression: non-allowlisted names are still blocked."""
+        os.environ["GLUDD_PSK"] = "should-not-resolve"
+        mgr = EnvSecretsManager()
+        assert mgr.resolve("GLUDD_PSK") is None
+        assert mgr.resolve("gludd_psk") is None

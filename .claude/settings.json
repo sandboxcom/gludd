@@ -1,0 +1,135 @@
+{
+  "hooks": {
+    "SessionStart": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/session_start_orchestrate.sh"
+          }
+        ]
+      }
+    ],
+    "UserPromptSubmit": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_userprompt.sh"
+          }
+        ]
+      }
+    ],
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/enforce_make_bash.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/gate_concurrency_pretool.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_pretool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/mainthread_budget.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_ceiling_pretool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/disk_discipline_pretool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/model_utilization_pretool.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "Edit",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/guardrail_integrity_edit_pretool.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "AskUserQuestion",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_blocking_questions_pretool.sh"
+          }
+        ]
+      }
+    ],
+    "PostToolUse": [
+      {
+        "matcher": "Agent",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_inc.sh"
+          }
+        ]
+      },
+      {
+        "matcher": "*",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_posttool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/mainthread_budget.sh"
+          }
+        ]
+      }
+    ],
+    "Stop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_stop.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/multitasking_backlog_stop.sh"
+          }
+        ]
+      }
+    ],
+    "SubagentStop": [
+      {
+        "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_dec.sh"
+          }
+        ]
+      }
+    ]
+  }
+}

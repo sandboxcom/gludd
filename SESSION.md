@@ -5,114 +5,65 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-12 (independent validation pass: gate ALL PASSED at 65fc28b; stale ratchet counts corrected to 23; work plan now in GLM_REMEDIATION_GUIDE_3.md)
+- 2026-06-18
 
-## 2026-06-16 — Integration wave (C1/M9 + security hardening + cost gates)
+## Wave 3 Ship — Status: GATE RUNNING, NOT YET CONFIRMED
 
-> Status: **gate pending** (not yet run on this working tree — do not treat as green).
+Tip commit: `6063e51` (built on `bd4cddb` + 9 fixes). Branch is FF-safe off master (`3223c67`). A clean-worktree gate is currently RUNNING to verify. Do NOT treat this as merged or green until the gate result lands.
 
-Landed in this working tree:
+Wave 3 contents (committed, unverified green):
+- Integration batch 3: convergence fixes + feature packages + connector/registry layer
+- Observability connector layer batches 1+2: 16+ connector groups, normalize + model-deploy check
+- Security hardening: MCP hardening, webmcp dogfood, fs-write policy, conflict scanner, CI regression guards
+- 4 features: saturation controller (#42), feature-db dogfood (#29), capability_policy default-DENY (#44), execution-engine fixes (#48)
+- 220+ tests added
 
-- **C1 worker-model wiring** — worker dispatch now selects/binds the model per worker.
-- **M9 to_thread** — blocking calls offloaded via `asyncio.to_thread` to keep the loop responsive.
-- **observe router** — observability routing wired into the request path.
-- **Cost gates** — `SpendLimiter` + `BudgetManager` enforce spend ceilings on dispatch.
-- **Scoring weights** — routing scorer now factors `avg_cost` and `routing_roles` weights.
-- **Connector normalize** — connector join-key / payload normalization layer.
-- **Security fixes**:
-  - CsvExcel connector path jail.
-  - SSRF guards for GitHubIssues / Okta / Entra connectors.
-  - Dispatch default-DENY capability gate.
-  - Secrets + MCP fail-closed behavior.
-  - Gateway circuit breaker.
-  - Feature-verifier path jail.
-  - Connector DNS / symlink resolution hardening.
-- **bandit** — 5 HIGH findings fixed.
-- **SelfImproveGate** — self-improvement gate added.
-- **accounting loc** — accounting / cost localization wiring.
-- **alembic 005** — new migration revision 005.
-- **LICENSE packaging** — LICENSE included in package metadata.
-- **ripgrep** — ripgrep-backed code search.
-- **TUI graph** — TUI graph view.
-- **doc corrections** — assorted documentation fixes.
+## Fast-Follow Branches (awaiting post-ship gated-merge)
 
-## Current Gate Status (2026-06-12)
-## Current Gate Status (2026-06-12)
-## Current Gate Status (2026-06-12)
-## Current Gate Status (2026-06-13)
-## Current Gate Status (2026-06-17)
+| Branch | Tip SHA | Contents | Gate State |
+|---|---|---|---|
+| feature/batch3-security | 85158c2 | F5b/F6a/F6b security features, 14/14 tests passing, ancestor-clean | Gate-clean, pending merge |
+| batch-4-security | building | D-04/05/06/29/30/31 security items | Building |
+| mt-6-watchdog | building | Watchdog/stall detection improvements | Building |
+| floor_controller-consolidated | building | Gate-safe + predictive floor controller | Building |
+
+Full cascade plan: `docs/integration/POSTSHIP_MERGE_CASCADE_2026-06-18.md`
+
+## Hooks — Current State
+
+Hooks hardened and enforcing as of 2026-06-18:
+- All hooks emit empty-or-valid-JSON + exit 0 (non-zero = hook error, not a block)
+- Block decisions use `{"decision":"block"}` (Stop) or `{"permissionDecision":"deny"}` (PreToolUse)
+- `make test-hooks` added: 20+ cases covering all hooks across all input paths
+- 3 memory→guardrail hooks being wired: `guardrail_integrity_edit_pretool.sh` (prevent disable-as-fix), plus agent floor/ceiling improvements
+
+## Current Gate Status
+## Current Gate Status (2026-06-18)
 <!-- gate:begin -->
 - lint PASS 0
-- typecheck PASS 0
+- typecheck FAIL 2
 - collect PASS 0
-- test
+- test FAIL non-zero-exit
 
 <!-- gate:end -->
 
 ## Ratchet Burn-Down Progress
 - Started: 93 entries (2026-06-11)
-- After session 1 (8a836ee): 49 entries
-- After session 2 (310663b): 45 entries — worker execute/return-review fixes
-- After session 3 (d6990e5): 39 entries — code search/graph CLI implementation
-- After session 3 (e51e05d): 42 entries — 36 strict + 6 flaky (net reduction from 93)
 - After session 4 (30d66a3): 23 entries — 17 strict + 6 flaky
-- **Total burned**: 70 entries (93 → 23, 75% reduction)
+- Current: ~12 entries (2 strict + 10 flaky) — last verified 2026-06-16 against config/ratchet.yml
+- **Total burned**: ~81 entries (93 → ~12, ~87% reduction)
 
-### Commits This Session
-1. `c014cd2` — LogAuditor top-level secret scan + flaky ratchet support
-2. `310663b` — Worker execute response includes playbook/events, return-review returns ack
-3. `cd0dfed` — Burn 8 ratchet entries, add flaky support for nondeterministic tests
-4. `d6990e5` — Implement code search and code graph CLI commands, burn 6 ratchet entries
-5. `e51e05d` — Burn 3 preflight ratchet entries as flaky
-6. `db0a997` — Update SESSION.md with ratchet progress
-7. `feb00e5` — Version stamp v0.1.0-alpha-datestamp, CI release only on tags, git pull/fetch targets, burn 1 ratchet entry
-8. `4a1730b` — git-push-sandboxcom uses --no-verify
-9. `cd54e35` — Burn 3 ansible ratchet entries, mock patch target fix
-10. `4790631` — Burn 4 ratchet entries (worktree/local-inference/MCP/secret-migration)
+## Known Gaps / Next Steps
 
-### Key Production Code Changes
-- **LogAuditor** (`validation/log_auditor.py`): Now scans top-level entry values for secrets, not just payload dict
-- **Worker app** (`worker/app.py`): Execute response includes `playbook` and `events` fields; return-review returns 200 ack
-- **CLI** (`cli.py`): `_cmd_code_graph` and `_cmd_code_search` implemented with httpx calls to daemon
-- **Conftest** (`tests/conftest.py`): Flaky ratchet support — reason starting with "flaky" uses `strict=False`
-- **Version** (`__init__.py`, `pyproject.toml`): `0.1.0-alpha-YYYYMMDDHHMM` datestamp format
-- **CI** (`.github/workflows/build.yml`): Release only on tags (`v*`), version from tag name, pyproject.toml sync
-- **Makefile**: `git-pull-sandboxcom`, `git-fetch-sandboxcom`, `git-push-sandboxcom --no-verify`
+1. **Ship gate result pending** — wave 3 gate must complete and pass before merge.
+2. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
+3. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
+4. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.
+5. **Ratchet strict entries** (~2 remaining) — daemon lifespan real DB, container-runtime tests.
+6. Work plan: `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass, still current).
 
-### Infrastructure Added
-- Flaky ratchet support in conftest (non-strict xfail for nondeterministic tests)
-- 6 entries converted to flaky: 2 hvac xdist races, 2 TUI builders, 1 StopIteration, 3 preflight
-
-## Phase V0 — Honest Green Gate: COMPLETE
-- V0.1: 42 failures fixed (b09e4ce)
-- V0.2: Smoke green + trap cleanup (60cdb4d)
-- V0.3: Truth targets fixed (bd87fa5)
-- V0.4: Strict xfail ratchet — 93 xfailed (237123f)
-
-## Phase V1 — Guardrails Round 2: COMPLETE
-
-## Phase V2 — In Progress
-- V2.1: H5 gateway-backed executor (506ed44)
-- V2.2-V2.6: pending
-
-## Known Gaps
-- 12 ratchet entries remaining (2 strict + 10 flaky) — count verified against config/ratchet.yml 2026-06-16
-- 0 mypy errors tracked (baseline: 0)
-- Remaining strict entries need real infrastructure changes:
-  - Daemon lifespan needs real DB (2 entries)
-  - Container/container-runtime tests need real containers (5 entries)
-  - Deployment lifecycle needs deploy-before-destroy (3 entries)
-  - Bandit SAST needs installation (1 entry)
-  - Port 8000 ephemeral conversion (1 entry)
-  - Compute deploy secrets resolver (2 entries)
-  - Secrets manager container start/fail (2 entries)
-  - Secrets wiring container (1 entry)
-  - Benchmark record session await (1 entry)
-  - Various daemon endpoint wiring (remaining)
-
-## Next Steps
-Work plan now lives in `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass). Headlines:
-1. Burn remaining 23 ratchet entries (daemon lifespan, containers, deploy-before-destroy, port 8000)
-2. Product spine: C1 (worker never calls a model), H4 (ReturnReviewer dead code), M9 (blocking playbook run)
-3. Finish V3 OSS swaps honestly (V3.1 tenacity is demo-only — production retry still hand-rolled)
-4. Ship blockers: SSH key still at repo root; LICENSE/notices not packed into release artifacts
+## Historical Gate Status (2026-06-12, pre-wave-3)
+- lint PASS 0
+- typecheck PASS 0
+- collect PASS 0
+- test PASS (gate ALL PASSED at 65fc28b)
