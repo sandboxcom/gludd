@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import os
 from typing import Any
 
@@ -84,6 +85,30 @@ def _confined_code_path(app: FastAPI, path: str) -> str:
     return os.path.realpath(path)
 
 
+async def _parse_request_body(request: Request) -> dict:
+    body = await request.json() if hasattr(request, "json") else {}
+    if isinstance(body, str):
+        body = json.loads(body)
+    return body
+
+
+def _serialize_discovered_profile(p: dict, *, include_enabled: bool = False) -> dict:
+    result = {
+        "model_profile_id": p["model_profile_id"],
+        "model_name": p["model_name"],
+        "display_name": p.get("display_name", p["model_name"]),
+        "cost_per_input_token": p["cost_per_input_token"],
+        "cost_per_output_token": p["cost_per_output_token"],
+        "context_window": p["context_window"],
+        "is_free": p.get("is_free", False),
+        "role_names": p["role_names"],
+        "quality_class": p["quality_class"],
+    }
+    if include_enabled:
+        result["enabled"] = p.get("enabled", True)
+    return result
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/models")
@@ -152,20 +177,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "provider": provider,
             "discovered_count": len(scraped),
             "generated_profiles": len(profiles),
-            "models": [
-                {
-                    "model_profile_id": p["model_profile_id"],
-                    "model_name": p["model_name"],
-                    "display_name": p.get("display_name", p["model_name"]),
-                    "cost_per_input_token": p["cost_per_input_token"],
-                    "cost_per_output_token": p["cost_per_output_token"],
-                    "context_window": p["context_window"],
-                    "is_free": p.get("is_free", False),
-                    "role_names": p["role_names"],
-                    "quality_class": p["quality_class"],
-                }
-                for p in ranked
-            ],
+            "models": [_serialize_discovered_profile(p) for p in ranked],
         }
 
     @app.get("/admin/models/discovered")
@@ -174,21 +186,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if profiles is None:
             return {"profiles": []}
         return {
-            "profiles": [
-                {
-                    "model_profile_id": p["model_profile_id"],
-                    "model_name": p["model_name"],
-                    "display_name": p.get("display_name", p["model_name"]),
-                    "cost_per_input_token": p["cost_per_input_token"],
-                    "cost_per_output_token": p["cost_per_output_token"],
-                    "context_window": p["context_window"],
-                    "is_free": p.get("is_free", False),
-                    "role_names": p["role_names"],
-                    "quality_class": p["quality_class"],
-                    "enabled": p.get("enabled", True),
-                }
-                for p in profiles
-            ]
+            "profiles": [_serialize_discovered_profile(p, include_enabled=True) for p in profiles]
         }
 
     @app.get("/admin/observability/comparison")
@@ -208,11 +206,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/code/blocks")
     async def admin_code_blocks(request: Request) -> dict[str, Any]:
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
         source = body.get("source", "")
         language = body.get("language", "python")
         extractor = ASTBlockExtractor()
@@ -318,11 +312,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/code/complexity")
     async def admin_code_complexity(request: Request) -> dict[str, Any]:
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
         path = body.get("path", "")
         safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
@@ -335,11 +325,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/code/suggest-model")
     async def admin_code_suggest_model(request: Request) -> dict[str, Any]:
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
         path = body.get("path", "")
         safe_path = _confined_code_path(app, path)
         scorer = CodeComplexityScorer()
@@ -390,11 +376,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         Auth: same PSK as other admin routes (enforced by middleware).
         """
-        import json
-
-        body = await request.json() if hasattr(request, "json") else {}
-        if isinstance(body, str):
-            body = json.loads(body)
+        body = await _parse_request_body(request)
 
         prompt: str = body.get("prompt", "")
         if not prompt:
