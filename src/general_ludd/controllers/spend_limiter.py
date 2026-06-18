@@ -197,7 +197,25 @@ class SpendLimiter:
         if not records:
             return
         with self._lock:
-            self._records.extend((float(ts), float(c)) for ts, c in records)
+            valid = []
+            for ts, c in records:
+                ts_f, c_f = float(ts), float(c)
+                if not math.isfinite(c_f) or c_f < 0:
+                    logger.warning(
+                        "SpendLimiter.restore: dropping record with invalid cost %r (ts=%r) — "
+                        "negative or non-finite costs are not permitted.",
+                        c_f,
+                        ts_f,
+                    )
+                    continue
+                if not math.isfinite(ts_f):
+                    logger.warning(
+                        "SpendLimiter.restore: dropping record with non-finite timestamp %r — skipping.",
+                        ts_f,
+                    )
+                    continue
+                valid.append((ts_f, c_f))
+            self._records.extend(valid)
 
     def window_spend(self, now: float | None = None) -> float:
         """Sum of all spend within the rolling window ending at ``now``.

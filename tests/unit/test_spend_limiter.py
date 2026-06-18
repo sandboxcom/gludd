@@ -166,3 +166,47 @@ class TestDefaultClock:
         sl.record(0.01, kind="token")
         assert sl.window_spend() > 0.0
         assert sl.remaining() < 5.0
+
+
+class TestRestoreValidation:
+    """Security tests: restore() must drop invalid (negative / non-finite) cost records.
+
+    A hostile restore() payload carrying cost=-1000.0 would deflate window_spend()
+    and let an attacker evade the cap.  NaN/inf costs must also be rejected because
+    NaN compares False against every limit and inf overflows the sum.
+    """
+
+    def test_restore_negative_cost_does_not_deflate_spend(self) -> None:
+        """Negative cost in restore() must be silently dropped; the window spend
+        must remain at its pre-restore level and the cap must still be enforced."""
+        sl, clock = _make_limiter(limit_usd=1.0, window_seconds=60.0)
+        clock[0] = 10.0
+        # Record legitimate spend of 0.9 USD (near cap).
+        sl.record(0.9, kind="token")
+        # Attempt to deflate via a negative-cost restore record.
+        sl.restore([(10.0, -1000.0)])
+        # Window spend must not be deflated to -999.1.
+        assert sl.window_spend() == pytest.approx(0.9)
+        # Cap must still be enforced: 0.9 + 0.15 > 1.0.
+        assert sl.would_exceed(0.15) is True
+
+    def test_restore_nan_cost_is_dropped(self) -> None:
+        """NaN cost in restore() must be silently dropped; window spend unchanged."""
+        sl, clock = _make_limiter(limit_usd=1.0, window_seconds=60.0)
+        clock[0] = 10.0
+        sl.record(0.9, kind="token")
+        sl.restore([(10.0, float("nan"))])
+        assert sl.window_spend() == pytest.approx(0.9)
+        assert sl.would_exceed(0.15) is True
+
+    def test_restore_inf_cost_is_dropped(self) -> None:
+        """Positive inf, negative inf costs in restore() must all be dropped."""
+        sl, clock = _make_limiter(limit_usd=1.0, window_seconds=60.0)
+        clock[0] = 10.0
+        sl.record(0.9, kind="token")
+        sl.restore([
+            (10.0, float("inf")),
+            (10.0, float("-inf")),
+        ])
+        assert sl.window_spend() == pytest.approx(0.9)
+        assert sl.would_exceed(0.15) is True
