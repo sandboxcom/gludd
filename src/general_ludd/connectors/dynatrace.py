@@ -24,24 +24,15 @@ Design contract (shared by all gludd APM connectors):
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
-from urllib.parse import urlparse, urlsplit
+from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 KIND_METRICS = "metrics"
 KIND_TRACES = "traces"
 VALID_KINDS = frozenset({KIND_METRICS, KIND_TRACES})
-
-# Cloud instance-metadata hostnames/IPs that must never be reachable as a base.
-_METADATA_HOSTS = frozenset(
-    {
-        "metadata.google.internal",
-        "metadata",
-        "169.254.169.254",
-        "fd00:ec2::254",
-    }
-)
 
 DEFAULT_TIMEOUT = 30.0
 
@@ -68,42 +59,12 @@ class HttpTransport(Protocol):
         ...
 
 
-def _is_blocked_host(host: str) -> bool:
-    """Return True if a literal host must be rejected (SSRF guard, no DNS)."""
-    if not host:
-        return True
-    cleaned = host.strip().lower().strip("[]")
-    if cleaned in _METADATA_HOSTS:
-        return True
-    # Well-known loopback hostnames are rejected by NAME (no DNS): "localhost"
-    # and anything in the localhost zone (e.g. "foo.localhost" per RFC 6761).
-    if cleaned == "localhost" or cleaned.endswith(".localhost"):
-        return True
-    # Other bare hostnames are allowed through the literal check — we
-    # deliberately do NOT resolve DNS here. Only IP-literal bases are vetted.
-    try:
-        ip = ipaddress.ip_address(cleaned)
-    except ValueError:
-        return False
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _validate_base_url(base_url: str) -> str:
     """Validate + normalize a base URL, applying the literal-host SSRF guard."""
     if not base_url or not isinstance(base_url, str):
         raise ConnectorConfigError("base_url must be a non-empty string")
-    parsed = urlparse(base_url)
-    if parsed.scheme not in ("http", "https"):
-        raise ConnectorConfigError(f"base_url scheme must be http/https, got {parsed.scheme!r}")
-    host = urlsplit(base_url).hostname or ""
-    if _is_blocked_host(host):
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        host = urlsplit(base_url).hostname or ""
         raise ConnectorConfigError(
             f"base_url host {host!r} is blocked (loopback/private/link-local/metadata)"
         )
