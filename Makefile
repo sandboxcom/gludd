@@ -37,9 +37,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
-        git-tracked-keys git-ls-tracked git-history-file dist-path-check \
+        git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async
+        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -597,6 +597,21 @@ untrack:
 git-rm:
 	@[ -n "$(FILES)" ] || { echo "Usage: make git-rm FILES='path ...'"; exit 1; }
 	@git rm -r $(FILES) && echo "git-removed: $(FILES)"
+
+# Read-only ancestor check: exit=0 means A is a strict ancestor of B (ff-only valid).
+# Usage: make git-is-ancestor A=<commit> B=<commit>
+git-is-ancestor:
+	@[ -n "$(A)" ] && [ -n "$(B)" ] || { echo "Usage: make git-is-ancestor A=<commit> B=<commit>"; exit 1; }
+	@git merge-base --is-ancestor $(A) $(B); echo "exit=$$?"
+
+# Read-only rev-list counts for ff-only check.
+# Usage: make git-revlist-count A=<old> B=<new>
+# Prints: commits unique to A (must be 0 for ff) and commits B is ahead of A.
+git-revlist-count:
+	@[ -n "$(A)" ] && [ -n "$(B)" ] || { echo "Usage: make git-revlist-count A=<old> B=<new>"; exit 1; }
+	@echo "commits unique to A (B..A, must be 0 for ff-only):"; git rev-list --count $(B)..$(A)
+	@echo "commits B is ahead of A (A..B, should be >0):"; git rev-list --count $(A)..$(B)
+	@echo "--- commits unique to A (would be lost on ff) ---"; git log --oneline $(B)..$(A) || true
 
 # Revert working-tree changes for specific files: tracked files -> HEAD version,
 # untracked files -> deleted. Used to back a synced-but-broken agent change out
@@ -1619,3 +1634,15 @@ gate-async:
 # Print the current .gate-status file (RUNNING/PASS/FAIL).
 gate-status:
 	@if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status found)"; fi
+
+# ---------------------------------------------------------------------------
+# Activate the BLOCKING gate-safe agent-floor Stop hook (#79/#78)
+# ---------------------------------------------------------------------------
+# Regenerates .claude/hooks/agent_floor_stop.sh from scripts/gen_gate_safe_hook.py.
+# The generator is the sanctioned writer of the hook (do NOT hand-edit the hook).
+# Gate-safe rule: a running gate does NOT lower the read-only floor -- only heavy
+# worktree-writers are capped during a gate. Idempotent; sets execute permissions.
+write-gate-safe-hook:
+	@mkdir -p .claude/hooks
+	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
+	@echo "write-gate-safe-hook done"

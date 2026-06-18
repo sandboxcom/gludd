@@ -372,3 +372,222 @@ class TestB5ModelCallBudgetGate:
         client = self._client_with_profiles(_missing_allowed_guard())
         resp = client.post("/admin/models/call", json={"prompt": "hello"})
         assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# Real-instance tests for budget_pre_check
+# These use ACTUAL RunBudgetGuard and SpendLimiter instances — NOT MagicMock —
+# so a signature mismatch (wrong kwarg, missing required arg, wrong method name)
+# FAILS the test rather than silently passing.
+# ---------------------------------------------------------------------------
+
+
+class TestBudgetPreCheckRealInstances:
+    """budget_pre_check() against real guard objects (no mocks)."""
+
+    # ------------------------------------------------------------------
+    # RunBudgetGuard — uses check_all_limits(estimated_cost=0.0)
+    # ------------------------------------------------------------------
+
+    def test_real_run_budget_guard_allowed_proceeds(self):
+        """Real RunBudgetGuard with headroom → budget_pre_check returns None."""
+        from general_ludd.budget_guard_check import budget_pre_check
+        from general_ludd.controllers.budget import RunBudgetGuard
+
+        guard = RunBudgetGuard(run_budget_usd=10.0)
+        # No spend recorded → allowed
+        result = budget_pre_check(guard)
+        assert result is None, f"expected None (allowed), got {result!r}"
+
+    def test_real_run_budget_guard_over_limit_denied(self):
+        """Real RunBudgetGuard with spend > limit → budget_pre_check returns denial."""
+        from general_ludd.budget_guard_check import budget_pre_check
+        from general_ludd.controllers.budget import RunBudgetGuard
+
+        guard = RunBudgetGuard(run_budget_usd=1.0)
+        guard.record_spend(2.0)  # push over the $1 limit
+        result = budget_pre_check(guard)
+        assert result is not None, "expected denial string, got None"
+        assert isinstance(result, str)
+        # The real check_all_limits returns reason containing "run budget exceeded"
+        assert "budget" in result.lower() or "exceeded" in result.lower(), (
+            f"unexpected denial reason: {result!r}"
+        )
+
+    def test_real_run_budget_guard_none_proceeds(self):
+        """None guard → budget_pre_check returns None (no budget configured)."""
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        result = budget_pre_check(None)
+        assert result is None
+
+    # ------------------------------------------------------------------
+    # SpendLimiter — uses would_exceed(projected_usd: float) -> bool
+    # NOT try_charge (which is mutating and requires kind=... kwarg)
+    # ------------------------------------------------------------------
+
+    def test_real_spend_limiter_allowed_proceeds(self):
+        """Real SpendLimiter with headroom → budget_pre_check returns None."""
+        from general_ludd.budget_guard_check import budget_pre_check
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        # $10 limit, no spend → would_exceed(0.0) is False → allowed
+        limiter = SpendLimiter(limit_usd=10.0, window_seconds=3600)
+        result = budget_pre_check(limiter)
+        assert result is None, f"expected None (allowed), got {result!r}"
+
+    def test_real_spend_limiter_over_limit_denied(self):
+        """Real SpendLimiter already over limit → budget_pre_check returns denial."""
+        from general_ludd.budget_guard_check import budget_pre_check
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        # $1 limit, record $2 spend → would_exceed(0.0) is True (already over)
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3600)
+        limiter.record(2.0, kind="token")
+        result = budget_pre_check(limiter)
+        assert result is not None, "expected denial string, got None"
+        assert isinstance(result, str)
+        assert "spend" in result.lower() or "limit" in result.lower() or "exceeded" in result.lower(), (
+            f"unexpected denial reason: {result!r}"
+        )
+
+    def test_real_spend_limiter_wrong_kwarg_would_fail(self):
+        """Demonstrate that calling try_charge(cost=0.0) on SpendLimiter fails.
+
+        This is the bug that the old code had: it called try_charge with a
+        positional ``cost=`` kwarg that doesn't match ``cost_usd``.  The real
+        SpendLimiter.try_charge signature is:
+            try_charge(self, cost_usd, *, kind, ...)
+        so ``try_charge(cost=0.0)`` raises TypeError.  This test DOCUMENTS
+        that the old call pattern is broken, so a regression back to it
+        fails this test immediately.
+        """
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        limiter = SpendLimiter(limit_usd=10.0, window_seconds=3600)
+        import pytest
+
+        # Wrong positional kwarg (old buggy pattern)
+        with pytest.raises(TypeError):
+            limiter.try_charge(cost=0.0)  # type: ignore[call-arg]
+
+    def test_real_spend_limiter_try_charge_requires_kind_kwarg(self):
+        """try_charge requires 'kind' keyword argument — positional cost_usd only."""
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        limiter = SpendLimiter(limit_usd=10.0, window_seconds=3600)
+        import pytest
+
+        # try_charge(cost_usd) alone is missing required kwarg 'kind'
+        with pytest.raises(TypeError):
+            limiter.try_charge(0.0)  # missing kind=
+
+    # ------------------------------------------------------------------
+    # Unknown guard interface — fail-closed
+    # ------------------------------------------------------------------
+
+    def test_unknown_interface_real_object_denied(self):
+        """An object with no check_all_limits / would_exceed → denied."""
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        class WeirdGuard:
+            """Has neither check_all_limits nor would_exceed."""
+            def some_other_method(self) -> bool:
+                return True
+
+        result = budget_pre_check(WeirdGuard())
+        assert result is not None
+        assert "unknown interface" in result
+
+    # ------------------------------------------------------------------
+    # reviewer._call_model with REAL RunBudgetGuard
+    # ------------------------------------------------------------------
+
+    def test_reviewer_real_run_budget_guard_allowed(self):
+        """reviewer._call_model proceeds when real RunBudgetGuard has headroom."""
+        from unittest.mock import MagicMock
+
+        from general_ludd.controllers.budget import RunBudgetGuard
+        from general_ludd.prompts.registry import PromptRegistry
+        from general_ludd.review.reviewer import ReturnReviewer
+
+        guard = RunBudgetGuard(run_budget_usd=10.0)
+        gw = MagicMock()
+        gw.call_model.return_value = MagicMock(content="ok")
+        rv = ReturnReviewer(
+            gateway=gw,
+            prompt_registry=MagicMock(spec=PromptRegistry),
+            budget_guard=guard,
+        )
+        content, err = rv._call_model("test prompt")
+        assert content == "ok"
+        assert err is None
+
+    def test_reviewer_real_run_budget_guard_over_limit_denied(self):
+        """reviewer._call_model denied when real RunBudgetGuard is exhausted."""
+        from unittest.mock import MagicMock
+
+        from general_ludd.controllers.budget import RunBudgetGuard
+        from general_ludd.prompts.registry import PromptRegistry
+        from general_ludd.review.reviewer import ReturnReviewer
+
+        guard = RunBudgetGuard(run_budget_usd=1.0)
+        guard.record_spend(5.0)  # way over the $1 limit
+        gw = MagicMock()
+        rv = ReturnReviewer(
+            gateway=gw,
+            prompt_registry=MagicMock(spec=PromptRegistry),
+            budget_guard=guard,
+        )
+        content, err = rv._call_model("test prompt")
+        assert content is None
+        assert err is not None
+        assert "Budget denied" in err
+        gw.call_model.assert_not_called()
+
+    # ------------------------------------------------------------------
+    # invoke_model_for_generation with REAL SpendLimiter
+    # ------------------------------------------------------------------
+
+    def test_invoke_real_spend_limiter_allowed(self):
+        """invoke_model_for_generation proceeds when real SpendLimiter has headroom."""
+        from unittest.mock import MagicMock
+
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+        from general_ludd.models.job_invocation import invoke_model_for_generation
+
+        limiter = SpendLimiter(limit_usd=10.0, window_seconds=3600)
+        gw = MagicMock()
+        gw.call_model.return_value = MagicMock(content="generated")
+        result = invoke_model_for_generation(
+            gw,
+            job_id="J-real-1",
+            work_type="code",
+            model_profile="default",
+            prompt_text="write a test",
+            skill_body=None,
+            budget_guard=limiter,
+        )
+        assert result == "generated"
+
+    def test_invoke_real_spend_limiter_over_limit_returns_none(self):
+        """invoke_model_for_generation returns None when real SpendLimiter is exhausted."""
+        from unittest.mock import MagicMock
+
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+        from general_ludd.models.job_invocation import invoke_model_for_generation
+
+        limiter = SpendLimiter(limit_usd=1.0, window_seconds=3600)
+        limiter.record(5.0, kind="token")  # push well past $1 limit
+        gw = MagicMock()
+        result = invoke_model_for_generation(
+            gw,
+            job_id="J-real-2",
+            work_type="code",
+            model_profile="default",
+            prompt_text="write a test",
+            skill_body=None,
+            budget_guard=limiter,
+        )
+        assert result is None
+        gw.call_model.assert_not_called()

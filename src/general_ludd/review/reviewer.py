@@ -137,19 +137,12 @@ class ReturnReviewer:
             profile_id = self._router.resolve_role("return_review")
             if profile_id is not None:
                 self._model_profile_id = profile_id
-        if self._budget_guard is not None and hasattr(self._budget_guard, "check_all_limits"):
-            try:
-                verdict = self._budget_guard.check_all_limits(estimated_cost=0.0)
-            except Exception as exc:
-                logger.warning("Budget pre-check raised in reviewer: %s", exc)
-                return None, f"budget check raised: {exc}"
-            if not isinstance(verdict, dict) or not verdict.get("allowed", False):
-                reason = (
-                    verdict.get("reason", "budget exhausted")
-                    if isinstance(verdict, dict)
-                    else "budget check returned non-dict"
-                )
-                return None, f"Budget denied: {reason}"
+        from general_ludd.budget_guard_check import budget_pre_check
+
+        denial = budget_pre_check(self._budget_guard)
+        if denial is not None:
+            logger.warning("Budget pre-check denied in reviewer: %s", denial)
+            return None, f"Budget denied: {denial}"
         try:
             response = self._gateway.call_model(
                 self._model_profile_id,
