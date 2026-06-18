@@ -9,6 +9,7 @@ import os
 import time
 from collections.abc import AsyncIterator
 from contextlib import asynccontextmanager
+from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
 
@@ -425,6 +426,26 @@ class ModelSearchRequest(BaseModel):
     limit: int = 20
 
 
+@dataclass
+class _BudgetConfig:
+    daily_limit: float
+    per_task_limit: float
+    timeout_seconds: float
+    spend_window_usd: float
+    spend_window_seconds: float
+
+
+def _parse_budget_config(uc: Any) -> _BudgetConfig:
+    raw = (getattr(uc, "budget", None) or {}) if uc is not None else {}
+    return _BudgetConfig(
+        daily_limit=float(raw.get("daily_limit", float("inf"))),
+        per_task_limit=float(raw.get("per_task_limit", float("inf"))),
+        timeout_seconds=float(raw.get("timeout_seconds", float("inf"))),
+        spend_window_usd=float(raw.get("spend_window_usd", 0.0)),
+        spend_window_seconds=float(raw.get("spend_window_seconds", 3600.0)),
+    )
+
+
 def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
     if task.cancelled():
         logger.info("EventLoop task cancelled")
@@ -494,6 +515,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         startup_config = getattr(app.state, "_startup_config", {}) or {}
         db_config: dict[str, Any] = {}
         uc = startup_config.get("user_config")
+        bc = _parse_budget_config(uc)
         if uc and hasattr(uc, "database"):
             db_config = uc.database or {}
         engine = init_engine_from_config(db_config)
@@ -555,12 +577,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Build budget guard from config
         budget_guard = None
         if uc is not None:
-            budget_data = getattr(uc, "budget", None) or {}
-            if budget_data and any(budget_data.values()):
+            raw_budget = getattr(uc, "budget", None) or {}
+            if raw_budget and any(raw_budget.values()):
                 budget_guard = RunBudgetGuard(
-                    run_budget_usd=float(budget_data.get("daily_limit", float("inf"))),
-                    run_timeout_seconds=float(budget_data.get("timeout_seconds", float("inf"))),
-                    per_call_budget_usd=float(budget_data.get("per_task_limit", float("inf"))),
+                    run_budget_usd=bc.daily_limit,
+                    run_timeout_seconds=bc.timeout_seconds,
+                    per_call_budget_usd=bc.per_task_limit,
                 )
         app.state._budget_guard = budget_guard
 
@@ -649,10 +671,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.observability.metrics_exporter import get_metrics_exporter
         from general_ludd.observability.run_history import RunHistoryRecorder
 
-        budget_cfg = getattr(uc, "budget", {}) if uc else {}
         app.state._budget_manager = BudgetManager(
-            daily_limit_usd=float(budget_cfg.get("daily_limit", float("inf"))),
-            per_todo_limit_usd=float(budget_cfg.get("per_task_limit", float("inf"))),
+            daily_limit_usd=bc.daily_limit,
+            per_todo_limit_usd=bc.per_task_limit,
         )
         app.state._run_history = RunHistoryRecorder()
         app.state._dashboard_data = DashboardDataProvider(
@@ -688,9 +709,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         spend_limiter: SpendLimiter | None = None
         if uc is not None:
-            budget_data = getattr(uc, "budget", None) or {}
-            spend_window_usd = float(budget_data.get("spend_window_usd", 0.0))
-            spend_window_seconds = float(budget_data.get("spend_window_seconds", 3600.0))
+            spend_window_usd = bc.spend_window_usd
+            spend_window_seconds = bc.spend_window_seconds
             if spend_window_usd > 0.0:
                 import time as _time
 
