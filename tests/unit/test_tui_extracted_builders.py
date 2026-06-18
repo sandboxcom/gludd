@@ -381,12 +381,13 @@ class TestCmdIntegrityReject:
 
 
 class TestCmdIntegrityLog:
-    @patch("general_ludd.cli.httpx.get")
-    def test_success(self, mock_get, capsys):
+    @patch("general_ludd.cli.httpx.request")
+    def test_success(self, mock_request, capsys):
         from general_ludd.cli import _cmd_integrity_log
 
-        mock_get.return_value = MagicMock(
+        mock_request.return_value = MagicMock(
             status_code=200,
+            text="",
             json=lambda: {
                 "entries": [
                     {"path": "a.yaml", "action": "approved", "timestamp": "2026-01-01T00:00:00", "signer": "admin"},
