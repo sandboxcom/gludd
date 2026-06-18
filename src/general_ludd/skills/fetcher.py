@@ -8,8 +8,8 @@ from urllib.parse import quote
 
 import httpx
 
-from general_ludd.security.auth import is_path_within, is_safe_fetch_url
-from general_ludd.security.sanitize import sanitize_path
+from general_ludd.security.auth import is_safe_fetch_url
+from general_ludd.security.sanitize import is_path_within, sanitize_path
 from general_ludd.skills.catalog import CatalogSkillEntry
 from general_ludd.skills.loader import parse_skill_md
 from general_ludd.skills.skill import Skill
@@ -167,7 +167,7 @@ class RemoteSkillFetcher:
         target.mkdir(parents=True, exist_ok=True)
         skill_file = target / f"{stem}.md"
         # Defense in depth: confirm the resolved file stays inside target_dir.
-        if not is_path_within(str(target), f"{stem}.md"):
+        if not is_path_within(f"{stem}.md", str(target)):
             logger.warning("Refusing skill path escaping %s: %r", target_dir, skill.name)
             return None
         content = build_skill_frontmatter(skill)

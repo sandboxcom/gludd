@@ -23,10 +23,10 @@ Layers
 
 from __future__ import annotations
 
-import ipaddress
 import operator
 from typing import Any, Protocol, TypedDict, runtime_checkable
-from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 # Valid KIND values for the four marker source subtypes.
 PIPELINE_KIND = "pipeline"
@@ -303,16 +303,8 @@ class Observability:
 # --------------------------------------------------------------------------- #
 # SSRF guard
 # --------------------------------------------------------------------------- #
-# Hostnames that name a cloud/internal metadata endpoint by name (no IP).
-_BLOCKED_HOST_NAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata.google.internal",
-        "metadata",
-    }
-)
-
+# Connectors permit plain http (observability backends are frequently plain http
+# on internal-but-allowlisted hosts) in addition to https.
 _ALLOWED_SCHEMES = frozenset({"http", "https"})
 
 
@@ -324,45 +316,22 @@ def is_safe_endpoint(url: str) -> bool:
     guard but intentionally permits plain ``http`` (observability backends are
     frequently plain http on internal-but-allowlisted hosts).
 
-    The check is purely literal — it NEVER performs DNS resolution. A hostname
-    that does not resolve still passes (the connector layer, not this guard,
-    owns network egress policy / allowlisting). What is rejected:
+    The host/scheme decision is delegated to the canonical
+    :func:`general_ludd.security.ssrf.is_url_blocked` so this guard can never
+    drift weaker than the others — it now blocks the SAME hostile set, including
+    ``instance-data`` and the Alibaba metadata IP ``100.100.100.200`` that this
+    layer previously missed. The check is purely literal — it NEVER performs DNS
+    resolution. A hostname that does not resolve still passes (the connector
+    layer, not this guard, owns network egress policy / allowlisting). What is
+    rejected:
 
     - non-http(s) schemes,
     - loopback hosts (``localhost``, ``127.0.0.0/8``, ``::1``),
-    - the cloud metadata IP ``169.254.169.254`` and link-local ranges,
+    - the cloud metadata IPs ``169.254.169.254`` / ``100.100.100.200`` and
+      link-local ranges,
     - RFC-1918 private ranges (``10/8``, ``172.16/12``, ``192.168/16``),
     - unique-local IPv6 (``fc00::/7``),
-    - named metadata hosts (``metadata.google.internal``, ...).
+    - named metadata hosts (``metadata.google.internal``, ``metadata``,
+      ``instance-data``, ``localhost.localdomain``).
     """
-    try:
-        parts = urlsplit(url)
-    except ValueError:
-        return False
-
-    if parts.scheme.lower() not in _ALLOWED_SCHEMES:
-        return False
-
-    host = parts.hostname
-    if not host:
-        return False
-
-    host_l = host.lower()
-    if host_l in _BLOCKED_HOST_NAMES:
-        return False
-
-    # If the host is a literal IP, classify it; otherwise it is a DNS name we do
-    # NOT resolve — accept it (literal-host policy).
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        return True
-
-    return not (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
+    return not is_url_blocked(url, scheme_allowlist=_ALLOWED_SCHEMES)
