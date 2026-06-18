@@ -212,7 +212,9 @@ test:
 
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
+		BT=$$(mktemp -d /tmp/gludd-unit-XXXXXX); \
+		$(UV) run python -m pytest $(TESTFILE) --basetemp="$$BT" -p no:cacheprovider -v; RC=$$?; \
+		rm -rf "$$BT"; exit $$RC; \
 	else \
 		$(UV) run python -m pytest tests/unit/ $(_XD) -v; \
 	fi
