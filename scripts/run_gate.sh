@@ -138,12 +138,18 @@ fi
 # ---------------------------------------------------------------------------
 PYTEST_CMD=${PYTEST_CMD:-}
 
-# Mirror the Makefile's GLUDD_XDIST / cpu-count logic.
-XDIST_WORKERS=$(python3 -c "
-import os
-v = os.environ.get('GLUDD_XDIST')
-print(v if v else max(1, (os.cpu_count() or 1) // 4))
-" 2>/dev/null || echo "1")
+# Derive a memory-safe worker count via the standalone helper.
+# scripts/gate_worker_count.py:
+#   - derives a memory ceiling from total RAM (~4 GB/worker, fallback 2)
+#   - clamps EVERY path (unset, 'auto', numeric GLUDD_XDIST) to min(cpu//4, mem_cap)
+#   - an explicit override may only LOWER the count, never raise it above mem_cap
+#   - echoes a diagnostic line to stderr; prints the final count to stdout
+_WORKER_HELPER="$(dirname "$0")/gate_worker_count.py"
+XDIST_WORKERS=$(python3 "${_WORKER_HELPER}" 2>/tmp/gludd-gate-worker-diag.txt) || XDIST_WORKERS=1
+# Ensure we always have a sane fallback and echo the diagnostic.
+XDIST_WORKERS=${XDIST_WORKERS:-1}
+cat /tmp/gludd-gate-worker-diag.txt >&2 2>/dev/null || true
+echo "[run_gate.sh] using ${XDIST_WORKERS} xdist worker(s)" >&2
 
 if [ -n "${PYTEST_CMD}" ]; then
     # set -e would abort the subshell on a non-zero eval before echo $? runs;

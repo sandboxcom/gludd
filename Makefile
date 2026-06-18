@@ -26,6 +26,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
+        git-worktree-list git-worktree-remove \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
 		molecule-version molecule-test molecule-test-all \
@@ -95,6 +96,8 @@ help:
 	@echo "  git-merge MSG='...'   Merge branch with --no-ff"
 	@echo "  feature-start MSG='...' Create and switch to feature branch"
 	@echo "  feature-done MSG='...' Test, merge to master with --no-ff"
+	@echo "  git-worktree-list       List all registered git worktrees"
+	@echo "  git-worktree-remove WT=<path>  Force-remove a zombie worktree + prune"
 	@echo ""
 	@echo "  --- Secrets + Security ---"
 	@echo "  scan-secrets          Run detect-secrets scan against baseline"
@@ -923,6 +926,21 @@ wt-changed:
 wt-remove:
 	@[ -n "$(SRC)" ] || { echo "Usage: make wt-remove SRC=<worktree-root>"; exit 1; }
 	@git worktree remove --force "$(SRC)" 2>/dev/null && echo "removed: $(SRC)" || echo "remove skipped/failed: $(SRC)"
+
+# List all registered git worktrees (make-only alternative to `git worktree list`).
+# Orchestrators use this to discover which zombie worktrees need pruning.
+git-worktree-list:
+	@git worktree list
+
+# Force-remove a single git worktree by path and prune stale admin refs.
+# Use this make-only target to kill a zombie worktree (one whose agent process
+# has died and left the directory locked). The --force flag removes even worktrees
+# with uncommitted changes — caller must ensure work has been synced first.
+# Usage: make git-worktree-remove WT=<absolute-path-to-worktree>
+git-worktree-remove:
+	@[ -n "$(WT)" ] || { echo "Usage: make git-worktree-remove WT=<path>"; exit 1; }
+	@git worktree remove --force "$(WT)" && echo "removed: $(WT)" || echo "remove failed (may already be gone): $(WT)"
+	@git worktree prune && echo "git worktree prune done"
 
 # Reclaim disk safely: remove every CLEAN worktree (git refuses any with
 # uncommitted changes, so dirty/unsynced ones are preserved). Branch refs always
