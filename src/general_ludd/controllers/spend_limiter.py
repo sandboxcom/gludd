@@ -110,6 +110,8 @@ class SpendLimiter:
         Raises:
             ValueError: If ``cost_usd`` is negative or non-finite (NaN / inf).
         """
+        if not isinstance(cost_usd, (int, float)):
+            return
         if not math.isfinite(cost_usd) or cost_usd < 0:
             raise ValueError(
                 f"SpendLimiter.record(): cost_usd must be a finite non-negative value, "
@@ -211,6 +213,8 @@ class SpendLimiter:
         with self._lock:
             valid = []
             for ts, c in records:
+                if not isinstance(ts, (int, float)) or not isinstance(c, (int, float)):
+                    continue
                 ts_f, c_f = float(ts), float(c)
                 if not math.isfinite(c_f) or c_f < 0:
                     logger.warning(
@@ -286,6 +290,8 @@ class SpendLimiter:
         # limit`` check would wave a NaN/garbage cost straight through —
         # effectively unlimited spend. A non-finite projected cost cannot be
         # proven to fit the cap, so treat it as exceeding (defer/refuse).
+        if not isinstance(projected_usd, (int, float)):
+            return True
         if not math.isfinite(projected_usd):
             logger.warning(
                 "SpendLimiter: non-finite projected cost (%r) treated as "

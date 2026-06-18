@@ -85,14 +85,14 @@ def _confined_code_path(app: FastAPI, path: str) -> str:
     return os.path.realpath(path)
 
 
-async def _parse_request_body(request: Request) -> dict:
+async def _parse_request_body(request: Request) -> dict[str, Any]:
     body = await request.json() if hasattr(request, "json") else {}
     if isinstance(body, str):
         body = json.loads(body)
     return body
 
 
-def _serialize_discovered_profile(p: dict, *, include_enabled: bool = False) -> dict:
+def _serialize_discovered_profile(p: dict[str, Any], *, include_enabled: bool = False) -> dict[str, Any]:
     result = {
         "model_profile_id": p["model_profile_id"],
         "model_name": p["model_name"],

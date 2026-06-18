@@ -24,6 +24,7 @@ callers never see a raw exception from the guard layer.
 from __future__ import annotations
 
 import logging
+from typing import Any, cast
 
 logger = logging.getLogger(__name__)
 
@@ -76,7 +77,7 @@ def budget_pre_check(guard: object) -> str | None:
         if over:
             # Extract a human-readable reason if the guard exposes remaining().
             try:
-                remaining = guard.remaining()
+                remaining = cast(Any, guard).remaining()
                 return f"spend limit exceeded: remaining=${remaining:.6f}"
             except Exception:
                 return "spend limit exceeded"

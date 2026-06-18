@@ -8,6 +8,8 @@ OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
 PYTHON := python3
 UV := uv
+export VIRTUAL_ENV := $(CURDIR)/.venv
+export UV_PROJECT_ENVIRONMENT := $(CURDIR)/.venv
 PROJECT_SRC := src/general_ludd
 TESTS_DIR := tests
 # Worker count: env GLUDD_XDIST overrides (CI sets it so the suite isn't run on a
@@ -187,6 +189,11 @@ version:
 check-uv:
 	@command -v $(UV) >/dev/null 2>&1 || (echo "uv not found"; exit 1)
 	@$(UV) --version
+
+venv-check:
+	@echo "VIRTUAL_ENV=$(VIRTUAL_ENV)"
+	@echo "UV_PROJECT_ENVIRONMENT=$(UV_PROJECT_ENVIRONMENT)"
+	@$(UV) run python -c "import sys; print('sys.executable=' + sys.executable)"
 
 check-pytest:
 	@$(UV) run python -c "import pytest; print(f'pytest {pytest.__version__}')"
@@ -566,6 +573,10 @@ git-init:
 	@git init
 	@git config user.email "agent@general-ludd.local" || true
 	@git config user.name "General Ludd Agent" || true
+
+git-hard-reset:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-hard-reset REF=<ref>"; exit 1; }
+	@git reset --hard $(REF)
 
 status-snapshot:
 	@python3 scripts/status_snapshot.py

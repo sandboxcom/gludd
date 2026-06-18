@@ -685,10 +685,10 @@ class ModelGateway:
         self,
         event: Any,
         hook_name: str,
-        hook_payload: dict,
+        hook_payload: dict[str, Any],
         action: str,
         model_id: str,
-        broadcast_payload: dict,
+        broadcast_payload: dict[str, Any],
     ) -> None:
         """Publish event, fire hook, and broadcast a profile add/remove notification.
 
