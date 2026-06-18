@@ -37,7 +37,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan
+        gate-async gate-status floor-plan gated-merge
 
 help:
 	@echo "Usage: make [target]"
@@ -120,6 +120,7 @@ help:
 	@echo "  smoke                 Quick daemon boot health check"
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
+	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
 
 skeleton:
 	@$(PYTHON) scripts/skeleton.py
@@ -360,6 +361,14 @@ kill-gate-force:
 # RESULT= line — so the supervising task COMPLETES (and notifies) instead of
 # leaving anyone waiting on a dead run. Emits a heartbeat each cycle.
 #   Usage: make run-watched CMD='make ci-repro-linux PYV=3.11' STALL_SECS=180 MAX_SECS=3600
+BASE ?=
+BRANCHES ?=
+MERGE_STRATEGY ?= stop-on-conflict
+MANIFEST ?= /tmp/gludd-gated-merge-manifest.txt
+
+gated-merge:
+	@BASE='$(BASE)' BRANCHES='$(BRANCHES)' MERGE_STRATEGY='$(MERGE_STRATEGY)' MANIFEST='$(MANIFEST)' bash scripts/gated_merge.sh
+
 STALL_SECS ?= 180
 MAX_SECS ?= 3600
 run-watched:
