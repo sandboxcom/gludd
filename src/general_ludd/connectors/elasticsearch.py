@@ -26,28 +26,18 @@ tested in isolation.
 
 from __future__ import annotations
 
-import ipaddress
 import json
 from collections.abc import Callable, Mapping
 from datetime import datetime
 from typing import Any, Literal, cast
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 # Transport contract: (method, url, headers, body) -> (status_code, json_dict)
 HttpRequest = Callable[[str, str, Mapping[str, str], "bytes | None"], "tuple[int, dict[str, Any]]"]
 
 RecordKind = Literal["logs", "traces"]
-
-# Hostnames that must always be rejected even though they are not literal IPs
-# (cloud-metadata service names). Compared case-insensitively against the host.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
 
 _DEFAULT_TIMEOUT_SECONDS = 10.0
 
@@ -58,30 +48,6 @@ class SSRFError(ValueError):
 
 class ElasticsearchConfigError(ValueError):
     """Raised when the connector config is malformed."""
-
-
-def _strip_brackets(host: str) -> str:
-    """Strip the ``[...]`` wrapper from an IPv6 host, if present."""
-    if host.startswith("[") and host.endswith("]"):
-        return host[1:-1]
-    return host
-
-
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """True if ``ip`` is in any range we refuse to talk to."""
-    # 169.254.169.254 / fd00:ec2:: style metadata endpoints are link-local or
-    # private and are caught by the flags below; we also special-case the
-    # canonical IMDS v4 address for clarity.
-    if isinstance(ip, ipaddress.IPv4Address) and str(ip) == "169.254.169.254":
-        return True
-    return bool(
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -98,22 +64,9 @@ def _validate_base_url(base_url: str) -> str:
     if parts.scheme not in ("http", "https"):
         raise ElasticsearchConfigError(f"base_url must be http(s), got scheme {parts.scheme!r}")
 
-    host = parts.hostname
-    if not host:
-        raise ElasticsearchConfigError("base_url has no host")
-
-    host_l = host.lower()
-    if host_l in _BLOCKED_HOSTNAMES:
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        host = parts.hostname or ""
         raise SSRFError(f"base_url host {host!r} is blocked")
-
-    # If the host is a literal IP address, enforce the range block (no DNS).
-    literal = _strip_brackets(host)
-    try:
-        ip = ipaddress.ip_address(literal)
-    except ValueError:
-        ip = None
-    if ip is not None and _is_blocked_ip(ip):
-        raise SSRFError(f"base_url resolves to blocked address {ip}")
 
     return base_url.rstrip("/")
 
