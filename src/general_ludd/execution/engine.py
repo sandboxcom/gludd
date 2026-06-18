@@ -206,13 +206,46 @@ class ExecutionEngine:
         workspace_path: str = "/tmp/gludd-workspace",
         benchmark_recorder: Any = None,
         metrics_collector: Any = None,
+        budget_guard: Any = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
         self._benchmark_recorder = benchmark_recorder
         self._metrics_collector = metrics_collector
+        self._budget_guard = budget_guard
         self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
+
+    def _budget_pre_check(self, guard: Any) -> str | None:
+        """Run budget pre-check; return denial string or None (allowed).
+
+        Fail-CLOSED: any non-dict result, missing 'allowed' key, or unknown
+        guard interface returns a denial string. Only guard=None is an
+        intentional no-op (returns None = allowed).
+        """
+        if guard is None:
+            return None
+        if hasattr(guard, "check_all_limits"):
+            try:
+                verdict = guard.check_all_limits(estimated_cost=0.0)
+            except Exception as exc:
+                return f"budget check raised: {exc}"
+            if not isinstance(verdict, dict):
+                return "budget check returned non-dict"
+            if not verdict.get("allowed", False):
+                return verdict.get("reason", "budget exhausted")
+            return None
+        if hasattr(guard, "try_charge"):
+            try:
+                verdict = guard.try_charge(cost=0.0)
+            except Exception as exc:
+                return f"budget check raised: {exc}"
+            if not isinstance(verdict, dict):
+                return "budget check returned non-dict"
+            if not verdict.get("allowed", False):
+                return verdict.get("reason", "budget exhausted")
+            return None
+        return "budget guard has unknown interface"
 
     def _record_metrics(self, job: JobSpec, success: bool, tokens: int = 0) -> None:
         if self._metrics_collector is None:
@@ -249,6 +282,14 @@ class ExecutionEngine:
 
         system_prompt = _build_system_prompt(job)
         user_prompt = _build_user_prompt(job)
+
+        denial = self._budget_pre_check(self._budget_guard)
+        if denial is not None:
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary=f"Budget check failed: {denial}",
+            )
 
         try:
             response = self._model_gateway.call_model(

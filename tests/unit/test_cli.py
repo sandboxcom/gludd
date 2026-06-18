@@ -201,6 +201,66 @@ class TestClientCommands:
         assert "/api/status" in mock_get.call_args[0][0]
 
     @pytest.mark.asyncio
+    async def test_status_renders_new_host_path_keys(self, capsys):
+        """_cmd_status must use config_file_count + filestore_available (wave3 host-path change)."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "version": "0.1.0",
+            "config_file_count": 3,
+            "filestore_available": True,
+            "queue_depths": {},
+        }
+        with patch("httpx.get", return_value=mock_response):
+            import argparse
+
+            from general_ludd.cli import _cmd_status
+            args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000", project=None)
+            _cmd_status(args)
+        captured = capsys.readouterr()
+        assert "Config files: 3" in captured.out
+        assert "available" in captured.out
+        # old keys must NOT appear
+        assert "config_dir" not in captured.out
+        assert "filestore_root" not in captured.out
+
+    @pytest.mark.asyncio
+    async def test_status_renders_filestore_unavailable(self, capsys):
+        """_cmd_status shows 'unavailable' when filestore_available is False."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {
+            "version": "0.1.0",
+            "config_file_count": 0,
+            "filestore_available": False,
+            "queue_depths": {},
+        }
+        with patch("httpx.get", return_value=mock_response):
+            import argparse
+
+            from general_ludd.cli import _cmd_status
+            args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000", project=None)
+            _cmd_status(args)
+        captured = capsys.readouterr()
+        assert "Config files: 0" in captured.out
+        assert "unavailable" in captured.out
+
+    @pytest.mark.asyncio
+    async def test_status_renders_unknown_when_keys_missing(self, capsys):
+        """_cmd_status shows 'unknown' for config_file_count when key absent."""
+        mock_response = MagicMock()
+        mock_response.status_code = 200
+        mock_response.json.return_value = {"version": "0.1.0", "queue_depths": {}}
+        with patch("httpx.get", return_value=mock_response):
+            import argparse
+
+            from general_ludd.cli import _cmd_status
+            args = argparse.Namespace(todo_id=None, daemon_url="http://localhost:8000", project=None)
+            _cmd_status(args)
+        captured = capsys.readouterr()
+        assert "Config files: unknown" in captured.out
+
+    @pytest.mark.asyncio
     async def test_list_sends_get_with_filters(self):
         mock_response = MagicMock()
         mock_response.status_code = 200

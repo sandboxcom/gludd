@@ -916,10 +916,10 @@ def _cmd_status(args: argparse.Namespace) -> None:
             data = resp.json()
             print(f"General Ludd Agent v{data.get('version', 'unknown')}  [daemon running]")
             print("\u2500" * 72)
-            print(f"Config dir:  {data.get('config_dir', 'not set')}")
-            for cf in data.get("config_files", []):
-                print(f"  \u251c\u2500 {cf}")
-            print(f"Filestore:   {data.get('filestore_root', '')}")
+            cfg_count = data.get("config_file_count")
+            print(f"Config files: {cfg_count if cfg_count is not None else 'unknown'}")
+            fs_avail = data.get("filestore_available")
+            print(f"Filestore:   {'available' if fs_avail else 'unavailable'}")
             bins = data.get("filestore_binaries", [])
             versions = data.get("binary_versions", {})
             if versions:

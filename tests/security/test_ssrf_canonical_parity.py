@@ -30,7 +30,10 @@ CANONICAL_HOSTILE_HOSTS = [
     "localhost.localdomain",
     "metadata",
     "metadata.google.internal",
+    "metadata.goog",  # GCP metadata alias — connector-consolidation regression fix
     "instance-data",  # <- was missing from connectors + sanitize
+    "ip6-localhost",  # IPv6 loopback alias — connector-consolidation regression fix
+    "ip6-loopback",  # IPv6 loopback alias — connector-consolidation regression fix
     "169.254.169.254",  # AWS/GCP/Azure metadata (also link-local)
     "100.100.100.200",  # <- Alibaba metadata, was missing from connectors + sanitize
     "127.0.0.1",  # loopback v4
@@ -41,6 +44,7 @@ CANONICAL_HOSTILE_HOSTS = [
     "169.254.0.1",  # link-local
     "0.0.0.0",  # unspecified
     "fc00::1",  # unique-local v6
+    "192.0.2.1",  # TEST-NET-1 / documentation range (not is_global)
 ]
 
 # A normal public host every entrypoint MUST allow.

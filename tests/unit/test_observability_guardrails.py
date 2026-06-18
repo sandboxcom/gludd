@@ -18,6 +18,7 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[2]
 MAKEFILE = ROOT / "Makefile"
+RUN_GATE_SH = ROOT / "scripts" / "run_gate.sh"
 
 
 def _recipe(target: str) -> str:
@@ -39,12 +40,30 @@ def _recipe(target: str) -> str:
 
 class TestNoUnseenEvents:
     def test_gate_test_phase_streams_via_tee(self) -> None:
-        """The 16-min full-suite phase must tee so a running gate is observable."""
-        body = _recipe("gate")
-        assert "pytest tests/" in body, "gate must run the full suite"
-        assert "tee /tmp/gludd-test-gate.txt" in body, (
-            "gate test phase MUST tee its output to stdout — a backgrounded gate "
-            "cannot be a silent black box (regression of the 16-min-silence defect)"
+        """The full-suite phase must tee so a running gate is observable.
+
+        The gate target now delegates its test phase to scripts/run_gate.sh
+        (collision-proof: flock + unique basetemp + EXIT trap). The invariant is
+        preserved: the full suite still runs via pytest tests/ and its output is
+        still streamed through tee — just from run_gate.sh instead of inline.
+        We verify:
+          1. The Makefile gate recipe calls run_gate.sh (delegation wired).
+          2. run_gate.sh itself contains 'pytest tests/' (suite is not truncated).
+          3. run_gate.sh pipes through tee (output is never a silent black box).
+        """
+        gate_body = _recipe("gate")
+        assert "run_gate.sh" in gate_body, (
+            "gate target must delegate its test phase to scripts/run_gate.sh"
+        )
+        run_gate_text = RUN_GATE_SH.read_text()
+        assert "pytest tests/" in run_gate_text, (
+            "scripts/run_gate.sh must run the full suite (pytest tests/) — "
+            "the suite must not be truncated or omitted"
+        )
+        assert "tee" in run_gate_text, (
+            "scripts/run_gate.sh MUST pipe its output through tee so a "
+            "backgrounded gate is never a silent black box "
+            "(regression of the 16-min-silence defect)"
         )
 
     def test_gate_full_suite_is_never_silenced(self) -> None:

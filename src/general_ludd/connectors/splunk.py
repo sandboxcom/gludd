@@ -21,28 +21,15 @@ Design constraints (intentional, do not "simplify" away):
 from __future__ import annotations
 
 import datetime as _dt
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.security.ssrf import is_url_blocked
+
 __all__ = ["HttpResponse", "HttpTransport", "SSRFError", "SplunkSource"]
 
 KIND = "logs"
-
-# Hosts that must never be reached, matched on the *literal* URL host.
-_BLOCKED_HOST_NAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "ip6-localhost",
-        "ip6-loopback",
-        # Cloud metadata service (IMDS) common aliases.
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
 
 
 class SSRFError(ValueError):
@@ -88,46 +75,15 @@ class HttpTransport(Protocol):
         ...
 
 
-def _is_blocked_ip(ip: ipaddress.IPv4Address | ipaddress.IPv6Address) -> bool:
-    """Return True for any address class we must never talk to."""
-    if ip.is_loopback or ip.is_private or ip.is_link_local:
-        return True
-    if ip.is_reserved or ip.is_multicast or ip.is_unspecified:
-        return True
-    # IPv4-mapped / -compatible IPv6 -> re-check the embedded v4 address.
-    mapped = getattr(ip, "ipv4_mapped", None)
-    if mapped is not None and _is_blocked_ip(mapped):
-        return True
-    # Cloud metadata link-local addresses (caught by is_link_local above, but be
-    # explicit for the canonical 169.254.169.254 / fd00:ec2::254 endpoints).
-    return str(ip) in {"169.254.169.254", "fd00:ec2::254"}
-
-
 def _assert_safe_base_url(base_url: str) -> str:
     """Validate ``base_url`` against SSRF and return a normalized base (no trailing /).
 
     Only the *literal* host in the URL is inspected -- DNS is never resolved.
     """
-    parts = urlsplit(base_url)
-    if parts.scheme not in {"http", "https"}:
-        raise SSRFError(f"unsupported scheme: {parts.scheme!r}")
-    host = parts.hostname
-    if not host:
-        raise SSRFError("base_url has no host")
-
-    lowered = host.lower()
-    if lowered in _BLOCKED_HOST_NAMES:
-        raise SSRFError(f"forbidden host: {host!r}")
-
-    # If the host is a literal IP, classify it directly. Bracketed IPv6 hosts are
-    # returned by ``hostname`` without brackets.
-    try:
-        ip = ipaddress.ip_address(lowered)
-    except ValueError:
-        ip = None
-    if ip is not None and _is_blocked_ip(ip):
-        raise SSRFError(f"forbidden address: {host!r}")
-
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        parts = urlsplit(base_url)
+        host = parts.hostname or ""
+        raise SSRFError(f"forbidden host or address: {host!r}")
     return base_url.rstrip("/")
 
 
