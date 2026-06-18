@@ -23,6 +23,22 @@
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# SUBAGENT GUARD: refuse full gate launches from subagent contexts.
+#
+# If either CLAUDE_AGENT_ID or GLUDD_SUBAGENT is set (indicating this shell
+# was spawned inside a Claude subagent), refuse to run unless the caller has
+# explicitly set GLUDD_GATE_AUTHORIZED=1.  This prevents a dying subagent from
+# orphan-reaping and accidentally launching a full gate that would collide with
+# the main session's gate.
+# ---------------------------------------------------------------------------
+if [ -n "${CLAUDE_AGENT_ID:-}" ] || [ -n "${GLUDD_SUBAGENT:-}" ]; then
+    if [ "${GLUDD_GATE_AUTHORIZED:-0}" != "1" ]; then
+        echo "run_gate.sh: refusing full gate from subagent context (gates must be launched by the main session); set GLUDD_GATE_AUTHORIZED=1 to override" >&2
+        exit 2
+    fi
+fi
+
 # GATE_LOCK_FILE can be overridden in tests to give each test an isolated lock.
 LOCK_FILE="${GATE_LOCK_FILE:-/tmp/gludd-gate.lock}"
 LOG_FILE=/tmp/gludd-test-gate.txt
