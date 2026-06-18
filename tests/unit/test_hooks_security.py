@@ -129,3 +129,54 @@ class TestNoBlockingCallInAsyncContext:
             "inside a running event loop — this blocks the loop"
         )
         assert mock_loop.run_in_executor.called, "run_in_executor was not called"
+
+
+class TestNestedRedaction:
+    """D) Nested dict/list values containing secret keys must not reach the webhook."""
+
+    def _fire_and_capture(self, payload: dict) -> dict:
+        captured = []
+
+        def fake_post(url, **kwargs):
+            captured.append(kwargs.get("json", {}))
+            return MagicMock(status_code=200)
+
+        hs = HookSystem()
+        hs.register_webhook("nestevt", "http://example.com", retry_count=1)
+        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+            hs.fire("nestevt", payload)
+        assert len(captured) == 1
+        return captured[0].get("payload", {})
+
+    def test_nested_dict_secret_redacted(self):
+        """Secret in a sub-dict must not appear in the outgoing payload."""
+        payload = {"meta": {"api_key": "SEKRIT", "env": "prod"}}  # pragma: allowlist secret
+        sent = self._fire_and_capture(payload)
+        assert "SEKRIT" not in str(sent), "Nested api_key value leaked to webhook"
+        # non-secret sibling key is preserved
+        assert sent.get("meta", {}).get("env") == "prod"
+
+    def test_nested_list_of_dicts_secret_redacted(self):
+        """Secret in a list-of-dicts element must not appear in the outgoing payload."""
+        payload = {"items": [{"token": "T_SECRET"}, {"name": "ok"}]}  # pragma: allowlist secret
+        sent = self._fire_and_capture(payload)
+        assert "T_SECRET" not in str(sent), "token value in list element leaked to webhook"
+        # non-secret element key is preserved
+        items = sent.get("items", [])
+        assert any(item.get("name") == "ok" for item in items)
+
+    def test_top_level_still_redacted(self):
+        """Regression: top-level secret keys remain redacted after the recursion refactor."""
+        payload = {"password": "toplevel_secret", "user": "alice"}  # pragma: allowlist secret
+        sent = self._fire_and_capture(payload)
+        assert "password" not in sent
+        assert "toplevel_secret" not in str(sent)
+        assert sent.get("user") == "alice"
+
+    def test_three_levels_deep_redacted(self):
+        """Secret 3 levels deep must be stripped."""
+        payload = {"a": {"b": {"authorization": "bearer xyz123", "safe": "keep"}}}  # pragma: allowlist secret
+        sent = self._fire_and_capture(payload)
+        assert "xyz123" not in str(sent), "3-level nested authorization value leaked"
+        # safe sibling preserved
+        assert sent.get("a", {}).get("b", {}).get("safe") == "keep"
