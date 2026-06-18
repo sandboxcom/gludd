@@ -18,27 +18,16 @@ Security posture:
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
-from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["HoneycombSource"]
 
 DEFAULT_BASE_URL = "https://api.honeycomb.io"
 DEFAULT_TIMEOUT = 30.0
 TEAM_HEADER = "X-Honeycomb-Team"
-
-# Literal hostnames that must never be reachable as a base URL. We do not
-# resolve DNS; these are obvious internal/metadata literals only.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
 
 
 @runtime_checkable
@@ -70,28 +59,6 @@ class _Transport(Protocol):
     ) -> _Response: ...
 
 
-def _is_blocked_host(host: str) -> bool:
-    """Return True if ``host`` is an obviously-internal literal (no DNS)."""
-    if not host:
-        return True
-    host = host.strip("[]").lower()
-    if host in _BLOCKED_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # Not an IP literal -> treat as a public hostname (we do NOT resolve it).
-        return False
-    return bool(
-        ip.is_loopback
-        or ip.is_link_local
-        or ip.is_private
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 class HoneycombSource:
     """Honeycomb high-cardinality query source.
 
@@ -114,12 +81,9 @@ class HoneycombSource:
         self._api_key_env: str = str(config["api_key_env"])
 
         base_url = str(config.get("base_url") or DEFAULT_BASE_URL).rstrip("/")
-        parts = urlsplit(base_url)
-        if parts.scheme not in ("http", "https") or not parts.hostname:
-            raise ValueError(f"invalid base_url: {base_url!r}")
-        if _is_blocked_host(parts.hostname):
+        if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
             raise ValueError(
-                f"refusing internal/loopback base_url host: {parts.hostname!r}"
+                f"refusing internal/loopback base_url host: {base_url!r}"
             )
         self.base_url: str = base_url
 

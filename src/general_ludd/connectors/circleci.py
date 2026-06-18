@@ -16,7 +16,6 @@ variable at call time and is NEVER hardcoded.
 
 from __future__ import annotations
 
-import ipaddress
 import json as _json
 import os
 import urllib.error
@@ -25,6 +24,8 @@ import urllib.request
 from collections.abc import Callable
 from datetime import datetime
 from typing import Any
+
+from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["CircleCiSource"]
 
@@ -35,55 +36,12 @@ _DEFAULT_TIMEOUT = 10.0
 # A transport is any callable matching ``http_get(url, headers) -> (status, json)``.
 Transport = Callable[[str, dict[str, str]], "tuple[int, Any]"]
 
-_BLOCKED_HOST_NAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
-
-
-def _is_blocked_host(host: str) -> bool:
-    """Return True if *host* is a loopback/private/link-local/metadata target.
-
-    Purely literal: if the host parses as an IP we classify it; otherwise we
-    only reject known-bad literal names. No name resolution is performed.
-    """
-    h = host.strip().lower().rstrip(".")
-    if not h:
-        return True
-    if h in _BLOCKED_HOST_NAMES:
-        return True
-    if h.startswith("[") and h.endswith("]"):
-        h = h[1:-1]
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        return False
-    return bool(
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
 
 def _validate_base_url(base_url: str) -> str:
     """Validate and normalize *base_url*, refusing internal/metadata targets."""
-    parsed = urllib.parse.urlparse(base_url)
-    if parsed.scheme not in ("http", "https"):
-        raise ValueError(f"base_url must be http(s): {base_url!r}")
-    host = parsed.hostname or ""
-    if not host:
-        raise ValueError(f"base_url has no host: {base_url!r}")
-    if _is_blocked_host(host):
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
         raise ValueError(
-            f"base_url host is blocked (loopback/private/metadata): {host!r}"
+            f"base_url host is blocked (loopback/private/metadata): {base_url!r}"
         )
     return base_url.rstrip("/")
 
