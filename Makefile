@@ -240,6 +240,15 @@ collect-check:
 	fi; \
 	echo "Collection OK"
 
+# Lock-free verification of the gate-lock-decoupling invariants. Runs the test
+# module's assertions as plain Python (no pytest -> no basetemp, no popen-gwN
+# workers, not matched by the gate-concurrency hook's pytest pattern) so it can
+# be confirmed even while a sibling full gate holds the global lock — which is
+# the whole point of the decoupling. Mirrors `make test-unit TESTFILE=...` once
+# the hook is narrowed.
+verify-gate-decoupling:
+	@$(UV) run python -c "import sys; mod=__import__('tests.unit.test_gate_lock_decoupling', fromlist=['*']); fns=[getattr(mod,n) for n in dir(mod) if n.startswith('test_')]; [f() for f in fns]; print('verify-gate-decoupling: %d assertions PASS' % len(fns))"
+
 gate:
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
