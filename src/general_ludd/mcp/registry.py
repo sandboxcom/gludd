@@ -43,11 +43,10 @@ class MCPToolRegistry:
     def get_tool(self, name: str, server_id: str | None = None) -> MCPTool | None:
         if server_id is not None:
             return self._tools.get((server_id, name))
-        # Back-compat: name-only scan returns first match
-        for (_sid, n), tool in self._tools.items():
-            if n == name:
-                return tool
-        return None
+        # Back-compat: name-only scan returns the unique match, or None if
+        # zero or more than one server advertises the same name (ambiguous).
+        matches = [t for ((_s, n), t) in self._tools.items() if n == name]
+        return matches[0] if len(matches) == 1 else None
 
     def remove_server(self, server_id: str) -> int:
         names = self._server_tools.pop(server_id, [])
@@ -56,4 +55,4 @@ class MCPToolRegistry:
         return len(names)
 
     def tool_names(self) -> list[str]:
-        return [n for (_, n) in self._tools]
+        return sorted(set(n for (_, n) in self._tools))
