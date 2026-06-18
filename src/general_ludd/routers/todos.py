@@ -203,11 +203,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if not qg:
             qg = {"overall": "not_run", "passed_count": 0, "total_count": 0}
         _db_engine = getattr(app.state, "_db_engine", None)
-        _db_url_str: str = (
-            _db_engine.url.render_as_string(hide_password=True)
-            if _db_engine is not None
-            else "sqlite"
-        )
+        _db_url_str: str
+        _db_engine_str: str
+        if _db_engine is not None:
+            _db_url_str = _db_engine.url.render_as_string(hide_password=True)
+            _db_engine_str = _db_url_str
+        else:
+            _db_url_str = "sqlite"
+            _db_engine_str = str(_db_engine)  # "None"
         return {
             "version": __version__,
             "uptime_ticks": elapsed.get("total_ticks", 0),
@@ -220,7 +223,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
-            "db_engine": _db_url_str,
+            "db_engine": _db_engine_str,
             "db_url": _db_url_str,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
