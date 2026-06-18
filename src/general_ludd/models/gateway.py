@@ -681,6 +681,31 @@ class ModelGateway:
             f"All profiles in fallback chain failed for '{profile_id}'"
         )
 
+    def _notify_profile_change(
+        self,
+        event: Any,
+        hook_name: str,
+        hook_payload: dict,
+        action: str,
+        model_id: str,
+        broadcast_payload: dict,
+    ) -> None:
+        """Publish event, fire hook, and broadcast a profile add/remove notification.
+
+        Centralises the three-step fan-out that both add_profile and
+        remove_profile require, keeping the order and exception handling
+        identical in both callers.
+        """
+        if self._event_bus:
+            self._event_bus.publish(event)
+        if self._hooks:
+            self._hooks.fire(hook_name, hook_payload)
+        if self._broadcaster:
+            try:
+                self._broadcaster.broadcast_model_update(action, model_id, broadcast_payload)
+            except Exception as exc:
+                logger.warning("Worker broadcast failed for model %s: %s", action, exc)
+
     def add_profile(
         self,
         model_id: str,
@@ -700,25 +725,23 @@ class ModelGateway:
             **{k: v for k, v in kwargs.items() if k in ModelProfile.model_fields},
         )
         self._profiles[model_id] = profile
-        if self._event_bus:
-            self._event_bus.publish(ModelAddedEvent(model_id=model_id, profile=profile.model_dump()))
-        if self._hooks:
-            self._hooks.fire("on_model_added", {"model_id": model_id, "profile": profile.model_dump()})
-        if self._broadcaster:
-            try:
-                self._broadcaster.broadcast_model_update("add", model_id, profile.model_dump())
-            except Exception as exc:
-                logger.warning("Worker broadcast failed for model add: %s", exc)
+        self._notify_profile_change(
+            event=ModelAddedEvent(model_id=model_id, profile=profile.model_dump()),
+            hook_name="on_model_added",
+            hook_payload={"model_id": model_id, "profile": profile.model_dump()},
+            action="add",
+            model_id=model_id,
+            broadcast_payload=profile.model_dump(),
+        )
         return profile
 
     def remove_profile(self, model_id: str) -> None:
         self._profiles.pop(model_id, None)
-        if self._event_bus:
-            self._event_bus.publish(ModelRemovedEvent(model_id=model_id))
-        if self._hooks:
-            self._hooks.fire("on_model_removed", {"model_id": model_id})
-        if self._broadcaster:
-            try:
-                self._broadcaster.broadcast_model_update("remove", model_id, {})
-            except Exception as exc:
-                logger.warning("Worker broadcast failed for model remove: %s", exc)
+        self._notify_profile_change(
+            event=ModelRemovedEvent(model_id=model_id),
+            hook_name="on_model_removed",
+            hook_payload={"model_id": model_id},
+            action="remove",
+            model_id=model_id,
+            broadcast_payload={},
+        )
