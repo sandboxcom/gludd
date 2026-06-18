@@ -281,6 +281,19 @@ class GitAutomation:
         except (subprocess.CalledProcessError, FileNotFoundError, OSError):
             return False
 
+    def current_branch(self) -> str:
+        """Return the current branch name, or ``'unknown'`` on any failure.
+
+        Uses ``rev-parse --abbrev-ref HEAD`` (same command the engine used
+        inline before delegation). Failures — timeout, not-a-repo, detached
+        HEAD — all surface as ``'unknown'`` so callers never see an exception.
+        """
+        try:
+            result = self._run_git("rev-parse", "--abbrev-ref", "HEAD")
+            return result.stdout.strip()
+        except Exception:
+            return "unknown"
+
     def create_branch(self, name: str) -> str:
         _reject_leading_dash(name, kind="branch name")
         # `--` ends option parsing so the name is unambiguously the new branch.

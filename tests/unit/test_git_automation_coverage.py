@@ -81,6 +81,29 @@ class TestIsRepo:
         assert GitAutomation(".").is_repo() is False
 
 
+class TestCurrentBranch:
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        return_value=_ok(stdout="main\n"),
+    )
+    def test_current_branch_returns_branch_name(self, mock_run: MagicMock):
+        assert GitAutomation(".").current_branch() == "main"
+
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        side_effect=subprocess.CalledProcessError(1, "git"),
+    )
+    def test_current_branch_returns_unknown_on_error(self, mock_run: MagicMock):
+        assert GitAutomation(".").current_branch() == "unknown"
+
+    @patch(
+        "general_ludd.git_automation.repo.subprocess.run",
+        side_effect=subprocess.TimeoutExpired(cmd="git", timeout=60),
+    )
+    def test_current_branch_returns_unknown_on_timeout(self, mock_run: MagicMock):
+        assert GitAutomation(".").current_branch() == "unknown"
+
+
 class TestCreateBranch:
     @patch("general_ludd.git_automation.repo.subprocess.run", return_value=_ok())
     def test_create_branch(self, mock_run: MagicMock):
