@@ -37,12 +37,13 @@ Record shape (one dict per event or metric point)::
 
 from __future__ import annotations
 
-import ipaddress
 import os
 import time
 from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport signature:
 #   (method, url, *, params, json, headers, timeout) -> (status, payload)
@@ -53,40 +54,6 @@ KIND = "logs"
 _DEFAULT_SITE = "https://api.datadoghq.com"
 _DEFAULT_TIMEOUT = 10.0
 
-# Hostnames that must never be reached, regardless of IP resolution.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "metadata",
-        "metadata.google.internal",
-        "metadata.goog",
-    }
-)
-
-
-def _strip_brackets(host: str) -> str:
-    # IPv6 literals arrive as "[::1]"
-    if host.startswith("[") and host.endswith("]"):
-        return host[1:-1]
-    return host
-
-
-def _is_blocked_ip(host: str) -> bool:
-    try:
-        ip = ipaddress.ip_address(_strip_brackets(host))
-    except ValueError:
-        return False
-    return (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-        or not ip.is_global
-    )
-
 
 def _validate_site(site: str) -> str:
     """Reject SSRF-prone literal hosts; return a normalized site URL.
@@ -95,21 +62,10 @@ def _validate_site(site: str) -> str:
     """
     if not site or not isinstance(site, str):
         raise ValueError("site is required")
-
-    parts = urlsplit(site)
-    if parts.scheme not in ("http", "https"):
-        raise ValueError(f"unsupported scheme: {parts.scheme!r} (only http/https)")
-
-    host = (parts.hostname or "").strip().lower()
-    if not host:
-        raise ValueError("site has no host")
-
-    if host in _BLOCKED_HOSTNAMES:
-        raise ValueError(f"blocked host: {host!r}")
-
-    if _is_blocked_ip(host):
-        raise ValueError(f"blocked internal/metadata address: {host!r}")
-
+    if is_url_blocked(site, scheme_allowlist=("http", "https")):
+        raise ValueError(
+            f"site blocked by SSRF policy (bad scheme, missing host, or internal/metadata address): {site!r}"
+        )
     return site.rstrip("/")
 
 
