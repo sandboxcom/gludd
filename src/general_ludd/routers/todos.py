@@ -103,13 +103,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         queue: str | None = None,
         status: str | None = None,
         project_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
     ) -> list[dict[str, Any]]:
+        _limit = max(1, min(limit, 500))
+        _offset = max(0, offset)
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
                 repo = TodoRepository(session)
                 todos = await repo.list_all(
                     queue=queue, status=status, project_id=project_id,
+                    limit=_limit, offset=_offset,
                 )
                 return [_todo_to_dict(t) for t in todos]
         results = list(_daemon_state["todos"])
@@ -119,7 +124,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             results = [t for t in results if t.get("status") == status]
         if project_id is not None:
             results = [t for t in results if t.get("project_id") == project_id]
-        return results
+        return results[_offset:_offset + _limit]
 
     @app.get("/api/todos/{todo_id}")
     async def api_get_todo(todo_id: str) -> dict[str, Any]:

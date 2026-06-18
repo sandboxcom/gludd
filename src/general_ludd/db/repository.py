@@ -144,6 +144,8 @@ class TodoRepository:
         queue: str | None = None,
         status: str | None = None,
         project_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[TodoModel]:
         stmt = select(TodoModel)
         if queue is not None:
@@ -152,6 +154,10 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.status == status)
         if project_id is not None:
             stmt = stmt.where(TodoModel.project_id == project_id)
+        if offset:
+            stmt = stmt.offset(offset)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
