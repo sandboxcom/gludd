@@ -210,3 +210,105 @@ class TestRestoreValidation:
         ])
         assert sl.window_spend() == pytest.approx(0.9)
         assert sl.would_exceed(0.15) is True
+
+
+class TestRecordGuard:
+    """Security tests: record() must RAISE on negative / non-finite cost (live path).
+
+    Unlike restore() which silently drops bad records (offline/deserialization path),
+    record() is the LIVE path called by try_charge() on every dispatch.  A negative
+    cost here would DEFLATE window_spend(), letting an attacker evade the cap by
+    injecting a negative charge.  NaN/inf costs would poison sum() so would_exceed()
+    returns False (unlimited spend).  We raise ValueError so the caller sees a hard
+    error and cannot continue as if the charge were accepted.
+    """
+
+    def test_record_negative_cost_raises(self) -> None:
+        """record() with a negative cost must raise ValueError."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        with pytest.raises(ValueError, match="non-negative"):
+            sl.record(-1.0, kind="token")
+
+    def test_record_negative_cost_does_not_add_to_window(self) -> None:
+        """After a failed record() call the window must be unchanged (no partial write)."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(2.0, kind="token")
+        with pytest.raises(ValueError):
+            sl.record(-1.0, kind="token")
+        # Window must still be 2.0, not 1.0 (deflated) or anything else.
+        assert sl.window_spend() == pytest.approx(2.0)
+
+    def test_record_nan_cost_raises(self) -> None:
+        """record() with NaN cost must raise ValueError."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        with pytest.raises(ValueError):
+            sl.record(float("nan"), kind="token")
+
+    def test_record_nan_does_not_poison_window(self) -> None:
+        """A failed record(NaN) must leave window_spend() unaffected (no NaN in sum)."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(3.0, kind="token")
+        with pytest.raises(ValueError):
+            sl.record(float("nan"), kind="token")
+        assert sl.window_spend() == pytest.approx(3.0)
+        # Cap enforcement must still work (not poisoned to always-False).
+        assert sl.would_exceed(8.0) is True  # 3 + 8 = 11 > 10
+
+    def test_record_inf_cost_raises(self) -> None:
+        """record() with +inf cost must raise ValueError."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        with pytest.raises(ValueError):
+            sl.record(float("inf"), kind="token")
+
+    def test_record_neg_inf_cost_raises(self) -> None:
+        """record() with -inf cost must raise ValueError."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        with pytest.raises(ValueError):
+            sl.record(float("-inf"), kind="token")
+
+    def test_record_positive_cost_works(self) -> None:
+        """The normal positive-cost path must still succeed after the guard is added."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(0.05, kind="token")
+        assert sl.window_spend() == pytest.approx(0.05)
+
+    def test_record_zero_cost_works(self) -> None:
+        """Zero is a valid (non-negative, finite) cost and must be accepted."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        sl.record(0.0, kind="infra")
+        assert sl.window_spend() == pytest.approx(0.0)
+
+    def test_try_charge_negative_cost_refused_no_headroom_created(self) -> None:
+        """try_charge() with a negative cost must not create phantom headroom.
+
+        A negative cost passed through try_charge → record() would reduce
+        window_spend() and let subsequent charges bypass the cap.  The guard
+        in record() must raise, which propagates out of try_charge() so the
+        cap is never evaded.
+        """
+        sl, clock = _make_limiter(limit_usd=1.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        # Fill the cap to within 0.05 USD.
+        sl.record(0.95, kind="token")
+        assert sl.remaining() == pytest.approx(0.05)
+        # Attempt to inject negative cost via try_charge — must raise.
+        with pytest.raises(ValueError):
+            sl.try_charge(-1.0, kind="token")
+        # Remaining must be unchanged (not inflated to 1.05).
+        assert sl.remaining() == pytest.approx(0.05)
+
+    def test_try_charge_positive_cost_still_recorded(self) -> None:
+        """try_charge() normal positive path must still record the charge."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1.0
+        accepted = sl.try_charge(2.0, kind="token")
+        assert accepted is True
+        assert sl.window_spend() == pytest.approx(2.0)

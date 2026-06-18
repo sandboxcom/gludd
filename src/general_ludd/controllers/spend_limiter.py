@@ -95,14 +95,26 @@ class SpendLimiter:
         """Record a spend event.
 
         Args:
-            cost_usd:   Amount spent in USD.
+            cost_usd:   Amount spent in USD.  Must be a finite, non-negative
+                        value; negative or non-finite values are programming
+                        errors (or abuse attempts) and raise ``ValueError``
+                        fail-closed rather than silently poisoning the window
+                        sum or deflating the cap.
             kind:       Resource kind (e.g. ``"token"``, ``"infra"``).
             at:         Override the record timestamp (useful in tests).
                         Defaults to the injected clock's current value.
             model:      Optional model identifier (informational, not used in
                         rolling-window math).
             project_id: Optional project scope (informational).
+
+        Raises:
+            ValueError: If ``cost_usd`` is negative or non-finite (NaN / inf).
         """
+        if not math.isfinite(cost_usd) or cost_usd < 0:
+            raise ValueError(
+                f"SpendLimiter.record(): cost_usd must be a finite non-negative value, "
+                f"got {cost_usd!r}. Negative or non-finite costs are not permitted."
+            )
         ts = at if at is not None else self._clock()
         with self._lock:
             self._records.append((ts, cost_usd))
