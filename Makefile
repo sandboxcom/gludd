@@ -1,6 +1,8 @@
 MSG ?=
 FILES ?=
 TESTFILE ?=
+REF ?=
+TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
@@ -37,7 +39,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge
+        gate-async gate-status floor-plan gated-merge ship-async
 
 help:
 	@echo "Usage: make [target]"
@@ -115,6 +117,7 @@ help:
 	@echo "  git-push-sandboxcom   Push to sandboxcom/gludd mirror"
 	@echo "  git-pull-sandboxcom   Pull and rebase from sandboxcom/gludd"
 	@echo "  git-fetch-sandboxcom  Fetch from sandboxcom/gludd"
+	@echo "  ship-async REF=<hash> [TARGET=master]  Run gate in background job; ff-only merge on green"
 	@echo ""
 	@echo "  --- Other ---"
 	@echo "  smoke                 Quick daemon boot health check"
@@ -352,6 +355,9 @@ kill-gate-force:
 	@rm -f /tmp/gludd-gate.lock /tmp/gludd-gate.lock.*.tmp
 	@rm -rf /tmp/gludd-gate-[A-Za-z0-9]* 2>/dev/null || true
 	@echo "[kill-gate-force] lock + tmp dirs removed"
+
+ship-async:
+	@bash scripts/ship_async.sh $(REF) $(TARGET)
 
 # STALL WATCHDOG — run a long command under active no-progress + max-runtime
 # supervision so a hang can NEVER sit silently forever. Streams the command's
