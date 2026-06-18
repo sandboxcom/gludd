@@ -16,6 +16,8 @@ from general_ludd.skills.skill import Skill
 
 logger = logging.getLogger(__name__)
 
+SIZE_CAP = 512 * 1024  # 512 KB
+
 
 def build_skill_frontmatter(skill: Skill) -> str:
     """Build a SKILL.md frontmatter block from a fetched skill SAFELY.
@@ -127,14 +129,38 @@ class GitHubSkillSource:
 
     def download_skill(self, skill_path: str) -> Skill | None:
         skill_md_path = f"{skill_path.rstrip('/')}/SKILL.md"
-        resp = httpx.get(self._raw_url(skill_md_path), timeout=15.0)
-        if resp.status_code != 200:
+        text = None
+        final_path = skill_md_path
+        with httpx.stream("GET", self._raw_url(skill_md_path), timeout=15.0) as resp:
+            if resp.status_code == 200:
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in resp.iter_bytes(chunk_size=8192):
+                    total += len(chunk)
+                    if total > SIZE_CAP:
+                        logger.warning("Skill response exceeds 512 KB cap: %s", skill_md_path)
+                        return None
+                    chunks.append(chunk)
+                text = b"".join(chunks).decode("utf-8", errors="replace")
+
+        if text is None:
             skill_md_path = f"{skill_path.rstrip('/')}.md"
-            resp = httpx.get(self._raw_url(skill_md_path), timeout=15.0)
-        if resp.status_code != 200:
-            logger.warning("Failed to fetch skill from %s: %d", skill_md_path, resp.status_code)
-            return None
-        return parse_skill_md(resp.text, source_path=skill_md_path)
+            final_path = skill_md_path
+            with httpx.stream("GET", self._raw_url(skill_md_path), timeout=15.0) as resp:
+                if resp.status_code != 200:
+                    logger.warning("Failed to fetch skill from %s: %d", skill_md_path, resp.status_code)
+                    return None
+                chunks = []
+                total = 0
+                for chunk in resp.iter_bytes(chunk_size=8192):
+                    total += len(chunk)
+                    if total > SIZE_CAP:
+                        logger.warning("Skill response exceeds 512 KB cap: %s", skill_md_path)
+                        return None
+                    chunks.append(chunk)
+                text = b"".join(chunks).decode("utf-8", errors="replace")
+
+        return parse_skill_md(text, source_path=final_path)
 
 
 class RemoteSkillFetcher:
@@ -147,13 +173,22 @@ class RemoteSkillFetcher:
             logger.warning("Refusing unsafe skill URL: %s", url)
             return None
         try:
-            resp = httpx.get(url, timeout=15.0, follow_redirects=False)
+            with httpx.stream("GET", url, timeout=15.0, follow_redirects=False) as resp:
+                if resp.status_code != 200:
+                    return None
+                chunks: list[bytes] = []
+                total = 0
+                for chunk in resp.iter_bytes(chunk_size=8192):
+                    total += len(chunk)
+                    if total > SIZE_CAP:
+                        logger.warning("Skill fetch response exceeds 512 KB cap: %s", url)
+                        return None
+                    chunks.append(chunk)
+                text = b"".join(chunks).decode("utf-8", errors="replace")
         except httpx.HTTPError:
             logger.warning("Failed to fetch skill from %s", url)
             return None
-        if resp.status_code != 200:
-            return None
-        return parse_skill_md(resp.text, source_path=url)
+        return parse_skill_md(text, source_path=url)
 
     def install(self, url: str, target_dir: str) -> Path | None:
         skill = self.fetch(url)

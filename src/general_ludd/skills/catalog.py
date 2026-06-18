@@ -8,11 +8,32 @@ from __future__ import annotations
 
 import json
 import logging
+import os
 from pathlib import Path
 
 from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
+
+
+def _safe_catalog_name(name: str) -> str | None:
+    """Validate a catalog skill name to prevent path traversal.
+
+    Rejects empty strings, names containing '/' or '\\', names containing
+    '..' as a segment, and names that look like absolute paths. Returns the
+    name unchanged if safe, None otherwise.
+    """
+    if not name:
+        return None
+    if name.startswith("/") or name.startswith("\\"):
+        return None
+    if "/" in name or "\\" in name:
+        return None
+    # Reject '..' as a segment (handles bare '..', '../', etc.)
+    segments = name.replace("\\", "/").split("/")
+    if any(seg == ".." for seg in segments):
+        return None
+    return name
 
 
 class CatalogSkillEntry(BaseModel):
@@ -71,12 +92,22 @@ class SkillCatalog:
         if entry is None:
             return None
 
+        safe_name = _safe_catalog_name(name)
+        if safe_name is None:
+            logger.warning("Refusing catalog skill with unsafe name: %r", name)
+            return None
+
         target = Path(target_dir)
         target.mkdir(parents=True, exist_ok=True)
 
-        skill_file = target / f"{name}.md"
+        skill_file = target / f"{safe_name}.md"
+        # Defense-in-depth: verify the resolved path stays inside target_dir
+        if not os.path.realpath(str(skill_file)).startswith(os.path.realpath(str(target))):
+            logger.warning("Catalog skill path escapes target dir: %r -> %s", name, skill_file)
+            return None
+
         skill_file.write_text(_build_skill_md(entry))
-        logger.info("Downloaded skill %s to %s", name, skill_file)
+        logger.info("Downloaded skill %s to %s", safe_name, skill_file)
         return skill_file
 
     def list_categories(self) -> list[str]:
