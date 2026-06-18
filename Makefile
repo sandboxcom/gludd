@@ -39,7 +39,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async
+        gate-async gate-status floor-plan gated-merge ship-async \
+        git-cherry-pick git-cherry-continue
 
 help:
 	@echo "Usage: make [target]"
@@ -1258,11 +1259,21 @@ open('tests/unit/test_secrets_manager_coverage.py','w').write(c)"
 	@echo "Fixed ratchet mock targets"
 
 git-reset:
-	@if [ -z "$(FILES)" ]; then \
-		echo "Usage: make git-reset FILES='HEAD~1' (or specific ref)"; \
+	@if [ -n "$(MSG)" ]; then \
+		git reset $(MSG); \
+	elif [ -n "$(FILES)" ]; then \
+		git reset $(FILES); \
+	else \
+		echo "Usage: make git-reset MSG='--hard <ref>'  or  make git-reset FILES='HEAD~1'"; \
 		exit 1; \
 	fi
-	@git reset $(FILES)
+
+git-cherry-pick:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make git-cherry-pick MSG='<commit>'"; exit 1; fi
+	@git cherry-pick $(MSG)
+
+git-cherry-continue:
+	@GIT_EDITOR=true git cherry-pick --continue
 
 git-branch:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-branch MSG='branch-name'"; exit 1; fi
