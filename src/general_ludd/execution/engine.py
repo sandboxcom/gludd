@@ -12,21 +12,12 @@ import subprocess
 import uuid
 from typing import Any
 
-from general_ludd.git_automation.locking import git_repo_lock
-from general_ludd.git_automation.repo import (
-    _GIT_TIMEOUT_SECONDS,
-    _NON_INTERACTIVE_GIT_ENV,
-    _reject_leading_dash,
-)
+from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
 
 logger = logging.getLogger(__name__)
 
-
-def _git_env() -> dict[str, str]:
-    """Process env plus the non-interactive git overrides (no TTY/credential prompt)."""
-    return {**os.environ, **_NON_INTERACTIVE_GIT_ENV}
 
 
 def _parse_fenced_blocks(text: str) -> list[dict[str, str]]:
@@ -118,80 +109,40 @@ def _run_tests(workspace: str) -> tuple[int, str]:
 
 
 def _is_git_repo(path: str) -> bool:
-    # Hardened (mirrors git_automation._run_git): bounded timeout + non-interactive
-    # env + per-repo lock. A hung/credential-prompting git can never stall the
-    # caller, and concurrent roles serialize on .git/index.lock instead of racing.
+    """Delegate to GitAutomation.is_repo() — bounded timeout + non-interactive env + lock."""
+    return GitAutomation(path).is_repo()
+
+
+def _git_create_branch(path: str, branch_name: str) -> bool:
+    """Delegate to GitAutomation.create_branch(); return False on any failure.
+
+    GitAutomation.create_branch() already rejects dash-leading names via
+    _reject_leading_dash and appends a ``--`` end-of-options separator.
+    """
     try:
-        with git_repo_lock(path):
-            result = subprocess.run(
-                ["git", "rev-parse", "--git-dir"],
-                cwd=path, capture_output=True, text=True,
-                timeout=_GIT_TIMEOUT_SECONDS, env=_git_env(),
-            )
-        return result.returncode == 0
+        GitAutomation(path).create_branch(branch_name)
+        return True
     except Exception:
         return False
 
 
-def _git_create_branch(path: str, branch_name: str) -> bool:
-    # Refuse a dash-leading branch (e.g. ``--upload-pack=...``) BEFORE exec so it
-    # can never be parsed as a git option, and add a ``--`` end-of-options
-    # separator after ``-b <branch>`` as defense in depth. Bounded + non-interactive
-    # + locked like every other mutating git call.
-    try:
-        _reject_leading_dash(branch_name, kind="branch name")
-    except ValueError:
-        return False
-    try:
-        with git_repo_lock(path):
-            subprocess.run(
-                ["git", "checkout", "-b", branch_name, "--"],
-                cwd=path, capture_output=True, text=True, check=True,
-                timeout=_GIT_TIMEOUT_SECONDS, env=_git_env(),
-            )
-        return True
-    except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
-        return False
-
-
 def _git_commit(path: str, message: str) -> str | None:
-    # add -A -> commit -> rev-parse all under ONE lock acquisition (the lock is
-    # re-entrant, but holding it across the trio also makes the commit atomic
-    # against a concurrent role). Bounded + non-interactive env throughout.
+    """Delegate to GitAutomation.commit(); return 8-char SHA or None on failure.
+
+    GitAutomation.commit() runs add-A -> commit -> rev-parse under a single
+    re-entrant lock acquisition — the 3-step lock granularity is acceptable in
+    engine's single-threaded execute(). Truncate to 8 chars to match the
+    original contract.
+    """
     try:
-        with git_repo_lock(path):
-            subprocess.run(
-                ["git", "add", "-A"], cwd=path, capture_output=True, check=True,
-                timeout=_GIT_TIMEOUT_SECONDS, env=_git_env(),
-            )
-            result = subprocess.run(
-                ["git", "commit", "-m", message],
-                cwd=path, capture_output=True, text=True,
-                timeout=_GIT_TIMEOUT_SECONDS, env=_git_env(),
-            )
-            if result.returncode == 0:
-                sha_result = subprocess.run(
-                    ["git", "rev-parse", "HEAD"],
-                    cwd=path, capture_output=True, text=True,
-                    timeout=_GIT_TIMEOUT_SECONDS, env=_git_env(),
-                )
-                return sha_result.stdout.strip()[:8]
-        return None
+        return GitAutomation(path).commit(message)[:8]
     except Exception:
         return None
 
 
 def _git_current_branch(path: str) -> str:
-    try:
-        with git_repo_lock(path):
-            result = subprocess.run(
-                ["git", "rev-parse", "--abbrev-ref", "HEAD"],
-                cwd=path, capture_output=True, text=True,
-                timeout=_GIT_TIMEOUT_SECONDS, env=_git_env(),
-            )
-        return result.stdout.strip()
-    except Exception:
-        return "unknown"
+    """Delegate to GitAutomation.current_branch(); returns 'unknown' on any failure."""
+    return GitAutomation(path).current_branch()
 
 
 def _slugify(text: str, max_len: int = 40) -> str:
