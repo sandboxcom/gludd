@@ -311,6 +311,27 @@ The following claims in the body of this README are broadly accurate but carry c
 
 ---
 
+## Presentation
+
+A self-describing reveal.js deck — "gludd, honestly" — is generated from live
+E2E artifacts and committed design templates. Every maturity claim on a slide
+carries the same evidence token the README table carries; missing data renders
+an honest "NO DATA — run `make deck-data`" placeholder rather than a fabricated
+screenshot.
+
+**Planned URL:** https://sandboxcom.github.io/gludd/
+
+> This link goes live once:
+> 1. GitHub Pages is enabled in repo settings (Source: GitHub Actions)
+> 2. The deck source (`docs/presentation/deck/`) is committed to `main`
+> 3. The `.github/workflows/pages.yml` workflow has run successfully
+>
+> Until then, build and preview locally with `make deck && make deck-serve`.
+
+Source: `docs/presentation/` | Design: `DESIGN_revealjs_deck.md` | Build tasks: `BUILD_TASK_LIST.md`
+
+---
+
 ## Quick Start
 
 ### Prerequisites
