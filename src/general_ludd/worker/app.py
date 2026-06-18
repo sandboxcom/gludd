@@ -5,6 +5,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import os
+import shutil
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -192,29 +193,43 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
             model_response = _invoke_gateway_for_job(gw, job)
 
         runner = get_runner()
-        dirs = runner.prepare_job_dirs(job.job_id)
-        runner.write_vars(
-            job.job_id,
-            job_vars={
-                "job_id": job.job_id,
-                "todo_id": job.todo_id,
-                "queue": job.queue,
-                "work_type": job.work_type,
-                "project_id": getattr(job, "project_id", None),
-                "model_profile": job.model_profile,
-                "prompt_text": job.prompt_text,
-                "skill_body": job.skill_body,
-                "model_response": model_response,
-                **job.budget_context,
-            },
-            shared_vars=None,
+        try:
+            dirs = runner.prepare_job_dirs(job.job_id)
+        except FileExistsError as exc:
+            raise HTTPException(status_code=409, detail="Job already in progress") from exc
+        _max_timeout = float(os.environ.get("GLUDD_JOB_TIMEOUT_MAX", "600"))
+        _timeout: float | None = (
+            min(job.timeout, _max_timeout) if job.timeout is not None else _max_timeout
         )
-        runner_result = await asyncio.to_thread(
-            runner.run_playbook,
-            playbook_name=job.playbook,
-            private_data_dir=dirs["root"],
-            extravars={"model_response": model_response} if model_response is not None else None,
-        )
+        try:
+            runner.write_vars(
+                job.job_id,
+                job_vars={
+                    "job_id": job.job_id,
+                    "todo_id": job.todo_id,
+                    "queue": job.queue,
+                    "work_type": job.work_type,
+                    "project_id": getattr(job, "project_id", None),
+                    "model_profile": job.model_profile,
+                    "prompt_text": job.prompt_text,
+                    "skill_body": job.skill_body,
+                    "model_response": model_response,
+                    **job.budget_context,
+                },
+                shared_vars=None,
+            )
+            runner_result = await asyncio.wait_for(
+                asyncio.to_thread(
+                    runner.run_playbook,
+                    playbook_name=job.playbook,
+                    private_data_dir=dirs["root"],
+                    extravars={"model_response": model_response} if model_response is not None else None,
+                ),
+                timeout=_timeout,
+            )
+        except Exception:
+            shutil.rmtree(dirs["root"], ignore_errors=True)
+            raise
         return {
             "status": "created",
             "return_id": f"RET-{job.job_id}",
