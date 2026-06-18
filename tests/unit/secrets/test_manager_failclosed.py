@@ -222,3 +222,47 @@ def test_connect_https_defaults_tls_verify_true(monkeypatch: pytest.MonkeyPatch)
     mgr.connect()
 
     assert captured["verify"] is True
+
+
+# --- scan_for_image_updates(): exc-sanitize regression (4th site) -----------
+
+
+class _LeakyBackendError(Exception):
+    """Simulates a backend exception whose message contains secret material."""
+
+
+def test_scan_for_image_updates_does_not_leak_exc_body_in_raised_error(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """scan_for_image_updates() must not interpolate the raw exception body into
+    the raised SecretsUnavailableError message.  A hvac/openbao exception may
+    carry secret material (tokens, response bodies) in its str(); only the class
+    name is safe to surface.
+
+    Regression test for the 4th raw-exc leak site in manager.py
+    (scan_for_image_updates ~L309-311).
+    """
+    # Patch read_secret so it raises a non-InvalidPath exception whose str()
+    # contains a fake secret body — simulating an hvac error with leaked material.
+    def _raise_leaky(*_args: object, **_kwargs: object) -> None:
+        raise _LeakyBackendError("token=LEAKED_SECRET_BODY api_key=sk-abc123")
+
+    mgr = SecretsManager(client=MagicMock())
+    monkeypatch.setattr(mgr, "read_secret", _raise_leaky)
+
+    with pytest.raises(SecretsUnavailableError) as exc_info:
+        mgr.scan_for_image_updates()
+
+    msg = str(exc_info.value)
+    assert "LEAKED_SECRET_BODY" not in msg, (
+        f"raw exception body leaked into raised error: {msg!r}"
+    )
+    assert "_LeakyBackendError" in msg, (
+        f"exception class name missing from raised error: {msg!r}"
+    )
+    # The non-secret image_ref must still appear so operators can diagnose which
+    # image triggered the failure.
+    image_ref = mgr._config.local_image
+    assert image_ref in msg, (
+        f"image_ref {image_ref!r} missing from raised error: {msg!r}"
+    )

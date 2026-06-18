@@ -307,7 +307,7 @@ class SecretsManager:
             if _is_genuine_not_found(exc):
                 return None
             raise SecretsUnavailableError(
-                f"secrets backend unavailable scanning image pins for {image_ref!r}: {exc}"
+                f"secrets backend unavailable scanning image pins for {image_ref!r}: {type(exc).__name__}"
             ) from exc
         if stored is None:
             return None
