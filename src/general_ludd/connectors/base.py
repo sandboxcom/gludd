@@ -23,10 +23,21 @@ Layers
 
 from __future__ import annotations
 
+import contextlib
+import logging
+import math
 import operator
+import sys
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
+
+# D-30: per-source and global fan-out caps to prevent OOM from a runaway source.
+_PER_SOURCE_CAP = 10_000
+_GLOBAL_CAP = 50_000
+_BYTE_BUDGET = 50 * 1024 * 1024  # 50 MB
 
 # Valid KIND values for the four marker source subtypes.
 PIPELINE_KIND = "pipeline"
@@ -93,7 +104,16 @@ def normalized_record(
 
     Connectors should funnel every backend row through this so the facade can
     rely on all eight keys being present.
+
+    D-31: NaN/Inf guards — non-finite ts or value are set to None so downstream
+    consumers never receive a NaN/Inf that could corrupt metrics or sort order.
     """
+    # D-31: sanitize ts
+    if ts is not None and not math.isfinite(ts):
+        ts = None
+    # D-31: sanitize value
+    if value is not None and isinstance(value, float) and not math.isfinite(value):
+        value = None
     return NormalizedRecord(
         ts=ts,
         source=source,
@@ -203,6 +223,9 @@ class Observability:
         ``query()`` raises, the exception is captured as an ``"error"``-level
         normalized record attributed to that source and the fan-out continues —
         one flaky backend never aborts the whole ``find``.
+
+        D-30: per-source cap (_PER_SOURCE_CAP) and global cap (_GLOBAL_CAP /
+        _BYTE_BUDGET) prevent a runaway source from causing OOM.
         """
         if kinds is None:
             sources = self._registry.all()
@@ -211,9 +234,13 @@ class Observability:
             sources = [s for s in self._registry.all() if s.KIND in wanted]
 
         merged: list[dict[str, Any]] = []
+        _global_count = 0
+        _byte_count = 0
         for source in sources:
+            if _global_count >= _GLOBAL_CAP or _byte_count >= _BYTE_BUDGET:
+                break
             try:
-                merged.extend(source.query(spec))
+                raw_records = source.query(spec)
             except Exception as exc:
                 # Resilience is the whole point: a single source blowing up must
                 # never abort the fan-out — capture it as an error record.
@@ -227,6 +254,24 @@ class Observability:
                     )
                 )
                 merged.append(error_rec)
+                _global_count += 1
+                continue
+            # D-30: per-source cap
+            if len(raw_records) > _PER_SOURCE_CAP:
+                logger.warning(
+                    "find(): source %r returned %d records, truncating to %d (per-source cap)",
+                    getattr(source, "name", "<unknown>"),
+                    len(raw_records),
+                    _PER_SOURCE_CAP,
+                )
+                raw_records = raw_records[:_PER_SOURCE_CAP]
+            for rec in raw_records:
+                if _global_count >= _GLOBAL_CAP or _byte_count >= _BYTE_BUDGET:
+                    break
+                merged.append(rec)
+                _global_count += 1
+                with contextlib.suppress(Exception):
+                    _byte_count += sys.getsizeof(rec)
 
         return self._sort_by_ts(merged)
 
