@@ -269,6 +269,8 @@ class TestRunGateScript:
         env = {
             **os.environ,
             "PYTEST_CMD": f'python3 -c "print(\\"{marker}\\")"',
+            # Unique lock so concurrent xdist workers don't race on the default lock.
+            "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-marker-lock-", dir="/tmp"),
         }
         result = subprocess.run(
             ["bash", str(SCRIPT)],
@@ -281,4 +283,139 @@ class TestRunGateScript:
         combined = result.stdout + result.stderr
         assert marker in combined, (
             f"PYTEST_CMD stub output '{marker}' must appear in run_gate.sh output. Got:\n{combined}"
+        )
+
+    # -----------------------------------------------------------------------
+    # Subagent guard tests (mt-5)
+    # -----------------------------------------------------------------------
+
+    def test_subagent_guard_refused_via_claude_agent_id(self) -> None:
+        """When CLAUDE_AGENT_ID is set and GLUDD_GATE_AUTHORIZED is unset,
+        run_gate.sh must exit non-zero with the refusal message and must NOT
+        create any gludd-gate-XXXXXX basetemp directory."""
+        workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
+        (workdir / ".gate-status").write_text("")
+
+        before_temps = set(glob.glob("/tmp/gludd-gate-[A-Za-z0-9]*"))
+
+        env = {
+            **os.environ,
+            "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
+            "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-subagent-lock-", dir="/tmp"),
+            "CLAUDE_AGENT_ID": "test-agent-abc123",
+        }
+        # Ensure the override is NOT set.
+        env.pop("GLUDD_GATE_AUTHORIZED", None)
+
+        result = subprocess.run(
+            ["bash", str(SCRIPT)],
+            capture_output=True,
+            text=True,
+            cwd=str(workdir),
+            env=env,
+            timeout=10,
+        )
+
+        after_temps = set(glob.glob("/tmp/gludd-gate-[A-Za-z0-9]*"))
+        new_dirs = {p for p in (after_temps - before_temps) if Path(p).is_dir()}
+
+        assert result.returncode != 0, (
+            f"Expected non-zero exit when CLAUDE_AGENT_ID is set without GLUDD_GATE_AUTHORIZED. "
+            f"Got {result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        combined = result.stdout + result.stderr
+        assert "subagent" in combined.lower(), (
+            f"Refusal message must mention 'subagent'. Got:\n{combined}"
+        )
+        assert not new_dirs, (
+            f"Refused invocation must NOT leave a basetemp dir on disk. Found: {new_dirs}"
+        )
+
+    def test_subagent_guard_refused_via_gludd_subagent(self) -> None:
+        """When GLUDD_SUBAGENT is set and GLUDD_GATE_AUTHORIZED is unset,
+        run_gate.sh must exit non-zero with the refusal message."""
+        workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
+        (workdir / ".gate-status").write_text("")
+
+        env = {
+            **os.environ,
+            "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
+            "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-subagent-lock-", dir="/tmp"),
+            "GLUDD_SUBAGENT": "1",
+        }
+        env.pop("GLUDD_GATE_AUTHORIZED", None)
+        env.pop("CLAUDE_AGENT_ID", None)
+
+        result = subprocess.run(
+            ["bash", str(SCRIPT)],
+            capture_output=True,
+            text=True,
+            cwd=str(workdir),
+            env=env,
+            timeout=10,
+        )
+
+        assert result.returncode != 0, (
+            f"Expected non-zero exit when GLUDD_SUBAGENT is set without GLUDD_GATE_AUTHORIZED. "
+            f"Got {result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        combined = result.stdout + result.stderr
+        assert "subagent" in combined.lower(), (
+            f"Refusal message must mention 'subagent'. Got:\n{combined}"
+        )
+
+    def test_subagent_guard_bypassed_with_authorized_flag(self) -> None:
+        """When CLAUDE_AGENT_ID is set but GLUDD_GATE_AUTHORIZED=1, the gate
+        must proceed normally (exit 0 with a passing PYTEST_CMD stub)."""
+        workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
+        (workdir / ".gate-status").write_text("")
+
+        result = _run_gate(
+            env_overrides={
+                "CLAUDE_AGENT_ID": "test-agent-authorized",
+                "GLUDD_GATE_AUTHORIZED": "1",
+            },
+            cwd=workdir,
+        )
+
+        assert result.returncode == 0, (
+            f"Expected exit 0 when GLUDD_GATE_AUTHORIZED=1 even with CLAUDE_AGENT_ID set. "
+            f"Got {result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        content = (workdir / ".gate-status").read_text()
+        assert "PASS 0" in content, (
+            f".gate-status must contain 'PASS 0' after authorized subagent run. Got:\n{content}"
+        )
+
+    def test_main_session_no_marker_runs_normally(self) -> None:
+        """Without any subagent markers, a clean environment must run normally
+        (exit 0, PASS 0 in .gate-status)."""
+        workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
+        (workdir / ".gate-status").write_text("")
+
+        env = {
+            **os.environ,
+            "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
+            "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-main-lock-", dir="/tmp"),
+        }
+        env.pop("CLAUDE_AGENT_ID", None)
+        env.pop("GLUDD_SUBAGENT", None)
+        env.pop("GLUDD_GATE_AUTHORIZED", None)
+
+        result = subprocess.run(
+            ["bash", str(SCRIPT)],
+            capture_output=True,
+            text=True,
+            cwd=str(workdir),
+            env=env,
+            timeout=10,
+        )
+
+        assert result.returncode == 0, (
+            f"Main session (no subagent markers) must run normally. "
+            f"Got {result.returncode}.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+        content = (workdir / ".gate-status").read_text()
+        assert "PASS 0" in content, (
+            f".gate-status must contain 'PASS 0'. Got:\n{content}"
         )
