@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
+import re
 import uuid
 from dataclasses import dataclass
 from typing import Any
@@ -14,6 +16,11 @@ from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.secrets.config import OpenBaoConfig
 
 logger = logging.getLogger(__name__)
+
+_PERMITTED_MOUNTS: frozenset[str] = frozenset(
+    os.environ.get("GLUDD_PERMITTED_MOUNTS", "secret,kv").split(",")
+)
+_PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_/-]*$")
 
 
 class SecretsUnavailableError(RuntimeError):
@@ -88,6 +95,15 @@ class SecretsManager:
         self._secret_id_accessors: dict[str, list[str]] = {}
 
     def register_alias(self, alias: SecretAlias) -> None:
+        if not _PATH_RE.match(alias.path) or ".." in alias.path.split("/"):
+            raise ValueError(
+                f"invalid secret path {alias.path!r}: must match "
+                r"^[A-Za-z0-9_][A-Za-z0-9_/-]*$ with no '..' segment"
+            )
+        if alias.mount not in _PERMITTED_MOUNTS:
+            raise ValueError(
+                f"mount {alias.mount!r} not in permitted mounts {sorted(_PERMITTED_MOUNTS)}"
+            )
         self._aliases[alias.alias] = alias
 
     def resolve(self, alias_name: str) -> str | None:
@@ -109,9 +125,9 @@ class SecretsManager:
                 return None
             # Outage / auth / TLS / network failure — fail CLOSED, do not
             # masquerade as a missing secret.
-            logger.error("Failed to resolve secret alias %s: %s", alias_name, exc)
+            logger.error("Failed to resolve secret alias %s: %s", alias_name, type(exc).__name__)
             raise SecretsUnavailableError(
-                f"secrets backend unavailable resolving alias {alias_name!r}: {exc}"
+                f"secrets backend unavailable resolving alias {alias_name!r}: {type(exc).__name__}"
             ) from exc
         return None
 
