@@ -278,6 +278,7 @@ class TestMCPClientFacade:
     async def test_mcp_client_facade_call_tool(self):
         configs = {"srv": _make_config()}
         registry = MCPToolRegistry()
+        registry.register_tool("srv", MCPTool(name="read_file"))
 
         mock_transport = MagicMock()
         mock_transport.start = AsyncMock()

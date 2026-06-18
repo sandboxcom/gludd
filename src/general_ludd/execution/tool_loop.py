@@ -50,6 +50,8 @@ class ToolCallLoop:
         Capability gate (Finding 3): a tool name that is NOT in the registry is
         rejected outright with MCPTransportError — the model cannot reach an
         unadvertised tool, and a real server_id is always supplied (never None).
+        Ambiguous names (same name on multiple servers) are also rejected with
+        a clear error message — use server_id qualifier to disambiguate.
         """
         registry = self._mcp_registry
         if registry is None:
@@ -58,7 +60,19 @@ class ToolCallLoop:
                 f"{tc_name!r}"
             )
         tool = registry.get_tool(tc_name)
-        if tool is None or not tool.server_id:
+        if tool is None:
+            # Distinguish ambiguous (name exists on multiple servers) from unknown
+            known_names = registry.tool_names()
+            if tc_name in known_names:
+                raise MCPTransportError(
+                    f"Tool {tc_name!r} is ambiguous: registered on multiple servers. "
+                    f"Use server_id qualifier to disambiguate."
+                )
+            raise MCPTransportError(
+                f"Tool {tc_name!r} is not a registered MCP tool (capability "
+                f"gate); refusing call"
+            )
+        if not tool.server_id:
             raise MCPTransportError(
                 f"Tool {tc_name!r} is not a registered MCP tool (capability "
                 f"gate); refusing call"
