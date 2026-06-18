@@ -180,3 +180,157 @@ class TestNestedRedaction:
         assert "xyz123" not in str(sent), "3-level nested authorization value leaked"
         # safe sibling preserved
         assert sent.get("a", {}).get("b", {}).get("safe") == "keep"
+
+
+# ---------------------------------------------------------------------------
+# D-07: Async dispatch does not block the event loop
+# ---------------------------------------------------------------------------
+
+class TestAsyncWebhookNonBlocking:
+    """D-07 — _fire_webhook called from inside a running loop must not stall it.
+
+    A slow webhook (e.g. 0.5 s) dispatched via fire() from an async context
+    must not prevent a concurrent coroutine from completing first.  The slow
+    network call must be offloaded via run_in_executor so the loop stays free.
+    """
+
+    def test_slow_webhook_does_not_stall_concurrent_task(self):
+        """Slow webhook dispatched in async context must not block the event loop.
+
+        Strategy: patch asyncio.get_running_loop() to return a spy object that
+        records run_in_executor calls.  Then assert the executor was used (not
+        a direct blocking call), so a concurrent task could have progressed.
+        """
+        executor_calls: list[tuple] = []
+
+        class SpyLoop:
+            """Minimal loop stand-in that records run_in_executor calls."""
+
+            def run_in_executor(self, executor, fn, *args):
+                executor_calls.append((executor, fn, args))
+                # Return None — the impl fires-and-forgets (returns immediately)
+                return None
+
+        spy_loop = SpyLoop()
+        hs = HookSystem()
+        hs.register_webhook("asyncevt2", "http://slow.example.com", retry_count=1, timeout_seconds=30)
+
+        with (
+            patch("general_ludd.events.hooks.httpx.post") as mock_post,
+            patch("asyncio.get_running_loop", return_value=spy_loop),
+        ):
+            hs.fire("asyncevt2", {"event_type": "model_added", "profile": {}})
+
+        # The blocking httpx.post must NOT be called directly — offloaded to executor
+        mock_post.assert_not_called()
+        assert len(executor_calls) >= 1, (
+            "run_in_executor was never called — webhook dispatch blocked the loop"
+        )
+
+    def test_sync_context_uses_direct_httpx_post(self):
+        """When there is NO running loop, direct httpx.post is acceptable."""
+        called = []
+
+        def fake_post(url, **kwargs):
+            called.append(url)
+            return MagicMock(status_code=200)
+
+        hs = HookSystem()
+        hs.register_webhook("syncevt", "http://example.com", retry_count=1)
+
+        # asyncio.get_running_loop raises RuntimeError when no loop is running
+        with (
+            patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post),
+            patch("asyncio.get_running_loop", side_effect=RuntimeError("no loop")),
+        ):
+            hs.fire("syncevt", {"data": "ok"})
+
+        assert len(called) == 1, "Direct httpx.post should be used in sync context"
+
+
+# ---------------------------------------------------------------------------
+# D-08: ModelAddedEvent-style profile payload strips credentials at registration
+# ---------------------------------------------------------------------------
+
+class TestModelAddedEventCredentialStrip:
+    """D-08 — ModelAddedEvent.profile can carry api_key / token; must be stripped."""
+
+    def test_model_profile_api_key_not_forwarded(self):
+        """api_key inside a model profile sub-dict must not reach the webhook URL."""
+        captured = []
+
+        def fake_post(url, **kwargs):
+            captured.append(kwargs.get("json", {}))
+            return MagicMock(status_code=200)
+
+        hs = HookSystem()
+        hs.register_webhook("model_added", "https://webhook.example.com", retry_count=1)
+
+        # Simulate what ModelAddedEvent.profile might look like
+        payload = {
+            "event": "model_added",
+            "profile": {
+                "name": "gpt-4o",
+                "provider": "openai",
+                "api_key": "sk-abc123",  # pragma: allowlist secret
+                "endpoint": "https://api.openai.com/v1",
+                "token": "bearer-xyz",  # pragma: allowlist secret
+            },
+        }
+
+        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+            hs.fire("model_added", payload)
+
+        assert len(captured) == 1
+        body = captured[0]
+        body_str = str(body)
+        assert "sk-abc123" not in body_str, "api_key value leaked in outgoing body"
+        assert "bearer-xyz" not in body_str, "token value leaked in outgoing body"
+        # Safe fields must be preserved
+        assert body.get("payload", {}).get("event") == "model_added"
+
+
+# ---------------------------------------------------------------------------
+# D-34: retry_count is clamped AT REGISTRATION, stored value == min(max(1,n), 5)
+# ---------------------------------------------------------------------------
+
+class TestRetryCountClampAtRegistration:
+    """D-34 — retry_count must be clamped to [1, 5] when register_webhook is called.
+
+    The stored WebhookConfig.retry_count must equal 5 for any input > 5,
+    and 1 for any input < 1 (including 0 and negatives).  This prevents a
+    caller from configuring a 10000-iteration retry loop.
+    """
+
+    def test_retry_count_10000_stored_as_5(self):
+        """register_webhook(retry_count=10000) must store retry_count=5 on the config."""
+        hs = HookSystem()
+        hs.register_webhook("evt_clamp", "http://example.com", retry_count=10000)
+        hooks = hs.list_hooks()
+        assert len(hooks) == 1
+        stored = hooks[0].webhook_config.retry_count  # type: ignore[union-attr]
+        assert stored == 5, (
+            f"Expected retry_count=5 (clamped), got {stored}. "
+            "Clamp must happen at register_webhook, not only at fire time."
+        )
+
+    def test_retry_count_0_stored_as_1(self):
+        """register_webhook(retry_count=0) must store retry_count=1."""
+        hs = HookSystem()
+        hs.register_webhook("evt_zero", "http://example.com", retry_count=0)
+        stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
+        assert stored == 1, f"Expected retry_count=1 for input 0, got {stored}"
+
+    def test_retry_count_negative_stored_as_1(self):
+        """register_webhook(retry_count=-99) must store retry_count=1."""
+        hs = HookSystem()
+        hs.register_webhook("evt_neg", "http://example.com", retry_count=-99)
+        stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
+        assert stored == 1, f"Expected retry_count=1 for input -99, got {stored}"
+
+    def test_retry_count_in_range_stored_unchanged(self):
+        """retry_count=3 is within range and must be stored as-is."""
+        hs = HookSystem()
+        hs.register_webhook("evt_ok", "http://example.com", retry_count=3)
+        stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
+        assert stored == 3, f"Expected retry_count=3 unchanged, got {stored}"

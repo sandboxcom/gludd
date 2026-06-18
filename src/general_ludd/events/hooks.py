@@ -105,11 +105,14 @@ class HookSystem:
         retry_count: int = 1,
         timeout_seconds: int = 10,
     ) -> str:
+        # D-34: clamp at registration — a caller-supplied retry_count must never
+        # be stored verbatim so that fire() can't loop 10000x on a slow endpoint.
+        clamped_retry = min(max(1, retry_count), 5)
         hook_id = f"hook-wh-{uuid.uuid4().hex[:8]}"
         config = WebhookConfig(
             url=url,
             headers=headers or {},
-            retry_count=retry_count,
+            retry_count=clamped_retry,
             timeout_seconds=timeout_seconds,
         )
         reg = HookRegistration(
