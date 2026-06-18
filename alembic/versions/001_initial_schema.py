@@ -5,6 +5,7 @@ Revises:
 Create Date: 2026-01-01 00:00:00.000000
 """
 
+import os
 from collections.abc import Sequence
 
 import sqlalchemy as sa
@@ -201,7 +202,22 @@ def upgrade() -> None:
     op.create_index("ix_bucket_leases_bucket_key", "bucket_leases", ["bucket_key"])
 
 
+def _require_downgrade_confirmed() -> None:
+    """D-38: guard against silent data loss on `alembic downgrade base`.
+
+    Raises RuntimeError unless the caller has explicitly set
+    ALEMBIC_DOWNGRADE_CONFIRMED=yes, making accidental full-schema drops
+    impossible without an intentional opt-in.
+    """
+    if os.environ.get("ALEMBIC_DOWNGRADE_CONFIRMED") != "yes":
+        raise RuntimeError(
+            "Downgrade of 001_initial_schema is destructive (drops all 9 tables). "
+            "Set ALEMBIC_DOWNGRADE_CONFIRMED=yes to proceed."
+        )
+
+
 def downgrade() -> None:
+    _require_downgrade_confirmed()
     op.drop_table("bucket_leases")
     op.drop_table("variable_values")
     op.drop_table("variable_namespaces")

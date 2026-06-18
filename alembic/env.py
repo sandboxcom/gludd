@@ -1,5 +1,6 @@
 """Alembic environment configuration."""
 
+import os
 from logging.config import fileConfig
 
 from alembic import context
@@ -10,6 +11,11 @@ from general_ludd.db.models import Base
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
+
+# D-37: honour DATABASE_URL so `alembic upgrade` on prod does not silently
+# migrate the hardcoded sqlite:///./test.db in alembic.ini.
+if db_url := os.environ.get("DATABASE_URL"):
+    config.set_main_option("sqlalchemy.url", db_url)
 
 target_metadata = Base.metadata
 
