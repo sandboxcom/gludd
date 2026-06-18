@@ -36,3 +36,4 @@ id_dsa
 *.pfx
 
 scripts/scan-secrets.py
+/.secrets/
