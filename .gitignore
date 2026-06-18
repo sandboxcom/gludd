@@ -36,3 +36,6 @@ id_dsa
 *.pfx
 
 scripts/scan-secrets.py
+
+# LLM API keys — never commit; loaded by tests/e2e/dogfood/_secrets.py
+/.secrets/
