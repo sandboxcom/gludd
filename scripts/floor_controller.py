@@ -1,0 +1,208 @@
+#!/usr/bin/env python3
+"""Floor controller — single integration point that composes the three floor tools.
+
+PROBLEM BEING SOLVED:
+    floor_planner, agent_liveness, and agent_watchdog each exist as tested, pure-ish
+    utilities, but nothing combined them into ONE decision that an orchestrator could
+    act on without custom glue code per caller.  The result was that the
+    dispatch/repoke/kill logic was "behavioral" — a human eyeballed three separate
+    outputs and decided.  This module is that composition layer.
+
+WHAT ``decide`` DOES:
+    1. Calls ``floor_planner.plan`` for the *dispatch count*: how many new agents
+       should be launched right now (pre-drain-aware, ceiling-clamped).
+    2. Iterates every inflight agent, calls ``agent_watchdog.classify_tail`` on its
+       tail text + age, and routes it to one of three buckets:
+         - repoke_ids : LIKELY_STALLED_INCOMPLETE — agent is alive but stuck; poke it
+         - kill_ids   : DONE but not reaped (idling); safe to reap / untrack
+         - (neither)  : ACTIVE — leave it alone
+    3. Returns a plain dict so the orchestrator can JSON-serialise it, log it, or
+       pattern-match on it without importing this module.
+
+PURE / DETERMINISTIC:
+    ``decide`` has NO side effects: it does not spawn processes, write files, or read
+    the filesystem.  All inputs come in via parameters (counts, ages, tail texts) so
+    the function is fully unit-testable with synthetic data.
+
+CLI (``make floor-plan``):
+    Reads a JSON blob from stdin or a file (via the STATE= Makefile variable) of the
+    form::
+
+        {
+          "live": 4,
+          "inflight": [
+            {"id": "agent-abc", "age_seconds": 300, "tail": "Let me continue..."},
+            {"id": "agent-def", "age_seconds": 30,  "tail": "result: done"}
+          ],
+          "floor":   6,
+          "target":  10,
+          "ceiling": 12
+        }
+
+    and prints the decision as JSON.
+"""
+from __future__ import annotations
+
+import importlib.util
+import json
+import sys
+from pathlib import Path
+from typing import Any
+
+# ---------------------------------------------------------------------------
+# Dynamic import of sibling scripts so this module works both as a script
+# (python scripts/floor_controller.py) AND when imported from the tests dir
+# without the scripts/ directory on sys.path.
+# ---------------------------------------------------------------------------
+
+_SCRIPTS = Path(__file__).resolve().parent
+
+
+def _load(name: str):  # type: ignore[return]
+    spec = importlib.util.spec_from_file_location(name, _SCRIPTS / f"{name}.py")
+    assert spec and spec.loader, f"cannot find scripts/{name}.py"
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+_floor_planner = _load("floor_planner")
+_agent_watchdog = _load("agent_watchdog")
+
+# Re-export the enums/types callers may want.
+State = _agent_watchdog.State
+plan = _floor_planner.plan
+classify_tail = _agent_watchdog.classify_tail
+
+
+# ---------------------------------------------------------------------------
+# Public API
+# ---------------------------------------------------------------------------
+
+
+def decide(
+    live_agents: int,
+    inflight: list[dict[str, Any]],
+    floor: int = 6,
+    target: int = 10,
+    ceiling: int = 12,
+    watchdog_window: float = _agent_watchdog.DEFAULT_WINDOW_SECS,
+) -> dict[str, Any]:
+    """Produce a composite orchestration plan.
+
+    Parameters
+    ----------
+    live_agents:
+        Current ground-truth live count (e.g. from ``agent_liveness.live_count``).
+    inflight:
+        A list of agent descriptors, each a dict with at least:
+          - ``"id"``          : str  — opaque agent identifier
+          - ``"age_seconds"`` : float — seconds since last transcript write
+          - ``"tail"``        : str  — last portion of the agent's output transcript
+    floor:
+        Minimum concurrency to hold.
+    target:
+        Desired steady-state concurrency.
+    ceiling:
+        Hard maximum concurrency (never exceeded post-dispatch).
+    watchdog_window:
+        Passed to ``classify_tail``; files modified within this many seconds are
+        ACTIVE (not stalled).
+
+    Returns
+    -------
+    A dict::
+
+        {
+          "dispatch_n":  int,        # how many new agents to launch
+          "repoke_ids":  [str, ...], # ids of stalled-but-incomplete agents to repoke
+          "kill_ids":    [str, ...], # ids of DONE/idle agents safe to reap
+          "reason":      str,        # human-readable summary from floor_planner
+          "planner":     {...},      # full floor_planner.plan output (for logging)
+        }
+    """
+    # --- 1. Classify every inflight agent -----------------------------------
+    repoke_ids: list[str] = []
+    kill_ids: list[str] = []
+
+    for agent in inflight:
+        agent_id: str = str(agent.get("id", "unknown"))
+        age: float = float(agent.get("age_seconds", 0.0))
+        tail: str = str(agent.get("tail", ""))
+
+        state, _reason = classify_tail(tail, age, watchdog_window)
+
+        if state == State.LIKELY_STALLED_INCOMPLETE:
+            repoke_ids.append(agent_id)
+        elif state == State.DONE:
+            kill_ids.append(agent_id)
+        # ACTIVE -> no action
+
+    # --- 2. Ask the planner for a dispatch count ----------------------------
+    # Pass the ages of ACTIVE inflight agents to the drain-lookahead logic.
+    # Agents already going into repoke/kill are counted as still "live" by the
+    # planner (they haven't been reaped yet), so their ages feed the drain
+    # predictor correctly.
+    inflight_ages: list[float] = [
+        float(a.get("age_seconds", 0.0)) for a in inflight
+    ]
+
+    planner_result = plan(
+        live=live_agents,
+        floor=floor,
+        target=target,
+        ceiling=ceiling,
+        inflight_ages=inflight_ages,
+    )
+
+    dispatch_n: int = planner_result["dispatch_now"]
+
+    return {
+        "dispatch_n": dispatch_n,
+        "repoke_ids": repoke_ids,
+        "kill_ids": kill_ids,
+        "reason": planner_result["reason"],
+        "planner": planner_result,
+    }
+
+
+# ---------------------------------------------------------------------------
+# CLI
+# ---------------------------------------------------------------------------
+
+
+def _load_state(argv: list[str]) -> dict[str, Any]:
+    """Load state JSON from a file path arg or stdin."""
+    if argv and not argv[0].startswith("-"):
+        with open(argv[0]) as fh:
+            return json.load(fh)  # type: ignore[no-any-return]
+    raw = sys.stdin.read()
+    return json.loads(raw)  # type: ignore[no-any-return]
+
+
+def main(argv: list[str] | None = None) -> int:
+    if argv is None:
+        argv = sys.argv[1:]
+
+    try:
+        state = _load_state(argv)
+    except (json.JSONDecodeError, OSError, IndexError) as exc:
+        print(
+            json.dumps({"error": str(exc), "dispatch_n": 0, "repoke_ids": [], "kill_ids": [], "reason": "input error"}),
+            file=sys.stdout,
+        )
+        return 1
+
+    result = decide(
+        live_agents=int(state.get("live", 0)),
+        inflight=list(state.get("inflight", [])),
+        floor=int(state.get("floor", 6)),
+        target=int(state.get("target", 10)),
+        ceiling=int(state.get("ceiling", 12)),
+    )
+    print(json.dumps(result, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

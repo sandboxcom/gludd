@@ -36,7 +36,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check \
-        molecule-clean plan ps-gludd kill-stale kill-gate-force
+        molecule-clean plan ps-gludd kill-stale kill-gate-force \
+        floor-plan
 
 help:
 	@echo "Usage: make [target]"
@@ -714,6 +715,19 @@ floor-status:
 	@printf '[floor-status] maintained counter: '
 	@cat "$${TMPDIR:-/tmp}/claude-agent-floor.count" 2>/dev/null || cat /tmp/claude-agent-floor.count 2>/dev/null || echo "(MISSING in both \$$TMPDIR and /tmp)"
 	@$(PYTHON) scripts/agent_liveness.py
+
+# Composite orchestration decision: reads a JSON state blob (counts + ages +
+# tails) and prints a structured plan (dispatch_n, repoke_ids, kill_ids, reason).
+# Composes floor_planner + agent_liveness + agent_watchdog into one command.
+# Usage: echo '{"live":4,"inflight":[...],"floor":6,"target":10,"ceiling":12}' | make floor-plan
+# Or:    make floor-plan STATE=/tmp/state.json
+STATE ?=
+floor-plan:
+	@if [ -n "$(STATE)" ]; then \
+		$(UV) run python scripts/floor_controller.py "$(STATE)"; \
+	else \
+		$(UV) run python scripts/floor_controller.py; \
+	fi
 
 scan-secrets-baseline:
 	@echo "[scan-secrets-baseline] scanning tracked files with detect-secrets (no per-file stream; typically 30-90s on this repo)..."
