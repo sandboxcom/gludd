@@ -25,18 +25,33 @@ _SECRET_PATTERNS: tuple[str, ...] = (
 )
 
 
-def _redact_payload(payload: dict[str, Any]) -> dict[str, Any]:
-    """Return a copy of *payload* with secret-looking keys removed.
+def _redact_payload(payload: dict[str, Any], _depth: int = 0) -> dict[str, Any]:
+    """Return a redacted copy of *payload* with secret-looking keys removed.
 
     A key is considered sensitive when its lower-cased name contains any of
     the substrings listed in ``_SECRET_PATTERNS``.  All other keys are passed
     through unchanged.
+
+    Recursion: dict values are redacted recursively; list values have each
+    element redacted if it is a dict.  A depth cap of 10 prevents pathological
+    recursion on deeply nested structures.
     """
-    return {
-        k: v
-        for k, v in payload.items()
-        if not any(pattern in k.lower() for pattern in _SECRET_PATTERNS)
-    }
+    if _depth > 10:
+        return payload
+    result: dict[str, Any] = {}
+    for k, v in payload.items():
+        if any(pattern in k.lower() for pattern in _SECRET_PATTERNS):
+            continue
+        if isinstance(v, dict):
+            result[k] = _redact_payload(v, _depth + 1)
+        elif isinstance(v, list):
+            result[k] = [
+                _redact_payload(item, _depth + 1) if isinstance(item, dict) else item
+                for item in v
+            ]
+        else:
+            result[k] = v
+    return result
 
 
 @dataclass
