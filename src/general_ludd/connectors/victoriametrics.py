@@ -23,11 +23,12 @@ Contract
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 KIND = "metrics"
 
@@ -48,52 +49,17 @@ class SSRFError(ValueError):
     """Raised when ``base_url`` points at a blocked internal literal host."""
 
 
-# Hostnames that always resolve to the local machine or cloud-metadata service
-# and must be rejected regardless of whether they parse as IP literals.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "ip6-localhost",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
-
-
-def _is_blocked_ip(host: str) -> bool:
-    name = host.strip().lower().rstrip(".")
-    if not name:
-        return True
-    # Strip IPv6 brackets before the name check so "[::1]" matches correctly.
-    stripped = name[1:-1] if (name.startswith("[") and name.endswith("]")) else name
-    if stripped in _BLOCKED_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(stripped)
-    except ValueError:
-        return False
-    return (
-        ip.is_private
-        or ip.is_loopback
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _validate_base_url(base_url: str) -> str:
     """Fail-closed SSRF guard on a base URL's literal host."""
     if not isinstance(base_url, str) or not base_url:
         raise SSRFError("base_url must be a non-empty string")
-    parts = urlsplit(base_url)
-    if parts.scheme not in ("http", "https"):
-        raise SSRFError(f"base_url scheme must be http/https, got {parts.scheme!r}")
-    host = parts.hostname
-    if not host:
-        raise SSRFError(f"base_url has no host: {base_url!r}")
-    if _is_blocked_ip(host):
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        parts = urlsplit(base_url)
+        host = parts.hostname or ""
+        if parts.scheme not in ("http", "https"):
+            raise SSRFError(f"base_url scheme must be http/https, got {parts.scheme!r}")
+        if not host:
+            raise SSRFError(f"base_url has no host: {base_url!r}")
         raise SSRFError(f"base_url host {host!r} is a blocked internal address")
     return base_url.rstrip("/")
 

@@ -24,7 +24,6 @@ Design constraints (see the connector contract):
 
 from __future__ import annotations
 
-import ipaddress
 import json
 import os
 import urllib.error
@@ -32,6 +31,8 @@ import urllib.parse
 import urllib.request
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["HttpResponse", "SentrySource", "Transport"]
 
@@ -106,48 +107,6 @@ class _UrllibTransport:
             return HttpResponse(status=int(exc.code), body=body)
 
 
-# Hosts that must never be reached (SSRF guard). Literal checks only — no DNS.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "ip6-localhost",
-        "ip6-loopback",
-    }
-)
-
-
-def _host_is_blocked(host: str) -> bool:
-    """Return ``True`` if ``host`` is a literal address that must be blocked.
-
-    Blocks loopback, private, link-local, reserved, multicast, and unspecified
-    IP literals, plus a small set of well-known loopback hostnames. Does *not*
-    resolve DNS: a name like ``sentry.example.com`` is allowed (egress policy is
-    the operator's responsibility), per the "no DNS" requirement.
-    """
-
-    h = host.strip().lower()
-    if not h:
-        return True
-    # Strip IPv6 brackets if present.
-    if h.startswith("[") and h.endswith("]"):
-        h = h[1:-1]
-    if h in _BLOCKED_HOSTNAMES:
-        return True
-    try:
-        ip = ipaddress.ip_address(h)
-    except ValueError:
-        # Not an IP literal — a DNS name. We do not resolve it (no DNS).
-        return False
-    return bool(
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 class SentrySource:
     """Sentry issues/events connector.
 
@@ -214,7 +173,7 @@ class SentrySource:
         host = parts.hostname
         if not host:
             raise ValueError(f"base_url has no host: {base_url!r}")
-        if _host_is_blocked(host):
+        if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
             raise ValueError(f"base_url host is blocked (SSRF guard): {host!r}")
 
     # ------------------------------------------------------------------ #
