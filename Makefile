@@ -291,6 +291,18 @@ gate:
 ps-pytest:
 	@pgrep -fl 'pytest|molecule test|make gate' || echo "NONE running"
 
+# Block until no pytest/molecule/gate process is running, so a follow-on
+# pytest invocation does not collide with another agent's in-flight gate
+# (basetemp keep-last-3 rotation incident). Polls every 15s up to ~30 min.
+wait-pytest-idle:
+	@for i in $$(seq 1 120); do \
+		if ! pgrep -f 'pytest|molecule test|make gate' >/dev/null 2>&1; then \
+			echo "PYTEST_IDLE"; exit 0; \
+		fi; \
+		sleep 15; \
+	done; \
+	echo "TIMEOUT: pytest still running after ~30min"; exit 1
+
 # Read-only census of every gludd-related process (pytest/molecule/uv/python
 # daemon/gate/ansible) with PID, PPID, elapsed time and command. Marks each row
 # ORPHAN when its parent is PID 1 (init/launchd) — i.e. the make/agent/gate that
