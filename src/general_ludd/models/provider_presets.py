@@ -19,6 +19,8 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "display_name": "OpenRouter",
         "free_models_endpoint": "https://openrouter.ai/api/v1/models",
         "supports_free_models": True,
+        "cost_per_input_token": 0.000001,
+        "cost_per_output_token": 0.000002,
     },
     "openai": {
         "api_base_url": "https://api.openai.com/v1",
@@ -30,6 +32,8 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "display_name": "OpenAI",
         "free_models_endpoint": None,
         "supports_free_models": False,
+        "cost_per_input_token": 0.0000025,
+        "cost_per_output_token": 0.000010,
     },
     "anthropic": {
         "api_base_url": "https://api.anthropic.com/v1",
@@ -41,6 +45,8 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "display_name": "Anthropic",
         "free_models_endpoint": None,
         "supports_free_models": False,
+        "cost_per_input_token": 0.000003,
+        "cost_per_output_token": 0.000015,
     },
     "zai": {
         "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
@@ -52,6 +58,8 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "display_name": "Z.AI / GLM",
         "free_models_endpoint": None,
         "supports_free_models": False,
+        "cost_per_input_token": 0.0000007,
+        "cost_per_output_token": 0.0000007,
     },
     "groq": {
         "api_base_url": "https://api.groq.com/openai/v1",
@@ -63,6 +71,8 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "display_name": "Groq",
         "free_models_endpoint": None,
         "supports_free_models": False,
+        "cost_per_input_token": 0.00000027,
+        "cost_per_output_token": 0.00000027,
     },
     "deepseek": {
         "api_base_url": "https://api.deepseek.com/v1",
@@ -74,6 +84,8 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "display_name": "DeepSeek",
         "free_models_endpoint": None,
         "supports_free_models": False,
+        "cost_per_input_token": 0.00000014,
+        "cost_per_output_token": 0.00000028,
     },
 }
 

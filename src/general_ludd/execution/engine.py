@@ -338,6 +338,10 @@ class ExecutionEngine:
         if self._benchmark_recorder is not None:
             try:
                 from general_ludd.event_loop.benchmark import record_job_benchmark
+                _usage = getattr(response, "usage_metadata", {}) or {}
+                _input_tokens = _usage.get("input_tokens", _usage.get("prompt_tokens", 0)) or len(model_output) // 4
+                _output_tokens = _usage.get("output_tokens", _usage.get("completion_tokens", 0)) or 0
+                _cost_usd = getattr(response, "cost_estimate", 0.0) or 0.0
                 task = asyncio.create_task(
                     record_job_benchmark(
                         self._benchmark_recorder,
@@ -345,7 +349,10 @@ class ExecutionEngine:
                         prompt_profile=getattr(job, "prompt_profile", None),
                         work_type=job.work_type or "code",
                         success=test_exit_code == 0,
-                        input_tokens=len(model_output) // 4,
+                        input_tokens=int(_input_tokens),
+                        output_tokens=int(_output_tokens),
+                        cost_usd=float(_cost_usd),
+                        model_output=model_output,
                     )
                 )
                 self._background_tasks.add(task)
