@@ -58,7 +58,18 @@ class ToolCallLoop:
                 f"{tc_name!r}"
             )
         tool = registry.get_tool(tc_name)
-        if tool is None or not tool.server_id:
+        if tool is None:
+            # Distinguish ambiguous (same name on multiple servers) from unknown.
+            if tc_name in registry.tool_names():
+                raise MCPTransportError(
+                    f"Tool {tc_name!r} is ambiguous across multiple servers; "
+                    f"supply an explicit server_id"
+                )
+            raise MCPTransportError(
+                f"Tool {tc_name!r} is not a registered MCP tool (capability "
+                f"gate); refusing call"
+            )
+        if not tool.server_id:
             raise MCPTransportError(
                 f"Tool {tc_name!r} is not a registered MCP tool (capability "
                 f"gate); refusing call"

@@ -50,10 +50,11 @@ class TestCompositeKeyNoCollision:
         assert remaining[0].server_id == "server_b"
 
     def test_tool_names_no_duplicates_across_servers(self):
-        """tool_names() returns one entry per (server,name) pair."""
+        """tool_names() deduplicates names across servers — same name on two
+        servers counts once; a unique name on a third server is also included."""
         reg = MCPToolRegistry()
         reg.register_tool("server_a", MCPTool(name="shared_tool"))
         reg.register_tool("server_b", MCPTool(name="shared_tool"))
-        # After fix: two distinct entries in _tools keyed by composite
+        reg.register_tool("server_a", MCPTool(name="unique_tool"))
         names = reg.tool_names()
-        assert len(names) == 2
+        assert names == ["shared_tool", "unique_tool"]
