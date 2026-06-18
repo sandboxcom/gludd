@@ -230,7 +230,7 @@ class SecretsManager:
             except Exception as exc:
                 logger.warning(
                     "Failed to destroy old secret_id accessor for role %s: %s",
-                    role_name, exc,
+                    role_name, type(exc).__name__,
                 )
         # Retain only accessors minted by this rotation (i.e. drop the destroyed ones).
         current = self._secret_id_accessors.get(role_name, [])
@@ -272,9 +272,9 @@ class SecretsManager:
         except Exception as exc:
             if _is_genuine_not_found(exc):
                 return None
-            logger.error("Failed to read secret at %s: %s", path, exc)
+            logger.error("Failed to read secret at %s: %s", path, type(exc).__name__)
             raise SecretsUnavailableError(
-                f"secrets backend unavailable reading {path!r}: {exc}"
+                f"secrets backend unavailable reading {path!r}: {type(exc).__name__}"
             ) from exc
         return None
 
@@ -307,7 +307,7 @@ class SecretsManager:
             if _is_genuine_not_found(exc):
                 return None
             raise SecretsUnavailableError(
-                f"secrets backend unavailable scanning image pins for {image_ref!r}: {exc}"
+                f"secrets backend unavailable scanning image pins for {image_ref!r}: {type(exc).__name__}"
             ) from exc
         if stored is None:
             return None
