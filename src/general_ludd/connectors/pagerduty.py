@@ -13,26 +13,14 @@ Security notes:
 
 from __future__ import annotations
 
-import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
-from urllib.parse import urlparse
+
+from general_ludd.security.ssrf import is_url_blocked
 
 DEFAULT_BASE_URL = "https://api.pagerduty.com"
 DEFAULT_TIMEOUT = 15.0
 ACCEPT_HEADER = "application/vnd.pagerduty+json;version=2"
-
-# Literal hostnames that must never be reached.
-_BLOCKED_HOSTNAMES = frozenset(
-    {
-        "localhost",
-        "localhost.localdomain",
-        "ip6-localhost",
-        "ip6-loopback",
-        "metadata",
-        "metadata.google.internal",
-    }
-)
 
 
 @runtime_checkable
@@ -54,43 +42,9 @@ class HttpTransport(Protocol):
     ) -> HttpResponse: ...
 
 
-def _is_blocked_host(host: str) -> bool:
-    """Return True if *host* is a literal internal/loopback/link-local target.
-
-    No DNS resolution is performed: only the literal string is inspected.
-    Hostnames (non-IP) that are not in the explicit blocklist are allowed,
-    matching a "block known-internal literals, never resolve" policy.
-    """
-    host = host.strip().lower()
-    if not host:
-        return True
-    if host in _BLOCKED_HOSTNAMES:
-        return True
-    candidate = host
-    # Strip brackets from IPv6 literals like [::1].
-    if candidate.startswith("[") and candidate.endswith("]"):
-        candidate = candidate[1:-1]
-    try:
-        ip = ipaddress.ip_address(candidate)
-    except ValueError:
-        return False
-    return (
-        ip.is_loopback
-        or ip.is_link_local
-        or ip.is_private
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    )
-
-
 def _validate_base_url(base_url: str) -> str:
-    parsed = urlparse(base_url)
-    if parsed.scheme not in {"http", "https"}:
-        raise ValueError(f"unsupported URL scheme: {parsed.scheme!r}")
-    host = parsed.hostname or ""
-    if _is_blocked_host(host):
-        raise ValueError(f"refusing to target internal/loopback host: {host!r}")
+    if is_url_blocked(base_url, scheme_allowlist=("http", "https")):
+        raise ValueError(f"refusing to target internal/loopback host: {base_url!r}")
     return base_url.rstrip("/")
 
 
