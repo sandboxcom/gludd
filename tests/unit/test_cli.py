@@ -156,7 +156,7 @@ class TestClientCommands:
         mock_response = MagicMock()
         mock_response.status_code = 201
         mock_response.json.return_value = {"todo_id": "TODO-001", "status": "queued"}
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_add
@@ -165,10 +165,11 @@ class TestClientCommands:
                 work_type="code", description="", daemon_url="http://localhost:9000",
             )
             _cmd_add(args)
-            mock_post.assert_called_once()
-            call_kwargs = mock_post.call_args
-            assert call_kwargs[0][0] == "http://localhost:9000/api/todos"
-            body = call_kwargs[1]["json"]
+            mock_req.assert_called_once()
+            call_args = mock_req.call_args
+            assert call_args[0][0] == "POST"
+            assert call_args[0][1] == "http://localhost:9000/api/todos"
+            body = call_args[1]["json"]
             assert body["title"] == "Fix bug"
             assert body["queue"] == "core"
 
@@ -265,7 +266,7 @@ class TestClientCommands:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = [{"todo_id": "TODO-001"}]
-        with patch("httpx.get", return_value=mock_response) as mock_get:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_list
@@ -273,10 +274,11 @@ class TestClientCommands:
                 queue="core", status="queued", daemon_url="http://localhost:8000",
             )
             _cmd_list(args)
-        mock_get.assert_called_once()
-        url = mock_get.call_args[0][0]
-        assert "/api/todos" in url
-        params = mock_get.call_args[1].get("params", {})
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "GET"
+        assert "/api/todos" in call_args[0][1]
+        params = call_args[1].get("params", {})
         assert params.get("queue") == "core"
         assert params.get("status") == "queued"
 
@@ -285,15 +287,17 @@ class TestClientCommands:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "ok", "level": "debug"}
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_log_level
             args = argparse.Namespace(level="debug", daemon_url="http://localhost:8000")
             _cmd_log_level(args)
-        mock_post.assert_called_once()
-        assert "/admin/log-level" in mock_post.call_args[0][0]
-        body = mock_post.call_args[1]["json"]
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "POST"
+        assert "/admin/log-level" in call_args[0][1]
+        body = call_args[1]["json"]
         assert body["level"] == "debug"
 
     @pytest.mark.asyncio
@@ -301,31 +305,35 @@ class TestClientCommands:
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = [{"deployment_id": "DEPLOY-001"}]
-        with patch("httpx.get", return_value=mock_response) as mock_get:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_deployments
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_deployments(args)
-        mock_get.assert_called_once()
-        assert "/api/deployments" in mock_get.call_args[0][0]
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "GET"
+        assert "/api/deployments" in call_args[0][1]
 
     @pytest.mark.asyncio
     async def test_health_sends_get_to_healthz(self):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"status": "healthy"}
-        with patch("httpx.get", return_value=mock_response) as mock_get:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_health
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_health(args)
-        mock_get.assert_called_once()
-        assert "/healthz" in mock_get.call_args[0][0]
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "GET"
+        assert "/healthz" in call_args[0][1]
 
     def test_client_handles_connection_refused(self, capsys):
-        with patch("httpx.get", side_effect=httpx.ConnectError("Connection refused")):
+        with patch("httpx.request", side_effect=httpx.ConnectError("Connection refused")):
             import argparse
 
             from general_ludd.cli import _cmd_health
@@ -362,7 +370,7 @@ class TestClientCommands:
         assert "Database:" in captured.out
 
     def test_add_connection_error_message(self, capsys):
-        with patch("httpx.post", side_effect=httpx.ConnectError("Connection refused")):
+        with patch("httpx.request", side_effect=httpx.ConnectError("Connection refused")):
             import argparse
 
             from general_ludd.cli import _cmd_add
@@ -382,33 +390,37 @@ class TestClientCommands:
                 {"model_id": "meta-llama/Llama-3-8B", "pipeline_tag": "text-generation", "downloads": 100000}
             ]
         }
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_models_search
             args = argparse.Namespace(query="llama", limit=10, daemon_url="http://localhost:8000")
             _cmd_models_search(args)
-        mock_post.assert_called_once()
-        assert "/admin/models/search" in mock_post.call_args[0][0]
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "POST"
+        assert "/admin/models/search" in call_args[0][1]
 
     def test_models_downloaded_sends_get_to_daemon(self, capsys):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"models": []}
-        with patch("httpx.get", return_value=mock_response) as mock_get:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_models_downloaded
             args = argparse.Namespace(daemon_url="http://localhost:8000")
             _cmd_models_downloaded(args)
-        mock_get.assert_called_once()
-        assert "/admin/models/downloaded" in mock_get.call_args[0][0]
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "GET"
+        assert "/admin/models/downloaded" in call_args[0][1]
 
     def test_local_serve_sends_post_to_daemon(self):
         mock_response = MagicMock()
         mock_response.status_code = 200
         mock_response.json.return_value = {"server_id": "local-0", "endpoint_url": "http://localhost:8001/v1"}
-        with patch("httpx.post", return_value=mock_response) as mock_post:
+        with patch("httpx.request", return_value=mock_response) as mock_req:
             import argparse
 
             from general_ludd.cli import _cmd_local_serve
@@ -417,8 +429,10 @@ class TestClientCommands:
                 gpu_layers=-1, context_size=4096, daemon_url="http://localhost:8000",
             )
             _cmd_local_serve(args)
-        mock_post.assert_called_once()
-        assert "/admin/local-inference/start" in mock_post.call_args[0][0]
+        mock_req.assert_called_once()
+        call_args = mock_req.call_args
+        assert call_args[0][0] == "POST"
+        assert "/admin/local-inference/start" in call_args[0][1]
 
 
 class TestHotLoading:
