@@ -4,16 +4,16 @@ from __future__ import annotations
 
 import datetime
 import os
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 
 @dataclass
 class CosignKey:
     key_name: str
-    private_key: str
-    public_key: str
-    password: str | None = None
+    private_key: str = field(repr=False)
+    public_key: str = ""
+    password: str | None = field(default=None, repr=False)
     created_at: str = ""
 
 
