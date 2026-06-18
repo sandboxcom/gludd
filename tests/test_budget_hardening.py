@@ -212,6 +212,25 @@ class TestReviewerCallModelBudgetGate:
         assert content is None
         assert "boom" in (err or "")
 
+    def test_try_charge_only_denied_fail_closed(self):
+        """try_charge-ONLY guard that refuses must block the model call."""
+        rv = self._reviewer(guard=_try_charge_denied_guard())
+        # Record whether call_model was ever invoked
+        content, err = rv._call_model("some prompt")
+        assert content is None, "must not return content when try_charge denies"
+        assert err is not None
+        assert "Budget denied" in err
+        rv._gateway.call_model.assert_not_called()
+
+    def test_try_charge_only_allowed_proceeds(self):
+        """try_charge-ONLY guard with headroom must allow the model call."""
+        rv = self._reviewer(guard=_try_charge_allowed_guard())
+        rv._gateway.call_model.return_value = MagicMock(content="ok")
+        content, err = rv._call_model("some prompt")
+        assert content == "ok"
+        assert err is None
+        rv._gateway.call_model.assert_called_once()
+
 
 # ---------------------------------------------------------------------------
 # invoke_model_for_generation budget gate
@@ -274,6 +293,32 @@ class TestInvokeModelForGenerationBudgetGate:
             skill_body=None, budget_guard=_nondict_guard(),
         )
         assert result is None
+
+    def test_try_charge_only_denied_fail_closed(self):
+        """try_charge-ONLY guard that refuses must block the model call (fail-closed)."""
+        from general_ludd.models.job_invocation import invoke_model_for_generation
+        gw = self._gw()
+        result = invoke_model_for_generation(
+            gw,
+            job_id="J2", work_type="code",
+            model_profile="default", prompt_text="do stuff",
+            skill_body=None, budget_guard=_try_charge_denied_guard(),
+        )
+        assert result is None, "must return None when try_charge denies"
+        gw.call_model.assert_not_called()
+
+    def test_try_charge_only_allowed_proceeds(self):
+        """try_charge-ONLY guard with headroom must allow the model call."""
+        from general_ludd.models.job_invocation import invoke_model_for_generation
+        gw = self._gw()
+        result = invoke_model_for_generation(
+            gw,
+            job_id="J3", work_type="code",
+            model_profile="default", prompt_text="do stuff",
+            skill_body=None, budget_guard=_try_charge_allowed_guard(),
+        )
+        assert result == "generated text"
+        gw.call_model.assert_called_once()
 
 
 # ---------------------------------------------------------------------------

@@ -12,6 +12,7 @@ import subprocess
 import uuid
 from typing import Any
 
+from general_ludd.budget_guard_check import budget_pre_check
 from general_ludd.git_automation.locking import git_repo_lock
 from general_ludd.git_automation.repo import (
     _GIT_TIMEOUT_SECONDS,
@@ -219,33 +220,12 @@ class ExecutionEngine:
     def _budget_pre_check(self, guard: Any) -> str | None:
         """Run budget pre-check; return denial string or None (allowed).
 
-        Fail-CLOSED: any non-dict result, missing 'allowed' key, or unknown
-        guard interface returns a denial string. Only guard=None is an
-        intentional no-op (returns None = allowed).
+        Delegates to the shared ``budget_pre_check`` helper so engine,
+        reviewer, and job_invocation all enforce identical fail-closed
+        semantics.  See ``general_ludd.budget_guard_check`` for the
+        full contract.
         """
-        if guard is None:
-            return None
-        if hasattr(guard, "check_all_limits"):
-            try:
-                verdict = guard.check_all_limits(estimated_cost=0.0)
-            except Exception as exc:
-                return f"budget check raised: {exc}"
-            if not isinstance(verdict, dict):
-                return "budget check returned non-dict"
-            if not verdict.get("allowed", False):
-                return verdict.get("reason", "budget exhausted")
-            return None
-        if hasattr(guard, "try_charge"):
-            try:
-                verdict = guard.try_charge(cost=0.0)
-            except Exception as exc:
-                return f"budget check raised: {exc}"
-            if not isinstance(verdict, dict):
-                return "budget check returned non-dict"
-            if not verdict.get("allowed", False):
-                return verdict.get("reason", "budget exhausted")
-            return None
-        return "budget guard has unknown interface"
+        return budget_pre_check(guard)
 
     def _record_metrics(self, job: JobSpec, success: bool, tokens: int = 0) -> None:
         if self._metrics_collector is None:
