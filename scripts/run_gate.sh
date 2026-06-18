@@ -23,6 +23,35 @@
 
 set -euo pipefail
 
+# ---------------------------------------------------------------------------
+# SUBAGENT GUARD — must run before any side-effects (no basetemp, no lock).
+#
+# Full-gate runs must only be launched by the main orchestrator session.
+# Subagents that launch `make gate` / run_gate.sh get orphan-reaped when the
+# agent dies mid-run (historically killed at 1-81% complete — see mt-5).
+#
+# Detection: if any common subagent-context marker is present in the
+# environment, we refuse UNLESS the caller explicitly opts in via
+# GLUDD_GATE_AUTHORIZED=1.
+#
+# Markers checked (union — any one triggers the guard):
+#   CLAUDE_AGENT_ID   — set by the Claude Agent SDK for every subagent thread
+#   GLUDD_SUBAGENT    — set by gludd's own dispatch helpers
+#
+# To run the gate from inside a subagent on purpose (e.g. a dedicated gate
+# agent that is expected to outlive the dispatch), set GLUDD_GATE_AUTHORIZED=1.
+# ---------------------------------------------------------------------------
+_is_subagent_context() {
+    [ -n "${CLAUDE_AGENT_ID:-}" ] || [ -n "${GLUDD_SUBAGENT:-}" ]
+}
+
+if _is_subagent_context && [ "${GLUDD_GATE_AUTHORIZED:-}" != "1" ]; then
+    echo "[run_gate.sh] refusing to launch a full gate from a subagent context" \
+         "— gates must be launched by the main session;" \
+         "set GLUDD_GATE_AUTHORIZED=1 to override" >&2
+    exit 1
+fi
+
 # GATE_LOCK_FILE can be overridden in tests to give each test an isolated lock.
 LOCK_FILE="${GATE_LOCK_FILE:-/tmp/gludd-gate.lock}"
 LOG_FILE=/tmp/gludd-test-gate.txt
@@ -30,21 +59,11 @@ RC_FILE=/tmp/gludd-gate-rc
 STATUS_FILE=.gate-status
 FAILED_FILE=.gate-failed
 
-# Unique per-run basetemp (prevents shared-path collision even without the lock).
-BASETEMP=$(mktemp -d /tmp/gludd-gate-XXXXXX)
-
-# --- Cleanup trap: remove unique basetemp + release lock on any exit ---
-_cleanup() {
-    local rc=$?
-    rm -rf "${BASETEMP}" 2>/dev/null || true
-    # Releasing fd 200 (flock path) is a no-op when the PID-file path was used.
-    exec 200>&- 2>/dev/null || true
-    exit "${rc}"
-}
-trap _cleanup EXIT INT TERM
-
 # ---------------------------------------------------------------------------
 # Lock acquisition: two paths depending on whether GNU flock is present.
+#
+# IMPORTANT: basetemp is created AFTER lock acquisition so that a rejected
+# invocation never touches any /tmp/gludd-gate-XXXXXX directory.
 # ---------------------------------------------------------------------------
 _acquire_flock() {
     # fd 200 must already be open on LOCK_FILE before this is called.
@@ -116,6 +135,20 @@ else
     exec 200>/dev/null
     _acquire_pidfile
 fi
+
+# Lock acquired — now safe to create per-run basetemp and register cleanup.
+# Unique per-run basetemp (prevents shared-path collision even without the lock).
+BASETEMP=$(mktemp -d /tmp/gludd-gate-XXXXXX)
+
+# --- Cleanup trap: remove unique basetemp + release lock on any exit ---
+_cleanup() {
+    local rc=$?
+    rm -rf "${BASETEMP}" 2>/dev/null || true
+    # Releasing fd 200 (flock path) is a no-op when the PID-file path was used.
+    exec 200>&- 2>/dev/null || true
+    exit "${rc}"
+}
+trap _cleanup EXIT INT TERM
 
 # ---------------------------------------------------------------------------
 # Run pytest (or the PYTEST_CMD stub for unit testing).

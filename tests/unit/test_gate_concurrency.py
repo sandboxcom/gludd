@@ -262,23 +262,132 @@ class TestRunGateScript:
     def test_pytest_cmd_env_override_used(self) -> None:
         """PYTEST_CMD env var must be honoured (testability hook)."""
         # Use a stub that prints a marker so we can confirm it ran.
+        # Uses _run_gate so each xdist worker gets its own unique lock file
+        # and does not collide with other tests running in parallel.
+        marker = "STUB_PYTEST_MARKER_12345"
+        result = _run_gate(
+            env_overrides={"PYTEST_CMD": f'python3 -c "print(\\"{marker}\\")"'},
+        )
+        combined = result.stdout + result.stderr
+        assert marker in combined, (
+            f"PYTEST_CMD stub output '{marker}' must appear in run_gate.sh output. Got:\n{combined}"
+        )
+
+    # -----------------------------------------------------------------------
+    # Subagent guard tests (mt-5)
+    # -----------------------------------------------------------------------
+
+    def test_subagent_guard_refuses_when_claude_agent_id_set(self) -> None:
+        """run_gate.sh must refuse (exit non-zero) when CLAUDE_AGENT_ID is set
+        and GLUDD_GATE_AUTHORIZED is not 1.  No basetemp must be created.
+        """
+        before_temps = set(glob.glob("/tmp/gludd-gate-[A-Za-z0-9]*"))
         workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
         (workdir / ".gate-status").write_text("")
 
-        marker = "STUB_PYTEST_MARKER_12345"
-        env = {
-            **os.environ,
-            "PYTEST_CMD": f'python3 -c "print(\\"{marker}\\")"',
+        result = _run_gate(
+            env_overrides={
+                "CLAUDE_AGENT_ID": "test-agent-abc123",
+                # GLUDD_GATE_AUTHORIZED intentionally absent
+            },
+        )
+
+        after_temps = set(glob.glob("/tmp/gludd-gate-[A-Za-z0-9]*"))
+        new_temps = after_temps - before_temps
+
+        # Must be refused.
+        assert result.returncode != 0, (
+            "run_gate.sh must exit non-zero when CLAUDE_AGENT_ID is set without "
+            f"GLUDD_GATE_AUTHORIZED=1.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        # Must print the subagent guard message.
+        combined = result.stdout + result.stderr
+        assert "subagent" in combined.lower() or "refusing" in combined.lower(), (
+            f"Refusal message must mention 'subagent' or 'refusing'. Got:\n{combined}"
+        )
+
+        # Must NOT leave a new basetemp on disk (guard fires before mktemp).
+        leaked = {p for p in new_temps if Path(p).is_dir()}
+        assert not leaked, (
+            f"Refused subagent invocation must NOT leave a basetemp dir. Found: {leaked}"
+        )
+
+    def test_subagent_guard_refuses_when_gludd_subagent_set(self) -> None:
+        """run_gate.sh must refuse when GLUDD_SUBAGENT is set (without authorization)."""
+        result = _run_gate(
+            env_overrides={
+                "GLUDD_SUBAGENT": "1",
+                # GLUDD_GATE_AUTHORIZED intentionally absent
+            },
+        )
+
+        assert result.returncode != 0, (
+            "run_gate.sh must exit non-zero when GLUDD_SUBAGENT is set without "
+            f"GLUDD_GATE_AUTHORIZED=1.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+        combined = result.stdout + result.stderr
+        assert "subagent" in combined.lower() or "refusing" in combined.lower(), (
+            f"Refusal message must mention 'subagent' or 'refusing'. Got:\n{combined}"
+        )
+
+    def test_subagent_guard_allows_with_gate_authorized_override(self) -> None:
+        """When GLUDD_GATE_AUTHORIZED=1 is set, the gate must proceed even if a
+        subagent marker is also present.  Uses PYTEST_CMD stub so it runs in ms.
+        """
+        result = _run_gate(
+            env_overrides={
+                "CLAUDE_AGENT_ID": "test-agent-xyz",
+                "GLUDD_GATE_AUTHORIZED": "1",
+            },
+        )
+
+        assert result.returncode == 0, (
+            "run_gate.sh must exit 0 when GLUDD_GATE_AUTHORIZED=1 even if "
+            f"CLAUDE_AGENT_ID is set.\nstdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_subagent_guard_absent_when_no_markers(self) -> None:
+        """Normal invocation (no subagent markers) must proceed without restriction."""
+        # Ensure neither marker bleeds in from the outer test environment.
+        env_clean: dict[str, str] = {
+            k: v for k, v in os.environ.items()
+            if k not in ("CLAUDE_AGENT_ID", "GLUDD_SUBAGENT", "GLUDD_GATE_AUTHORIZED")
         }
+        workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
+        (workdir / ".gate-status").write_text("")
+        unique_lock = tempfile.mktemp(prefix="gludd-gate-test-lock-", dir="/tmp")
+
+        env_clean["PYTEST_CMD"] = 'python3 -c "import sys; sys.exit(0)"'
+        env_clean["GATE_LOCK_FILE"] = unique_lock
+
         result = subprocess.run(
             ["bash", str(SCRIPT)],
             capture_output=True,
             text=True,
             cwd=str(workdir),
-            env=env,
-            timeout=10,
+            env=env_clean,
+            timeout=15,
         )
-        combined = result.stdout + result.stderr
-        assert marker in combined, (
-            f"PYTEST_CMD stub output '{marker}' must appear in run_gate.sh output. Got:\n{combined}"
+
+        assert result.returncode == 0, (
+            "run_gate.sh must exit 0 for a normal (non-subagent) invocation.\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
+
+    def test_subagent_guard_message_present_in_script(self) -> None:
+        """The guard and its refusal message must be present in the script source."""
+        script_text = SCRIPT.read_text()
+        assert "CLAUDE_AGENT_ID" in script_text, (
+            "run_gate.sh must check CLAUDE_AGENT_ID as a subagent-context marker"
+        )
+        assert "GLUDD_SUBAGENT" in script_text, (
+            "run_gate.sh must check GLUDD_SUBAGENT as a subagent-context marker"
+        )
+        assert "GLUDD_GATE_AUTHORIZED" in script_text, (
+            "run_gate.sh must honour GLUDD_GATE_AUTHORIZED=1 as an opt-in override"
+        )
+        assert "refusing" in script_text.lower(), (
+            "run_gate.sh must print a 'refusing' message when the guard fires"
         )
