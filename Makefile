@@ -613,6 +613,37 @@ git-revlist-count:
 	@echo "commits B is ahead of A (A..B, should be >0):"; git rev-list --count $(A)..$(B)
 	@echo "--- commits unique to A (would be lost on ff) ---"; git log --oneline $(B)..$(A) || true
 
+# Read-only: show a commit's parent SHA + the files it touched (rebase planning).
+# Usage: make git-show-commit C=<sha>
+git-show-commit:
+	@[ -n "$(C)" ] || { echo "Usage: make git-show-commit C=<sha>"; exit 1; }
+	@echo "--- $(C) summary ---"; git log -1 --format='%H%nparent: %P%n%s' $(C)
+	@echo "--- files touched ---"; git show --stat --oneline $(C) | tail -n +2
+
+# Recreate a branch at BASE by cherry-picking a commit RANGE onto it. Used to
+# re-root mis-branched work onto its intended base WITHOUT touching the source
+# branch. NEW (the new branch name) is created at BASE, then every commit in
+# RANGE (git rev-list order, oldest-first) is cherry-picked. Aborts + restores
+# on any conflict so a half-applied branch is never left behind.
+# Usage: make git-rebranch-onto NEW=<branch> BASE=<sha> RANGE='<sha1> <sha2> ...'
+git-rebranch-onto:
+	@[ -n "$(NEW)" ] && [ -n "$(BASE)" ] && [ -n "$(RANGE)" ] || { echo "Usage: make git-rebranch-onto NEW=<branch> BASE=<sha> RANGE='<sha1> <sha2>'"; exit 1; }
+	@git rev-parse --verify "$(BASE)^{commit}" >/dev/null 2>&1 || { echo "ERROR: BASE $(BASE) is not a valid commit"; exit 1; }
+	@ORIG=$$(git rev-parse --abbrev-ref HEAD); \
+	echo "[rebranch] creating $(NEW) at $(BASE) (from $$ORIG)"; \
+	git checkout -b "$(NEW)" "$(BASE)" || { echo "ERROR: could not create $(NEW) at $(BASE)"; exit 1; }; \
+	for c in $(RANGE); do \
+		echo "[rebranch] cherry-pick $$c"; \
+		if ! git cherry-pick "$$c"; then \
+			echo "ERROR: cherry-pick $$c CONFLICTED — aborting + cleaning up"; \
+			git cherry-pick --abort 2>/dev/null || true; \
+			git checkout -f "$$ORIG" 2>/dev/null || true; \
+			git branch -D "$(NEW)" 2>/dev/null || true; \
+			exit 1; \
+		fi; \
+	done; \
+	echo "[rebranch] done: $(NEW) now at $$(git rev-parse --short HEAD) rooted on $(BASE)"
+
 # Revert working-tree changes for specific files: tracked files -> HEAD version,
 # untracked files -> deleted. Used to back a synced-but-broken agent change out
 # of the working tree without disturbing other synced work.
