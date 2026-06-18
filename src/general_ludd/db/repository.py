@@ -71,19 +71,80 @@ def _is_locked_error(exc: OperationalError) -> bool:
 
 
 class TodoRepository:
-    def __init__(self, session: AsyncSession) -> None:
+    # D-28: Fields that callers must not supply in create() — they are set by the
+    # DB/ORM (id, todo_id, created_at, updated_at) or must start at a fixed value
+    # (version=1, status=BACKLOG).  Accepting them would allow callers to forge
+    # primary keys, skip version accounting, or bypass the status machine.
+    _IMMUTABLE_FIELDS: frozenset[str] = frozenset(
+        {"id", "todo_id", "version", "created_at", "updated_at"}
+    )
+    # D-28: Maximum byte length for text columns.  Prevents callers from storing
+    # arbitrarily large blobs through the create() path.
+    _MAX_TEXT_BYTES: int = 65_536  # 64 KiB
+
+    def __init__(self, session: AsyncSession, project_id: str | None = None) -> None:
         self._session = session
+        self._project_id = project_id
+
+    @classmethod
+    def scoped(cls, session: AsyncSession, project_id: str) -> TodoRepository:
+        """Return a repository pre-scoped to *project_id*.
+
+        Every read/write method that accepts ``project_id`` will fall back to
+        this scope when the caller passes ``project_id=None`` (the default).
+        This prevents the silent cross-tenant query that the unscoped constructor
+        allows.  Admin/cross-tenant callers should use the plain constructor (or
+        pass an explicit ``project_id`` override per-call).
+        """
+        return cls(session, project_id=project_id)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _resolve_pid(self, project_id: str | None) -> str | None:
+        """Return *project_id* if explicitly supplied, else fall back to the
+        instance scope.  ``None`` is only propagated when the instance was not
+        scoped (admin / cross-tenant path)."""
+        return project_id if project_id is not None else self._project_id
+
+    @classmethod
+    def _validate_create_data(cls, todo_data: dict[str, Any]) -> None:
+        """Raise ValueError if *todo_data* contains immutable fields or oversized
+        text values (D-28).  Called before mass-assigning data to TodoModel so
+        callers cannot forge primary keys, manipulate version counters, or store
+        arbitrarily large blobs."""
+        bad_fields = cls._IMMUTABLE_FIELDS & todo_data.keys()
+        if bad_fields:
+            raise ValueError(
+                f"create() rejected: these fields are immutable and must not be "
+                f"supplied by callers: {sorted(bad_fields)}"
+            )
+        for key, value in todo_data.items():
+            if isinstance(value, str) and len(value.encode()) > cls._MAX_TEXT_BYTES:
+                raise ValueError(
+                    f"create() rejected: field '{key}' exceeds the "
+                    f"{cls._MAX_TEXT_BYTES}-byte limit "
+                    f"({len(value.encode())} bytes)"
+                )
 
     async def create(self, todo_data: dict[str, Any]) -> TodoModel:
+        # D-28: validate before mass-assignment so callers cannot forge primary
+        # keys, skip version accounting, or store oversized blobs.
+        self._validate_create_data(todo_data)
         todo = TodoModel(**todo_data)
+        # D-28: enforce version=1 regardless of what the caller passed (already
+        # blocked above, but belt-and-suspenders guard for future callers).
+        todo.version = 1
         self._session.add(todo)
         await self._session.flush()
         return todo
 
     async def get_by_id(self, todo_id: str, project_id: str | None = None) -> TodoModel | None:
+        _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.todo_id == todo_id)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
@@ -96,7 +157,8 @@ class TodoRepository:
     ) -> TodoModel:
         from sqlalchemy import update as _update
 
-        todo = await self.get_by_id(todo_id, project_id=project_id)
+        _pid = self._resolve_pid(project_id)
+        todo = await self.get_by_id(todo_id, project_id=_pid)
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
         if todo.version != expected_version:
@@ -113,8 +175,8 @@ class TodoRepository:
                 TodoModel.version == expected_version,
             )
         )
-        if project_id is not None:
-            guard = guard.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            guard = guard.where(TodoModel.project_id == _pid)
         guard = guard.values(**updates, version=expected_version + 1, updated_at=now)
         res = await self._session.execute(guard)
         if (res.rowcount or 0) != 1:  # type: ignore[attr-defined]  # CursorResult at runtime
@@ -133,9 +195,10 @@ class TodoRepository:
     async def list_by_status(
         self, status: TodoStatus, project_id: str | None = None
     ) -> list[TodoModel]:
+        _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.status == status.value)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -145,22 +208,24 @@ class TodoRepository:
         status: str | None = None,
         project_id: str | None = None,
     ) -> list[TodoModel]:
+        _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
         if queue is not None:
             stmt = stmt.where(TodoModel.queue == queue)
         if status is not None:
             stmt = stmt.where(TodoModel.status == status)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_by_work_type(
         self, work_type: str, project_id: str | None = None
     ) -> list[TodoModel]:
+        _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -177,9 +242,10 @@ class TodoRepository:
         """
         from sqlalchemy import update
 
+        _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         stmt = stmt.limit(limit)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
@@ -239,20 +305,22 @@ class TodoRepository:
 
     async def count_active(self, project_id: str | None = None) -> int:
         from sqlalchemy import func
+        _pid = self._resolve_pid(project_id)
         stmt = select(func.count()).select_from(TodoModel).where(
             TodoModel.status == TodoStatus.ACTIVE.value
         )
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar() or 0
 
     async def status_summary(self, project_id: str | None = None) -> dict[str, Any]:
         """Aggregate todo facts: counts by status / queue / work_type, oldest age,
         backlog size. Reused by the /api/facts aggregation endpoint."""
+        _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
-        if project_id is not None:
-            stmt = stmt.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         by_status: dict[str, int] = {}
@@ -293,7 +361,8 @@ class TodoRepository:
     ) -> TodoModel:
         from sqlalchemy import update as _update
 
-        todo = await self.get_by_id(todo_id, project_id=project_id)
+        _pid = self._resolve_pid(project_id)
+        todo = await self.get_by_id(todo_id, project_id=_pid)
         if todo is None:
             raise InvalidTransitionError(f"Todo {todo_id} not found")
         if todo.version != expected_version:
@@ -315,8 +384,8 @@ class TodoRepository:
                 TodoModel.status == current.value,
             )
         )
-        if project_id is not None:
-            guard = guard.where(TodoModel.project_id == project_id)
+        if _pid is not None:
+            guard = guard.where(TodoModel.project_id == _pid)
         guard = guard.values(
             status=new_status.value, version=expected_version + 1, updated_at=now
         )
