@@ -97,6 +97,46 @@ class TestDbCredentialRedaction:
         assert mock_engine.url.render_as_string.call_count >= 1
 
 
+class TestApiStatusDbFieldsNoEngine:
+    def test_db_engine_is_none_string_when_no_engine(self):
+        """db_engine must be 'None' (str) when no engine is attached."""
+        app = FastAPI()
+        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+        register(app, state)
+        client = TestClient(app)
+        with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
+            resp = client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["db_engine"] == "None", f"Expected 'None', got {data['db_engine']!r}"
+
+    def test_db_url_is_sqlite_when_no_engine(self):
+        """db_url must be 'sqlite' when no engine is attached."""
+        app = FastAPI()
+        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+        register(app, state)
+        client = TestClient(app)
+        with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
+            resp = client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["db_url"] == "sqlite", f"Expected 'sqlite', got {data['db_url']!r}"
+
+    def test_db_engine_and_db_url_differ_when_no_engine(self):
+        """The two keys must have DIFFERENT values when no engine — collapsed bug returns same."""
+        app = FastAPI()
+        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+        register(app, state)
+        client = TestClient(app)
+        with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
+            resp = client.get("/api/status")
+        data = resp.json()
+        assert data["db_engine"] != data["db_url"], (
+            f"db_engine and db_url must differ when no engine, "
+            f"but both are {data['db_engine']!r}"
+        )
+
+
 class TestFilestoreAvailability:
     def test_filestore_available_false_for_nonexistent_path(self, tmp_path):
         """filestore_available must be False when root_path does not exist on disk."""
