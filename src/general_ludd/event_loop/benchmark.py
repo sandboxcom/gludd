@@ -18,6 +18,7 @@ async def record_job_benchmark(
     input_tokens: int = 0,
     output_tokens: int = 0,
     cost_usd: float = 0.0,
+    skill_id: str | None = None,
 ) -> None:
     if recorder is None or recorder._repo is None:
         return
@@ -37,5 +38,9 @@ async def record_job_benchmark(
             "time_seconds": 0.0,
             "error_message": "" if success else "Job failed",
             "raw_output": "",
+            "skill_id": skill_id,
         })
-        logger.info("Benchmark recorded: model=%s task=%s success=%s", model_profile, work_type, success)
+        logger.info(
+            "Benchmark recorded: model=%s task=%s success=%s skill=%s",
+            model_profile, work_type, success, skill_id,
+        )

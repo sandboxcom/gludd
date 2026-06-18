@@ -633,7 +633,11 @@ class BenchmarkRepository:
             return row
         return cast(BenchmarkResultModel, await self._execute_with_session(_do))
 
-    async def get_aggregate_scores(self, task_type: str | None = None) -> list[dict[str, Any]]:
+    async def get_aggregate_scores(
+        self,
+        task_type: str | None = None,
+        skill_id: str | None = None,
+    ) -> list[dict[str, Any]]:
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
             from sqlalchemy import func
             stmt = (
@@ -641,6 +645,7 @@ class BenchmarkRepository:
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
+                    BenchmarkResultModel.skill_id,
                     func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
                     func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
@@ -659,10 +664,13 @@ class BenchmarkRepository:
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
+                    BenchmarkResultModel.skill_id,
                 )
             )
             if task_type is not None:
                 stmt = stmt.where(BenchmarkResultModel.task_type == task_type)
+            if skill_id is not None:
+                stmt = stmt.where(BenchmarkResultModel.skill_id == skill_id)
             result = await session.execute(stmt)
             rows = result.all()
             return [
@@ -670,6 +678,7 @@ class BenchmarkRepository:
                     "prompt_profile_id": r.prompt_profile_id,
                     "model_profile_id": r.model_profile_id,
                     "task_type": r.task_type,
+                    "skill_id": r.skill_id,
                     "avg_completion": r.avg_completion,
                     "avg_quality": r.avg_quality,
                     "avg_instruction": r.avg_instruction,

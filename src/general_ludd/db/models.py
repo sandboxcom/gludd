@@ -516,9 +516,16 @@ class BenchmarkResultModel(Base):
         DateTime(timezone=True), nullable=False, default=_utcnow
     )
 
+    skill_id: Mapped[str | None] = mapped_column(
+        String(128),
+        nullable=True,
+        index=True,
+    )
+
     __table_args__ = (
         Index("ix_benchmark_task_model", "task_type", "model_profile_id"),
         Index("ix_benchmark_task_prompt", "task_type", "prompt_profile_id"),
+        Index("ix_benchmark_skill_model", "skill_id", "model_profile_id"),
     )
 
 
