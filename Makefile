@@ -41,7 +41,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook
+        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
+        verify-gate-status
 
 help:
 	@echo "Usage: make [target]"
@@ -708,6 +709,11 @@ git-commit-file:
 	if [ $$AGE -gt 1800 ]; then \
 		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
 	fi
+	@echo "Verifying .gate-status provenance (HMAC + tree + freshness) ..."
+	@$(UV) run python scripts/verify_gate_status.py .gate-status || { \
+		echo "ERROR: .gate-status failed provenance check (forged or stale — run 'make gate')."; \
+		exit 1; \
+	}
 	@echo "Gate fresh and green. Committing (message file)..."
 	@git commit -F "$(FILE)"
 
@@ -1249,6 +1255,11 @@ git-commit:
 	if [ $$AGE -gt 1800 ]; then \
 		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
 	fi
+	@echo "Verifying .gate-status provenance (HMAC + tree + freshness) ..."
+	@$(UV) run python scripts/verify_gate_status.py .gate-status || { \
+		echo "ERROR: .gate-status failed provenance check (forged or stale — run 'make gate')."; \
+		exit 1; \
+	}
 	@echo "Gate fresh and green. Committing..."
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 

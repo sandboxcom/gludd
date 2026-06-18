@@ -160,10 +160,60 @@ fi
 EXIT=$(cat "${RC_FILE}" 2>/dev/null || echo 1)
 
 if [ "${EXIT}" -eq 0 ]; then
+    GATE_RESULT="PASS"
     echo "PASS 0" >> "${STATUS_FILE}"
 else
+    GATE_RESULT="FAIL"
     echo "FAIL non-zero-exit" >> "${STATUS_FILE}"
     touch "${FAILED_FILE}"
 fi
+
+# ---------------------------------------------------------------------------
+# PROVENANCE STAMP: make .gate-status unforgeable.
+#
+# Stamp the tree SHA, UTC epoch, result, and an HMAC-SHA256 signature so a
+# hand-crafted / forged .gate-status (containing only "PASS 0" etc.) is
+# rejected by the gated-commit verifier.
+#
+# Key file: ~/.config/gludd/gate.key (created 0600 on first run if absent).
+# The verifier (scripts/verify_gate_status.py) is wired into `make git-commit`.
+#
+# Threat-model note: the key lives on the local FS under the same UID as the
+# agent.  A compromised process running as the SAME user can read it.  The
+# guard is intended to block SANDBOXED subagents (worktree jails) that cannot
+# reach $HOME / ~/.config.  To harden further, replace _read_key() in
+# verify_gate_status.py with a call to the macOS Keychain
+# (security find-generic-password -w) or 1Password CLI (op read ...).
+# ---------------------------------------------------------------------------
+_TREE_SHA=$(git rev-parse HEAD^{tree} 2>/dev/null || echo "unknown")
+_EPOCH=$(date +%s)
+
+# Compute HMAC via Python (available everywhere we run pytest).
+# Uses verify_gate_status.py's compute_sig() so signing + verification share
+# the SAME code path — no drift possible.
+_SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+_VERIFIER="${_SCRIPT_DIR}/verify_gate_status.py"
+
+if [ -f "${_VERIFIER}" ]; then
+    _SIG=$(python3 - <<PYEOF 2>/dev/null
+import importlib.util, sys, os
+spec = importlib.util.spec_from_file_location("vgs", "${_VERIFIER}")
+mod = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(mod)
+print(mod.compute_sig("${_TREE_SHA}", ${_EPOCH}, "${GATE_RESULT}"))
+PYEOF
+    )
+else
+    _SIG=""
+fi
+
+{
+    echo "TREE ${_TREE_SHA}"
+    echo "EPOCH ${_EPOCH}"
+    echo "RESULT ${GATE_RESULT}"
+    if [ -n "${_SIG}" ]; then
+        echo "SIG ${_SIG}"
+    fi
+} >> "${STATUS_FILE}"
 
 exit "${EXIT}"
