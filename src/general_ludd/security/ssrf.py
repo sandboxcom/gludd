@@ -40,7 +40,10 @@ BLOCKED_HOST_NAMES = frozenset(
         "localhost.localdomain",
         "metadata",
         "metadata.google.internal",
+        "metadata.goog",  # GCP metadata alias — was in per-connector blocklists
         "instance-data",
+        "ip6-localhost",  # IPv6 loopback alias — falls through ip_address() parse
+        "ip6-loopback",  # IPv6 loopback alias — falls through ip_address() parse
     }
 )
 
@@ -71,6 +74,7 @@ def _ip_addr_is_blocked(
         or ip.is_reserved
         or ip.is_multicast
         or ip.is_unspecified
+        or not ip.is_global  # catches TEST-NET/documentation ranges (192.0.2/24 etc.)
     )
 
 
