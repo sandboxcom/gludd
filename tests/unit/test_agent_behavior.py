@@ -284,3 +284,35 @@ class TestDefaultBehaviors:
         assert b.completion_policy == "complete_all"
         assert b.self_directed_work is False
         assert b.allowed_command_patterns == ["make *"]
+
+
+class TestNeverBlockOnQuestions:
+    def test_never_block_renders_section_when_true(self):
+        b = AgentBehavior(never_block_on_questions=True)
+        result = BehaviorRenderer().render(b)
+        assert "Never pause work to ask" in result
+
+    def test_never_block_omits_section_when_false(self):
+        b = AgentBehavior(never_block_on_questions=False)
+        result = BehaviorRenderer().render(b)
+        assert "Never Block On Questions" not in result
+
+    def test_never_block_default_is_true(self):
+        b = AgentBehavior()
+        assert b.never_block_on_questions is True
+
+
+class TestRepairNotDisable:
+    def test_repair_not_disable_renders_section_when_true(self):
+        b = AgentBehavior(repair_not_disable=True)
+        result = BehaviorRenderer().render(b)
+        assert "repair the root cause" in result
+
+    def test_repair_not_disable_omits_section_when_false(self):
+        b = AgentBehavior(repair_not_disable=False)
+        result = BehaviorRenderer().render(b)
+        assert "Fix Means Repair" not in result
+
+    def test_repair_not_disable_default_is_true(self):
+        b = AgentBehavior()
+        assert b.repair_not_disable is True

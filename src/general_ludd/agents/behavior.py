@@ -47,6 +47,8 @@ class AgentBehavior(BaseModel):
     stop_conditions: list[str] = ["missing_credentials", "environment_change"]
     max_retries: int = 3
     self_improve_interval: int = 0
+    never_block_on_questions: bool = True
+    repair_not_disable: bool = True
 
     @field_validator("max_retries")
     @classmethod
@@ -235,6 +237,29 @@ class BehaviorRenderer:
             )
             sections.append("")
 
+        if behavior.never_block_on_questions:
+            sections.append("## Never Block On Questions")
+            sections.append(
+                "Never pause work to ask the user a question. Default to action: make a "
+                "reasonable assumption, state it explicitly, and keep going."
+            )
+            sections.append(
+                "Only stop for a stop_condition (missing credentials or irreversible destructive action)."
+            )
+            sections.append("")
+
+        if behavior.repair_not_disable:
+            sections.append("## Fix Means Repair, Never Disable")
+            sections.append(
+                "When something fails, repair the root cause. Do NOT disable, comment-out, "
+                "skip, xfail, or delete the feature or test to make the gate green."
+            )
+            sections.append(
+                "A disable is only legitimate as an explicitly tracked decision with a "
+                "follow-up todo — never a silent one."
+            )
+            sections.append("")
+
         return "\n".join(sections)
 
     def render_as_prompt(
@@ -257,6 +282,8 @@ def default_primary_behavior() -> AgentBehavior:
         guardrail=GuardrailConfig(config_layer=True, hook_layer=True, prompt_layer=True),
         allowed_command_patterns=["make *"],
         stop_conditions=["missing_credentials", "environment_change"],
+        never_block_on_questions=True,
+        repair_not_disable=True,
     )
 
 
@@ -272,4 +299,6 @@ def default_subagent_behavior() -> AgentBehavior:
         guardrail=GuardrailConfig(config_layer=True, hook_layer=True, prompt_layer=True),
         allowed_command_patterns=["make *"],
         stop_conditions=["missing_credentials", "environment_change"],
+        never_block_on_questions=True,
+        repair_not_disable=True,
     )

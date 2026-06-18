@@ -12,6 +12,7 @@ import subprocess
 import uuid
 from typing import Any
 
+from general_ludd.agents.behavior import AgentBehavior, BehaviorRenderer
 from general_ludd.git_automation.repo import GitAutomation
 from general_ludd.schemas.job import JobSpec
 from general_ludd.schemas.task_return import TaskReturn
@@ -55,7 +56,7 @@ def _render_skill_body(raw: str, variables: dict[str, object] | None = None) -> 
         return raw
 
 
-def _build_system_prompt(job: JobSpec) -> str:
+def _build_system_prompt(job: JobSpec, behavior: AgentBehavior | None = None) -> str:
     lines: list[str] = []
     lines.append(
         "You are a coding agent. Generate code changes for the following task."
@@ -68,7 +69,12 @@ def _build_system_prompt(job: JobSpec) -> str:
     lines.append(
         "- Prefix each file with 'FILE: <path>' followed by the content."
     )
-    return "\n".join(lines)
+    base = "\n".join(lines)
+    if behavior is not None:
+        renderer = BehaviorRenderer()
+        behavior_block = renderer.render(behavior)
+        return behavior_block + "\n\n" + base
+    return base
 
 
 def _build_user_prompt(job: JobSpec) -> str:
@@ -158,12 +164,14 @@ class ExecutionEngine:
         benchmark_recorder: Any = None,
         metrics_collector: Any = None,
         budget_guard: Any = None,
+        behavior: AgentBehavior | None = None,
     ) -> None:
         self._model_gateway = model_gateway
         self.workspace_path = workspace_path
         self._benchmark_recorder = benchmark_recorder
         self._metrics_collector = metrics_collector
         self._budget_guard = budget_guard
+        self._behavior = behavior
         self._background_tasks: set[asyncio.Task[Any]] = set()
         os.makedirs(workspace_path, exist_ok=True)
 
@@ -231,7 +239,7 @@ class ExecutionEngine:
         if is_git:
             _git_create_branch(self.workspace_path, branch_name)
 
-        system_prompt = _build_system_prompt(job)
+        system_prompt = _build_system_prompt(job, behavior=self._behavior)
         user_prompt = _build_user_prompt(job)
 
         denial = self._budget_pre_check(self._budget_guard)
