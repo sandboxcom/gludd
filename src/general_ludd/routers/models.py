@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException, Request
 
@@ -424,7 +424,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
         if _guard_active:
             try:
-                _verdict = _budget_guard.check_all_limits(estimated_cost=0.0)
+                _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
                 raise HTTPException(
                     status_code=503, detail=f"budget check raised: {_exc}"
