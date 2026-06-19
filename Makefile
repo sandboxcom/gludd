@@ -25,7 +25,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
         git-status git-init git-add git-commit git-log git-diff git-reset \
-        git-branch git-checkout git-merge git-staged \
+        git-branch git-checkout git-merge git-staged git-branch-files \
         repo-status repo-diff repo-staged repo-log \
 		feature-start feature-done test-and-commit preflight \
 		molecule-version molecule-test molecule-test-all \
@@ -43,7 +43,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
-        git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom
+        git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
+        ci-poll
 
 help:
 	@echo "Usage: make [target]"
@@ -617,6 +618,22 @@ git-is-ancestor:
 	@[ -n "$(A)" ] && [ -n "$(B)" ] || { echo "Usage: make git-is-ancestor A=<commit> B=<commit>"; exit 1; }
 	@git merge-base --is-ancestor $(A) $(B); echo "exit=$$?"
 
+# Read-only: list files a ref touches vs its merge-base with BASE (default master).
+# Usage: make git-files-vs REF=<branch> [BASE=master]
+git-files-vs:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-files-vs REF=<branch> [BASE=master]"; exit 1; }
+	@MB=$$(git merge-base $(TARGET) $(REF)); \
+	echo "=== $(REF) (merge-base with $(TARGET): $$MB) ==="; \
+	git diff --name-only $$MB $(REF)
+
+# Read-only: oneline log of a ref's commits since its merge-base with TARGET (default master).
+# Usage: make git-log-vs REF=<branch> [TARGET=master]
+git-log-vs:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-log-vs REF=<branch> [TARGET=master]"; exit 1; }
+	@MB=$$(git merge-base $(TARGET) $(REF)); \
+	echo "=== $(REF) since $$MB ==="; \
+	git log --oneline $$MB..$(REF)
+
 # Read-only rev-list counts for ff-only check.
 # Usage: make git-revlist-count A=<old> B=<new>
 # Prints: commits unique to A (must be 0 for ff) and commits B is ahead of A.
@@ -639,6 +656,12 @@ git-revert-files:
 git-log:
 	@git log --oneline -10 || echo "No git history"
 
+# List files changed in a branch vs master (commits unique to the branch).
+# Usage: make git-branch-files BR=feature/my-branch
+git-branch-files:
+	@[ -n "$(BR)" ] || { echo "Usage: make git-branch-files BR=<branch>"; exit 1; }
+	@git log --name-only --oneline master..$(BR) 2>/dev/null || echo "branch not found: $(BR)"
+
 grep:
 	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
 	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
@@ -653,6 +676,18 @@ git-ls-tracked:
 git-history-file:
 	@[ -n "$(Q)" ] || { echo "Usage: make git-history-file Q='path'"; exit 1; }
 	@git log --all --full-history --oneline -- "$(Q)" || echo "No history"
+
+# Read-only: print a file's contents at a given ref (git show <ref>:<path>).
+# Usage: make git-show MSG='<ref>:<path>'
+git-show:
+	@[ -n "$(MSG)" ] || { echo "Usage: make git-show MSG='<ref>:<path>'"; exit 1; }
+	@git show "$(MSG)"
+
+# Read-only: list files a ref touches vs its parent commit (single-commit diff).
+# Usage: make git-show-files REF=<ref>
+git-show-files:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-show-files REF=<ref>"; exit 1; }
+	@git show --name-status --oneline "$(REF)"
 
 audit-messages:
 	@$(PYTHON) scripts/audit_messages.py 2>&1 || echo "No opencode database found"
@@ -819,6 +854,30 @@ git-tag-push:
 # --- CI observability (W16) ---
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
+
+# Poll both target runs until completed (or 55-min timeout).
+# Checks runs 27795704202 (tag v0.1.0-alpha.2) and 27795703529 (master).
+ci-poll:
+	@start=$$(date +%s); poll=0; \
+	while true; do \
+		now=$$(date +%s); elapsed=$$((now - start)); \
+		poll=$$((poll + 1)); \
+		out=$$($(MAKE) --no-print-directory ci-status 2>&1); \
+		line_tag=$$(echo "$$out" | grep 27795704202 | head -1); \
+		line_master=$$(echo "$$out" | grep 27795703529 | head -1); \
+		st_tag=$$(echo "$$line_tag" | awk '{print $$1}'); \
+		st_master=$$(echo "$$line_master" | awk '{print $$1}'); \
+		echo "POLL#$$poll elapsed=$${elapsed}s"; \
+		echo "  TAG    27795704202: $$line_tag"; \
+		echo "  MASTER 27795703529: $$line_master"; \
+		if [ "$$st_tag" = "completed" ] && [ "$$st_master" = "completed" ]; then \
+			echo "BOTH_COMPLETED"; break; \
+		fi; \
+		if [ $$elapsed -ge 3300 ]; then \
+			echo "TIMEOUT 55min"; break; \
+		fi; \
+		sleep 300; \
+	done
 
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
@@ -1980,6 +2039,51 @@ test-hooks:
 	OUT=$$(printf 'NOT JSON' | GLUDD_GATE_PYTEST_RUNNING=1 bash .claude/hooks/gate_concurrency_pretool.sh 2>/dev/null); RC=$$?; \
 	[ $$RC -eq 0 ] && echo "  PASS [10f]: fail-open on garbage stdin" || { echo "  FAIL [10f]: exit $$RC"; OVERALL=FAIL; }; \
 	\
+	echo "[10g] EXEMPT: make test-count (pytest running) -> exit=0, empty (lock-free, not blocked)"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make test-count"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10g]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [10g]: silent on test-count (exempt from block)"; \
+	else echo "  FAIL [10g]: test-count should be exempt; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[10h] EXEMPT: make collect-check (pytest running) -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make collect-check"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10h]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [10h]: silent on collect-check (exempt from block)"; \
+	else echo "  FAIL [10h]: collect-check should be exempt; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[10i] EXEMPT: make test-unit TESTFILE=tests/unit/test_foo.py (pytest running) -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make test-unit TESTFILE=tests/unit/test_foo.py"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10i]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [10i]: silent on test-unit TESTFILE= (exempt from block)"; \
+	else echo "  FAIL [10i]: test-unit TESTFILE= should be exempt; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[10j] BLOCKED: make test-unit (bare, no TESTFILE) -> deny when pytest running"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make test-unit"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10j]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [10j]: deny on bare test-unit (runs full unit suite)"; \
+	else echo "  FAIL [10j]: expected deny on bare test-unit; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[10k] BLOCKED: make validate (pytest running) -> deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"command":"make validate"}}' | \
+	  GLUDD_GATE_PYTEST_RUNNING=1 \
+	  bash .claude/hooks/gate_concurrency_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [10k]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [10k]: deny on make validate (runs full suite)"; \
+	else echo "  FAIL [10k]: expected deny on make validate; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
 	echo ""; echo "--- GROUP 11: no_blocking_questions_pretool.sh (PreToolUse/AskUserQuestion) ---"; \
 	echo "[11a] AskUserQuestion tool-input -> exit=0, permissionDecision=deny, valid JSON"; \
 	OUT=$$(printf '%s' '{"tool_name":"AskUserQuestion","tool_input":{"question":"Should I proceed?","options":["Yes","No"]}}' | bash .claude/hooks/no_blocking_questions_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
@@ -2070,6 +2174,46 @@ test-hooks:
 	printf '%s' "$$SERR" | grep -q 'Traceback' || echo "  PASS [12d-notraceback]: no Traceback in stderr"; \
 	rm -f "$$_MU_STATE" "$$_MU_CFG" /tmp/gludd-hooktest-12d-out.txt; \
 	\
+	echo ""; echo "--- GROUP 13: no_flag_file_write_pretool.sh (PreToolUse/Write+Edit) ---"; \
+	echo "[13a] DENY: Write tool_input file_path=.gate-status -> exit=0, permissionDecision=deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/.gate-status","content":"lint PASS\ntest PASS\nepoch 9999999999"}}' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [13a]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [13a]: deny on Write to .gate-status"; \
+	else echo "  FAIL [13a]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[13b] DENY: Write tool_input file_path=.gate-failed -> exit=0, permissionDecision=deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/.gate-failed","content":""}}' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [13b]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [13b]: deny on Write to .gate-failed"; \
+	else echo "  FAIL [13b]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[13c] DENY: Write to foo.gate-status (*.gate-status glob) -> exit=0, deny"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/tmp/foo.gate-status","content":"PASS"}}' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC deny=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [13c]: exit $$RC"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("hookSpecificOutput",{}).get("permissionDecision")=="deny"' 2>/dev/null; then echo "  PASS [13c]: deny on Write to *.gate-status"; \
+	else echo "  FAIL [13c]: expected deny; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[13d] SILENT: Write to a normal src file -> exit=0, empty stdout"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/Users/shawnwilson/gludd/src/general_ludd/foo.py","content":"# code"}}' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [13d]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [13d]: silent on normal file write"; \
+	else echo "  FAIL [13d]: should be silent for non-flag-file; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[13e] SILENT: Write to .gate-status-report (not a flag file) -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"tool_input":{"file_path":"/tmp/.gate-status-report","content":"summary"}}' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [13e]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [13e]: silent on .gate-status-report (suffix, not exact match)"; \
+	else echo "  FAIL [13e]: should be silent for non-exact-match; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[13f] FAIL-OPEN: garbage stdin -> exit=0, empty"; \
+	OUT=$$(printf 'NOT JSON' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/dev/null); RC=$$?; \
+	[ $$RC -eq 0 ] && echo "  PASS [13f]: fail-open on garbage stdin" || { echo "  FAIL [13f]: exit $$RC"; OVERALL=FAIL; }; \
+	\
 	echo ""; \
 	echo "========================================================"; \
 	echo "  test-hooks OVERALL: $$OVERALL"; \
@@ -2104,6 +2248,17 @@ test-stop-hooks: test-hooks
 # Status Table" and scripts/check_readme_status_current.py.
 # ---------------------------------------------------------------------------
 
+# require-ci-green: Verify that HEAD (or SHA=...) has a SUCCESSFUL "Build and Release"
+# CI run. Exit 0 = green, exit 1 = red/missing (fail-closed), exit 2 = pending.
+# Used as step 0 of release-cut to block releasing on a non-green commit.
+# Usage:
+#   make require-ci-green             # checks HEAD
+#   make require-ci-green SHA=abc123  # checks a specific commit
+SHA ?=
+require-ci-green:
+	@echo "[require-ci-green] checking CI status for $$(git rev-parse --short HEAD) ..."
+	@$(UV) run python scripts/require_ci_green.py $(SHA)
+
 # Verify that README.md's "Status as of <version>" line matches the release version.
 # Usage:
 #   make check-readme-status               # reads version from pyproject.toml
@@ -2121,6 +2276,15 @@ check-readme-status:
 #   4. release-view         — confirm the published GitHub Release
 release-cut:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-cut TAG='v0.1.0-alpha.N' MSG='...'"; exit 1; }
+	@echo "[release-cut] step 0/4 — require a GREEN CI run for HEAD before releasing ..."
+	@$(MAKE) --no-print-directory require-ci-green || { \
+		echo ""; \
+		echo "RELEASE ABORTED: CI is not GREEN for HEAD (the commit being released)."; \
+		echo "  A release tag must only be cut on a commit whose 'Build and Release' run"; \
+		echo "  concluded SUCCESS. Wait for CI to pass (make ci-status), or fix-forward, then retry."; \
+		echo "  Do NOT push the tag manually — that bypasses the green-pipeline guardrail."; \
+		exit 1; \
+	}
 	@echo "[release-cut] step 1/4 — check README status table is current for $(TAG) ..."
 	@$(MAKE) --no-print-directory check-readme-status TAG='$(TAG)' || { \
 		echo ""; \
