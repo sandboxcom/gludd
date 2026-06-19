@@ -103,9 +103,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         queue: str | None = None,
         status: str | None = None,
         project_id: str | None = None,
-        limit: int = Query(100, ge=1, le=500),
+        limit: int = Query(100, ge=1),
         offset: int = Query(0, ge=0),
     ) -> list[dict[str, Any]]:
+        # Clamp (don't reject) overlarge limits to the 500-row hard cap.
+        limit = min(limit, 500)
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
