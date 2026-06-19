@@ -107,20 +107,19 @@ class TestMainExitCodes:
 
     def _run(self, tmp_path: Path, argv: list[str], monkeypatch) -> int:
         """Call main() with a monkeypatched repo root and sys.argv."""
-        monkeypatch.setattr(
-            _mod.Path,
-            "__new__",
-            # We can't easily patch Path globally, so patch the module-level helper.
-            _mod.Path.__new__,
-        )
-        # Easier: patch the two helper functions to use tmp_path instead of __file__
+        # Patch the two helper functions so main() reads from tmp_path instead of
+        # the real repo root. Capture the ORIGINAL implementations first — otherwise
+        # the replacement lambda would resolve _mod._read_pyproject_version to itself
+        # at call time (it has just been reassigned), causing infinite recursion.
+        orig_read_pyproject = _mod._read_pyproject_version
+        orig_find_status_line = _mod._find_readme_status_line
         monkeypatch.setattr(
             _mod, "_read_pyproject_version",
-            lambda _root: _mod._read_pyproject_version(tmp_path),
+            lambda _root: orig_read_pyproject(tmp_path),
         )
         monkeypatch.setattr(
             _mod, "_find_readme_status_line",
-            lambda _root: _mod._find_readme_status_line(tmp_path),
+            lambda _root: orig_find_status_line(tmp_path),
         )
         monkeypatch.setattr(sys, "argv", ["check_readme_status_current.py", *argv])
         return _mod.main()

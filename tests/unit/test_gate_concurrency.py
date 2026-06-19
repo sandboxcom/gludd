@@ -16,9 +16,18 @@ from __future__ import annotations
 
 import glob
 import os
+import re
 import subprocess
 import tempfile
 from pathlib import Path
+
+# The script's basetemp is `mktemp -d /tmp/gludd-gate-XXXXXX` → basename is
+# "gludd-gate-" followed by ONLY alphanumerics. Test artifacts (workdirs, lock
+# files) all use "gludd-gate-test-…" / "gludd-gate-…-lock-…" which contain a
+# hyphen after the prefix, so this pattern excludes them on every platform.
+# (On Linux CI tempfile.mkdtemp lands in /tmp and would otherwise pollute the
+# leak check; on macOS it lands in $TMPDIR=/var/folders and never did.)
+_SCRIPT_BASETEMP_RE = re.compile(r"^gludd-gate-[A-Za-z0-9]+$")
 
 ROOT = Path(__file__).parent.parent.parent
 SCRIPT = ROOT / "scripts" / "run_gate.sh"
@@ -234,8 +243,14 @@ class TestRunGateScript:
                 f"Rejection must include 'already running' message. Got:\n{combined}"
             )
 
-            # Must NOT leave a new basetemp on disk (cleaned up by trap or never created).
-            leaked = {p for p in new_temps if Path(p).is_dir()}
+            # Must NOT leave a new SCRIPT basetemp on disk (cleaned up by trap or
+            # never created). Match only the script's basetemp shape so this test's
+            # own workdir / lock files (which share the gludd-gate- prefix) are not
+            # mistaken for a leak.
+            leaked = {
+                p for p in new_temps
+                if Path(p).is_dir() and _SCRIPT_BASETEMP_RE.match(Path(p).name)
+            }
             assert not leaked, (
                 f"Rejected invocation must NOT leave a basetemp dir on disk. Found: {leaked}"
             )

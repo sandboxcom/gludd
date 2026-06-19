@@ -24,13 +24,13 @@ from __future__ import annotations
 
 import re
 import sys
-import os
 from pathlib import Path
 
 
 def _normalize(raw: str) -> str:
     """Strip a leading 'v' and surrounding whitespace for a case-insensitive compare."""
-    return raw.strip().lstrip("v").lower()
+    # Lowercase BEFORE removing the prefix so an uppercase 'V' is also stripped.
+    return raw.strip().lower().removeprefix("v")
 
 
 def _read_pyproject_version(repo_root: Path) -> str:

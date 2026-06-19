@@ -46,13 +46,16 @@ RC_FILE=/tmp/gludd-gate-rc
 STATUS_FILE=.gate-status
 FAILED_FILE=.gate-failed
 
-# Unique per-run basetemp (prevents shared-path collision even without the lock).
-BASETEMP=$(mktemp -d /tmp/gludd-gate-XXXXXX)
+# Unique per-run basetemp — created AFTER the lock is held (see below) so a
+# rejected second invocation never creates (nor has to clean up) a basetemp dir.
+# Empty until then; the trap guards on emptiness.
+BASETEMP=""
 
 # --- Cleanup trap: remove unique basetemp + release lock on any exit ---
 _cleanup() {
     local rc=$?
-    rm -rf "${BASETEMP}" 2>/dev/null || true
+    [ -n "${BASETEMP}" ] && rm -rf "${BASETEMP}" 2>/dev/null
+    true
     # Releasing fd 200 (flock path) is a no-op when the PID-file path was used.
     exec 200>&- 2>/dev/null || true
     exit "${rc}"
@@ -132,6 +135,11 @@ else
     exec 200>/dev/null
     _acquire_pidfile
 fi
+
+# Lock is now held — safe to create the unique per-run basetemp. Doing this
+# AFTER lock acquisition guarantees a rejected second invocation leaves no
+# basetemp dir behind at all (the rejection paths above exit before this line).
+BASETEMP=$(mktemp -d /tmp/gludd-gate-XXXXXX)
 
 # ---------------------------------------------------------------------------
 # Run pytest (or the PYTEST_CMD stub for unit testing).
