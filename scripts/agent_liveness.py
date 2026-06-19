@@ -12,48 +12,71 @@ WHY THIS EXISTS (the bug it fixes):
     hides a floor breach (reports "healthy" while the floor is actually breached)
     — the precise failure the agent-floor guardrail exists to prevent.
 
-ROBUST SIGNAL:
-    "Is this transcript being appended RIGHT NOW?" not "was it touched recently?".
-    We sample every transcript's mtime, sleep a short PROBE window, then re-sample.
-    A file is LIVE only if it GREW during the probe (the agent is still streaming
-    tool calls / tokens), UNION a small recent-write tail so an agent that just
-    emitted is not missed between writes. A COMPLETED agent's transcript is frozen,
-    so it can never grow during the probe -> never false-counted.
+DETERMINISM FIX (the wobble bug this revision addresses):
+    The prior implementation sampled mtime before and after a PROBE sleep, so two
+    rapid back-to-back ``--count`` calls could return 6 / 13 / 18 / 21 depending
+    on whether the sleep straddles an active write. Every hook that calls
+    ``--count`` got a slightly different wall-clock slice, making the floor signal
+    incoherent.
 
-BIAS (floor STABILITY, not just breach-safety):
-    A tail SHORTER than one LLM think-cycle undercounts a fleet that is all
-    mid-think (an agent blocked in a `make`/test or waiting on the model is frozen
-    for 30-90s with no transcript write) -> a FALSE floor breach -> a dispatch
-    burst -> the count spikes -> the burst finishes together -> the count craters
-    below the floor. That 1<->21 oscillation is exactly the "floor not held"
-    symptom. So the tail (default 75s) covers a full think-cycle: a live-but-quiet
-    agent is not undercounted, and a just-completed agent's final write decays out
-    of the window gradually rather than instantly, damping the crater. The
-    "grew during probe" signal remains the definitely-live core; the tail is only
-    the smoothing term. Trade-off: a genuinely-drained fleet is detected ~TAIL_SECS
-    later — a deliberate exchange of a small breach-detection delay for a steady
-    floor.
+    Solution: eliminate the probe sleep entirely. Use a SINGLE fixed wall-clock
+    window (``GLUDD_LIVENESS_WINDOW_SEC``, default 25 s) evaluated identically
+    at every call site. A transcript is LIVE if its mtime falls within that
+    window AND it does not end with a terminal result marker. No sleep → no
+    sampling variance → two consecutive calls at the same instant return the
+    same count.
 
-Format-independent and hook-independent: depends only on filesystem mtimes.
+DUAL-FILTER APPROACH (over-count fix):
+    A recently-completed agent's transcript has a fresh mtime (the final write
+    happened moments ago), so a window-only filter still counts it as live. This
+    revision adds terminal-detection as the primary filter:
+
+      1. TERMINAL DETECTION (primary): read the last non-empty line of each
+         ``.output`` JSONL file. If it is valid JSON whose ``type`` field equals
+         ``"result"`` OR whose ``subtype`` field equals ``"result"``, the agent
+         has completed — exclude it from the live count regardless of mtime.
+         Fail-open: if the last line cannot be parsed or the file is empty,
+         assume the agent is still running (never under-count a live agent).
+
+      2. SHORT WINDOW (secondary/fallback): ``GLUDD_LIVENESS_WINDOW_SEC``
+         (default 25 s). A genuinely running agent streams tool-calls every few
+         seconds, so a 25 s window catches it. A completed agent whose terminal
+         marker could not be parsed (e.g. partial final write) decays out of the
+         window within 25 s anyway. This provides defense-in-depth.
+
+    A transcript is counted LIVE iff:
+        mtime >= (now - window)  AND  NOT _is_terminal(path)
+
+BIAS (floor STABILITY):
+    The 25 s window is narrow enough to exclude completed agents within half a
+    minute, without under-counting a live agent that is temporarily quiet (e.g.
+    waiting for a long LLM call). Terminal detection catches completions
+    immediately, before the window even expires.
+
+Format-independent and hook-independent: depends only on filesystem mtimes and
+last-line JSONL content.
 Fail-safe by construction — any error yields 0 / exit 0 (callers treat 0 as
 "could not determine, dispatch toward the floor" rather than wedging).
 
 TESTABILITY:
     The transcript dir is configurable via GLUDD_TASKS_DIR so the counter can be
     unit-tested against a temp dir. FLOOR_LIVE_OVERRIDE is a test seam that skips
-    probing entirely (print the override and exit). PROBE/TAIL are env-tunable.
+    probing entirely (print the override and exit). GLUDD_LIVENESS_WINDOW_SEC is
+    env-tunable so tests can pass a short window without patching module globals.
 """
 from __future__ import annotations
 
 import glob
+import json
 import os
 import sys
 import time
 
-PROBE_SECS = float(os.environ.get("FLOOR_PROBE_SECS", "0.6"))
-# TAIL must cover a full LLM think-cycle (~30-90s) so a live agent waiting on the
-# model is not undercounted as dead — the root cause of the floor oscillation.
-TAIL_SECS = float(os.environ.get("FLOOR_TAIL_SECS", "75.0"))
+# Single fixed window constant — every call reads this identically, eliminating
+# inter-call variance caused by the old probe-sleep approach. Default 25 s: a
+# live agent streams output every few seconds so 25 s catches it; a completed
+# agent whose terminal marker is unparseable decays out quickly.
+LIVENESS_WINDOW_SEC = float(os.environ.get("GLUDD_LIVENESS_WINDOW_SEC", "25.0"))
 
 
 def _tasks_dir() -> str | None:
@@ -74,45 +97,86 @@ def _tasks_dir() -> str | None:
     return next((s + "tasks" for s in sessions if os.path.isdir(s + "tasks")), None)
 
 
+def _is_terminal(path: str) -> bool:
+    """Return True if the transcript at ``path`` ends with a completion marker.
+
+    Reads the last ~512 bytes of the file to find the last non-empty line, then
+    tries to parse it as JSON. Returns True (completed) if:
+      - ``type == "result"``  (direct result object), OR
+      - ``subtype == "result"``  (system envelope around a result)
+
+    Returns False on any exception (fail-open: assume still running if we cannot
+    determine the terminal state). An empty file also returns False (agent just
+    started, no content yet).
+    """
+    try:
+        with open(path, "rb") as fh:
+            fh.seek(0, 2)
+            size = fh.tell()
+            if size == 0:
+                return False
+            read_bytes = min(512, size)
+            fh.seek(-read_bytes, 2)
+            tail = fh.read(read_bytes)
+        lines = tail.split(b"\n")
+        # Walk backwards to find last non-empty line.
+        for line in reversed(lines):
+            stripped = line.strip()
+            if not stripped:
+                continue
+            obj = json.loads(stripped.decode("utf-8", errors="replace"))
+            if not isinstance(obj, dict):
+                return False
+            if obj.get("type") == "result":
+                return True
+            if obj.get("subtype") == "result":
+                return True
+            return False
+        return False
+    except Exception:
+        return False
+
+
 def live_count(
-    probe: float = PROBE_SECS, tail: float = TAIL_SECS
+    window: float = LIVENESS_WINDOW_SEC,
 ) -> tuple[int, int, str | None]:
     """Return ``(live, total, tasks_dir)``.
 
-    live  = transcripts that GREW during the probe window OR were written within
-            the last ``tail`` seconds (actively-streaming subagents).
+    live  = transcripts whose mtime falls within the last ``window`` seconds
+            AND whose last line does NOT indicate a terminal result. Uses a
+            single ``time.time()`` snapshot so every transcript is evaluated
+            against the SAME clock value — no probe sleep, no drift.
     total = all ``*.output`` transcripts in the resolved tasks dir.
     tasks = the resolved tasks dir (or ``None`` if unresolved).
 
-    A frozen (completed) transcript can never grow during the probe, so it is
-    only ever counted via the tail term and decays out after ``tail`` seconds.
+    A transcript is live iff BOTH conditions hold:
+        (1) mtime >= now - window  (recently active)
+        (2) NOT _is_terminal(path)  (no terminal result marker on last line)
+
+    Terminal detection is fail-open: an unparseable last line is treated as
+    non-terminal (agent assumed running). The short window provides defense-in-
+    depth for completed agents whose terminal marker could not be parsed.
     """
     tasks = _tasks_dir()
     fs = glob.glob(tasks + "/*.output") if tasks else []
 
-    def snap() -> dict[str, float]:
-        m: dict[str, float] = {}
-        for f in fs:
-            try:
-                m[f] = os.path.getmtime(f)
-            except OSError:
-                # File vanished mid-probe (agent dir cleaned up): treat as absent.
-                pass
-        return m
-
-    m1 = snap()
-    time.sleep(probe)
-    m2 = snap()
+    # Single clock snapshot — all files evaluated against the same ``now``.
     now = time.time()
+    cutoff = now - window
+
     live = 0
+    total = 0
     for f in fs:
-        if f not in m2:
+        try:
+            mtime = os.path.getmtime(f)
+        except OSError:
+            # File vanished (agent dir cleaned up): skip it.
             continue
-        grew = m2[f] > m1.get(f, 0.0)
-        recent = (now - m2[f]) < tail
-        if grew or recent:
+        total += 1
+        if mtime >= cutoff and not _is_terminal(f):
             live += 1
-    return live, len(fs), tasks
+
+    return live, total, tasks
 
 
 def main(argv: list[str]) -> int:
@@ -142,10 +206,9 @@ def main(argv: list[str]) -> int:
         print(live)
     else:
         print(
-            "[liveness] actively-streaming subagents "
-            "(transcript grew during %.1fs probe, or written <%.0fs ago): "
+            "[liveness] live subagents (window=%.0fs + terminal-detection): "
             "%d live  of %d total transcripts  (dir=%s)"
-            % (PROBE_SECS, TAIL_SECS, live, total, tasks)
+            % (LIVENESS_WINDOW_SEC, live, total, tasks)
         )
     return 0
 

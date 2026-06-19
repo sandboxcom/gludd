@@ -132,6 +132,17 @@ class TestNormalizeJoinKeys:
         twice = normalize_join_keys(once)
         assert twice["join"] == once["join"]
 
+    # Group F3: service.name, application, container_name aliases for service.
+    @pytest.mark.parametrize("alias", ["service.name", "application", "container_name"])
+    def test_service_from_aliases_group_f3(self, alias: str) -> None:
+        out = normalize_join_keys(_rec(**{alias: "checkout"}))
+        assert out["join"]["service"] == "checkout"
+
+    # Group F5: machine alias for host.
+    def test_host_from_machine_alias_group_f5(self) -> None:
+        out = normalize_join_keys(_rec(machine="es-node-01"))
+        assert out["join"]["host"] == "es-node-01"
+
     def test_heterogeneous_records_share_canonical_keys(self) -> None:
         # CloudWatch-style + Loki-style + k8s-style records for the same host.
         aws = normalize_join_keys(_rec(instance="HOST-A", traceId="trace-1"))
@@ -155,6 +166,18 @@ class TestSpanAndRequestJoinKeys:
         out = normalize_join_keys(_rec(**{alias: "r-456"}))
         assert out["join"]["request_id"] == "r-456"
 
+    # Group F1: underscore/dot span_id aliases not already covered above.
+    @pytest.mark.parametrize("alias", ["spanid", "x_b3_spanid"])
+    def test_span_id_from_aliases_group_f1(self, alias: str) -> None:
+        out = normalize_join_keys(_rec(**{alias: "s-999"}))
+        assert out["join"]["span_id"] == "s-999"
+
+    # Group F2: underscore/dot request_id aliases not already covered above.
+    @pytest.mark.parametrize("alias", ["requestid", "request.id", "correlationid", "correlation.id", "x_request_id"])
+    def test_request_id_from_aliases_group_f2(self, alias: str) -> None:
+        out = normalize_join_keys(_rec(**{alias: "r-789"}))
+        assert out["join"]["request_id"] == "r-789"
+
 
 class TestDatadogTagsFolding:
     def test_tags_list_folds_into_canonical_join_keys(self) -> None:
@@ -167,6 +190,12 @@ class TestDatadogTagsFolding:
         # A direct (non-tag) label of the same name always wins over the tag.
         out = normalize_join_keys(_rec(service="real-service", tags=["service:from-tag"]))
         assert out["join"]["service"] == "real-service"
+
+    # Group F4: span_id and request_id entries in the Datadog tags list.
+    def test_span_and_request_id_from_tags_group_f4(self) -> None:
+        out = normalize_join_keys(_rec(tags=["span_id:s-001", "request_id:r-002"]))
+        assert out["join"]["span_id"] == "s-001"
+        assert out["join"]["request_id"] == "r-002"
 
 
 # --------------------------------------------------------------------------- #
