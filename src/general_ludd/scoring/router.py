@@ -13,6 +13,7 @@ from general_ludd.schemas.benchmark import (
     RoutingDecision,
     TaskType,
 )
+from general_ludd.scoring.metric import score
 
 log = logging.getLogger(__name__)
 
@@ -43,8 +44,12 @@ class AdaptiveRouter:
         default_prompt_profile: str | None = None,
         default_model_profile: str = "default",
         max_cost_usd: float | None = None,
+        task_role: TaskType | None = None,
     ) -> RoutingDecision:
-        best = await self._get_best_from_history(task_type)
+        # D-10: when a per-task role is supplied, select its routing-role weights
+        # via weights_for(task_role); otherwise fall back to the candidate's own
+        # task_type weights (identical behavior to before).
+        best = await self._get_best_from_history(task_type, task_role=task_role)
         if best is not None:
             if max_cost_usd is not None and self._exceeds_cap(
                 best.avg_cost_usd, max_cost_usd
@@ -107,7 +112,7 @@ class AdaptiveRouter:
         return cost > cap
 
     async def _get_best_from_history(
-        self, task_type: TaskType
+        self, task_type: TaskType, task_role: TaskType | None = None
     ) -> RoutingCandidate | None:
         if self._repo is None:
             return None
@@ -146,7 +151,7 @@ class AdaptiveRouter:
         ranked = [
             (
                 self._cost_adjusted_rank(
-                    c, self._apply_quantization_penalty(c), max_cost
+                    c, self._apply_quantization_penalty(c), max_cost, task_role
                 ),
                 c,
             )
@@ -159,15 +164,17 @@ class AdaptiveRouter:
         candidate: RoutingCandidate,
         quality: float,
         max_cost: float,
+        task_role: TaskType | None = None,
     ) -> float:
         """Rank key: quality reward minus normalized-cost penalty, per task role.
 
-        Internal RANKING key only — does NOT mutate composite_score.
+        Internal RANKING key only — does NOT mutate composite_score. The W$
+        formula itself lives in ``scoring.metric.score`` (C-05); this only picks
+        the weights. D-10: prefer the explicit per-task ``task_role`` weights
+        when supplied, else fall back to the candidate's own ``task_type``.
         """
-        weights = weights_for(candidate.task_type)
-        cost = candidate.avg_cost_usd
-        cost_norm = (cost / max_cost) if (max_cost > 0 and math.isfinite(cost)) else 0.0
-        return weights.quality * quality - weights.cost * cost_norm
+        weights = weights_for(task_role if task_role is not None else candidate.task_type)
+        return score(candidate.avg_cost_usd, quality, weights, max_cost)
 
     def _apply_quantization_penalty(self, candidate: RoutingCandidate) -> float:
         score = candidate.composite_score
