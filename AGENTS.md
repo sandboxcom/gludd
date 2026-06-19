@@ -657,6 +657,38 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 7. Fix all gaps, run make test, commit green
 ```
 
+## Branch-landing integrity (codified)
+
+Three guardrails against the class of failures where commits land on the wrong
+branch, pushes silently no-op, or stale CI runs are misread as verdicts:
+
+**(a) Shared/RC branch mutations: main checkout only.**
+Mutations to a SHARED or RC branch (master, main, release/*) MUST happen on the
+main checkout (/Users/shawnwilson/gludd) or a non-isolated agent running there
+— NEVER in a worktree-isolated agent. A worktree-isolated agent branches off a
+divergent HEAD at creation time; any commits it makes go to its own branch,
+silently failing to advance the shared branch tip. The orchestrator can never
+observe the update via `git log master` on the main checkout.
+
+**(b) Verify the remote after every push.**
+After any push to sandboxcom, run:
+
+    make verify-remote BRANCH=<branch> SHA=<local-HEAD>
+
+This calls `git ls-remote sandboxcom` (using the sandboxcom SSH key, same
+pattern as `git-push-sandboxcom`) and asserts the remote tip matches the
+expected SHA. A silent "Everything up-to-date" push (where the branch was not
+actually advanced) exits non-zero with `REMOTE MISMATCH: remote=X expected=Y`.
+Never claim a push succeeded until `VERIFIED <branch>@<sha>` is printed.
+
+**(c) Never report a CI verdict whose headSha != the branch tip.**
+Use `make ci-verdict BRANCH=<branch>` instead of reading raw `ci-status`
+output. `ci-verdict` prints the latest run's headSha alongside its conclusion,
+and emits a loud `STALE RUN WARNING` if that headSha does not match the current
+local HEAD of the branch — making it structurally impossible to misread an old
+run as the verdict for a new push. A run only counts if its headSha matches the
+branch tip; otherwise the run is stale and must be discarded.
+
 This is enforced by:
 - This AGENTS.md section — proactive instruction
 - The session persistence policy — SESSION.md tracks known gaps

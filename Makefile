@@ -45,7 +45,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
-        ci-poll test-no-wait-hook
+        ci-poll test-no-wait-hook \
+        verify-remote ci-verdict \
+        git-push-branch
 
 help:
 	@echo "Usage: make [target]"
@@ -2411,3 +2413,57 @@ git-worktree-remove:
 
 git-ls-remote-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom
+
+# Assert that the sandboxcom remote tip of BRANCH == the expected SHA (short or
+# full match). Catches silent no-op pushes ("Everything up-to-date") and
+# wrong-branch commits. Exits non-zero on mismatch.
+# Usage: make verify-remote BRANCH=master SHA=<expected-sha>
+BRANCH ?=
+SHA ?=
+verify-remote:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make verify-remote BRANCH=<branch> SHA=<expected>"; exit 1; }
+	@[ -n "$(SHA)" ] || { echo "Usage: make verify-remote BRANCH=<branch> SHA=<expected>"; exit 1; }
+	@REMOTE_LINE=$$(GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom "refs/heads/$(BRANCH)" 2>&1); \
+	REMOTE_SHA=$$(echo "$$REMOTE_LINE" | awk '{print $$1}'); \
+	if [ -z "$$REMOTE_SHA" ]; then echo "REMOTE MISMATCH: branch $(BRANCH) not found on sandboxcom"; exit 1; fi; \
+	EXP="$(SHA)"; \
+	MATCH=$$(echo "$$REMOTE_SHA" | grep -c "^$${EXP}" 2>/dev/null || echo 0); \
+	if [ "$$MATCH" -ge 1 ]; then \
+		echo "VERIFIED $(BRANCH)@$${REMOTE_SHA}"; \
+	else \
+		echo "REMOTE MISMATCH: remote=$${REMOTE_SHA} expected=$${EXP}"; exit 1; \
+	fi
+
+# Print the latest CI run's headSha + conclusion for BRANCH and LOUDLY WARN if
+# that headSha != the current local HEAD of BRANCH — making stale-run misreads
+# impossible (the run must match the branch tip to count as a verdict).
+# Usage: make ci-verdict BRANCH=master
+ci-verdict:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make ci-verdict BRANCH=<branch>"; exit 1; }
+	@LOCAL_HEAD=$$(git rev-parse "$(BRANCH)" 2>/dev/null || echo "UNKNOWN"); \
+	echo "local HEAD of $(BRANCH): $$LOCAL_HEAD"; \
+	RUN_JSON=$$(gh run list -R sandboxcom/gludd -L 5 --branch "$(BRANCH)" --json headSha,conclusion,status,databaseId,createdAt 2>/dev/null || echo "[]"); \
+	echo "$$RUN_JSON" | $(PYTHON) -c " \
+import sys, json; \
+local_head = '$$LOCAL_HEAD'; \
+runs = json.load(sys.stdin); \
+if not runs: print('ci-verdict: no runs found for branch $(BRANCH)'); sys.exit(0); \
+r = runs[0]; \
+head_sha = r.get('headSha', '?'); \
+conclusion = r.get('conclusion') or r.get('status') or '?'; \
+run_id = r.get('databaseId', '?'); \
+created = r.get('createdAt', '?'); \
+print(f'Latest run {run_id} created={created}'); \
+print(f'  headSha={head_sha}  conclusion={conclusion}'); \
+if local_head != 'UNKNOWN' and not head_sha.startswith(local_head[:7]): \
+    print(); \
+    print('  !! STALE RUN WARNING: run headSha ' + head_sha + ' != local HEAD ' + local_head); \
+    print('  !! This run does NOT reflect the current branch tip — do NOT use it as a verdict.'); \
+else: \
+    print(f'  -> RUN MATCHES LOCAL HEAD: verdict = {conclusion}'); \
+"
+
+git-push-branch:
+	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$(TARGET)"
+	@echo "Pushed branch $(TARGET) to sandboxcom"
