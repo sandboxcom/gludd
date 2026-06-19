@@ -4,11 +4,6 @@ When a model turn returns a tool_call request the DynamicDispatcher routes the
 call to the correct handler by ``kind``, captures the result, and returns a
 ``DispatchResult`` that can be written into a ``VariableStore`` so the next
 prompt turn reflects reality.
-
-# TODO(integration): call DynamicDispatcher from the event-loop turn handler
-# when a model returns tool_calls, then re-render the next prompt from the
-# VariableStore.  See event_loop/loop.py _dispatch_execute_job for the
-# integration point.
 """
 
 from __future__ import annotations

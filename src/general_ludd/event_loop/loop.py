@@ -157,6 +157,7 @@ class EventLoop:
         self_improve_interval: int = 0,
         reviewer: Any | None = None,
         model_gateway: Any | None = None,
+        dispatcher: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -166,6 +167,7 @@ class EventLoop:
         self._self_improve_interval = self_improve_interval
         self._reviewer = reviewer
         self._model_gateway = model_gateway
+        self._dispatcher = dispatcher
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -947,6 +949,47 @@ class EventLoop:
                 )
             else:
                 model_response = None
+            if model_response is not None:
+                from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+                from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
+                calls = parse_tool_calls(model_response)
+                if len(calls) > MAX_CALLS_PER_REQUEST:
+                    logger.error(
+                        "EventLoop: model returned %d tool calls which exceeds cap %d — "
+                        "denying all (job %s)",
+                        len(calls),
+                        MAX_CALLS_PER_REQUEST,
+                        job_id,
+                    )
+                elif calls:
+                    if self._dispatcher is None:
+                        logger.warning(
+                            "EventLoop: model returned %d tool call(s) but no dispatcher "
+                            "is wired — skipping dispatch (job %s)",
+                            len(calls),
+                            job_id,
+                        )
+                    else:
+                        results = self._dispatcher.dispatch_all(calls)
+                        ok_count = sum(1 for r in results if r.ok)
+                        err_count = len(results) - ok_count
+                        logger.info(
+                            "EventLoop: dispatched %d tool call(s): %d ok, %d error (job %s)",
+                            len(results),
+                            ok_count,
+                            err_count,
+                            job_id,
+                        )
+                        if eff_variable_repo is not None:
+                            for r in results:
+                                if r.ok:
+                                    import contextlib as _cl
+                                    with _cl.suppress(Exception):
+                                        await eff_variable_repo.set_var(
+                                            namespace="tool_results",
+                                            key=f"tool_result:{r.name}",
+                                            value=str(r.output),
+                                        )
             self._runner.write_vars(job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
