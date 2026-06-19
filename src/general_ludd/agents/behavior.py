@@ -9,7 +9,7 @@ from __future__ import annotations
 import fnmatch
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 # Shell metacharacters that enable chaining / redirection / substitution. A
 # command containing any of these is rejected outright: the allowlist matches a
@@ -47,6 +47,8 @@ class AgentBehavior(BaseModel):
     stop_conditions: list[str] = ["missing_credentials", "environment_change"]
     max_retries: int = 3
     self_improve_interval: int = 0
+    assume_and_proceed: bool = True  # when True, record assumptions instead of blocking on questions
+    assumption_log: list[str] = Field(default_factory=list)
 
     @field_validator("max_retries")
     @classmethod
@@ -103,6 +105,16 @@ class AgentBehavior(BaseModel):
         return any(
             fnmatch.fnmatch(cmd, pattern) for pattern in self.allowed_command_patterns
         )
+
+    def record_assumption(self, question: str, assumed_answer: str) -> str:
+        """Record an assumption to the log and return a formatted string."""
+        entry = f"ASSUMPTION: {question} → assumed: {assumed_answer}"
+        self.assumption_log.append(entry)
+        return entry
+
+    def should_block_on_question(self, question: str) -> bool:
+        """Return True only when assume_and_proceed is False (i.e., blocking is needed)."""
+        return not self.assume_and_proceed
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -232,6 +244,17 @@ class BehaviorRenderer:
             )
             sections.append(
                 "Gaps found are enqueued as high-priority self_improve todos."
+            )
+            sections.append("")
+
+        if behavior.assume_and_proceed:
+            sections.append("## No-Blocking-Questions Policy")
+            sections.append(
+                "NEVER pause work to ask the user a clarifying question. "
+                "Default to action: state your assumption, record it, and proceed."
+            )
+            sections.append(
+                "Use record_assumption() to log decisions. Reserve blocking only for truly irreversible choices."
             )
             sections.append("")
 
