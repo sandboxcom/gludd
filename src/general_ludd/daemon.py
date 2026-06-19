@@ -1003,32 +1003,44 @@ def create_daemon_app(
     app.state._hardware = probe_hardware()
 
     _psk = os.environ.get("GLUDD_PSK", "")
-    app.state._psk = _psk
-    # A-3: opt-in fail-closed. Default stays open-but-warned for back-compat
-    # (the ~100 no-PSK tests expect open admin access). When GLUDD_REQUIRE_AUTH
-    # is truthy AND no PSK is configured, /admin/* (and other non-public paths)
-    # refuse with 503 instead of silently serving an unauthenticated request.
-    _require_auth = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
+    # P1 fix: FAIL-CLOSED by default when no PSK is set.
+    # Non-public paths are DENIED (503) unless the operator explicitly opts out
+    # via GLUDD_ALLOW_NO_AUTH=1 (development/test only).
+    # GLUDD_REQUIRE_AUTH is kept for backward compat: when set it forces
+    # fail-closed even if GLUDD_ALLOW_NO_AUTH=1 is also set.
+    _allow_no_auth = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
-    app.state._require_auth = _require_auth
-    # A-3: surface the no-auth posture so /healthz can advertise the degraded
-    # security stance and operators can detect an unprotected daemon.
+    _require_auth_env = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    # GLUDD_REQUIRE_AUTH overrides GLUDD_ALLOW_NO_AUTH — fail-closed wins.
+    if _require_auth_env:
+        _allow_no_auth = False
     _no_auth = not _psk
+    # When no PSK: require_auth is True (fail-closed) unless the operator has
+    # explicitly opted out with GLUDD_ALLOW_NO_AUTH=1.
+    _require_auth = _no_auth and not _allow_no_auth
+    app.state._psk = _psk
     app.state._no_auth = _no_auth
-    if _no_auth and not _require_auth:
-        # A-3: LOUD startup warning — an unprotected /admin surface is a serious
-        # posture, never a silent default.
+    app.state._require_auth = _require_auth
+    app.state._allow_no_auth = _allow_no_auth
+    if _no_auth and not _allow_no_auth:
+        # Default fail-closed posture: LOUD warning that non-public paths will
+        # be refused (503) until a PSK is configured.
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set — the daemon is running with admin "
-            "auth DISABLED (degraded/no_auth mode). The entire /admin surface is "
-            "open to any caller that can reach the port. Set GLUDD_PSK to enable "
-            "auth, or GLUDD_REQUIRE_AUTH=1 to fail closed when no PSK is set."
+            "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
+            "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
+            "For development only, set GLUDD_ALLOW_NO_AUTH=1 to allow unauthenticated "
+            "access (leaves the entire /admin surface open to any caller)."
         )
-    elif _no_auth and _require_auth:
+    elif _no_auth and _allow_no_auth:
+        # Explicit dev opt-out: LOUD warning that auth is intentionally disabled.
         logger.warning(
-            "SECURITY: GLUDD_REQUIRE_AUTH is set but GLUDD_PSK is not — "
-            "non-public paths will be REFUSED (503) until a PSK is configured."
+            "SECURITY: GLUDD_PSK is not set and GLUDD_ALLOW_NO_AUTH=1 — the "
+            "daemon is running with admin auth DISABLED (no_auth mode). The "
+            "entire /admin surface is open to any caller that can reach the port. "
+            "Set GLUDD_PSK to enable auth."
         )
 
     _PUBLIC_PATHS = {
@@ -1116,7 +1128,11 @@ def create_daemon_app(
         # fields instead.
         no_auth = bool(getattr(app.state, "_no_auth", False))
         require_auth = bool(getattr(app.state, "_require_auth", False))
-        auth_degraded = no_auth and not require_auth
+        allow_no_auth = bool(getattr(app.state, "_allow_no_auth", False))
+        # auth_degraded = no PSK AND opted-out of fail-closed (open dev mode).
+        # When no PSK and fail-closed is active, auth is not "degraded" in the
+        # permissive sense — it is enforced; the 503 is the correct response.
+        auth_degraded = no_auth and allow_no_auth
         budget_manager = getattr(app.state, "_budget_manager", None)
         budget_status = budget_manager.get_status() if budget_manager is not None else {}
         budget_exhausted = bool(budget_status.get("paused", False))
@@ -1126,6 +1142,7 @@ def create_daemon_app(
                 "reason": str(degraded)[:200],
                 "no_auth": no_auth,
                 "require_auth": require_auth,
+                "allow_no_auth": allow_no_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
                 "budget": budget_status,
@@ -1134,6 +1151,7 @@ def create_daemon_app(
             "status": "healthy",
             "no_auth": no_auth,
             "require_auth": require_auth,
+            "allow_no_auth": allow_no_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
             "budget": budget_status,
