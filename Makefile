@@ -666,6 +666,13 @@ grep:
 	@[ -n "$(Q)" ] || { echo "Usage: make grep Q='pattern' [PATH='dir']"; exit 1; }
 	@grep -rn -- "$(Q)" $(if $(PATH_),$(PATH_),src tests) || echo "No matches"
 
+# Pure-python recursive grep (system grep is absent in some sandboxes).
+# Usage: make pygrep Q='pattern' [PATH_='src tests']
+pygrep:
+	@[ -n "$(Q)" ] || { echo "Usage: make pygrep Q='pattern' [PATH_='dir']"; exit 1; }
+	@$(PYTHON) -c "import os,sys,re; q=sys.argv[1]; roots=sys.argv[2:] or ['src','tests']; pat=re.compile(re.escape(q));\
+[print(f'{p}:{i}:{ln.rstrip()}') for root in roots for dp,_,fs in os.walk(root) for f in fs if f.endswith(('.py','.cfg','.toml','.yml','.yaml')) for p in [os.path.join(dp,f)] for i,ln in enumerate(open(p,errors='ignore'),1) if pat.search(ln)]" "$(Q)" $(PATH_)
+
 git-tracked-keys:
 	@echo "=== Tracked files matching private-key / key patterns ==="
 	@git ls-files | grep -E 'id_rsa|id_ed25519|\.pem$$|_rsa$$|_rsa\.pub$$|sandboxcom_github' || echo "NONE TRACKED"
@@ -2254,6 +2261,12 @@ test-stop-hooks: test-hooks
 # Usage:
 #   make require-ci-green             # checks HEAD
 #   make require-ci-green SHA=abc123  # checks a specific commit
+# agent-count: GROUND-TRUTH count of live subagents (measured, not claimed).
+# This is the ONLY sanctioned source for any statement about how many subagents
+# are running. Dispatched-count is NOT live-count (agents drain). See AGENTS.md.
+agent-count:
+	@printf 'LIVE_AGENTS='; python3 scripts/agent_liveness.py --count 2>/dev/null || echo 0
+
 SHA ?=
 require-ci-green:
 	@echo "[require-ci-green] checking CI status for $$(git rev-parse --short HEAD) ..."

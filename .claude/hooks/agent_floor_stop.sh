@@ -20,8 +20,8 @@
 # a one-line note, not a coercion. FAIL-OPEN on any error (exit 0 = allow stop).
 
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
-CEILING="${CLAUDE_AGENT_CEILING:-12}"
+TARGET="${CLAUDE_AGENT_TARGET:-8}"
+CEILING="${CLAUDE_AGENT_CEILING:-10}"
 # REFILL: refill just into the band (hysteresis), NOT up to TARGET.
 # Clamp so that REFILL and the display band never invert when FLOOR is env-overridden
 # above CEILING (e.g. CLAUDE_AGENT_FLOOR=999 for testing). The enforcement is correct

@@ -9,7 +9,7 @@
 set +e
 
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
+TARGET="${CLAUDE_AGENT_TARGET:-8}"
 REPO="/Users/shawnwilson/gludd"
 
 live="$(cd "$REPO" 2>/dev/null && python3 scripts/agent_liveness.py --count 2>/dev/null)"

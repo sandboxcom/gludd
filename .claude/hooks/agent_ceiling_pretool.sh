@@ -5,8 +5,8 @@
 # is caught at the moment of dispatch, not only via the response-transform plugin.
 # This is the "don't run" counterpart to the floor enforcers. FAST + FAIL-OPEN.
 
-CEILING="${CLAUDE_AGENT_CEILING:-12}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
+CEILING="${CLAUDE_AGENT_CEILING:-10}"
+TARGET="${CLAUDE_AGENT_TARGET:-8}"
 
 live="$(cd /Users/shawnwilson/gludd 2>/dev/null && \
   FLOOR_PROBE_SECS="${FLOOR_PROBE_SECS:-0.5}" FLOOR_TAIL_SECS="${FLOOR_TAIL_SECS:-12}" \

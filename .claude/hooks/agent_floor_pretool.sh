@@ -8,8 +8,8 @@
 # FAST + FAIL-OPEN: short probe; any error -> emit nothing, never wedge a tool.
 
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
-TARGET="${CLAUDE_AGENT_TARGET:-10}"
-CEILING="${CLAUDE_AGENT_CEILING:-12}"
+TARGET="${CLAUDE_AGENT_TARGET:-8}"
+CEILING="${CLAUDE_AGENT_CEILING:-10}"
 
 live="$(cd /Users/shawnwilson/gludd 2>/dev/null && \
   FLOOR_PROBE_SECS="${FLOOR_PROBE_SECS:-0.5}" FLOOR_TAIL_SECS="${FLOOR_TAIL_SECS:-75}" \
