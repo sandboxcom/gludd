@@ -48,7 +48,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         ci-poll test-no-wait-hook \
         verify-remote ci-verdict \
         git-push-branch test-model-ratio-hook \
-        commit-no-verify
+        commit-no-verify \
+        git-stash-rebase-pop
 
 help:
 	@echo "Usage: make [target]"
@@ -2442,6 +2443,16 @@ git-rebase-onto:
 	@echo "[git-rebase-onto] BEFORE: $$(git rev-parse --short HEAD)"
 	@git rebase "$(REF)"
 	@echo "[git-rebase-onto] AFTER:  $$(git rev-parse --short HEAD)"
+
+# git-stash-rebase-pop: stash any unstaged changes, rebase onto REF, then
+# restore the stash. Handles the case where untracked/modified files block
+# a plain rebase. Usage: make git-stash-rebase-pop REF=<ref>
+git-stash-rebase-pop:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-stash-rebase-pop REF=<ref>"; exit 1; }
+	@echo "[git-stash-rebase-pop] stashing unstaged changes ..."
+	@git stash --include-untracked
+	@echo "[git-stash-rebase-pop] BEFORE: $$(git rev-parse --short HEAD)"
+	@git rebase "$(REF)" && echo "[git-stash-rebase-pop] AFTER:  $$(git rev-parse --short HEAD)" && git stash pop && echo "[git-stash-rebase-pop] stash restored" || { echo "[git-stash-rebase-pop] REBASE FAILED — running stash pop to restore then aborting"; git stash pop; exit 1; }
 
 # ---------------------------------------------------------------------------
 # git-worktree-list / git-worktree-remove: manage agent worktrees make-only.
