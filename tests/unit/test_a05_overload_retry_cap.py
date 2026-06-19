@@ -182,7 +182,7 @@ class TestOverloadBackoffCap:
 # ---------------------------------------------------------------------------
 
 class TestNonRetryableKinds:
-    @pytest.mark.parametrize("kind", list(_NON_RETRYABLE_KINDS))
+    @pytest.mark.parametrize("kind", sorted(_NON_RETRYABLE_KINDS, key=str))
     def test_never_retry(self, kind: TimeoutKind) -> None:
         p = TimeoutRetryPolicy()
         for attempt in range(1, 5):
