@@ -1,20 +1,24 @@
 """Unit tests for scripts/agent_liveness.py — the ground-truth live-subagent
 counter.
 
-These exercise the five guarantees the orchestrator depends on:
+These exercise the six guarantees the orchestrator depends on:
   1. A transcript written within the window is counted live (window-based signal),
   2. A stale (frozen, old) transcript is NOT counted,
   3. Two consecutive ``--count`` calls on the SAME fixture set return the SAME
      number (determinism — the regression this file guards),
   4. The FLOOR_LIVE_OVERRIDE test seam short-circuits all probing,
   5. Fail-safe: a missing/unresolvable tasks dir yields 0, never raises.
+  6. A recently-written transcript ending with a terminal result marker is NOT
+     counted live (terminal-detection prevents completed agents from being
+     over-counted due to their fresh final-write mtime).
 
 All filesystem cases drive the counter against a pytest tmp dir via the
 GLUDD_TASKS_DIR env override, so the tests are hermetic (no real session dirs).
 
 The old "grew during probe" tests are gone — the probe-sleep approach was the
-source of the 6/13/18/21 wobble and has been replaced with a pure fixed-window
-mtime check (GLUDD_LIVENESS_WINDOW_SEC).
+source of the 6/13/18/21 wobble and has been replaced with a dual-filter:
+  - short fixed-window mtime check (GLUDD_LIVENESS_WINDOW_SEC, default 25s)
+  - terminal-detection: last-line JSON with type/subtype == "result" -> excluded
 """
 from __future__ import annotations
 
@@ -256,3 +260,71 @@ def test_override_env_dir_used_over_session(monkeypatch: pytest.MonkeyPatch) -> 
     with tempfile.TemporaryDirectory() as d:
         monkeypatch.setenv("GLUDD_TASKS_DIR", d)
         assert agent_liveness._tasks_dir() == d
+
+
+# --- 6. terminal-detection: completed transcript not counted ---
+
+def test_completed_transcript_not_counted(tasks_dir: Path) -> None:
+    """A recently-written transcript with a terminal result marker must NOT be counted live."""
+    import json
+    f = tasks_dir / "completed.output"
+    lines = [
+        json.dumps({"type": "assistant", "content": "working..."}),
+        json.dumps({"type": "result", "subtype": "success", "result": "done"}),
+    ]
+    f.write_text("\n".join(lines) + "\n")
+    live, total, _ = agent_liveness.live_count(window=25.0)
+    assert total == 1
+    assert live == 0, "a recently-written but terminal transcript must not be counted live"
+
+
+def test_running_transcript_counted(tasks_dir: Path) -> None:
+    """A recently-written transcript ending with a non-terminal line IS counted live."""
+    import json
+    f = tasks_dir / "running.output"
+    lines = [
+        json.dumps({"type": "assistant", "content": "thinking..."}),
+        json.dumps({"type": "tool_use", "name": "Bash", "input": {"command": "make test"}}),
+    ]
+    f.write_text("\n".join(lines) + "\n")
+    live, total, _ = agent_liveness.live_count(window=25.0)
+    assert total == 1
+    assert live == 1, "a recently-written non-terminal transcript must be counted live"
+
+
+def test_completed_transcript_old_also_not_counted(tasks_dir: Path) -> None:
+    """A stale terminal transcript is not counted (both filters agree)."""
+    import json
+    f = tasks_dir / "old_done.output"
+    f.write_text(json.dumps({"type": "result", "subtype": "success"}) + "\n")
+    _age_file(f, 10_000)
+    live, _, _ = agent_liveness.live_count(window=25.0)
+    assert live == 0
+
+
+def test_terminal_detection_subtype_result(tasks_dir: Path) -> None:
+    """Terminal detection works on last-line JSON with subtype=result."""
+    import json
+    f = tasks_dir / "subtype_done.output"
+    f.write_text(json.dumps({"type": "system", "subtype": "result", "content": "ok"}) + "\n")
+    live, total, _ = agent_liveness.live_count(window=25.0)
+    assert total == 1
+    assert live == 0
+
+
+def test_terminal_detection_unparseable_last_line_failopen(tasks_dir: Path) -> None:
+    """If last line is not valid JSON, terminal detection fails open (agent assumed running)."""
+    f = tasks_dir / "corrupt.output"
+    f.write_bytes(b"partial line or binary garbage\x00\xff\n")
+    live, total, _ = agent_liveness.live_count(window=25.0)
+    assert total == 1
+    assert live == 1, "unparseable last line -> fail-open, count as live"
+
+
+def test_empty_output_file_failopen(tasks_dir: Path) -> None:
+    """An empty .output file (agent just started) is fail-open counted as live."""
+    f = tasks_dir / "empty.output"
+    f.write_text("")
+    live, total, _ = agent_liveness.live_count(window=25.0)
+    assert total == 1
+    assert live == 1, "empty file -> no terminal marker -> fail-open live"
