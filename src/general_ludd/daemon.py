@@ -1262,6 +1262,20 @@ def create_daemon_app(
     slurm.register(app, _daemon_state)
     self_improve.register(app, _daemon_state)
     maintenance.register(app, _daemon_state)
+    # Construct the receiver buffer BEFORE registering the router: the router's
+    # routes close over the buffer at register-time (app-creation), which runs
+    # before the lifespan. If we left this to the lifespan only, the routes would
+    # capture a throwaway default buffer and the configured 10k/REJECT/3600 buffer
+    # would never be the one ingest writes into. Idempotent: the lifespan's
+    # _get_or_create_extended_subsystems reuses this same instance.
+    if getattr(app.state, "_receiver_buffer", None) is None:
+        from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+        app.state._receiver_buffer = ReceiverBuffer(
+            maxlen=10_000,
+            overflow=OverflowPolicy.REJECT,
+            retention_s=3600,
+        )
+    _daemon_state["receiver_buffer"] = app.state._receiver_buffer
     from general_ludd.receiver import router as receiver_router
     receiver_router.register(app, _daemon_state)
     # Dynamic dispatch router — handlers close over ``app`` and look up
