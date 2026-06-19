@@ -1025,7 +1025,7 @@ def create_daemon_app(
 
     _PUBLIC_PATHS = {
         "/healthz", "/readyz", "/api/status", "/api/todos", "/api/webmcp",
-        "/docs", "/openapi.json", "/redoc",
+        "/docs", "/docs/", "/openapi.json", "/redoc",
     }
 
     # AUTH-1: public access is (method, path)-aware. A path on the public list
@@ -1038,7 +1038,7 @@ def create_daemon_app(
     def _is_public(method: str, path: str) -> bool:
         if method.upper() not in _SAFE_METHODS:
             return False
-        return path in _PUBLIC_PATHS or path.startswith("/docs")
+        return path in _PUBLIC_PATHS
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
