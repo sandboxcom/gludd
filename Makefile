@@ -44,7 +44,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
-        ci-poll
+        ci-poll \
+        agent-count floor-status install-agent-count-hook write-agent-count-truth-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -792,9 +793,16 @@ scan-conflicts:
 # toward undercount (over-provision), the safe direction, and is hook-independent.
 # If the maintained counter disagrees, trust ground-truth (the probe).
 floor-status:
-	@printf '[floor-status] maintained counter: '
-	@cat "$${TMPDIR:-/tmp}/claude-agent-floor.count" 2>/dev/null || cat /tmp/claude-agent-floor.count 2>/dev/null || echo "(MISSING in both \$$TMPDIR and /tmp)"
-	@$(PYTHON) scripts/agent_liveness.py
+	@python3 -c "\
+import json, os; \
+band_file = '.claude/agent_band.json'; \
+band = json.load(open(band_file)) if os.path.exists(band_file) else {}; \
+floor = band.get('floor', 15); target = band.get('target', 18); ceiling = band.get('ceiling', 20); \
+live_raw = os.popen('python3 scripts/agent_liveness.py --count 2>/dev/null').read().strip(); \
+live = int(live_raw) if live_raw.isdigit() else 0; \
+refill = max(0, target - live); \
+print(f'LIVE={live} FLOOR={floor} TARGET={target} CEILING={ceiling} REFILL_NEEDED={refill}') \
+"
 
 # Composite orchestration decision: reads a JSON state blob (counts + ages +
 # tails) and prints a structured plan (dispatch_n, repoke_ids, kill_ids, reason).
@@ -1718,6 +1726,27 @@ write-gate-safe-hook:
 	@mkdir -p .claude/hooks
 	@python3 scripts/gen_gate_safe_hook.py .claude/hooks/agent_floor_stop.sh
 	@echo "write-gate-safe-hook done"
+
+# ---------------------------------------------------------------------------
+# GUARDRAIL 1 — Agent-count ground truth (anti-fabrication, incident 2026-06-19)
+# ---------------------------------------------------------------------------
+# write-agent-count-truth-hook: generate .claude/hooks/agent_count_truth.sh
+#   (registered under UserPromptSubmit + Stop — injects [GROUND-TRUTH] every turn)
+write-agent-count-truth-hook:
+	@mkdir -p .claude/hooks
+	@python3 scripts/gen_agent_count_truth_hook.py .claude/hooks/agent_count_truth.sh
+	@python3 scripts/gen_agent_count_truth_hook.py /Users/shawnwilson/gludd/.claude/hooks/agent_count_truth.sh
+	@echo "write-agent-count-truth-hook done"
+
+install-agent-count-hook: write-agent-count-truth-hook
+	@python3 scripts/register_agent_count_truth_hook.py
+	@echo "agent_count_truth.sh installed, executable, and registered in settings.json"
+
+# agent-count: print LIVE_AGENTS=<n> — the ground-truth measured live subagent count.
+# Source: scripts/agent_liveness.py (FLOOR_LIVE_OVERRIDE env var = test seam).
+# NEVER state how many agents are running except by quoting this output verbatim.
+agent-count:
+	@live=$$(python3 scripts/agent_liveness.py --count 2>/dev/null || echo 0); echo "LIVE_AGENTS=$$live"
 
 # ---------------------------------------------------------------------------
 # Comprehensive hook test suite (supersedes test-stop-hooks)

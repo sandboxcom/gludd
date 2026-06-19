@@ -497,6 +497,34 @@ This is enforced by:
 - `src/general_ludd/review/evidence_checker.py` — runtime claim auditing
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: Subagent Count Is Ground-Truth Only (anti-fabrication)
+
+**Incident 2026-06-19:** The orchestrator reported "15 live agents" when ground truth
+was 5. It had counted dispatched-count, not measured live-count. Dispatched agents
+drain as they complete — dispatched-count is NOT live-count. Reporting a fabricated
+number is a violation of the evidence-based response policy.
+
+**The only valid source for live-agent count:**
+- `make agent-count` — prints `LIVE_AGENTS=<n>` (measured by `scripts/agent_liveness.py`)
+- The `[GROUND-TRUTH]` line injected by `.claude/hooks/agent_count_truth.sh` every turn
+
+**Rules (binding, no exceptions):**
+1. NEVER state how many subagents are running except by quoting the `LIVE_AGENTS=<n>`
+   output of `make agent-count` or the `[GROUND-TRUTH]` line verbatim.
+2. Dispatched-count ≠ live-count. Agents complete and drain. Counting "I dispatched N"
+   as "N are running" is a fabrication.
+3. If you did not run `make agent-count` this turn, you do not know the live count.
+   State that — do not guess.
+4. `make floor-status` is the deterministic refill signal:
+   `LIVE=<n> FLOOR=<f> TARGET=<t> CEILING=<c> REFILL_NEEDED=<r>` — use REFILL_NEEDED
+   as the exact number of new agents to dispatch.
+
+Enforced by:
+- `.claude/hooks/agent_count_truth.sh` (UserPromptSubmit + Stop) — injects ground truth every turn
+- `make agent-count` — on-demand measurement
+- `make floor-status` — band status + refill signal
+- This AGENTS.md section — proactive instruction
+
 ## Project Overview
 
 This is the general-ludd-agent project: an autonomous coding system with Ansible runners and multi-model AI agents.
