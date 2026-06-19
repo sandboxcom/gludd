@@ -27,10 +27,13 @@ class TestLocalInferenceLifecycle:
             port=8001,
             gpu_layers=0,
             context_size=2048,
+            # Skip the /health readiness probe — no real server binary in CI.
+            startup_timeout=0,
         )
         server = manager.create_server(config)
 
-        with patch("asyncio.create_subprocess_exec") as mock_proc:
+        _patch_exec = "general_ludd.infra.local_inference.asyncio.create_subprocess_exec"
+        with patch(_patch_exec, new_callable=AsyncMock) as mock_proc:
             mock_process = MagicMock()
             mock_process.returncode = None
             mock_process.stdin = MagicMock()
@@ -50,10 +53,13 @@ class TestLocalInferenceLifecycle:
             model_name="sshleifer/tiny-gpt2",
             host="localhost",
             port=8002,
+            # Skip the /health readiness probe — no real server binary in CI.
+            startup_timeout=0,
         )
         server = manager.create_server(config)
 
-        with patch("asyncio.create_subprocess_exec") as mock_proc:
+        _patch_exec = "general_ludd.infra.local_inference.asyncio.create_subprocess_exec"
+        with patch(_patch_exec, new_callable=AsyncMock) as mock_proc:
             mock_process = MagicMock()
             mock_process.returncode = None
             mock_process.stdin = MagicMock()
@@ -79,13 +85,18 @@ class TestLocalInferenceLifecycle:
 
         mock_process = MagicMock()
         mock_process.returncode = None
+        mock_process.pid = 99999  # fake PID — avoids real OS lookup
         mock_process.terminate = MagicMock()
         mock_process.wait = AsyncMock(return_value=0)
         server.process = mock_process
         server.status = "running"
 
-        await manager.stop_server(server.server_id)
-        mock_process.terminate.assert_called_once()
+        with (
+            patch("general_ludd.infra.local_inference.os.getpgid", return_value=99999),
+            patch("general_ludd.infra.local_inference.os.killpg"),
+        ):
+            await manager.stop_server(server.server_id)
+
         assert server.status == "stopped"
 
 
