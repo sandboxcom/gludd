@@ -146,12 +146,9 @@ BASETEMP=$(mktemp -d /tmp/gludd-gate-XXXXXX)
 # ---------------------------------------------------------------------------
 PYTEST_CMD=${PYTEST_CMD:-}
 
-# Mirror the Makefile's GLUDD_XDIST / cpu-count logic.
-XDIST_WORKERS=$(python3 -c "
-import os
-v = os.environ.get('GLUDD_XDIST')
-print(v if v else max(1, (os.cpu_count() or 1) // 4))
-" 2>/dev/null || echo "1")
+# Compute memory-bounded worker count via scripts/gate_worker_count.py.
+# Falls back to 1 if the script is missing or errors.
+XDIST_WORKERS=$(python3 "$(dirname "$0")/gate_worker_count.py" 2>/dev/null || echo "1")
 
 if [ -n "${PYTEST_CMD}" ]; then
     # set -e would abort the subshell on a non-zero eval before echo $? runs;
