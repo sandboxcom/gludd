@@ -538,6 +538,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
+        _daemon_state["receiver_buffer"] = app.state._receiver_buffer
 
         # W3.11 (H13): merge DB-persisted projects into the manager so projects
         # added at runtime survive a restart, and materialize each repo_url into
@@ -903,6 +904,13 @@ def _get_or_create_extended_subsystems(
     if not hasattr(app.state, "_recent_traces") or app.state._recent_traces is None:
         from general_ludd.observability.trace_store import RecentTracesBuffer
         app.state._recent_traces = RecentTracesBuffer()
+    if not hasattr(app.state, "_receiver_buffer") or app.state._receiver_buffer is None:
+        from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+        app.state._receiver_buffer = ReceiverBuffer(
+            maxlen=10_000,
+            overflow=OverflowPolicy.REJECT,
+            retention_s=3600,
+        )
     if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
         startup_cfg = app.state._startup_config if hasattr(app.state, "_startup_config") else {}
         app.state._project_manager = seed_from_config(startup_cfg)
@@ -1028,6 +1036,12 @@ def create_daemon_app(
         "/docs", "/openapi.json", "/redoc",
     }
 
+    # Receiver ingest paths use their own ingest-token auth (GLUDD_INGEST_TOKEN),
+    # separate from the admin PSK. The PSK middleware must not challenge them so
+    # the receiver router's internal auth runs instead (least-privilege: a leaked
+    # ingest token cannot access /admin, a leaked PSK cannot push telemetry).
+    _RECEIVER_PREFIXES = ("/v1/", "/ingest/")
+
     # AUTH-1: public access is (method, path)-aware. A path on the public list
     # is only public for SAFE, read-only methods (GET/HEAD/OPTIONS). The same
     # path under a mutating method (POST/PUT/PATCH/DELETE) is NOT public — e.g.
@@ -1036,6 +1050,8 @@ def create_daemon_app(
     _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
     def _is_public(method: str, path: str) -> bool:
+        if path.startswith(_RECEIVER_PREFIXES):
+            return True
         if method.upper() not in _SAFE_METHODS:
             return False
         return path in _PUBLIC_PATHS or path.startswith("/docs")
@@ -1246,6 +1262,22 @@ def create_daemon_app(
     slurm.register(app, _daemon_state)
     self_improve.register(app, _daemon_state)
     maintenance.register(app, _daemon_state)
+    # Construct the receiver buffer BEFORE registering the router: the router's
+    # routes close over the buffer at register-time (app-creation), which runs
+    # before the lifespan. If we left this to the lifespan only, the routes would
+    # capture a throwaway default buffer and the configured 10k/REJECT/3600 buffer
+    # would never be the one ingest writes into. Idempotent: the lifespan's
+    # _get_or_create_extended_subsystems reuses this same instance.
+    if getattr(app.state, "_receiver_buffer", None) is None:
+        from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+        app.state._receiver_buffer = ReceiverBuffer(
+            maxlen=10_000,
+            overflow=OverflowPolicy.REJECT,
+            retention_s=3600,
+        )
+    _daemon_state["receiver_buffer"] = app.state._receiver_buffer
+    from general_ludd.receiver import router as receiver_router
+    receiver_router.register(app, _daemon_state)
     # Dynamic dispatch router — handlers close over ``app`` and look up
     # subsystems lazily at call time so they resolve against the live
     # lifespan-initialised state rather than the not-yet-started state at
