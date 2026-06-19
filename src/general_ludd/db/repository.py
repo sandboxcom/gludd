@@ -207,8 +207,11 @@ class TodoRepository:
         queue: str | None = None,
         status: str | None = None,
         project_id: str | None = None,
+        limit: int = 500,
+        offset: int = 0,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
+        limit = min(limit, 500)
         stmt = select(TodoModel)
         if queue is not None:
             stmt = stmt.where(TodoModel.queue == queue)
@@ -216,6 +219,7 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.status == status)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(limit)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
