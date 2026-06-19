@@ -2,8 +2,8 @@
 counter.
 
 These exercise the six guarantees the orchestrator depends on:
-  1. A transcript written within the window is counted live (window-based signal),
-  2. A stale (frozen, old) transcript is NOT counted,
+  1. A transcript without a terminal marker is counted live,
+  2. A transcript with a terminal marker is NOT counted,
   3. Two consecutive ``--count`` calls on the SAME fixture set return the SAME
      number (determinism — the regression this file guards),
   4. The FLOOR_LIVE_OVERRIDE test seam short-circuits all probing,
@@ -15,10 +15,11 @@ These exercise the six guarantees the orchestrator depends on:
 All filesystem cases drive the counter against a pytest tmp dir via the
 GLUDD_TASKS_DIR env override, so the tests are hermetic (no real session dirs).
 
-The old "grew during probe" tests are gone — the probe-sleep approach was the
-source of the 6/13/18/21 wobble and has been replaced with a dual-filter:
-  - short fixed-window mtime check (GLUDD_LIVENESS_WINDOW_SEC, default 25s)
-  - terminal-detection: last-line JSON with type/subtype == "result" -> excluded
+Liveness is now determined SOLELY by terminal-detection: the mtime/window gate
+has been removed entirely. A transcript is live iff its last line does NOT parse
+as a terminal result JSON object (type=="result" or subtype=="result"). An
+alive-but-idle agent (no writes for a long time) is correctly counted live.
+GLUDD_LIVENESS_WINDOW_SEC is accepted for backward-compatibility but unused.
 """
 from __future__ import annotations
 
@@ -83,37 +84,42 @@ def test_window_boundary_includes_just_inside(tasks_dir: Path) -> None:
 # --- 2. stale (frozen + old) file is not counted ----------------------------
 
 def test_stale_file_not_counted(tasks_dir: Path) -> None:
+    import json
     f = tasks_dir / "done.output"
-    _write(f, "completed transcript")
-    _age_file(f, 10_000)  # far past any window
+    f.write_text(json.dumps({"type": "result", "subtype": "success", "result": "done"}) + "\n")
+    _age_file(f, 10_000)  # age doesn't matter anymore; terminal marker does
     live, total, _ = agent_liveness.live_count(window=120.0)
     assert total == 1
-    assert live == 0, "a frozen, old transcript must not be counted live"
+    assert live == 0, "a transcript with a terminal marker must not be counted live"
 
 
 def test_tail_boundary_excludes_just_past(tasks_dir: Path) -> None:
-    """A file just OUTSIDE the window decays out -> not live."""
+    """A file with a terminal marker is not live regardless of age."""
+    import json
     f = tasks_dir / "decayed.output"
-    _write(f, "x")
+    f.write_text(json.dumps({"type": "result", "subtype": "success"}) + "\n")
     _age_file(f, 80.0)
     live, _, _ = agent_liveness.live_count(window=75.0)
     assert live == 0
 
 
 def test_mixed_fleet_counts_only_live(tasks_dir: Path) -> None:
+    import json
     live_f = tasks_dir / "live.output"
     stale_f = tasks_dir / "stale.output"
     quiet_f = tasks_dir / "quiet.output"
-    _write(live_f, "s")
-    _age_file(live_f, 10_000)   # outside window
-    _write(stale_f, "done")
-    _age_file(stale_f, 10_000)  # outside window
-    _write(quiet_f, "recent")
-    _age_file(quiet_f, 3.0)     # within 30s window
+    # Give terminal markers to live_f and stale_f so they're excluded
+    live_f.write_text(json.dumps({"type": "result", "subtype": "success"}) + "\n")
+    _age_file(live_f, 10_000)
+    stale_f.write_text(json.dumps({"type": "result", "subtype": "success"}) + "\n")
+    _age_file(stale_f, 10_000)
+    # quiet_f has no terminal marker — it's the only live one
+    quiet_f.write_text("recent")
+    _age_file(quiet_f, 3.0)
 
     live, total, _ = agent_liveness.live_count(window=30.0)
     assert total == 3
-    assert live == 1, "only the quiet-within-window file is live; stale ones are not"
+    assert live == 1, "only quiet_f (no terminal marker) is live; others have terminal markers"
 
 
 # --- 3. DETERMINISM — two consecutive calls return the same count -----------
@@ -122,6 +128,7 @@ def test_consecutive_count_calls_are_identical(tasks_dir: Path) -> None:
     """Two back-to-back --count calls on the same fixture set must return the
     same integer. This is the regression guard for the 6/13/18/21 wobble caused
     by the old probe-sleep approach."""
+    import json
     # Mix of live and stale files to make the count non-trivial.
     for i in range(3):
         f = tasks_dir / f"live{i}.output"
@@ -130,8 +137,8 @@ def test_consecutive_count_calls_are_identical(tasks_dir: Path) -> None:
 
     for i in range(2):
         f = tasks_dir / f"stale{i}.output"
-        _write(f, f"done {i}")
-        _age_file(f, 10_000)  # outside window
+        f.write_text(json.dumps({"type": "result", "subtype": "success"}) + "\n")
+        _age_file(f, 10_000)
 
     live1, total1, _ = agent_liveness.live_count(window=120.0)
     live2, total2, _ = agent_liveness.live_count(window=120.0)
