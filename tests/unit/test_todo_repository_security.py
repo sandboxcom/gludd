@@ -12,8 +12,9 @@ D-27
 
 D-28
 ----
-- ``create()`` rejects any payload that contains immutable fields (``id``,
-  ``todo_id``, ``version``, ``created_at``, ``updated_at``).
+- ``create()`` rejects any payload that contains immutable DB-assigned fields
+  (``id``, ``version``, ``created_at``, ``updated_at``).
+- ``create()`` accepts ``todo_id`` as an app-assignable business key.
 - ``create()`` rejects text field values that exceed ``_MAX_TEXT_BYTES`` bytes.
 - ``create()`` always sets ``version=1`` on the created row.
 - A valid minimal payload (title only) succeeds and sets version=1.
@@ -209,10 +210,12 @@ class TestCreateFieldAllowlist:
             await repo.create({"title": "t", "id": 999})
 
     @pytest.mark.asyncio
-    async def test_create_rejects_todo_id_field(self, session: AsyncSession):
+    async def test_create_accepts_todo_id_field(self, session: AsyncSession):
+        """todo_id is an app-assigned business key — callers may supply it at
+        create time; only the DB PK (id) is immutable/forbidden."""
         repo = TodoRepository(session)
-        with pytest.raises(ValueError, match="immutable"):
-            await repo.create({"title": "t", "todo_id": "TODO-FORGED"})
+        todo = await repo.create({"title": "t", "todo_id": "TODO-EXPLICIT"})
+        assert todo.todo_id == "TODO-EXPLICIT"
 
     @pytest.mark.asyncio
     async def test_create_rejects_version_field(self, session: AsyncSession):
@@ -271,6 +274,9 @@ class TestCreateFieldAllowlist:
 
     @pytest.mark.asyncio
     async def test_create_immutable_fields_constant_covers_required_set(self):
-        """_IMMUTABLE_FIELDS must contain at minimum the required fields."""
-        required = {"id", "todo_id", "version", "created_at", "updated_at"}
+        """_IMMUTABLE_FIELDS must contain the DB-assigned fields; todo_id is
+        intentionally excluded because callers may supply it as a business key."""
+        required = {"id", "version", "created_at", "updated_at"}
         assert required <= TodoRepository._IMMUTABLE_FIELDS
+        # todo_id must NOT be in _IMMUTABLE_FIELDS — it is an app-assignable key
+        assert "todo_id" not in TodoRepository._IMMUTABLE_FIELDS
