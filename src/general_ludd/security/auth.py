@@ -116,6 +116,26 @@ def require_auth_env(env: Mapping[str, str] | None = None) -> bool:
     }
 
 
+def is_join_within(base: str, candidate: str) -> bool:
+    """True iff ``candidate`` resolves to a path inside ``base``.
+
+    ``candidate`` is joined onto ``base`` first, so a relative path is taken
+    relative to the base while an ABSOLUTE candidate replaces the base entirely
+    (the classic escape) — which this function then catches via ``commonpath``.
+    Both paths are passed through ``realpath`` so symlink and ``../`` escapes are
+    resolved before comparison. Pure string/filesystem-metadata work only; no
+    network, no blocking.
+    """
+    try:
+        base_real = os.path.realpath(base)
+        full = os.path.realpath(os.path.join(base_real, candidate))
+        common = os.path.commonpath([base_real, full])
+    except (ValueError, OSError):
+        # Mixed drives, embedded NULs, etc. -> treat as not contained.
+        return False
+    return common == base_real
+
+
 def _host_is_blocked(host: str) -> bool:
     """LITERAL deny check for a URL host — no DNS, no network.
 

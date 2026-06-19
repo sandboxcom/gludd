@@ -36,3 +36,13 @@ class AgentConfig:
     max_concurrent: int = 1
     enabled: bool = True
     behavior: AgentBehavior | None = None
+
+
+@dataclass
+class AgentTask:
+    task_id: str
+    agent_name: str
+    description: str
+    prompt: str
+    parent_task_id: str | None = None
+    invoker_name: str = ""

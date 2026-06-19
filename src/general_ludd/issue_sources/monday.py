@@ -29,6 +29,32 @@ from collections.abc import Callable, Mapping
 from typing import Any
 from urllib.parse import urlsplit
 
+
+class _NoRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """Opener handler that refuses to follow any HTTP redirect.
+
+    Raising ``urllib.error.HTTPError`` on redirect prevents SSRF via
+    attacker-controlled 3xx responses that point at internal endpoints.
+    """
+
+    def redirect_request(  # type: ignore[override]
+        self,
+        req: urllib.request.Request,
+        fp: Any,
+        code: int,
+        msg: str,
+        headers: Any,
+        newurl: str,
+    ) -> None:
+        raise urllib.error.HTTPError(
+            url=newurl,
+            code=code,
+            msg=f"redirect blocked: {msg}",
+            hdrs=headers,
+            fp=None,
+        )
+
+
 Transport = Callable[
     [str, str, Mapping[str, str], "dict[str, Any] | None", float],
     "tuple[int, dict[str, Any]]",
@@ -85,7 +111,8 @@ def _default_transport(
     for key, value in headers.items():
         req.add_header(key, value)
     try:
-        with urllib.request.urlopen(req, timeout=timeout) as resp:
+        _opener = urllib.request.build_opener(_NoRedirectHandler())
+        with _opener.open(req, timeout=timeout) as resp:
             status = int(getattr(resp, "status", 0) or resp.getcode() or 0)
             body = resp.read()
     except urllib.error.HTTPError as exc:  # pragma: no cover - network path

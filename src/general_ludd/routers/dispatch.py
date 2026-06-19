@@ -29,6 +29,9 @@ MAX_CALLS_PER_REQUEST = 20
 # Bounded ring-buffer for recent dispatch history (facts facet).
 _MAX_RECENT_DISPATCHES = 50
 
+# Hard cap on tool_calls per request to prevent unbounded dispatch loops.
+MAX_CALLS_PER_REQUEST = 20
+
 Handler = Callable[[str, dict[str, Any]], Any]
 
 

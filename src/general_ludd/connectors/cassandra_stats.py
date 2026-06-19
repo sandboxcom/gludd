@@ -72,6 +72,12 @@ class CassandraStatsSource:
             logger.debug("httpx import failed: %s", exc)
             return None
 
+        from general_ludd.connectors.base import is_safe_endpoint
+
+        if not is_safe_endpoint(self._jmx_url):
+            self._driver_error = "unsafe endpoint"
+            logger.debug("jmx_url rejected by SSRF guard: %s", self._jmx_url)
+            return None
         url = self._jmx_url
         token = os.environ.get(self._token_env)
         headers = {"Authorization": f"Bearer {token}"} if token else {}

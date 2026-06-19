@@ -61,7 +61,13 @@ class _DefaultTransport:
     ) -> HttpResponse:
         import httpx
 
-        return httpx.get(url, headers=headers, params=params, timeout=timeout)
+        return httpx.get(
+            url,
+            headers=headers,
+            params=params,
+            timeout=timeout,
+            follow_redirects=False,
+        )
 
 
 class PagerDutySource:

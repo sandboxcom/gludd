@@ -31,12 +31,23 @@
       - dispatch_calls | length > 0
       - dispatch_calls | map(attribute='name') | list | unique | length == dispatch_calls | length
       - async_timeout | int >= call_request_timeout | int
-      - (barrier_retries | int * barrier_delay | float) < 300
-      - async_timeout | int < 300
+      - (barrier_retries | int * barrier_delay | float) < (playbook_timeout | int)
+      - async_timeout | int < (playbook_timeout | int)
+      - join_policy in ['all', 'required', 'any']
+      # SUM-OVER-BATCHES budget: batches run SEQUENTIALLY, so total wall-clock is
+      # ceil(N / max_in_flight) * (per-batch barrier wait). Prove that fits inside
+      # GLUDD_PLAYBOOK_TIMEOUT up front rather than only bounding a single batch.
+      - >-
+        ((((dispatch_calls | length) + (max_in_flight | int) - 1) // (max_in_flight | int))
+         * ((barrier_retries | int) * (barrier_delay | float))) | int < (playbook_timeout | int)
     fail_msg: >-
-      ai_parallel_dispatch inputs invalid: need >=1 call, unique names,
-      async_timeout >= call_request_timeout, and both async_timeout and
-      barrier_retries*barrier_delay under GLUDD_PLAYBOOK_TIMEOUT (300s).
+      ai_parallel_dispatch inputs invalid: need >=1 call, unique names, a valid
+      join_policy, async_timeout >= call_request_timeout, both async_timeout and
+      barrier_retries*barrier_delay under GLUDD_PLAYBOOK_TIMEOUT, AND
+      ceil(N/max_in_flight) sequential batches * (barrier_retries*barrier_delay)
+      under GLUDD_PLAYBOOK_TIMEOUT ({{ playbook_timeout }}s) — else the fork-child
+      group gets SIGKILLed mid-run. Lower barrier_retries/delay or raise
+      max_in_flight (fewer batches).
 
 # Resolve the REQUIRED set up front (fail-closed: 'required' policy with no
 # call flagged required:true means EVERY call is required).
@@ -45,7 +56,7 @@
     _apd_required_names: >-
       {{ (dispatch_calls | selectattr('required', 'defined') | selectattr('required') | map(attribute='name') | list)
          if (join_policy == 'required' and (dispatch_calls | selectattr('required', 'defined') | selectattr('required') | list | length) > 0)
-         else (dispatch_calls | map(attribute='name') | list) }}"
+         else (dispatch_calls | map(attribute='name') | list) }}
     _apd_results: {}
 
 # Batch the fan-out: list of slices each of size <= max_in_flight.

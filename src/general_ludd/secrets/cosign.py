@@ -12,7 +12,7 @@ from typing import Any
 class CosignKey:
     key_name: str
     private_key: str = field(repr=False)
-    public_key: str = ""
+    public_key: str
     password: str | None = field(default=None, repr=False)
     created_at: str = ""
 

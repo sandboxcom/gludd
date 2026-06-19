@@ -50,6 +50,48 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
 }
 
 
+# Fields that callers are permitted to set via TodoRepository.create().
+# Excludes auto-managed columns (id, version, created_at, updated_at) to
+# prevent mass-assignment of internal state.
+ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset({
+    "todo_id",
+    "project_id",
+    "title",
+    "description",
+    "status",
+    "priority",
+    "queue",
+    "tags",
+    "risk_level",
+    "work_type",
+    "resource_profile",
+    "parent_todo_id",
+    "child_todo_ids",
+    "acceptance_criteria",
+    "test_commands",
+    "molecule_scenarios",
+    "molecule_evidence_refs",
+    "coverage_requirements",
+    "dependencies",
+    "created_by",
+    "assigned_agent",
+    "model_profile",
+    "prompt_profile",
+    "worktree",
+    "branch_name",
+    "artifacts",
+    "evidence_refs",
+    "plan_artifact",
+    "confidence",
+    "manual_hold_reason",
+    "approval_policy",
+    "completed_at",
+})
+
+# Maximum UTF-8 byte length for any single string field on a TodoModel create.
+_TODO_STR_FIELD_MAX_BYTES = 65536
+
+
 class ConcurrencyError(Exception):
     pass
 
@@ -199,12 +241,17 @@ class TodoRepository:
         return todo
 
     async def list_by_status(
-        self, status: TodoStatus, project_id: str | None = None
+        self,
+        status: TodoStatus,
+        project_id: str | None = None,
+        limit: int | None = None,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.status == status.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -213,6 +260,7 @@ class TodoRepository:
         queue: str | None = None,
         status: str | None = None,
         project_id: str | None = None,
+        limit: int | None = None,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
@@ -222,16 +270,23 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.status == status)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_by_work_type(
-        self, work_type: str, project_id: str | None = None
+        self,
+        work_type: str,
+        project_id: str | None = None,
+        limit: int | None = None,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        if limit is not None:
+            stmt = stmt.limit(limit)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 

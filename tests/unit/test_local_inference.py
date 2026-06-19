@@ -118,7 +118,8 @@ class TestCreateServer:
 class TestBuildCommand:
     def test_vllm_command_with_model_name(self):
         mgr = LocalInferenceManager()
-        cfg = LocalServerConfig(engine="vllm", model_name="llama3", host="0.0.0.0", port=9999)
+        # allow_nonloopback=True because 0.0.0.0 is now rejected by default
+        cfg = LocalServerConfig(engine="vllm", model_name="llama3", host="0.0.0.0", port=9999, allow_nonloopback=True)
         cmd = mgr._build_command(cfg)
         assert cmd[:4] == ["vllm", "serve", "llama3", "--host"]
         assert "0.0.0.0" in cmd
@@ -244,7 +245,7 @@ class TestStartServer:
         with patch(
             "general_ludd.infra.local_inference.asyncio.create_subprocess_exec",
             return_value=mock_proc,
-        ) as mock_exec:
+        ) as mock_exec, patch.object(mgr, "_wait_for_ready", new=AsyncMock()):
             result = await mgr.start_server("local-0")
             mock_exec.assert_called_once()
             assert result.status == "running"
@@ -262,7 +263,8 @@ class TestStartServer:
         mock_proc = AsyncMock()
         mock_proc.pid = 12345
         mock_proc.returncode = None
-        with patch("general_ludd.infra.local_inference.asyncio.create_subprocess_exec", return_value=mock_proc):
+        with patch("general_ludd.infra.local_inference.asyncio.create_subprocess_exec", return_value=mock_proc), \
+             patch.object(mgr, "_wait_for_ready", new=AsyncMock()):
             await mgr.start_server("local-0")
         assert len(events) == 1
         assert events[0].payload["name"] == "local_server_started"
@@ -295,16 +297,18 @@ class TestStopServer:
         server = mgr.create_server(cfg)
         mock_proc = AsyncMock()
         mock_proc.returncode = None
+        mock_proc.pid = 12345
         mock_proc.wait = AsyncMock()
-        # terminate()/kill() are SYNC subprocess methods; AsyncMock leaks an
-        # unawaited coroutine (CI serial-order -> "Event loop is closed").
-        mock_proc.terminate = MagicMock()
-        mock_proc.kill = MagicMock()
         server.process = mock_proc
         server.status = "running"
         server.pid = 12345
-        await mgr.stop_server("local-0")
-        mock_proc.terminate.assert_called_once()
+        # stop_server now sends SIGTERM to the process group; mock os.killpg
+        # and os.getpgid so we don't need a real process.
+        with patch("general_ludd.infra.local_inference.os.killpg") as mock_killpg, \
+             patch("general_ludd.infra.local_inference.os.getpgid", return_value=12345):
+            await mgr.stop_server("local-0")
+        import signal as _signal
+        mock_killpg.assert_any_call(12345, _signal.SIGTERM)
         assert server.status == "stopped"
         assert server.process is None
         assert server.pid is None
@@ -316,13 +320,15 @@ class TestStopServer:
         server = mgr.create_server(cfg)
         mock_proc = AsyncMock()
         mock_proc.returncode = None
+        mock_proc.pid = 12345
         mock_proc.wait = AsyncMock(side_effect=asyncio.TimeoutError)
-        mock_proc.terminate = MagicMock()
-        mock_proc.kill = MagicMock()
         server.process = mock_proc
         server.status = "running"
-        await mgr.stop_server("local-0")
-        mock_proc.kill.assert_called_once()
+        import signal as _signal
+        with patch("general_ludd.infra.local_inference.os.killpg") as mock_killpg, \
+             patch("general_ludd.infra.local_inference.os.getpgid", return_value=12345):
+            await mgr.stop_server("local-0")
+        mock_killpg.assert_any_call(12345, _signal.SIGKILL)
 
     @pytest.mark.asyncio
     async def test_stop_nonexistent_is_noop(self):
@@ -346,15 +352,16 @@ class TestStopAll:
         mgr = LocalInferenceManager()
         s1 = mgr.create_server(LocalServerConfig(model_name="a"))
         s2 = mgr.create_server(LocalServerConfig(model_name="b", port=8001))
-        for s in [s1, s2]:
+        for idx, s in enumerate([s1, s2]):
             mock_proc = AsyncMock()
             mock_proc.returncode = None
+            mock_proc.pid = 12345 + idx
             mock_proc.wait = AsyncMock()
-            mock_proc.terminate = MagicMock()
-            mock_proc.kill = MagicMock()
             s.process = mock_proc
             s.status = "running"
-            s.pid = 12345
-        await mgr.stop_all()
+            s.pid = 12345 + idx
+        with patch("general_ludd.infra.local_inference.os.killpg"), \
+             patch("general_ludd.infra.local_inference.os.getpgid", return_value=12345):
+            await mgr.stop_all()
         assert s1.status == "stopped"
         assert s2.status == "stopped"

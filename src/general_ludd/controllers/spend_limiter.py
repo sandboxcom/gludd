@@ -203,6 +203,17 @@ class SpendLimiter:
         ``window_spend()`` call, so restoring stale records after a long
         downtime is safe.
 
+        Invalid records are DROPPED (not silently accepted) to prevent
+        cap-evasion attacks:
+
+        * Negative or non-finite ``cost_usd`` values would deflate the
+          rolling window total, effectively lifting the cap.  These are
+          logged and dropped.
+        * Future timestamps survive ``window_spend()`` pruning indefinitely
+          (their cutoff never arrives), so they could ghost-inflate the
+          window.  Future timestamps are clamped to ``now`` so they are
+          treated as current-window spend.
+
         Args:
             records: A list of ``(timestamp, cost_usd)`` tuples produced by
                      ``snapshot`` (or an equivalent persisted form).  ``None``

@@ -1,6 +1,7 @@
 """Security sanitization utilities."""
 
 from general_ludd.security.auth import (
+    is_join_within,
     is_safe_fetch_url,
     require_auth_env,
     verify_psk,
@@ -14,6 +15,7 @@ from general_ludd.security.ssrf import host_is_blocked
 
 __all__ = [
     "host_is_blocked",
+    "is_join_within",
     "is_path_within",
     "is_safe_fetch_url",
     "require_auth_env",
