@@ -140,6 +140,17 @@ def _git_commit(path: str, message: str) -> str | None:
         return None
 
 
+async def _git_commit_async(path: str, message: str) -> str | None:
+    """Async wrapper: run _git_commit in a thread executor (non-blocking).
+
+    Uses asyncio.get_running_loop() (not the deprecated get_event_loop())
+    so this is safe on Python 3.10+ and raises immediately if called
+    outside a running loop rather than silently creating a new one.
+    """
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, _git_commit, path, message)
+
+
 def _git_current_branch(path: str) -> str:
     """Delegate to GitAutomation.current_branch(); returns 'unknown' on any failure."""
     return GitAutomation(path).current_branch()
@@ -213,6 +224,140 @@ class ExecutionEngine:
             )
         except Exception:
             pass
+
+    def defer_commit(self, path: str, message: str) -> None:
+        """Schedule a git commit as a background asyncio task (non-blocking).
+
+        FIX: the done-callback inspects task.exception() and logs at ERROR so
+        commit failures are observable rather than silently swallowed.
+        """
+        try:
+            task: asyncio.Task[str | None] = asyncio.create_task(
+                _git_commit_async(path, message)
+            )
+            self._background_tasks.add(task)
+
+            def _on_commit_done(t: asyncio.Task[str | None]) -> None:
+                self._background_tasks.discard(t)
+                exc = t.exception() if not t.cancelled() else None
+                if exc is not None:
+                    logger.error(
+                        "defer_commit: background commit failed: %s", exc
+                    )
+
+            task.add_done_callback(_on_commit_done)
+        except Exception:
+            pass
+
+    async def execute_async(self, job: JobSpec) -> TaskReturn:
+        """Async variant of execute(): defers the git commit step to background."""
+        return_id = f"RET-{job.job_id}-{uuid.uuid4().hex[:6]}"
+
+        if self._model_gateway is None:
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary="No model gateway configured",
+            )
+
+        is_git = _is_git_repo(self.workspace_path)
+        title_slug = _slugify(job.prompt_text or job.todo_id or "untitled")
+        branch_name = f"gludd/{job.todo_id}-{title_slug}"
+        if is_git:
+            _git_create_branch(self.workspace_path, branch_name)
+
+        system_prompt = _build_system_prompt(job)
+        user_prompt = _build_user_prompt(job)
+
+        denial = self._budget_pre_check(self._budget_guard)
+        if denial is not None:
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary=f"Budget check failed: {denial}",
+            )
+
+        try:
+            response = self._model_gateway.call_model(
+                system_prompt=system_prompt, user_prompt=user_prompt,
+            )
+            model_output = getattr(response, "content", "") or str(response)
+            self._record_metrics(job, success=True, tokens=len(model_output) // 4)
+        except Exception as exc:
+            self._record_metrics(job, success=False)
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary=f"Model call failed: {exc}",
+            )
+
+        if not model_output or not model_output.strip():
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary="Model returned empty output",
+            )
+
+        changed_files: list[str] = []
+        applied_changes = False
+        blocks = _parse_fenced_blocks(model_output)
+        for block in blocks:
+            content = block["content"]
+            lang = block["language"].lower()
+            if lang in ("diff", "patch"):
+                changed = self._apply_unified_diff(content)
+                changed_files.extend(changed)
+                if changed:
+                    applied_changes = True
+            else:
+                for file_path, file_content in _extract_file_paths(content):
+                    self._write_file(file_path, file_content)
+                    changed_files.append(file_path)
+                    applied_changes = True
+        for file_path, file_content in _extract_file_paths(model_output):
+            if file_path not in changed_files:
+                self._write_file(file_path, file_content)
+                changed_files.append(file_path)
+                applied_changes = True
+
+        if not applied_changes:
+            return TaskReturn(
+                return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+                playbook=job.playbook or "code", queue=job.queue or "core",
+                exit_code=1, result_summary="No changes parsed from model output",
+                artifacts=[f"raw_output:{len(model_output)} chars"],
+            )
+
+        # Deferred (non-blocking) commit: fires in background, doesn't stall caller
+        if applied_changes and is_git:
+            commit_msg = (
+                f"[gludd] {job.todo_id}: "
+                f"{job.prompt_text or 'code change'}\n\n"
+                f"Work type: {job.work_type}\n"
+                f"Changed files: {', '.join(changed_files[:10])}"
+            )
+            self.defer_commit(self.workspace_path, commit_msg)
+
+        test_exit_code, test_summary = _run_tests(self.workspace_path)
+        evidence_refs: list[str] = list(changed_files[:20])
+
+        summary_parts: list[str] = [
+            f"Changed {len(changed_files)} file(s): "
+            f"{', '.join(changed_files[:10])}.",
+        ]
+        if not is_git:
+            summary_parts.append("WARNING: Workspace is not a git repository.")
+        summary_parts.append("Commit deferred to background.")
+        summary_parts.append(f"Tests: exit={test_exit_code}. {test_summary[:500]}")
+
+        return TaskReturn(
+            return_id=return_id, todo_id=job.todo_id, job_id=job.job_id,
+            playbook=job.playbook or "code", queue=job.queue or "core",
+            exit_code=test_exit_code, result_summary=" ".join(summary_parts),
+            artifacts=evidence_refs,
+            diff_ref=f"raw_output:{len(model_output)} chars",
+            test_results_ref=f"exit_code={test_exit_code}",
+        )
 
     def execute(self, job: JobSpec) -> TaskReturn:
         return_id = f"RET-{job.job_id}-{uuid.uuid4().hex[:6]}"
