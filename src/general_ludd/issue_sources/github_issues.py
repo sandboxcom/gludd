@@ -28,7 +28,7 @@ from __future__ import annotations
 import ipaddress
 import os
 from typing import Any, Protocol, runtime_checkable
-from urllib.parse import urlparse
+from urllib.parse import quote, urlparse
 
 SYSTEM = "github"
 
@@ -308,7 +308,7 @@ class GitHubIssueSource:
             raise ValueError(f"status must be 'open' or 'closed', got {status!r}")
         resp = self._request(
             "PATCH",
-            f"/repos/{self._repo}/issues/{external_id}",
+            f"/repos/{self._repo}/issues/{quote(str(external_id), safe='')}",
             json={"state": norm},
         )
         result: dict[str, Any] = {
@@ -327,7 +327,7 @@ class GitHubIssueSource:
 
         resp = self._request(
             "POST",
-            f"/repos/{self._repo}/issues/{external_id}/comments",
+            f"/repos/{self._repo}/issues/{quote(str(external_id), safe='')}/comments",
             json={"body": comment},
         )
         return {
@@ -485,7 +485,7 @@ class GitHubIssuesSource(IssueSource):
         if transition is Transition.DONE:
             status_code, _ = self._call(
                 "PATCH",
-                f"/repos/{self._repo}/issues/{external_id}",
+                f"/repos/{self._repo}/issues/{quote(str(external_id), safe='')}",
                 {"state": "closed"},
             )
             return 200 <= status_code < 300
@@ -493,7 +493,7 @@ class GitHubIssuesSource(IssueSource):
             if self._claim_label:
                 status_code, _ = self._call(
                     "POST",
-                    f"/repos/{self._repo}/issues/{external_id}/labels",
+                    f"/repos/{self._repo}/issues/{quote(str(external_id), safe='')}/labels",
                     {"labels": [self._claim_label]},
                 )
                 return 200 <= status_code < 300

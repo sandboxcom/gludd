@@ -259,3 +259,11 @@ def test_default_base_url_and_token_env() -> None:
     src = GitHubIssueSource({"repo": "acme/widget"}, transport=_Transport([_Resp(200, [])]), env={"GITHUB_TOKEN": "z"})
     assert src._base_url == "https://api.github.com"
     src.fetch_issues()
+
+
+def test_url_injection_external_id_is_quoted() -> None:
+    src, transport = _make([_Resp(200, {})])
+    src.update_status("../../admin", "closed")
+    url = transport.calls[0]["url"]
+    assert "%2F" in url
+    assert "../" not in url
