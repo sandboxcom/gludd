@@ -43,7 +43,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
-        git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom
+        git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
+        deck deck-serve
 
 help:
 	@echo "Usage: make [target]"
@@ -2198,3 +2199,31 @@ git-worktree-remove:
 
 git-ls-remote-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git ls-remote sandboxcom
+
+# ---------------------------------------------------------------------------
+# Presentation deck — reveal.js (CDN, no npm required)
+#
+# make deck        Build docs/presentation/build/index.html from README status table.
+# make deck-serve  Open the built deck in the default browser (macOS: open).
+#
+# Used by .github/workflows/pages.yml to publish to GitHub Pages.
+# ---------------------------------------------------------------------------
+deck:
+	@echo "[deck] parsing README status table ..."
+	@$(UV) run python3 scripts/parse_readme_status.py \
+		--out docs/presentation/build/deck-data.json
+	@echo "[deck] building reveal.js HTML ..."
+	@$(UV) run python3 scripts/build_deck.py \
+		--data docs/presentation/build/deck-data.json \
+		--out docs/presentation/build/index.html
+	@echo "[deck] running honesty lint ..."
+	@$(UV) run python3 scripts/deck_honesty_lint.py \
+		--path docs/presentation/build/index.html \
+		--features docs/presentation/build/deck-data.json
+	@echo "[deck] done — open docs/presentation/build/index.html"
+
+deck-serve:
+	@echo "[deck-serve] opening docs/presentation/build/index.html ..."
+	@open docs/presentation/build/index.html 2>/dev/null || \
+		xdg-open docs/presentation/build/index.html 2>/dev/null || \
+		echo "Open docs/presentation/build/index.html in your browser"
