@@ -16,6 +16,7 @@ from general_ludd.models.response_cache import _make_cache_key
 from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import (
     _NON_RETRYABLE_KINDS,
+    _OVERLOAD_KINDS,
     TimeoutClassifier,
     TimeoutRetryPolicy,
 )
@@ -492,19 +493,20 @@ class ModelGateway:
             exc = retry_state.outcome.exception() if retry_state.outcome else None
             if exc is not None and isinstance(exc, _retryable_exc_types):
                 kind = TimeoutClassifier.classify(exc)
-                wait_s = policy._compute_backoff(kind, _attempt_counter[0], None)
+                is_overload = kind in _OVERLOAD_KINDS
+                wait_s = policy._compute_backoff(kind, _attempt_counter[0], None, overload=is_overload)
                 if wait_s > 0:
                     _time.sleep(wait_s)
 
-        # failover_after_retries == 3: stop retrying primary after 3 attempts.
-        failover_after = policy._failover_after
-
+        # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) use the higher retry cap
+        # so tenacity doesn't stop too early on the primary before policy can
+        # exhaust the overload budget.
         _exhausted = False
         try:
             for attempt in tenacity.Retrying(
                 retry=tenacity.retry_if_exception(_is_retryable),
                 wait=tenacity.wait_none(),
-                stop=tenacity.stop_after_attempt(failover_after),
+                stop=tenacity.stop_after_attempt(policy._overload_max_retries),
                 before_sleep=_before_sleep,
                 reraise=True,
             ):
