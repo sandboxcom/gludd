@@ -915,6 +915,13 @@ ci-artifacts:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-artifacts RUN=<id>"; exit 1; fi
 	@gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/artifacts 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); a=d.get('artifacts',[]); print('TOTAL ARTIFACTS:', d.get('total_count', len(a))); [print(' -', x['name'], x['size_in_bytes'], 'bytes', '(EXPIRED)' if x.get('expired') else '(live)') for x in a]" || echo "ci-artifacts-failed"
 
+# Print the headSha + conclusion + status for a specific CI run id, so we can
+# decide whether a run is CURRENT or STALE vs a given remote tip.
+# Usage: make ci-run-detail RUN=<id>
+ci-run-detail:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-run-detail RUN=<id>"; exit 1; fi
+	@gh api repos/sandboxcom/gludd/actions/runs/$(RUN) 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print('run_id=%s' % d.get('id')); print('headSha=%s' % d.get('head_sha')); print('status=%s' % d.get('status')); print('conclusion=%s' % d.get('conclusion')); print('created_at=%s' % d.get('created_at')); print('head_branch=%s' % d.get('head_branch'))" || echo "ci-run-detail-failed"
+
 # Integration helper: copy a (red-team-fixed/new) file from an agent worktree
 # into the main checkout without routing it through the orchestrator's context.
 wt-import:
@@ -2446,25 +2453,7 @@ ci-verdict:
 	@LOCAL_HEAD=$$(git rev-parse "$(BRANCH)" 2>/dev/null || echo "UNKNOWN"); \
 	echo "local HEAD of $(BRANCH): $$LOCAL_HEAD"; \
 	RUN_JSON=$$(gh run list -R sandboxcom/gludd -L 5 --branch "$(BRANCH)" --json headSha,conclusion,status,databaseId,createdAt 2>/dev/null || echo "[]"); \
-	echo "$$RUN_JSON" | $(PYTHON) -c " \
-import sys, json; \
-local_head = '$$LOCAL_HEAD'; \
-runs = json.load(sys.stdin); \
-if not runs: print('ci-verdict: no runs found for branch $(BRANCH)'); sys.exit(0); \
-r = runs[0]; \
-head_sha = r.get('headSha', '?'); \
-conclusion = r.get('conclusion') or r.get('status') or '?'; \
-run_id = r.get('databaseId', '?'); \
-created = r.get('createdAt', '?'); \
-print(f'Latest run {run_id} created={created}'); \
-print(f'  headSha={head_sha}  conclusion={conclusion}'); \
-if local_head != 'UNKNOWN' and not head_sha.startswith(local_head[:7]): \
-    print(); \
-    print('  !! STALE RUN WARNING: run headSha ' + head_sha + ' != local HEAD ' + local_head); \
-    print('  !! This run does NOT reflect the current branch tip — do NOT use it as a verdict.'); \
-else: \
-    print(f'  -> RUN MATCHES LOCAL HEAD: verdict = {conclusion}'); \
-"
+	echo "$$RUN_JSON" | GLUDD_LOCAL_HEAD="$$LOCAL_HEAD" GLUDD_BRANCH="$(BRANCH)" $(PYTHON) -c "import sys, json, os; lh=os.environ['GLUDD_LOCAL_HEAD']; br=os.environ['GLUDD_BRANCH']; runs=json.load(sys.stdin); r=(runs[0] if runs else None); (print('ci-verdict: no runs found for branch '+br) or sys.exit(0)) if not r else None; hs=r.get('headSha','?'); concl=(r.get('conclusion') or r.get('status') or '?'); rid=r.get('databaseId','?'); created=r.get('createdAt','?'); print('Latest run %s created=%s' % (rid, created)); print('  headSha=%s  conclusion=%s' % (hs, concl)); stale=(lh != 'UNKNOWN' and not hs.startswith(lh[:7])); print('\n  !! STALE RUN WARNING: run headSha '+hs+' != local HEAD '+lh+'\n  !! This run does NOT reflect the current branch tip -- do NOT use it as a verdict.') if stale else print('  -> RUN MATCHES LOCAL HEAD: verdict = '+str(concl))"
 
 git-push-branch:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
