@@ -16,7 +16,7 @@ def _parse(args: list[str]) -> object:
 
 class TestMCPCliParsing:
     def test_mcp_search_defaults(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -27,7 +27,7 @@ class TestMCPCliParsing:
             assert "github" in out
 
     def test_mcp_search_with_query(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -37,7 +37,7 @@ class TestMCPCliParsing:
             mock_req.assert_called_once()
 
     def test_mcp_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -48,7 +48,7 @@ class TestMCPCliParsing:
             assert "filesystem" in out
 
     def test_mcp_info(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -59,7 +59,7 @@ class TestMCPCliParsing:
             assert "github" in out
 
     def test_mcp_info_not_found(self):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(status_code=404, text="not found")
             with patch("sys.exit") as mock_exit:
                 _parse(["mcp", "info", "nonexistent"])
@@ -68,7 +68,7 @@ class TestMCPCliParsing:
 
 class TestSkillsCliParsing:
     def test_skills_search_defaults(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -88,13 +88,13 @@ class TestSkillsCliParsing:
             assert "tdd-discipline" in out
 
     def test_skills_search_with_query(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(status_code=200, text="", json=lambda: {"results": []})
             _parse(["skills", "search", "security"])
             mock_req.assert_called_once()
 
     def test_skills_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -105,7 +105,7 @@ class TestSkillsCliParsing:
             assert "tdd-discipline" in out
 
     def test_skills_install(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -116,7 +116,7 @@ class TestSkillsCliParsing:
             assert "tdd-discipline" in out
 
     def test_skills_install_not_found(self):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(status_code=404, text="not found")
             import pytest
             with pytest.raises(SystemExit) as exc_info:
@@ -126,7 +126,7 @@ class TestSkillsCliParsing:
 
 class TestComputeCliParsing:
     def test_compute_endpoints(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -150,7 +150,7 @@ class TestComputeCliParsing:
             assert "local-gpu" in out
 
     def test_compute_register(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -161,7 +161,7 @@ class TestComputeCliParsing:
             assert "test-ep" in out
 
     def test_compute_register_error(self):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(status_code=422, text="missing fields")
             with patch("sys.exit") as mock_exit:
                 _parse(["compute", "register", "--id", "", "--url", ""])
@@ -170,7 +170,7 @@ class TestComputeCliParsing:
 
 class TestHooksCliParsing:
     def test_hooks_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -181,14 +181,14 @@ class TestHooksCliParsing:
             assert "h1" in out
 
     def test_hooks_list_empty(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(status_code=200, text="", json=lambda: {"hooks": []})
             _parse(["hooks", "list"])
             out = capsys.readouterr().out
             assert "No hooks" in out
 
     def test_hooks_register(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"hook_id": "new-hook"},
             )
@@ -197,7 +197,7 @@ class TestHooksCliParsing:
             assert "new-hook" in out
 
     def test_hooks_delete(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.delete") as mock_req:
             mock_req.return_value = MagicMock(status_code=200, text="", json=lambda: {})
             _parse(["hooks", "delete", "h1"])
             out = capsys.readouterr().out
@@ -206,7 +206,7 @@ class TestHooksCliParsing:
 
 class TestWorkersCliParsing:
     def test_workers_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -217,7 +217,7 @@ class TestWorkersCliParsing:
             assert "w1" in out
 
     def test_workers_ping(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"pinged": 1},
             )
@@ -228,7 +228,7 @@ class TestWorkersCliParsing:
 
 class TestAgentsCliParsing:
     def test_agents_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -239,7 +239,7 @@ class TestAgentsCliParsing:
             assert "coder" in out
 
     def test_agents_list_empty(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(status_code=200, text="", json=lambda: {"agents": []})
             _parse(["agents", "list"])
             out = capsys.readouterr().out
@@ -248,7 +248,7 @@ class TestAgentsCliParsing:
 
 class TestMetricsCliParsing:
     def test_metrics_cost(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"total_cost_usd": 1.23},
             )
@@ -257,7 +257,7 @@ class TestMetricsCliParsing:
             assert "1.23" in out
 
     def test_metrics_report(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"report": "ok"},
             )
@@ -268,7 +268,7 @@ class TestMetricsCliParsing:
 
 class TestReloadCliParsing:
     def test_reload(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"scope": "all"},
             )
@@ -279,7 +279,7 @@ class TestReloadCliParsing:
 
 class TestTemplatesCliParsing:
     def test_templates_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"templates": ["prompt_a.txt", "prompt_b.txt"]},
             )
@@ -288,7 +288,7 @@ class TestTemplatesCliParsing:
             assert "prompt_a" in out
 
     def test_templates_refresh(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"templates": ["t1", "t2", "t3", "t4", "t5"]},
             )
@@ -299,7 +299,7 @@ class TestTemplatesCliParsing:
 
 class TestPlaybooksCliParsing:
     def test_playbooks_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"playbooks": ["noop.yml", "run.yml"]},
             )
@@ -308,7 +308,7 @@ class TestPlaybooksCliParsing:
             assert "noop.yml" in out
 
     def test_playbooks_refresh(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200, text="", json=lambda: {"playbooks": ["p1", "p2", "p3"]},
             )
@@ -341,7 +341,7 @@ class TestCodeIntelCliParsing:
 
 class TestModelsCrudCliParsing:
     def test_models_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -352,14 +352,14 @@ class TestModelsCrudCliParsing:
             assert "gpt4" in out
 
     def test_models_add(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(status_code=200, text="", json=lambda: {})
             _parse(["models", "add", "--model-id", "test-model", "--provider", "openai"])
             out = capsys.readouterr().out
             assert "test-model" in out
 
     def test_models_remove(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.delete") as mock_req:
             mock_req.return_value = MagicMock(status_code=200, text="", json=lambda: {})
             _parse(["models", "remove", "test-model"])
             out = capsys.readouterr().out
@@ -368,7 +368,7 @@ class TestModelsCrudCliParsing:
 
 class TestQuantizationCli:
     def test_quantization_list(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.get") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -379,7 +379,7 @@ class TestQuantizationCli:
             assert "test-model" in out
 
     def test_quantization_detect(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
@@ -390,7 +390,7 @@ class TestQuantizationCli:
             assert "test-model" in out
 
     def test_quantization_drift_check(self, capsys):
-        with patch("general_ludd.cli.httpx.request") as mock_req:
+        with patch("general_ludd.cli.httpx.post") as mock_req:
             mock_req.return_value = MagicMock(
                 status_code=200,
                 text="",
