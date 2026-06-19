@@ -24,6 +24,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         typecheck setup-dirs setup-venv clean healthcheck \
         bootstrap skeleton version check-uv check-pytest \
         ansible-syntax ansible-lint-playbooks ansible-collection-test playbook-list \
+        a11y-check \
         git-status git-init git-add git-commit git-log git-diff git-reset \
         git-branch git-checkout git-merge git-staged \
         repo-status repo-diff repo-staged repo-log \
@@ -1593,6 +1594,34 @@ collect-prompts:
 	@echo "Done. Run 'make collect-prompts SOURCE=aider' for a specific agent."
 
 NAME ?= mp-diagnose
+
+# A11y + visual-QA checker — pure-stdlib HTML static analysis.
+# Usage:
+#   make a11y-check FILE=path/to/index.html      (single file)
+#   make a11y-check SITE=path/to/site/           (whole directory)
+# Exits 0 if all files pass, 1 if any error-severity finding is found.
+FILE ?=
+SITE ?=
+a11y-check:
+	@if [ -z "$(FILE)" ] && [ -z "$(SITE)" ]; then \
+		echo "Usage: make a11y-check FILE=path/to/index.html"; \
+		echo "   or: make a11y-check SITE=path/to/site/"; \
+		exit 1; \
+	fi
+	@$(UV) run $(PYTHON) -c " \
+import sys, json; \
+from general_ludd.quality.a11y_checker import check_html_file, check_site_dir; \
+file_arg = '$(FILE)'; site_arg = '$(SITE)'; \
+reports = [check_html_file(file_arg)] if file_arg else check_site_dir(site_arg); \
+failed = 0; \
+for r in reports: \
+    print(r.summary()); \
+    [print(f'  [{f.severity.upper():7s}] {f.check}: {f.message}' + (f' -- {f.element}' if f.element else '')) for f in r.findings]; \
+    failed += 0 if r.passed else 1; \
+print(); \
+print(f'a11y-check: {len(reports)} file(s) checked, {failed} failed'); \
+sys.exit(1 if failed else 0) \
+"
 
 skill-list:
 	@$(UV) run $(PYTHON) -c "from general_ludd.skills.catalog import SkillCatalog; cat = SkillCatalog(); [print(f'  {s.name:30s} {s.category:15s} {s.description[:60]}') for s in cat.search(limit=100)]"
