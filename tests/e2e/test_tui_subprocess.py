@@ -24,11 +24,27 @@ _SRC_DIR = str(_REPO_ROOT / "src")
 
 
 def _subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ with src/ guaranteed on PYTHONPATH."""
+    """Return a copy of os.environ that lets the child import BOTH general_ludd AND
+    its third-party deps (httpx, rich, ...).
+
+    Passing only src/ on PYTHONPATH is insufficient: under CI the child resolves
+    general_ludd from src/ but then fails at `import httpx` because the parent's
+    site-packages are not guaranteed to be on the child's import path. We therefore
+    hand the child the parent interpreter's ENTIRE sys.path (which already contains
+    both the installed deps and, after we prepend it, src/). Combined with launching
+    via sys.executable (the same venv interpreter running this test), the child sees
+    exactly what the parent sees.
+    """
     env = dict(os.environ)
+    # src/ first, then every non-empty entry of the parent's sys.path (site-packages
+    # with httpx/rich/etc.), then any pre-existing PYTHONPATH. De-duplicate, keep order.
+    parts: list[str] = [_SRC_DIR, *[p for p in sys.path if p]]
     existing = env.get("PYTHONPATH", "")
-    if _SRC_DIR not in existing.split(os.pathsep):
-        env["PYTHONPATH"] = _SRC_DIR + (os.pathsep + existing if existing else "")
+    if existing:
+        parts.extend(existing.split(os.pathsep))
+    seen: set[str] = set()
+    ordered = [p for p in parts if not (p in seen or seen.add(p))]
+    env["PYTHONPATH"] = os.pathsep.join(ordered)
     env["TERM"] = "xterm-256color"
     return env
 
