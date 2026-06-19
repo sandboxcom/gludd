@@ -34,7 +34,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         build-executable dist dist-clean bundle-binaries bundle-ripgrep \
         sast sbom pip-audit security \
         audit-messages qa validate collect-check gate smoke install-hooks \
-        status-snapshot audit-evidence deps-audit dogfood-features \
+        status-snapshot audit-evidence deps-audit dogfood-features dogfood-multiprovider \
         skill-install skill-list bootstrap-skills scan-tool-usage \
         scan-secrets scan-secrets-baseline clean-untracked clean-hooks \
         git-remote-sandboxcom git-push-sandboxcom git-pull-sandboxcom git-fetch-sandboxcom \
@@ -1615,6 +1615,9 @@ dogfood:
 
 dogfood-features:
 	@$(UV) run python scripts/dogfood_features.py
+
+dogfood-multiprovider:
+	@$(UV) run python -m pytest tests/e2e/dogfood/test_multiprovider_e2e.py -v -p no:cacheprovider
 
 # --- Orchestration planner (#32) ---
 # Reads a JSON work-list (file path via WORK= or stdin) and prints which items

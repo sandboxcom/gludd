@@ -24,6 +24,7 @@ class AdaptiveRouter:
         min_samples: int = 3,
         cost_weight: float = 0.2,
         quality_weight: float = 0.8,
+        usefulness_weight: float = 0.1,
         quantization_map: dict[str, tuple[str, float]] | None = None,
         health_tracker: Any | None = None,
     ) -> None:
@@ -31,6 +32,7 @@ class AdaptiveRouter:
         self._min_samples = min_samples
         self._cost_weight = cost_weight
         self._quality_weight = quality_weight
+        self._usefulness_weight = usefulness_weight
         self._quantization_map = quantization_map or {}
         self._health_tracker = health_tracker
         self._cache: dict[str, RoutingDecision] = {}
@@ -130,6 +132,7 @@ class AdaptiveRouter:
                 continue
             composite = float(agg.get("composite_score", 0.0))
             avg_cost = float(agg.get("avg_cost", 0.0))
+            usefulness = float(agg.get("usefulness_score", 0.5))
             candidates.append(
                 RoutingCandidate(
                     prompt_profile_id=agg.get("prompt_profile_id"),
@@ -138,6 +141,7 @@ class AdaptiveRouter:
                     avg_cost_usd=avg_cost,
                     sample_count=sample_count,
                     task_type=task_type,
+                    usefulness_score=usefulness,
                 )
             )
         if not candidates:
@@ -154,20 +158,25 @@ class AdaptiveRouter:
         ]
         return max(ranked, key=lambda pair: pair[0])[1]
 
-    @staticmethod
     def _cost_adjusted_rank(
+        self,
         candidate: RoutingCandidate,
         quality: float,
         max_cost: float,
     ) -> float:
-        """Rank key: quality reward minus normalized-cost penalty, per task role.
+        """Rank key: quality + usefulness reward minus normalized-cost penalty, per task role.
+
+        usefulness_score captures task-outcome usefulness independently of raw
+        quality — e.g. correct tool calls, low hallucination rate, appropriate
+        verbosity. Defaults to 0.5 (neutral) when no evidence is available.
 
         Internal RANKING key only — does NOT mutate composite_score.
         """
         weights = weights_for(candidate.task_type)
         cost = candidate.avg_cost_usd
         cost_norm = (cost / max_cost) if (max_cost > 0 and math.isfinite(cost)) else 0.0
-        return weights.quality * quality - weights.cost * cost_norm
+        usefulness = candidate.usefulness_score
+        return weights.quality * quality + self._usefulness_weight * usefulness - weights.cost * cost_norm
 
     def _apply_quantization_penalty(self, candidate: RoutingCandidate) -> float:
         score = candidate.composite_score

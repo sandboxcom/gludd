@@ -75,6 +75,17 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "free_models_endpoint": None,
         "supports_free_models": False,
     },
+    "ollama": {
+        "api_base_url": "http://localhost:11434/v1",
+        "provider_package": "langchain-openai",
+        "provider_class": "ChatOpenAI",
+        "credential_env_var": "OLLAMA_API_KEY",
+        "credential_alias": "ollama_api_key",
+        "api_base_alias": "ollama_api_base",
+        "display_name": "Ollama (local)",
+        "free_models_endpoint": None,
+        "supports_free_models": True,
+    },
 }
 
 
@@ -101,6 +112,21 @@ def list_configured_providers(environ: dict[str, str] | None = None) -> list[str
     env = environ if environ is not None else dict(os.environ)
     configured: list[str] = []
     for name, preset in PROVIDER_PRESETS.items():
-        if preset["credential_env_var"] in env and bool(env[preset["credential_env_var"]]):
+        if name == "ollama":
+            if is_ollama_available(env):
+                configured.append(name)
+        elif preset["credential_env_var"] in env and bool(env[preset["credential_env_var"]]):
             configured.append(name)
     return configured
+
+
+def is_ollama_available(environ: dict[str, str] | None = None) -> bool:
+    """Return True if Ollama appears to be configured (no API key required).
+
+    Checks for OLLAMA_BASE_URL or OLLAMA_MODEL env vars as intent signals,
+    since Ollama is a local server with no mandatory credential.
+    """
+    import os
+
+    env = environ if environ is not None else dict(os.environ)
+    return bool(env.get("OLLAMA_BASE_URL") or env.get("OLLAMA_MODEL") or env.get("OLLAMA_API_KEY"))

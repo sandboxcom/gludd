@@ -117,6 +117,19 @@ class RoutingCandidate(BaseModel):
     avg_cost_usd: float
     sample_count: int
     task_type: TaskType
+    usefulness_score: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Task-outcome usefulness of this model for the given task type: "
+            "0.0 = rarely useful, 0.5 = neutral/unknown, 1.0 = highly useful. "
+            "Distinct from raw quality — captures whether the model's outputs "
+            "actually advance the task goal (e.g. correct tool calls, minimal "
+            "hallucination, appropriate verbosity). Set from benchmark outcomes; "
+            "defaults to 0.5 when no evidence is available."
+        ),
+    )
 
     @field_validator("composite_score")
     @classmethod
