@@ -238,6 +238,105 @@ class TestA3NoAuthDegraded:
         assert resp.status_code == 200
 
 
+# --- gateway-health-budget P1: no numeric spend/budget leak on /healthz -----
+
+class TestHealthzBudgetLeak:
+    """/healthz is an UNAUTHENTICATED public path. It may surface a coarse
+    `budget_exhausted` boolean, but it must NEVER leak the numeric spend/budget
+    figures (daily_spend, daily_limit, daily_pct, per_todo_limit) that
+    BudgetManager.get_status() returns — those reveal the operator's spend
+    posture and remaining headroom to any anonymous caller.
+    """
+
+    @staticmethod
+    def _app_with_spend(*, paused: bool):
+        """Daemon app with a BudgetManager carrying real, distinctive spend
+        numbers injected onto app.state (the lifespan wires this in prod; we
+        inject directly so the absence assertion is meaningful without a DB).
+        """
+        from general_ludd.controllers.budget_manager import BudgetManager
+
+        env = dict(os.environ)
+        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_REQUIRE_AUTH", None)
+        with patch.dict(os.environ, env, clear=True):
+            app = create_daemon_app(tick_interval=0.01)
+        bm = BudgetManager(daily_limit_usd=137.50, per_todo_limit_usd=9.25)
+        bm.record_spend("todo-x", 42.75)
+        if paused:
+            # Trip the kill switch so budget_exhausted is True.
+            bm._paused = True
+        app.state._budget_manager = bm
+        return app
+
+    @staticmethod
+    def _numeric_leaf_values(obj):
+        """Yield every int/float leaf in a nested JSON structure (excluding
+        bools, which are a coarse, intentionally-public signal)."""
+        if isinstance(obj, bool):
+            return
+        if isinstance(obj, (int, float)):
+            yield obj
+        elif isinstance(obj, dict):
+            for v in obj.values():
+                yield from TestHealthzBudgetLeak._numeric_leaf_values(v)
+        elif isinstance(obj, (list, tuple)):
+            for v in obj:
+                yield from TestHealthzBudgetLeak._numeric_leaf_values(v)
+
+    @pytest.mark.asyncio
+    async def test_healthz_exposes_no_numeric_budget_values(self):
+        app = self._app_with_spend(paused=False)
+        async with _client(app) as c:
+            resp = await c.get("/healthz")
+        assert resp.status_code == 200
+        body = resp.json()
+        # The whole numeric-bearing `budget` dict must be gone entirely.
+        assert "budget" not in body, (
+            "gateway-health-budget P1: the numeric BudgetManager.get_status() "
+            "dict must NOT be embedded in the unauthenticated /healthz response."
+        )
+        # No spend/budget numeric figures may appear anywhere in the body.
+        for forbidden in ("daily_spend", "daily_limit", "daily_pct", "per_todo_limit"):
+            assert forbidden not in body, (
+                f"gateway-health-budget P1: '{forbidden}' must not be exposed "
+                "on the unauthenticated /healthz endpoint."
+            )
+        numerics = list(self._numeric_leaf_values(body))
+        # The known-injected spend figures must not surface.
+        assert 42.75 not in numerics
+        assert 137.50 not in numerics
+        assert 9.25 not in numerics
+        # And there must be NO numeric leaves at all — only string status fields
+        # and boolean posture flags are public.
+        assert numerics == [], (
+            f"gateway-health-budget P1: /healthz leaked numeric value(s) "
+            f"{numerics} to an unauthenticated caller; only string status and "
+            "boolean flags are permitted."
+        )
+
+    @pytest.mark.asyncio
+    async def test_healthz_keeps_coarse_budget_exhausted_boolean(self):
+        # Coarse boolean stays public and tracks the kill-switch state.
+        app = self._app_with_spend(paused=True)
+        async with _client(app) as c:
+            resp = await c.get("/healthz")
+        body = resp.json()
+        assert resp.status_code == 200
+        assert body.get("budget_exhausted") is True, (
+            "the coarse `budget_exhausted` boolean must remain public so probes "
+            "can observe the kill-switch without seeing the numbers."
+        )
+
+    def test_source_does_not_embed_budget_status_in_healthz(self):
+        # Regression guard: the `"budget": budget_status` line that leaked the
+        # numeric dict must not return to the handler.
+        assert '"budget": budget_status' not in _DAEMON_SRC, (
+            "gateway-health-budget P1: the numeric budget_status dict must not "
+            "be embedded in the /healthz response payload."
+        )
+
+
 # --- header / token-parsing hygiene -----------------------------------------
 
 class TestAuthParsingHygiene:

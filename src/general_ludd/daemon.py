@@ -1135,6 +1135,13 @@ def create_daemon_app(
         auth_degraded = no_auth and allow_no_auth
         budget_manager = getattr(app.state, "_budget_manager", None)
         budget_status = budget_manager.get_status() if budget_manager is not None else {}
+        # SECURITY (gateway-health-budget P1): /healthz is an UNAUTHENTICATED
+        # public path (in `_PUBLIC_PATHS`). Never expose the numeric
+        # budget/spend figures (daily_spend, daily_limit, daily_pct,
+        # per_todo_limit) returned by BudgetManager.get_status() to anonymous
+        # callers — that leaks the operator's spend posture and remaining
+        # headroom. Only the coarse boolean `budget_exhausted` is public; the
+        # full numbers live behind the auth'd surface (/api/spend, dashboard).
         budget_exhausted = bool(budget_status.get("paused", False))
         if degraded:
             return {
@@ -1145,7 +1152,6 @@ def create_daemon_app(
                 "allow_no_auth": allow_no_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
-                "budget": budget_status,
             }
         return {
             "status": "healthy",
@@ -1154,7 +1160,6 @@ def create_daemon_app(
             "allow_no_auth": allow_no_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
-            "budget": budget_status,
         }
 
     @app.get("/readyz")
