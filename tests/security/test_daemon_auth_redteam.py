@@ -1,4 +1,4 @@
-"""Red-team regression tests for daemon auth (findings A-1, A-2, A-3).
+"""Red-team regression tests for daemon auth (findings A-1, A-2, A-3, P1).
 
 A read-only red-team found three daemon-auth weaknesses:
 
@@ -11,20 +11,17 @@ A read-only red-team found three daemon-auth weaknesses:
        log only a boolean `psk_configured`.
 
   A-3  When GLUDD_PSK is unset/empty, ALL auth is skipped silently and the
-       entire /admin surface is open. A naive fail-closed would break the
-       ~100 existing no-PSK tests, so the BACKWARD-COMPATIBLE fix is:
-         (a) LOUD startup WARNING when no PSK is configured,
-         (b) a `no_auth` / `auth_degraded` flag on /healthz,
-         (c) opt-in env GLUDD_REQUIRE_AUTH=1 that makes no-PSK fail-closed
-             (503 on non-public paths).
-       Default posture stays OPEN-but-warned (the existing suite depends on
-       open admin access without a PSK).
+       entire /admin surface is open.
+       FIX (P1): FAIL-CLOSED by default — no PSK → 503 on non-public paths.
+       GLUDD_ALLOW_NO_AUTH=1 is the explicit dev/test opt-out that restores
+       the open posture (with a LOUD warning).
+       GLUDD_REQUIRE_AUTH=1 is kept for back-compat; it also forces fail-closed
+       and overrides GLUDD_ALLOW_NO_AUTH.
 
-RESIDUAL (documented): the default no-PSK posture is still open. Operators
-who want a hard fail-closed default must set GLUDD_REQUIRE_AUTH=1. This is a
-deliberate back-compat concession, not an oversight — flipping the default
-would break the no-PSK test corpus and any deployment relying on dev-mode
-open access. The warning + healthz flag make the degraded posture observable.
+NOTE: the test suite conftest sets GLUDD_ALLOW_NO_AUTH=1 globally so that
+the ~100 existing no-PSK tests continue to exercise daemon logic rather than
+middleware rejection. Tests below that verify fail-closed behaviour must
+explicitly unset GLUDD_ALLOW_NO_AUTH before creating the app.
 """
 
 from __future__ import annotations
@@ -112,14 +109,16 @@ class TestA2NoPskInLogs:
         )
 
 
-# --- A-3: degraded flag + opt-in fail-closed --------------------------------
+# --- A-3 / P1: fail-closed by default, GLUDD_ALLOW_NO_AUTH=1 opt-out ------
 
 class TestA3NoAuthDegraded:
     @pytest.mark.asyncio
-    async def test_healthz_reports_no_auth_when_psk_unset(self):
+    async def test_healthz_reports_no_auth_when_psk_unset_allow_no_auth(self):
+        """With GLUDD_ALLOW_NO_AUTH=1 (dev opt-out), healthz reports auth_degraded."""
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
+        env["GLUDD_ALLOW_NO_AUTH"] = "1"
         with patch.dict(os.environ, env, clear=True):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
@@ -129,6 +128,7 @@ class TestA3NoAuthDegraded:
         # Liveness status stays "healthy" for back-compat; the security posture
         # rides on the no_auth / auth_degraded flags.
         assert body.get("no_auth") is True
+        # auth_degraded = no PSK AND opted-out of fail-closed (open dev mode).
         assert body.get("auth_degraded") is True
 
     @pytest.mark.asyncio
@@ -142,37 +142,68 @@ class TestA3NoAuthDegraded:
         assert body.get("auth_degraded") is False
 
     def test_no_psk_logs_loud_warning(self, caplog):
+        """A loud warning fires whether fail-closed or dev-open; PSK absence is always warned."""
         import logging
 
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
+        with patch.dict(os.environ, env, clear=True), caplog.at_level(logging.WARNING):
+            create_daemon_app(tick_interval=0.01)
+        joined = " ".join(r.getMessage() for r in caplog.records).lower()
+        assert "gludd_psk" in joined and (
+            "refuse" in joined or "fail-closed" in joined or "fail_closed" in joined
+        ), "P1: a LOUD startup WARNING must fire when GLUDD_PSK is unset (fail-closed mode)."
+
+    def test_no_psk_allow_no_auth_logs_loud_warning(self, caplog):
+        """With GLUDD_ALLOW_NO_AUTH=1, a loud warning fires that auth is disabled."""
+        import logging
+
+        env = dict(os.environ)
+        env.pop("GLUDD_PSK", None)
+        env.pop("GLUDD_REQUIRE_AUTH", None)
+        env["GLUDD_ALLOW_NO_AUTH"] = "1"
         with patch.dict(os.environ, env, clear=True), caplog.at_level(logging.WARNING):
             create_daemon_app(tick_interval=0.01)
         joined = " ".join(r.getMessage() for r in caplog.records).lower()
         assert "gludd_psk" in joined and (
             "disabled" in joined or "no_auth" in joined or "open" in joined
-        ), "A-3: a LOUD startup WARNING must fire when GLUDD_PSK is unset."
+        ), "P1: a LOUD startup WARNING must fire when GLUDD_ALLOW_NO_AUTH=1 and no PSK."
 
     @pytest.mark.asyncio
-    async def test_default_no_psk_keeps_admin_open(self):
-        """Back-compat residual: default posture is OPEN-but-warned, NOT 503."""
-        env = dict(os.environ)
-        env.pop("GLUDD_PSK", None)
-        env.pop("GLUDD_REQUIRE_AUTH", None)
-        with patch.dict(os.environ, env, clear=True):
-            app = create_daemon_app(tick_interval=0.01)
+    async def test_default_no_psk_fails_closed(self, monkeypatch):
+        """P1: default posture (no PSK, no opt-out) is FAIL-CLOSED → 503."""
+        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
+        monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+        app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
             resp = await c.get("/admin/does-not-exist")
-        # No 503 (not fail-closed) and no 401 (no auth gate) — handler-level 404.
-        assert resp.status_code != 503
-        assert resp.status_code != 401
+        assert resp.status_code == 503, (
+            "P1: no PSK + no GLUDD_ALLOW_NO_AUTH must refuse non-public paths (503)."
+        )
+
+    @pytest.mark.asyncio
+    async def test_allow_no_auth_opt_out_grants_access(self, monkeypatch):
+        """P1: GLUDD_ALLOW_NO_AUTH=1 opt-out keeps admin open (dev mode)."""
+        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.delenv("GLUDD_REQUIRE_AUTH", raising=False)
+        monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+        app = create_daemon_app(tick_interval=0.01)
+        async with _client(app) as c:
+            resp = await c.get("/admin/does-not-exist")
+        # No PSK + allow_no_auth: handler-level 404 (not 503, not 401).
+        assert resp.status_code == 404, (
+            "P1: GLUDD_ALLOW_NO_AUTH=1 must allow unauthenticated access to admin paths."
+        )
 
     @pytest.mark.asyncio
     async def test_require_auth_without_psk_fails_closed(self):
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
         env["GLUDD_REQUIRE_AUTH"] = "1"
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
         with patch.dict(os.environ, env, clear=True):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:
@@ -182,10 +213,24 @@ class TestA3NoAuthDegraded:
         )
 
     @pytest.mark.asyncio
+    async def test_require_auth_overrides_allow_no_auth(self, monkeypatch):
+        """GLUDD_REQUIRE_AUTH=1 forces fail-closed even when GLUDD_ALLOW_NO_AUTH=1."""
+        monkeypatch.delenv("GLUDD_PSK", raising=False)
+        monkeypatch.setenv("GLUDD_REQUIRE_AUTH", "1")
+        monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+        app = create_daemon_app(tick_interval=0.01)
+        async with _client(app) as c:
+            resp = await c.get("/admin/anything")
+        assert resp.status_code == 503, (
+            "GLUDD_REQUIRE_AUTH=1 must override GLUDD_ALLOW_NO_AUTH=1 — fail-closed wins."
+        )
+
+    @pytest.mark.asyncio
     async def test_require_auth_keeps_public_paths_open(self):
         env = dict(os.environ)
         env.pop("GLUDD_PSK", None)
         env["GLUDD_REQUIRE_AUTH"] = "1"
+        env.pop("GLUDD_ALLOW_NO_AUTH", None)
         with patch.dict(os.environ, env, clear=True):
             app = create_daemon_app(tick_interval=0.01)
         async with _client(app) as c:

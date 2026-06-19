@@ -52,6 +52,23 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
 
 
 @pytest.fixture(autouse=True)
+def _no_auth_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
+    """Set GLUDD_ALLOW_NO_AUTH=1 for the entire test suite.
+
+    The daemon now defaults to fail-closed (503) when no PSK is configured.
+    Most tests intentionally run without a PSK and expect open admin access —
+    this fixture opts them all out of the fail-closed default so they continue
+    to exercise daemon logic rather than middleware rejection.
+
+    Tests that specifically need to verify the fail-closed behaviour (e.g.
+    test_daemon_auth_redteam.py) must explicitly undo this via:
+        monkeypatch.delenv("GLUDD_ALLOW_NO_AUTH", raising=False)
+    before creating the daemon app under test.
+    """
+    monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+
+
+@pytest.fixture(autouse=True)
 def _async_teardown_drain() -> None:
     """Drain async generators and collect garbage after each test.
 
