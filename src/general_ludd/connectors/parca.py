@@ -33,23 +33,18 @@ seconds, ``message`` the function name, and ``labels`` the decoded label-set.
 
 from __future__ import annotations
 
-import ipaddress
 import logging
 import os
 from typing import Any, Protocol
-from urllib.parse import urlsplit
 
 import httpx
+
+from general_ludd.connectors._ssrf_guard import _assert_safe_base_url
 
 logger = logging.getLogger(__name__)
 
 # Connect/HTTP path for the Parca QueryService range query.
 _QUERY_RANGE_PATH = "/parca.query.v1alpha1.QueryService/QueryRange"
-
-_ALLOWED_SCHEMES = frozenset({"http", "https"})
-_BLOCKED_HOST_NAMES = frozenset(
-    {"localhost", "localhost.localdomain", "metadata", "metadata.google.internal"}
-)
 
 
 # --------------------------------------------------------------------------- #
@@ -90,52 +85,6 @@ class _HttpxTransport:
     ) -> _Response:
         with httpx.Client(timeout=timeout) as client:
             return client.post(url, json=json, headers=headers)
-
-
-# --------------------------------------------------------------------------- #
-# SSRF guard (literal-host, no DNS)
-# --------------------------------------------------------------------------- #
-def _assert_safe_base_url(url: str, *, allow_private: bool) -> None:
-    """Reject obviously-internal backend URLs by *literal* host inspection.
-
-    Never resolves DNS: a bare hostname is accepted (egress allowlisting is the
-    deployment's job). Raises ``ValueError`` on a non-http(s) scheme, a missing
-    host, a named metadata host, or — unless ``allow_private`` — a loopback /
-    private / link-local / reserved / multicast / unspecified literal IP.
-    """
-    try:
-        parts = urlsplit(url)
-    except ValueError as exc:  # pragma: no cover - urlsplit rarely raises
-        raise ValueError(f"unparseable base_url: {url!r}") from exc
-
-    if parts.scheme.lower() not in _ALLOWED_SCHEMES:
-        raise ValueError(f"base_url scheme must be http/https: {url!r}")
-
-    host = parts.hostname
-    if not host:
-        raise ValueError(f"base_url has no host: {url!r}")
-
-    if host.lower() in _BLOCKED_HOST_NAMES and not allow_private:
-        raise ValueError(f"base_url host is blocked: {host!r}")
-
-    try:
-        ip = ipaddress.ip_address(host)
-    except ValueError:
-        # A DNS name — do not resolve; literal-host policy accepts it.
-        return
-
-    if allow_private:
-        return
-
-    if (
-        ip.is_loopback
-        or ip.is_private
-        or ip.is_link_local
-        or ip.is_reserved
-        or ip.is_multicast
-        or ip.is_unspecified
-    ):
-        raise ValueError(f"base_url resolves to an internal/private IP: {host!r}")
 
 
 # --------------------------------------------------------------------------- #
