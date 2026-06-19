@@ -2425,6 +2425,24 @@ ship-ff:
 	@echo "[ship-ff] AFTER:  $$(git rev-parse HEAD)"
 	@echo "[ship-ff] $(TARGET) is now at $(REF)"
 
+# git-divergence: report ahead/behind counts of the current HEAD vs REF, and
+# whether REF is an ancestor of HEAD (fast-forwardable). Read-only inspection
+# used before deciding rebase vs ff vs force. Usage: make git-divergence REF=<ref>
+git-divergence:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-divergence REF=<ref>"; exit 1; }
+	@echo "[git-divergence] HEAD=$$(git rev-parse --short HEAD)  REF=$$(git rev-parse --short $(REF))"
+	@echo "[git-divergence] ahead/behind (local ahead, remote ahead): $$(git rev-list --left-right --count HEAD...$(REF))"
+	@git merge-base --is-ancestor $(REF) HEAD && echo "[git-divergence] REF is ANCESTOR of HEAD (HEAD is ahead; safe to push if remote == REF)" || echo "[git-divergence] REF is NOT an ancestor of HEAD (diverged; rebase needed)"
+
+# git-rebase-onto: rebase the current branch onto REF. Use to integrate a
+# diverged remote tip under the local commit before re-pushing. Usage:
+# make git-rebase-onto REF=sandboxcom/integration/alpha3-rc
+git-rebase-onto:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-rebase-onto REF=<ref>"; exit 1; }
+	@echo "[git-rebase-onto] BEFORE: $$(git rev-parse --short HEAD)"
+	@git rebase "$(REF)"
+	@echo "[git-rebase-onto] AFTER:  $$(git rev-parse --short HEAD)"
+
 # ---------------------------------------------------------------------------
 # git-worktree-list / git-worktree-remove: manage agent worktrees make-only.
 #
