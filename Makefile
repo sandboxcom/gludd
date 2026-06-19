@@ -47,7 +47,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
         ci-poll test-no-wait-hook \
         verify-remote ci-verdict \
-        git-push-branch
+        git-push-branch test-model-ratio-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -1666,6 +1666,9 @@ db-tables:
 # Test the no_wait_stop.sh stop hook against 6 known-good/known-bad payloads.
 test-no-wait-hook:
 	@$(PYTHON) scripts/test_no_wait_hook.py
+
+test-model-ratio-hook:
+	@$(PYTHON) scripts/test_model_ratio_hook.py
 
 debug-no-wait-hook:
 	@$(PYTHON) /tmp/debug_hook.py
