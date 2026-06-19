@@ -338,6 +338,33 @@ impossible to skip.
 - `make release-cut` — the only sanctioned release command; gate is step 1/4
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: Release Pipeline Must Be CI-Green (codified)
+
+**Every release tag MUST be preceded by a passing "Build and Release" CI run on the exact commit being tagged. `make release-cut` enforces this as step 0 and aborts the entire release if CI is not green.**
+
+### Rule
+Before `git-push-sandboxcom` or `git-tag-push` run, `scripts/require_ci_green.py` is called against HEAD. It queries GitHub Actions via `gh run list` and applies a fail-closed policy:
+
+| CI state | Exit | release-cut behaviour |
+|---|---|---|
+| completed + success | 0 (GREEN) | proceeds |
+| in_progress / queued / pending | 2 (PENDING) | ABORT — wait, retry |
+| failure / cancelled / timed_out / unknown | 1 (RED) | ABORT — fix CI, retry |
+| no matching run found | 1 (RED, fail-closed) | ABORT — push triggers a run; wait |
+
+### Enforcement
+- `scripts/require_ci_green.py` — enforcing script; pure `verdict_for()` unit-tested in `tests/unit/test_require_ci_green.py` (17 tests).
+- `make require-ci-green [SHA=<sha>]` — callable (default HEAD).
+- `make release-cut` — the only sanctioned release command; CI-green is step 0/4.
+
+### Never
+- Never push a release tag manually (bypasses the gate).
+- Never push fix-forward waves straight to master as if releasable; use a release-candidate branch, confirm its CI green, then ship-ff master.
+- Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA. (Reinforces no-unquantified-status-claims.)
+
+### Why fail-closed
+A non-green release tag means artifacts may build from broken code. The gate blocks the tag push rather than warning, so broken releases are structurally impossible via `make release-cut`.
+
 ## CRITICAL: Agent At-Rest / Re-Dispatch Policy
 
 **An agent "coming to rest" does NOT mean it is incomplete.** "At rest" =
