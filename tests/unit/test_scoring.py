@@ -12,6 +12,7 @@ from general_ludd.schemas.benchmark import (
     PromptProfile,
     RoutingCandidate,
     RoutingDecision,
+    TaskRole,
     TaskType,
 )
 from general_ludd.scoring.engine import (
@@ -100,6 +101,34 @@ class TestBenchmarkResult:
         assert r.success is False
         assert r.input_tokens == 0
         assert r.id is None
+
+    def test_task_role_defaults_none(self):
+        r = BenchmarkResult(
+            model_profile_id="openai",
+            task_type=TaskType.BUG_FIX,
+            scores=BenchmarkScores(
+                completion_score=0.8,
+                code_quality_score=0.7,
+                instruction_adherence_score=0.9,
+                token_efficiency_score=0.6,
+            ),
+        )
+        assert r.task_role is None
+
+    def test_task_role_accepts_valid_value(self):
+        r = BenchmarkResult(
+            model_profile_id="openai",
+            task_type=TaskType.FEATURE,
+            scores=BenchmarkScores(
+                completion_score=1.0,
+                code_quality_score=1.0,
+                instruction_adherence_score=1.0,
+                token_efficiency_score=1.0,
+            ),
+            task_role=TaskRole.PLANNER,
+        )
+        assert r.task_role is TaskRole.PLANNER
+        assert r.task_role == "planner"
 
 
 class TestRoutingDecision:
