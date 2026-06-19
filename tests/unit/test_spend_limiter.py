@@ -168,6 +168,57 @@ class TestDefaultClock:
         assert sl.remaining() < 5.0
 
 
+class TestRestoreFutureTimestampClamp:
+    """Security tests: restore() must clamp future timestamps to now.
+
+    A hostile restore() payload with ts = now + 9999 creates a record that
+    would NEVER expire from the rolling window (it is always within
+    [now - window_seconds, now] since future ts > now > cutoff).  That lets
+    an attacker peg the window spend artificially high indefinitely — a
+    denial-of-service against legitimate dispatches.
+
+    Fix: any ts > current_clock() must be clamped to current_clock() so the
+    restored record ages out of the window on the normal schedule.
+    """
+
+    def test_restore_future_timestamp_expires_normally(self) -> None:
+        """A record with a future timestamp must be clamped to now so it ages
+        out of the window at the normal time rather than living forever."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=60.0)
+        clock[0] = 100.0
+        # Inject a record with timestamp 9999 seconds in the future.
+        sl.restore([(100.0 + 9999.0, 5.0)])
+        # At t=100, the record should be visible (it was clamped to ts=100).
+        assert sl.window_spend(now=100.0) == pytest.approx(5.0)
+        # At t=161 (100+61), the record at ts=100 should have expired from
+        # the 60-second window (cutoff=101, ts=100 < 101 -> pruned).
+        assert sl.window_spend(now=161.0) == pytest.approx(0.0)
+
+    def test_restore_future_timestamp_does_not_inflate_forever(self) -> None:
+        """Without clamping, a far-future timestamp record is never pruned.
+        After clamping, it must age out normally."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1000.0
+        # Far-future timestamp: now + 100000 seconds.
+        sl.restore([(1000.0 + 100_000.0, 3.0)])
+        # Advance clock well past one window (4601 s later — window = 3600 s).
+        # If the ts were NOT clamped it would still be in the window.
+        # After clamping to ts=1000, cutoff at t=4601 is 4601-3600=1001 > 1000 -> pruned.
+        assert sl.window_spend(now=4601.0) == pytest.approx(0.0)
+
+    def test_restore_past_timestamps_unchanged(self) -> None:
+        """Timestamps legitimately in the past must not be altered."""
+        sl, clock = _make_limiter(limit_usd=10.0, window_seconds=3600.0)
+        clock[0] = 1000.0
+        # A record 100s in the past — still within the 3600s window.
+        sl.restore([(900.0, 2.0)])
+        assert sl.window_spend(now=1000.0) == pytest.approx(2.0)
+        # It must expire at t=900+3600=4500, i.e. still present at t=4499,
+        # absent at t=4501.
+        assert sl.window_spend(now=4499.0) == pytest.approx(2.0)
+        assert sl.window_spend(now=4501.0) == pytest.approx(0.0)
+
+
 class TestRestoreValidation:
     """Security tests: restore() must drop invalid (negative / non-finite) cost records.
 

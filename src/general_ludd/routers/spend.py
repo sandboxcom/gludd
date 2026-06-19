@@ -67,22 +67,26 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def api_spend_configure(req: ConfigureSpendRequest) -> dict[str, Any]:
         """Replace the spend limiter with new ``limit_usd`` / ``window_seconds``.
 
-        The existing in-memory spend records are NOT carried over — the new
-        limiter starts with an empty window.  This endpoint is intended for
-        operator use (operator key rotation / limit adjustment).
+        Prior spend history is PRESERVED: the old limiter's in-window records
+        are carried over via ``snapshot()`` / ``restore()`` so that
+        reconfiguring the cap cannot be used to reset the rolling window and
+        evade the spend cap (D-33).
 
         Returns:
             JSON with the new effective limits.
         """
         from general_ludd.controllers.spend_limiter import SpendLimiter
 
+        old_limiter = _get_limiter(app)
         new_limiter = SpendLimiter(
             limit_usd=req.limit_usd,
             window_seconds=req.window_seconds,
         )
+        if old_limiter is not None:
+            new_limiter.restore(old_limiter.snapshot())
         app.state._spend_limiter = new_limiter
         logger.info(
-            "SpendLimiter reconfigured: limit=%.4f USD window=%.0f s",
+            "SpendLimiter reconfigured: limit=%.4f USD window=%.0f s (history carried over)",
             req.limit_usd,
             req.window_seconds,
         )

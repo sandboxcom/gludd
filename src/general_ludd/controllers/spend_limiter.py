@@ -207,9 +207,18 @@ class SpendLimiter:
             records: A list of ``(timestamp, cost_usd)`` tuples produced by
                      ``snapshot`` (or an equivalent persisted form).  ``None``
                      or empty is a no-op.
+
+        Security notes:
+            * Negative or non-finite ``cost_usd`` values are silently dropped —
+              they would deflate ``window_spend()`` and enable cap evasion.
+            * Timestamps in the future (ts > now) are clamped to now — a
+              far-future timestamp creates a record that never expires from the
+              rolling window, allowing an attacker to peg window spend high
+              indefinitely as a DoS against legitimate dispatches.
         """
         if not records:
             return
+        now = self._clock()
         with self._lock:
             valid = []
             for ts, c in records:
@@ -230,6 +239,15 @@ class SpendLimiter:
                         ts_f,
                     )
                     continue
+                # Clamp future timestamps to now so a restored record with a
+                # far-future ts cannot live in the window indefinitely.
+                if ts_f > now:
+                    logger.warning(
+                        "SpendLimiter.restore: clamping future timestamp %r to now=%r.",
+                        ts_f,
+                        now,
+                    )
+                    ts_f = now
                 valid.append((ts_f, c_f))
             self._records.extend(valid)
 
