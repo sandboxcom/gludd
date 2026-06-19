@@ -723,3 +723,36 @@ False blockers (parallelize, do NOT wait): independent features, additive new fi
 CI observation, research/planning. Before ever "waiting," apply the decision checklist:
 (a) mutates shared master tree now? (b) needs gate/commit/push now? (c) depends on
 unmerged code? All NO → not a blocker, spin a worktree agent. Full policy: `docs/ORCHESTRATION.md`.
+
+## CRITICAL: Release Pipeline Must Be CI-Green (codified)
+
+**Every release tag MUST be preceded by a passing "Build and Release" CI run on the
+exact commit being tagged. `make release-cut` enforces this as step 0 and aborts the
+entire release if CI is not green. The CI workflow independently enforces it too: the
+`release` job `needs: [gate]` (transitively via the platform build jobs), so a tag push
+cannot publish a GitHub Release if the gate fails.**
+
+### Rule
+Before `git-push-sandboxcom`/`git-tag-push` run, `scripts/require_ci_green.py` is called
+against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
+
+| CI state | Exit | release-cut behaviour |
+|---|---|---|
+| completed + success | 0 (GREEN) | proceeds |
+| in_progress / queued / pending | 2 (PENDING) | ABORT — wait, retry |
+| failure / cancelled / timed_out / unknown | 1 (RED) | ABORT — fix CI, retry |
+| no matching run found | 1 (RED, fail-closed) | ABORT — push triggers a run; wait |
+
+### Enforcement (both sides)
+- **Client:** `scripts/require_ci_green.py` (pure `verdict_for()` unit-tested in
+  `tests/unit/test_require_ci_green.py`, 17 tests) → `make require-ci-green [SHA=…]` →
+  `make release-cut` step 0/4. The only sanctioned release command.
+- **CI:** `.github/workflows/build.yml` — `release` job `needs: [version, gate, …]`; the
+  gate runs on `v*` tag pushes. Broken code cannot publish a release.
+
+### Never
+- Never push a release tag manually (bypasses the client gate).
+- Never push fix-forward waves straight to `master` as if releasable. Use a
+  `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
+- Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA
+  (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
