@@ -27,7 +27,7 @@ class MCPToolRegistry:
         self._server_tools: dict[str, list[str]] = {}
 
     def register_tool(self, server_id: str, tool: MCPTool) -> None:
-        existing = self._tools.get(tool.name)
+        existing = next((t for t in self._tools.values() if t.name == tool.name), None)
         if existing is not None and existing.server_id != server_id:
             raise ValueError(
                 f"Tool name collision: {tool.name!r} is already registered to "
