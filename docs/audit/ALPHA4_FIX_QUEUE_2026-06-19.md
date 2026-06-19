@@ -33,8 +33,8 @@ Fix branches already known:
 
 | # | Title | Severity | File : line | One-line fix | Effort | Branch |
 |---|---|---|---|---|---|---|
-| A-01 | SpendLimiter projected_cost always 0.0 — cap never fires | P1 | `src/general_ludd/daemon.py:729` | Replace `projected_cost_usd=0.0` with actual model call cost estimate; remove TODO at `spend_limiter.py:17-27` | M | — |
-| A-02 | Scoring cost-cap silently inert — avg_cost never stored in DB | P1 | `src/general_ludd/db/repository.py` `BenchmarkRepository.get_aggregate_scores` | Add `func.avg(BenchmarkResult.cost_usd).label("avg_cost")` to SELECT; requires Alembic migration for `cost_usd` column if absent | M | — |
+| A-01 | ~~SpendLimiter projected_cost always 0.0 — cap never fires~~ | P1 | `src/general_ludd/daemon.py:753-762` | **ALREADY-FIXED**: `_projected_cost_usd` now computed via `token_cost_usd(model_name, max_input_tokens, max_output_tokens)` and passed to both BudgetManager pre-checks. Stale TODO at `spend_limiter.py:17-27` remains but does not affect runtime. | M | ALREADY-FIXED |
+| A-02 | ~~Scoring cost-cap silently inert — avg_cost never stored in DB~~ | P1 | `src/general_ludd/db/repository.py` `BenchmarkRepository.get_aggregate_scores` | **ALREADY-FIXED**: `func.avg(BenchmarkResultModel.cost_usd).label("avg_cost")` is present in `get_aggregate_scores` SELECT at repository.py:724. Same item as C-02 (duplicate). | M | ALREADY-FIXED (= C-02) |
 | A-03 | DynamicDispatcher not in event-loop — autonomous tool calls bypass dispatch | P1 | `src/general_ludd/dispatch/dynamic_dispatcher.py:8-12` `TODO(integration)`; `event_loop/loop.py:1-30` (no import) | Import `DynamicDispatcher` in `event_loop/loop.py` and invoke it when the model turn returns `tool_calls` | L | — |
 | A-04 | CI gate `run_gate.sh` basetemp not cleaned on lock-rejection — disk leak + race | P1 | `scripts/run_gate.sh` lock-rejection exit path | Add `rm -rf "$BASETEMP"` in the lock-rejected exit branch | S | fix/ci-readme-gate-and-basetemp (merged) |
 | A-05 | Overload retry cap too low — PROVIDER_ERROR exhausted in < 3 min | P1 | `src/general_ludd/models/timeout_detector.py` `TimeoutRetryPolicy.__init__` defaults `max_retries=3, max_backoff_seconds=60` | Add `overload_max_retries=10` kwarg; extend `max_backoff_seconds=120` for `PROVIDER_ERROR`/`RATE_LIMITED` kinds in `gateway.py:call_model_with_retry` | M | — |
@@ -61,7 +61,7 @@ Fix branches already known:
 | # | Title | Severity | File : line | One-line fix | Effort | Branch |
 |---|---|---|---|---|---|---|
 | C-01 | `BenchmarkResult` missing `task_role` field — routing_roles spec P1 item | P3 | `src/general_ludd/schemas/benchmark.py` | Add `task_role: TaskRole \| None = None` field; generate Alembic migration | M | — |
-| C-02 | `avg_cost` column absent from BenchmarkResult DB schema — silent cost-cap zero | P1 | `src/general_ludd/db/repository.py` + Alembic migrations | Add `cost_usd` column to `benchmark_results` table via Alembic migration; update `get_aggregate_scores` SELECT | M | — |
+| C-02 | ~~`avg_cost` column absent from BenchmarkResult DB schema — silent cost-cap zero~~ | P1 | `src/general_ludd/db/repository.py` + Alembic migrations | **ALREADY-FIXED (= A-02 duplicate)**: `func.avg(BenchmarkResultModel.cost_usd).label("avg_cost")` confirmed in `get_aggregate_scores` SELECT at repository.py:724. Same fix as A-02; this row is a duplicate. | M | ALREADY-FIXED (= A-02) |
 | C-03 | `routing_roles/` package exists in worktree only — not merged to main | P3 | worktree `agent-aa7abecb24030ba7d/src/general_ludd/routing_roles/` | Cherry-pick `roles.py` and `weights.py` from worktree into main before wiring into AdaptiveRouter | S | — |
 | C-04 | `model_weights/` package entirely absent — cold-start seed data missing | P3 | `src/general_ludd/model_weights/` (CREATE) | Create `schema.py`, `store.py`, `loader.py`, `seed_data.json` with model assignments from recommendation doc §3.2 | L | — |
 | C-05 | `scoring/metric.py` absent — W$ formula inline in router, no standalone module | P3 | `src/general_ludd/scoring/router.py` (inline math) | Create `scoring/metric.py` implementing W$ formula; update AdaptiveRouter to import from it | M | — |
@@ -127,22 +127,21 @@ Fix branches already known:
 
 ## Summary Counts
 
-| Group | Items | Open (no branch) | Already has fix branch |
+| Group | Items | Open (no branch) | Already-Fixed / Fix branch |
 |---|---|---|---|
-| A — Security P1 | 5 | 4 | 1 (A-04 merged) |
+| A — Security P1 | 5 | 2 | 3 (A-01 already-fixed, A-02 already-fixed, A-04 merged) |
 | B — Security P2 | 8 | 6 | 2 (B-02 merged) |
-| C — Data/Migrations | 7 | 7 | 0 |
+| C — Data/Migrations | 7 | 6 | 1 (C-02 already-fixed = A-02 duplicate) |
 | D — Correctness/Dedup | 12 | 11 | 1 (D-12 merged) |
 | E — Coverage/Tests | 13 | 12 | 1 (E-12 partial) |
 | F — Provider E2E | 9 | 9 | 0 |
-| **TOTAL** | **54** | **49** | **5 (4 merged, 1 partial)** |
+| **TOTAL** | **54** | **46** | **8 (5 merged/partial + 3 already-fixed; A-02 and C-02 are the same item)** |
 
 ---
 
 ## Recommended First-Wave Sequence (alpha.4 → alpha.5)
 
-1. **A-01 + A-02 (spend-cap + cost-cap)** — P1 security controls that currently never fire.
-   Wire in a single commit: daemon cost projection + `avg_cost` migration.
+1. ~~**A-01 + A-02 (spend-cap + cost-cap)**~~ — **ALREADY-FIXED** (confirmed 2026-06-19): daemon.py:753-762 computes real cost projection; repository.py:724 stores avg_cost. No action needed.
 2. **E-01 (observe router registration)** — 1-line change; unlocks 38 connector modules.
 3. **C-06 + C-07 (__init__.py files)** — 2-minute fixes; unblock mypy on pipeline + issue_sources.
 4. **D-01 + D-02 + D-03 + D-04 (dedup wave 1)** — zero-risk dead-code deletions; reduce noise.
