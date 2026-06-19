@@ -76,6 +76,23 @@ _DONE_MARKERS: tuple[str, ...] = (
     "task complete",
 )
 
+# Substrings in agent output that indicate transient overload (not a true stall).
+# If any of these appear in the tail, skip the kill and extend the deadline instead.
+_OVERLOAD_MARKERS: tuple[str, ...] = (
+    "overloaded",
+    "rate limit",
+    "429",
+    "529",
+    "temporarily limiting requests",
+    "quota exceeded",
+)
+
+
+def has_overload_marker(tail_text: str) -> bool:
+    """Return True if *tail_text* contains any overload/rate-limit signal."""
+    lower = tail_text.lower()
+    return any(marker in lower for marker in _OVERLOAD_MARKERS)
+
 
 def _last_nonempty_lines(text: str, n: int = 20) -> list[str]:
     """Return up to *n* trailing non-empty lines from *text*."""
@@ -105,6 +122,11 @@ def classify_tail(
     """
     if age_seconds < window_seconds:
         return State.ACTIVE, f"modified {age_seconds:.0f}s ago (< {window_seconds:.0f}s window)"
+
+    # Transient overload: stale file but output signals a rate-limit/quota issue.
+    # Treat as ACTIVE (extend deadline, do not kill) so the agent can recover.
+    if has_overload_marker(tail_text):
+        return State.ACTIVE, "overload marker detected in output — extending deadline (backoff)"
 
     nonempty = _last_nonempty_lines(tail_text, 20)
     if not nonempty:
