@@ -22,6 +22,10 @@ from general_ludd.dispatch.dynamic_dispatcher import (
 
 logger = logging.getLogger(__name__)
 
+# Per-request tool_calls cap (D-16): unbounded model tool calls = unbounded
+# cost.  Any request carrying more than this many calls is rejected with 422.
+MAX_CALLS_PER_REQUEST = 20
+
 # Bounded ring-buffer for recent dispatch history (facts facet).
 _MAX_RECENT_DISPATCHES = 50
 
@@ -94,6 +98,16 @@ def register(
                 detail=(
                     "Could not parse any tool calls from request body. "
                     "Expected {kind, name[, args]} or {tool_calls: [...]}"
+                ),
+            )
+        # D-16: cap per-request tool_calls to bound model cost.
+        if len(calls) > MAX_CALLS_PER_REQUEST:
+            raise HTTPException(
+                status_code=422,
+                detail=(
+                    f"Request contains {len(calls)} tool calls which exceeds the "
+                    f"per-request cap of {MAX_CALLS_PER_REQUEST}. "
+                    "Split into smaller batches."
                 ),
             )
         results = dispatcher.dispatch_all(calls)

@@ -17,12 +17,32 @@ class ModelRouter:
         self._latency_map: dict[str, str] = {}
         self._pattern_map: dict[str, str] = {}
 
-    def resolve_role(self, role_name: str) -> str | None:
+    def resolve_role(self, role_name: str, strict: bool = False) -> str | None:
+        """Resolve a role name to a model profile ID.
+
+        Args:
+            role_name: The role to look up.
+            strict: When True, raise ValueError for any role that is not
+                explicitly mapped (i.e. would fall through to the default
+                or return None).  This prevents arbitrary role strings from
+                silently gaining default-model access (D-19).
+                The ``"weak"`` sentinel is always accepted when
+                ``weak_model_profile_id`` is set, regardless of strict.
+                The gateway call-site (``call_model_by_role``) should pass
+                ``strict=True`` — that is a 1-line follow-up in gateway.py.
+        """
         if role_name == "weak" and self.weak_model_profile_id:
             return self.weak_model_profile_id
         result = self._mapping.get(role_name)
         if result is not None:
             return result
+        # Role is not in the explicit mapping.
+        if strict:
+            raise ValueError(
+                f"Unrecognised role {role_name!r}: not present in role_mapping and "
+                "strict=True was requested.  Add the role to the ModelRouter "
+                "role_mapping or pass strict=False to fall through to the default."
+            )
         if self.default_profile_id is not None:
             return self.default_profile_id
         return None
