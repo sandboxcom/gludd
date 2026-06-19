@@ -43,8 +43,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
+        verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
-        ci-poll
+        ci-poll test-no-wait-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -884,6 +885,26 @@ release-view:
 	@[ -n "$(TAG)" ] || { echo "Usage: make release-view TAG=v0.1.0-alpha.1"; exit 1; }
 	@gh release view "$(TAG)" -R sandboxcom/gludd --json tagName,name,isDraft,isPrerelease,publishedAt,url,assets 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); print('RELEASE:', d.get('tagName'), '|', d.get('url')); print('  draft=%s prerelease=%s published=%s' % (d.get('isDraft'), d.get('isPrerelease'), d.get('publishedAt'))); a=d.get('assets',[]); print('  ASSETS (%d):' % len(a)); [print('   -', x['name'], x['size'], 'bytes') for x in a]" || echo "release-view-failed"
 
+# ---------------------------------------------------------------------------
+# verify-release-artifact: confirm that a GitHub Release for TAG exists AND has
+# downloadable assets (the release job uploaded binaries).  A tag alone is NOT
+# a release — the Build-and-Release CI job must have completed successfully and
+# published assets before this passes.
+#
+# Exit codes:
+#   0  — release found + at least one asset published (artifact confirmed)
+#   1  — release missing, draft-only, or has zero assets (NOT released)
+#
+# Usage:
+#   make verify-release-artifact TAG=v0.1.0-alpha.2
+# ---------------------------------------------------------------------------
+VERIFY_POLLS ?= 6
+VERIFY_INTERVAL ?= 60
+verify-release-artifact:
+	@[ -n "$(TAG)" ] || { echo "Usage: make verify-release-artifact TAG=v0.1.0-alpha.N"; exit 1; }
+	@echo "[verify-release-artifact] checking $(TAG) on sandboxcom/gludd ..."
+	@$(UV) run python scripts/verify_release_artifact.py "$(TAG)"
+
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi
 	@gh run view "$(RUN)" -R sandboxcom/gludd --log-failed 2>&1 | tail -120 || echo "ci-faillog-failed"
@@ -1640,6 +1661,13 @@ db-sample-part:
 db-tables:
 	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
 
+# Test the no_wait_stop.sh stop hook against 6 known-good/known-bad payloads.
+test-no-wait-hook:
+	@$(PYTHON) scripts/test_no_wait_hook.py
+
+debug-no-wait-hook:
+	@$(PYTHON) /tmp/debug_hook.py
+
 db-count:
 	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM message;" 2>/dev/null
 
@@ -2296,10 +2324,31 @@ release-cut:
 	@$(MAKE) --no-print-directory git-push-sandboxcom
 	@echo "[release-cut] step 3/4 — create and push annotated tag $(TAG) ..."
 	@$(MAKE) --no-print-directory git-tag-push TAG='$(TAG)' MSG='$(MSG)'
-	@echo "[release-cut] step 4/4 — confirm published release ..."
-	@$(MAKE) --no-print-directory release-view TAG='$(TAG)'
-	@echo ""
-	@echo "release-cut COMPLETE: $(TAG) pushed and confirmed."
+	@echo "[release-cut] step 4/4 — verify published release artifact (polls up to $(VERIFY_POLLS)x every $(VERIFY_INTERVAL)s; CI release job runs async) ..."
+	@poll=0; while [ $$poll -lt $(VERIFY_POLLS) ]; do \
+		poll=$$((poll + 1)); \
+		echo "[release-cut] artifact poll $$poll/$(VERIFY_POLLS) at $$(date +%H:%M:%S) ..."; \
+		if $(MAKE) --no-print-directory verify-release-artifact TAG='$(TAG)'; then \
+			echo ""; \
+			echo "release-cut COMPLETE: $(TAG) tag pushed AND artifact confirmed published."; \
+			echo "  Artifact URL: run 'make release-view TAG=$(TAG)' for the download URL."; \
+			exit 0; \
+		fi; \
+		if [ $$poll -lt $(VERIFY_POLLS) ]; then \
+			echo "  [release-cut] asset not yet visible — waiting $(VERIFY_INTERVAL)s for CI release job ..."; \
+			sleep $(VERIFY_INTERVAL); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "==========================================================="; \
+	echo "WARNING: TAG $(TAG) was pushed but artifact NOT yet confirmed."; \
+	echo "  The Build-and-Release CI job is still running or failed."; \
+	echo "  DO NOT treat this tag as a shipped release."; \
+	echo "  After the CI run completes, verify with:"; \
+	echo "    make verify-release-artifact TAG=$(TAG)"; \
+	echo "  A release is an ARTIFACT, not a tag."; \
+	echo "==========================================================="; \
+	exit 1
 
 # ---------------------------------------------------------------------------
 # True fast-forward without re-running the gate

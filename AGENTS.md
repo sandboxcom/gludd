@@ -756,3 +756,62 @@ against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
   `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
 - Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA
   (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
+
+## CRITICAL: A Release is an Artifact, Not a Tag (codified)
+
+**A version is NOT done until its Build-and-Release CI run is GREEN and
+`make verify-release-artifact TAG=<tag>` exits 0 (published assets confirmed).**
+
+This was codified after neither `v0.1.0-alpha.2` nor `v0.1.0-alpha.3` ever
+produced a downloadable artifact: the gate was red on both releases, so the
+`release` job (which `needs: [gate]`) was skipped.  Tags existed; artifacts did
+not.  Both releases were treated as "shipped" — a false claim.  This section is
+the machine-enforceable correction.
+
+### The rule (three bindings)
+
+1. **A version is NOT shipped until `make verify-release-artifact TAG=<tag>` passes.**
+   That command calls `scripts/verify_release_artifact.py` and exits 0 only when
+   `gh release view` returns a non-draft release with at least one downloadable
+   asset.  A tag in the repo with zero assets = NOT shipped.
+
+2. **Never bump to the next version while the current version lacks a green release
+   and confirmed artifact.**  "alpha.3 is done, starting alpha.4" is only valid
+   when `make verify-release-artifact TAG=v0.1.0-alpha.3` returns PASS.
+
+3. **A release/version task may only be marked completed with the artifact URL as
+   evidence.**  The completion entry in TASKS.md must include:
+   - The `gh release view` output showing `isDraft: false` and `assets: N` (N ≥ 1)
+   - The artifact download URL(s)
+   - The CI run id and `conclusion: success`
+   Without all three, the task is NOT complete — marking it done is a false claim
+   (see the no-unquantified-status-claims rule).
+
+### Enforcement (three layers)
+
+- **Script:** `scripts/verify_release_artifact.py` — exit 0 only if assets exist.
+  Fail-closed: no gh / no network / release missing = exit 1.
+- **Make:** `make verify-release-artifact TAG=<tag>` — the callable gate target.
+  `make release-cut` calls it as step 4/4 with a poll loop (async CI); if the
+  poll exhausts without seeing assets it exits non-zero with a loud warning so a
+  tag is never mistaken for a shipped release.
+- **Prompt (this section):** proactive instruction — the three rules above.
+
+### Tag vs. artifact — the key distinction
+
+| State | Meaning | Action |
+|---|---|---|
+| Tag pushed, CI still running | release job in flight | Wait; run `make verify-release-artifact` after CI completes |
+| Tag pushed, CI green, assets published | **SHIPPED** | Mark done with artifact URL as evidence |
+| Tag pushed, CI red/skipped, zero assets | **NOT SHIPPED** — broken release | Fix CI, cut a new release, do NOT bump version |
+| No tag, no run | Work in progress | Keep working |
+
+### Never
+
+- Never call a version "done" or "shipped" from a tag alone.
+- Never open a next-version epic/task while the current version has no artifact.
+- Never log a completion entry without the artifact URL and CI run id.
+- Never treat `make release-cut` success as proof of an artifact — only
+  `make verify-release-artifact` is the proof (it queries the actual GitHub Release).
+  If `release-cut` timed out on its poll, run `verify-release-artifact` manually
+  after CI finishes.
