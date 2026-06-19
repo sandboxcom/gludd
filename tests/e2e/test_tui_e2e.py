@@ -151,7 +151,9 @@ class TestTUIInteractiveControls:
         layout["h"].update(Panel("TUI Dashboard"))
         layout["f"].update(Panel("Controls"))
 
-        console = Console(file=io.StringIO(), force_terminal=True)
+        # emoji=False prevents rich from importing _emoji_codes (a lazy data
+        # module that may be missing in some partial wheel extractions in CI).
+        console = Console(file=io.StringIO(), force_terminal=True, emoji=False)
         with Live(layout, console=console, refresh_per_second=4, screen=False) as live:
             layout2 = Layout()
             layout2.split(Layout(name="hnew", size=3), Layout(name="bnew"))

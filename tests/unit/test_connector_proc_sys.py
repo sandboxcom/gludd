@@ -104,9 +104,15 @@ def test_path_outside_proc_sys_refused(bad_path: str) -> None:
 
 
 def test_confined_explicit_path_allowed() -> None:
-    reader = FakeReader(files={"/sys/class/net/eth0/statistics/rx_bytes": "42\n"})
+    # Use a fake interface name ("hermetic_iface0") that cannot exist as a real
+    # symlink on any host.  On the dev box, /sys/class/net/eth0 is a symlink that
+    # os.path.realpath() resolves to a different /sys/devices/... path; the reader
+    # only knows the original path, so it raises FileNotFoundError.  A non-existent
+    # path keeps realpath == normpath, so FakeReader lookup always matches.
+    fake_path = "/sys/class/net/hermetic_iface0/statistics/rx_bytes"
+    reader = FakeReader(files={fake_path: "42\n"})
     src = ProcSysSource(reader=reader)
-    records = src.query({"path": "/sys/class/net/eth0/statistics/rx_bytes"})
+    records = src.query({"path": fake_path})
     assert records[0]["value"] == 42
 
 

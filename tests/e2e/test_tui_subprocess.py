@@ -7,11 +7,30 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import subprocess
 import sys
 import time
 
 GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
+
+# Absolute path to the repo's src/ directory.  When CI runs pytest with
+# PYTHONPATH=src (rather than an editable install), the spawned subprocess
+# inherits os.environ — but os.environ may not contain PYTHONPATH at all if
+# the harness injected importability via sys.path manipulation only.  We ensure
+# the subprocess always has src/ on PYTHONPATH regardless.
+_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
+_SRC_DIR = str(_REPO_ROOT / "src")
+
+
+def _subprocess_env() -> dict[str, str]:
+    """Return a copy of os.environ with src/ guaranteed on PYTHONPATH."""
+    env = dict(os.environ)
+    existing = env.get("PYTHONPATH", "")
+    if _SRC_DIR not in existing.split(os.pathsep):
+        env["PYTHONPATH"] = _SRC_DIR + (os.pathsep + existing if existing else "")
+    env["TERM"] = "xterm-256color"
+    return env
 
 
 class TestTUIE2E:
@@ -25,7 +44,7 @@ class TestTUIE2E:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
-                env={**os.environ, "TERM": "xterm-256color"},
+                env=_subprocess_env(),
             )
             os.close(slave_fd)
             time.sleep(1.0)
@@ -70,7 +89,7 @@ class TestTUIE2E:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
-                env={**os.environ, "TERM": "xterm-256color"},
+                env=_subprocess_env(),
             )
             os.close(slave_fd)
             time.sleep(1.5)
@@ -114,7 +133,7 @@ class TestTUIE2E:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
-                env={**os.environ, "TERM": "xterm-256color"},
+                env=_subprocess_env(),
             )
             os.close(slave_fd)
             time.sleep(1.0)
@@ -148,7 +167,7 @@ class TestTUIE2E:
                 stdout=slave_fd,
                 stderr=slave_fd,
                 close_fds=True,
-                env={**os.environ, "TERM": "xterm-256color"},
+                env=_subprocess_env(),
             )
             os.close(slave_fd)
             time.sleep(1.0)
