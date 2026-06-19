@@ -381,7 +381,7 @@ class TestCmdIntegrityReject:
 
 
 class TestCmdIntegrityLog:
-    @patch("general_ludd.cli.httpx.request")
+    @patch("general_ludd.cli.httpx.get")
     def test_success(self, mock_request, capsys):
         from general_ludd.cli import _cmd_integrity_log
 
