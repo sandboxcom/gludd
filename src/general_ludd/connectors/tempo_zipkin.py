@@ -29,7 +29,7 @@ from urllib.parse import urlsplit
 logger = logging.getLogger(__name__)
 
 _DEFAULT_TIMEOUT = 10.0
-_ALLOWED_SCHEMES = ("http", "https")
+_ALLOWED_SCHEMES: frozenset[str] = frozenset({"http", "https"})
 
 
 @runtime_checkable
@@ -64,7 +64,7 @@ class _HttpxTransport:
 # --------------------------------------------------------------------------- #
 # SSRF literal-host guard (no DNS)
 # --------------------------------------------------------------------------- #
-def _assert_public_base_url(base_url: str) -> None:
+def _assert_public_base_url(base_url: str, allow_private: bool = False) -> None:
     parts = urlsplit(base_url)
     if parts.scheme.lower() not in _ALLOWED_SCHEMES:
         raise ValueError(f"disallowed scheme for base_url: {parts.scheme!r}")
@@ -74,7 +74,13 @@ def _assert_public_base_url(base_url: str) -> None:
         raise ValueError("base_url has no host")
 
     lowered = host.lower()
-    if lowered in {"localhost", "localhost.localdomain", "ip6-localhost"}:
+    if not allow_private and lowered in {
+        "localhost",
+        "localhost.localdomain",
+        "ip6-localhost",
+        "metadata",
+        "metadata.google.internal",
+    }:
         raise ValueError(f"refusing internal host: {host!r}")
 
     try:
@@ -82,7 +88,7 @@ def _assert_public_base_url(base_url: str) -> None:
     except ValueError:
         return  # DNS name; literal block does not vet names
 
-    if (
+    if not allow_private and (
         ip.is_private
         or ip.is_loopback
         or ip.is_link_local
