@@ -121,10 +121,10 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
     application.state._psk = _psk
     application.state._require_auth = _posture.require_auth
     application.state._no_auth = _posture.no_auth
-    _public_paths = {"/healthz", "/docs", "/openapi.json", "/redoc"}
+    _public_paths = {"/healthz", "/docs", "/docs/", "/openapi.json", "/redoc"}
 
     def _worker_is_public(path: str) -> bool:
-        return path in _public_paths or path.startswith("/docs")
+        return path in _public_paths
 
     @application.middleware("http")
     async def _psk_auth_middleware(request: Any, call_next: Any) -> Any:
