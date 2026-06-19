@@ -837,16 +837,6 @@ git-push-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom master
 	@echo "Pushed to sandboxcom/gludd"
 
-git-push-branch:
-	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
-	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom $(TARGET)
-	@echo "Pushed $(TARGET) to sandboxcom/gludd"
-
-gh-pr-rc:
-	@gh pr create --repo sandboxcom/gludd --base master --head integration/alpha3-rc \
-	  --title "v0.1.0-alpha.3 release candidate" \
-	  --body "Consolidated alpha.3 RC: 11 branches merged onto master. Security: batch45 hardening (mcp tool-hijack guard, auth is_join_within, cosign required-key, spend-limiter restore validation), daemon fail-closed auth, /healthz budget-leak fix, todos path-leak removal. Reliability: a05 overload-retry (10/120s), a03 deny-by-default dispatcher wiring, router wiring. Cleanup: connector dedup (5 files) + shared SSRF guard, pg-union process guardrails. Tests: normalize aliases, todo_id contract. Local test-count clean: 11748 collected / 0 errors. Merging runs the full CI gate = release-readiness check."
-
 git-pull-sandboxcom:
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git pull --rebase sandboxcom master
 	@echo "Pulled and rebased from sandboxcom/gludd"
