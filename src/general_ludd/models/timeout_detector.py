@@ -293,6 +293,15 @@ _NON_RETRYABLE_KINDS: frozenset[TimeoutKind] = frozenset(
     }
 )
 
+# Overload kinds get a higher retry cap and longer backoff ceiling than the
+# fast-failover path used for transient connection errors.
+_OVERLOAD_KINDS: frozenset[TimeoutKind] = frozenset(
+    {
+        TimeoutKind.PROVIDER_ERROR,
+        TimeoutKind.RATE_LIMITED,
+    }
+)
+
 
 class TimeoutRetryPolicy:
     def __init__(
@@ -301,11 +310,15 @@ class TimeoutRetryPolicy:
         base_backoff_seconds: float = 1.0,
         max_backoff_seconds: float = 60.0,
         failover_after_retries: int = 3,
+        overload_max_retries: int = 10,
+        overload_max_backoff_seconds: float = 120.0,
     ) -> None:
         self._max_retries = max_retries
         self._base_backoff = base_backoff_seconds
         self._max_backoff = max_backoff_seconds
         self._failover_after = failover_after_retries
+        self._overload_max_retries = overload_max_retries
+        self._overload_max_backoff = overload_max_backoff_seconds
 
     def decide(
         self,
@@ -318,6 +331,23 @@ class TimeoutRetryPolicy:
             return RetryDecision(
                 should_retry=False,
                 reason=f"{kind.value} is not retryable",
+            )
+
+        # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) get a higher retry cap
+        # and a longer backoff ceiling. They do NOT flow into the fast-failover
+        # path used for transient connection errors.
+        if kind in _OVERLOAD_KINDS:
+            if attempt > self._overload_max_retries:
+                return RetryDecision(
+                    should_retry=False,
+                    should_failover=True,
+                    reason="overload max retries exhausted",
+                )
+            wait = self._compute_backoff(kind, attempt, retry_after_seconds, overload=True)
+            return RetryDecision(
+                should_retry=True,
+                wait_seconds=wait,
+                reason=f"retrying {kind.value} (overload) after {wait:.1f}s",
             )
 
         if attempt > self._max_retries:
@@ -349,6 +379,7 @@ class TimeoutRetryPolicy:
         kind: TimeoutKind,
         attempt: int,
         retry_after: float | None,
+        overload: bool = False,
     ) -> float:
         if kind == TimeoutKind.RATE_LIMITED and retry_after is not None:
             return max(retry_after, 1.0)
@@ -362,4 +393,5 @@ class TimeoutRetryPolicy:
         if kind == TimeoutKind.RATE_LIMITED:
             base = max(base, 1.0)
 
-        return float(min(base, self._max_backoff))
+        cap = self._overload_max_backoff if overload else self._max_backoff
+        return float(min(base, cap))
