@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.2 — 2026-06-18**
+**Status as of v0.1.0-alpha.3 — 2026-06-19**
 
 This table is regenerated/verified on every release cut (enforced by `make release-cut`).
 
