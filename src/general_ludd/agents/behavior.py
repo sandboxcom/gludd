@@ -9,7 +9,7 @@ from __future__ import annotations
 import fnmatch
 from typing import Any
 
-from pydantic import BaseModel, field_validator
+from pydantic import BaseModel, Field, field_validator
 
 # Shell metacharacters that enable chaining / redirection / substitution. A
 # command containing any of these is rejected outright: the allowlist matches a
@@ -47,6 +47,10 @@ class AgentBehavior(BaseModel):
     stop_conditions: list[str] = ["missing_credentials", "environment_change"]
     max_retries: int = 3
     self_improve_interval: int = 0
+    never_block_on_questions: bool = True
+    repair_not_disable: bool = True
+    assume_and_proceed: bool = True  # when True, record assumptions instead of blocking on questions
+    assumption_log: list[str] = Field(default_factory=list)
 
     @field_validator("max_retries")
     @classmethod
@@ -103,6 +107,16 @@ class AgentBehavior(BaseModel):
         return any(
             fnmatch.fnmatch(cmd, pattern) for pattern in self.allowed_command_patterns
         )
+
+    def record_assumption(self, question: str, assumed_answer: str) -> str:
+        """Record an assumption to the log and return a formatted string."""
+        entry = f"ASSUMPTION: {question} → assumed: {assumed_answer}"
+        self.assumption_log.append(entry)
+        return entry
+
+    def should_block_on_question(self, question: str) -> bool:
+        """Return True only when assume_and_proceed is False (i.e., blocking is needed)."""
+        return not self.assume_and_proceed
 
     def to_dict(self) -> dict[str, Any]:
         return self.model_dump()
@@ -235,6 +249,40 @@ class BehaviorRenderer:
             )
             sections.append("")
 
+        if behavior.never_block_on_questions:
+            sections.append("## Never Block On Questions")
+            sections.append(
+                "Never pause work to ask the user a question. Default to action: make a "
+                "reasonable assumption, state it explicitly, and keep going."
+            )
+            sections.append(
+                "Only stop for a stop_condition (missing credentials or irreversible destructive action)."
+            )
+            sections.append("")
+
+        if behavior.repair_not_disable:
+            sections.append("## Fix Means Repair, Never Disable")
+            sections.append(
+                "When something fails, repair the root cause. Do NOT disable, comment-out, "
+                "skip, xfail, or delete the feature or test to make the gate green."
+            )
+            sections.append(
+                "A disable is only legitimate as an explicitly tracked decision with a "
+                "follow-up todo — never a silent one."
+            )
+            sections.append("")
+
+        if behavior.assume_and_proceed:
+            sections.append("## No-Blocking-Questions Policy")
+            sections.append(
+                "NEVER pause work to ask the user a clarifying question. "
+                "Default to action: state your assumption, record it, and proceed."
+            )
+            sections.append(
+                "Use record_assumption() to log decisions. Reserve blocking only for truly irreversible choices."
+            )
+            sections.append("")
+
         return "\n".join(sections)
 
     def render_as_prompt(
@@ -257,6 +305,8 @@ def default_primary_behavior() -> AgentBehavior:
         guardrail=GuardrailConfig(config_layer=True, hook_layer=True, prompt_layer=True),
         allowed_command_patterns=["make *"],
         stop_conditions=["missing_credentials", "environment_change"],
+        never_block_on_questions=True,
+        repair_not_disable=True,
     )
 
 
@@ -272,4 +322,6 @@ def default_subagent_behavior() -> AgentBehavior:
         guardrail=GuardrailConfig(config_layer=True, hook_layer=True, prompt_layer=True),
         allowed_command_patterns=["make *"],
         stop_conditions=["missing_credentials", "environment_change"],
+        never_block_on_questions=True,
+        repair_not_disable=True,
     )
