@@ -87,7 +87,8 @@ class AnsibleRunnerAdapter:
             "inventory": os.path.join(job_dir, "inventory"),
             "artifacts": os.path.join(job_dir, "artifacts"),
         }
-        for d in dirs.values():
+        os.makedirs(job_dir, exist_ok=False)
+        for d in (v for k, v in dirs.items() if k != "root"):
             os.makedirs(d, exist_ok=True)
         return dirs
 

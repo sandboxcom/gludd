@@ -28,6 +28,7 @@ class JobSpec(BaseModel):
     skill_body: str | None = None
     ansible_roles_path: str | None = None
     templates_dir: str | None = None
+    timeout: float | None = None
 
     @field_validator("job_id", "playbook", "queue", mode="before")
     @classmethod
