@@ -1,20 +1,25 @@
 """Unit tests for scripts/agent_liveness.py — the ground-truth live-subagent
 counter.
 
-These exercise the four guarantees the orchestrator depends on:
-  1. grew-during-probe -> counted live (the definitely-live core signal),
-  2. a stale (frozen, old) transcript is NOT counted,
-  3. the FLOOR_LIVE_OVERRIDE test seam short-circuits all probing,
-  4. fail-safe: a missing/unresolvable tasks dir yields 0, never raises.
+These exercise the five guarantees the orchestrator depends on:
+  1. A transcript written within the window is counted live (window-based signal),
+  2. A stale (frozen, old) transcript is NOT counted,
+  3. Two consecutive ``--count`` calls on the SAME fixture set return the SAME
+     number (determinism — the regression this file guards),
+  4. The FLOOR_LIVE_OVERRIDE test seam short-circuits all probing,
+  5. Fail-safe: a missing/unresolvable tasks dir yields 0, never raises.
 
 All filesystem cases drive the counter against a pytest tmp dir via the
 GLUDD_TASKS_DIR env override, so the tests are hermetic (no real session dirs).
+
+The old "grew during probe" tests are gone — the probe-sleep approach was the
+source of the 6/13/18/21 wobble and has been replaced with a pure fixed-window
+mtime check (GLUDD_LIVENESS_WINDOW_SEC).
 """
 from __future__ import annotations
 
 import importlib.util
 import os
-import threading
 import time
 from pathlib import Path
 
@@ -49,65 +54,45 @@ def _age_file(path: Path, secs: float) -> None:
     os.utime(path, (past, past))
 
 
-# --- 1. grew-during-probe counts live ---------------------------------------
-def test_grew_during_probe_counts_live(tasks_dir: Path) -> None:
+# --- 1. window-based live signal --------------------------------------------
+
+def test_recent_file_counts_live(tasks_dir: Path) -> None:
+    """A transcript written within the window is live."""
     f = tasks_dir / "agent1.output"
-    _write(f, "start")
-    # Backdate so the recent-tail term can't be what counts it — force the
-    # "grew during probe" path to be the reason it's live.
-    _age_file(f, 10_000)
-
-    def appender() -> None:
-        time.sleep(0.1)
-        with f.open("a") as fh:
-            fh.write("more tokens\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-
-    t = threading.Thread(target=appender)
-    t.start()
-    try:
-        live, total, resolved = agent_liveness.live_count(probe=0.5, tail=1.0)
-    finally:
-        t.join()
-
+    _write(f, "running")
+    # File is freshly written — mtime is essentially now.
+    live, total, resolved = agent_liveness.live_count(window=120.0)
     assert total == 1
     assert resolved == str(tasks_dir)
-    assert live == 1, "a transcript that grew mid-probe must count as live"
+    assert live == 1, "a recently-written transcript must count as live"
+
+
+def test_window_boundary_includes_just_inside(tasks_dir: Path) -> None:
+    """A file aged just inside the window boundary is still live."""
+    f = tasks_dir / "borderline.output"
+    _write(f, "x")
+    _age_file(f, 60.0)  # within 120s window
+    live, _, _ = agent_liveness.live_count(window=120.0)
+    assert live == 1
 
 
 # --- 2. stale (frozen + old) file is not counted ----------------------------
+
 def test_stale_file_not_counted(tasks_dir: Path) -> None:
     f = tasks_dir / "done.output"
     _write(f, "completed transcript")
-    _age_file(f, 10_000)  # far past any tail, and it will not grow during probe
-
-    live, total, _ = agent_liveness.live_count(probe=0.2, tail=75.0)
-
+    _age_file(f, 10_000)  # far past any window
+    live, total, _ = agent_liveness.live_count(window=120.0)
     assert total == 1
     assert live == 0, "a frozen, old transcript must not be counted live"
 
 
-def test_recent_tail_counts_quiet_agent(tasks_dir: Path) -> None:
-    """A live-but-quiet agent (no growth during probe, but written recently) is
-    kept alive by the tail term — the smoothing that prevents false breaches."""
-    f = tasks_dir / "quiet.output"
-    _write(f, "mid-think, no write this instant")
-    _age_file(f, 5.0)  # within a 75s tail, will not grow during the probe
-
-    live, total, _ = agent_liveness.live_count(probe=0.2, tail=75.0)
-
-    assert total == 1
-    assert live == 1
-
-
 def test_tail_boundary_excludes_just_past(tasks_dir: Path) -> None:
-    """A file just OUTSIDE the tail (and not growing) decays out -> not live."""
+    """A file just OUTSIDE the window decays out -> not live."""
     f = tasks_dir / "decayed.output"
     _write(f, "x")
     _age_file(f, 80.0)
-
-    live, _, _ = agent_liveness.live_count(probe=0.1, tail=75.0)
+    live, _, _ = agent_liveness.live_count(window=75.0)
     assert live == 0
 
 
@@ -116,31 +101,68 @@ def test_mixed_fleet_counts_only_live(tasks_dir: Path) -> None:
     stale_f = tasks_dir / "stale.output"
     quiet_f = tasks_dir / "quiet.output"
     _write(live_f, "s")
-    _age_file(live_f, 10_000)  # only the growth will count it
+    _age_file(live_f, 10_000)   # outside window
     _write(stale_f, "done")
-    _age_file(stale_f, 10_000)
+    _age_file(stale_f, 10_000)  # outside window
     _write(quiet_f, "recent")
-    _age_file(quiet_f, 3.0)  # within tail
+    _age_file(quiet_f, 3.0)     # within 30s window
 
-    def appender() -> None:
-        time.sleep(0.1)
-        with live_f.open("a") as fh:
-            fh.write("grow\n")
-            fh.flush()
-            os.fsync(fh.fileno())
-
-    t = threading.Thread(target=appender)
-    t.start()
-    try:
-        live, total, _ = agent_liveness.live_count(probe=0.5, tail=30.0)
-    finally:
-        t.join()
-
+    live, total, _ = agent_liveness.live_count(window=30.0)
     assert total == 3
-    assert live == 2, "grew-file + quiet-within-tail are live; stale is not"
+    assert live == 1, "only the quiet-within-window file is live; stale ones are not"
 
 
-# --- 3. FLOOR_LIVE_OVERRIDE seam --------------------------------------------
+# --- 3. DETERMINISM — two consecutive calls return the same count -----------
+
+def test_consecutive_count_calls_are_identical(tasks_dir: Path) -> None:
+    """Two back-to-back --count calls on the same fixture set must return the
+    same integer. This is the regression guard for the 6/13/18/21 wobble caused
+    by the old probe-sleep approach."""
+    # Mix of live and stale files to make the count non-trivial.
+    for i in range(3):
+        f = tasks_dir / f"live{i}.output"
+        _write(f, f"running {i}")
+        _age_file(f, 5.0)  # within 120s window
+
+    for i in range(2):
+        f = tasks_dir / f"stale{i}.output"
+        _write(f, f"done {i}")
+        _age_file(f, 10_000)  # outside window
+
+    live1, total1, _ = agent_liveness.live_count(window=120.0)
+    live2, total2, _ = agent_liveness.live_count(window=120.0)
+
+    assert total1 == 5
+    assert total2 == 5
+    assert live1 == live2 == 3, (
+        f"consecutive live_count calls must agree; got {live1} then {live2}"
+    )
+
+
+def test_consecutive_main_count_calls_are_identical(
+    tasks_dir: Path, monkeypatch: pytest.MonkeyPatch, capsys
+) -> None:
+    """Two back-to-back main(['--count']) calls must print the same number.
+    Uses GLUDD_LIVENESS_WINDOW_SEC to pin the window so the test is hermetic."""
+    monkeypatch.setenv("GLUDD_LIVENESS_WINDOW_SEC", "120.0")
+    for i in range(4):
+        f = tasks_dir / f"agent{i}.output"
+        _write(f, f"work {i}")
+        _age_file(f, 10.0)  # fresh enough for 120s window
+
+    agent_liveness.main(["--count"])
+    out1 = capsys.readouterr().out.strip()
+
+    agent_liveness.main(["--count"])
+    out2 = capsys.readouterr().out.strip()
+
+    assert out1 == out2 == "4", (
+        f"--count must be deterministic; first={out1!r} second={out2!r}"
+    )
+
+
+# --- 4. FLOOR_LIVE_OVERRIDE seam --------------------------------------------
+
 def test_override_seam_count(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
     monkeypatch.setenv("FLOOR_LIVE_OVERRIDE", "7")
     rc = agent_liveness.main(["--count"])
@@ -169,7 +191,8 @@ def test_override_non_digit_ignored(
     assert capsys.readouterr().out.strip() == "0"
 
 
-# --- 4. fail-safe on missing / unresolvable dir -----------------------------
+# --- 5. fail-safe on missing / unresolvable dir -----------------------------
+
 def test_missing_dir_resolves_none(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GLUDD_TASKS_DIR", "/nonexistent/path/does/not/exist")
     monkeypatch.delenv("FLOOR_LIVE_OVERRIDE", raising=False)
@@ -179,7 +202,7 @@ def test_missing_dir_resolves_none(monkeypatch: pytest.MonkeyPatch) -> None:
 def test_missing_dir_live_count_zero(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GLUDD_TASKS_DIR", "/nonexistent/path/does/not/exist")
     monkeypatch.delenv("FLOOR_LIVE_OVERRIDE", raising=False)
-    live, total, resolved = agent_liveness.live_count(probe=0.05, tail=75.0)
+    live, total, resolved = agent_liveness.live_count(window=120.0)
     assert (live, total, resolved) == (0, 0, None)
 
 
