@@ -24,27 +24,29 @@ _SRC_DIR = str(_REPO_ROOT / "src")
 
 
 def _subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ that lets the child import BOTH general_ludd AND
-    its third-party deps (httpx, rich, ...).
+    """Return a copy of os.environ that lets the child import general_ludd and deps.
 
-    Passing only src/ on PYTHONPATH is insufficient: under CI the child resolves
-    general_ludd from src/ but then fails at `import httpx` because the parent's
-    site-packages are not guaranteed to be on the child's import path. We therefore
-    hand the child the parent interpreter's ENTIRE sys.path (which already contains
-    both the installed deps and, after we prepend it, src/). Combined with launching
-    via sys.executable (the same venv interpreter running this test), the child sees
-    exactly what the parent sees.
+    Strategy: rely on sys.executable being the venv interpreter (the same one running
+    this test under `uv run python -m pytest`). A venv interpreter's default sys.path
+    already includes the venv's site-packages (httpx, rich, etc.), so the child process
+    inherits dependency access automatically — no PYTHONPATH injection is needed for
+    third-party deps.
+
+    We only prepend src/ to PYTHONPATH to cover the editable-install source path in
+    case the package metadata lookup differs across platforms. We do NOT dump the
+    parent's full sys.path into PYTHONPATH: pytest inserts many internal paths
+    (conftest dirs, tmp basetemp, plugin paths) that are meaningless to the child
+    and can shadow the venv's own site-packages lookup on some Linux CI configurations,
+    causing ModuleNotFoundError for packages like httpx that are installed in the venv
+    but not on those injected paths.
     """
     env = dict(os.environ)
-    # src/ first, then every non-empty entry of the parent's sys.path (site-packages
-    # with httpx/rich/etc.), then any pre-existing PYTHONPATH. De-duplicate, keep order.
-    parts: list[str] = [_SRC_DIR, *[p for p in sys.path if p]]
+    # Only prepend src/ — deps come from the venv interpreter's built-in site-packages.
     existing = env.get("PYTHONPATH", "")
+    parts: list[str] = [_SRC_DIR]
     if existing:
-        parts.extend(existing.split(os.pathsep))
-    seen: set[str] = set()
-    ordered = [p for p in parts if not (p in seen or seen.add(p))]
-    env["PYTHONPATH"] = os.pathsep.join(ordered)
+        parts.extend(p for p in existing.split(os.pathsep) if p and p != _SRC_DIR)
+    env["PYTHONPATH"] = os.pathsep.join(parts)
     env["TERM"] = "xterm-256color"
     return env
 

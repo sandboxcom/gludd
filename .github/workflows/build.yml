@@ -48,6 +48,10 @@ jobs:
       - name: Gate
         run: |
           uv sync --python ${{ matrix.python-version }}
+          # Editable install ensures `sys.executable -m general_ludd.cli` (used by
+          # TUI subprocess tests) resolves the package AND all deps (httpx, rich,
+          # etc.) from the venv's site-packages without any PYTHONPATH injection.
+          uv pip install -e .
           make lint typecheck test-count test smoke
         env:
           GLUDD_PSK: ""
