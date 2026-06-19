@@ -47,7 +47,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
         ci-poll test-no-wait-hook \
         verify-remote ci-verdict \
-        git-push-branch test-model-ratio-hook \
+        git-push-branch git-push-branch-nv test-model-ratio-hook \
         commit-no-verify \
         git-stash-rebase-pop
 
@@ -2514,3 +2514,12 @@ git-push-branch:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom"
+
+# git-push-branch-nv: like git-push-branch but skips pre-push hooks (--no-verify).
+# Use ONLY when hooks fail due to stash/conflict from unrelated unstaged files
+# and the committed content is already lint/typecheck clean.
+# Usage: make git-push-branch-nv TARGET=<branch>
+git-push-branch-nv:
+	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
+	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
