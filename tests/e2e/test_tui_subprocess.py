@@ -7,47 +7,29 @@ from __future__ import annotations
 
 import contextlib
 import os
-import pathlib
 import subprocess
 import sys
 import time
 
-# Absolute path to the repo's src/ directory.
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SRC_DIR = str(_REPO_ROOT / "src")
-
-# Launch the child so it can import general_ludd from src/ WITHOUT setting
-# PYTHONPATH.  Setting a non-empty PYTHONPATH on a Python 3.12+ venv interpreter
-# makes site.py skip adding the venv's own site-packages, which causes the child
-# to fail `import httpx` ("No module named 'httpx'") even though httpx is
-# installed in the venv — this was the exact CI failure on the 3.12 gate.  We
-# instead bootstrap via `python -c`: site initialization runs normally (so the
-# venv site-packages stay on sys.path and httpx/rich import fine), then we
-# inject src/ into sys.path *inside* the child before importing the CLI.  This
-# works whether or not general_ludd is also installed in site-packages.
-_BOOTSTRAP = (
-    "import sys; "
-    f"sys.path.insert(0, {_SRC_DIR!r}); "
-    "from general_ludd.cli import main; "
-    "main()"
-)
-GLUDD_CMD = [sys.executable, "-c", _BOOTSTRAP, "tui"]
+GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
 
 
 def _subprocess_env() -> dict[str, str]:
-    """Return a child env that lets the TUI import general_ludd and its
-    third-party deps (httpx, rich, ...).
+    """Return a copy of os.environ for the child subprocess.
 
-    We deliberately do NOT set PYTHONPATH: on Python 3.12+ venvs a non-empty
-    PYTHONPATH can cause site.py to skip adding the venv's own site-packages,
-    which produces the "No module named 'httpx'" error seen in CI.  src/ is
-    instead injected via the in-child `-c` bootstrap (see _BOOTSTRAP), and the
-    venv site-packages are added by normal site initialization.
+    We spawn via sys.executable (the same venv interpreter) using `-m
+    general_ludd.cli`, so normal site initialization adds the venv's
+    site-packages (httpx, rich, ...) AND the installed general_ludd package.
+    We must NOT inject src/ onto sys.path or set PYTHONPATH: on the CI venv
+    interpreter that shadows the venv site-packages and breaks `import httpx`
+    (the cli.py top-level import) — the exact failure seen in CI run
+    27882721091.
     """
     env = dict(os.environ)
-    # Ensure no inherited PYTHONPATH suppresses venv site-packages on 3.12+.
-    env.pop("PYTHONPATH", None)
     env["TERM"] = "xterm-256color"
+    # Strip any inherited PYTHONPATH so the child's site init exposes the venv
+    # site-packages instead of a shadowed src/-only path.
+    env.pop("PYTHONPATH", None)
     return env
 
 
