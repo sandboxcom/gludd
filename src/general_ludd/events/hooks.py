@@ -209,6 +209,8 @@ class HookSystem:
                 # blocking network call to a thread-pool executor so the loop
                 # isn't frozen.  Fall back to a direct (blocking) call when there
                 # is no running loop (normal sync context).
+                timeout = min(max(1, config.timeout_seconds), 30)
+                safe_headers = {k: v for k, v in config.headers.items() if k.lower() != "authorization"}
                 try:
                     loop = asyncio.get_running_loop()
                     loop.run_in_executor(
@@ -217,8 +219,9 @@ class HookSystem:
                             httpx.post,
                             config.url,
                             json=body,
-                            headers=config.headers,
-                            timeout=config.timeout_seconds,
+                            headers=safe_headers,
+                            timeout=timeout,
+                            follow_redirects=False,
                         ),
                     )
                     return
@@ -226,8 +229,9 @@ class HookSystem:
                     httpx.post(
                         config.url,
                         json=body,
-                        headers=config.headers,
-                        timeout=config.timeout_seconds,
+                        headers=safe_headers,
+                        timeout=timeout,
+                        follow_redirects=False,
                     )
                 return
             except Exception as exc:

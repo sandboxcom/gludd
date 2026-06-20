@@ -115,7 +115,7 @@ _BUILTIN: dict[str, RoleCapabilities] = {
     "operator": RoleCapabilities(
         role="operator",
         collections_self_modify=False,
-        dispatch_kinds=frozenset({"role", "collection", "mcp", "skill"}),
+        dispatch_kinds=frozenset({"role", "mcp", "skill"}),
     ),
     "report_status": RoleCapabilities(
         role="report_status",
@@ -213,7 +213,7 @@ def is_protected_path(path: str) -> bool:
         if sub in norm:
             return True
     leaf = norm.rsplit("/", 1)[-1]
-    stem = re.sub(r"\.py[cod]?$", "", leaf)
+    stem = re.sub(r"\.(py[cod]?|pyi|so)$", "", leaf)
     return stem in PROTECTED_FILE_STEMS
 
 

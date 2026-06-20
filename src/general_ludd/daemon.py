@@ -698,10 +698,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._worktree_monitor = wt_monitor
 
         from general_ludd.agents.dispatcher import AgentDispatcher
-        from general_ludd.agents.registry import AgentRegistry
+        from general_ludd.agents.registry import AgentRegistry, default_registry
         from general_ludd.agents.types import AgentTask
 
-        registry = AgentRegistry()
+        registry = default_registry()
         dispatcher_executor = None
 
         # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.

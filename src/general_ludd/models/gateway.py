@@ -678,6 +678,8 @@ class ModelGateway:
                 fallback_ids = list(profile.fallback_profiles)
 
         for fb_id in fallback_ids:
+            if self._health_tracker is not None and not self._health_tracker.is_healthy(fb_id):
+                continue
             result = self._try_call_model(fb_id, messages, **kwargs)
             if result is not None:
                 return result
