@@ -133,13 +133,18 @@ class TestNoDoubleCount:
         tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
         gateway = _make_gateway(tracker)
 
-        # 2 retryable failures (one per attempt). max_retries small so each
-        # call_model_with_retry exhausts after exactly the scripted failures.
+        # 2 retryable failures (one per attempt). overload_max_retries=2 caps
+        # the PROVIDER_ERROR/503 retry budget to exactly 2 total calls
+        # (attempt 1 + 1 retry), exhausting the scripted queue precisely.
+        # Without overload_max_retries, the default overload budget (10) would
+        # cause the loop to attempt a 3rd unscripted call and hit the
+        # "provider invoked more times than scripted" assertion guard.
         _FakeChatModel.script = [_server_error(), _server_error()]
         with pytest.raises(httpx.HTTPStatusError):
             gateway.call_model_with_retry(
                 "primary", [{"role": "user", "content": "hi"}],
                 max_retries=1, base_backoff_seconds=0.0,
+                overload_max_retries=2,
             )
 
         # EXACTLY 2 consecutive failures recorded (no double-count -> would be 4).

@@ -31,11 +31,11 @@ def _make_app_with_engine(password: str) -> tuple[FastAPI, TestClient]:
     mock_url = MagicMock()
     # render_as_string(hide_password=True) should mask the password with ***
     mock_url.render_as_string.return_value = (
-        "postgresql+psycopg2://user:***@localhost/mydb"
+        "postgresql+psycopg://user:***@localhost/mydb"
     )
     # str(url) would reveal the password (simulate SQLAlchemy behaviour)
     mock_url.__str__ = MagicMock(
-        return_value=f"postgresql+psycopg2://user:{password}@localhost/mydb"
+        return_value=f"postgresql+psycopg://user:{password}@localhost/mydb"
     )
 
     mock_engine = MagicMock()
@@ -220,7 +220,7 @@ class TestStatusDbUrlRedaction:
         register(app, state)
 
         # Build a real SQLAlchemy URL object that carries a password.
-        engine = create_engine("postgresql+psycopg2://admin:s3cr3tpassword@localhost/mydb")
+        engine = create_engine("postgresql+psycopg://admin:s3cr3tpassword@localhost/mydb")
         app.state._db_engine = engine
 
         with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):

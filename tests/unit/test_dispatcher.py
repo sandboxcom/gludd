@@ -96,7 +96,7 @@ class TestDispatchUnpermittedInvoker:
             agent_name="target",
             description="do work",
             prompt="run it",
-            invoker="caller",
+            invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
 
@@ -117,7 +117,7 @@ class TestDispatchUnpermittedInvoker:
             agent_name="target",
             description="do work",
             prompt="run it",
-            invoker="caller",
+            invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
 
@@ -160,7 +160,7 @@ class TestDispatchPermittedInvoker:
             agent_name="target",
             description="do work",
             prompt="run it",
-            invoker="caller",
+            invoker_name="caller",
         )
         result = _run(dispatcher.dispatch_one(task))
 

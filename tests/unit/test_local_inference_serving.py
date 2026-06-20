@@ -19,6 +19,9 @@ class TestSlurmInference:
             host="gpu01",
             port=8000,
             extra_args=["--partition=gpu", "--gres=gpu:1"],
+            # Slurm jobs run on cluster nodes that intentionally bind non-loopback
+            # interfaces; allow_nonloopback=True is required for cluster hosts.
+            allow_nonloopback=True,
         )
         cmd = mgr._build_command(cfg)
         assert "sbatch" in cmd
@@ -62,7 +65,7 @@ class TestSlurmInference:
         cfg = LocalServerConfig(
             engine="vllm",
             model_name="meta-llama/Llama-3.2-1B",
-            host="0.0.0.0",
+            host="127.0.0.1",
             port=8000,
         )
         cmd = mgr._build_command(cfg)

@@ -413,6 +413,7 @@ class ModelGateway:
         *,
         max_retries: int = 3,
         base_backoff_seconds: float = 1.0,
+        overload_max_retries: int = 10,
         **kwargs: Any,
     ) -> ModelResponse:
         """Retry a model call using tenacity with TimeoutRetryPolicy semantics.
@@ -426,6 +427,12 @@ class ModelGateway:
           primary profile and walk the fallback_profiles chain.
         - Health tracker: records timeout events and checks profile health
           before attempting; unhealthy primary → skip to fallbacks immediately.
+
+        ``overload_max_retries`` caps retries for PROVIDER_ERROR / RATE_LIMITED
+        (overload kinds). These use a separate, higher retry budget than
+        ``max_retries`` (which applies to connection/read timeouts). Pass a small
+        value in tests to bound the number of provider invocations for 503-class
+        errors without changing the non-overload retry semantics.
         """
         import time as _time
 
@@ -439,6 +446,7 @@ class ModelGateway:
         policy = TimeoutRetryPolicy(
             max_retries=max_retries,
             base_backoff_seconds=base_backoff_seconds,
+            overload_max_retries=overload_max_retries,
         )
 
         # If primary is already unhealthy, skip straight to fallbacks. Each

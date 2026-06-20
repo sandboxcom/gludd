@@ -29,7 +29,7 @@ def test_vllm_normal_config_builds_expected_argv(mgr: LocalInferenceManager):
     cfg = LocalServerConfig(
         engine="vllm",
         model_name="meta-llama/Llama-3-8B",
-        host="0.0.0.0",
+        host="127.0.0.1",
         port=9999,
     )
     cmd = mgr._build_command(cfg)
@@ -38,7 +38,7 @@ def test_vllm_normal_config_builds_expected_argv(mgr: LocalInferenceManager):
         "serve",
         "meta-llama/Llama-3-8B",
         "--host",
-        "0.0.0.0",
+        "127.0.0.1",
         "--port",
         "9999",
     ]
@@ -133,11 +133,30 @@ def test_invalid_host_rejected(mgr: LocalInferenceManager, host: str):
         mgr._build_command(cfg)
 
 
-@pytest.mark.parametrize("host", ["localhost", "0.0.0.0", "127.0.0.1", "my-host.example.com"])
-def test_valid_host_accepted(mgr: LocalInferenceManager, host: str):
+@pytest.mark.parametrize("host", ["localhost", "127.0.0.1"])
+def test_loopback_host_accepted(mgr: LocalInferenceManager, host: str):
+    # Loopback addresses are accepted by default (no allow_nonloopback needed).
     cfg = LocalServerConfig(engine="vllm", model_name="m", host=host)
     cmd = mgr._build_command(cfg)
     assert host in cmd
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "my-host.example.com"])
+def test_nonloopback_host_accepted_with_flag(mgr: LocalInferenceManager, host: str):
+    # Non-loopback addresses are accepted when allow_nonloopback=True is set
+    # (e.g. Slurm/cluster mode where the server intentionally binds a cluster NIC).
+    cfg = LocalServerConfig(engine="vllm", model_name="m", host=host, allow_nonloopback=True)
+    cmd = mgr._build_command(cfg)
+    assert host in cmd
+
+
+@pytest.mark.parametrize("host", ["0.0.0.0", "my-host.example.com"])
+def test_nonloopback_host_rejected_by_default(mgr: LocalInferenceManager, host: str):
+    # Without allow_nonloopback=True, non-loopback hosts must raise ValueError
+    # (the unauthenticated inference API must not be exposed on every NIC).
+    cfg = LocalServerConfig(engine="vllm", model_name="m", host=host)
+    with pytest.raises(ValueError, match="not a loopback address"):
+        mgr._build_command(cfg)
 
 
 # --- port validation ------------------------------------------------------

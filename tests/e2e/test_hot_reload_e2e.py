@@ -1020,7 +1020,7 @@ class TestDaemonReloadEndpointsE2E:
                 json={
                     "event_name": "on_model_added",
                     "url": "https://example.com/webhook",
-                    "headers": {"Authorization": "Bearer token123"},
+                    "headers": {"X-Custom-Token": "Bearer token123"},
                 },
             )
             assert resp.status_code == 200
