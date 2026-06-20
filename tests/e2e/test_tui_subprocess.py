@@ -12,39 +12,41 @@ import subprocess
 import sys
 import time
 
-GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
-
-# Absolute path to the repo's src/ directory.  When CI runs pytest with
-# PYTHONPATH=src (rather than an editable install), the spawned subprocess
-# inherits os.environ — but os.environ may not contain PYTHONPATH at all if
-# the harness injected importability via sys.path manipulation only.  We ensure
-# the subprocess always has src/ on PYTHONPATH regardless.
+# Absolute path to the repo's src/ directory.
 _REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
 _SRC_DIR = str(_REPO_ROOT / "src")
 
+# Launch the child so it can import general_ludd from src/ WITHOUT setting
+# PYTHONPATH.  Setting a non-empty PYTHONPATH on a Python 3.12+ venv interpreter
+# makes site.py skip adding the venv's own site-packages, which causes the child
+# to fail `import httpx` ("No module named 'httpx'") even though httpx is
+# installed in the venv — this was the exact CI failure on the 3.12 gate.  We
+# instead bootstrap via `python -c`: site initialization runs normally (so the
+# venv site-packages stay on sys.path and httpx/rich import fine), then we
+# inject src/ into sys.path *inside* the child before importing the CLI.  This
+# works whether or not general_ludd is also installed in site-packages.
+_BOOTSTRAP = (
+    "import sys; "
+    f"sys.path.insert(0, {_SRC_DIR!r}); "
+    "from general_ludd.cli import main; "
+    "main()"
+)
+GLUDD_CMD = [sys.executable, "-c", _BOOTSTRAP, "tui"]
+
 
 def _subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ that lets the child import BOTH general_ludd AND
-    its third-party deps (httpx, rich, ...).
+    """Return a child env that lets the TUI import general_ludd and its
+    third-party deps (httpx, rich, ...).
 
-    Passing only src/ on PYTHONPATH is insufficient: under CI the child resolves
-    general_ludd from src/ but then fails at `import httpx` because the parent's
-    site-packages are not guaranteed to be on the child's import path. We therefore
-    hand the child the parent interpreter's ENTIRE sys.path (which already contains
-    both the installed deps and, after we prepend it, src/). Combined with launching
-    via sys.executable (the same venv interpreter running this test), the child sees
-    exactly what the parent sees.
+    We deliberately do NOT set PYTHONPATH: on Python 3.12+ venvs a non-empty
+    PYTHONPATH can cause site.py to skip adding the venv's own site-packages,
+    which produces the "No module named 'httpx'" error seen in CI.  src/ is
+    instead injected via the in-child `-c` bootstrap (see _BOOTSTRAP), and the
+    venv site-packages are added by normal site initialization.
     """
     env = dict(os.environ)
-    # src/ first, then every non-empty entry of the parent's sys.path (site-packages
-    # with httpx/rich/etc.), then any pre-existing PYTHONPATH. De-duplicate, keep order.
-    parts: list[str] = [_SRC_DIR, *[p for p in sys.path if p]]
-    existing = env.get("PYTHONPATH", "")
-    if existing:
-        parts.extend(existing.split(os.pathsep))
-    seen: set[str] = set()
-    ordered = [p for p in parts if not (p in seen or seen.add(p))]
-    env["PYTHONPATH"] = os.pathsep.join(ordered)
+    # Ensure no inherited PYTHONPATH suppresses venv site-packages on 3.12+.
+    env.pop("PYTHONPATH", None)
     env["TERM"] = "xterm-256color"
     return env
 
