@@ -23,6 +23,8 @@ Safety contract (fail-closed throughout):
 
 from __future__ import annotations
 
+import os
+import urllib.parse
 from dataclasses import dataclass
 from typing import Literal, Protocol, runtime_checkable
 
@@ -95,7 +97,8 @@ class ApplyResult:
 def _first_protected(target_paths: list[str]) -> str | None:
     """Return the first target path matching the deny-list, else ``None``."""
     for path in target_paths:
-        lowered = path.lower()
+        normalised = os.path.normpath(urllib.parse.unquote(path))
+        lowered = normalised.lower()
         for marker in PROTECTED_PATH_MARKERS:
             if marker in lowered:
                 return path
