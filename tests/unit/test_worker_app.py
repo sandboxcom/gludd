@@ -324,15 +324,12 @@ class TestExecuteJob:
 
         rmtree_calls: list[Any] = []
 
-        original_rmtree = shutil.rmtree
-
         def _fake_rmtree(path: Any, ignore_errors: bool = False) -> None:
             rmtree_calls.append(path)
 
+        # app.py looks up `shutil.rmtree` on the real shutil module at call time,
+        # so patching that attribute is what the source actually resolves to.
         monkeypatch.setattr(shutil, "rmtree", _fake_rmtree)
-        # Also patch the module reference since it imports shutil at top level
-        import general_ludd.worker.app as app_module
-        monkeypatch.setattr(app_module, "shutil", type("_shutil", (), {"rmtree": _fake_rmtree})())
 
         from general_ludd.worker.app import create_app
         client = TestClient(create_app(gateway=None), raise_server_exceptions=False)
@@ -437,10 +434,10 @@ class TestExecuteJob:
 
         rmtree_calls: list[Any] = []
 
-        import general_ludd.worker.app as app_module
-        monkeypatch.setattr(app_module, "shutil", type("_shutil", (), {
-            "rmtree": lambda path, ignore_errors=False: rmtree_calls.append(path)
-        })())
+        def _fake_rmtree(path: Any, ignore_errors: bool = False) -> None:
+            rmtree_calls.append(path)
+
+        monkeypatch.setattr(shutil, "rmtree", _fake_rmtree)
 
         from general_ludd.worker.app import create_app
         client = TestClient(create_app(gateway=None), raise_server_exceptions=False)
@@ -809,51 +806,41 @@ class TestBuildGatewayFromConfig:
         assert result is None
 
     def test_dict_profile_builds_gateway(self, monkeypatch: pytest.MonkeyPatch) -> None:
-        """Dict profile entry → ModelProfile built and gateway returned."""
-        mock_config = MagicMock()
-        mock_config.model_profiles = {
-            "default": {
-                "provider": "anthropic",
-                "model_id": "claude-haiku-4-5",
-            }
-        }
+        """Dict profile entry → ModelProfile(**data) built and gateway returned.
 
+        ModelProfile must stay a real type so the source's ``isinstance`` check
+        works; only ModelGateway + EnvSecretsManager are stubbed so no real
+        provider/secret init happens.
+        """
+        mock_config = MagicMock()
+        # A dict (not a ModelProfile instance) drives the ModelProfile(**data) path.
+        mock_config.model_profiles = {
+            "default": {"provider": "anthropic", "model_name": "claude-haiku-4-5"}
+        }
         monkeypatch.setattr(
             "general_ludd.config.loader.load_user_config",
             lambda: mock_config,
         )
 
         fake_gw = MagicMock()
-
-        mock_model_profile = MagicMock()
-
-        def _fake_model_profile(**kwargs: Any) -> Any:
-            return mock_model_profile
+        gateway_calls: list[Any] = []
 
         def _fake_model_gateway(**kwargs: Any) -> Any:
+            gateway_calls.append(kwargs)
             return fake_gw
 
-        monkeypatch.setattr("general_ludd.worker.app.ModelProfile", _fake_model_profile)
         monkeypatch.setattr("general_ludd.worker.app.ModelGateway", _fake_model_gateway)
-
-        from general_ludd.worker.app import build_gateway_from_config
-        # Need to reimport after patching
-        import general_ludd.worker.app as app_module
-        app_module.ModelProfile = _fake_model_profile  # type: ignore[assignment]
-        app_module.ModelGateway = _fake_model_gateway  # type: ignore[assignment]
-
-        # Directly test the dict path
-        mock_config2 = MagicMock()
-        mock_config2.model_profiles = {"key1": {"provider": "anthropic", "model_id": "x"}}
         monkeypatch.setattr(
-            "general_ludd.config.loader.load_user_config",
-            lambda: mock_config2,
+            "general_ludd.secrets.env.EnvSecretsManager", lambda: MagicMock()
         )
 
+        from general_ludd.worker.app import build_gateway_from_config
         result = build_gateway_from_config()
-        # Should not be None when profiles exist
-        # (fake gateway returned from ModelGateway constructor)
-        assert result is not None
+
+        assert result is fake_gw
+        # One profile was passed to the gateway constructor.
+        assert len(gateway_calls) == 1
+        assert len(gateway_calls[0]["profiles"]) == 1
 
     def test_model_profile_instance_passed_through(
         self, monkeypatch: pytest.MonkeyPatch
