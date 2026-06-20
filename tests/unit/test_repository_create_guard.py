@@ -66,13 +66,13 @@ class TestCreateFieldAllowlist:
     async def test_disallowed_field_version_raises(self, async_session: AsyncSession):
         """Passing 'version' (auto-managed) must raise ValueError."""
         repo = TodoRepository(async_session)
-        with pytest.raises(ValueError, match="disallowed field"):
+        with pytest.raises(ValueError, match="immutable"):
             await repo.create({"title": "Bad task", "version": 99})
 
     async def test_disallowed_field_id_raises(self, async_session: AsyncSession):
         """Passing 'id' (auto-increment PK) must raise ValueError."""
         repo = TodoRepository(async_session)
-        with pytest.raises(ValueError, match="disallowed field"):
+        with pytest.raises(ValueError, match="immutable"):
             await repo.create({"title": "Bad task", "id": 1})
 
     async def test_disallowed_field_not_written(self, async_session: AsyncSession):
@@ -87,7 +87,7 @@ class TestCreateFieldAllowlist:
     async def test_multiple_disallowed_fields_raises(self, async_session: AsyncSession):
         """Multiple disallowed fields in one call must raise ValueError."""
         repo = TodoRepository(async_session)
-        with pytest.raises(ValueError, match="disallowed field"):
+        with pytest.raises(ValueError, match="immutable"):
             await repo.create({"title": "Bad", "id": 1, "version": 2})
 
     async def test_allowed_fields_all_pass(self, async_session: AsyncSession):

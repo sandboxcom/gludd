@@ -189,7 +189,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         filestore_available = False
         try:
             store = FileStore()
-            filestore_available = bool(store.root_path)
+            filestore_available = bool(store.root_path) and os.path.isdir(store.root_path)
             boot = BinaryBootstrapper(store=store)
             bare_binaries = [
                 {"name": b["binary_name"], "version": b.get("version", "?")}
@@ -228,7 +228,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
-            "db_engine": str(getattr(app.state, "_db_engine", None)),
+            "db_engine": _db_engine_str,
             "db_url": _db_url_safe,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},

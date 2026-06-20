@@ -101,8 +101,8 @@ class TestDispatchUnpermittedInvoker:
         result = _run(dispatcher.dispatch_one(task))
 
         assert result.status == "failed", f"Expected failed, got {result.status!r}"
-        assert "not permitted" in result.output.lower(), (
-            f"Expected 'not permitted' in output, got: {result.output!r}"
+        assert "permission denied" in result.output.lower(), (
+            f"Expected 'permission denied' in output, got: {result.output!r}"
         )
 
     def test_dispatch_unpermitted_invoker_wrong_target(self) -> None:
@@ -122,8 +122,8 @@ class TestDispatchUnpermittedInvoker:
         result = _run(dispatcher.dispatch_one(task))
 
         assert result.status == "failed"
-        assert "not permitted" in result.output.lower(), (
-            f"Expected 'not permitted' in output, got: {result.output!r}"
+        assert "permission denied" in result.output.lower(), (
+            f"Expected 'permission denied' in output, got: {result.output!r}"
         )
 
 

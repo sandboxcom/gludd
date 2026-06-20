@@ -3,10 +3,11 @@ import tempfile
 
 from general_ludd.security import is_join_within as exported
 from general_ludd.security.auth import is_join_within, is_path_within
+from general_ludd.security import sanitize
 
 
 def test_alias_is_same_object():
-    assert is_path_within is is_join_within
+    assert is_path_within is sanitize.is_path_within
 
 
 def test_join_within_confines():
