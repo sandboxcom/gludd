@@ -7,45 +7,26 @@ from __future__ import annotations
 
 import contextlib
 import os
-import pathlib
 import subprocess
 import sys
 import time
 
 GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
 
-# Absolute path to the repo's src/ directory.  When CI runs pytest with
-# PYTHONPATH=src (rather than an editable install), the spawned subprocess
-# inherits os.environ — but os.environ may not contain PYTHONPATH at all if
-# the harness injected importability via sys.path manipulation only.  We ensure
-# the subprocess always has src/ on PYTHONPATH regardless.
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SRC_DIR = str(_REPO_ROOT / "src")
-
 
 def _subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ that lets the child import BOTH general_ludd AND
-    its third-party deps (httpx, rich, ...).
+    """Return a copy of os.environ for the child subprocess.
 
-    Passing only src/ on PYTHONPATH is insufficient: under CI the child resolves
-    general_ludd from src/ but then fails at `import httpx` because the parent's
-    site-packages are not guaranteed to be on the child's import path. We therefore
-    hand the child the parent interpreter's ENTIRE sys.path (which already contains
-    both the installed deps and, after we prepend it, src/). Combined with launching
-    via sys.executable (the same venv interpreter running this test), the child sees
-    exactly what the parent sees.
+    We spawn via sys.executable (the same venv interpreter), so site-packages
+    (including httpx, rich, etc.) are already on the interpreter's path.
+    We must NOT override PYTHONPATH — doing so can shadow venv site-packages
+    and break third-party imports like httpx.
     """
     env = dict(os.environ)
-    # src/ first, then every non-empty entry of the parent's sys.path (site-packages
-    # with httpx/rich/etc.), then any pre-existing PYTHONPATH. De-duplicate, keep order.
-    parts: list[str] = [_SRC_DIR, *[p for p in sys.path if p]]
-    existing = env.get("PYTHONPATH", "")
-    if existing:
-        parts.extend(existing.split(os.pathsep))
-    seen: set[str] = set()
-    ordered = [p for p in parts if not (p in seen or seen.add(p))]
-    env["PYTHONPATH"] = os.pathsep.join(ordered)
     env["TERM"] = "xterm-256color"
+    # Strip any PYTHONPATH that could interfere with venv site-packages resolution.
+    # Since we use sys.executable, the venv's site-packages are already available.
+    env.pop("PYTHONPATH", None)
     return env
 
 
