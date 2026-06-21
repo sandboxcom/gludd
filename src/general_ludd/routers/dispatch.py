@@ -113,7 +113,7 @@ def register(
                     "Split into smaller batches."
                 ),
             )
-        results = dispatcher.dispatch_all(calls)
+        results = await dispatcher.dispatch_all(calls)
         _record(results)
         return {
             "results": [r.to_dict() for r in results],

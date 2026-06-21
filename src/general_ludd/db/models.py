@@ -162,7 +162,12 @@ class TaskReturnModel(Base):
         nullable=True,
         index=True,
     )
-    todo_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    todo_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("todos.todo_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     job_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     playbook: Mapped[str] = mapped_column(String(256), nullable=False)
     queue: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
@@ -188,7 +193,12 @@ class TaskDecisionModel(Base):
     __tablename__ = "task_decisions"
 
     id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
-    return_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    return_id: Mapped[str] = mapped_column(
+        String(64),
+        ForeignKey("task_returns.return_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
     project_id: Mapped[str | None] = mapped_column(
         String(32),
         ForeignKey("projects.project_id", ondelete="SET NULL"),
