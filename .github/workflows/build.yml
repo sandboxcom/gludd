@@ -52,6 +52,7 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
+          PYTHONPATH: src
 
   molecule:
     needs: [version, gate]
