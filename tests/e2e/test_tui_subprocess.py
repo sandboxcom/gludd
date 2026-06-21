@@ -51,6 +51,9 @@ class TestTUIE2E:
                 env=_subprocess_env(),
             )
             os.close(slave_fd)
+            import fcntl as _fcntl
+            _flags = _fcntl.fcntl(master_fd, _fcntl.F_GETFL)
+            _fcntl.fcntl(master_fd, _fcntl.F_SETFL, _flags | os.O_NONBLOCK)
             time.sleep(1.0)
             os.write(master_fd, b"q")
             time.sleep(1.0)
@@ -96,6 +99,9 @@ class TestTUIE2E:
                 env=_subprocess_env(),
             )
             os.close(slave_fd)
+            import fcntl as _fcntl
+            _flags = _fcntl.fcntl(master_fd, _fcntl.F_GETFL)
+            _fcntl.fcntl(master_fd, _fcntl.F_SETFL, _flags | os.O_NONBLOCK)
             time.sleep(1.5)
             output = b""
             for _ in range(10):

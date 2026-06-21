@@ -54,7 +54,10 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         sync-rc stash-sync-rc \
         ci-status-rc \
         ci-job-grep ci-job-log-raw \
-        probe-uvenv probe-syspath probe-child probe-child-bare probe-sitepackages ci-job-grep-tui
+        probe-uvenv probe-syspath probe-child probe-child-bare probe-sitepackages ci-job-grep-tui \
+        git-divergence git-rebase-onto \
+        ci-sync-rc ci-repro-local ci-check-install push-tui-fix \
+        fetch-rc-tip rebase-onto-rc push-tui-fix-force rebase-abort rebase-continue rebase-stage-continue
 
 help:
 	@echo "Usage: make [target]"
@@ -2640,3 +2643,62 @@ rebase-push-c2:
 	@echo "[rebase-push-c2] rebased HEAD=$$(git rev-parse --short HEAD); pushing ..."
 	@git push --no-verify "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" HEAD:refs/heads/integration/alpha3-rc
 	@echo "[rebase-push-c2] pushed HEAD=$$(git rev-parse --short HEAD)"
+
+# ---------------------------------------------------------------------------
+# CI reproduction and sync targets
+# ---------------------------------------------------------------------------
+
+# ci-sync-rc: fetch and checkout the latest remote tip of integration/alpha3-rc
+ci-sync-rc:
+	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc && git checkout -B integration/alpha3-rc FETCH_HEAD
+	@echo "Synced to integration/alpha3-rc"
+
+# ci-repro-local: reproduce TUI e2e CI failure locally (no xdist, fresh env)
+ci-repro-local:
+	@rm -rf .venv
+	@$(UV) sync
+	@$(UV) run python -m pytest tests/e2e/test_tui_subprocess.py -p no:xdist -v
+
+# ci-check-install: verify that key packages are importable in the venv
+ci-check-install:
+	@$(UV) run python -c "import general_ludd; print('general_ludd OK:', general_ludd.__file__)"
+	@$(UV) run python -c "import httpx; print('httpx OK')"
+	@$(UV) run python -c "import sys; print('sys.path first 5:', sys.path[:5])"
+
+# push-tui-fix: push current HEAD to integration/alpha3-rc on sandboxcom via HTTPS
+push-tui-fix:
+	@git push "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" HEAD:refs/heads/integration/alpha3-rc
+	@echo "Pushed HEAD to integration/alpha3-rc"
+
+# fetch-rc-tip: fetch integration/alpha3-rc into refs/remotes/origin/integration/alpha3-rc
+fetch-rc-tip:
+	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc:refs/remotes/origin/integration/alpha3-rc
+	@echo "[fetch-rc-tip] fetched integration/alpha3-rc"
+	@git log --oneline refs/remotes/origin/integration/alpha3-rc -5
+
+# rebase-onto-rc: rebase current branch onto the fetched remote RC tip
+rebase-onto-rc:
+	@echo "[rebase-onto-rc] BEFORE: $$(git rev-parse --short HEAD)"
+	@git rebase refs/remotes/origin/integration/alpha3-rc
+	@echo "[rebase-onto-rc] AFTER:  $$(git rev-parse --short HEAD)"
+
+# push-tui-fix-force: force-push HEAD to integration/alpha3-rc (use after rebase)
+push-tui-fix-force:
+	@git push --force-with-lease "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" HEAD:refs/heads/integration/alpha3-rc
+	@echo "[push-tui-fix-force] Pushed HEAD to integration/alpha3-rc (force-with-lease)"
+
+# rebase-abort: abort an in-progress rebase
+rebase-abort:
+	@git rebase --abort
+	@echo "[rebase-abort] rebase aborted"
+
+# rebase-continue: continue an in-progress rebase after conflict resolution
+rebase-continue:
+	@GIT_EDITOR=true git rebase --continue
+	@echo "[rebase-continue] rebase continued"
+
+# rebase-stage-continue: stage Makefile + test file then continue rebase
+rebase-stage-continue:
+	@git add Makefile tests/e2e/test_tui_subprocess.py
+	@GIT_EDITOR=true git rebase --continue
+	@echo "[rebase-stage-continue] staged and continued rebase"
