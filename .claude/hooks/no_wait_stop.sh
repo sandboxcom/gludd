@@ -92,6 +92,25 @@ patterns = [
     r"\bor hold\b", r"\bcommit or hold\b", r"\bi'?ll leave (?:it|that|this)?\s*to (?:your|you)\b",
     r"\bi can (?:commit|push|apply|proceed|hold)\b.*\bor\b",
     r"\bwhich (?:would you|do you want|one)\b", r"\bprefer (?:that )?i\b",
+    # ── CONSTRAINT-AS-STOPSIGN (2026-06-21) ─────────────────────────────────
+    # Policy (AGENTS.md "Constraints Are To Engineer Around"): a constraint is a
+    # design prompt, not a terminal answer. Naked "can't / isn't possible / we have
+    # to wait" phrasings without an immediately-paired workaround are parking the
+    # problem on the user. Block them in enforce mode; the paired-workaround
+    # distinction is left to human judgment (the hook catches the raw phrasing).
+    r"\bisn'?t possible\b",
+    r"\bis not possible\b",
+    r"\bnot possible to\b",
+    r"\bno way to\b",
+    r"there'?s no way\b",
+    r"\bit'?s a limitation\b",
+    r"\bis a limitation\b",
+    r"\bwe have to wait\b",
+    r"\bhave to wait for\b",
+    r"\bnothing (?:i|we) can do\b",
+    r"\bcan'?t be done\b",
+    r"\bthe api does(?:n'?t| not) (?:support|expose|provide)\b",
+    # ── END CONSTRAINT-AS-STOPSIGN ───────────────────────────────────────────
     # Added 2026-06-21 (round 2): ending a turn by DESCRIBING the next / remaining
     # / pending action instead of EXECUTING it is still parking. A status report
     # that hands the next step back to the user (no question asked) slipped through

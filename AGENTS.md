@@ -933,3 +933,60 @@ live agents for the purposes of the floor check.
 When you discover that a hook fires too aggressively or too rarely, narrow the
 check (see "Guardrail Integrity Policy") — do NOT remove the hook or make it
 permanently advisory when the intent is enforcement.
+
+## Constraints Are To Engineer Around
+
+**A constraint is a design prompt, never a dead end.**
+
+GitHub API granularity, local-gate OOM, make-only Bash, rate limits, job timeouts,
+"no make target for X", clock time — these are constraints. Constraints define the
+problem shape; they do not terminate it. When you hit a constraint, your job is to
+engineer around it, not to hand it back to the user.
+
+### The rule
+
+The phrase *"X isn't possible / it's a limitation / there's no way / we have to
+wait"* is ONLY acceptable when **immediately paired with the workaround being
+implemented OR a research task dispatched to find one.** A naked "can't" — or
+parking the problem in the user's lap — is a bug.
+
+> **If no workaround is obvious, that is a research task to dispatch, not a
+> stopping point.**
+
+### Worked example
+
+> "GitHub only exposes step results at completion — there's no way to get
+> live per-step status."
+
+Engineered around by:
+1. **Sharding the CI test job** so job-level failures surface within minutes (not
+   after a monolithic run), and
+2. **Live annotation polling** (`gh run watch` / annotation API on each job) so
+   partial results can be read before the overall run completes.
+
+The constraint (API granularity) shaped the solution (shard + poll); it did not
+end the conversation.
+
+### Forbidden responses
+
+- "The API doesn't support that." ← stop sign without a workaround
+- "It's a limitation of X — we'd have to wait." ← parking it on the user
+- "There's no way to do this without Y." ← dead end without research task
+- "We can't get that data; it isn't exposed." ← same, every time
+
+### Correct responses
+
+- "The API doesn't expose per-step status, but I can shard the job + poll
+  annotations — implementing now."
+- "No make target for X yet. Adding one."
+- "Rate-limited — backing off 60 s, then retrying."
+- "OOM on full gate locally. Running the slow tests in a CI PR instead."
+
+### Enforcement
+
+This is codified at all three levels:
+1. **This section** — proactive instruction for every agent reading AGENTS.md.
+2. **`.claude/hooks/no_wait_stop.sh` constraint-as-stopsign group** — when
+   `GLUDD_NO_WAIT_ENFORCE=1`, naked constraint phrasings block the turn-end.
+3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block
+   in enforce mode.

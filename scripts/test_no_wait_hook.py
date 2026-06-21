@@ -106,6 +106,85 @@ with tempfile.TemporaryDirectory(prefix="hook_test_") as d:
     except OSError:
         pass
 
+    # ── CONSTRAINT-AS-STOPSIGN cases (AGENTS.md "Constraints Are To Engineer Around") ──
+    # All run with GLUDD_NO_WAIT_ENFORCE=1 (enforce mode).
+    # Note: the hook cannot distinguish a paired-workaround from a naked stop-sign
+    # at the regex level — that distinction is left to human judgment. These cases
+    # assert the RAW phrasing blocks in enforce mode.
+
+    # Case 30: "isn't possible" -> BLOCK
+    p30 = os.path.join(d, "t30.jsonl")
+    make_jsonl(p30, "That isn't possible with the current API.")
+    cases.append((30, "BLOCK", run_hook(json.dumps({"transcript_path": p30}))))
+
+    # Case 31: "is not possible" -> BLOCK
+    p31 = os.path.join(d, "t31.jsonl")
+    make_jsonl(p31, "Live per-step status is not possible via GitHub Actions.")
+    cases.append((31, "BLOCK", run_hook(json.dumps({"transcript_path": p31}))))
+
+    # Case 32: "not possible to" -> BLOCK
+    p32 = os.path.join(d, "t32.jsonl")
+    make_jsonl(p32, "It's not possible to get that data without a paid plan.")
+    cases.append((32, "BLOCK", run_hook(json.dumps({"transcript_path": p32}))))
+
+    # Case 33: "no way to" -> BLOCK
+    p33 = os.path.join(d, "t33.jsonl")
+    make_jsonl(p33, "There's no way to run the full gate locally without OOM.")
+    cases.append((33, "BLOCK", run_hook(json.dumps({"transcript_path": p33}))))
+
+    # Case 34: "there's no way" -> BLOCK
+    p34 = os.path.join(d, "t34.jsonl")
+    make_jsonl(p34, "There's no way around the rate limit.")
+    cases.append((34, "BLOCK", run_hook(json.dumps({"transcript_path": p34}))))
+
+    # Case 35: "it's a limitation" -> BLOCK
+    p35 = os.path.join(d, "t35.jsonl")
+    make_jsonl(p35, "It's a limitation of the GitHub API.")
+    cases.append((35, "BLOCK", run_hook(json.dumps({"transcript_path": p35}))))
+
+    # Case 36: "is a limitation" -> BLOCK
+    p36 = os.path.join(d, "t36.jsonl")
+    make_jsonl(p36, "The 60-second granularity is a limitation we can't avoid.")
+    cases.append((36, "BLOCK", run_hook(json.dumps({"transcript_path": p36}))))
+
+    # Case 37: "we have to wait" -> BLOCK
+    p37 = os.path.join(d, "t37.jsonl")
+    make_jsonl(p37, "The GitHub API doesn't expose that, so we have to wait for the run.")
+    cases.append((37, "BLOCK", run_hook(json.dumps({"transcript_path": p37}))))
+
+    # Case 38: "have to wait for" -> BLOCK (subset phrase)
+    p38 = os.path.join(d, "t38.jsonl")
+    make_jsonl(p38, "We'll have to wait for CI to finish before we know.")
+    cases.append((38, "BLOCK", run_hook(json.dumps({"transcript_path": p38}))))
+
+    # Case 39: "nothing we can do" -> BLOCK
+    p39 = os.path.join(d, "t39.jsonl")
+    make_jsonl(p39, "There's nothing we can do until the API quota resets.")
+    cases.append((39, "BLOCK", run_hook(json.dumps({"transcript_path": p39}))))
+
+    # Case 40: "can't be done" -> BLOCK
+    p40 = os.path.join(d, "t40.jsonl")
+    make_jsonl(p40, "That can't be done with make-only Bash.")
+    cases.append((40, "BLOCK", run_hook(json.dumps({"transcript_path": p40}))))
+
+    # Case 41: "the api doesn't support" -> BLOCK
+    p41 = os.path.join(d, "t41.jsonl")
+    make_jsonl(p41, "The API doesn't support per-step result streaming.")
+    cases.append((41, "BLOCK", run_hook(json.dumps({"transcript_path": p41}))))
+
+    # Case 42: "the api doesn't expose" -> BLOCK
+    p42 = os.path.join(d, "t42.jsonl")
+    make_jsonl(p42, "The API doesn't expose live step output until completion.")
+    cases.append((42, "BLOCK", run_hook(json.dumps({"transcript_path": p42}))))
+
+    # Case 43: worked-example phrasing from AGENTS.md -> BLOCK (raw phrasing; paired
+    # workaround distinction is left to judgment as noted above)
+    p43 = os.path.join(d, "t43.jsonl")
+    make_jsonl(p43, "GitHub only exposes step results at completion — there's no way to get live per-step status.")
+    cases.append((43, "BLOCK", run_hook(json.dumps({"transcript_path": p43}))))
+
+    # ── END CONSTRAINT-AS-STOPSIGN cases ──────────────────────────────────────
+
     # Case 20: deferral phrase with NO enforce var set -> NOBLOCK (advisory mode).
     p20 = os.path.join(d, "t20.jsonl")
     make_jsonl(p20, "Say so and I'll proceed.")
