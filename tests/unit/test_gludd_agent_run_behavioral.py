@@ -66,16 +66,37 @@ class TestRunLocalBehavioral:
     """W6.8: behavioral coverage for _run_local — actual execution, not source inspection."""
 
     def test_run_local_returns_error_result_structure(self):
-        """_run_local always returns a dict with 'failed' key."""
-        _run_local = _import_run_local()
-        result = _run_local(
-            prompt="hello",
-            system_prompt="you are helpful",
-            model_profile=None,
-            max_iterations=1,
-        )
+        """_run_local error path returns failed=True, changed=False, non-empty msg.
+
+        Forces the ImportError branch deterministically (general_ludd.execution.tool_loop
+        made unimportable) and asserts the ACTUAL error-result VALUES, not just dict shape.
+        """
+        blocked_modules = {
+            "general_ludd.execution.tool_loop": None,
+            "general_ludd.models.gateway": None,
+            "general_ludd.schemas.job": None,
+        }
+        with mock.patch.dict(sys.modules, blocked_modules):
+            _run_local = _import_run_local()
+            result = _run_local(
+                prompt="hello",
+                system_prompt="you are helpful",
+                model_profile=None,
+                max_iterations=1,
+            )
+
         assert isinstance(result, dict), "must return a dict"
-        assert "failed" in result, "result must have 'failed' key"
+        assert result["failed"] is True, (
+            f"Expected failed=True on ImportError path, got {result.get('failed')!r}. Full: {result}"
+        )
+        assert result.get("changed") is False, (
+            f"Expected changed=False on error path, got {result.get('changed')!r}. Full: {result}"
+        )
+        msg = result.get("msg", "")
+        assert isinstance(msg, str) and msg, f"Expected non-empty 'msg', got {msg!r}"
+        assert "not importable" in msg, (
+            f"Expected ImportError message, got {msg!r} — the error path changed; update this test."
+        )
 
     def test_run_local_jobspec_now_valid(self):
         """FIX VERIFIED: _run_local now builds a valid JobSpec (job_id/playbook/queue provided).
