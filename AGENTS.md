@@ -847,3 +847,80 @@ the machine-enforceable correction.
   `make verify-release-artifact` is the proof (it queries the actual GitHub Release).
   If `release-cut` timed out on its poll, run `verify-release-artifact` manually
   after CI finishes.
+
+## Pipeline Orchestration Model
+
+The goal is a **continuous, pipelined** stream of subagent batches — not a
+sawtooth of "dispatch burst → drain to zero → repeat."  Draining to zero wastes
+the pool; the reconciliation cost is low compared to the dispatch-to-first-result
+latency, so keep batch N+1 in flight while batch N is reconciling.
+
+**1. Keep the pipeline primed.** As soon as batch N delivers results, the next
+batch of agents must already be running (or launch immediately).  Never let the
+active-agent count drop to zero while independent work remains.
+
+**2. Bias each new batch toward disjoint / new-file work.**  The real cost of
+pipelining is concurrent edits to the same hot files (`daemon.py`, `loop.py`,
+`gateway.py`) — those edits cannot be trivially unioned and require manual
+conflict resolution.  Work that touches distinct files reconciles cheaply.
+When hot-file edits are unavoidable, serialize them through the integrator (one
+at a time), and fill remaining agent slots with disjoint work.
+
+**3. Run one continuous integrator.**  A single integrator agent drains finished
+worktree commits onto the main branch in a steady stream.  Conflicts are resolved
+by keeping BOTH sides (union of independent fixes); gate must be green after each
+merge before the next one lands.
+
+**4. Bound the pipeline by two constraints.**
+- **(a) Hot-file concurrency:** at most ONE in-flight agent per hot file
+  (`daemon.py`, `loop.py`, `gateway.py`) at any given time.  More than one is a
+  guaranteed conflict.
+- **(b) Worktree disk:** each worktree-isolated agent creates a ~320 MB venv.
+  Prefer **non-isolated agents** for new-file work and read-only research — they
+  share the main venv and add no disk, but they MUST NOT run `git commit` or any
+  git mutation that would race the integrator.  When no worktree-isolated agents
+  are live, reclaim disk with `make clean-worktree-venvs`.  Cap simultaneous
+  worktree agents at ~5–6 to avoid ENOSPC deadlocks (see
+  [[gludd-disk-discipline]] memory).
+
+**Summary:** dispatch disjoint work in parallel → integrator merges continuously
+→ one integrator, one hot-file agent at a time → non-isolated agents for
+new-file / read-only tasks.
+
+## Codify Improvements (Meta-Rule)
+
+**When you discover a better way to work, codify it IN THE SAME SESSION before
+moving on.**  Applying a better approach once and forgetting it is a bug —
+identical to discovering a better algorithm, using it once, and then reverting
+to the old one.
+
+### The three codification layers (in priority order)
+
+1. **`AGENTS.md` (policy)** — captures the rule for every future agent reading
+   this file.  Add a new section or extend an existing one.  Keep it concise and
+   consistent with the voice of surrounding sections.
+2. **`.claude/hooks/` script (enforced behavior)** — a `PreToolUse` or
+   `PostToolUse` hook that *enforces* the rule mechanically.  Register it in
+   `.claude/settings.json`.  A hook is better than a prompt for patterns that
+   repeat and are hard to notice in the moment.
+3. **Memory (cross-session)** — write a memory entry when the insight needs to
+   survive session resets and applies globally, or is too detailed for AGENTS.md.
+
+Add a test for the guardrail where useful (e.g., for a hook that checks file
+content, add a unit test under `tests/unit/`).
+
+### Orchestration hooks — current state
+
+The no-wait and floor-enforcement orchestration hooks are **advisory by default**
+(they emit guidance but do not block):
+
+- `GLUDD_NO_WAIT_ENFORCE=1` — elevates the no-wait hook from advisory to
+  blocking (denies the tool call).
+- `GLUDD_FLOOR_ENFORCE=1` — elevates the floor hook from advisory to blocking.
+
+`agent_liveness.py` counts **Workflow subagents** (not just background tasks) as
+live agents for the purposes of the floor check.
+
+When you discover that a hook fires too aggressively or too rarely, narrow the
+check (see "Guardrail Integrity Policy") — do NOT remove the hook or make it
+permanently advisory when the intent is enforcement.
