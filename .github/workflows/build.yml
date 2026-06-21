@@ -42,7 +42,10 @@ jobs:
   gate:
     needs: version
     runs-on: ubuntu-latest
-    timeout-minutes: 40
+    # Lint + typecheck + collection-check + smoke only — the full test run is
+    # split across parallel shards in the `test-shard` job below so failures
+    # surface at job granularity in minutes rather than after a 33-min monolith.
+    timeout-minutes: 15
     strategy:
       # Don't cancel the 3.12 leg when 3.11 fails (or vice-versa): we want both
       # Python versions' results on every run, not just the first failure.
@@ -56,16 +59,81 @@ jobs:
         run: |
           sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
           sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
-      - name: Gate
+      - name: Lint, typecheck, collect, smoke
         run: |
           uv sync --python ${{ matrix.python-version }}
-          make lint typecheck test-count test smoke
+          make lint typecheck test-count smoke
+        env:
+          GLUDD_PSK: ""
+
+  # Parallel test shards — 4 path-based groups × 2 Python versions = 8 jobs.
+  # Each shard is independent: a failure in shard "unit-1" is reported at the
+  # job level within minutes of that shard finishing, without waiting for the
+  # other 7 jobs.  No new dependencies: xdist (already present) is used within
+  # each shard; splitting is by pytest path argument, not pytest-split.
+  #
+  # Shard layout (adjust as the suite grows; ~629 test files total):
+  #   unit-1      tests/unit/test_[a-e]*.py               ← ~¼ of unit (~135 files)
+  #   unit-2      tests/unit/test_[f-m]*.py               ← ~¼ of unit (~135 files)
+  #   unit-3      tests/unit/test_[n-z]*.py               ← ~¼ of unit + secrets/
+  #   other       tests/integration/ tests/e2e/ tests/live/
+  #               tests/security/ tests/test_*.py         ← 87 non-unit files
+  #
+  # Coverage is collected only on the unit-1 shard for Python 3.11 (the
+  # canonical coverage report); other shards skip --cov to save time.
+  test-shard:
+    needs: [version, gate]
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    strategy:
+      fail-fast: false
+      matrix:
+        python-version: ["3.11", "3.12"]
+        shard: [unit-1, unit-2, unit-3, other]
+        include:
+          # Map each shard label to the pytest path(s) it owns.
+          # Bash glob expansion inside `run:` handles the wildcard patterns.
+          - shard: unit-1
+            testpaths: "tests/unit/test_[a-e]*.py"
+          - shard: unit-2
+            testpaths: "tests/unit/test_[f-m]*.py"
+          - shard: unit-3
+            testpaths: "tests/unit/test_[n-z]*.py tests/unit/secrets/"
+          - shard: other
+            testpaths: "tests/integration/ tests/e2e/ tests/live/ tests/security/ tests/test_*.py"
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"${{ needs.version.outputs.version }}\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"${{ needs.version.outputs.version }}\"/" pyproject.toml
+      - name: Install deps
+        run: uv sync --python ${{ matrix.python-version }}
+      - name: Test (shard ${{ matrix.shard }}, Python ${{ matrix.python-version }})
+        # Expand $TESTPATHS with bash so wildcard patterns like test_[a-e]*.py
+        # are resolved by the shell before pytest sees them.  When the glob
+        # matches nothing (e.g. a new shard boundary) pytest exits 5 (no tests
+        # collected); we treat that as a pass so adding new letters never
+        # hard-blocks CI — the empty shard is just a no-op.
+        # Coverage is collected only for unit-1 / Python 3.11 to avoid
+        # redundant xml uploads; all other shards run with --no-cov.
+        run: |
+          TESTPATHS="${{ matrix.testpaths }}"
+          if [[ "${{ matrix.shard }}" == "unit-1" && "${{ matrix.python-version }}" == "3.11" ]]; then
+            uv run python -m pytest $TESTPATHS \
+              --cov=general_ludd --cov-report=term-missing --cov-report=xml \
+              -n auto --dist loadgroup -v || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
+          else
+            uv run python -m pytest $TESTPATHS \
+              --no-cov -n auto --dist loadgroup -v || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
+          fi
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
 
   molecule:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
@@ -82,7 +150,7 @@ jobs:
           GLUDD_PSK: ""
 
   linux:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
@@ -117,7 +185,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-linux-x86_64.tar.gz.sha256
 
   macos:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: macos-latest
     timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
@@ -152,7 +220,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-macos-arm64.tar.gz.sha256
 
   windows:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: windows-latest
     timeout-minutes: 30
     # Safety net while the Windows pyinstaller build is stabilized: keep it
@@ -198,7 +266,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-windows-x86_64.zip.sha256
 
   termux:
-    needs: [version, gate]
+    needs: [version, gate, test-shard]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
@@ -233,7 +301,7 @@ jobs:
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
 
   release:
-    needs: [version, gate, linux, macos, windows, termux]
+    needs: [version, gate, test-shard, linux, macos, windows, termux]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
