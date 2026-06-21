@@ -294,26 +294,71 @@ class TestCAT11BenchmarkOnAsync:
             "wired but the helper never called recorder.record()."
         )
 
+        # Strengthen: verify the recorded entry has the expected structure.
+        # _record_generation_benchmark calls recorder.record(model_profile_id=...,
+        # work_type=..., input_tokens=..., output_tokens=..., success=True,
+        # scoring="generation_path").  bench.recorded stores (args, kwargs) tuples.
+        _first_args, first_kwargs = bench.recorded[0]
+        assert first_kwargs.get("work_type") == "code", (
+            f"INERT/WRONG: expected work_type='code' in recorded benchmark, "
+            f"got: {first_kwargs!r}"
+        )
+        assert first_kwargs.get("model_profile_id") == "default", (
+            f"INERT/WRONG: expected model_profile_id='default' in recorded benchmark, "
+            f"got: {first_kwargs!r}"
+        )
+        assert isinstance(first_kwargs.get("input_tokens"), int) and first_kwargs["input_tokens"] > 0, (
+            f"INERT/WRONG: expected a positive int input_tokens, "
+            f"got: {first_kwargs.get('input_tokens')!r}"
+        )
+        assert isinstance(first_kwargs.get("output_tokens"), int) and first_kwargs["output_tokens"] > 0, (
+            f"INERT/WRONG: expected a positive int output_tokens, "
+            f"got: {first_kwargs.get('output_tokens')!r}"
+        )
+        assert first_kwargs.get("success") is True, (
+            f"INERT/WRONG: expected success=True in recorded benchmark, "
+            f"got: {first_kwargs!r}"
+        )
+
     def test_job_invocation_helper_references_scoring(self) -> None:
-        """Structural proof: the daemon generation helper references a
+        """Structural proof: the daemon generation helper CALLS a
         scoring/benchmark recorder in its own source so a score CAN be recorded.
 
-        This is a tight source-level assertion.  The presence of these keywords
-        proves the hook is in the function body, not an adjacent module.
+        This is a tight AST-level assertion: we verify that a Call node whose
+        function name includes a scoring/benchmark keyword actually appears in the
+        function body — not merely that the word appears in a docstring or comment.
+        A text scan would pass even if scoring only existed in documentation;
+        an AST scan only hits real invocations.
         """
+        import ast
         import inspect
 
         from general_ludd.models import job_invocation
 
         src = inspect.getsource(job_invocation.invoke_model_for_generation)
-        names = ("score", "benchmark", "PromptScoringEngine", "scoring")
-        hits = [n for n in names if n in src]
-        assert hits, (
+        tree = ast.parse(src)
+
+        # Collect the names of all functions/attributes actually CALLED in the
+        # function body (including calls inside nested helpers it delegates to).
+        called_names: list[str] = []
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Call):
+                func = node.func
+                if isinstance(func, ast.Attribute):
+                    called_names.append(func.attr)
+                elif isinstance(func, ast.Name):
+                    called_names.append(func.id)
+
+        # At least one call must reference a scoring/benchmark routine.
+        scoring_calls = [
+            n for n in called_names
+            if any(kw in n.lower() for kw in ("score", "benchmark", "record"))
+        ]
+        assert scoring_calls, (
             "INERT: invoke_model_for_generation (the daemon async generation "
-            "path) contains no reference to any of "
-            f"{names!r}; it only calls gateway.call_model and returns "
-            "content. No benchmark/score can be recorded on the async "
-            "execute path."
+            "path) contains no CALL to any scoring/benchmark/record function "
+            f"in its AST — only text mentions. Calls found: {called_names!r}. "
+            "No benchmark/score can be recorded on the async execute path."
         )
 
 
@@ -450,13 +495,6 @@ class TestCAT9AgentToolAdapterWiring:
         from general_ludd.models import job_invocation
 
         src = inspect.getsource(job_invocation.invoke_model_for_generation)
-
-        # The architectural comment about CA-T9 / tool-free must be present,
-        # proving the decision is documented in the source itself.
-        assert "tool" in src.lower(), (
-            "invoke_model_for_generation source must reference tools/tool-free "
-            "to document the CA-T9 architectural decision."
-        )
 
         # Parse the AST to verify call_model is never called with tools=.
         tree = ast.parse(src)

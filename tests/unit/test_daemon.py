@@ -398,6 +398,91 @@ class TestExtendedSubsystemsWiring:
             "Without pre-assignment of _quantization_tracker, quantization_map is {} (old bug documented)"
         )
 
+    @pytest.mark.asyncio
+    async def test_lifespan_wires_budget_guard_into_model_gateway(self):
+        """budget_guard must be passed to ModelGateway so spend ceilings are enforced.
+
+        Commit 6c019e0 fixed a silent regression where budget_guard was built from
+        the operator's UserConfig but never forwarded to the ModelGateway constructor
+        (daemon.py ~750: ``budget_guard=budget_guard``).  Without that kwarg the
+        gateway's ``_budget_guard`` is always None and configured spend limits are
+        completely inert in the running daemon.
+
+        This test drives _lifespan with a minimal startup_config that has:
+          - a UserConfig-like object with a non-zero budget so budget_guard is built
+          - one ModelProfile so the ModelGateway branch is entered
+        and asserts that the resulting app.state._model_gateway._budget_guard is
+        the live RunBudgetGuard instance (not None).
+        """
+        from unittest.mock import AsyncMock, MagicMock, patch
+
+        from fastapi import FastAPI
+
+        from general_ludd.controllers.budget import RunBudgetGuard
+        from general_ludd.daemon import _lifespan
+        from general_ludd.models.gateway import ModelProfile
+
+        # Build a minimal UserConfig-like object with a non-zero daily_limit so
+        # _parse_budget_config / the budget_guard construction branch fires.
+        mock_uc = MagicMock()
+        mock_uc.budget = {"daily_limit": 10.0, "per_task_limit": 1.0, "timeout_seconds": 3600.0}
+        mock_uc.database = {}
+        mock_uc.self_improve = {}
+
+        profile = ModelProfile(
+            model_profile_id="test-prof",
+            provider="openai",
+            model_name="gpt-4o-mini",
+            api_key_env="OPENAI_API_KEY",
+        )
+
+        app = FastAPI()
+        app.state.tick_interval = 0.01
+        app.state.event_loop = None
+        app.state._startup_config = {
+            "user_config": mock_uc,
+            "model_routing": MagicMock(default_profile=None),
+            "model_profiles": [profile],
+            "binary_paths": None,
+            "openbao_config": None,
+            "process_isolation": None,
+            "mcp_servers": {},
+        }
+
+        mock_event_loop = MagicMock()
+        mock_event_loop.run_forever = AsyncMock()
+
+        # Stub out the async DB machinery so we don't need a real DB engine.
+        # engine.dispose() is awaited during lifespan teardown → AsyncMock.
+        mock_engine = MagicMock()
+        mock_engine.dispose = AsyncMock()
+        mock_session = AsyncMock()
+        mock_session.__aenter__ = AsyncMock(return_value=mock_session)
+        mock_session.__aexit__ = AsyncMock(return_value=False)
+        mock_session_factory = MagicMock(return_value=mock_session)
+
+        with (
+            patch("general_ludd.daemon.EventLoop", return_value=mock_event_loop),
+            patch("general_ludd.daemon.init_engine_from_config", return_value=mock_engine),
+            patch("general_ludd.daemon.ensure_tables", new_callable=AsyncMock),
+            patch("general_ludd.daemon.create_async_session_factory", return_value=mock_session_factory),
+            patch("general_ludd.daemon.seed_initial_queues", new_callable=AsyncMock),
+            patch("general_ludd.daemon.is_sqlite_url", return_value=False),
+            patch("general_ludd.daemon._restore_persisted_projects", new_callable=AsyncMock),
+        ):
+            async with _lifespan(app):
+                gateway = getattr(app.state, "_model_gateway", None)
+                assert gateway is not None, (
+                    "ModelGateway must be built during lifespan when model_profiles are configured"
+                )
+                assert gateway._budget_guard is not None, (
+                    "budget_guard must be wired into ModelGateway._budget_guard "
+                    "(was silently None before commit 6c019e0 — configured spend ceilings were inert)"
+                )
+                assert isinstance(gateway._budget_guard, RunBudgetGuard), (
+                    "ModelGateway._budget_guard must be a live RunBudgetGuard instance"
+                )
+
 
 class TestDirectDispatch:
     @pytest.mark.asyncio

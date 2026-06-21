@@ -192,6 +192,35 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
         if gw is not None and is_generation_work_type(job.work_type):
             model_response = _invoke_gateway_for_job(gw, job)
 
+        # Warn-block: parse any tool_calls the model may have emitted and log
+        # a WARNING that no dispatcher is wired in the worker (audible gap).
+        # Tool calls are NOT executed here — this is a conservative detect-only
+        # path so the gap is observable in logs and the response dict.
+        tool_calls_detected: list[dict[str, object]] = []
+        if model_response is not None:
+            from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+            from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
+
+            calls = parse_tool_calls(model_response)
+            if len(calls) > MAX_CALLS_PER_REQUEST:
+                logger.warning(
+                    "Worker /jobs/execute: model returned %d tool call(s) which exceeds "
+                    "cap %d — all dropped; no dispatcher is wired in the worker (job %s)",
+                    len(calls),
+                    MAX_CALLS_PER_REQUEST,
+                    job.job_id,
+                )
+            elif calls:
+                logger.warning(
+                    "Worker /jobs/execute: model returned %d tool call(s) but no dispatcher "
+                    "is wired in the worker — dropping (job %s)",
+                    len(calls),
+                    job.job_id,
+                )
+                tool_calls_detected = [
+                    {"kind": c.kind, "name": c.name, "args": c.args} for c in calls
+                ]
+
         runner = get_runner()
         try:
             dirs = runner.prepare_job_dirs(job.job_id)
@@ -237,6 +266,7 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
             "job_id": job.job_id,
             "playbook": job.playbook,
             "model_response": model_response,
+            "tool_calls_detected": tool_calls_detected,
             "exit_code": runner_result.get("rc", runner_result.get("exit_code", 0)),
             "result_summary": runner_result.get("output", runner_result.get("result_summary", "")),
             "artifacts": runner_result.get("artifacts", []),

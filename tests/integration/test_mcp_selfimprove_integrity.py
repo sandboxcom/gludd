@@ -49,36 +49,96 @@ class TestSelfImproveIntervalDefault:
         )
 
     def test_daemon_self_improve_interval_resolution_default(self):
-        """Simulate daemon.py interval resolution with default config.
+        """Drive the REAL daemon source to assert both fallback constants == 10.
 
-        Reproduces the CURRENT daemon logic (fallback=10):
-          self_improve_interval = 0
-          if uc is not None:
-              si_cfg = getattr(uc, "self_improve", None) or {}
-              with contextlib.suppress(Exception):
-                  self_improve_interval = int(si_cfg.get("interval", 10))
-          if not self_improve_interval:
-              with contextlib.suppress(Exception):
-                  self_improve_interval = int(startup_config.get("self_improve_interval", 10))
+        Uses inspect.getsource + ast to locate the two `.get(key, default)` calls
+        inside _lifespan that govern self_improve_interval resolution:
 
-        PASSES if the resolved interval is > 0 (daemon default of 10 fires).
-        FAILS if interval is 0 (= old broken behaviour, phase disabled).
+          1. si_cfg.get("interval", <N>)              — UserConfig si_cfg fallback
+          2. startup_config.get("self_improve_interval", <N>)  — startup_config fallback
+
+        Asserts that <N> == 10 for BOTH calls so any regression to 0 (= phase
+        disabled) fails.  Also asserts the value resolved for a default UserConfig
+        (empty self_improve dict, empty startup_config) equals 10.
+
+        PASSES when both daemon constants are 10 AND the resolved default is 10.
+        FAILS on regression to any other constant (catches source edits, not mocks).
         """
+        import ast
+        import inspect
+        import textwrap
+
+        from general_ludd import daemon as daemon_module
+
+        source = inspect.getsource(daemon_module._lifespan)
+        dedented = textwrap.dedent(source)
+        tree = ast.parse(dedented)
+
+        # Collect all .get(key, default) calls whose key matches one of the two
+        # self_improve_interval config keys.
+        TARGET_KEYS = {"interval", "self_improve_interval"}
+        found_defaults: dict[str, int] = {}
+
+        for node in ast.walk(tree):
+            # Match: <anything>.get(<string_key>, <constant>)
+            if (
+                isinstance(node, ast.Call)
+                and isinstance(node.func, ast.Attribute)
+                and node.func.attr == "get"
+                and len(node.args) == 2
+                and isinstance(node.args[0], ast.Constant)
+                and node.args[0].value in TARGET_KEYS
+                and isinstance(node.args[1], ast.Constant)
+            ):
+                key = node.args[0].value
+                default = node.args[1].value
+                found_defaults[key] = default
+
+        assert "interval" in found_defaults, (
+            "AUDIT NEEDED: si_cfg.get('interval', <N>) call not found in "
+            "_lifespan source — self_improve_interval wiring has been restructured."
+        )
+        assert "self_improve_interval" in found_defaults, (
+            "AUDIT NEEDED: startup_config.get('self_improve_interval', <N>) call not found in "
+            "_lifespan source — self_improve_interval wiring has been restructured."
+        )
+
+        assert found_defaults["interval"] == 10, (
+            f"REGRESSION: si_cfg.get('interval', {found_defaults['interval']!r}) "
+            "— fallback constant must be 10 (phase enabled by default); "
+            "a regression to 0 disables self-improvement."
+        )
+        assert found_defaults["self_improve_interval"] == 10, (
+            f"REGRESSION: startup_config.get('self_improve_interval', "
+            f"{found_defaults['self_improve_interval']!r}) "
+            "— fallback constant must be 10 (phase enabled by default); "
+            "a regression to 0 disables self-improvement."
+        )
+
+        # Runtime check: resolve the interval using a default UserConfig and an
+        # empty startup_config, confirm the daemon path yields 10.
         uc = UserConfig()
-        startup_config: dict = {}  # no self_improve_interval key
+        startup_config: dict = {}
 
         self_improve_interval = 0
         if uc is not None:
             si_cfg = getattr(uc, "self_improve", None) or {}
             with contextlib.suppress(Exception):
-                self_improve_interval = int(si_cfg.get("interval", 10))
+                self_improve_interval = int(
+                    si_cfg.get("interval", found_defaults["interval"])
+                )
         if not self_improve_interval:
             with contextlib.suppress(Exception):
-                self_improve_interval = int(startup_config.get("self_improve_interval", 10))
+                self_improve_interval = int(
+                    startup_config.get(
+                        "self_improve_interval",
+                        found_defaults["self_improve_interval"],
+                    )
+                )
 
-        assert self_improve_interval > 0, (
+        assert self_improve_interval == 10, (
             f"REGRESSION: daemon resolves self_improve_interval={self_improve_interval} "
-            "from default UserConfig (expected > 0 via daemon fallback of 10)"
+            "from default UserConfig (expected 10 via daemon fallback constants confirmed above)"
         )
 
     def test_eventloop_self_improve_phase_skips_at_interval_zero(self):
