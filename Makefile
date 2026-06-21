@@ -2670,7 +2670,8 @@ push-tui-fix:
 	@git push "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" HEAD:refs/heads/integration/alpha3-rc
 	@echo "Pushed HEAD to integration/alpha3-rc"
 
-# fetch-rc-tip: fetch integration/alpha3-rc into refs/remotes/origin/integration/alpha3-rc
+# fetch-rc-tip: fetch integration/alpha3-rc remote tip into refs/remotes/origin/integration/alpha3-rc
+# without checking out the branch (avoids worktree conflict)
 fetch-rc-tip:
 	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc:refs/remotes/origin/integration/alpha3-rc
 	@echo "[fetch-rc-tip] fetched integration/alpha3-rc"
