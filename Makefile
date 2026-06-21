@@ -49,7 +49,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         verify-remote ci-verdict \
         git-push-branch git-push-branch-nv test-model-ratio-hook \
         commit-no-verify \
-        git-stash-rebase-pop
+        git-stash-rebase-pop \
+        git-push-https
 
 help:
 	@echo "Usage: make [target]"
@@ -2523,3 +2524,11 @@ git-push-branch-nv:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
+
+# Push a specific SHA to a remote branch via HTTPS token auth (bypasses SSH key / hook issues).
+# Usage: make git-push-https SHA=<sha> TARGET=<branch>
+git-push-https:
+	@[ -n "$(SHA)" ] || { echo "Usage: make git-push-https SHA=<sha> TARGET=<branch>"; exit 1; }
+	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-https SHA=<sha> TARGET=<branch>"; exit 1; }
+	@git push --no-verify "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" "$(SHA):refs/heads/$(TARGET)"
+	@echo "Pushed $(SHA) -> $(TARGET)"
