@@ -42,16 +42,18 @@ TARGET_CONFIG="${GLUDD_SONNET_TARGET_CONFIG:-$REPO_ROOT/.claude/sonnet_ratio_tar
 # Read stdin once; fail open if unavailable.
 input="$(cat 2>/dev/null || echo '{}')"
 
-# Extract the model field from tool_input.  Absent/empty/null → "sonnet".
+# Extract the model field from tool_input.  An ABSENT/empty model is NOT sonnet:
+# omitting `model` makes the subagent INHERIT THE PARENT MODEL (opus in this
+# session), so it must be gated like any other non-sonnet dispatch. Only a
+# genuine parse failure fails open (→ "sonnet", allowed).
 model="$(printf '%s' "$input" | python3 -c '
 import sys, json
 try:
     d = json.load(sys.stdin)
     m = (d.get("tool_input") or {}).get("model") or ""
-    m = m.strip()
-    print(m if m else "sonnet")
+    print(m.strip())   # absent/empty -> "" -> treated non-sonnet (inherited opus)
 except Exception:
-    print("sonnet")
+    print("sonnet")   # genuine parse failure -> fail open
 ' 2>/dev/null || echo 'sonnet')"
 
 # All logic in one python3 call to avoid partial-state risk.
@@ -71,8 +73,10 @@ enforce_env = sys.argv[6]   # "0" disables enforcement
 DEFAULT_TARGET = 0.91   # 10:1 sonnet:non-sonnet
 GRACE_MIN      = 3      # entries needed before enforcement kicks in
 
-# --- Normalise model label: anything other than strict "sonnet" is non-sonnet ---
-is_sonnet = (model == "sonnet" or model == "" or not model)
+# --- Only an EXPLICIT model:"sonnet" counts as sonnet. An empty/absent model
+# inherits the parent (opus) and is therefore NON-sonnet — it must be gated so
+# the operator is forced to set model:"sonnet" explicitly to earn headroom. ---
+is_sonnet = (model == "sonnet")
 
 # --- Load existing window (BEFORE appending current dispatch) ---
 try:
@@ -144,7 +148,8 @@ if not is_sonnet and enforce:
             f"MODEL-RATIO ENFORCER: dispatching '{model}' would drop sonnet share "
             f"to {round(proj_share*100)}% (window={proj_total}, target={target_pct}%). "
             f"Current share {now_pct}% leaves no non-sonnet headroom right now. "
-            f"Use model:'sonnet' (or omit model — sonnet is the default). "
+            f"Set model:'sonnet' EXPLICITLY (omitting model inherits the parent "
+            f"model = opus, which counts as non-sonnet). "
             f"~{headroom_needed} more sonnet dispatch(es) will restore headroom."
         )
         out = {"hookSpecificOutput": {

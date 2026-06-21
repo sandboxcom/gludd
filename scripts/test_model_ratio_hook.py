@@ -94,11 +94,20 @@ def case_A():
     check("A1: exit 0", rc == 0, f"exit={rc}")
     check("A2: not denied", not is_denied(parsed), f"output={raw}")
 
-    # Also test with no model field (defaults to sonnet)
+    # With the fix, a MISSING model field inherits the parent (opus) and is
+    # treated as NON-sonnet. Against this all-opus window (no headroom) it is now
+    # DENIED (previously it was wrongly waved through as "default sonnet").
     payload2 = json.dumps({"tool_input": {}})
-    rc2, parsed2, _ = run_hook(payload2, state)
-    check("A3: no-model-field allowed (default=sonnet)", not is_denied(parsed2))
+    rc2, parsed2, raw2 = run_hook(payload2, state)
+    check("A3: no-model-field treated non-sonnet → denied (no headroom)",
+          is_denied(parsed2), f"output={raw2}")
     check("A4: exit 0 no-model", rc2 == 0)
+
+    # ...but a no-model dispatch WITH ample sonnet headroom is still allowed.
+    state_room = ["sonnet"] * 19
+    rc3, parsed3, raw3 = run_hook(json.dumps({"tool_input": {}}), state_room)
+    check("A5: no-model allowed when headroom exists",
+          not is_denied(parsed3), f"output={raw3}")
 
 
 def case_B():
@@ -133,7 +142,10 @@ def case_C():
 def case_D():
     """Bad JSON input → fail-open."""
     print("Case D: bad JSON input → fail-open")
-    for bad in ["", "NOT JSON AT ALL", '{"tool_input": null', '{"no_tool_input":true}']:
+    # Only genuine PARSE failures fail open. (A valid JSON object with no
+    # tool_input is NOT a parse failure — it is a real no-model dispatch, now
+    # treated as non-sonnet and gated, so it is covered by case A, not here.)
+    for bad in ["", "NOT JSON AT ALL", '{"tool_input": null']:
         state = ["sonnet"] * 5
         rc, parsed, raw = run_hook(bad, state)
         check(f"D exit=0 ({repr(bad[:20])})", rc == 0)
