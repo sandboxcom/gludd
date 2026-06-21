@@ -7,44 +7,36 @@ from __future__ import annotations
 
 import contextlib
 import os
-import pathlib
 import subprocess
 import sys
 import time
 
+# Launch via the SAME interpreter running this test (the project venv's python)
+# using `-m general_ludd.cli`. Because uv sync installs general-ludd-agent INTO
+# that venv (build.yml runs `uv sync` with no --no-install-project), this
+# interpreter's own site initialization already exposes BOTH the general_ludd
+# package AND every third-party dep (httpx, rich, ...). No console-script path is
+# assumed and no PYTHONPATH surgery is needed.
 GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
-
-# Absolute path to the repo's src/ directory.  When CI runs pytest with
-# PYTHONPATH=src (rather than an editable install), the spawned subprocess
-# inherits os.environ — but os.environ may not contain PYTHONPATH at all if
-# the harness injected importability via sys.path manipulation only.  We ensure
-# the subprocess always has src/ on PYTHONPATH regardless.
-_REPO_ROOT = pathlib.Path(__file__).resolve().parents[2]
-_SRC_DIR = str(_REPO_ROOT / "src")
 
 
 def _subprocess_env() -> dict[str, str]:
-    """Return a copy of os.environ that lets the child import BOTH general_ludd AND
-    its third-party deps (httpx, rich, ...).
+    """Return an env for the child that preserves the parent's natural import path.
 
-    Passing only src/ on PYTHONPATH is insufficient: under CI the child resolves
-    general_ludd from src/ but then fails at `import httpx` because the parent's
-    site-packages are not guaranteed to be on the child's import path. We therefore
-    hand the child the parent interpreter's ENTIRE sys.path (which already contains
-    both the installed deps and, after we prepend it, src/). Combined with launching
-    via sys.executable (the same venv interpreter running this test), the child sees
-    exactly what the parent sees.
+    The child is spawned with sys.executable (the venv interpreter), so its normal
+    `site` init already finds the installed general_ludd package and its deps
+    (httpx, rich, ...) in the venv's site-packages.
+
+    Critically, we must NOT prepend src/ onto PYTHONPATH: doing so makes the child
+    import general_ludd from the *uninstalled* source tree, which then fails at
+    `import httpx` because that source-tree path does not carry the venv's
+    site-packages with it — the exact ModuleNotFoundError seen in CI run
+    27891147726. We leave PYTHONPATH untouched (inheriting whatever the parent
+    has, which already lets the parent import httpx) and only set TERM so the TUI
+    renders. If the parent itself injected PYTHONPATH (e.g. CI sets PYTHONPATH=src),
+    we keep it as-is rather than reordering it.
     """
     env = dict(os.environ)
-    # src/ first, then every non-empty entry of the parent's sys.path (site-packages
-    # with httpx/rich/etc.), then any pre-existing PYTHONPATH. De-duplicate, keep order.
-    parts: list[str] = [_SRC_DIR, *[p for p in sys.path if p]]
-    existing = env.get("PYTHONPATH", "")
-    if existing:
-        parts.extend(existing.split(os.pathsep))
-    seen: set[str] = set()
-    ordered = [p for p in parts if not (p in seen or seen.add(p))]
-    env["PYTHONPATH"] = os.pathsep.join(ordered)
     env["TERM"] = "xterm-256color"
     return env
 
