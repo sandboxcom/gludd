@@ -138,20 +138,30 @@ def _is_terminal(path: str) -> bool:
 
 
 def _workflow_transcript_files() -> list[str]:
-    """Return a list of workflow-subagent transcript file paths to include in liveness counting.
+    """Return Workflow-subagent transcript file paths to include in liveness counting.
 
-    Checks ``GLUDD_WORKFLOW_DIRS`` (colon-separated) for a test override.  When
-    that var is set each directory is scanned non-recursively for ``*.jsonl`` and
-    ``*.output`` files.
+    Workflow subagents (the parallel pools spawned by a Workflow run) write their
+    per-agent transcripts to a DIFFERENT tree than Agent-tool tasks — the
+    agent-floor probe used to miss them entirely and report "0 live" while a full
+    Workflow pool was running, falsely tripping the floor hook. This discovers them.
 
-    Without the override, four glob patterns are tried that cover both the
-    ``~/.claude/projects/`` hierarchy and the ``/private/tmp/claude-<uid>/``
-    session hierarchy used by the harness:
+    VERIFIED on-disk layout (2026-06-21, via `make discover-workflow-transcripts`):
 
-      - ``~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl``
-      - ``~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output``
-      - ``/private/tmp/claude-<uid>/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl``
-      - ``/private/tmp/claude-<uid>/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output``
+        ~/.claude/projects/-Users-shawnwilson-gludd/<session>/subagents/workflows/<runid>/agent-<id>.jsonl
+
+    i.e. each running Workflow agent has an ``agent-<id>.jsonl`` transcript under a
+    per-run ``workflows/<runid>/`` dir. (Siblings ``agent-<id>.meta.json`` and a
+    per-run ``journal.jsonl`` are NOT agent transcripts — the ``agent-*.jsonl``
+    glob deliberately excludes both so a workflow is not over-counted.)
+
+    Resolution:
+      1. ``GLUDD_WORKFLOW_DIRS`` (colon-separated) test override — each dir is
+         scanned non-recursively for ``*.jsonl`` and ``*.output`` files (the test
+         fixtures use those names directly).
+      2. Otherwise the verified ``~/.claude/projects/.../agent-*.jsonl`` glob, plus
+         a defensive ``/private/tmp/claude-<uid>/.../agent-*.jsonl`` fallback in
+         case a future harness version relocates the tree there (currently empty —
+         confirmed no workflow transcripts live under /private/tmp today).
 
     Returns an empty list on any error (fail-open).
     """
@@ -168,15 +178,15 @@ def _workflow_transcript_files() -> list[str]:
             return results
 
         uid = os.getuid()
+        # Match the VERIFIED real filename (agent-*.jsonl) so journal.jsonl and
+        # *.meta.json siblings are excluded. recursive=True lets ** span the
+        # workflows/<runid>/ nesting level.
         patterns = [
             os.path.expanduser(
-                "~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl"
+                "~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/agent-*.jsonl"
             ),
-            os.path.expanduser(
-                "~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output"
-            ),
-            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl" % uid,
-            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output" % uid,
+            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/subagents/workflows/**/agent-*.jsonl"
+            % uid,
         ]
         results = []
         for pattern in patterns:

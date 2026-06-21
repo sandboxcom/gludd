@@ -1707,6 +1707,23 @@ test-model-ratio-hook:
 test-liveness-workflow:
 	@$(PYTHON) scripts/test_liveness_workflow.py
 
+# Read-only discovery: locate Workflow-subagent transcript dirs/files on disk so
+# the agent_liveness.py production glob patterns can be verified against reality.
+# Lists any 'subagents'/'workflows' dirs + a sample of files under the two
+# candidate roots. Purely diagnostic; touches nothing.
+discover-workflow-transcripts:
+	@echo "=== ~/.claude/projects/-Users-shawnwilson-gludd ==="
+	@find "$$HOME/.claude/projects/-Users-shawnwilson-gludd" \( -name subagents -o -name workflows \) -type d 2>/dev/null || echo "(none / unreadable)"
+	@echo "--- sample transcript files (subagents/workflows paths) ---"
+	@find "$$HOME/.claude/projects/-Users-shawnwilson-gludd" -path '*subagents*' -type f 2>/dev/null | head -20 || true
+	@find "$$HOME/.claude/projects/-Users-shawnwilson-gludd" -path '*workflows*' -type f 2>/dev/null | head -20 || true
+	@echo "=== /private/tmp/claude-$$(id -u)/-Users-shawnwilson-gludd ==="
+	@find "/private/tmp/claude-$$(id -u)/-Users-shawnwilson-gludd" \( -name subagents -o -name workflows \) -type d 2>/dev/null || echo "(none / unreadable)"
+	@echo "--- sample transcript files (subagents/workflows paths) ---"
+	@find "/private/tmp/claude-$$(id -u)/-Users-shawnwilson-gludd" -path '*subagents*' -type f 2>/dev/null | head -20 || true
+	@find "/private/tmp/claude-$$(id -u)/-Users-shawnwilson-gludd" -path '*workflows*' -type f 2>/dev/null | head -20 || true
+	@echo "=== done ==="
+
 debug-no-wait-hook:
 	@$(PYTHON) /tmp/debug_hook.py
 
