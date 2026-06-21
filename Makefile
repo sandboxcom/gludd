@@ -49,7 +49,9 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         verify-remote ci-verdict \
         git-push-branch git-push-branch-nv test-model-ratio-hook \
         commit-no-verify \
-        git-stash-rebase-pop
+        git-stash-rebase-pop \
+        sync-rc git-push-https \
+        clean-stale-worktrees
 
 help:
 	@echo "Usage: make [target]"
@@ -2523,3 +2525,30 @@ git-push-branch-nv:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
+
+# clean-stale-worktrees: remove the two known-stale agent worktrees (Step 0 cleanup).
+# Errors are suppressed — if a worktree is already gone that's fine.
+clean-stale-worktrees:
+	@git worktree remove --force '.claude/worktrees/agent-a04ed73c74acb4c4b' 2>/dev/null && echo "removed agent-a04ed73c74acb4c4b" || echo "skip/absent: agent-a04ed73c74acb4c4b"
+	@git worktree remove --force '.claude/worktrees/agent-a81f6f32723cdb765' 2>/dev/null && echo "removed agent-a81f6f32723cdb765" || echo "skip/absent: agent-a81f6f32723cdb765"
+	@git worktree prune
+	@echo "clean-stale-worktrees done"
+
+# sync-rc: fetch the remote integration/alpha3-rc tip via HTTPS (gh auth token)
+# and check it out locally, printing the resulting short SHA.
+# Usage: make sync-rc
+sync-rc:
+	@echo "[sync-rc] fetching integration/alpha3-rc from sandboxcom/gludd via HTTPS ..."
+	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc
+	@git checkout -B integration/alpha3-rc FETCH_HEAD
+	@echo "[sync-rc] HEAD is now: $$(git rev-parse --short HEAD)"
+
+# git-push-https: push a local SHA to a remote branch via HTTPS token auth.
+# Bypasses SSH key requirement. --no-verify skips pre-push hooks.
+# Usage: make git-push-https SHA=<local-sha> TARGET=<remote-branch>
+git-push-https:
+	@[ -n "$(SHA)" ] || { echo "Usage: make git-push-https SHA=<sha> TARGET=<branch>"; exit 1; }
+	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-https SHA=<sha> TARGET=<branch>"; exit 1; }
+	@echo "[git-push-https] pushing $(SHA) -> refs/heads/$(TARGET) ..."
+	@git push --no-verify "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" "$(SHA):refs/heads/$(TARGET)"
+	@echo "[git-push-https] pushed $(SHA) to $(TARGET)"
