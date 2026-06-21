@@ -2,7 +2,14 @@ name: Build and Release
 
 on:
   push:
-    branches: [master, main]
+    branches:
+      - master
+      - main
+      - 'release/**'
+      - 'rc/**'
+      - 'integration/**'
+      - '*-rc'
+      - '*-rc.*'
     tags: ["v*"]
   pull_request:
     branches: [master, main]
