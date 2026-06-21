@@ -250,19 +250,22 @@ class TestModelComparison:
         mock_repo.get_aggregate_scores.return_value = [
             {"model_profile_id": "m1", "prompt_profile_id": "p1", "task_type": "code",
              "sample_count": 10, "composite_score": 0.85, "avg_cost": 0.01,
-             "avg_completion": 0.9, "avg_code_quality": 0.8, "avg_instruction": 0.9, "avg_token_efficiency": 0.7},
+             "avg_completion": 0.9, "avg_quality": 0.8, "avg_instruction": 0.9, "avg_efficiency": 0.7},
             {"model_profile_id": "m2", "prompt_profile_id": "p2", "task_type": "code",
              "sample_count": 8, "composite_score": 0.72, "avg_cost": 0.05,
-             "avg_completion": 0.7, "avg_code_quality": 0.7, "avg_instruction": 0.7, "avg_token_efficiency": 0.8},
+             "avg_completion": 0.7, "avg_quality": 0.7, "avg_instruction": 0.7, "avg_efficiency": 0.8},
             {"model_profile_id": "m1", "prompt_profile_id": "p2", "task_type": "code",
              "sample_count": 5, "composite_score": 0.65, "avg_cost": 0.02,
-             "avg_completion": 0.6, "avg_code_quality": 0.6, "avg_instruction": 0.6, "avg_token_efficiency": 0.9},
+             "avg_completion": 0.6, "avg_quality": 0.6, "avg_instruction": 0.6, "avg_efficiency": 0.9},
         ]
         comparison = ModelComparison(benchmark_repo=mock_repo)
         result = await comparison.compare_models(task_type="code")
         assert len(result["rankings"]) == 3
         assert result["rankings"][0]["model_profile_id"] == "m1"
         assert result["rankings"][0]["composite_score"] == 0.85
+        # Verify mapped fields are non-zero (would be 0.0 with the old buggy key names)
+        assert result["rankings"][0]["avg_code_quality"] == 0.8
+        assert result["rankings"][0]["avg_token_efficiency"] == 0.7
 
     @pytest.mark.asyncio
     async def test_compare_models_empty_repo(self):
@@ -283,10 +286,10 @@ class TestModelComparison:
         mock_repo.get_aggregate_scores.return_value = [
             {"model_profile_id": "cheap", "prompt_profile_id": "p1", "task_type": "code",
              "sample_count": 15, "composite_score": 0.75, "avg_cost": 0.001,
-             "avg_completion": 0.8, "avg_code_quality": 0.7, "avg_instruction": 0.8, "avg_token_efficiency": 0.6},
+             "avg_completion": 0.8, "avg_quality": 0.7, "avg_instruction": 0.8, "avg_efficiency": 0.6},
             {"model_profile_id": "expensive", "prompt_profile_id": "p1", "task_type": "code",
              "sample_count": 12, "composite_score": 0.90, "avg_cost": 0.05,
-             "avg_completion": 0.9, "avg_code_quality": 0.9, "avg_instruction": 0.9, "avg_token_efficiency": 0.9},
+             "avg_completion": 0.9, "avg_quality": 0.9, "avg_instruction": 0.9, "avg_efficiency": 0.9},
         ]
         comparison = ModelComparison(benchmark_repo=mock_repo)
         result = await comparison.compare_models(task_type="code")
@@ -301,10 +304,10 @@ class TestModelComparison:
         mock_repo.get_aggregate_scores.return_value = [
             {"model_profile_id": "expensive_high_quality", "prompt_profile_id": "p1", "task_type": "code",
              "sample_count": 10, "composite_score": 0.95, "avg_cost": 0.10,
-             "avg_completion": 0.9, "avg_code_quality": 0.9, "avg_instruction": 0.9, "avg_token_efficiency": 0.9},
+             "avg_completion": 0.9, "avg_quality": 0.9, "avg_instruction": 0.9, "avg_efficiency": 0.9},
             {"model_profile_id": "cheap_decent", "prompt_profile_id": "p2", "task_type": "code",
              "sample_count": 10, "composite_score": 0.80, "avg_cost": 0.001,
-             "avg_completion": 0.8, "avg_code_quality": 0.8, "avg_instruction": 0.8, "avg_token_efficiency": 0.8},
+             "avg_completion": 0.8, "avg_quality": 0.8, "avg_instruction": 0.8, "avg_efficiency": 0.8},
         ]
         comparison = ModelComparison(benchmark_repo=mock_repo)
         result = await comparison.compare_models(task_type="code", sort_by="cost")
@@ -339,7 +342,7 @@ class TestModelComparison:
         mock_repo.get_aggregate_scores.return_value = [
             {"model_profile_id": "m1", "prompt_profile_id": "p1", "task_type": "code",
              "sample_count": 1, "composite_score": 0.95, "avg_cost": 0.01,
-             "avg_completion": 0.9, "avg_code_quality": 0.9, "avg_instruction": 0.9, "avg_token_efficiency": 0.9},
+             "avg_completion": 0.9, "avg_quality": 0.9, "avg_instruction": 0.9, "avg_efficiency": 0.9},
         ]
         comparison = ModelComparison(benchmark_repo=mock_repo)
         result = await comparison.compare_models(task_type="code", min_samples=2)

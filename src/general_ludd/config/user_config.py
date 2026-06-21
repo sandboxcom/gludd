@@ -94,6 +94,7 @@ class UserConfig(BaseSettings):
     observability: ObservabilityConfig = ObservabilityConfig()
     queues: list[dict[str, Any]] = []
     self_improve: dict[str, Any] = {}
+    rules: list[Any] = []
     pipeline: PipelineConfigBlock = PipelineConfigBlock()
 
     @classmethod

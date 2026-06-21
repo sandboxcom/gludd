@@ -167,16 +167,21 @@ class ToolCallLoop:
     async def _call_model(
         self, job: JobSpec, system_prompt: str, user_prompt: str,
     ) -> Any:
-        return self._gateway.call_model(
-            system_prompt=system_prompt,
-            user_prompt=user_prompt,
-        )
+        profile_id = job.model_profile or "default"
+        messages: list[dict[str, Any]] = []
+        if system_prompt:
+            messages.append({"role": "system", "content": system_prompt})
+        if user_prompt:
+            messages.append({"role": "user", "content": user_prompt})
+        return self._gateway.call_model(profile_id, messages=messages)
 
     async def _call_with_tools(
         self, job: JobSpec, messages: list[dict[str, Any]],
         tool_schemas: list[dict[str, Any]],
     ) -> Any:
+        profile_id = job.model_profile or "default"
         return self._gateway.call_model(
+            profile_id,
             messages=messages,
             tools=tool_schemas,
         )

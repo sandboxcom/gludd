@@ -44,9 +44,9 @@ PHASE_ORDER = [
     "claim_unreviewed_task_returns",
     "dispatch_return_review_jobs",
     "evaluate_pid_controllers",
-    "evaluate_rules",
     "refill_task_buckets",
     "claim_runnable_todos",
+    "evaluate_rules",
     "dispatch_execute_jobs",
     "reconcile_completed_decisions",
     "self_improve",
@@ -190,6 +190,7 @@ class EventLoop:
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
         # Reconcile idempotency ledgers (defects F1/F2):
@@ -524,8 +525,11 @@ class EventLoop:
             result_summary=_safe_str(tr, "result_summary", "") or "",
         )
         try:
-            decision = self._reviewer.review_return(
-                task_return, candidate_todos=[], artifacts=[]
+            decision = await asyncio.to_thread(
+                self._reviewer.review_return,
+                task_return,
+                candidate_todos=[],
+                artifacts=[],
             )
         except Exception as exc:
             # Reviewer itself failed — escalate, never silent pass/complete.
@@ -636,14 +640,17 @@ class EventLoop:
     async def _phase_evaluate_rules(self) -> None:
         raw_rules = self.config.get("rules", [])
         rules = [r if isinstance(r, Rule) else Rule(**r) for r in raw_rules]
-        todos_ctx = self.config.get("todos", [])
+        # W4c: evaluate rules against the LIVE claimed todos for this tick (set by
+        # _phase_claim_runnable_todos, which now runs first per PHASE_ORDER), not the
+        # static self.config["todos"] — which is absent at runtime, so rules never fired.
+        todos_ctx = self._tick_state.get("claimed_todos", [])
         all_results: list[dict[str, Any]] = []
         for todo_ctx in todos_ctx:
             context = {"todo": todo_ctx}
             actions = evaluate_rules(rules, context)
             if actions:
                 all_results.append({
-                    "todo_id": todo_ctx.get("todo_id", ""),
+                    "todo_id": _safe_str(todo_ctx, "todo_id", ""),
                     "actions": [
                         {"rule_id": a.rule_id, "action_type": a.action_type, "params": a.params}
                         for a in actions
@@ -909,6 +916,24 @@ class EventLoop:
             self._prompt_registry, resolved_prompt_profile,
             project_templates_dir=project_templates_dir, **task_context,
         )
+        # Fallback: the prompt_profile path above is PRIMARY, but a generation
+        # todo submitted via POST /api/todos has no prompt_profile, so
+        # _resolve_prompt_text_static returns None and the model would never be
+        # called (silent no-op). If no profile resolved a prompt but the todo
+        # carries a title/description, synthesize a minimal task prompt so the
+        # model IS invoked. This only fires when the primary path produced
+        # nothing; a real prompt_profile still wins.
+        if not prompt_text:
+            _fallback_title = task_context.get("todo_title") or ""
+            _fallback_desc = task_context.get("todo_description") or ""
+            _synthesized = f"Task: {_fallback_title}\n\n{_fallback_desc}".strip()
+            if _synthesized:
+                prompt_text = _synthesized
+                logger.info(
+                    "EventLoop: no prompt_profile resolved for todo %s; "
+                    "synthesized fallback prompt from title/description",
+                    getattr(todo, "todo_id", "?"),
+                )
         prompt_text = await self._append_message_queue_section(
             prompt_text, todo, project_id_val,
         )
@@ -990,6 +1015,56 @@ class EventLoop:
                                             key=f"tool_result:{r.name}",
                                             value=str(r.output),
                                         )
+            if model_response is not None and self._benchmark_recorder is not None:
+                try:
+                    from general_ludd.event_loop.benchmark import record_job_benchmark
+                    _bt = asyncio.create_task(
+                        record_job_benchmark(
+                            self._benchmark_recorder,
+                            model_profile=resolved_model_profile,
+                            prompt_profile=resolved_prompt_profile,
+                            work_type=work_type,
+                            success=True,
+                            input_tokens=len(prompt_text or "") // 4,
+                        )
+                    )
+                    self._background_tasks.add(_bt)
+                    _bt.add_done_callback(self._background_tasks.discard)
+                except Exception:
+                    pass
+                # Trace-buffer feed (additive): the DB benchmark write above is
+                # preserved, but the trace→recorder→RecentTracesBuffer chain was
+                # never exercised, so /api/traces always reported count 0. Build a
+                # genuine ExecutionTrace with one completed span around the model
+                # generation (reusing the data already gathered above) and feed it
+                # through AutoBenchmarkRecorder.record_from_trace so the in-process
+                # recent-traces buffer reflects actually-captured telemetry.
+                try:
+                    from general_ludd.observability.tracer import ExecutionTrace
+                    _input_tokens = len(prompt_text or "") // 4
+                    _output_tokens = len(model_response or "") // 4
+                    _trace = ExecutionTrace(
+                        todo_id=_safe_str(todo, "todo_id", "") or "",
+                        work_type=work_type,
+                    )
+                    _span = _trace.start_span(name="model_generation", phase="generate")
+                    _span.complete(
+                        status="success",
+                        input_tokens=_input_tokens,
+                        output_tokens=_output_tokens,
+                        model_profile_id=resolved_model_profile,
+                        prompt_profile_id=resolved_prompt_profile,
+                    )
+                    self._active_traces[_trace.trace_id] = _trace
+                    _tbt = asyncio.create_task(
+                        self._benchmark_recorder.record_from_trace(
+                            _trace, success=True,
+                        )
+                    )
+                    self._background_tasks.add(_tbt)
+                    _tbt.add_done_callback(self._background_tasks.discard)
+                except Exception:
+                    pass
             self._runner.write_vars(job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),

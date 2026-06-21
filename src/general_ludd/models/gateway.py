@@ -106,6 +106,88 @@ class ModelResponse:
     cost_estimate: float = 0.0
     model_name: str = ""
     raw_response: Any = None
+    # Tool/function calls the model requested, NORMALIZED to the OpenAI-nested
+    # shape the tool-call loop consumes: each item is
+    #   {"id": str, "type": "function",
+    #    "function": {"name": str, "arguments": <json-string>}}
+    # This field is the bridge that makes the MCP tool-call loop functional. The
+    # provider's tool_calls live on raw_response (a LangChain AIMessage, whose
+    # .tool_calls is the FLAT {"name","args","id","type"} shape, or a raw OpenAI
+    # message with the nested shape). Before this field existed, _invoke_and_bill
+    # dropped them on the floor — only content/raw_response were kept — so
+    # ToolCallLoop's `getattr(response, "tool_calls", None)` was always None and
+    # NO tool was ever dispatched in production. _extract_tool_calls normalizes
+    # either provider shape into the nested shape and we store it here.
+    tool_calls: list[dict[str, Any]] | None = None
+
+
+def _extract_tool_calls(raw_response: Any) -> list[dict[str, Any]] | None:
+    """Normalize a provider response's tool calls into the nested OpenAI shape.
+
+    The MCP ToolCallLoop reads each tool call as ``tc["function"]["name"]`` /
+    ``tc["function"]["arguments"]`` (a JSON string) / ``tc["id"]`` — the OpenAI
+    *nested* shape. But the live provider here is ``langchain_openai.ChatOpenAI``,
+    whose AIMessage exposes ``.tool_calls`` in the LangChain *flat* shape
+    ``{"name", "args": dict, "id", "type"}``. A raw OpenAI SDK message instead
+    carries the nested shape (objects or dicts). This helper accepts EITHER and
+    returns the nested shape, so the loop dispatches regardless of which provider
+    produced the response.
+
+    Returns None when the response carries no tool calls (the common case), so
+    ``ModelResponse.tool_calls`` stays falsy and the loop returns content.
+    """
+    import json as _json
+
+    raw_calls = getattr(raw_response, "tool_calls", None)
+    # Defensive: only a real list/tuple of tool calls is meaningful. Anything
+    # else (None, a MagicMock auto-attr from a stubbed provider, a scalar) is
+    # treated as "no tool calls" — this helper runs on EVERY billed call and must
+    # never raise into the billing path on an unexpected provider shape.
+    if not isinstance(raw_calls, (list, tuple)) or not raw_calls:
+        return None
+
+    normalized: list[dict[str, Any]] = []
+    for tc in raw_calls:
+        # Support both dict-shaped tool calls (LangChain flat, or already-nested)
+        # and OpenAI SDK objects (with .id / .function.name / .function.arguments).
+        if isinstance(tc, dict):
+            fn = tc.get("function")
+            if isinstance(fn, dict) and "name" in fn:
+                # Already nested OpenAI shape.
+                name = fn.get("name", "")
+                args = fn.get("arguments", "{}")
+                call_id = tc.get("id", "")
+            else:
+                # LangChain flat shape: {"name", "args": dict, "id", "type"}.
+                name = tc.get("name", "")
+                args = tc.get("args", {})
+                call_id = tc.get("id", "")
+        else:
+            # OpenAI SDK object: tc.id, tc.function.name, tc.function.arguments.
+            call_id = getattr(tc, "id", "") or ""
+            fn_obj = getattr(tc, "function", None)
+            name = getattr(fn_obj, "name", "") or ""
+            args = getattr(fn_obj, "arguments", "{}")
+
+        # The loop json.loads() the arguments, so always hand it a JSON string.
+        if not isinstance(args, str):
+            try:
+                args = _json.dumps(args)
+            except (TypeError, ValueError):
+                args = "{}"
+
+        if not name:
+            # A tool call with no resolvable name cannot be dispatched; skip it
+            # rather than emit a call the loop would reject as unregistered.
+            continue
+
+        normalized.append({
+            "id": call_id or "",
+            "type": "function",
+            "function": {"name": name, "arguments": args},
+        })
+
+    return normalized or None
 
 
 class ModelGateway:
@@ -258,6 +340,13 @@ class ModelGateway:
         else:
             raise ValueError(f"No provider registry configured for '{profile_id}'")
 
+        # Pop `tools` BEFORE updating init_kwargs so it is never forwarded to
+        # the LangChain provider constructor (ChatOpenAI et al. do not accept a
+        # `tools=` constructor arg — passing it there raises a TypeError that is
+        # silently swallowed upstream and produces zero tool-use behaviour).
+        # Tools are bound to the *invocation* via chat_model.bind_tools() below.
+        tools = kwargs.pop("tools", None)
+
         init_kwargs: dict[str, Any] = {"model": profile.model_name}
         if api_key:
             init_kwargs["api_key"] = api_key
@@ -276,6 +365,30 @@ class ModelGateway:
 
         chat_model = provider_cls(**init_kwargs)
 
+        # Bind tools to the invocation (LangChain pattern) when the caller
+        # passed a non-empty tools list.  bind_tools() returns a new runnable
+        # that adds the tool schemas to every .invoke() call — this is the only
+        # supported way to pass tools through LangChain without putting them on
+        # the constructor.  We guard with hasattr so a provider that doesn't
+        # implement bind_tools (e.g. a custom stub) falls back gracefully to a
+        # plain invoke rather than raising AttributeError.
+        if tools:
+            if hasattr(chat_model, "bind_tools"):
+                chat_model = chat_model.bind_tools(tools)
+                logger.debug(
+                    "Tools bound for profile=%s (%d tool(s))",
+                    profile_id,
+                    len(tools),
+                )
+            else:
+                logger.warning(
+                    "Provider class %s does not support bind_tools — "
+                    "tools=%r will be ignored for profile=%s",
+                    type(chat_model).__name__,
+                    tools,
+                    profile_id,
+                )
+
         logger.debug(
             "Calling model %s (profile=%s, provider=%s) with api_key=***REDACTED***",
             profile.model_name,
@@ -293,6 +406,11 @@ class ModelGateway:
         content = getattr(raw_response, "content", str(raw_response))
         usage = getattr(raw_response, "usage_metadata", {}) or {}
 
+        # Extract tool calls BEFORE the empty-200 guard: a tool-call turn
+        # legitimately has empty text content (the model's "output" IS the tool
+        # request), so it must NOT be misclassified as an empty-200 soft failure.
+        tool_calls = _extract_tool_calls(raw_response)
+
         # Empty-200 guard: some providers return HTTP 200 with empty content on
         # a soft/transient failure. Bill+cache BOTH happened AFTER this point, so
         # an empty 200 was being billed (record_spend) and (until the content
@@ -301,7 +419,9 @@ class ModelGateway:
         # never metered, and never cached — and is retried/failed-over like any
         # other transient provider error. record_timeout_on_failure records it
         # as PROVIDER_ERROR (5xx) on the health tracker.
-        if not str(content).strip():
+        # EXEMPTION: empty content WITH tool calls is a valid tool-call turn, not
+        # a soft failure — billing it and returning it is correct.
+        if not str(content).strip() and not tool_calls:
             empty_exc = self._empty_response_error(profile_id)
             self.record_timeout_on_failure(profile_id, empty_exc)
             raise empty_exc
@@ -361,13 +481,29 @@ class ModelGateway:
             cost_estimate=cost,
             model_name=profile.model_name,
             raw_response=raw_response,
+            # Carry the provider's tool calls forward (normalized) so the MCP
+            # ToolCallLoop can actually dispatch them. Without this they survive
+            # only inside raw_response, which the loop never inspects, and the
+            # entire tool-call loop is dead in production.
+            tool_calls=tool_calls,
         )
 
         # content is non-empty (the empty-200 guard above raised otherwise), so
         # we never cache an error-shaped "successful" response here. cache_key is
         # the same key the single-flight path locked on, so the entry the next
         # waiter re-reads is exactly this one.
-        if self._response_cache is not None and cache_key is not None:
+        #
+        # NEVER cache a tool-call turn: a response carrying tool_calls is an
+        # INCOMPLETE turn (the model asked to run tools; the real answer comes on
+        # the next iteration after tool results are fed back). The cache stores
+        # only content (tool_calls are intentionally NOT persisted), so a cached
+        # tool-call turn would replay as an empty-content final answer and the
+        # tool loop would silently stop dispatching. Skip caching it entirely.
+        if (
+            self._response_cache is not None
+            and cache_key is not None
+            and not response.tool_calls
+        ):
             self._response_cache.set(
                 cache_key,
                 {
@@ -455,20 +591,65 @@ class ModelGateway:
                 # All fallbacks failed is_healthy and none was attempted: probe
                 # the first as a last resort (records its own success/failure).
                 return self._call_fallback(fallback_ids[0], messages, **kwargs)
+            # CIRCUIT-BREAKER HOLE FIX: primary is unhealthy AND there are no
+            # fallbacks — falling through to the retry loop would hammer the
+            # unhealthy primary instead of failing fast. Raise the same error
+            # type used when all fallbacks are exhausted so callers get a
+            # consistent, informative signal.
+            raise RuntimeError(
+                f"call_model_with_retry: profile '{profile_id}' is unhealthy "
+                "and no fallback profiles are configured"
+            )
 
-        _retryable_exc_types = (
+        _retryable_exc_types: tuple[type[BaseException], ...] = (
             httpx.HTTPStatusError,
             httpx.TimeoutException,
             httpx.ConnectError,
             TimeoutError,
         )
+        # The openai SDK (used by langchain_openai, hence by z.ai and every
+        # openai-compatible provider) wraps connection/timeout/status failures in
+        # its OWN exception classes rather than raising raw httpx errors. Without
+        # adding them here the tenacity retry predicate never matched a real
+        # provider connection error, so the primary re-raised and the fallback
+        # chain was never walked. TimeoutClassifier.classify already knows how to
+        # categorize these (see _classify_openai_error); we only need them to be
+        # recognized as candidate retryable types here. APIStatusError is included
+        # so a retryable 5xx/429 surfaced via the SDK is retried/failed-over too;
+        # AUTH_ERROR / CONTEXT_LENGTH / INVALID_REQUEST among them still classify
+        # NON_RETRYABLE and are re-raised by _is_retryable, preserving semantics.
+        try:
+            import openai as _openai
+
+            _retryable_exc_types = (
+                *_retryable_exc_types,
+                _openai.APIConnectionError,
+                _openai.APITimeoutError,
+                _openai.APIStatusError,
+            )
+        except Exception:  # pragma: no cover - openai always present in practice
+            pass
 
         _attempt_counter: list[int] = [0]
         _last_exc: list[BaseException | None] = [None]
 
         def _is_retryable(exc: BaseException) -> bool:
-            """Tenacity retry predicate: True → retry, False → re-raise."""
+            """Tenacity retry predicate: True → retry, False → re-raise.
+
+            max_retries is the caller's hard cap on retries for ALL kinds,
+            including overload kinds (PROVIDER_ERROR / RATE_LIMITED). Without
+            this guard, TimeoutRetryPolicy.decide() returns should_retry=True
+            for overload kinds up to overload_max_retries (default 10),
+            completely ignoring the caller-supplied max_retries. A test (or
+            production caller) that passes max_retries=1 would then get up to
+            10 total attempts instead of 2, exhausting any scripted sequence
+            and producing an AssertionError rather than the expected provider
+            exception.
+            """
             if not isinstance(exc, _retryable_exc_types):
+                return False
+            # Hard cap: honor the caller's max_retries for ALL kinds.
+            if _attempt_counter[0] > max_retries:
                 return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.

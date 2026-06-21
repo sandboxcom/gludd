@@ -24,11 +24,11 @@ def _get_zai_api_key() -> str | None:
 
 
 def _get_zai_base_url() -> str:
-    return os.environ.get("ZAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+    return os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
 
 
 def _get_zai_model() -> str:
-    return os.environ.get("ZAI_MODEL", "glm-5.1")
+    return os.environ.get("ZAI_MODEL", "glm-4.6")
 
 
 _SKIP_REASON = (
@@ -110,7 +110,7 @@ class TestZAIAuthenticatedIdentity:
         content_lower = response.content.lower()
         assert any(
             token in content_lower
-            for token in ["glm", "5.1", "zhipu", "bigmodel", "chatglm"]
+            for token in ["glm", "4.6", "5.1", "zhipu", "bigmodel", "chatglm"]
         ), f"Model identity response did not contain GLM-identifying tokens: {response.content!r}"
 
         assert response.usage_metadata is not None, "Expected usage_metadata in response"

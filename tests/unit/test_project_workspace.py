@@ -2,6 +2,9 @@
 
 from __future__ import annotations
 
+import os
+from pathlib import Path
+
 from general_ludd.projects.workspace import ProjectWorkspace
 
 
@@ -51,3 +54,33 @@ class TestProjectWorkspace:
         assert "artifacts_dir" in d
         assert "logs_dir" in d
         assert "config_dir" in d
+
+    def test_relative_base_dir_does_not_leak_into_cwd(self, tmp_path, monkeypatch):
+        """A RELATIVE base_dir must not materialize dirs under the process CWD.
+
+        REGRESSION GUARD (leak incident): a now-removed workspace test exercised
+        ``ProjectWorkspace``/``materialize_project_workspace`` with a *relative*
+        ``base_dir`` (e.g. ``"nested"`` / ``"proj-ok"``) while pytest's CWD was the
+        repo root. ``Path(base_dir) / project_id`` then resolved against the CWD and
+        ``ensure_dirs()`` planted ``nested/proj-ok/repo`` and ``proj-ok/repo`` into
+        the repo root, leaking out of tmp. Every test MUST anchor ``base_dir`` under
+        ``tmp_path``; this test asserts that running with a relative ``base_dir``
+        from a tmp CWD keeps all created dirs inside that tmp CWD (never the real
+        repo root) so the leak can never silently recur.
+        """
+        # Run from an isolated tmp CWD so even a relative base_dir stays contained.
+        monkeypatch.chdir(tmp_path)
+        repo_root_before = set(os.listdir(tmp_path))
+
+        ws = ProjectWorkspace(project_id="proj-ok", base_dir="nested")
+        ws.ensure_dirs()
+
+        # The workspace tree must live under the tmp CWD, never escape it.
+        resolved_root = Path(ws.root).resolve()
+        assert resolved_root.is_relative_to(tmp_path.resolve()), (
+            f"workspace root {resolved_root} escaped the tmp CWD {tmp_path}"
+        )
+        # Exactly the expected relative subtree appeared (nested/proj-ok/repo, ...).
+        assert (tmp_path / "nested" / "proj-ok" / "repo").is_dir()
+        # Nothing leaked as a sibling of base_dir — only "nested" is new at the top.
+        assert set(os.listdir(tmp_path)) - repo_root_before == {"nested"}

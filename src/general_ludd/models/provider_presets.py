@@ -43,7 +43,7 @@ PROVIDER_PRESETS: dict[str, dict[str, Any]] = {
         "supports_free_models": False,
     },
     "zai": {
-        "api_base_url": "https://open.bigmodel.cn/api/paas/v4",
+        "api_base_url": "https://api.z.ai/api/coding/paas/v4",
         "provider_package": "langchain-openai",
         "provider_class": "ChatOpenAI",
         "credential_env_var": "ZAI_API_KEY",

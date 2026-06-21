@@ -110,7 +110,67 @@ class TimeoutClassifier:
         if isinstance(exc, httpx.HTTPStatusError):
             return cls._classify_http_error(exc, response_body=response_body)
 
+        # OpenAI-SDK-wrapped errors. The openai client (used by langchain_openai,
+        # which is how the openai-compatible providers — including z.ai — are
+        # wired) does NOT raise raw httpx exceptions: it wraps a connection
+        # failure as openai.APIConnectionError, a timeout as openai.APITimeoutError,
+        # and a 4xx/5xx as openai.APIStatusError (with .status_code + .response).
+        # Without this branch every such failure classified as UNKNOWN and the
+        # gateway's retry/failover path never fired for the real provider path.
+        openai_kind = cls._classify_openai_error(exc, response_body=response_body)
+        if openai_kind is not None:
+            return openai_kind
+
         return TimeoutKind.UNKNOWN
+
+    @classmethod
+    def _classify_openai_error(
+        cls,
+        exc: BaseException,
+        *,
+        response_body: str | None = None,
+    ) -> TimeoutKind | None:
+        """Classify an openai-SDK exception, or return None if not one.
+
+        Imports openai lazily so the dependency stays optional. APITimeoutError
+        is a subclass of APIConnectionError, so order the checks timeout-first.
+        APIStatusError carries .status_code + an httpx.Response, which we route
+        through the same status-code logic used for raw httpx.HTTPStatusError so
+        the retry/failover decision is identical regardless of which layer
+        surfaced the error.
+        """
+        try:
+            import openai
+        except Exception:  # pragma: no cover - openai always present in practice
+            return None
+
+        if isinstance(exc, openai.APITimeoutError):
+            return TimeoutKind.READ_TIMEOUT
+        if isinstance(exc, openai.APIConnectionError):
+            return TimeoutKind.CONNECTION_TIMEOUT
+        if isinstance(exc, openai.APIStatusError):
+            import httpx
+
+            response = getattr(exc, "response", None)
+            status_code = getattr(exc, "status_code", None)
+            if isinstance(response, httpx.Response):
+                wrapped = httpx.HTTPStatusError(
+                    str(exc), request=response.request, response=response
+                )
+                return cls._classify_http_error(wrapped, response_body=response_body)
+            # No usable response object but we still have a status code: map it
+            # with the same code-based rules.
+            if isinstance(status_code, int):
+                if status_code == 429:
+                    return TimeoutKind.RATE_LIMITED
+                if status_code in _AUTH_ERROR_CODES:
+                    return TimeoutKind.AUTH_ERROR
+                if status_code in _RETRYABLE_SERVER_CODES:
+                    return TimeoutKind.PROVIDER_ERROR
+                if status_code == 400:
+                    return TimeoutKind.INVALID_REQUEST
+            return TimeoutKind.UNKNOWN
+        return None
 
     @classmethod
     def _classify_http_error(

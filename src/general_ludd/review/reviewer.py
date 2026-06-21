@@ -164,8 +164,9 @@ class ReturnReviewer:
             return raw
         if not isinstance(raw, str):
             return None
+        cleaned = self._extract_json_from_output(raw)
         try:
-            data = json.loads(raw)
+            data = json.loads(cleaned)
         except (json.JSONDecodeError, TypeError):
             return None
         if not isinstance(data, dict):
@@ -176,3 +177,30 @@ class ReturnReviewer:
             return TaskDecision(**data)
         except (ValueError, TypeError):
             return None
+
+    @staticmethod
+    def _extract_json_from_output(text: str) -> str:
+        """Strip markdown code fences and extract the first JSON object.
+
+        Handles ```json\\n{...}\\n``` and ```\\n{...}\\n``` fences, leading/trailing
+        prose, and plain JSON (passthrough).  Uses json.JSONDecoder.raw_decode so
+        that brace characters inside string values (e.g. "reason": "loop }{ ok") are
+        handled correctly and trailing prose after the closing brace is ignored.
+        """
+        import re
+
+        # Strip an outer ```json ... ``` or ``` ... ``` fence if present, then fall
+        # through to the raw_decode path so trailing prose inside the fence is also
+        # handled correctly.
+        fence_match = re.search(r"```(?:json)?\s*(\{.*?)\s*```", text, re.DOTALL)
+        candidate = fence_match.group(1).strip() if fence_match else text
+
+        start = candidate.find("{")
+        if start == -1:
+            return candidate
+
+        try:
+            _obj, _end = json.JSONDecoder().raw_decode(candidate, start)
+            return candidate[start:_end]
+        except json.JSONDecodeError:
+            return candidate

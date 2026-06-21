@@ -51,9 +51,9 @@ class ModelComparison:
                 "composite_score": round(float(r.get("composite_score", 0)), 4),
                 "avg_cost": round(float(r.get("avg_cost", 0)), 6),
                 "avg_completion": round(float(r.get("avg_completion", 0)), 4),
-                "avg_code_quality": round(float(r.get("avg_code_quality", 0)), 4),
+                "avg_code_quality": round(float(r.get("avg_quality", 0)), 4),
                 "avg_instruction": round(float(r.get("avg_instruction", 0)), 4),
-                "avg_token_efficiency": round(float(r.get("avg_token_efficiency", 0)), 4),
+                "avg_token_efficiency": round(float(r.get("avg_efficiency", 0)), 4),
             }
             for r in qualified
         ]

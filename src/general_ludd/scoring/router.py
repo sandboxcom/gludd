@@ -37,6 +37,18 @@ class AdaptiveRouter:
         self._cache_time: datetime | None = None
         self._cache_ttl_seconds: float = 300.0
 
+    def _cache_key(self, task_type: TaskType, max_cost_usd: float | None) -> str:
+        """Cache key incorporates task type and cost cap so different constraints
+        never share a cached decision."""
+        return f"{task_type.value}:{max_cost_usd}"
+
+    def _cache_valid(self) -> bool:
+        """True if there is a cache timestamp within the TTL window."""
+        if self._cache_time is None:
+            return False
+        elapsed = (datetime.now() - self._cache_time).total_seconds()
+        return elapsed < self._cache_ttl_seconds
+
     async def route(
         self,
         task_type: TaskType,
@@ -44,6 +56,11 @@ class AdaptiveRouter:
         default_model_profile: str = "default",
         max_cost_usd: float | None = None,
     ) -> RoutingDecision:
+        cache_key = self._cache_key(task_type, max_cost_usd)
+        if self._cache_valid() and cache_key in self._cache:
+            log.debug("route(): cache hit for key=%s", cache_key)
+            return self._cache[cache_key]
+
         best = await self._get_best_from_history(task_type)
         if best is not None:
             if max_cost_usd is not None and self._exceeds_cap(
@@ -51,7 +68,7 @@ class AdaptiveRouter:
             ):
                 cheaper = await self._get_cheapest_for_task(task_type, max_cost_usd)
                 if cheaper is not None:
-                    return RoutingDecision(
+                    decision = RoutingDecision(
                         selected_prompt_profile_id=cheaper.prompt_profile_id,
                         selected_model_profile_id=cheaper.model_profile_id,
                         composite_score=cheaper.composite_score,
@@ -60,11 +77,12 @@ class AdaptiveRouter:
                         fallback=False,
                         reason="cost_constrained",
                     )
+                    return self._cache_and_return(cache_key, decision)
                 # FAIL CLOSED (#69/#59): the best is over the cap and no cheaper
                 # candidate fits under budget. Never return the over-cap best —
                 # deny spend we cannot prove is in budget and fall back to the
                 # safe default model.
-                return RoutingDecision(
+                decision = RoutingDecision(
                     selected_prompt_profile_id=default_prompt_profile,
                     selected_model_profile_id=default_model_profile,
                     composite_score=0.0,
@@ -73,7 +91,8 @@ class AdaptiveRouter:
                     fallback=True,
                     reason="cost_cap_no_fit",
                 )
-            return RoutingDecision(
+                return self._cache_and_return(cache_key, decision)
+            decision = RoutingDecision(
                 selected_prompt_profile_id=best.prompt_profile_id,
                 selected_model_profile_id=best.model_profile_id,
                 composite_score=best.composite_score,
@@ -82,8 +101,9 @@ class AdaptiveRouter:
                 fallback=False,
                 reason="best_historical_score",
             )
+            return self._cache_and_return(cache_key, decision)
 
-        return RoutingDecision(
+        decision = RoutingDecision(
             selected_prompt_profile_id=default_prompt_profile,
             selected_model_profile_id=default_model_profile,
             composite_score=0.0,
@@ -92,6 +112,13 @@ class AdaptiveRouter:
             fallback=True,
             reason="insufficient_historical_data",
         )
+        return self._cache_and_return(cache_key, decision)
+
+    def _cache_and_return(self, key: str, decision: RoutingDecision) -> RoutingDecision:
+        """Write *decision* to the in-memory cache and return it."""
+        self._cache[key] = decision
+        self._cache_time = datetime.now()
+        return decision
 
     @staticmethod
     def _exceeds_cap(cost: float, cap: float) -> bool:

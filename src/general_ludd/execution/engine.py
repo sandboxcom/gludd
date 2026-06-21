@@ -286,9 +286,12 @@ class ExecutionEngine:
             )
 
         try:
-            response = self._model_gateway.call_model(
-                system_prompt=system_prompt, user_prompt=user_prompt,
-            )
+            profile_id = getattr(job, "model_profile", None) or "default"
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            response = self._model_gateway.call_model(profile_id, messages=messages)
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:
@@ -349,6 +352,24 @@ class ExecutionEngine:
         test_exit_code, test_summary = _run_tests(self.workspace_path)
         evidence_refs: list[str] = list(changed_files[:20])
 
+        if self._benchmark_recorder is not None:
+            try:
+                from general_ludd.event_loop.benchmark import record_job_benchmark
+                task = asyncio.create_task(
+                    record_job_benchmark(
+                        self._benchmark_recorder,
+                        model_profile=getattr(job, "model_profile", None),
+                        prompt_profile=getattr(job, "prompt_profile", None),
+                        work_type=job.work_type or "code",
+                        success=test_exit_code == 0,
+                        input_tokens=len(model_output) // 4,
+                    )
+                )
+                self._background_tasks.add(task)
+                task.add_done_callback(self._background_tasks.discard)
+            except Exception:
+                pass
+
         summary_parts: list[str] = [
             f"Changed {len(changed_files)} file(s): "
             f"{', '.join(changed_files[:10])}.",
@@ -396,9 +417,12 @@ class ExecutionEngine:
             )
 
         try:
-            response = self._model_gateway.call_model(
-                system_prompt=system_prompt, user_prompt=user_prompt,
-            )
+            profile_id = getattr(job, "model_profile", None) or "default"
+            messages = [
+                {"role": "system", "content": system_prompt},
+                {"role": "user", "content": user_prompt},
+            ]
+            response = self._model_gateway.call_model(profile_id, messages=messages)
             model_output = getattr(response, "content", "") or str(response)
             self._record_metrics(job, success=True, tokens=len(model_output) // 4)
         except Exception as exc:

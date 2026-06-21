@@ -19,6 +19,21 @@ from general_ludd.schemas.job import JobSpec
 from general_ludd.worker.app import create_app
 
 
+@pytest.fixture(autouse=True)
+def _reset_runner() -> Any:
+    """Restore the module-level _runner singleton after each test.
+
+    Prevents xdist process-level state leak: _make_client writes
+    worker_module._runner directly and never restores it. Without this
+    fixture, a failing-runner set by one test contaminates the next
+    test scheduled on the same worker process.
+    """
+    import general_ludd.worker.app as worker_module
+    original = worker_module._runner
+    yield
+    worker_module._runner = original
+
+
 def _make_job(**kwargs: Any) -> dict[str, Any]:
     base = {
         "job_id": "TESTJOB001",

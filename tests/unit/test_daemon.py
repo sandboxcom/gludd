@@ -120,9 +120,9 @@ class TestDaemonApp:
             assert "todos_total" in data
             assert "queue_depths" in data
             assert "tick_metrics" in data
-            assert "config_dir" in data
-            assert "config_files" in data
-            assert "filestore_root" in data
+            assert "config_file_count" in data
+            assert isinstance(data["config_file_count"], int)
+            assert "filestore_available" in data
             assert "filestore_binaries" in data
             assert "db_engine" in data
             assert "db_url" in data
@@ -276,6 +276,127 @@ class TestExtendedSubsystemsWiring:
         ext1 = _get_or_create_extended_subsystems(app)
         ext2 = _get_or_create_extended_subsystems(app)
         assert ext1["skill_registry"] is ext2["skill_registry"]
+
+    def test_adaptive_router_receives_live_health_tracker_ca_t7(self):
+        """CA-T7/CA-T8: adaptive_router must receive a non-None health_tracker.
+
+        Previously _get_or_create_extended_subsystems was called BEFORE
+        app.state._health_tracker was set, so the router got None and the
+        health-filtering + quantization-penalty logic was permanently inert.
+        The fix pre-assigns the tracker to app.state before the call.
+        """
+        from unittest.mock import MagicMock
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+        from general_ludd.models.timeout_detector import ModelHealthTracker
+
+        app = FastAPI()
+        # Simulate the fixed startup order: assign health_tracker BEFORE the call
+        health_tracker = ModelHealthTracker()
+        app.state._health_tracker = health_tracker
+
+        # Provide a minimal session_factory so the router branch is entered
+        mock_sf = MagicMock()
+        ext = _get_or_create_extended_subsystems(app, session_factory=mock_sf)
+
+        router = ext.get("adaptive_router")
+        assert router is not None, "AdaptiveRouter should be built when session_factory provided"
+        assert router._health_tracker is not None, (
+            "CA-T7: router._health_tracker must be non-None after startup wiring "
+            "(was None before the fix because tracker was assigned after router was built)"
+        )
+        assert router._health_tracker is health_tracker, (
+            "CA-T7: router must hold the SAME ModelHealthTracker instance set on app.state"
+        )
+
+    def test_adaptive_router_health_tracker_is_none_without_pre_assignment(self):
+        """Regression guard: without the fix (no pre-assignment), health_tracker is None.
+
+        This test documents the old broken behaviour to prove the fix is necessary.
+        """
+        from unittest.mock import MagicMock
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+
+        app = FastAPI()
+        # Do NOT set app.state._health_tracker — simulates old broken order
+        mock_sf = MagicMock()
+        ext = _get_or_create_extended_subsystems(app, session_factory=mock_sf)
+
+        router = ext.get("adaptive_router")
+        assert router is not None
+        # Without pre-assignment the router gets None — this is the pre-fix bug
+        assert router._health_tracker is None, (
+            "Without pre-assignment of _health_tracker, router gets None (old bug documented)"
+        )
+
+    def test_adaptive_router_receives_live_quantization_tracker_ca_t9(self):
+        """CA-T9: adaptive_router must receive a non-empty quantization_map source.
+
+        Previously _get_or_create_extended_subsystems checked
+        getattr(app.state, "_quantization_tracker", None) but nothing ever
+        assigned app.state._quantization_tracker before the router was built, so
+        quantization_map stayed {} and _apply_quantization_penalty was permanently
+        inert in the running daemon.  The fix pre-assigns a QuantizationTracker
+        to app.state BEFORE _get_or_create_extended_subsystems is called.
+        """
+        from unittest.mock import MagicMock
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+        from general_ludd.models.quantization import QuantizationInfo, QuantizationTracker
+
+        app = FastAPI()
+        # Simulate the fixed startup order: assign _quantization_tracker BEFORE the call
+        tracker = QuantizationTracker()
+        # Pre-populate with one entry so quantization_map is non-empty in the router
+        tracker.update("test-model", QuantizationInfo(precision="int4", source="test", confidence=0.9))
+        app.state._quantization_tracker = tracker
+
+        mock_sf = MagicMock()
+        ext = _get_or_create_extended_subsystems(app, session_factory=mock_sf)
+
+        router = ext.get("adaptive_router")
+        assert router is not None, "AdaptiveRouter should be built when session_factory provided"
+        assert router._quantization_map is not None, (
+            "CA-T9: router._quantization_map must not be None"
+        )
+        assert "test-model" in router._quantization_map, (
+            "CA-T9: router._quantization_map must reflect the pre-assigned tracker's data"
+        )
+        prec, conf = router._quantization_map["test-model"]
+        assert prec == "int4"
+        assert conf == pytest.approx(0.9)
+
+    def test_adaptive_router_quantization_map_empty_without_pre_assignment(self):
+        """Regression guard for CA-T9: without pre-assignment, quantization_map stays {}.
+
+        This documents the old broken behaviour: nothing ever created
+        app.state._quantization_tracker before the router was built, so
+        quantization_map was always {} and penalty logic never fired.
+        """
+        from unittest.mock import MagicMock
+
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _get_or_create_extended_subsystems
+
+        app = FastAPI()
+        # Do NOT set app.state._quantization_tracker — simulates old broken order
+        mock_sf = MagicMock()
+        ext = _get_or_create_extended_subsystems(app, session_factory=mock_sf)
+
+        router = ext.get("adaptive_router")
+        assert router is not None
+        # Without pre-assignment quantization_map is {} — old bug documented
+        assert router._quantization_map == {}, (
+            "Without pre-assignment of _quantization_tracker, quantization_map is {} (old bug documented)"
+        )
 
 
 class TestDirectDispatch:

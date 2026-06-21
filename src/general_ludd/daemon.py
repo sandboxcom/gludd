@@ -7,7 +7,7 @@ import contextlib
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -80,6 +80,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "mcp_servers": {},
         "task_definitions": [],
         "model_profiles": [],
+        "rules": [],
     }
 
     if config_dir is None:
@@ -161,6 +162,12 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     profiles_dir = cdir / "model_profiles"
     if profiles_dir.is_dir():
         cfg["model_profiles"] = load_model_profiles(profiles_dir=str(profiles_dir))
+
+    # Surface the rules engine: copy UserConfig.rules into startup_config so the
+    # EventLoop (which reads startup_config["rules"]) receives operator rules.
+    uc_loaded = cfg.get("user_config")
+    if uc_loaded is not None:
+        cfg["rules"] = list(getattr(uc_loaded, "rules", []) or [])
 
     return cfg
 
@@ -504,6 +511,116 @@ def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
     )
 
 
+def build_event_loop_mcp_dispatcher(
+    *,
+    mcp_client: Any | None,
+    mcp_tool_registry: Any | None,
+    skill_registry: Any | None = None,
+    agent_dispatcher: Any | None = None,
+) -> Any:
+    """Build the DynamicDispatcher the EventLoop uses to execute model tool-calls.
+
+    Completion-integrity HIGH fix (audit a30dc5ac): without this, the daemon
+    constructed an ``MCPClient`` and handed it to the ``EventLoop`` purely to
+    *advertise* tool names, but never built a dispatcher with an ``mcp`` handler.
+    At dispatch time the loop saw ``_dispatcher is None`` and DROPPED the model's
+    MCP tool-call ("no dispatcher is wired — skipping dispatch"). This builder
+    closes that gap by returning a fully-wired
+    :class:`~general_ludd.dispatch.dynamic_dispatcher.DynamicDispatcher`.
+
+    Wiring decisions:
+
+    * **Role** — the dispatcher acts under the ``"event_loop"`` role, which the
+      capability lattice grants ``{"role", "mcp", "skill"}`` (and deliberately
+      NOT ``"collection"``: the loop never self-modifies). Using a real,
+      mcp-capable role avoids the fail-closed ``capability_denied`` trap that a
+      ``None`` role would hit, WITHOUT widening to the ``UNRESTRICTED_ROLE``
+      sentinel. No ``default_registry`` switch is required — the gate is on the
+      role, not on an AgentRegistry.
+    * **mcp_handler** — routes a model tool-call ``name`` of the form
+      ``"<server_id>/<tool_name>"`` to ``mcp_client.call_tool(server_id,
+      tool_name, args)`` (the same resolution the HTTP dispatch path and
+      ``daemon_wiring.make_mcp_handler`` use). The registry-backed server_id
+      validation inside ``MCPClient.call_tool`` defends against tool-name
+      hijack. Because ``DynamicDispatcher.dispatch`` invokes handlers
+      *synchronously* (and the EventLoop dispatch site runs INSIDE the active
+      asyncio loop, so ``run_until_complete`` would raise), the async
+      ``call_tool`` coroutine is driven to completion on a short-lived worker
+      thread running its own event loop.
+    * **skill_handler** — wired from the live skill registry so the same
+      dispatcher also serves the ``skill`` kind the lattice grants; a ``None``
+      registry simply leaves that kind unregistered (fail-closed).
+
+    The ``role`` kind is intentionally left unregistered here: ``make_role_handler``
+    returns an *async* handler, and registering it raw would store an un-awaited
+    coroutine. Wiring it needs the same sync bridge as mcp (follow-up).
+
+    Args:
+        mcp_client: A connected ``MCPClient`` (or None). When None, no ``mcp``
+            handler is registered and mcp calls fail-closed.
+        mcp_tool_registry: The ``MCPToolRegistry`` (currently advisory — server
+            resolution is name-prefixed; passed through to keep the call-site
+            explicit and for future per-tool server resolution).
+        skill_registry: A ``SkillRegistry`` (or None) for the ``skill`` kind.
+        agent_dispatcher: Reserved for the ``role`` kind (needs a sync bridge).
+
+    Returns:
+        A configured ``DynamicDispatcher`` bound to the ``event_loop`` role, or
+        ``None`` when there is nothing to dispatch (no mcp client and no skill
+        registry) so the EventLoop keeps its existing no-dispatcher behaviour.
+    """
+    from general_ludd.daemon_wiring import make_mcp_handler, make_skill_handler
+    from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
+
+    _ = agent_dispatcher  # reserved: role dispatch needs the same sync bridge
+
+    if mcp_client is None and skill_registry is None:
+        return None
+
+    # The MCP handler from daemon_wiring is async; the DynamicDispatcher calls
+    # handlers synchronously, so bridge the coroutine on a worker thread that
+    # owns its own event loop. We cannot use asyncio.run / run_until_complete on
+    # the dispatch site's loop because that loop is already running.
+    async_mcp_handler = make_mcp_handler(mcp_client)
+    sync_mcp_handler = _sync_bridge(async_mcp_handler) if async_mcp_handler is not None else None
+
+    return DynamicDispatcher(
+        role="event_loop",
+        mcp_handler=sync_mcp_handler,
+        skill_handler=make_skill_handler(skill_registry),
+    )
+
+
+def _sync_bridge(
+    async_handler: Callable[[str, dict[str, Any]], Any],
+) -> Callable[[str, dict[str, Any]], Any]:
+    """Wrap an async ``(name, args) -> awaitable`` handler as a sync handler.
+
+    The ``DynamicDispatcher`` invokes handlers synchronously and stores their
+    return value verbatim, so an un-awaited coroutine would never execute. This
+    drives the coroutine to completion: directly via ``asyncio.run`` when no loop
+    is running on the calling thread, or — when the call site is already inside a
+    running loop (the EventLoop dispatch path) — on a short-lived worker thread
+    that owns its own loop, so the running loop is never re-entered.
+    """
+
+    def _bridged(name: str, args: dict[str, Any]) -> Any:
+        import asyncio as _asyncio
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _run() -> Any:
+            return _asyncio.run(async_handler(name, args))
+
+        try:
+            _asyncio.get_running_loop()
+        except RuntimeError:
+            return _run()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_run).result()
+
+    return _bridged
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -537,6 +654,28 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
+
+        # CA-T7/CA-T8 fix: create and assign the health tracker BEFORE calling
+        # _get_or_create_extended_subsystems so the AdaptiveRouter constructor
+        # receives a live ModelHealthTracker (not None).  The tracker was
+        # previously assigned ~50 lines later, after the router was already built,
+        # making the health-filtering + quantization-penalty logic permanently
+        # inert in the running daemon.
+        from general_ludd.models.timeout_detector import ModelHealthTracker
+        _pre_health_tracker = ModelHealthTracker()
+        app.state._health_tracker = _pre_health_tracker
+
+        # CA-T9 fix: create and assign the quantization tracker BEFORE calling
+        # _get_or_create_extended_subsystems so the AdaptiveRouter constructor
+        # receives a populated quantization_map rather than an empty {}.
+        # Without this, getattr(app.state, "_quantization_tracker", None) inside
+        # _get_or_create_extended_subsystems always returns None → quantization_map
+        # stays {} → _apply_quantization_penalty never fires in the running daemon.
+        # The tracker starts empty (no detections yet) but is the live instance
+        # that /admin/quantization/detect will populate at runtime.
+        from general_ludd.models.quantization import QuantizationTracker as _QuantizationTracker
+        app.state._quantization_tracker = _QuantizationTracker()
+
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
         _daemon_state["receiver_buffer"] = app.state._receiver_buffer
 
@@ -589,6 +728,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Build the model gateway once (H4/H12): both the in-process reviewer and
         # the agent dispatcher reuse the SAME gateway instance.
+        # CA-T7/CA-T8: reuse the health_tracker pre-created before extended-subsystem
+        # construction so the AdaptiveRouter holds the live instance (not None).
+        health_tracker = app.state._health_tracker
+
         model_gateway = None
         if model_profiles:
             model_gateway = ModelGateway(
@@ -600,8 +743,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 provider_registry=None,
                 secrets_manager=secrets_resolver,
                 metrics_collector=ext.get("metrics_collector"),
+                health_tracker=health_tracker,
             )
             app.state._model_gateway = model_gateway
+            # Warn when a reasoning-model profile has a low max_output_tokens budget.
+            _REASONING_MODEL_PREFIXES = ("glm-4.5", "glm-5")
+            for _p in model_gateway._profiles.values():
+                _mn = (_p.model_name or "").lower()
+                if (
+                    any(_mn.startswith(_pfx) for _pfx in _REASONING_MODEL_PREFIXES)
+                    and (_p.max_output_tokens or 0) < 8192
+                ):
+                    logger.warning(
+                        "Profile %s: max_output_tokens=%d may be too low for "
+                        "reasoning model %s (reasoning_content fills first; "
+                        "content may be empty). Recommend >= 8192.",
+                        _p.model_profile_id,
+                        _p.max_output_tokens,
+                        _p.model_name,
+                    )
 
         # H4 (W3.2): wire a real ReturnReviewer into the review phase when a
         # gateway exists. Review failure escalates the todo; it is never a
@@ -618,16 +778,57 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         # H2 (W3.7): self-improvement interval comes from config; 0 disables it.
+        # interval=0 → disabled; default is 10 minutes so the feature is on out-of-the-box.
         self_improve_interval = 0
         if uc is not None:
             si_cfg = getattr(uc, "self_improve", None) or {}
             with contextlib.suppress(Exception):
-                self_improve_interval = int(si_cfg.get("interval", 0))
+                self_improve_interval = int(si_cfg.get("interval", 10))
         if not self_improve_interval:
             with contextlib.suppress(Exception):
                 self_improve_interval = int(
-                    startup_config.get("self_improve_interval", 0)
+                    startup_config.get("self_improve_interval", 10)
                 )
+
+        # W3.9 MCP wiring: build MCPToolRegistry and conditionally start MCPClient
+        from general_ludd.mcp.client import MCPClient
+        from general_ludd.mcp.config import MCPServerConfig
+        from general_ludd.mcp.registry import MCPToolRegistry
+
+        mcp_tool_registry = MCPToolRegistry()
+        mcp_client = None
+        mcp_configs = startup_config.get("mcp_servers", {}) or {}
+        if mcp_configs:
+            # Ensure values are MCPServerConfig instances
+            typed_configs: dict[str, MCPServerConfig] = {}
+            for srv_id, srv_cfg in mcp_configs.items():
+                if isinstance(srv_cfg, MCPServerConfig):
+                    typed_configs[srv_id] = srv_cfg
+                elif isinstance(srv_cfg, dict):
+                    typed_configs[srv_id] = MCPServerConfig(**srv_cfg)
+            if typed_configs:
+                try:
+                    mcp_client = MCPClient(
+                        configs=typed_configs,
+                        registry=mcp_tool_registry,
+                        secrets_mgr=secrets_resolver,
+                    )
+                    await mcp_client.start_all()
+                    logger.info("MCPClient started with %d server(s)", len(typed_configs))
+                except Exception as _mcp_exc:
+                    logger.warning("MCP startup failed (continuing without MCP): %s", _mcp_exc)
+                    mcp_client = None
+        app.state._mcp_client = mcp_client
+
+        # Completion-integrity HIGH fix (audit a30dc5ac): wire a DynamicDispatcher
+        # so the EventLoop can EXECUTE a model's MCP tool-call instead of dropping
+        # it ("no dispatcher is wired"). Acts under the mcp-capable "event_loop"
+        # role; None when there's nothing to dispatch (loop keeps prior behaviour).
+        event_loop_dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=mcp_client,
+            mcp_tool_registry=mcp_tool_registry,
+            skill_registry=ext["skill_registry"],
+        )
 
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
@@ -638,8 +839,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             task_return_repo=None,
             budget_guard=budget_guard,
             model_gateway=model_gateway,
-            mcp_client=None,
-            mcp_tool_registry=None,
+            mcp_client=mcp_client,
+            mcp_tool_registry=mcp_tool_registry,
+            dispatcher=event_loop_dispatcher,
             event_bus=subsys["bus"],
             project_manager=ext["projects"],
             skill_registry=ext["skill_registry"],
@@ -698,10 +900,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._worktree_monitor = wt_monitor
 
         from general_ludd.agents.dispatcher import AgentDispatcher
-        from general_ludd.agents.registry import AgentRegistry
+        from general_ludd.agents.registry import default_registry
         from general_ludd.agents.types import AgentTask
 
-        registry = AgentRegistry()
+        # Use default_registry() so the 4 built-in agents (build/plan/explore/
+        # general) are registered. A bare AgentRegistry() leaves the registry
+        # empty, which makes the dispatcher's can_invoke permission gate
+        # (dispatcher.py) reject every dispatch ("not found in registry") —
+        # silently disabling the agent-permission matrix in the daemon.
+        registry = default_registry()
         dispatcher_executor = None
 
         # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
@@ -869,6 +1076,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if pipeline_controller is not None:
         with contextlib.suppress(Exception):
             await pipeline_controller.stop()
+    mcp_client_ref = getattr(app.state, "_mcp_client", None)
+    if mcp_client_ref is not None:
+        with contextlib.suppress(Exception):
+            await mcp_client_ref.stop_all()
     if event_loop is not None:
         event_loop.stop()
     if task is not None:
@@ -941,6 +1152,7 @@ def _get_or_create_extended_subsystems(
         adaptive_router = AdaptiveRouter(
             benchmark_repo=benchmark_repo,
             quantization_map=quantization_map,
+            health_tracker=getattr(app.state, "_health_tracker", None),
         )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
