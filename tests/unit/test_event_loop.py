@@ -450,3 +450,67 @@ class TestEventLoop:
         assert called_fn is reviewer.review_return, (
             "review_return was not called via asyncio.to_thread — event loop would block"
         )
+
+
+class TestOneProjectPerTick:
+    """W3.14: claim and review phases share the same project selection per tick."""
+
+    @pytest.mark.asyncio
+    async def test_select_project_called_once_per_tick(self):
+        """_select_tick_project_id() must be called at most once per tick, not once per phase."""
+        from unittest.mock import patch
+
+        loop, _ = _make_loop()
+        call_count = 0
+
+        def _fake_select() -> str:
+            nonlocal call_count
+            call_count += 1
+            return "project-A"
+
+        with patch.object(loop, "_select_tick_project_id", side_effect=_fake_select):
+            await loop.tick()
+
+        # Must have been called exactly once — not once per phase
+        assert call_count <= 1, (
+            f"_select_tick_project_id called {call_count} times in one tick; "
+            "must be called once and the result shared across phases (W3.14)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_claim_and_review_use_same_project(self):
+        """Claim and review phases must operate on the same project in one tick."""
+        from unittest.mock import patch
+
+        loop, _ = _make_loop()
+        seen_projects: list[str | None] = []
+
+        async def _fake_claim_phase() -> None:
+            seen_projects.append(loop._tick_project_id)
+
+        async def _fake_review_phase() -> None:
+            seen_projects.append(loop._tick_project_id)
+
+        with patch.object(loop, "_phase_claim_runnable_todos", side_effect=_fake_claim_phase), \
+             patch.object(loop, "_phase_claim_unreviewed_task_returns", side_effect=_fake_review_phase), \
+             patch.object(loop, "_select_tick_project_id", return_value="proj-X"):
+            await loop.tick()
+
+        # Both phases must have seen the same project (or both saw None)
+        assert len(set(seen_projects)) <= 1, (
+            f"Claim and review phases saw different projects: {seen_projects} (W3.14 violated)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_tick_project_resets_after_tick(self):
+        """_tick_project_id must be reset to None after each tick completes."""
+        from unittest.mock import patch
+
+        loop, _ = _make_loop()
+
+        with patch.object(loop, "_select_tick_project_id", return_value="proj-Y"):
+            await loop.tick()
+
+        assert loop._tick_project_id is None, (
+            "_tick_project_id must be reset to None after tick completes (W3.14)"
+        )

@@ -203,6 +203,9 @@ class EventLoop:
         self._applied_decisions: set[str] = set()
         self._pushed_work: set[str] = set()
         self._config_snapshot: dict[str, Any] = {}
+        # M14 (W3.14): single project selected per tick, shared across all phases.
+        # Reset to None at the end of every tick (see tick() finally block).
+        self._tick_project_id: str | None = None
         self._event_bus = event_bus
         self._project_manager = project_manager
         self._prompt_registry = prompt_registry
@@ -344,35 +347,41 @@ class EventLoop:
             "todos_dispatched": 0, "decisions_applied": 0,
             "leases_reclaimed": 0,
         }
+        # M14 (W3.14): select ONE project per tick before phases run; reset after.
+        self._tick_project_id = self._select_tick_project_id()
         start = time.monotonic()
-        needs_own_session = self.session is None and self._session_factory is not None
-        if needs_own_session:
-            assert self._session_factory is not None
-            async with self._session_factory() as session:
-                self._active_session = session
-                self._todo_repo = TodoRepository(session)
-                self._task_return_repo = TaskReturnRepository(session)
-                self._audit_repo = AuditEventRepository(session)
-                self._variable_repo = VariableNamespaceRepository(session)
+        try:
+            needs_own_session = self.session is None and self._session_factory is not None
+            if needs_own_session:
+                assert self._session_factory is not None
+                async with self._session_factory() as session:
+                    self._active_session = session
+                    self._todo_repo = TodoRepository(session)
+                    self._task_return_repo = TaskReturnRepository(session)
+                    self._audit_repo = AuditEventRepository(session)
+                    self._variable_repo = VariableNamespaceRepository(session)
+                    await self._run_phases()
+                    try:
+                        await session.commit()
+                    except Exception as exc:
+                        logger.warning("Failed to commit tick session: %s", exc)
+                    self._active_session = None
+                    self._todo_repo = None
+                    self._task_return_repo = None
+                    self._audit_repo = None
+                    self._variable_repo = None
+            else:
+                if self.session is not None:
+                    self._active_session = self.session
+                    self._todo_repo = self._todo_repo or TodoRepository(self.session)
+                    self._task_return_repo = self._task_return_repo or TaskReturnRepository(self.session)
+                    self._audit_repo = self._audit_repo or AuditEventRepository(self.session)
+                    self._variable_repo = self._variable_repo or VariableNamespaceRepository(self.session)
                 await self._run_phases()
-                try:
-                    await session.commit()
-                except Exception as exc:
-                    logger.warning("Failed to commit tick session: %s", exc)
                 self._active_session = None
-                self._todo_repo = None
-                self._task_return_repo = None
-                self._audit_repo = None
-                self._variable_repo = None
-        else:
-            if self.session is not None:
-                self._active_session = self.session
-                self._todo_repo = self._todo_repo or TodoRepository(self.session)
-                self._task_return_repo = self._task_return_repo or TaskReturnRepository(self.session)
-                self._audit_repo = self._audit_repo or AuditEventRepository(self.session)
-                self._variable_repo = self._variable_repo or VariableNamespaceRepository(self.session)
-            await self._run_phases()
-            self._active_session = None
+        finally:
+            # M14 (W3.14): always reset tick-scoped project selection after the tick.
+            self._tick_project_id = None
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
@@ -418,22 +427,17 @@ class EventLoop:
             if shared_vars:
                 self._config_snapshot["shared_vars"] = shared_vars
 
-    def _select_tick_project(self) -> Any | None:
-        """M14 (W3.14): select ONE project per tick and reuse it everywhere.
+    def _select_tick_project_id(self) -> str | None:
+        """M14 (W3.14): select ONE project per tick and return its id.
 
-        The claim, review, and reconcile phases must all operate on the same
-        project; previously each called select_project() independently.
+        Called once at the start of tick(); the result is stored in
+        self._tick_project_id and shared across all phases within that tick.
+        All phases must read self._tick_project_id directly — never call
+        select_project() independently inside a phase.
         """
         if self._project_manager is None:
             return None
-        if "selected_project" in self._tick_state:
-            return self._tick_state["selected_project"]
         project = self._project_manager.select_project()
-        self._tick_state["selected_project"] = project
-        return project
-
-    def _tick_project_id(self) -> str | None:
-        project = self._select_tick_project()
         return project.project_id if project is not None else None
 
     def _estimated_dispatch_cost(self, item_count: int) -> float:
@@ -447,7 +451,7 @@ class EventLoop:
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:
             return
-        project_id = self._tick_project_id()
+        project_id = self._tick_project_id
         claimed = await self._task_return_repo.claim_unreviewed(project_id=project_id)
         self._tick_state["claimed_returns"] = claimed
 
@@ -668,7 +672,7 @@ class EventLoop:
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
-        project_id = self._tick_project_id()
+        project_id = self._tick_project_id
         if project_id is not None:
             claimed = await self._todo_repo.claim_runnable(project_id=project_id)
         else:
@@ -1196,7 +1200,7 @@ class EventLoop:
         if self._active_session is None or self._todo_repo is None:
             return
         stmt = select(TaskDecisionModel).order_by(TaskDecisionModel.created_at.desc()).limit(50)
-        project_id = self._tick_project_id()
+        project_id = self._tick_project_id
         if project_id is not None:
             stmt = stmt.where(TaskDecisionModel.project_id == project_id)
         result = await self._active_session.execute(stmt)
