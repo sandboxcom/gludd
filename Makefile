@@ -45,10 +45,10 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
-        ci-poll test-no-wait-hook \
+        ci-poll ci-jobs test-no-wait-hook \
         verify-remote ci-verdict \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
-        gh-run-list gh-run-cancel \
+        gh-run-list gh-run-cancel gh-run-view gh-run-failed-log \
         commit-no-verify \
         git-stash-rebase-pop \
         git-cherry-pick git-cherry-continue git-cherry-abort git-show-diff \
@@ -870,29 +870,11 @@ git-tag-push:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
-# Poll both target runs until completed (or 55-min timeout).
-# Checks runs 27795704202 (tag v0.1.0-alpha.2) and 27795703529 (master).
+# Incremental CI poller: surfaces the first failing job immediately.
+# Usage: make ci-poll ID=<run-id>
 ci-poll:
-	@start=$$(date +%s); poll=0; \
-	while true; do \
-		now=$$(date +%s); elapsed=$$((now - start)); \
-		poll=$$((poll + 1)); \
-		out=$$($(MAKE) --no-print-directory ci-status 2>&1); \
-		line_tag=$$(echo "$$out" | grep 27795704202 | head -1); \
-		line_master=$$(echo "$$out" | grep 27795703529 | head -1); \
-		st_tag=$$(echo "$$line_tag" | awk '{print $$1}'); \
-		st_master=$$(echo "$$line_master" | awk '{print $$1}'); \
-		echo "POLL#$$poll elapsed=$${elapsed}s"; \
-		echo "  TAG    27795704202: $$line_tag"; \
-		echo "  MASTER 27795703529: $$line_master"; \
-		if [ "$$st_tag" = "completed" ] && [ "$$st_master" = "completed" ]; then \
-			echo "BOTH_COMPLETED"; break; \
-		fi; \
-		if [ $$elapsed -ge 3300 ]; then \
-			echo "TIMEOUT 55min"; break; \
-		fi; \
-		sleep 300; \
-	done
+	@if [ -z "$(ID)" ]; then echo "Usage: make ci-poll ID=<run-id>"; exit 1; fi
+	@$(UV) run python scripts/ci_poll.py $(ID)
 
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
@@ -935,6 +917,11 @@ ci-job-steps:
 ci-job-log:
 	@if [ -z "$(JOB)" ]; then echo "Usage: make ci-job-log JOB=<id>"; exit 1; fi
 	@gh api repos/sandboxcom/gludd/actions/jobs/$(JOB)/logs 2>&1 | grep -iE "error|fail|traceback|mypy|ruff|coverage|FAILED|passed|no such|not found|Process completed" | tail -60 || echo "ci-job-log-failed"
+
+# List all jobs for a run with status/conclusion. Usage: make ci-jobs ID=<run-id>
+ci-jobs:
+	@if [ -z "$(ID)" ]; then echo "Usage: make ci-jobs ID=<run-id>"; exit 1; fi
+	@gh run view $(ID) -R sandboxcom/gludd --json jobs 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print(j.get('databaseId'), j.get('status'), j.get('conclusion'), j.get('name')) for j in d.get('jobs',[])]" || echo "ci-jobs-failed"
 
 # Print the job ids + names for a run (to feed ci-job-log).
 ci-job-ids:
@@ -2596,3 +2583,17 @@ gh-run-list:
 gh-run-cancel:
 	@[ -n "$(ID)" ] || { echo "Usage: make gh-run-cancel ID=<run-id>"; exit 1; }
 	@gh run cancel "$(ID)" -R sandboxcom/gludd && echo "Cancelled run $(ID)" || echo "Cancel failed for $(ID)"
+
+# Show job/step status summary for a specific GHA run.
+# Usage: make gh-run-view ID=<run-id>
+gh-run-view:
+	@[ -n "$(ID)" ] || { echo "Usage: make gh-run-view ID=<run-id>"; exit 1; }
+	@gh run view "$(ID)" -R sandboxcom/gludd 2>&1 || echo "gh-run-view-failed"
+
+# Fetch the failed-step logs for a specific GHA run. Writes output to
+# /tmp/ci-failed-$(ID).log AND streams the last 200 lines to stdout.
+# Usage: make gh-run-failed-log ID=<run-id>
+gh-run-failed-log:
+	@[ -n "$(ID)" ] || { echo "Usage: make gh-run-failed-log ID=<run-id>"; exit 1; }
+	@gh run view "$(ID)" -R sandboxcom/gludd --log-failed 2>&1 | tee /tmp/ci-failed-$(ID).log | tail -200 || echo "gh-run-failed-log-failed"
+	@echo "[gh-run-failed-log] full log saved to /tmp/ci-failed-$(ID).log"
