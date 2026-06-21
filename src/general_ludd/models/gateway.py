@@ -848,9 +848,12 @@ class ModelGateway:
         fallback_profiles: list[str] | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
-        result = self._try_call_model(profile_id, messages, **kwargs)
-        if result is not None:
-            return result
+        # Health gate: skip circuit-open profiles rather than attempting them.
+        tracker = self._health_tracker
+        if tracker is None or tracker.is_healthy(profile_id):
+            result = self._try_call_model(profile_id, messages, **kwargs)
+            if result is not None:
+                return result
 
         fallback_ids: list[str] = fallback_profiles or []
         if not fallback_ids:
@@ -859,6 +862,8 @@ class ModelGateway:
                 fallback_ids = list(profile.fallback_profiles)
 
         for fb_id in fallback_ids:
+            if tracker is not None and not tracker.is_healthy(fb_id):
+                continue
             result = self._try_call_model(fb_id, messages, **kwargs)
             if result is not None:
                 return result

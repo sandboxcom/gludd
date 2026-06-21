@@ -66,6 +66,35 @@ class TestAgentRegistryRegisterAndGet:
         assert reg.get("nonexistent") is None
 
 
+class TestAgentRegistrySeal:
+    def test_register_after_seal_raises(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="before",
+            description="registered before seal",
+            type=AgentType.SUBAGENT,
+        ))
+        reg.seal()
+        with pytest.raises(RuntimeError, match="sealed"):
+            reg.register(AgentConfig(
+                name="after",
+                description="must be rejected",
+                type=AgentType.SUBAGENT,
+            ))
+        # The pre-seal agent survives; the post-seal one never lands.
+        assert reg.get("before") is not None
+        assert reg.get("after") is None
+
+    def test_unsealed_registry_allows_register(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="ok",
+            description="no seal yet",
+            type=AgentType.SUBAGENT,
+        ))
+        assert reg.get("ok") is not None
+
+
 class TestAgentRegistryListSubagents:
     def test_agent_registry_list_subagents(self):
         reg = AgentRegistry()
@@ -421,3 +450,14 @@ class TestDefaultAgents:
         assert "general" in sub_names
         assert "build" not in sub_names
         assert "plan" not in sub_names
+
+    def test_default_registry_is_sealed(self):
+        # default_registry() must seal so callers (e.g. the daemon) cannot
+        # mutate the agent-permission matrix after startup.
+        reg = default_registry()
+        with pytest.raises(RuntimeError, match="sealed"):
+            reg.register(AgentConfig(
+                name="rogue",
+                description="post-seal registration must be rejected",
+                type=AgentType.SUBAGENT,
+            ))

@@ -184,3 +184,80 @@ class TestCallModelWithFallbackMethod:
         gw = ModelGateway()
         assert hasattr(gw, "call_model_with_fallback")
         assert callable(gw.call_model_with_fallback)
+
+
+class _FakeHealthTracker:
+    """Minimal health tracker that reports a fixed set of profiles unhealthy."""
+
+    def __init__(self, unhealthy: set[str]) -> None:
+        self._unhealthy = unhealthy
+
+    def is_healthy(self, profile_id: str) -> bool:
+        return profile_id not in self._unhealthy
+
+
+class TestFallbackHealthGate:
+    def _gateway_with_tracker(
+        self, profiles: list[ModelProfile], tracker: _FakeHealthTracker
+    ) -> tuple[ModelGateway, ProviderRegistry]:
+        gw, reg = _make_gateway(profiles)
+        gw._health_tracker = tracker
+        return gw, reg
+
+    def test_circuit_open_primary_is_skipped(self):
+        # Primary is circuit-open: the gateway must NOT attempt it and must fall
+        # through to the healthy fallback instead.
+        primary = _make_profile("primary_open", fallback=["healthy_fb"])
+        fb = _make_profile("healthy_fb")
+        tracker = _FakeHealthTracker(unhealthy={"primary_open"})
+        gw, reg = self._gateway_with_tracker([primary, fb], tracker)
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.return_value = _fake_response("from healthy fallback")
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+            patch.object(gw, "_try_call_model", wraps=gw._try_call_model) as spy,
+        ):
+            resp = gw.call_model_with_fallback(
+                "primary_open",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        assert resp.content == "from healthy fallback"
+        # The open primary must never have been attempted.
+        attempted = [c.args[0] for c in spy.call_args_list]
+        assert "primary_open" not in attempted
+        assert "healthy_fb" in attempted
+
+    def test_circuit_open_fallback_is_skipped(self):
+        # A circuit-open fallback is skipped; a later healthy fallback serves.
+        primary = _make_profile("primary_open", fallback=["fb_open", "fb_ok"])
+        fb_open = _make_profile("fb_open")
+        fb_ok = _make_profile("fb_ok")
+        tracker = _FakeHealthTracker(unhealthy={"primary_open", "fb_open"})
+        gw, reg = self._gateway_with_tracker([primary, fb_open, fb_ok], tracker)
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.return_value = _fake_response("from fb_ok")
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+            patch.object(gw, "_try_call_model", wraps=gw._try_call_model) as spy,
+        ):
+            resp = gw.call_model_with_fallback(
+                "primary_open",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        assert resp.content == "from fb_ok"
+        attempted = [c.args[0] for c in spy.call_args_list]
+        assert "primary_open" not in attempted
+        assert "fb_open" not in attempted
+        assert "fb_ok" in attempted
