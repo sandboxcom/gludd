@@ -2,22 +2,56 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any
 
+logger = logging.getLogger(__name__)
+
+
+def _strip_json_fences(text: str) -> str:
+    """Strip ```json...``` or ```...``` code fences from a string."""
+    text = text.strip()
+    if text.startswith("```"):
+        # Remove opening fence line (e.g. ```json or ```)
+        first_newline = text.find("\n")
+        if first_newline != -1:
+            text = text[first_newline + 1:]
+        # Remove closing fence
+        if text.endswith("```"):
+            text = text[: text.rfind("```")]
+    return text.strip()
+
 
 class SelfImprovementHarness:
-    def __init__(self, repo_root: str | None = None) -> None:
+    def __init__(self, repo_root: str | None = None, model_gateway: Any | None = None) -> None:
         self.repo_root = repo_root or os.getcwd()
         self._todos: list[dict[str, Any]] = []
+        self._model_gateway = model_gateway
 
     def run_gap_analysis(self) -> list[dict[str, Any]]:
-        findings: list[dict[str, Any]] = []
+        if self._model_gateway is not None:
+            prompt = (
+                "Analyze this codebase for gaps and return a JSON array of findings.\n"
+                "Each finding: {\"title\": str, \"description\": str,"
+                " \"priority\": \"high|medium|low\", \"tier\": \"config|code|test\"}\n"
+                "Return ONLY the JSON array, no other text."
+            )
+            try:
+                response = self._model_gateway.complete(prompt)
+                import json
+                parsed = json.loads(_strip_json_fences(response.content))
+                if isinstance(parsed, list):
+                    return parsed
+                logger.warning("model_gateway.complete returned non-list JSON; falling back to static analysis")
+            except Exception as exc:
+                logger.warning("model_gateway.complete failed (%s); falling back to static analysis", exc)
 
+        # Static fallback (or when model_gateway is None)
+        findings: list[dict[str, Any]] = []
         self._check_missing_tests(findings)
         self._check_completion_audit(findings)
         self._check_coverage_gaps(findings)
-
         return findings
 
     def _check_missing_tests(self, findings: list[dict[str, Any]]) -> None:
@@ -45,35 +79,13 @@ class SelfImprovementHarness:
                         })
 
     def _check_completion_audit(self, findings: list[dict[str, Any]]) -> None:
-        src_dir = os.path.join(self.repo_root, "src", "general_ludd")
-        if not os.path.isdir(src_dir):
-            return
+        """Dead-code heuristic — DISABLED.
 
-        for root, _dirs, files in os.walk(src_dir):
-            for f in files:
-                if not f.endswith(".py") or f == "__init__.py":
-                    continue
-                filepath = os.path.join(root, f)
-                try:
-                    with open(filepath) as fh:
-                        content = fh.read()
-                except (OSError, UnicodeDecodeError):
-                    continue
-                import re
-                classes = re.findall(r"\bclass\s+(\w+)", content)
-                for cls_name in classes:
-                    if cls_name.startswith("_"):
-                        continue
-                    src_text = self._read_all_src()
-                    count = src_text.count(cls_name)
-                    if count <= 1:
-                        findings.append({
-                            "type": "dead_code",
-                            "file": filepath,
-                            "class": cls_name,
-                            "severity": "medium",
-                            "message": f"{cls_name} defined in {f} has no callers outside its definition",
-                        })
+        The static class-reference count was unreliable (false positives on
+        every single-definition class) and caused runaway self-modification.
+        Disabled: method is kept for API compatibility but produces no findings.
+        """
+        logger.debug("_check_completion_audit: dead_code heuristic disabled — no findings appended")
 
     def _check_coverage_gaps(self, findings: list[dict[str, Any]]) -> None:
         coverage_xml = os.path.join(self.repo_root, "coverage.xml")
@@ -163,3 +175,14 @@ class SelfImprovementHarness:
             "findings": findings,
             "todos": todos,
         }
+
+    @staticmethod
+    def _write_config_value(path: str, key: str, value: Any) -> None:
+        """TODO: atomic YAML write + reload scaffold.
+
+        Wire SafeWriter + HotReloader(config_dir=...).reload(ReloadScope.CONFIG) here.
+        """
+        raise NotImplementedError(
+            "_write_config_value not yet implemented: "
+            "wire SafeWriter + HotReloader(config_dir=...).reload(ReloadScope.CONFIG) here"
+        )
