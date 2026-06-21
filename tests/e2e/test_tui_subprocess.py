@@ -7,36 +7,32 @@ from __future__ import annotations
 
 import contextlib
 import os
+import shutil
 import subprocess
-import sys
 import time
 
-# Launch via the SAME interpreter running this test (the project venv's python)
-# using `-m general_ludd.cli`. Because uv sync installs general-ludd-agent INTO
-# that venv (build.yml runs `uv sync` with no --no-install-project), this
-# interpreter's own site initialization already exposes BOTH the general_ludd
-# package AND every third-party dep (httpx, rich, ...). No console-script path is
-# assumed and no PYTHONPATH surgery is needed.
-GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
+# Spawn the TUI child via `uv run` so it gets the SAME project-environment
+# resolution that lets the parent pytest process (also run under `uv run`) import
+# httpx. A bare `sys.executable -m general_ludd.cli` child instead resolves
+# general_ludd from the uninstalled src/ tree under CI's uv-managed standalone
+# interpreter and fails the top-level `import httpx` at cli.py:16 — the
+# ModuleNotFoundError seen across the integration/alpha3-rc CI runs even though
+# httpx is installed in .venv. `uv` is on PATH in CI via astral-sh/setup-uv;
+# --no-sync avoids a uv.lock re-resolution side effect during the test.
+_UV = shutil.which("uv") or "uv"
+GLUDD_CMD = [_UV, "run", "--no-sync", "python", "-m", "general_ludd.cli", "tui"]
 
 
 def _subprocess_env() -> dict[str, str]:
-    """Return an env for the child that preserves the parent's natural import path.
+    """Return a child env that lets uv resolve the project environment cleanly.
 
-    The child is spawned with sys.executable (the venv interpreter), so its normal
-    `site` init already finds the installed general_ludd package and its deps
-    (httpx, rich, ...) in the venv's site-packages.
-
-    Critically, we must NOT prepend src/ onto PYTHONPATH: doing so makes the child
-    import general_ludd from the *uninstalled* source tree, which then fails at
-    `import httpx` because that source-tree path does not carry the venv's
-    site-packages with it — the exact ModuleNotFoundError seen in CI run
-    27891147726. We leave PYTHONPATH untouched (inheriting whatever the parent
-    has, which already lets the parent import httpx) and only set TERM so the TUI
-    renders. If the parent itself injected PYTHONPATH (e.g. CI sets PYTHONPATH=src),
-    we keep it as-is rather than reordering it.
+    PYTHONPATH is stripped: if any layer injected PYTHONPATH=src, passing it to
+    the child would shadow the venv-installed general_ludd with the uninstalled
+    source tree and break `import httpx`. uv's own resolution makes httpx
+    importable without it. TERM is set so the TUI renders in the PTY.
     """
     env = dict(os.environ)
+    env.pop("PYTHONPATH", None)
     env["TERM"] = "xterm-256color"
     return env
 

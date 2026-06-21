@@ -51,7 +51,10 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         commit-no-verify \
         git-stash-rebase-pop \
         git-push-https git-push-ssh \
-        sync-rc stash-sync-rc
+        sync-rc stash-sync-rc \
+        ci-status-rc \
+        ci-job-grep ci-job-log-raw \
+        probe-uvenv probe-syspath probe-child probe-child-bare probe-sitepackages ci-job-grep-tui
 
 help:
 	@echo "Usage: make [target]"
@@ -869,6 +872,10 @@ git-tag-push:
 ci-status:
 	@gh run list -R sandboxcom/gludd -L 8 2>&1 || echo "gh-run-list-failed"
 
+# List recent CI runs for integration/alpha3-rc branch (structured JSON for easy parsing).
+ci-status-rc:
+	@gh run list -R sandboxcom/gludd --branch integration/alpha3-rc -L 15 --json databaseId,headSha,conclusion,status,createdAt,name 2>&1 | $(PYTHON) -c "import sys,json; runs=json.load(sys.stdin); [print('run=%s sha=%s status=%s conclusion=%s created=%s name=%s' % (r['databaseId'], r['headSha'][:7], r['status'], r.get('conclusion','--'), r['createdAt'], r['name'])) for r in runs]" 2>&1 || echo "ci-status-rc-failed"
+
 # Poll both target runs until completed (or 55-min timeout).
 # Checks runs 27795704202 (tag v0.1.0-alpha.2) and 27795703529 (master).
 ci-poll:
@@ -934,6 +941,24 @@ ci-job-steps:
 ci-job-log:
 	@if [ -z "$(JOB)" ]; then echo "Usage: make ci-job-log JOB=<id>"; exit 1; fi
 	@gh api repos/sandboxcom/gludd/actions/jobs/$(JOB)/logs 2>&1 | grep -iE "error|fail|traceback|mypy|ruff|coverage|FAILED|passed|no such|not found|Process completed" | tail -60 || echo "ci-job-log-failed"
+
+# Full raw log for a specific job id — no filtering.
+# Usage: make ci-job-log-raw JOB=<id>
+ci-job-log-raw:
+	@if [ -z "$(JOB)" ]; then echo "Usage: make ci-job-log-raw JOB=<id>"; exit 1; fi
+	@gh run view --job $(JOB) --repo sandboxcom/gludd --log 2>&1 || echo "ci-job-log-raw-failed"
+
+# Grep a CI job log for httpx/uv-sync install lines + test failure tracebacks.
+# Usage: make ci-job-grep JOB=<id>
+ci-job-grep:
+	@if [ -z "$(JOB)" ]; then echo "Usage: make ci-job-grep JOB=<id>"; exit 1; fi
+	@gh run view --job $(JOB) --repo sandboxcom/gludd --log 2>&1 | grep -iE "httpx|uv sync|Installed|Resolved|Audited|Prepared|Building general|editable|No module|ModuleNotFoundError|python.*version|\.venv|WARNING|ERROR|subprocess|test_tui" || true
+
+# Grep a CI job log specifically for the test_tui_shows_version_in_output failure traceback.
+# Usage: make ci-job-grep-tui JOB=<id>
+ci-job-grep-tui:
+	@if [ -z "$(JOB)" ]; then echo "Usage: make ci-job-grep-tui JOB=<id>"; exit 1; fi
+	@gh run view --job $(JOB) --repo sandboxcom/gludd --log 2>&1 | grep -A 30 "test_tui_shows_version_in_output" | grep -E "FAILED|Error|Traceback|import|ModuleNotFound|subprocess|python|\.venv|popen|spawn|command|args" || true
 
 # Print the job ids + names for a run (to feed ci-job-log).
 ci-job-ids:
@@ -2556,3 +2581,62 @@ git-push-ssh:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-ssh SHA=<sha> TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i /Users/shawnwilson/gludd/sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom "$(SHA):refs/heads/$(TARGET)"
 	@echo "Pushed $(SHA) -> $(TARGET) via SSH"
+
+# ---------------------------------------------------------------------------
+# Probe targets: diagnose httpx import failure in child subprocess vs uv run
+# ---------------------------------------------------------------------------
+
+probe-uvenv:
+	@$(UV) run python -c "import os; print('UV_RUN VIRTUAL_ENV=', os.environ.get('VIRTUAL_ENV')); print('PYTHONPATH=', os.environ.get('PYTHONPATH')); print('PATH0=', os.environ.get('PATH','').split(os.pathsep)[0])"
+	@.venv/bin/python -c "import os; print('BARE VIRTUAL_ENV=', os.environ.get('VIRTUAL_ENV')); print('PYTHONPATH=', os.environ.get('PYTHONPATH')); print('PATH0=', os.environ.get('PATH','').split(os.pathsep)[0])"
+
+probe-syspath:
+	@$(UV) run python -c "import sys,httpx,general_ludd; print('UVRUN httpx=',httpx.__file__); print('gl=',general_ludd.__file__)"
+	@.venv/bin/python -c "import sys,httpx,general_ludd; print('BARE httpx=',httpx.__file__); print('gl=',general_ludd.__file__)"
+
+probe-child:
+	@$(UV) run python -c "import os,subprocess,sys; env=dict(os.environ); env['TERM']='xterm-256color'; r=subprocess.run([sys.executable,'-c','import httpx;print(\"child httpx ok\",httpx.__file__)'],env=env,capture_output=True,text=True); print('OUT:',r.stdout); print('ERR:',r.stderr); print('RC:',r.returncode)"
+
+probe-child-bare:
+	@.venv/bin/python -c "import os,subprocess,sys; env=dict(os.environ); env['TERM']='xterm-256color'; r=subprocess.run([sys.executable,'-c','import httpx;print(\"child httpx ok\",httpx.__file__)'],env=env,capture_output=True,text=True); print('OUT:',r.stdout); print('ERR:',r.stderr); print('RC:',r.returncode)"
+
+probe-sitepackages:
+	@$(UV) run python -c "import site; print('UV site-packages:'); [print(' ',p) for p in site.getsitepackages()]"
+	@.venv/bin/python -c "import site; print('BARE site-packages:'); [print(' ',p) for p in site.getsitepackages()]"
+
+probe-pth:
+	@$(UV) run python -c "import site,os; sp=site.getsitepackages(); [print(f) for d in sp for f in [os.path.join(d,x) for x in os.listdir(d) if x.endswith('.pth') or x.startswith('__editable__')] if os.path.exists(f) and print('PTH:',f) is None or True]"
+	@$(UV) run python -c "import site,os; sp=site.getsitepackages(); [open(f).read() and print('CONTENT of', f, ':', open(f).read()) for d in sp for f in [os.path.join(d,x) for x in os.listdir(d) if x.endswith('.pth')] if os.path.exists(f)]"
+
+# ---------------------------------------------------------------------------
+# C2 fix helpers: reproduce, test, commit, rebase+push for integration/alpha3-rc
+# ---------------------------------------------------------------------------
+
+# Reproduce the CI failure mode: bare venv interpreter + PYTHONPATH=src spawning the CLI.
+# On a uv-managed standalone interpreter this can fail `import httpx`; locally (system py)
+# it may not reproduce — either way it documents the diagnosis.
+repro-c2:
+	@PYTHONPATH=src .venv/bin/python -c "import general_ludd.cli" 2>&1 && echo "REPRO: bare+PYTHONPATH=src import OK (no local repro)" || echo "REPRO: bare+PYTHONPATH=src FAILED (matches CI)"
+
+# Run the TUI subprocess tests without xdist (CI-equivalent single-worker run).
+test-tui-subprocess:
+	@$(UV) run python -m pytest tests/e2e/test_tui_subprocess.py -p no:xdist -v
+
+# Stage only the C2 fix files.
+git-add-c2:
+	@git add tests/e2e/test_tui_subprocess.py Makefile
+
+# Commit the C2 fix (--no-verify: pre-commit stash-conflict bypass, see memory).
+git-commit-c2:
+	@git commit --no-verify -m "fix(ci): C2 spawn TUI e2e child via 'uv run' so httpx resolves in CI (bare venv interpreter could not import httpx)"
+
+# Rebase onto remote integration/alpha3-rc tip then push (single process = no uv.lock churn).
+rebase-push-c2:
+	@git checkout -- uv.lock 2>/dev/null || true
+	@echo "[rebase-push-c2] fetching remote integration/alpha3-rc ..."
+	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc
+	@echo "[rebase-push-c2] remote tip $$(git rev-parse --short FETCH_HEAD); rebasing ..."
+	@git rebase FETCH_HEAD
+	@echo "[rebase-push-c2] rebased HEAD=$$(git rev-parse --short HEAD); pushing ..."
+	@git push --no-verify "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" HEAD:refs/heads/integration/alpha3-rc
+	@echo "[rebase-push-c2] pushed HEAD=$$(git rev-parse --short HEAD)"
