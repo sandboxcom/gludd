@@ -195,6 +195,12 @@ class _FakeHealthTracker:
     def is_healthy(self, profile_id: str) -> bool:
         return profile_id not in self._unhealthy
 
+    def record_success(self, profile_id: str) -> None:
+        self._unhealthy.discard(profile_id)
+
+    def record_failure(self, profile_id: str, kind: object = None) -> None:
+        self._unhealthy.add(profile_id)
+
 
 class TestFallbackHealthGate:
     def _gateway_with_tracker(

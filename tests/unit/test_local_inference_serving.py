@@ -19,6 +19,7 @@ class TestSlurmInference:
             host="gpu01",
             port=8000,
             extra_args=["--partition=gpu", "--gres=gpu:1"],
+            allow_nonloopback=True,
         )
         cmd = mgr._build_command(cfg)
         assert "sbatch" in cmd
@@ -64,6 +65,7 @@ class TestSlurmInference:
             model_name="meta-llama/Llama-3.2-1B",
             host="0.0.0.0",
             port=8000,
+            allow_nonloopback=True,
         )
         cmd = mgr._build_command(cfg)
         assert "vllm" in cmd
