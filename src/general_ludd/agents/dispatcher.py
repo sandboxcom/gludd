@@ -51,7 +51,7 @@ class AgentDispatcher:
         if agent_name not in self._semaphores:
             config = self._registry.get(agent_name)
             limit = config.max_concurrent if config else 1
-            self._semaphores[agent_name] = asyncio.Semaphore(limit)
+            self._semaphores.setdefault(agent_name, asyncio.Semaphore(limit))
         return self._semaphores[agent_name]
 
     async def dispatch_one(self, task: AgentTask) -> AgentTaskResult:

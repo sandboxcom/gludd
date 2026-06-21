@@ -600,7 +600,7 @@ class AuditEventRepository:
             entity_type=entity_type,
             entity_id=entity_id,
             project_id=project_id,
-            details=details,
+            details=details or "{}",
         )
         self._session.add(row)
         await self._session.flush()
@@ -891,15 +891,20 @@ class PromptProfileRepository:
         return list(result.scalars().all())
 
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
-        from sqlalchemy import or_
-        stmt = select(PromptProfileModel).where(
-            or_(
-                PromptProfileModel.task_types.contains(task_type),
-                PromptProfileModel.task_types == "[]",
-            )
-        )
+        import json as _json
+        stmt = select(PromptProfileModel)
         result = await self._session.execute(stmt)
-        return list(result.scalars().all())
+        rows = list(result.scalars().all())
+        out: list[PromptProfileModel] = []
+        for row in rows:
+            try:
+                types = _json.loads(row.task_types or "[]")
+            except Exception:
+                types = []
+            # Empty list means "match all task types"
+            if not types or task_type in types:
+                out.append(row)
+        return out
 
 
 class QueueRepository:

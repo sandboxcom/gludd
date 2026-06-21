@@ -184,6 +184,10 @@ class ConnectorRegistry:
             mod = importlib.import_module(mod_path)
             class_name = config.get("class_name")
             if isinstance(class_name, str) and class_name:
+                if not class_name.endswith("Source"):
+                    raise ValueError(
+                        f"class_name {class_name!r} must end with 'Source'"
+                    )
                 return getattr(mod, class_name)
             return _single_source_class(mod, mod_path)
 
