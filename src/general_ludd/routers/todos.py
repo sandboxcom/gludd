@@ -217,7 +217,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             _db_engine_str = _db_url_str
         else:
             _db_url_str = "sqlite"
-            _db_engine_str = str(_db_engine)  # "None"
+            _db_engine_str = "None"
         return {
             "version": __version__,
             "uptime_ticks": elapsed.get("total_ticks", 0),
@@ -228,7 +228,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "filestore_available": filestore_available,
             "filestore_binaries": bare_binaries,
             "binary_versions": known_versions,
-            "db_engine": str(getattr(app.state, "_db_engine", None)),
+            "db_engine": _db_engine_str,
             "db_url": _db_url_safe,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},

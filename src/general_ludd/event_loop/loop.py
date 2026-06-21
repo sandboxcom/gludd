@@ -37,6 +37,7 @@ from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
+from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
 PHASE_ORDER = [
@@ -1369,7 +1370,6 @@ class EventLoop:
         if self._total_ticks % interval != 0:
             return
         try:
-            from general_ludd.self_improve.harness import SelfImprovementHarness
             harness = SelfImprovementHarness()
             findings = harness.run_gap_analysis()
             if not findings:
