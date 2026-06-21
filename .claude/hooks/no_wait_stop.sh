@@ -83,6 +83,22 @@ patterns = [
     r"\bor hold\b", r"\bcommit or hold\b", r"\bi'?ll leave (?:it|that|this)?\s*to (?:your|you)\b",
     r"\bi can (?:commit|push|apply|proceed|hold)\b.*\bor\b",
     r"\bwhich (?:would you|do you want|one)\b", r"\bprefer (?:that )?i\b",
+    # Added 2026-06-21 (round 2): ending a turn by DESCRIBING the next / remaining
+    # / pending action instead of EXECUTING it is still parking. A status report
+    # that hands the next step back to the user (no question asked) slipped through
+    # the permission-seek patterns above; catch the hand-off framing directly.
+    r"\bnext (?:step|steps|action|concrete step)\b",
+    r"\bthe next (?:step|thing|action|move|concrete)\b",
+    r"\bremaining (?:work|step|steps|item|items|action|task)\b",
+    r"\b(?:still need to|yet to|left to|remains? to|the remaining)\b",
+    r"\brequires?\b.{0,24}?\b(?:pr\b|pull request|push|merge|manual)\b",
+    r"\bwould (?:need|require) (?:a |an |to )?\b",
+    r"\bi have not (?:pushed|opened|taken|merged|run|applied|done|created)\b",
+    r"\bi haven'?t (?:pushed|opened|taken|merged|run|applied|done|created)\b",
+    r"\bnot yet (?:pushed|opened|taken|merged|run|applied|done|created)\b",
+    r"\bhave not taken\b", r"\boutward action i have not\b",
+    r"\bcaptured (?:for|as)\b.*\bfollow-?up\b", r"\bfor a future pr\b",
+    r"\bto get (?:a )?(?:ci|green|verdict|coverage)\b.*\b(?:requires?|need|would|open|push)\b",
 ]
 if any(re.search(p, low) for p in patterns):
     print("BLOCK")

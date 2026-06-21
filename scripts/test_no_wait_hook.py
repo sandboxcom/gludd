@@ -64,6 +64,29 @@ with tempfile.TemporaryDirectory(prefix="hook_test_") as d:
     make_jsonl(p8, "I won't push unprompted — that's your call.")
     cases.append((8, "BLOCK", run_hook(json.dumps({"transcript_path": p8}))))
 
+    # Case 10 (round-2 fix): ending by DESCRIBING the next step instead of doing
+    # it is parking — the exact phrasing that slipped through this session.
+    p10 = os.path.join(d, "t10.jsonl")
+    make_jsonl(p10, "The next concrete step toward a green pipeline is a PR from "
+                    "fix/self-update-sec to master.")
+    cases.append((10, "BLOCK", run_hook(json.dumps({"transcript_path": p10}))))
+
+    # Case 11: "requires opening a PR" hand-off -> BLOCK
+    p11 = os.path.join(d, "t11.jsonl")
+    make_jsonl(p11, "Getting a CI verdict requires opening a PR to master.")
+    cases.append((11, "BLOCK", run_hook(json.dumps({"transcript_path": p11}))))
+
+    # Case 12: "an outward action I have not taken" -> BLOCK
+    p12 = os.path.join(d, "t12.jsonl")
+    make_jsonl(p12, "That is an outward action I have not taken.")
+    cases.append((12, "BLOCK", run_hook(json.dumps({"transcript_path": p12}))))
+
+    # Case 13: a genuinely-finished report with NO next-step framing -> NOBLOCK.
+    # Guards against the round-2 patterns over-matching a real completion.
+    p13 = os.path.join(d, "t13.jsonl")
+    make_jsonl(p13, "Done — committed 840c025, gate is clean, and all suites pass.")
+    cases.append((13, "NOBLOCK", run_hook(json.dumps({"transcript_path": p13}))))
+
     # Case 9: bounded safety valve. A deferral on the SAME transcript is blocked
     # MAX_CONSECUTIVE_BLOCKS times, then fails open so a false positive cannot
     # wedge the session forever. First call BLOCKs, the (MAX+1)th NOBLOCKs.
