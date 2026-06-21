@@ -14,9 +14,26 @@ from unittest.mock import patch
 import pytest
 from fastapi.testclient import TestClient
 
+import general_ludd.worker.app as _worker_app
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.schemas.job import JobSpec
 from general_ludd.worker.app import create_app
+
+
+@pytest.fixture(autouse=True)
+def _reset_runner() -> Any:
+    """Save and restore the module-level _runner singleton around every test.
+
+    _make_client() sets general_ludd.worker.app._runner to a per-test runner
+    instance. Without restoration, a simulated-failure runner (D09 test) leaks
+    into sibling tests under xdist, causing e.g. test_worker_redacts_secret_aliases_in_logs
+    to see a raising runner instead of the default None.
+    """
+    _saved = _worker_app._runner
+    try:
+        yield _saved
+    finally:
+        _worker_app._runner = _saved
 
 
 def _make_job(**kwargs: Any) -> dict[str, Any]:

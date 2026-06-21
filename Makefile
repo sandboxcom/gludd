@@ -50,6 +50,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-push-branch git-push-branch-nv test-model-ratio-hook \
         commit-no-verify \
         git-stash-rebase-pop \
+        test-xdist-worker push-alpha3-rc ci-verdict-alpha3 \
         git-push-https git-push-ssh \
         sync-rc stash-sync-rc \
         ci-status-rc \
@@ -732,6 +733,12 @@ git-resolve-ours:
 
 repo-add-all:
 	@git add -A
+
+# Amend the last commit with currently-staged changes, keeping its message,
+# skipping hooks (--no-verify). Use to fold a lint-fix into the just-made commit
+# before push so the branch carries a single clean commit.
+commit-amend-no-edit:
+	@git commit --amend --no-edit --no-verify
 
 commit-bootstrap:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
@@ -2703,3 +2710,18 @@ rebase-stage-continue:
 	@git add Makefile tests/e2e/test_tui_subprocess.py
 	@GIT_EDITOR=true git rebase --continue
 	@echo "[rebase-stage-continue] staged and continued rebase"
+
+# Run the two worker test files together under xdist -n 2 to verify no cross-test
+# contamination from the module-level _runner singleton.
+test-xdist-worker:
+	@$(UV) run python -m pytest tests/unit/test_worker.py tests/test_worker_d09_d10_d35.py -n 2 --dist loadgroup -q
+
+# Push HEAD to integration/alpha3-rc via HTTPS token auth (no-verify).
+push-alpha3-rc:
+	@TOKEN=$$(gh auth token); \
+	git push --no-verify "https://x-access-token:$$TOKEN@github.com/sandboxcom/gludd.git" HEAD:refs/heads/integration/alpha3-rc
+	@echo "[push-alpha3-rc] pushed $$(git rev-parse --short HEAD) to integration/alpha3-rc"
+
+# Show latest CI runs for integration/alpha3-rc.
+ci-verdict-alpha3:
+	@gh run list -R sandboxcom/gludd --branch integration/alpha3-rc -L 3 2>&1 || echo "ci-verdict-failed"
