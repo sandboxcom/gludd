@@ -744,6 +744,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 secrets_manager=secrets_resolver,
                 metrics_collector=ext.get("metrics_collector"),
                 health_tracker=health_tracker,
+                # Wire the operator-configured budget guard so a configured spend
+                # ceiling is actually enforced — it was built above but never passed,
+                # leaving budgets silently inert in the daemon.
+                budget_guard=budget_guard,
             )
             app.state._model_gateway = model_gateway
             # Warn when a reasoning-model profile has a low max_output_tokens budget.
