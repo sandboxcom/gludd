@@ -999,7 +999,7 @@ class EventLoop:
                             job_id,
                         )
                     else:
-                        results = self._dispatcher.dispatch_all(calls)
+                        results = await self._dispatcher.dispatch_all(calls)
                         ok_count = sum(1 for r in results if r.ok)
                         err_count = len(results) - ok_count
                         logger.info(

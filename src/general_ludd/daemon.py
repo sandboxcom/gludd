@@ -995,7 +995,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         )
                         return "deferred:budget_exhausted"
                 try:
-                    result = model_gateway.call_model_with_retry(
+                    result = await asyncio.to_thread(
+                        model_gateway.call_model_with_retry,
                         profile_id,
                         [{"role": "user", "content": task.prompt}],
                     )
@@ -1524,13 +1525,12 @@ def create_daemon_app(
     # app-creation time.  W: event-loop-wiring (#26).
     from general_ludd.daemon_wiring import make_mcp_handler, make_role_handler, make_skill_handler
 
-    def _lazy_mcp_handler(name: str, args: dict[str, Any]) -> Any:
+    async def _lazy_mcp_handler(name: str, args: dict[str, Any]) -> Any:
         mcp_client = getattr(app.state, "_mcp_client", None)
         h = make_mcp_handler(mcp_client)
         if h is None:
             raise RuntimeError("MCP client not available")
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(h(name, args))
+        return await h(name, args)
 
     def _lazy_skill_handler(name: str, args: dict[str, Any]) -> Any:
         skill_registry = getattr(app.state, "_skill_registry", None)
@@ -1539,13 +1539,12 @@ def create_daemon_app(
             raise RuntimeError("SkillRegistry not available")
         return h(name, args)
 
-    def _lazy_role_handler(name: str, args: dict[str, Any]) -> Any:
+    async def _lazy_role_handler(name: str, args: dict[str, Any]) -> Any:
         agent_dispatcher = getattr(app.state, "_agent_dispatcher", None)
         h = make_role_handler(agent_dispatcher)
         if h is None:
             raise RuntimeError("AgentDispatcher not available")
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(h(name, args))
+        return await h(name, args)
 
     dispatch_router.register(
         app,
