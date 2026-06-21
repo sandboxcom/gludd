@@ -917,6 +917,15 @@ The no-wait and floor-enforcement orchestration hooks are **advisory by default*
 - `GLUDD_NO_WAIT_ENFORCE=1` — elevates the no-wait hook from advisory to
   blocking (denies the tool call).
 - `GLUDD_FLOOR_ENFORCE=1` — elevates the floor hook from advisory to blocking.
+- **`GLUDD_FORCE_DELEGATE=1`** (`force_delegate_pretool.sh`, matcher `*`) — opt-in grind guard.
+  Denies targeted mutations (Edit/Write to non-memory paths; mutating Bash targets like
+  `git-commit`, `git-add`, `ship`, `gate`) when the live subagent count is below
+  `CLAUDE_AGENT_FLOOR` and the consecutive-targeted-call count exceeds
+  `GLUDD_FORCE_DELEGATE_GRACE` (default 3). Bounded escape after
+  `GLUDD_FORCE_DELEGATE_MAXBLOCK` (default 4) consecutive denials to prevent wedging.
+  Read-only tools (Read/Glob/Grep/Bash read-only targets/memory-path writes) and
+  Agent/Workflow dispatch are always allowed; Agent/Workflow dispatch also resets the
+  consecutive counter. Default off; enable when multitasking discipline is required.
 
 `agent_liveness.py` counts **Workflow subagents** (not just background tasks) as
 live agents for the purposes of the floor check.

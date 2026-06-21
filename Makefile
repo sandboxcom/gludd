@@ -48,8 +48,11 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         ci-poll test-no-wait-hook \
         verify-remote ci-verdict \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
+        gh-run-list gh-run-cancel \
         commit-no-verify \
-        git-stash-rebase-pop
+        git-stash-rebase-pop \
+        git-cherry-pick git-cherry-continue git-cherry-abort git-show-diff \
+        test-force-delegate-hook
 
 help:
 	@echo "Usage: make [target]"
@@ -1704,6 +1707,9 @@ test-no-wait-hook:
 test-model-ratio-hook:
 	@$(PYTHON) scripts/test_model_ratio_hook.py
 
+test-force-delegate-hook:
+	@$(PYTHON) scripts/test_force_delegate_hook.py
+
 test-liveness-workflow:
 	@$(PYTHON) scripts/test_liveness_workflow.py
 
@@ -2557,3 +2563,36 @@ gh-pr-ensure:
 			--title "fix/self-update-sec: completion-integrity + hook + SSRF + budget fixes" \
 			--body "Session fixes: rules-engine W4c, daemon registry/budget_guard, SSRF guard, no-wait/sonnet hook fixes, worker tool-call detection, e2e zai harnesses. See commit log."; \
 	fi
+
+# Cherry-pick a commit onto the current branch (no-verify). Stages but does NOT
+# commit, so you can inspect + lint before committing. On conflict, the working
+# tree is left with conflict markers; resolve them, git-add, then cherry-continue.
+# Usage: make git-cherry-pick REF=<sha>
+git-cherry-pick:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-cherry-pick REF=<sha>"; exit 1; }
+	@git cherry-pick --no-commit "$(REF)" && echo "cherry-pick staged (no-commit): $(REF)" || { echo "CHERRY-PICK CONFLICT on $(REF) — files listed above need manual resolution, then: make git-add FILES='...' && make git-cherry-continue"; exit 1; }
+
+# Continue after resolving cherry-pick conflicts (equivalent to cherry-pick --continue).
+git-cherry-continue:
+	@git cherry-pick --continue --no-edit && echo "cherry-pick continued"
+
+# Abort a cherry-pick in progress (restores HEAD to pre-cherry-pick state).
+git-cherry-abort:
+	@git cherry-pick --abort && echo "cherry-pick aborted"
+
+# Show the full diff of a single commit vs its parent (diagnostic).
+# Usage: make git-show-diff REF=<sha>
+git-show-diff:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-show-diff REF=<sha>"; exit 1; }
+	@git show "$(REF)"
+
+# List recent CI runs for branch fix/self-update-sec (JSON output).
+# Usage: make gh-run-list
+gh-run-list:
+	@gh run list --branch fix/self-update-sec --limit 20 --json databaseId,headSha,status,conclusion,workflowName,createdAt -R sandboxcom/gludd
+
+# Cancel a specific GHA run by ID. Use only for in_progress/queued superseded runs.
+# Usage: make gh-run-cancel ID=<run-id>
+gh-run-cancel:
+	@[ -n "$(ID)" ] || { echo "Usage: make gh-run-cancel ID=<run-id>"; exit 1; }
+	@gh run cancel "$(ID)" -R sandboxcom/gludd && echo "Cancelled run $(ID)" || echo "Cancel failed for $(ID)"

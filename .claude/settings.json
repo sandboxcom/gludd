@@ -1,4 +1,8 @@
 {
+  "env": {
+    "CLAUDE_AGENT_FLOOR": "6",
+    "CLAUDE_AGENT_CEILING": "10"
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -44,6 +48,10 @@
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/mainthread_budget.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/force_delegate_pretool.sh"
           }
         ]
       },
@@ -110,6 +118,10 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_wait_stop.sh"
+          },
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_stop.sh"
