@@ -50,7 +50,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-push-branch git-push-branch-nv test-model-ratio-hook \
         commit-no-verify \
         git-stash-rebase-pop \
-        git-push-https git-push-ssh
+        git-push-https git-push-ssh \
+        sync-rc stash-sync-rc
 
 help:
 	@echo "Usage: make [target]"
@@ -2524,6 +2525,21 @@ git-push-branch-nv:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
+
+# Fetch the current remote tip of integration/alpha3-rc (HTTPS/gh-auth, no SSH key
+# needed) and reset the local branch to match. Prints the resulting short SHA.
+# Usage: make sync-rc
+sync-rc:
+	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc && git checkout -B integration/alpha3-rc FETCH_HEAD && git rev-parse --short HEAD
+
+# Stash local changes, sync to integration/alpha3-rc remote tip, then pop stash.
+# Use when local Makefile edits block the plain sync-rc checkout.
+stash-sync-rc:
+	@git stash --include-untracked
+	@git fetch "https://x-access-token:$$(gh auth token)@github.com/sandboxcom/gludd.git" integration/alpha3-rc
+	@git checkout -B integration/alpha3-rc FETCH_HEAD
+	@git rev-parse --short HEAD
+	@git stash pop
 
 # Push a specific SHA to a remote branch via HTTPS token auth (bypasses SSH key / hook issues).
 # Usage: make git-push-https SHA=<sha> TARGET=<branch>

@@ -7,11 +7,12 @@ from __future__ import annotations
 
 import contextlib
 import os
+import pathlib
 import subprocess
 import sys
 import time
 
-GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
+GLUDD_CMD = [str(pathlib.Path(sys.executable).parent / "gludd"), "tui"]
 
 
 def _subprocess_env() -> dict[str, str]:
