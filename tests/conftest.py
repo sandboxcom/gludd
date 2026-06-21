@@ -11,6 +11,8 @@ from __future__ import annotations
 
 import asyncio
 import gc
+import os
+import re
 from pathlib import Path
 
 import pytest
@@ -49,6 +51,57 @@ def pytest_collection_modifyitems(config: pytest.Config, items: list[pytest.Item
             item.add_marker(
                 pytest.mark.xfail(strict=strict, reason=reason)
             )
+
+
+def pytest_runtest_logreport(report: pytest.TestReport) -> None:
+    """Emit GitHub Actions workflow commands for failed tests.
+
+    When running inside GitHub Actions (GITHUB_ACTIONS=true), prints
+    ``::error file=...,line=...::message`` lines for each FAILED or ERROR
+    report so GitHub renders them as annotations in near-real-time — visible
+    while the job is still running, not only in the post-run summary.
+
+    Fires on the *call* phase (actual test body) for failures and on the
+    *setup*/*teardown* phases for errors so fixture crashes are also surfaced.
+    """
+    if not os.environ.get("GITHUB_ACTIONS"):
+        return
+    if report.passed:
+        return
+    # Only emit on call-phase failures + setup/teardown errors (skip xfail).
+    if report.skipped:
+        return
+
+    # Extract file + line from the longrepr when available.
+    file_part = ""
+    line_part = ""
+    longrepr = report.longreprtext if hasattr(report, "longreprtext") else str(report.longrepr)
+
+    # Try to pull the last "path:lineno:" reference out of the traceback.
+    if hasattr(report, "longrepr") and hasattr(report.longrepr, "reprcrash"):
+        crash = report.longrepr.reprcrash  # type: ignore[union-attr]
+        if crash:
+            file_part = getattr(crash, "path", "") or ""
+            line_part = str(getattr(crash, "lineno", "") or "")
+    elif hasattr(report, "fspath"):
+        file_part = str(report.fspath)
+
+    # Build the ::error:: workflow command.
+    # GitHub requires file= and line= to be non-empty for inline annotations.
+    ann_parts: list[str] = []
+    if file_part:
+        ann_parts.append(f"file={file_part}")
+    if line_part:
+        ann_parts.append(f"line={line_part}")
+    ann_props = ",".join(ann_parts)
+
+    # Truncate message to avoid over-long annotation lines; strip ANSI codes.
+    msg = re.sub(r"\x1b\[[0-9;]*m", "", longrepr)
+    msg = msg.replace("\n", "%0A").replace("\r", "").replace(":", "%3A")
+    msg = msg[:1000]  # GitHub annotation message limit is ~64 KB but keep it readable.
+
+    prefix = f"::{('error' if report.failed else 'warning')} {ann_props}"
+    print(f"{prefix}::{report.nodeid} — {msg}", flush=True)
 
 
 @pytest.fixture(autouse=True)

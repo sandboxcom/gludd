@@ -45,10 +45,10 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
-        ci-poll ci-jobs test-no-wait-hook \
+        ci-poll ci-jobs ci-annotations test-no-wait-hook \
         verify-remote ci-verdict \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
-        gh-run-list gh-run-cancel gh-run-view gh-run-failed-log \
+        gh-run-list gh-run-cancel ci-rerun gh-run-view gh-run-failed-log \
         commit-no-verify \
         git-stash-rebase-pop \
         git-cherry-pick git-cherry-continue git-cherry-abort git-show-diff \
@@ -875,6 +875,17 @@ ci-status:
 ci-poll:
 	@if [ -z "$(ID)" ]; then echo "Usage: make ci-poll ID=<run-id>"; exit 1; fi
 	@$(UV) run python scripts/ci_poll.py $(ID)
+
+# Live annotations poller: prints each new failure annotation from a running
+# CI job as soon as GitHub populates it — near-real-time per-test failures.
+# Polls every CI_ANN_INTERVAL (default 45s).  Exits when the run finishes or
+# CI_ANN_MAX_SEC (default 3600s) is reached.  Set CI_ANN_EARLY_EXIT=1 to stop
+# on the first annotation.
+# Usage: make ci-annotations ID=<run-id>
+CI_ANN_INTERVAL ?= 45
+ci-annotations:
+	@if [ -z "$(ID)" ]; then echo "Usage: make ci-annotations ID=<run-id>"; exit 1; fi
+	@CI_ANN_INTERVAL=$(CI_ANN_INTERVAL) $(UV) run python scripts/ci_annotations_poll.py $(ID)
 
 # Confirm a published GitHub Release + list its downloadable assets.
 release-view:
@@ -1704,6 +1715,25 @@ test-liveness-workflow:
 # the agent_liveness.py production glob patterns can be verified against reality.
 # Lists any 'subagents'/'workflows' dirs + a sample of files under the two
 # candidate roots. Purely diagnostic; touches nothing.
+# Display a saved CI failed-log (default the run that gh-run-failed-log wrote).
+# Prints the failure-relevant lines: pytest FAILED/ERROR nodes, the short test
+# summary, assertion/Error lines, ruff/mypy/collection errors, and the exit
+# annotation. Diagnostic only; reads a /tmp log that gh-run-failed-log produced.
+CI_LOG ?= /tmp/ci-failed-27919581264.log
+ci-failed-log-show:
+	@if [ ! -f "$(CI_LOG)" ]; then echo "no log at $(CI_LOG)"; exit 1; fi
+	@echo "=== $(CI_LOG) ($$(wc -l < $(CI_LOG)) lines) ==="
+	@echo "--- failure-relevant lines ---"
+	@grep -n -E '^(FAILED|ERROR|PASSED)|::.*(FAILED|ERROR|PASSED)|short test summary|[0-9]+ (failed|error|passed)|AssertionError|^E  |Error:|error:|ModuleNotFoundError|ImportError| collected|exit code|Process completed|^_+ .* _+$$|Traceback' "$(CI_LOG)" || echo "(no matches)"
+
+ci-failed-log-grep:
+	@if [ ! -f "$(CI_LOG)" ]; then echo "no log at $(CI_LOG)"; exit 1; fi
+	@grep -n -E "$(PAT)" "$(CI_LOG)" || echo "(no matches for $(PAT))"
+
+ci-failed-log-lines:
+	@if [ ! -f "$(CI_LOG)" ]; then echo "no log at $(CI_LOG)"; exit 1; fi
+	@sed -n '$(FROM),$(TO)p' "$(CI_LOG)"
+
 discover-workflow-transcripts:
 	@echo "=== ~/.claude/projects/-Users-shawnwilson-gludd ==="
 	@find "$$HOME/.claude/projects/-Users-shawnwilson-gludd" \( -name subagents -o -name workflows \) -type d 2>/dev/null || echo "(none / unreadable)"
@@ -2583,6 +2613,16 @@ gh-run-list:
 gh-run-cancel:
 	@[ -n "$(ID)" ] || { echo "Usage: make gh-run-cancel ID=<run-id>"; exit 1; }
 	@gh run cancel "$(ID)" -R sandboxcom/gludd && echo "Cancelled run $(ID)" || echo "Cancel failed for $(ID)"
+
+# Re-run a GHA run that was CANCELLED (not failed) so it can reach a clean
+# terminal verdict on the SAME commit SHA. Use when a run was manually cancelled
+# or superseded mid-flight (no test/lint failure) and you need an uninterrupted
+# pass/fail on the identical tip without fabricating a new commit. A re-run keeps
+# the same headSha, so `make ci-verdict` will still match the local HEAD.
+# Usage: make ci-rerun ID=<run-id>
+ci-rerun:
+	@[ -n "$(ID)" ] || { echo "Usage: make ci-rerun ID=<run-id>"; exit 1; }
+	@gh run rerun "$(ID)" -R sandboxcom/gludd && echo "Re-running run $(ID) (same headSha)" || echo "Re-run failed for $(ID)"
 
 # Show job/step status summary for a specific GHA run.
 # Usage: make gh-run-view ID=<run-id>
