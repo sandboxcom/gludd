@@ -31,6 +31,7 @@ def test_vllm_normal_config_builds_expected_argv(mgr: LocalInferenceManager):
         model_name="meta-llama/Llama-3-8B",
         host="0.0.0.0",
         port=9999,
+        allow_nonloopback=True,
     )
     cmd = mgr._build_command(cfg)
     assert cmd == [
@@ -135,7 +136,7 @@ def test_invalid_host_rejected(mgr: LocalInferenceManager, host: str):
 
 @pytest.mark.parametrize("host", ["localhost", "0.0.0.0", "127.0.0.1", "my-host.example.com"])
 def test_valid_host_accepted(mgr: LocalInferenceManager, host: str):
-    cfg = LocalServerConfig(engine="vllm", model_name="m", host=host)
+    cfg = LocalServerConfig(engine="vllm", model_name="m", host=host, allow_nonloopback=True)
     cmd = mgr._build_command(cfg)
     assert host in cmd
 
