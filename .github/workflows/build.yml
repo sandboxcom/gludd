@@ -48,6 +48,7 @@ jobs:
       - name: Gate
         run: |
           uv sync --python ${{ matrix.python-version }}
+          uv pip install --no-deps -e .
           make lint typecheck test-count test smoke
         env:
           GLUDD_PSK: ""
