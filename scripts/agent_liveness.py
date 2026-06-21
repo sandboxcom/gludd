@@ -137,6 +137,58 @@ def _is_terminal(path: str) -> bool:
         return False
 
 
+def _workflow_transcript_files() -> list[str]:
+    """Return a list of workflow-subagent transcript file paths to include in liveness counting.
+
+    Checks ``GLUDD_WORKFLOW_DIRS`` (colon-separated) for a test override.  When
+    that var is set each directory is scanned non-recursively for ``*.jsonl`` and
+    ``*.output`` files.
+
+    Without the override, four glob patterns are tried that cover both the
+    ``~/.claude/projects/`` hierarchy and the ``/private/tmp/claude-<uid>/``
+    session hierarchy used by the harness:
+
+      - ``~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl``
+      - ``~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output``
+      - ``/private/tmp/claude-<uid>/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl``
+      - ``/private/tmp/claude-<uid>/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output``
+
+    Returns an empty list on any error (fail-open).
+    """
+    try:
+        override = os.environ.get("GLUDD_WORKFLOW_DIRS", "")
+        if override:
+            results: list[str] = []
+            for d in override.split(":"):
+                d = d.strip()
+                if not d:
+                    continue
+                results.extend(glob.glob(os.path.join(d, "*.jsonl")))
+                results.extend(glob.glob(os.path.join(d, "*.output")))
+            return results
+
+        uid = os.getuid()
+        patterns = [
+            os.path.expanduser(
+                "~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl"
+            ),
+            os.path.expanduser(
+                "~/.claude/projects/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output"
+            ),
+            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.jsonl" % uid,
+            "/private/tmp/claude-%d/-Users-shawnwilson-gludd/*/subagents/workflows/**/*.output" % uid,
+        ]
+        results = []
+        for pattern in patterns:
+            try:
+                results.extend(glob.glob(pattern, recursive=True))
+            except Exception:
+                pass
+        return results
+    except Exception:
+        return []
+
+
 def live_count(
     window: float = LIVENESS_WINDOW_SEC,
 ) -> tuple[int, int, str | None]:
@@ -146,7 +198,9 @@ def live_count(
             AND whose last line does NOT indicate a terminal result. Uses a
             single ``time.time()`` snapshot so every transcript is evaluated
             against the SAME clock value — no probe sleep, no drift.
-    total = all ``*.output`` transcripts in the resolved tasks dir.
+            Both Agent-task transcripts AND Workflow-subagent transcripts are
+            counted.
+    total = all transcripts found (tasks dir ``*.output`` + workflow files).
     tasks = the resolved tasks dir (or ``None`` if unresolved).
 
     A transcript is live iff BOTH conditions hold:
@@ -160,6 +214,10 @@ def live_count(
     tasks = _tasks_dir()
     fs = glob.glob(tasks + "/*.output") if tasks else []
 
+    # Also include workflow-subagent transcripts so the floor hook never
+    # reports "0 live" while a Workflow-based parallel pool is running.
+    wf_files = _workflow_transcript_files()
+
     # Single clock snapshot — all files evaluated against the same ``now``.
     now = time.time()
     cutoff = now - window
@@ -171,6 +229,16 @@ def live_count(
             mtime = os.path.getmtime(f)
         except OSError:
             # File vanished (agent dir cleaned up): skip it.
+            continue
+        total += 1
+        if mtime >= cutoff and not _is_terminal(f):
+            live += 1
+
+    # Apply the same dual-filter to workflow transcripts.
+    for f in wf_files:
+        try:
+            mtime = os.path.getmtime(f)
+        except OSError:
             continue
         total += 1
         if mtime >= cutoff and not _is_terminal(f):

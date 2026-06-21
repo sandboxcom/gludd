@@ -18,7 +18,8 @@ def make_jsonl(path, msg):
 
 
 def run_hook(payload_str):
-    r = subprocess.run(["bash", HOOK], input=payload_str.encode(), capture_output=True)
+    env = {**os.environ, "GLUDD_NO_WAIT_ENFORCE": "1"}
+    r = subprocess.run(["bash", HOOK], input=payload_str.encode(), capture_output=True, env=env)
     out = r.stdout.decode()
     return "BLOCK" if '"decision"' in out and '"block"' in out else "NOBLOCK"
 
@@ -104,6 +105,40 @@ with tempfile.TemporaryDirectory(prefix="hook_test_") as d:
         os.remove(f"/tmp/no_wait_block_{key}")
     except OSError:
         pass
+
+    # Case 20: deferral phrase with NO enforce var set -> NOBLOCK (advisory mode).
+    p20 = os.path.join(d, "t20.jsonl")
+    make_jsonl(p20, "Say so and I'll proceed.")
+    env_no_enforce = {**os.environ}
+    env_no_enforce.pop("GLUDD_NO_WAIT_ENFORCE", None)
+    r20 = subprocess.run(
+        ["bash", HOOK], input=json.dumps({"transcript_path": p20}).encode(),
+        capture_output=True, env=env_no_enforce,
+    )
+    out20 = r20.stdout.decode()
+    cases.append((20, "NOBLOCK", "BLOCK" if ('"decision"' in out20 and '"block"' in out20) else "NOBLOCK"))
+
+    # Case 21: deferral phrase with GLUDD_NO_WAIT_ENFORCE=0 -> NOBLOCK (explicit advisory).
+    p21 = os.path.join(d, "t21.jsonl")
+    make_jsonl(p21, "Say so and I'll proceed.")
+    env21 = {**os.environ, "GLUDD_NO_WAIT_ENFORCE": "0"}
+    r21 = subprocess.run(
+        ["bash", HOOK], input=json.dumps({"transcript_path": p21}).encode(),
+        capture_output=True, env=env21,
+    )
+    out21 = r21.stdout.decode()
+    cases.append((21, "NOBLOCK", "BLOCK" if ('"decision"' in out21 and '"block"' in out21) else "NOBLOCK"))
+
+    # Case 22: deferral phrase WITH GLUDD_NO_WAIT_ENFORCE=1 -> BLOCK (enforce mode restored).
+    p22 = os.path.join(d, "t22.jsonl")
+    make_jsonl(p22, "Say so and I'll proceed.")
+    env22 = {**os.environ, "GLUDD_NO_WAIT_ENFORCE": "1"}
+    r22 = subprocess.run(
+        ["bash", HOOK], input=json.dumps({"transcript_path": p22}).encode(),
+        capture_output=True, env=env22,
+    )
+    out22 = r22.stdout.decode()
+    cases.append((22, "BLOCK", "BLOCK" if ('"decision"' in out22 and '"block"' in out22) else "NOBLOCK"))
 
 fail = 0
 for num, exp, got in cases:

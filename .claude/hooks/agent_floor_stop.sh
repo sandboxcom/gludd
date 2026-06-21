@@ -35,6 +35,17 @@ REFILL=$((DISPLAY_FLOOR + 2))
 [ "$REFILL" -gt "$CEILING" ] && REFILL="$CEILING"
 WINDOW=90  # seconds; a live background agent streams tool/output well within this
 
+# ADVISORY MODE (2026-06-21, by user instruction): this hook previously emitted
+# {"decision":"block"} to forcibly prevent turn-end while live<FLOOR. But the
+# live-count probe (agent_liveness.py) only scans the Agent-tool task dir and
+# CANNOT see Workflow subagents — so it reported "0 live" and trapped the
+# orchestrator even while a Workflow was running a full parallel pool. That false
+# alarm made it impossible to ever satisfy the floor during Workflow-based work.
+# It is now ADVISORY: never blocks. Set GLUDD_FLOOR_ENFORCE=1 to restore blocking.
+if [ "${GLUDD_FLOOR_ENFORCE:-0}" != "1" ]; then
+  exit 0
+fi
+
 # Never hard-wedge: if we're already inside a stop-hook continuation, allow stop.
 input="$(cat 2>/dev/null || echo '{}')"
 case "$input" in

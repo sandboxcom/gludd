@@ -23,6 +23,15 @@
 
 MAX_CONSECUTIVE_BLOCKS=25
 
+# ADVISORY MODE (2026-06-21, by user instruction): this hook previously emitted
+# {"decision":"block"} and forcibly prevented turn-end, which trapped the
+# orchestrator in a coercive loop (it could not answer the user or stop even when
+# that was the right thing to do). It is now ADVISORY: it never blocks. Set
+# GLUDD_NO_WAIT_ENFORCE=1 to restore the old blocking behaviour.
+if [ "${GLUDD_NO_WAIT_ENFORCE:-0}" != "1" ]; then
+  exit 0
+fi
+
 input="$(cat 2>/dev/null || echo '{}')"
 
 transcript="$(printf '%s' "$input" | python3 -c 'import sys,json; print(json.load(sys.stdin).get("transcript_path",""))' 2>/dev/null)"

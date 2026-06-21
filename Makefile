@@ -47,7 +47,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
         ci-poll test-no-wait-hook \
         verify-remote ci-verdict \
-        git-push-branch git-push-branch-nv test-model-ratio-hook \
+        git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
         commit-no-verify \
         git-stash-rebase-pop
 
@@ -1704,6 +1704,9 @@ test-no-wait-hook:
 test-model-ratio-hook:
 	@$(PYTHON) scripts/test_model_ratio_hook.py
 
+test-liveness-workflow:
+	@$(PYTHON) scripts/test_liveness_workflow.py
+
 debug-no-wait-hook:
 	@$(PYTHON) /tmp/debug_hook.py
 
@@ -2523,3 +2526,17 @@ git-push-branch-nv:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
+
+# Idempotent PR opener: check if a PR for fix/self-update-sec already exists;
+# if none, create one targeting master. Reports URL either way.
+gh-pr-ensure:
+	@EXISTING=$$(gh pr list --head fix/self-update-sec --json number --jq '.[0].number' 2>/dev/null); \
+	if [ -n "$$EXISTING" ] && [ "$$EXISTING" != "null" ]; then \
+		echo "PR already exists: #$$EXISTING"; \
+		gh pr view "$$EXISTING" --json number,url,title --jq '"PR #\(.number): \(.title)\nURL: \(.url)"' 2>/dev/null || echo "PR #$$EXISTING"; \
+	else \
+		echo "Creating PR for fix/self-update-sec -> master ..."; \
+		gh pr create --base master --head fix/self-update-sec \
+			--title "fix/self-update-sec: completion-integrity + hook + SSRF + budget fixes" \
+			--body "Session fixes: rules-engine W4c, daemon registry/budget_guard, SSRF guard, no-wait/sonnet hook fixes, worker tool-call detection, e2e zai harnesses. See commit log."; \
+	fi
