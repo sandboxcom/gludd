@@ -244,6 +244,29 @@ This is enforced by:
 - `.opencode/plugin/enforce-make.ts` — `tool.execute.before` checks
 - `tests/unit/test_guardrails.py` — guardrail existence and behavior tests
 
+## Opencode Plugin Ports (Claude Hook Equivalents)
+
+The Claude Code layer (`.claude/hooks/*.sh`, 20 shell scripts registered in
+`.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts`,
+4 TypeScript plugins registered in `opencode.json`) **enforce the same
+policies in parallel**. An opencode-only session gets the same guardrails as
+a Claude-only session. The port map:
+
+| Opencode plugin | Claude hook(s) ported |
+|---|---|
+| `enforce-make.ts` | `enforce_make_bash.sh`, `gate_concurrency_pretool.sh`, `guardrail_integrity_edit_pretool.sh`, `no_flag_file_write_pretool.sh` (Bash make-only, metachar deny, concurrent-gate block, guardrail-integrity across ALL hook/plugin files, `.gate-status` write block) |
+| `enforce-floor.ts` | `agent_floor_stop.sh`, `agent_floor_pretool.sh`, `agent_floor_posttool.sh`, `agent_ceiling_pretool.sh`, `agent_floor_userprompt.sh` (floor/ceiling bands via `agent_liveness.py`) |
+| `enforce-delegate.ts` | `model_utilization_pretool.sh`, `disk_discipline_pretool.sh`, `worktree_disk_guard_pretool.sh`, `force_delegate_pretool.sh`, `mainthread_budget.sh` (sonnet ratio, worktree disk guards, opt-in grind guard, main-thread delegation budget) |
+| `enforce-stop.ts` | `no_wait_stop.sh`, `multitasking_backlog_stop.sh`, `session_start_orchestrate.sh`, `no_blocking_questions_pretool.sh` (deferral-pattern block, open-backlog block, orchestration injection, question-tool deny) |
+
+Both layers are registered and active by default. The env-var knobs are
+shared (`CLAUDE_AGENT_FLOOR`, `GLUDD_FORCE_DELEGATE`, `GLUDD_NO_WAIT_ENFORCE`,
+`GLUDD_FLOOR_ENFORCE`, etc.) so operator configuration applies uniformly.
+
+Coverage tests: `tests/unit/test_opencode_plugin_ports.py` (per-plugin static
+checks), `tests/unit/test_guardrails.py` (3-layer existence checks),
+`scripts/test_*_hook.py` (behavioral harness tests for the shell layer).
+
 ## CRITICAL: "Fix" Means Repair, Never Disable
 
 **When the user asks you to FIX something, "fix" means: make the feature WORK

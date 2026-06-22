@@ -6,7 +6,12 @@
       "make *": "allow"
     }
   },
-  "plugin": ["./.opencode/plugin/enforce-make.ts"],
+  "plugin": [
+    "./.opencode/plugin/enforce-make.ts",
+    "./.opencode/plugin/enforce-floor.ts",
+    "./.opencode/plugin/enforce-delegate.ts",
+    "./.opencode/plugin/enforce-stop.ts"
+  ],
   "skills": {
     "paths": [".opencode/skills"]
   }
