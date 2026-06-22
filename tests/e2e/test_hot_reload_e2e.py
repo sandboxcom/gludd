@@ -1019,8 +1019,8 @@ class TestDaemonReloadEndpointsE2E:
                 "/admin/hooks",
                 json={
                     "event_name": "on_model_added",
-                    "url": "https://example.com/webhook",
-                    "headers": {"Authorization": "Bearer token123"},
+                    "url": "https://hooks.example.com/notify",
+                    "headers": {"X-Webhook-Secret": "token123"},
                 },
             )
             assert resp.status_code == 200
