@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 import os
-from typing import Any
+from typing import Any, cast
 
 
 class SelfImprovementHarness:
@@ -163,3 +163,77 @@ class SelfImprovementHarness:
             "findings": findings,
             "todos": todos,
         }
+
+    def write_config_value(
+        self,
+        path: str,
+        key: str,
+        value: Any,
+        *,
+        writer: Any = None,
+        reloader: Any = None,
+    ) -> str:
+        """Atomically set a dot-notation key in a YAML config file and emit a reload.
+
+        Reuses self_update.applier.SafeWriter semantics: validate-as-YAML then
+        write. If no writer is injected, uses an internal atomic temp-file+os.replace
+        writer. If a reloader (reload.hot_reloader.HotReloader) is injected, calls
+        reloader.reload(ReloadScope.CONFIG) after a successful write.
+        Fail-closed: a write or reload error raises (caller decides).
+        """
+        import contextlib
+        import os
+        import tempfile
+
+        import yaml
+
+        # Read existing YAML or start fresh
+        if os.path.isfile(path):
+            with open(path) as fh:
+                data: dict[str, Any] = yaml.safe_load(fh.read()) or {}
+        else:
+            data = {}
+
+        # Set dot-notation key (e.g. "self_improve.max_open")
+        parts = key.split(".")
+        node: Any = data
+        for part in parts[:-1]:
+            if not isinstance(node, dict) or part not in node:
+                if isinstance(node, dict):
+                    node[part] = {}
+                node = node[part] if isinstance(node, dict) else {}
+            else:
+                node = node[part]
+        if isinstance(node, dict):
+            node[parts[-1]] = value
+
+        content = yaml.safe_dump(data, default_flow_style=False, sort_keys=False)
+
+        # Write — injected writer or internal atomic write
+        if writer is not None:
+            writer.write(path, content)
+        else:
+            dir_name = os.path.dirname(os.path.abspath(path))
+            fd, tmp_path = tempfile.mkstemp(dir=dir_name, suffix=".tmp")
+            try:
+                with os.fdopen(fd, "w") as fh:
+                    fh.write(content)
+                    fh.flush()
+                    os.fsync(fh.fileno())
+                os.replace(tmp_path, path)
+            except Exception:
+                with contextlib.suppress(OSError):
+                    os.unlink(tmp_path)
+                raise
+
+        # Reload if reloader provided
+        if reloader is not None:
+            try:
+                from general_ludd.reload.hot_reloader import ReloadScope
+            except ImportError:
+                # Soft dep — skip reload if module unavailable
+                pass
+            else:
+                reloader.reload(ReloadScope.CONFIG)
+
+        return cast(str, content)
