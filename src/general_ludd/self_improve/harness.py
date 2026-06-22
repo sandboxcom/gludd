@@ -2,16 +2,88 @@
 
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, cast
 
+logger = logging.getLogger(__name__)
+
+
+def _strip_json_fences(text: str) -> str:
+    """Strip ```json ... ``` fences from model output."""
+    text = text.strip()
+    if text.startswith("```"):
+        lines = text.splitlines()
+        # Drop the opening fence line and closing fence line
+        inner = lines[1:-1] if lines[-1].strip() == "```" else lines[1:]
+        text = "\n".join(inner).strip()
+    return text
+
 
 class SelfImprovementHarness:
-    def __init__(self, repo_root: str | None = None) -> None:
+    # Profile used for the model-driven gap-analysis call against the real
+    # ModelGateway.call_model(profile_id, messages) interface. Overridable per
+    # instance so an operator can point gap-analysis at a cheaper/analysis model.
+    DEFAULT_MODEL_PROFILE: str = "default"
+
+    def __init__(
+        self,
+        repo_root: str | None = None,
+        model_gateway: Any | None = None,
+        model_profile_id: str | None = None,
+    ) -> None:
         self.repo_root = repo_root or os.getcwd()
         self._todos: list[dict[str, Any]] = []
+        self._model_gateway = model_gateway
+        self._model_profile_id = model_profile_id or self.DEFAULT_MODEL_PROFILE
+
+    _GAP_PROMPT: str = (
+        "Analyze this codebase for gaps and return a JSON array of findings.\n"
+        'Each finding: {"title": str, "description": str,'
+        ' "priority": "high|medium|low", "tier": "config|code|test"}\n'
+        "Return ONLY the JSON array, no other text."
+    )
+
+    def _invoke_gateway(self, prompt: str) -> str:
+        """Call the model gateway and return its text content.
+
+        Tolerant of two gateway shapes:
+          * the real ``ModelGateway.call_model(profile_id, messages, ...)``
+            (preferred — this is what production wires in); and
+          * a simpler ``complete(prompt)`` adapter/fake.
+        Both are expected to return an object exposing a ``.content`` string.
+        """
+        gw = self._model_gateway
+        if gw is None:  # pragma: no cover - guarded by caller
+            raise RuntimeError("no model gateway configured")
+        if hasattr(gw, "call_model"):
+            response = gw.call_model(
+                self._model_profile_id,
+                [{"role": "user", "content": prompt}],
+            )
+        else:
+            # Adapter / test-fake path.
+            response = gw.complete(prompt)
+        return str(response.content)
 
     def run_gap_analysis(self) -> list[dict[str, Any]]:
+        if self._model_gateway is not None:
+            try:
+                import json
+                content = self._invoke_gateway(self._GAP_PROMPT)
+                parsed = json.loads(_strip_json_fences(content))
+                if isinstance(parsed, list):
+                    return parsed
+                logger.warning(
+                    "model gateway returned non-list JSON; falling back to static analysis"
+                )
+            except Exception as exc:
+                logger.warning(
+                    "model gateway gap-analysis failed (%s); falling back to static analysis",
+                    exc,
+                )
+
+        # Static fallback (or when model_gateway is None)
         findings: list[dict[str, Any]] = []
 
         self._check_missing_tests(findings)
@@ -45,35 +117,10 @@ class SelfImprovementHarness:
                         })
 
     def _check_completion_audit(self, findings: list[dict[str, Any]]) -> None:
-        src_dir = os.path.join(self.repo_root, "src", "general_ludd")
-        if not os.path.isdir(src_dir):
-            return
-
-        for root, _dirs, files in os.walk(src_dir):
-            for f in files:
-                if not f.endswith(".py") or f == "__init__.py":
-                    continue
-                filepath = os.path.join(root, f)
-                try:
-                    with open(filepath) as fh:
-                        content = fh.read()
-                except (OSError, UnicodeDecodeError):
-                    continue
-                import re
-                classes = re.findall(r"\bclass\s+(\w+)", content)
-                for cls_name in classes:
-                    if cls_name.startswith("_"):
-                        continue
-                    src_text = self._read_all_src()
-                    count = src_text.count(cls_name)
-                    if count <= 1:
-                        findings.append({
-                            "type": "dead_code",
-                            "file": filepath,
-                            "class": cls_name,
-                            "severity": "medium",
-                            "message": f"{cls_name} defined in {f} has no callers outside its definition",
-                        })
+        # Dead-code heuristic disabled: too many false positives on a large
+        # codebase where classes are referenced by string (Ansible, config,
+        # dynamic dispatch). Re-enable with a proper AST-based caller graph.
+        pass
 
     def _check_coverage_gaps(self, findings: list[dict[str, Any]]) -> None:
         coverage_xml = os.path.join(self.repo_root, "coverage.xml")
@@ -182,7 +229,6 @@ class SelfImprovementHarness:
         Fail-closed: a write or reload error raises (caller decides).
         """
         import contextlib
-        import os
         import tempfile
 
         import yaml

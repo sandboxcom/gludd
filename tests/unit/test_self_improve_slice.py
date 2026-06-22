@@ -45,6 +45,20 @@ class _ErrorGateway:
         raise RuntimeError("gateway exploded")
 
 
+class _RealShapeGateway:
+    """Fake matching the real ModelGateway.call_model(profile_id, messages) shape."""
+
+    def __init__(self, response_text: str) -> None:
+        self._response_text = response_text
+        self.calls: list[tuple[str, list[dict[str, str]]]] = []
+
+    def call_model(
+        self, profile_id: str, messages: list[dict[str, str]], **kwargs: Any
+    ) -> _FakeModelResponse:
+        self.calls.append((profile_id, messages))
+        return _FakeModelResponse(content=self._response_text)
+
+
 class _FakeReloader:
     """Records reload() calls."""
 
@@ -130,6 +144,20 @@ class TestHarnessModelGateway:
         harness = SelfImprovementHarness(repo_root=repo_root, model_gateway=gw)
         result = harness.run_gap_analysis()
         assert len(gw.calls) == 1
+        assert result == [{"title": "t", "description": "d", "priority": "high", "tier": "test"}]
+
+    def test_real_call_model_shape_used(self, tmp_path: Any) -> None:
+        """A gateway exposing call_model (the real ModelGateway shape) is used."""
+        repo_root = _make_tmp_repo(tmp_path)
+        gw = _RealShapeGateway(self._VALID_JSON)
+        harness = SelfImprovementHarness(
+            repo_root=repo_root, model_gateway=gw, model_profile_id="analysis"
+        )
+        result = harness.run_gap_analysis()
+        assert len(gw.calls) == 1
+        profile_id, messages = gw.calls[0]
+        assert profile_id == "analysis"
+        assert messages[0]["role"] == "user"
         assert result == [{"title": "t", "description": "d", "priority": "high", "tier": "test"}]
 
     def test_fence_tolerant(self, tmp_path: Any) -> None:
