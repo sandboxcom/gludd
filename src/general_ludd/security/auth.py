@@ -25,10 +25,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-# Re-exported so existing ``from general_ludd.security.auth import
-# is_path_within`` call sites keep importing it from here; the canonical
-# realpath jail now lives in ``security.sanitize`` (one implementation).
-from general_ludd.security.sanitize import is_path_within as is_path_within
 from general_ludd.security.ssrf import host_is_blocked
 from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
 
@@ -134,6 +130,13 @@ def is_join_within(base: str, candidate: str) -> bool:
         # Mixed drives, embedded NULs, etc. -> treat as not contained.
         return False
     return common == base_real
+
+
+# Back-compat alias: ``is_path_within`` was the original name before the rename
+# to ``is_join_within``. Both names must resolve to the SAME object so that
+# identity checks (``is_path_within is is_join_within``) pass and call sites
+# that import either name get identical behaviour.
+is_path_within = is_join_within
 
 
 def _host_is_blocked(host: str) -> bool:
