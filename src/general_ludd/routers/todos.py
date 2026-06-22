@@ -217,7 +217,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             _db_engine_str = _db_url_str
         else:
             _db_url_str = "sqlite"
-            _db_engine_str = str(_db_engine)  # "None"
+            _db_engine_str = "None"
         return {
             "version": __version__,
             "uptime_ticks": elapsed.get("total_ticks", 0),

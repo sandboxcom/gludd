@@ -67,6 +67,7 @@ class TestEventLoop:
             "evaluate_rules",
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
+            "self_improve",
             "emit_tick_metrics",
         ]
         for name in expected:
