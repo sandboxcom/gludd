@@ -6,6 +6,14 @@ Covers:
   3. Pinned server_id lookup resolves correctly even when collision exists.
   4. _resolve_server_id raises MCPTransportError with "ambiguous" on collision.
   5. _resolve_server_id raises MCPTransportError with "not a registered" on unknown.
+
+Note on collision setup: register_tool() enforces a security gate that raises
+ValueError when the same tool name is registered on a second server.  Tests
+that exercise the *resolution* side of ambiguity (cases 2-4) therefore build
+the two-server collision state by inserting directly into the registry's
+internal _tools / _server_tools dicts, bypassing the registration guard.  This
+is the correct way to unit-test the resolution logic in isolation from the
+admission guard.
 """
 from __future__ import annotations
 
@@ -26,6 +34,21 @@ def _make_loop(registry: MCPToolRegistry) -> ToolCallLoop:
     return loop
 
 
+def _inject_collision(reg: MCPToolRegistry, name: str, srv_a: str, srv_b: str) -> None:
+    """Inject a same-named tool on two servers directly, bypassing register_tool's
+    security gate.  Only use this to set up state for resolution-logic tests."""
+    tool_a = MCPTool(name=name, server_id=srv_a)
+    tool_b = MCPTool(name=name, server_id=srv_b)
+    reg._tools[(srv_a, name)] = tool_a
+    reg._tools[(srv_b, name)] = tool_b
+    reg._server_tools.setdefault(srv_a, [])
+    reg._server_tools.setdefault(srv_b, [])
+    if name not in reg._server_tools[srv_a]:
+        reg._server_tools[srv_a].append(name)
+    if name not in reg._server_tools[srv_b]:
+        reg._server_tools[srv_b].append(name)
+
+
 class TestToolLoopRouting:
     def test_unique_name_resolves_correct_server(self):
         """A tool name present on exactly one server resolves to that server."""
@@ -35,27 +58,36 @@ class TestToolLoopRouting:
         assert loop._resolve_server_id("read_file") == "srv_a"
 
     def test_collision_name_only_get_tool_returns_none(self):
-        """get_tool(name) returns None when the same name is on two servers."""
+        """get_tool(name) returns None when the same name is on two servers.
+
+        The collision state is built via direct dict injection because
+        register_tool() (correctly) refuses cross-server collisions.
+        """
         reg = MCPToolRegistry()
-        reg.register_tool("srv_a", MCPTool(name="shared_tool"))
-        reg.register_tool("srv_b", MCPTool(name="shared_tool"))
+        _inject_collision(reg, "shared_tool", "srv_a", "srv_b")
         assert reg.get_tool("shared_tool") is None
 
     def test_pinned_server_id_resolves_despite_collision(self):
-        """get_tool(name, server_id=...) returns the right tool even when names collide."""
+        """get_tool(name, server_id=...) returns the right tool even when names collide.
+
+        The collision state is built via direct dict injection because
+        register_tool() (correctly) refuses cross-server collisions.
+        """
         reg = MCPToolRegistry()
-        reg.register_tool("srv_a", MCPTool(name="shared_tool"))
-        reg.register_tool("srv_b", MCPTool(name="shared_tool"))
+        _inject_collision(reg, "shared_tool", "srv_a", "srv_b")
         tool = reg.get_tool("shared_tool", server_id="srv_b")
         assert tool is not None
         assert tool.server_id == "srv_b"
 
     def test_resolve_server_id_raises_ambiguous_on_collision(self):
         """_resolve_server_id raises MCPTransportError with 'ambiguous' when same
-        tool name exists on multiple servers."""
+        tool name exists on multiple servers.
+
+        The collision state is built via direct dict injection because
+        register_tool() (correctly) refuses cross-server collisions.
+        """
         reg = MCPToolRegistry()
-        reg.register_tool("srv_a", MCPTool(name="shared_tool"))
-        reg.register_tool("srv_b", MCPTool(name="shared_tool"))
+        _inject_collision(reg, "shared_tool", "srv_a", "srv_b")
         loop = _make_loop(reg)
         with pytest.raises(MCPTransportError, match="ambiguous"):
             loop._resolve_server_id("shared_tool")
