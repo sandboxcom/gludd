@@ -615,7 +615,7 @@ class TestSuitabilityEvaluatorOffline:
         gateway = _FakeGateway({
             "def add(": _GOOD_CODE_OUTPUT,
             "invoice": _GOOD_EXTRACTION_OUTPUT,
-            "summarize": _GOOD_SUMMARIZATION_OUTPUT,
+            "Summarize": _GOOD_SUMMARIZATION_OUTPUT,
         })
         verdict = evaluate_suitability(gateway, "fake_good", _ALL_SCENARIOS)
         assert verdict.passed, (
@@ -666,7 +666,7 @@ class TestSuitabilityEvaluatorOffline:
         gateway = _FakeGateway({
             "def add(": _GOOD_CODE_OUTPUT,
             "invoice": _GOOD_EXTRACTION_OUTPUT,
-            "summarize": _GOOD_SUMMARIZATION_OUTPUT,
+            "Summarize": _GOOD_SUMMARIZATION_OUTPUT,
         })
         verdict = evaluate_suitability(gateway, "my_test_profile", _ALL_SCENARIOS)
         assert verdict.model_profile_id == "my_test_profile"
@@ -675,7 +675,7 @@ class TestSuitabilityEvaluatorOffline:
         gateway = _FakeGateway({
             "def add(": _GOOD_CODE_OUTPUT,
             "invoice": _GOOD_EXTRACTION_OUTPUT,
-            "summarize": _GOOD_SUMMARIZATION_OUTPUT,
+            "Summarize": _GOOD_SUMMARIZATION_OUTPUT,
         })
         verdict = evaluate_suitability(gateway, "fake_preview", _ALL_SCENARIOS)
         for result in verdict.scenario_results:
