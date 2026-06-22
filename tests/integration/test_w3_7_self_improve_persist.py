@@ -40,6 +40,7 @@ class TestSelfImprovePersistence:
              "work_type": "test", "priority": "high"},
         ]
 
+        import general_ludd.event_loop.loop as loop_mod
         import general_ludd.self_improve.harness as harness_mod
 
         fake_harness = MagicMock()
@@ -48,6 +49,7 @@ class TestSelfImprovePersistence:
         monkeypatch.setattr(
             harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness
         )
+        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
 
         # interval=1 → runs every tick.
         loop = EventLoop(session=factory, self_improve_interval=1)

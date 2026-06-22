@@ -314,7 +314,7 @@ class TestSelfImprovementHarnessOffline:
             "general_ludd.event_loop.loop.SelfImprovementHarness",
             lambda: SelfImprovementHarness(repo_root=str(tmp_path)),
         ):
-            asyncio.get_event_loop().run_until_complete(loop._phase_self_improve())
+            asyncio.run(loop._phase_self_improve())
 
         assert created_payloads, (
             "_phase_self_improve() did not call todo_repo.create() — "
@@ -406,7 +406,7 @@ class TestSelfImprovementHarnessOffline:
 
         # If SelfImprovementHarness were imported/constructed it would fail
         # (no repo_root set), so the test also implicitly proves early-exit.
-        asyncio.get_event_loop().run_until_complete(loop._phase_self_improve())
+        asyncio.run(loop._phase_self_improve())
 
         assert "self_improve_gaps" not in loop._tick_metrics, (
             "Phase must skip all work and leave tick_metrics clean "
