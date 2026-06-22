@@ -55,7 +55,7 @@ def _make_registry() -> AgentRegistry:
 
 
 def _run(coro: object) -> object:
-    return asyncio.get_event_loop().run_until_complete(coro)  # type: ignore[arg-type]
+    return asyncio.run(coro)  # type: ignore[arg-type]
 
 
 def test_disabled_agent_returns_failed() -> None:
