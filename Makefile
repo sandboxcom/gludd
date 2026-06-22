@@ -304,6 +304,17 @@ gate:
 ps-pytest:
 	@pgrep -fl 'pytest|molecule test|make gate' || echo "NONE running"
 
+# Block until no other `pytest tests/` process is running, so a fork can safely
+# launch its own test batch without the basetemp-rotation collision. Times out
+# after ~10 min (200 polls x 3s) and proceeds anyway.
+wait-pytest:
+	@i=0; while pgrep -f 'pytest tests/' >/dev/null 2>&1; do \
+		i=$$((i+1)); \
+		if [ $$i -ge 200 ]; then echo "wait-pytest: timed out after ~10min, proceeding"; break; fi; \
+		sleep 3; \
+	done; \
+	echo "wait-pytest: clear"
+
 # Read-only census of every gludd-related process (pytest/molecule/uv/python
 # daemon/gate/ansible) with PID, PPID, elapsed time and command. Marks each row
 # ORPHAN when its parent is PID 1 (init/launchd) — i.e. the make/agent/gate that
