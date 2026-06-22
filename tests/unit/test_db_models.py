@@ -164,6 +164,11 @@ class TestTodoEventModel:
 
 class TestTaskReturnModel:
     async def test_create_task_return(self, async_session: AsyncSession):
+        # Seed parent Todo so the FK todo_id→todos is satisfied.
+        parent_todo = TodoModel(todo_id="TODO-ABCD1234", title="Parent todo for TR test")
+        async_session.add(parent_todo)
+        await async_session.flush()
+
         tr = TaskReturnModel(
             return_id="R-001",
             todo_id="TODO-ABCD1234",
@@ -186,6 +191,25 @@ class TestTaskReturnModel:
 
 class TestTaskDecisionModel:
     async def test_create_task_decision(self, async_session: AsyncSession):
+        # Seed parent Todo and TaskReturn so FK constraints are satisfied:
+        #   task_decisions.return_id → task_returns.return_id (NOT NULL FK)
+        #   task_returns.todo_id    → todos.todo_id (nullable FK, but we seed
+        #                             matched_todo_id for realistic coverage)
+        parent_todo = TodoModel(todo_id="TODO-ABCD1234", title="Parent todo for TD test")
+        async_session.add(parent_todo)
+        await async_session.flush()
+
+        parent_tr = TaskReturnModel(
+            return_id="R-001",
+            todo_id="TODO-ABCD1234",
+            job_id="J-001",
+            playbook="noop.yml",
+            queue="core",
+            status="created",
+        )
+        async_session.add(parent_tr)
+        await async_session.flush()
+
         td = TaskDecisionModel(
             return_id="R-001",
             matched_todo_id="TODO-ABCD1234",
