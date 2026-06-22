@@ -990,3 +990,28 @@ This is codified at all three levels:
    `GLUDD_NO_WAIT_ENFORCE=1`, naked constraint phrasings block the turn-end.
 3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block
    in enforce mode.
+
+## Keep Opus Lean — Sonnet Carries the Token Load
+
+The expensive opus main thread must consume far fewer tokens than the cheap
+sonnet subagents.  Target: sonnet subagent tokens >= opus main-thread tokens
+at minimum; cost-weighted (opus ~5× sonnet $/token), aim for sonnet consuming
+SEVERAL TIMES the opus tokens.  Every opus token should buy
+coordination/judgment, not grunt work.
+
+**Levers (the controllable behaviors):**
+
+1. **Delegate ALL heavy reading/editing/testing to `model:'sonnet'` subagents —
+   never grind inline.**  File trawls, large diffs, test runs, research surveys,
+   multi-file edits: dispatch them.  Do not perform grunt work on the main thread.
+2. **Keep main-thread turns terse.**  Short replies; do NOT re-read large tool
+   outputs or transcripts into context; don't re-derive established facts; lean
+   on the memory index for session state.
+3. **Subagents return terse summaries + a file pointer**, keeping detail off the
+   main thread.  The main thread receives a punch-list, not the raw output.
+
+**Honest limit:** there is no live token meter on the main loop and no per-agent
+token accounting in hooks, so a true token-ratio hook is not feasible.  The
+enforceable proxy is the existing `model_utilization` `PreToolUse` hook
+(sonnet : non-sonnet dispatch-count ratio ≥ 10:1), which indirectly drives
+sonnet token dominance — plus the terse-main-thread discipline above.
