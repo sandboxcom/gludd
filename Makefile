@@ -53,7 +53,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-stash-rebase-pop \
         git-cherry-pick git-cherry-continue git-cherry-abort git-show-diff \
         test-force-delegate-hook \
-        test-worktree-disk-guard
+        test-worktree-disk-guard \
+        git-cherry-pick-commit git-amend-msg
 
 help:
 	@echo "Usage: make [target]"
@@ -2592,6 +2593,18 @@ gh-pr-ensure:
 git-cherry-pick:
 	@[ -n "$(REF)" ] || { echo "Usage: make git-cherry-pick REF=<sha>"; exit 1; }
 	@git cherry-pick --no-commit "$(REF)" && echo "cherry-pick staged (no-commit): $(REF)" || { echo "CHERRY-PICK CONFLICT on $(REF) — files listed above need manual resolution, then: make git-add FILES='...' && make git-cherry-continue"; exit 1; }
+
+# Cherry-pick a commit AND commit it atomically, preserving the original commit
+# message. Usage: make git-cherry-pick-commit REF=<sha>
+git-cherry-pick-commit:
+	@[ -n "$(REF)" ] || { echo "Usage: make git-cherry-pick-commit REF=<sha>"; exit 1; }
+	@git cherry-pick --no-edit "$(REF)" && echo "cherry-picked (committed): $(REF)" || { echo "CHERRY-PICK CONFLICT on $(REF) — resolve, git-add, then: make git-cherry-continue"; exit 1; }
+
+# Amend ONLY the message of the current HEAD commit (no content change).
+# Usage: make git-amend-msg MSG='corrected message'
+git-amend-msg:
+	@[ -n "$(MSG)" ] || { echo "Usage: make git-amend-msg MSG='message'"; exit 1; }
+	@git commit --amend --no-verify -m "$(MSG)" && echo "amended HEAD message"
 
 # Continue after resolving cherry-pick conflicts (equivalent to cherry-pick --continue).
 git-cherry-continue:
