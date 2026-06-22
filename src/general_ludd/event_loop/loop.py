@@ -109,7 +109,7 @@ def _work_type_to_task_type(work_type: str) -> Any:
 _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
     "code": "validate_task.yml", "test": "molecule_test.yml",
     "analysis": "gap_analysis.yml", "audit": "log_audit.yml",
-    "prompt": "prompt_eval.yml", "self_improvement": "self_improve_harness.yml",
+    "prompt": "prompt_eval.yml", "self_improve": "self_improve_harness.yml",
     "dependency": "dependency_update.yml", "review": "return_review.yml",
     "docs": "noop.yml", "infra": "noop.yml", "security": "noop.yml",
     "model": "noop.yml", "release": "noop.yml",

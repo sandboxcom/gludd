@@ -96,7 +96,8 @@ class TestDaemonMcpDispatchWired:
         """
         from general_ludd.daemon import build_event_loop_mcp_dispatcher  # noqa: F401
 
-    def test_dispatcher_routes_mcp_call_to_client(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatcher_routes_mcp_call_to_client(self) -> None:
         """A model MCP tool_call is ROUTED to mcp_client.call_tool and returns."""
         from general_ludd.daemon import build_event_loop_mcp_dispatcher
 
@@ -110,7 +111,7 @@ class TestDaemonMcpDispatchWired:
 
         # The model emitted: call MCP tool "read_file" on server "files".
         call = ToolCall(kind="mcp", name="files/read_file", args={"path": "/etc/hosts"})
-        result = dispatcher.dispatch(call)
+        result = await dispatcher.dispatch(call)
 
         assert result.ok is True, f"dispatch failed: {result.error!r}"
         # Recorded on the REAL client path — not bypassed.
@@ -144,13 +145,14 @@ class TestDaemonMcpDispatchWired:
         assert loop._dispatcher is not None
 
         calls = [ToolCall(kind="mcp", name="files/read_file", args={"q": 1})]
-        results = loop._dispatcher.dispatch_all(calls)
+        results = await loop._dispatcher.dispatch_all(calls)
 
         assert len(results) == 1
         assert results[0].ok is True, f"dispatch failed: {results[0].error!r}"
         assert client.recorded == [("files", "read_file", {"q": 1})]
 
-    def test_role_is_event_loop_not_denied(self) -> None:
+    @pytest.mark.asyncio
+    async def test_role_is_event_loop_not_denied(self) -> None:
         """The wired dispatcher must use a role that may dispatch mcp.
 
         Guards against the capability_denied trap (role None denies mcp).
@@ -166,7 +168,7 @@ class TestDaemonMcpDispatchWired:
         )
         # mcp kind must be registered AND the role permitted.
         assert "mcp" in dispatcher.list_available()["registered_kinds"]
-        result = dispatcher.dispatch(
+        result = await dispatcher.dispatch(
             ToolCall(kind="mcp", name="files/read_file", args={})
         )
         assert "capability_denied" not in (result.error or "")

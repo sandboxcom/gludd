@@ -20,9 +20,10 @@ class GateDecision:
 
 
 class SelfImproveGate:
-    def __init__(self, max_open: int = 10, auto_queue: bool = False) -> None:
+    def __init__(self, max_open: int = 10, auto_queue: bool = False, allow_auto_promote: bool = False) -> None:
         self.max_open = max_open
         self.auto_queue = auto_queue
+        self.allow_auto_promote = allow_auto_promote
 
     def evaluate(self, todo: dict[str, Any], open_count: int) -> GateDecision:
         if open_count >= self.max_open:
@@ -32,4 +33,6 @@ class SelfImproveGate:
             if self.auto_queue
             else TodoStatus.APPROVAL_REQUIRED.value
         )
+        if initial == TodoStatus.APPROVAL_REQUIRED.value and self.allow_auto_promote:
+            initial = TodoStatus.QUEUED.value
         return GateDecision(admitted=True, initial_status=initial)
