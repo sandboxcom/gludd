@@ -137,8 +137,17 @@ class TestRulesEvaluationInEventLoop:
             )
         ]
         loop.config["rules"] = rules
-        loop.config["todos"] = [
-            {"todo_id": "T1", "work_type": "dependency", "status": "queued"},
+        # _phase_evaluate_rules reads claimed todos from _tick_state["claimed_todos"]
+        # (set by _phase_claim_runnable_todos which runs first in PHASE_ORDER), not
+        # from config["todos"] which is absent at runtime.
+        loop._tick_state["claimed_todos"] = [
+            Todo(
+                title="dep task",
+                todo_id="T1",
+                work_type="dependency",
+                status=TodoStatus.QUEUED,
+                queue="dependency",
+            )
         ]
         await loop._phase_evaluate_rules()
         results = loop._tick_state.get("rule_evaluation_results", [])
