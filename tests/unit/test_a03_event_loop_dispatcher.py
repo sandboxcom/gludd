@@ -48,17 +48,19 @@ class TestEventLoopLattice:
 class TestDispatcherFailClosed:
     """Dispatcher fail-closed when no handler registered for a kind."""
 
-    def test_no_handler_returns_error_result(self) -> None:
+    @pytest.mark.asyncio
+    async def test_no_handler_returns_error_result(self) -> None:
         dispatcher = DynamicDispatcher(role="event_loop")
         call = ToolCall(kind="role", name="test_tool", args={})
-        result = dispatcher.dispatch(call)
+        result = await dispatcher.dispatch(call)
         assert result.ok is False
         assert "unknown_kind" in (result.error or "")
 
-    def test_dispatch_all_no_handler(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatch_all_no_handler(self) -> None:
         dispatcher = DynamicDispatcher(role="event_loop")
         calls = [ToolCall(kind="mcp", name="fs_read", args={})]
-        results = dispatcher.dispatch_all(calls)
+        results = await dispatcher.dispatch_all(calls)
         assert len(results) == 1
         assert results[0].ok is False
 

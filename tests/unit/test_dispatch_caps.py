@@ -7,6 +7,8 @@ FIX 2: A 1000-char tool name is truncated to 256 chars in the parsed ToolCall
 
 from __future__ import annotations  # noqa: I001
 
+import pytest
+
 from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls, UNRESTRICTED_ROLE
 from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST, register
 
@@ -103,7 +105,8 @@ class TestNameKindTruncation:
         calls = parse_tool_calls({"kind": "mcp", "name": "fs"})
         assert calls[0].kind == "mcp"
 
-    def test_truncated_name_flows_into_dispatch_result(self):
+    @pytest.mark.asyncio
+    async def test_truncated_name_flows_into_dispatch_result(self):
         """The truncated name appears in the DispatchResult, not the raw 1000-char string."""
         from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
 
@@ -116,7 +119,7 @@ class TestNameKindTruncation:
 
         # Dispatch the parsed call — result.name must also be the truncated form
         d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        result = d.dispatch(calls[0])
+        result = await d.dispatch(calls[0])
         # Even in error (no handler registered) the name field is bounded
         assert len(result.name) == 256
         assert result.name == truncated
