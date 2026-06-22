@@ -13,6 +13,7 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
@@ -213,6 +214,7 @@ class TestStatusDbUrlRedaction:
 
     def test_postgres_password_not_in_db_url(self):
         """A postgres engine URL with a password must be rendered password-hidden."""
+        pytest.importorskip("psycopg2")
         from sqlalchemy import create_engine
 
         app = FastAPI()
