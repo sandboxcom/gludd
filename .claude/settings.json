@@ -1,7 +1,10 @@
 {
   "env": {
     "CLAUDE_AGENT_FLOOR": "6",
-    "CLAUDE_AGENT_CEILING": "10"
+    "CLAUDE_AGENT_CEILING": "10",
+    "GLUDD_FORCE_DELEGATE": "1",
+    "GLUDD_FORCE_DELEGATE_GRACE": "5",
+    "GLUDD_FORCE_DELEGATE_MAXBLOCK": "4"
   },
   "hooks": {
     "SessionStart": [
@@ -65,6 +68,10 @@
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/disk_discipline_pretool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/worktree_disk_guard_pretool.sh"
           },
           {
             "type": "command",

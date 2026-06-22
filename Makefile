@@ -52,7 +52,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         commit-no-verify \
         git-stash-rebase-pop \
         git-cherry-pick git-cherry-continue git-cherry-abort git-show-diff \
-        test-force-delegate-hook
+        test-force-delegate-hook \
+        test-worktree-disk-guard
 
 help:
 	@echo "Usage: make [target]"
@@ -1707,6 +1708,9 @@ test-model-ratio-hook:
 
 test-force-delegate-hook:
 	@$(PYTHON) scripts/test_force_delegate_hook.py
+
+test-worktree-disk-guard:
+	@$(PYTHON) scripts/test_worktree_disk_guard.py
 
 test-liveness-workflow:
 	@$(PYTHON) scripts/test_liveness_workflow.py

@@ -159,6 +159,22 @@ for _ in range(4):
     results16.append(run_hook(make_payload("Bash", command="make git-add FILES=foo.py"), se16))
 cases.append((16, "DENY", results16[-1]))
 
+# ---------- Case 17: git-push-branch ALLOWED within grace=5 (first call) ----------
+# GLUDD_FORCE_DELEGATE_GRACE=5 means we must exceed 5 targeted calls before deny.
+# With a fresh state, the 1st call (consecutive_targeted=1) is well within grace.
+se17 = {**state_env(18), "GLUDD_FORCE_DELEGATE_GRACE": "5"}
+result17 = run_hook(make_payload("Bash", command="make git-push-branch"), se17)
+cases.append((17, "ALLOW", result17))
+
+# ---------- Case 18: git-commit as 5th consecutive call still within grace=5 ----------
+# grace=5 means deny only when consecutive_targeted > 5 (i.e., 6th call and beyond).
+# Calls 1-5 must all be ALLOW.
+se18 = {**state_env(19), "GLUDD_FORCE_DELEGATE_GRACE": "5"}
+results18 = []
+for _ in range(5):  # exactly at grace boundary — must all ALLOW
+    results18.append(run_hook(make_payload("Bash", command="make git-commit MSG=test"), se18))
+cases.append((18, "ALLOW", results18[-1]))  # 5th call at grace=5 is still within grace
+
 # ---------- Report ----------
 fail = 0
 for num, exp, got in cases:
