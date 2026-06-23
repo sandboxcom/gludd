@@ -580,3 +580,27 @@ class MemoryRecordModel(Base):
         Index("ix_memory_scope", "scope", "scope_key"),
         Index("ix_memory_scope_kind", "scope", "scope_key", "kind"),
     )
+
+
+class TaskEmbeddingModel(Base):
+    """Canonical embedding vector per task type (Tier 2 RAG routing substrate).
+
+    One row per ``task_type`` (the primary key). ``embedding`` stores a JSON
+    list of floats produced by the embedding model; ``dim`` records its
+    length so consumers can sanity-check shape without re-parsing. Used by
+    the AdaptiveRouter to weight historical aggregates by cosine similarity
+    to the current task, turning the flat 10-arm bandit into a soft cluster.
+    """
+
+    __tablename__ = "task_embeddings"
+
+    task_type: Mapped[str] = mapped_column(String(64), primary_key=True)
+    canonical_text: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # JSON array of floats (Text column — JSON-in-Text convention used
+    # elsewhere in this file, e.g. tags/acceptance_criteria). Empty list by
+    # default so a freshly-created row is always parseable.
+    embedding: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    dim: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )

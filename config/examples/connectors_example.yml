@@ -1,0 +1,62 @@
+# Connectors Configuration Example
+# =================================
+# Operator-supplied list of live sources the daemon can fan queries across.
+# Consumed by ConnectorRegistry.from_config() (src/general_ludd/connectors/registry.py).
+# Drop this under the top-level `connectors:` key of user.yml / general-ludd.yml,
+# e.g. copy to ~/.config/general-ludd/user.yml and customize.
+#
+# Each entry MUST carry:
+#   name   — operator-chosen unique handle used to address the source at query time
+#   kind   — informational family label (metrics / logs / traces / pipeline / incidents);
+#            the class-level KIND attr on the connector wins, this is a fallback
+#   AND one selector (first wins):
+#     module     — bare name of a module under general_ludd.connectors
+#                  (registry auto-discovers its single `*Source` class)
+#     class_name — paired with `module` when a module exposes >1 `*Source` class
+#     class      — fully-qualified "module.path:ClassName" (allowlisted to the
+#                  connectors package; arbitrary imports are rejected)
+#     factory    — key into an explicit factories map passed by the caller
+#
+# SECURITY: entries carry only `*_env` env-var NAMES — never raw secret values.
+# Each connector resolves the secret from os.environ at call time.
+
+connectors:
+  # --- metrics -----------------------------------------------------------
+  - name: prod-prometheus
+    kind: metrics
+    module: prometheus
+    base_url: https://prometheus.example.com
+    # Optional bearer token (name of the env var, not the value):
+    token_env: PROMETHEUS_TOKEN
+    # NOTE: PrometheusSource.__init__ requires an injected http_get transport,
+    # so a bare `module:` selector lands this entry in registry.errors() with
+    # "construct: http_get transport must be injected". Wire it via `factory:`
+    # pointing at a pre-built class/callable in your deployment if you need it
+    # live; kept here to document the config shape.
+
+  # --- logs --------------------------------------------------------------
+  - name: prod-datadog
+    kind: logs
+    module: datadog
+    # Datadog site (validated against a literal-host SSRF blocklist):
+    site: https://api.datadoghq.com
+    # Names of the env vars holding the API + app keys:
+    api_key_env: DATADOG_API_KEY
+    app_key_env: DATADOG_APP_KEY
+
+  # --- pipeline ----------------------------------------------------------
+  - name: gh-actions-general-ludd
+    kind: pipeline
+    module: github_actions
+    # Required: GitHub repo in owner/name form:
+    repo: anomalyco/general-ludd
+    # Defaults to https://api.github.com; override for GH Enterprise:
+    # base_url: https://github.example.com/api/v3
+    token_env: GITHUB_TOKEN
+
+  # --- local logs (no secrets) ------------------------------------------
+  - name: local-journald
+    kind: logs
+    module: journald
+    # No *_env keys: journald reads via journalctl on the local host.
+    # The only config knob operators set is the display `name`.
