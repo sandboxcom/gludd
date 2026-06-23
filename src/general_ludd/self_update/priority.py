@@ -89,6 +89,8 @@ def to_todo_spec(
         f"tier:{plan.apply_tier.value}",
         f"kind:{plan.change_kind.value}",
     ]
+    import json as _json
+
     spec: dict[str, object] = {
         "title": title,
         "description": description,
@@ -96,7 +98,7 @@ def to_todo_spec(
         "queue": "self_update",
         "work_type": WorkType.INFRA.value,
         "risk_level": risk.value,
-        "tags": tags,
+        "tags": _json.dumps(tags),
         "created_by": request.requested_by,
         "approval_policy": "required" if plan.requires_approval else "none",
     }
@@ -105,8 +107,14 @@ def to_todo_spec(
     return spec
 
 
-def to_work_item(plan: SelfUpdatePlan, item_id: str) -> WorkItem:
-    """Build a :class:`WorkItem` so the existing Scheduler can place this request.
+def work_item_for_tier(tier: ApplyTier, item_id: str) -> WorkItem:
+    """Build a :class:`WorkItem` for a self-update at the given apply tier.
+
+    This is the tier→resource-label mapping, isolated from
+    :class:`SelfUpdatePlan` so the event-loop scheduler branch can call it
+    directly when reconstructing a work item from a backlog todo's ``tier:``
+    tag (which is all the scheduler has at dispatch time — the full plan is
+    not carried on the todo row).
 
     Resource selection encodes the safety contract directly into the scheduler's
     concurrency model:
@@ -118,16 +126,25 @@ def to_work_item(plan: SelfUpdatePlan, item_id: str) -> WorkItem:
       * Anything else (e.g. REFUSED) -> greenfield/no-resource so it never blocks
         real work.
     """
-    if plan.apply_tier is ApplyTier.CODE:
+    if tier is ApplyTier.CODE:
         resources = frozenset({SELF_UPDATE_CODE_RESOURCE})
         greenfield = False
-    elif plan.apply_tier in (ApplyTier.CONFIG, ApplyTier.SCAFFOLD):
+    elif tier in (ApplyTier.CONFIG, ApplyTier.SCAFFOLD):
         resources = frozenset({SELF_UPDATE_CONFIG_RESOURCE})
         greenfield = False
     else:
         resources = frozenset()
         greenfield = True
     return WorkItem(id=item_id, resources=resources, is_greenfield=greenfield)
+
+
+def to_work_item(plan: SelfUpdatePlan, item_id: str) -> WorkItem:
+    """Build a :class:`WorkItem` so the existing Scheduler can place this request.
+
+    Thin delegate over :func:`work_item_for_tier` — kept as the plan-facing API
+    so intake-side callers don't need to dig the tier out themselves.
+    """
+    return work_item_for_tier(plan.apply_tier, item_id)
 
 
 def describe_scheduler_hook() -> str:

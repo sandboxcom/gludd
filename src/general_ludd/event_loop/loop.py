@@ -60,6 +60,37 @@ def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
     return val if isinstance(val, str) else default
 
 
+def _self_update_work_item_from_todo(todo: Any, todo_id: str) -> Any:
+    """Build a Scheduler ``WorkItem`` for a ``self_update``-queue todo.
+
+    The intake half of the pipeline (:func:`priority.to_todo_spec`) writes a
+    ``tier:<value>`` tag onto the backlog row. This inverts that: it digs the
+    apply tier back out of the todo's tags and feeds it through
+    :func:`priority.work_item_for_tier` so code-tier self-updates serialise on
+    ``self_update:code`` and config-tier on ``self_update:config`` — without
+    round-tripping the original :class:`SelfUpdatePlan` (which is not carried
+    on the todo row).
+
+    Fail-closed: an unknown / missing tier becomes a greenfield work item
+    (empty resources) so a malformed tag never blocks real work. Mirrors
+    ``ApplyTier.REFUSED`` handling in :func:`priority.work_item_for_tier`.
+    """
+    from general_ludd.self_update.model import ApplyTier
+    from general_ludd.self_update.priority import work_item_for_tier
+
+    tags = getattr(todo, "tags", None) or []
+    tier_value = ""
+    for tag in tags:
+        if isinstance(tag, str) and tag.startswith("tier:"):
+            tier_value = tag.split(":", 1)[1].strip()
+            break
+    try:
+        tier = ApplyTier(tier_value)
+    except ValueError:
+        tier = ApplyTier.REFUSED
+    return work_item_for_tier(tier, todo_id)
+
+
 def _resolve_prompt_text_static(
     prompt_registry: Any,
     prompt_profile: str | None,
@@ -766,6 +797,14 @@ class EventLoop:
         for todo in todos:
             todo_id = str(_safe_str(todo, "todo_id", "") or id(todo))
             queue = _safe_str(todo, "queue", "core") or "core"
+            if queue == "self_update":
+                # Phase-2 Step 5: self_update-queue todos serialise on the
+                # tier-specific resource label (self_update:code for CODE,
+                # self_update:config for CONFIG/SCAFFOLD) so two code-tier
+                # source edits never run concurrently. Tier is reconstructed
+                # from the todo's `tier:` tag written by priority.to_todo_spec.
+                items.append(_self_update_work_item_from_todo(todo, todo_id))
+                continue
             # Use the todo_id as a unique resource so each job is self-exclusive
             # by default; add queue as a shared resource only when queue-exclusive
             # serialization is explicitly needed (opt-in via config).
