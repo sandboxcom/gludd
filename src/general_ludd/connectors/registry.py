@@ -118,6 +118,13 @@ class ConnectorRegistry:
             return
         try:
             factory = self._resolve_factory(config, factories)
+            # Class-level interface preflight: reject a factory whose class is
+            # structurally incapable of satisfying the Source contract BEFORE we
+            # invoke its __init__.  A malformed connector's constructor may
+            # itself incur network/secret side effects; rejecting it here keeps
+            # those side effects from firing just for the instance to be
+            # discarded by the post-construction _SourceLike check below.
+            _validate_source_class(factory)
         except Exception as exc:  # discovery failure — skip, never abort
             self._errors.append({"name": name, "error": f"discovery: {exc}"})
             return
@@ -289,6 +296,60 @@ def _family_for(name: str, config: dict[str, Any]) -> str:
 
 
 _MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
+
+
+# Methods every connector class MUST expose (class-level, never dynamic).
+# ``KIND`` and ``name`` are intentionally NOT checked here — they are
+# legitimately set per-instance in ``__init__`` (see webhook_buffer.py /
+# the _FakeSource test double), so the instance-level ``_SourceLike`` check
+# remains the authority for those attributes.
+_REQUIRED_SOURCE_METHODS = ("health", "query")
+
+
+def _validate_source_class(factory: Any) -> None:
+    """Reject a factory that cannot satisfy the :class:`Source` interface.
+
+    Called AFTER resolution but BEFORE construction, so a malformed connector
+    class never has its ``__init__`` invoked. Raises :class:`TypeError` with a
+    message naming every gap, so a single bad registration surfaces all of its
+    interface problems at once (rather than one-per-iteration).
+
+    Two checks:
+
+    1. ``factory`` must be callable (a class or zero-or-more-arg callable that
+       builds a source). A non-callable (e.g. a bare instance smuggled in via
+       the ``factories`` map) is a discovery error, not a construct error.
+    2. The class must expose callable ``health`` and ``query`` attributes.
+       These are always defined on the class (inherited or direct), unlike
+       ``KIND``/``name`` which connectors may legitimately assign in
+       ``__init__`` and which are therefore validated post-construction by the
+       ``_SourceLike`` structural check.
+    """
+    if not callable(factory):
+        raise TypeError(
+            f"connector factory {factory!r} is not callable; "
+            f"expected a Source class (with health()/query())"
+        )
+
+    missing: list[str] = []
+    for method_name in _REQUIRED_SOURCE_METHODS:
+        attr = getattr(factory, method_name, None)
+        if not callable(attr):
+            missing.append(method_name)
+    if missing:
+        raise TypeError(
+            f"connector class {_qualname(factory)} is missing required "
+            f"Source method(s): {', '.join(missing)}"
+        )
+
+
+def _qualname(obj: Any) -> str:
+    """Best-effort ``Module.QualName`` for error messages; falls back to repr."""
+    name = getattr(obj, "__qualname__", None) or getattr(obj, "__name__", None)
+    module = getattr(obj, "__module__", None)
+    if name and module:
+        return f"{module}.{name}"
+    return repr(obj)
 
 
 def _check_module_allowlist(path: str, *, selector: str) -> None:

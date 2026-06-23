@@ -246,5 +246,87 @@ class TestOverCapDropped:
         assert resp.status_code == 200
         detected = resp.json()["tool_calls_detected"]
         assert len(detected) == MAX_CALLS_PER_REQUEST, (
-            f"Expected {MAX_CALLS_PER_REQUEST} detected at cap, got {len(detected)}"
+            f"Expected {MAX_CALLS_PER_REQUEST} detected at cap, got: {len(detected)}"
         )
+
+
+# ---------------------------------------------------------------------------
+# (4) Dispatcher wired → tool calls are EXECUTED (not just detected)
+# ---------------------------------------------------------------------------
+
+class TestDispatcherWired:
+    """When a DynamicDispatcher IS wired into the worker, model tool calls
+    are executed via ``dispatch_all`` instead of being silently dropped."""
+
+    def test_dispatched_calls_are_executed(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
+
+        tool_response = _make_tool_response([_single_tool_call("my_skill")])
+        runner = _build_runner_mock()
+        gw = MagicMock()
+        fake_dispatcher = MagicMock()
+        fake_dispatcher.dispatch_all = AsyncMock(
+            return_value=[
+                DispatchResult(ok=True, kind="skill", name="my_skill", output="done"),
+            ]
+        )
+
+        with (
+            patch("general_ludd.worker.app.get_runner", return_value=runner),
+            patch("general_ludd.worker.app.get_playbook_registry", return_value={"noop.yml"}),
+            patch(
+                "general_ludd.worker.app._invoke_gateway_for_job",
+                return_value=tool_response,
+            ),
+        ):
+            app = create_app(gateway=gw, dispatcher=fake_dispatcher)
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/jobs/execute", json=_make_job(job_id="DISPATCH001"))
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        # Dispatcher was called
+        fake_dispatcher.dispatch_all.assert_called_once()
+        # Results appear in response
+        results = data.get("tool_dispatch_results", [])
+        assert len(results) == 1
+        assert results[0]["ok"] is True
+        assert results[0]["name"] == "my_skill"
+        # Detected list stays empty because calls were EXECUTED, not just detected
+        assert data["tool_calls_detected"] == []
+
+    def test_dispatch_error_surfaces_in_results(self) -> None:
+        from unittest.mock import AsyncMock
+
+        from general_ludd.dispatch.dynamic_dispatcher import DispatchResult
+
+        tool_response = _make_tool_response([_single_tool_call("bad_skill")])
+        runner = _build_runner_mock()
+        gw = MagicMock()
+        fake_dispatcher = MagicMock()
+        fake_dispatcher.dispatch_all = AsyncMock(
+            return_value=[
+                DispatchResult(ok=False, kind="skill", name="bad_skill", error="not found"),
+            ]
+        )
+
+        with (
+            patch("general_ludd.worker.app.get_runner", return_value=runner),
+            patch("general_ludd.worker.app.get_playbook_registry", return_value={"noop.yml"}),
+            patch(
+                "general_ludd.worker.app._invoke_gateway_for_job",
+                return_value=tool_response,
+            ),
+        ):
+            app = create_app(gateway=gw, dispatcher=fake_dispatcher)
+            client = TestClient(app, raise_server_exceptions=False)
+            resp = client.post("/jobs/execute", json=_make_job(job_id="DISPATCH002"))
+
+        assert resp.status_code == 200, resp.text
+        data = resp.json()
+        results = data["tool_dispatch_results"]
+        assert len(results) == 1
+        assert results[0]["ok"] is False
+        assert "not found" in results[0]["error"]

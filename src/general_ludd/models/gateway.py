@@ -846,9 +846,22 @@ class ModelGateway:
         messages: list[dict[str, str]],
         *,
         fallback_profiles: list[str] | None = None,
+        estimated_cost: float = 0.0,
+        budget_remaining: float = float("inf"),
         **kwargs: Any,
     ) -> ModelResponse:
+        # Thread the run-budget context through so fallback attempts share the
+        # same budget ceiling as the primary call. Without this, call_model's
+        # check_budget gate (which reads estimated_cost/budget_remaining) was
+        # never reached with a real budget on the fallback path — every fallback
+        # saw budget_remaining=inf and could spend past the run budget.
+        kwargs.setdefault("estimated_cost", estimated_cost)
+        kwargs.setdefault("budget_remaining", budget_remaining)
+
         # Health gate: skip circuit-open profiles rather than attempting them.
+        # The primary is only tried when no tracker is configured (open by
+        # default) or its circuit is healthy; each fallback below is likewise
+        # gated on is_healthy before it is attempted.
         tracker = self._health_tracker
         if tracker is None or tracker.is_healthy(profile_id):
             result = self._try_call_model(profile_id, messages, **kwargs)

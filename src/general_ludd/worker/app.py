@@ -96,7 +96,40 @@ def _invoke_gateway_for_job(
     )
 
 
-def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
+def build_dispatcher_from_config() -> Any:
+    """Build a DynamicDispatcher for the worker from user config, or None.
+
+    Mirrors the daemon's ``build_event_loop_mcp_dispatcher()``: wires a
+    DynamicDispatcher with a skill handler so model-emitted tool calls are
+    EXECUTED rather than dropped. Returns None when no skills are configured
+    so the worker keeps its detect-only fallback.
+    """
+    try:
+        from general_ludd.daemon_wiring import make_skill_handler
+        from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
+        from general_ludd.skills.loader import discover_skills
+        from general_ludd.skills.registry import SkillRegistry
+
+        registry = SkillRegistry()
+        config_dir = os.environ.get("GLUDD_CONFIG_DIR")
+        if config_dir:
+            for skill in discover_skills(config_dir):
+                registry.register(skill)
+        if not registry.list_skills():
+            return None
+        return DynamicDispatcher(
+            role="event_loop",
+            skill_handler=make_skill_handler(registry),
+        )
+    except Exception as exc:  # pragma: no cover - defensive config path
+        logger.warning("Worker dispatcher construction failed: %s", exc)
+        return None
+
+
+def create_app(
+    gateway: ModelGateway | None = _UNSET,
+    dispatcher: Any = _UNSET,
+) -> FastAPI:
     application = FastAPI(
         title="General Ludd Worker",
         version="0.1.0",
@@ -105,6 +138,10 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
     if gateway is _UNSET:
         gateway = build_gateway_from_config()
     application.state.gateway = gateway
+    # ``dispatcher`` omitted → build from config; explicit None → detect-only.
+    if dispatcher is _UNSET:
+        dispatcher = build_dispatcher_from_config()
+    application.state.dispatcher = dispatcher
 
     # W5.6 (AUTH blocker): the worker runs arbitrary registered playbooks for any
     # caller who can reach the port. Enforce the same pre-shared-key the daemon
@@ -124,7 +161,9 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
     _public_paths = {"/healthz", "/docs", "/openapi.json", "/redoc"}
 
     def _worker_is_public(path: str) -> bool:
-        return path in _public_paths or path.startswith("/docs")
+        # SECURITY: exact-match `/docs` or `/docs/<sub>` only — NOT `startswith("/docs")`,
+        # which let prefix-colliding paths (e.g. `/docs_evil`) bypass the PSK auth gate.
+        return path in _public_paths or path == "/docs" or path.startswith("/docs/")
 
     @application.middleware("http")
     async def _psk_auth_middleware(request: Any, call_next: Any) -> Any:
@@ -192,11 +231,13 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
         if gw is not None and is_generation_work_type(job.work_type):
             model_response = _invoke_gateway_for_job(gw, job)
 
-        # Warn-block: parse any tool_calls the model may have emitted and log
-        # a WARNING that no dispatcher is wired in the worker (audible gap).
-        # Tool calls are NOT executed here — this is a conservative detect-only
-        # path so the gap is observable in logs and the response dict.
+        # Parse tool calls from the model response. When a DynamicDispatcher is
+        # wired (mirrors the daemon's EventLoop pattern), EXECUTE the calls via
+        # ``dispatch_all`` and surface the results. When no dispatcher is
+        # available, fall back to the conservative detect-only path so the gap
+        # is still observable in logs and the response dict.
         tool_calls_detected: list[dict[str, object]] = []
+        tool_dispatch_results: list[dict[str, object]] = []
         if model_response is not None:
             from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
             from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
@@ -205,21 +246,35 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
             if len(calls) > MAX_CALLS_PER_REQUEST:
                 logger.warning(
                     "Worker /jobs/execute: model returned %d tool call(s) which exceeds "
-                    "cap %d — all dropped; no dispatcher is wired in the worker (job %s)",
+                    "cap %d — all dropped (job %s)",
                     len(calls),
                     MAX_CALLS_PER_REQUEST,
                     job.job_id,
                 )
             elif calls:
-                logger.warning(
-                    "Worker /jobs/execute: model returned %d tool call(s) but no dispatcher "
-                    "is wired in the worker — dropping (job %s)",
-                    len(calls),
-                    job.job_id,
-                )
-                tool_calls_detected = [
-                    {"kind": c.kind, "name": c.name, "args": c.args} for c in calls
-                ]
+                _dispatcher = application.state.dispatcher
+                if _dispatcher is None:
+                    logger.warning(
+                        "Worker /jobs/execute: model returned %d tool call(s) but no dispatcher "
+                        "is wired in the worker — detect-only (job %s)",
+                        len(calls),
+                        job.job_id,
+                    )
+                    tool_calls_detected = [
+                        {"kind": c.kind, "name": c.name, "args": c.args} for c in calls
+                    ]
+                else:
+                    dispatch_results = await _dispatcher.dispatch_all(calls)
+                    ok_count = sum(1 for r in dispatch_results if r.ok)
+                    err_count = len(dispatch_results) - ok_count
+                    logger.info(
+                        "Worker /jobs/execute: dispatched %d tool call(s): %d ok, %d error (job %s)",
+                        len(dispatch_results),
+                        ok_count,
+                        err_count,
+                        job.job_id,
+                    )
+                    tool_dispatch_results = [r.to_dict() for r in dispatch_results]
 
         runner = get_runner()
         try:
@@ -267,6 +322,7 @@ def create_app(gateway: ModelGateway | None = _UNSET) -> FastAPI:
             "playbook": job.playbook,
             "model_response": model_response,
             "tool_calls_detected": tool_calls_detected,
+            "tool_dispatch_results": tool_dispatch_results,
             "exit_code": runner_result.get("rc", runner_result.get("exit_code", 0)),
             "result_summary": runner_result.get("output", runner_result.get("result_summary", "")),
             "artifacts": runner_result.get("artifacts", []),

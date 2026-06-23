@@ -286,7 +286,15 @@ class TestImportGuardIntegration:
 class TestSourceLikePreflight:
     def test_non_sourcelike_object_rejected_not_stored(self) -> None:
         """A factory that returns an object missing _SourceLike members must
-        be caught, produce an error entry, and NOT be stored in _sources."""
+        be caught, produce an error entry, and NOT be stored in _sources.
+
+        This may happen at either of two layers: the class-level preflight
+        (rejects before ``__init__`` runs, when the class itself lacks
+        ``health``/``query``) or the instance-level ``_SourceLike`` check
+        (rejects after construction, when ``name``/``KIND`` are absent). Both
+        are valid rejection points — the contract under test is that a
+        non-conforming class is rejected with a clear, interface-naming error.
+        """
         reg = ConnectorRegistry.from_config(
             [{"name": "broken", "kind": "logs", "factory": "bad"}],
             factories={"bad": _NotSourceLike},
@@ -297,7 +305,12 @@ class TestSourceLikePreflight:
         assert len(errors) == 1
         err = errors[0]
         assert err["name"] == "broken"
-        assert "_SourceLike" in err["error"] or "satisfy" in err["error"].lower()
+        # Either layer's message clearly names the Source interface gap.
+        assert (
+            "_SourceLike" in err["error"]
+            or "satisfy" in err["error"].lower()
+            or "required Source method" in err["error"]
+        )
 
     def test_sourcelike_conformant_object_stored(self) -> None:
         """A factory returning a _SourceLike-conformant object is accepted."""

@@ -362,11 +362,18 @@ class TestAuditEventRepository:
 
     @pytest.mark.asyncio
     async def test_audit_repo_creates_event(self, session: AsyncSession):
+        from general_ludd.db.models import ProjectModel
+
+        project = ProjectModel(project_id="proj-a", name="Audit Create Test")
+        session.add(project)
+        await session.flush()
+
         repo = AuditEventRepository(session)
         audit = await repo.create(
             event_type="todo_created",
             entity_type="todo",
             entity_id="TODO-001",
+            project_id="proj-a",
             details=json.dumps({"title": "Test"}),
         )
         assert audit.id is not None
@@ -375,16 +382,24 @@ class TestAuditEventRepository:
 
     @pytest.mark.asyncio
     async def test_audit_repo_lists_by_entity(self, session: AsyncSession):
+        from general_ludd.db.models import ProjectModel
+
+        project = ProjectModel(project_id="proj-b", name="Audit List Test")
+        session.add(project)
+        await session.flush()
+
         repo = AuditEventRepository(session)
         await repo.create(
             event_type="todo_created",
             entity_type="todo",
             entity_id="TODO-002",
+            project_id="proj-b",
         )
         await repo.create(
             event_type="todo_status_changed",
             entity_type="todo",
             entity_id="TODO-002",
+            project_id="proj-b",
         )
         events = await repo.list_by_entity("todo", "TODO-002")
         assert len(events) == 2
@@ -407,3 +422,14 @@ class TestAuditEventRepository:
         events = await repo.list_by_project("proj-x")
         assert len(events) == 1
         assert events[0].project_id == "proj-x"
+
+    @pytest.mark.asyncio
+    async def test_audit_repo_rejects_none_project_id(self, session: AsyncSession):
+        repo = AuditEventRepository(session)
+        with pytest.raises(ValueError, match="project_id"):
+            await repo.create(
+                event_type="todo_created",
+                entity_type="todo",
+                entity_id="TODO-NULL",
+                project_id=None,
+            )

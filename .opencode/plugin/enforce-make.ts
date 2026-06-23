@@ -592,8 +592,15 @@ export default (async ({ }) => {
         "Full rationale in AGENTS.md. This contract is all you need for mechanics.",
         "",
       ].join("\n");
+      const policyInjection = [
+        BASH_METACHAR_POLICY,
+        "",
+        TASK_COMPLETION_WARNING,
+        "",
+        SELF_DIRECTED_WORK_WARNING,
+      ].join("\n")
       if (typeof output === "string") {
-        output = mechanicalContract + "\n\n" + output
+        output = mechanicalContract + "\n\n" + policyInjection + "\n\n" + output
       }
       return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
     },
@@ -636,6 +643,8 @@ export default (async ({ }) => {
           "",
           "Check todowrite — any pending or in_progress items?",
           "→ Work on them NOW. Do NOT send another text message.",
+          "",
+          STOP_PATTERN_BLOCK,
         ].join("\n")
         return output
       }
@@ -708,6 +717,21 @@ export default (async ({ }) => {
           "",
         ].join("\n")
         output = output + verification
+      }
+
+      // Surface the preflight-gate notice when a test-and-commit was just
+      // attempted (flag set in tool.execute.before). Reset after surfacing.
+      if (_pendingPreflightGate) {
+        const preflight = _pendingPreflightGate
+        _pendingPreflightGate = ""
+        output = output + "\n\n" + preflight
+      }
+
+      // Surface the commit reminder when a prior test run passed (flag set in
+      // tool.execute.after). Reset after surfacing so it fires once.
+      if (_pendingCommitReminder) {
+        _pendingCommitReminder = false
+        output = output + "\n\n" + COMMIT_REMINDER
       }
 
       return output

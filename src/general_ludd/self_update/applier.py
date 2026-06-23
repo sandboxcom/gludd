@@ -111,6 +111,28 @@ def _first_protected(target_paths: list[str]) -> str | None:
     return None
 
 
+def _first_escape(target_paths: list[str], workspace_root: Path) -> str | None:
+    """Return the first target path resolving outside ``workspace_root``, else ``None``.
+
+    Every path is anchored to ``workspace_root`` and resolved with symlinks
+    followed, so ``../`` traversal, percent-encoded escapes, and absolute paths
+    outside the root are all detected. A path is safe only if its resolved form
+    is ``workspace_root`` itself or lives beneath it.
+    """
+    root = workspace_root.resolve()
+    for path in target_paths:
+        decoded = urllib.parse.unquote(path)
+        # Joining against ``root`` anchors relative paths; for an absolute
+        # ``decoded`` the join yields that absolute path, which the confinement
+        # check then rejects unless it already lives under ``root``.
+        resolved = (root / decoded).resolve()
+        try:
+            resolved.relative_to(root)
+        except ValueError:
+            return path
+    return None
+
+
 class UpdateApplier:
     """Apply an update plan through an injected writer and capability checker."""
 
@@ -118,9 +140,11 @@ class UpdateApplier:
         self,
         writer: SafeWriter,
         capability_checker: CapabilityChecker,
+        workspace_root: Path,
     ) -> None:
         self._writer = writer
         self._capability_checker = capability_checker
+        self._workspace_root = workspace_root
 
     def apply(self, plan: UpdatePlan, change_content: str) -> ApplyResult:
         target_paths = list(plan.target_paths)
@@ -146,7 +170,20 @@ class UpdateApplier:
                 ),
             )
 
-        # 2. Protected-path deny-list. Always wins over capability.
+        # 2. Workspace-confinement gate. Every target path must resolve INSIDE
+        #    the workspace root. ``../`` traversal, percent-encoded escapes, and
+        #    absolute paths outside the root are denied regardless of capability
+        #    or kind. This runs before the protected-path check and before any
+        #    write so an escaping path can never reach the SafeWriter.
+        escapee = _first_escape(target_paths, self._workspace_root)
+        if escapee is not None:
+            return ApplyResult(
+                status="denied",
+                target_paths=target_paths,
+                evidence=f"path escapes workspace root: {escapee}",
+            )
+
+        # 3. Protected-path deny-list. Always wins over capability.
         protected = _first_protected(target_paths)
         if protected is not None:
             return ApplyResult(
@@ -157,7 +194,7 @@ class UpdateApplier:
 
         kind = plan.kind
 
-        # 3. Code changes are NEVER blind-applied here — propose only.
+        # 4. Code changes are NEVER blind-applied here — propose only.
         if kind == "code":
             return ApplyResult(
                 status="proposed",
@@ -165,7 +202,7 @@ class UpdateApplier:
                 evidence=change_content,
             )
 
-        # 4. YAML-shaped kinds: validate then write.
+        # 5. YAML-shaped kinds: validate then write.
         if kind in _YAML_KINDS:
             try:
                 yaml.safe_load(change_content)
@@ -192,7 +229,7 @@ class UpdateApplier:
                 evidence=f"applied {kind} change to {len(target_paths)} path(s)",
             )
 
-        # 5. Unknown kind -> fail closed.
+        # 6. Unknown kind -> fail closed.
         return ApplyResult(
             status="denied",
             target_paths=target_paths,

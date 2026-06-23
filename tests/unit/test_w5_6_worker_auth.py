@@ -127,3 +127,37 @@ class TestWorkerAuth:
             # validate still returns its 501 (no auth gate), not 401
             resp = client.post("/jobs/validate", json=_EXEC_PAYLOAD)
         assert resp.status_code == 501
+
+    def test_docs_prefix_collision_is_not_public(self):
+        """SECURITY: ``/docs_evil`` must NOT inherit public status from ``/docs``.
+
+        The public-path check historically used ``path.startswith("/docs")``,
+        which let any path sharing the ``/docs`` prefix (e.g. ``/docs_evil``,
+        ``/docsadmin``) bypass the PSK auth gate. Such paths must be rejected
+        with 401 when a PSK is configured, not fall through to a 404 (which
+        would mean auth was skipped).
+        """
+        with patch.dict("os.environ", {"GLUDD_PSK": _PSK}):
+            app = create_app(gateway=None)
+            client = TestClient(app)
+            resp = client.get("/docs_evil")
+        assert resp.status_code == 401, (
+            f"/docs_evil without PSK returned {resp.status_code}; a prefix-colliding "
+            "path must NOT be treated as public (startswith('/docs') bypass)"
+        )
+
+    def test_docs_exact_and_subpath_remain_public(self):
+        """The fix must not break legitimate public docs paths."""
+        with patch.dict("os.environ", {"GLUDD_PSK": _PSK}):
+            app = create_app(gateway=None)
+            client = TestClient(app)
+            # /docs exact -> 200 (served by FastAPI's docs route)
+            docs_resp = client.get("/docs")
+            assert docs_resp.status_code != 401, (
+                f"/docs returned {docs_resp.status_code}; exact /docs must stay public"
+            )
+            # /docs/ subpath -> not 401 (still public)
+            docs_sub = client.get("/docs/")
+            assert docs_sub.status_code != 401, (
+                f"/docs/ returned {docs_sub.status_code}; /docs/ subpath must stay public"
+            )

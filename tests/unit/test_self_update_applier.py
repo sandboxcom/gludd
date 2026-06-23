@@ -13,6 +13,7 @@ sibling agent). They construct a minimal structural plan locally.
 from __future__ import annotations
 
 from dataclasses import dataclass, field
+from pathlib import Path
 
 import pytest
 
@@ -52,8 +53,16 @@ class _FixedChecker:
         return capability in self._allowed
 
 
-def _applier(writer: _FakeWriter, allowed: set[str]) -> UpdateApplier:
-    return UpdateApplier(writer=writer, capability_checker=_FixedChecker(allowed))
+def _applier(
+    writer: _FakeWriter,
+    allowed: set[str],
+    workspace_root: Path = Path("."),
+) -> UpdateApplier:
+    return UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker(allowed),
+        workspace_root=workspace_root,
+    )
 
 
 # --- config write, capability allowed, valid yaml -> applied -----------------
@@ -254,6 +263,7 @@ def test_writer_failure_fails_closed_to_denied() -> None:
     applier = UpdateApplier(
         writer=_BoomWriter(),
         capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=Path("."),
     )
     plan = _Plan(
         kind="config",
@@ -264,3 +274,107 @@ def test_writer_failure_fails_closed_to_denied() -> None:
     result = applier.apply(plan, "a: 1\n")
 
     assert result.status == "denied"
+
+
+# --- path traversal / workspace confinement -> denied, NOT written ----------
+
+
+def test_traversal_escape_is_denied_and_not_written(tmp_path: Path) -> None:
+    """A ``../`` path resolving outside the workspace root is refused."""
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=["../../../../../../../etc/passwd"],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "denied"
+    assert writer.writes == []
+    assert "workspace root" in result.evidence
+
+
+def test_percent_encoded_traversal_is_denied(tmp_path: Path) -> None:
+    """Percent-encoded ``../`` is decoded before the confinement check."""
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=["%2e%2e%2f%2e%2e%2f%2e%2e%2fetc%2fpasswd"],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "denied"
+    assert writer.writes == []
+
+
+def test_absolute_path_outside_root_is_denied(tmp_path: Path) -> None:
+    """An absolute path resolving outside the workspace root is refused."""
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=["/etc/passwd"],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "denied"
+    assert writer.writes == []
+
+
+def test_one_escape_in_set_denies_all(tmp_path: Path) -> None:
+    """If any path in the set escapes, the whole apply is denied."""
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=["config/ok.yml", "../../../etc/evil"],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "denied"
+    assert writer.writes == []
+
+
+def test_path_inside_root_still_applied(tmp_path: Path) -> None:
+    """Regression guard: a legitimate relative path under root is applied."""
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=["config/ok.yml"],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "applied"
+    assert writer.writes == [("config/ok.yml", "a: 1\n")]

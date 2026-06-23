@@ -595,6 +595,11 @@ class AuditEventRepository:
         project_id: str | None = None,
         details: str | None = None,
     ) -> AuditEventModel:
+        if project_id is None:
+            raise ValueError(
+                "project_id is required for audit events — "
+                "NULL project_id silently orphans the event from its project"
+            )
         row = AuditEventModel(
             event_type=event_type,
             entity_type=entity_type,
