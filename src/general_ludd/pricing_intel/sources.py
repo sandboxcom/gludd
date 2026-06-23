@@ -17,6 +17,7 @@ BILLING SEMANTICS ACCURACY NOTE:
 
 from __future__ import annotations
 
+import json
 import logging
 import os
 import time
@@ -880,6 +881,238 @@ class AWSSource:
 
 
 # ---------------------------------------------------------------------------
+# AWS — LIVE compute prices via AWS Price List Query API (GetProducts)
+# ---------------------------------------------------------------------------
+# Source: AWS Price List Query API — boto3 ``pricing`` client, GetProducts.
+# Spec:   https://docs.aws.amazon.com/aws-cost-management/latest/APIReference/API_pricing_GetProducts.html
+# Auth:   ``AWS_ACCESS_KEY_ID`` + ``AWS_SECRET_ACCESS_KEY`` environment variables
+#         (standard boto3 credential chain). If ``AWS_ACCESS_KEY_ID`` is unset,
+#         the source skips cleanly (returns ``[]`` and logs a warning) — it is
+#         dormant without credentials.
+#
+# The GetProducts API returns ``PriceList`` as a list of JSON *strings*, each
+# describing one product + its OnDemand terms. AWS bills Linux instances per
+# second (60-second minimum), so we convert the API's USD/hour rate to USD/s
+# to match the per_second granularity used by the static AWSSource.
+#
+# DEPENDENCY NOTE: boto3 is an OPTIONAL runtime dependency — it is NOT yet
+# listed in pyproject.toml. The class uses a lazy import inside ``_get_client``
+# so the module imports cleanly without boto3; a missing dep simply makes the
+# source dormant. Add ``boto3>=1.34.0`` to pyproject.toml dependencies to
+# activate live AWS pricing.
+# ---------------------------------------------------------------------------
+
+
+class AWSPricingSource:
+    """FETCH STRATEGY: LIVE — AWS Price List Query API (boto3 ``pricing.GetProducts``).
+
+    Queries the AWS Price List Query API for live Linux/Shared-tenancy EC2
+    pricing, then filters client-side for GPU instance families
+    (``p3.*``, ``p4d.*``, ``p5.*``, ``g5.*``). Returns one ``ComputePrice``
+    per matching instance type, with per-second pricing (USD/hour / 3600).
+
+    Auth: ``AWS_ACCESS_KEY_ID`` + ``AWS_SECRET_ACCESS_KEY`` environment
+    variables. If ``AWS_ACCESS_KEY_ID`` is unset, the source skips cleanly
+    (returns ``[]`` and logs a warning) — it is dormant without credentials.
+
+    BILLING SEMANTICS (same POSTPAID model as the static AWSSource):
+      - POSTPAID monthly invoice; no prepaid balance required.
+      - Per-second billing for Linux, 60-second minimum per launch.
+      - This source fetches ON-DEMAND prices only (not Spot — Spot price
+        history requires a separate EC2 DescribeSpotPriceHistory call).
+    """
+
+    _SERVICE_CODE = "AmazonEC2"
+    _REGION = "us-east-1"
+    _LOCATION = "US East (N. Virginia)"
+    _GPU_FAMILY_PREFIXES: tuple[str, ...] = ("p3.", "p4d.", "p5.", "g5.")
+    _SOURCE = "AWS Price List Query API (boto3 pricing.GetProducts)"
+
+    def provider_slug(self) -> str:
+        return "aws"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="aws",
+            granularity=BillingGranularity.per_second,
+            terms=BillingTerms.postpaid_monthly,
+            currency="USD",
+            min_charge=0.0,
+            spot_available=True,
+            notes=(
+                "POSTPAID MONTHLY. Live pricing via AWS Price List Query API "
+                "(GetProducts). On-demand per-second billing (Linux); 60-second "
+                "minimum per launch. No prepaid balance required. Spot prices "
+                "not included in this source (requires DescribeSpotPriceHistory). "
+                "Source: AWS Price List Query API"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        """AWS does not offer a general model API (Bedrock is separate). Returns []."""
+        return []
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Fetch live GPU compute prices from the AWS Price List Query API.
+
+        Returns an empty list on any error (fail-soft). Skips cleanly when
+        ``AWS_ACCESS_KEY_ID`` is not set or boto3 is not installed.
+        """
+        if not os.environ.get("AWS_ACCESS_KEY_ID"):
+            logger.warning(
+                "AWS pricing fetch skipped: AWS_ACCESS_KEY_ID not set"
+            )
+            return []
+
+        try:
+            client = self._get_client()
+        except ImportError as exc:
+            logger.warning(
+                "AWS pricing fetch skipped: boto3 unavailable (%s)", exc
+            )
+            return []
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("AWS pricing fetch skipped: %s", exc)
+            return []
+
+        try:
+            price_lists = self._fetch_price_list(client)
+        except Exception as exc:
+            logger.warning("AWS GetProducts failed: %s", exc)
+            return []
+
+        fetched_at = time.time()
+        results: list[ComputePrice] = []
+        for raw_entry in price_lists:
+            parsed = self._parse_entry(raw_entry, fetched_at)
+            if parsed is not None:
+                results.append(parsed)
+        return results
+
+    def _get_client(self) -> Any:
+        """Build a boto3 pricing client. Raises ImportError if boto3 is missing.
+
+        Lazy import keeps the module loadable when boto3 (an optional dep) is
+        not installed; tests mock this method to avoid the network/dep.
+        """
+        import boto3  # type: ignore[import-not-found]
+
+        return boto3.client("pricing", region_name=self._REGION)
+
+    def _fetch_price_list(self, client: Any) -> list[str]:
+        """Page through GetProducts and return the raw PriceList JSON strings.
+
+        Filters to Linux + Shared tenancy + Used capacity + no pre-installed
+        software (NA). GPU-family filtering happens client-side in
+        ``_parse_entry`` because GetProducts filters are TERM_MATCH (exact),
+        not prefix.
+        """
+        filters: list[dict[str, str]] = [
+            {"Type": "TERM_MATCH", "Field": "operatingSystem", "Value": "Linux"},
+            {"Type": "TERM_MATCH", "Field": "tenancy", "Value": "Shared"},
+            {"Type": "TERM_MATCH", "Field": "capacitystatus", "Value": "Used"},
+            {"Type": "TERM_MATCH", "Field": "preInstalledSw", "Value": "NA"},
+            {"Type": "TERM_MATCH", "Field": "location", "Value": self._LOCATION},
+        ]
+        paginator = client.get_paginator("get_products")
+        price_lists: list[str] = []
+        for page in paginator.paginate(
+            ServiceCode=self._SERVICE_CODE, Filters=filters
+        ):
+            price_lists.extend(page.get("PriceLists", []) or [])
+        return price_lists
+
+    def _parse_entry(self, raw_entry: str, fetched_at: float) -> ComputePrice | None:
+        """Parse one PriceList JSON string into a ComputePrice, or None to skip.
+
+        Skips (returns None) when:
+          - the entry is not valid JSON,
+          - the instance type is not in a GPU family (p3./p4d./p5./g5.),
+          - the entry has no GPU count (gpu == 0 — defensive; shouldn't happen
+            after the family filter but be safe),
+          - the OnDemand price or USD currency is missing.
+        """
+        try:
+            entry = json.loads(raw_entry)
+        except (json.JSONDecodeError, TypeError):
+            return None
+
+        if not isinstance(entry, dict):
+            return None
+
+        product = entry.get("product") or {}
+        if not isinstance(product, dict):
+            return None
+        attrs = product.get("attributes") or {}
+        if not isinstance(attrs, dict):
+            return None
+        instance_type = str(attrs.get("instanceType") or "")
+        if not instance_type.startswith(self._GPU_FAMILY_PREFIXES):
+            return None
+
+        try:
+            gpu_count = int(attrs.get("gpu") or 0)
+        except (TypeError, ValueError):
+            gpu_count = 0
+        if gpu_count <= 0:
+            return None
+
+        gpu_type = str(attrs.get("gpuType") or instance_type)
+
+        usd_per_hour = self._extract_on_demand_usd(entry)
+        if usd_per_hour is None:
+            return None
+
+        usd_per_second = usd_per_hour / 3600.0
+        return ComputePrice(
+            provider="aws",
+            sku=instance_type,
+            usd_per_unit=usd_per_second,
+            granularity=BillingGranularity.per_second,
+            spot=False,
+            terms=BillingTerms.postpaid_monthly,
+            fetched_at=fetched_at,
+            source=self._SOURCE,
+            gpu_count=gpu_count,
+            gpu_type=gpu_type,
+            notes=(
+                f"On-demand (Linux, Shared tenancy). ${usd_per_hour:.4f}/hr = "
+                f"${usd_per_second:.6f}/s. 60s minimum per launch. "
+                f"{self._LOCATION}."
+            ),
+        )
+
+    @staticmethod
+    def _extract_on_demand_usd(entry: dict[str, Any]) -> float | None:
+        """Pull the first OnDemand USD hourly rate out of a PriceList entry."""
+        terms = entry.get("terms") or {}
+        if not isinstance(terms, dict):
+            return None
+        on_demand = terms.get("OnDemand") or {}
+        if not isinstance(on_demand, dict) or not on_demand:
+            return None
+        term = next(iter(on_demand.values()))
+        if not isinstance(term, dict):
+            return None
+        price_dims = term.get("priceDimensions") or {}
+        if not isinstance(price_dims, dict) or not price_dims:
+            return None
+        price_dim = next(iter(price_dims.values()))
+        if not isinstance(price_dim, dict):
+            return None
+        price_per_unit = price_dim.get("pricePerUnit") or {}
+        if not isinstance(price_per_unit, dict):
+            return None
+        usd = price_per_unit.get("USD")
+        if usd is None:
+            return None
+        try:
+            return float(usd)
+        except (TypeError, ValueError):
+            return None
+
+
+# ---------------------------------------------------------------------------
 # GCP — STATIC compute table with billing semantics
 # ---------------------------------------------------------------------------
 # Source: https://cloud.google.com/compute/gpus-pricing (accessed 2025-Q4)
@@ -1177,9 +1410,11 @@ def all_sources() -> list[PricingSource]:
         OpenRouterSource(),
         AnthropicSource(),
         OpenAISource(),
+        RunPodPricingSource(),
         RunPodSource(),
         LambdaLabsSource(),
         AWSSource(),
+        AWSPricingSource(),
         GCPSource(),
         HuggingFaceSource(),
         FireworksSource(),
