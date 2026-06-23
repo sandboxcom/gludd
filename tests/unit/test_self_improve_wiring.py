@@ -69,6 +69,68 @@ class TestSelfImproveRunEndpoint:
                 assert data["todos_enqueued"] == 2
 
 
+class TestSelfImproveApplyConfigTier:
+    """Config-tier plans route through UpdateApplier + AtomicSafeWriter."""
+
+    @pytest.mark.asyncio
+    async def test_config_kind_routes_through_update_applier(self, transport):
+        from general_ludd.self_update.applier import ApplyResult
+        from general_ludd.self_update.safe_writer import AtomicSafeWriter
+
+        with patch(
+            "general_ludd.routers.self_improve.UpdateApplier"
+        ) as MockApplier:
+            instance = MockApplier.return_value
+            instance.apply.return_value = ApplyResult(
+                status="applied",
+                target_paths=["config/foo.yml"],
+                evidence="applied config change to 1 path(s)",
+            )
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "kind": "config",
+                        "capability_required": "config_write",
+                        "target_paths": ["config/foo.yml"],
+                        "change_content": "key: value\n",
+                    },
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["tier"] == "config"
+                assert data["status"] == "applied"
+                assert data["target_paths"] == ["config/foo.yml"]
+
+                MockApplier.assert_called_once()
+                instance.apply.assert_called_once()
+                kwargs = MockApplier.call_args.kwargs
+                assert isinstance(kwargs["writer"], AtomicSafeWriter)
+
+    @pytest.mark.asyncio
+    async def test_non_config_kind_skips_update_applier(self, transport):
+        with patch(
+            "general_ludd.routers.self_improve.UpdateApplier"
+        ) as MockApplier:
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-improve/apply",
+                    json={
+                        "title": "x",
+                        "description": "y",
+                        "worktree_path": "/nonexistent-xyz",
+                    },
+                )
+                assert resp.status_code == 200
+                # No config-tier kind -> legacy workflow path, applier untouched.
+                MockApplier.assert_not_called()
+                assert "applied" in resp.json()
+
+
 class TestSelfImproveStatusEndpoint:
     @pytest.mark.asyncio
     async def test_status_never_run(self, transport):

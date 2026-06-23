@@ -22,7 +22,6 @@ import pytest
 from general_ludd.self_update.applier import SafeWriter
 from general_ludd.self_update.safe_writer import AtomicSafeWriter
 
-
 # ---------------------------------------------------------------------------
 # Happy path
 # ---------------------------------------------------------------------------

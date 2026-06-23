@@ -63,9 +63,16 @@ class CapabilityChecker(Protocol):
 
 @runtime_checkable
 class SafeWriter(Protocol):
-    """Performs the actual filesystem write. Injected at integration."""
+    """Performs the actual filesystem write. Injected at integration.
 
-    def write(self, path: str, content: str) -> None: ...
+    Implementations MAY return the resolved written path (``str``) for
+    observability; callers that ignore the return value are unaffected. The
+    ``str | None`` upper bound lets a concrete writer be a structural superset
+    (e.g. ``AtomicSafeWriter.write -> str``) without tripping mypy's return-
+    type covariance.
+    """
+
+    def write(self, path: str, content: str) -> str | None: ...
 
 
 @runtime_checkable

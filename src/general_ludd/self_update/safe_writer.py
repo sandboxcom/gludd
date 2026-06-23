@@ -38,7 +38,7 @@ class AtomicSafeWriter:
     :mod:`general_ludd.self_update.applier`::
 
         class SafeWriter(Protocol):
-            def write(self, path: str, content: str) -> None: ...
+            def write(self, path: str, content: str) -> str | None: ...
 
     The implementation returns the resolved written path (``str``) — a
     superset of the Protocol's contract (callers that ignore the return
