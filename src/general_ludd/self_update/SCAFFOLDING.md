@@ -24,46 +24,66 @@ Phase-2 ladder (`model.py` + `classifier.py` + `apply.py` + `priority.py`)
 whose daemon-side wiring was deferred. Both generations coexist until the
 Phase-2 wiring lands and the Phase-1 surface can be retired.
 
-## What Phase-2 wiring looks like
+## Phase-2 wiring progress
 
 The executable blueprint is **§7 of
 [`docs/design/daemon_integration_plan.md`](../../docs/design/daemon_integration_plan.md)**.
-Summary of what a Phase-2 wiring wave must add:
+The wiring is tracked as a 7-step sequence. Steps 1–4 are **DONE**; steps 5–7
+are **NOT DONE**. Step 6 is the critical gap blocking end-to-end self-updates.
 
-1. **New HTTP surface — `routers/self_update.py`** (does not exist today):
-   - `POST /admin/self-update/plan` — body `{raw_text, requested_by, approval_token?}`
-     → build `SelfUpdateRequest`, run `classifier.classify()` → `SelfUpdatePlan`,
-     call `apply.apply_plan(...)` with the daemon-supplied `validate` + `audit_sink`,
-     return the `ApplyResult.outcome` + audit dict.
-   - `POST /admin/self-update/enqueue` → `priority.to_todo_spec(plan, request)`
-     then `TodoRepository.create`, so the request enters the normal backlog.
-   - Register in `create_daemon_app`'s router block and in
-     `routers/__init__.register_all`. PSK-gated (`/admin/*` is never public).
+### DONE
 
-2. **`_lifespan` construction + state key:**
-   - Build an `audit_sink` closure over `session_factory` writing through
-     `AuditEventRepository`; store on `app.state._self_update_audit_sink`.
-   - Wire a real `validate` callable (reuse the preflight pattern at
-     `daemon.py:761-772`), or pass `validate=None` which fail-closes any
-     code-tier change (`apply.py:292-301`) — the safe default.
+- **Step 1 — `UserConfig.self_update` field.** `self_update: dict[str, Any] = {}`
+  added to `UserConfig` with `auto_apply_config` (default `True`, `apply.py:157`)
+  and an approval policy. The Phase-2 config block now has a typed home.
+- **Step 2 — `routers/self_update.py`.** New HTTP surface exists with:
+  - `POST /admin/self-update/plan` — body `{raw_text, requested_by, approval_token?}`
+    → build `SelfUpdateRequest`, run `classifier.classify()` → `SelfUpdatePlan`,
+    call `apply.apply_plan(...)` with the daemon-supplied `validate` + `audit_sink`,
+    return the `ApplyResult.outcome` + audit dict.
+  - `POST /admin/self-update/enqueue` → `priority.to_todo_spec(plan, request)`
+    then `TodoRepository.create`, so the request enters the normal backlog.
+- **Step 3 — `audit_sink` in `_lifespan`.** Closure over `session_factory` writing
+  through `AuditEventRepository`; stored on `app.state._self_update_audit_sink`.
+  `validate` wired to the preflight pattern (`daemon.py:761-772`) — or `validate=None`
+  which fail-closes any code-tier change (`apply.py:292-301`), the safe default.
+- **Step 4 — Register router.** `self_update.router` registered in
+  `create_daemon_app`'s router block and in `routers/__init__.register_all`.
+  PSK-gated (`/admin/*` is never public).
 
-3. **Event-loop scheduler refinement (no new phase):**
-   - In `_dispatch_jobs_via_scheduler` (`event_loop/loop.py:718-731`), branch on
-     `todo.queue == "self_update"` and build the `WorkItem` via
-     `priority.to_work_item(plan, todo_id)` so code-tier self-updates serialize
-     on the `self_update:code` resource label (`priority.py:26-29`).
-   - Reconstruct the tier from the todo's `tier:` tag (`priority.py:88-91`).
+### NOT DONE
 
-4. **`UserConfig` block:** add `self_update: dict[str, Any] = {}` with
-   `auto_apply_config` (default `True`, `apply.py:157`) and an approval policy.
+- **Step 5 — Event-loop scheduler refinement (no new phase).**
+  In `_dispatch_jobs_via_scheduler` (`event_loop/loop.py:718-731`), branch on
+  `todo.queue == "self_update"` and build the `WorkItem` via
+  `priority.to_work_item(plan, todo_id)` so code-tier self-updates serialize
+  on the `self_update:code` resource label (`priority.py:26-29`).
+  Reconstruct the tier from the todo's `tier:` tag (`priority.py:88-91`).
+  **Currently no scheduler branch exists — self-update todos are never dispatched.**
 
-5. **Integration test** (`tests/integration/test_self_update_router_wired.py`)
-   proving: config-tier auto-applies; protected-path requests are `refused`;
-   `/admin/self-update/enqueue` creates a prioritised todo; admin PSK enforced.
+- **Step 6 — `arm.set_code_target` + `reload_if_needed` (THE critical gap).**
+  No code path exists yet to (a) arm a `set_code_target` mutation via
+  `apply.apply_plan` for a code-tier plan and (b) trigger a daemon
+  `reload_if_needed` after a successful apply. Until this lands, an approved
+  code-tier self-update is classified, queued, and scheduled-eligible but can
+  **never actually mutate code or reload the daemon**. This is the single
+  blocking gap for end-to-end Phase-2 self-updates.
 
-Until that wave lands, the four scaffolding files exist purely so the Phase-2
-contract is in tree, tested, and ready to wire — deleting them would discard
-the spec for the work the design doc describes.
+- **Step 7 — Integration test.** `tests/integration/test_self_update_router_wired.py`
+  does not yet exist. It must prove: config-tier auto-applies; protected-path
+  requests are `refused`; `/admin/self-update/enqueue` creates a prioritised
+  todo; admin PSK enforced; code-tier apply triggers `reload_if_needed`
+  (depends on Step 6).
+
+### Net state
+
+The scaffolding files (`model.py`, `classifier.py`, `apply.py`, `priority.py`)
+plus Steps 1–4 mean the **intake half** of the pipeline is wired: requests can
+be classified, applied at config tier, audited, and enqueued into the backlog.
+The **execution half** (Steps 5–7) is still unwritten, so code-tier
+self-updates cannot run. The scaffolding files remain in tree, tested, and
+required as the contract for the remaining execution-side wiring — deleting
+them would discard the spec for the work the design doc describes.
 
 ## Pointer
 

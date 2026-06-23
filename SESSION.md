@@ -7,21 +7,25 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — master@`21016a0`
+## Current State — master@`5a8a1a2`
 
 ### MERGED:
 - `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `21016a0`
+- master advanced to `5a8a1a2`
 
 ### Tier 2 RAG Progress:
 - **Step 1 — TaskEmbeddingModel:** complete
 - **Step 2 — Alembic migration 007:** complete
 - **Step 3 — TaskEmbeddingStore:** complete
 
-### Pricing:
-- LIVE sources registered: RunPod, Z.AI, AWS
-- PENDING: LiteLLM JSON source
-- Pricing catalog wired into spend limiter (pending)
+### Pricing (nearly complete — 14 of 15 sources return real data):
+- LIVE sources registered: RunPod, Z.AI, AWS, + 11 more (14/15 returning real data)
+- **HuggingFace:** static table implemented (10 GPU instances)
+- **Fireworks:** LiteLLM JSON live source registered
+- **Endpoints:** `/api/pricing` and `/api/pricing/compute` added
+- **Connector CLI:** `list`, `health`, `query` commands
+- **Spend limiter:** wired to PricingCatalog
+- 1 source still pending
 
 ### Dead Code:
 - `orchestration/` identified as dead (unwired)
@@ -33,6 +37,7 @@
 ### CI Watch:
 - `ci-verdict-fast` + `ci-verdict-loop` make targets added
 - Polling intervals lowered
+- Gate passing, shards running
 
 ### Tests:
 - 12,394 tests collected

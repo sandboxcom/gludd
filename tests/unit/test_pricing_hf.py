@@ -34,7 +34,6 @@ from general_ludd.pricing_intel.models import (
 )
 from general_ludd.pricing_intel.sources import HuggingFaceSource, all_sources
 
-
 # ---------------------------------------------------------------------------
 # Identity + billing semantics
 # ---------------------------------------------------------------------------
