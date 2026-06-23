@@ -511,6 +511,12 @@ class RunPodPricingSource:
     ``Authorization: Bearer <key>``. If unset, the source skips cleanly
     (returns ``[]`` and logs a warning) — it is dormant without credentials.
 
+    SLUG NOTE: Uses ``"runpod_live"`` (not ``"runpod"``) to avoid colliding
+    with the static ``RunPodSource`` in the catalog's first-match-wins
+    ``_source_for`` lookup. This keeps both the static baseline (always
+    available, no credentials) and the live source (dormant without API key)
+    independently queryable through ``PricingCatalog``.
+
     BILLING SEMANTICS (same PREPAID model as RunPodSource):
       - Customer must maintain a positive credit balance.
       - Usage deducted per second in real time.
@@ -526,11 +532,11 @@ class RunPodPricingSource:
     )
 
     def provider_slug(self) -> str:
-        return "runpod"
+        return "runpod_live"
 
     def billing(self) -> ProviderBilling:
         return ProviderBilling(
-            provider="runpod",
+            provider="runpod_live",
             granularity=BillingGranularity.per_second,
             terms=BillingTerms.prepaid_balance,
             currency="USD",
@@ -656,7 +662,7 @@ class RunPodPricingSource:
             hourly = 0.0
         usd_per_second = hourly / 3600.0
         return ComputePrice(
-            provider="runpod",
+            provider="runpod_live",
             sku=sku,
             usd_per_unit=usd_per_second,
             granularity=BillingGranularity.per_second,
@@ -915,6 +921,12 @@ class AWSPricingSource:
     variables. If ``AWS_ACCESS_KEY_ID`` is unset, the source skips cleanly
     (returns ``[]`` and logs a warning) — it is dormant without credentials.
 
+    SLUG NOTE: Uses ``"aws_live"`` (not ``"aws"``) to avoid colliding
+    with the static ``AWSSource`` in the catalog's first-match-wins
+    ``_source_for`` lookup. This keeps both the static baseline (always
+    available, no credentials) and the live source (dormant without API key)
+    independently queryable through ``PricingCatalog``.
+
     BILLING SEMANTICS (same POSTPAID model as the static AWSSource):
       - POSTPAID monthly invoice; no prepaid balance required.
       - Per-second billing for Linux, 60-second minimum per launch.
@@ -929,11 +941,11 @@ class AWSPricingSource:
     _SOURCE = "AWS Price List Query API (boto3 pricing.GetProducts)"
 
     def provider_slug(self) -> str:
-        return "aws"
+        return "aws_live"
 
     def billing(self) -> ProviderBilling:
         return ProviderBilling(
-            provider="aws",
+            provider="aws_live",
             granularity=BillingGranularity.per_second,
             terms=BillingTerms.postpaid_monthly,
             currency="USD",
@@ -1065,7 +1077,7 @@ class AWSPricingSource:
 
         usd_per_second = usd_per_hour / 3600.0
         return ComputePrice(
-            provider="aws",
+            provider="aws_live",
             sku=instance_type,
             usd_per_unit=usd_per_second,
             granularity=BillingGranularity.per_second,

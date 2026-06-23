@@ -6,16 +6,19 @@ async sessions via aiosqlite, matching the pattern in test_db_models.py.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import datetime
 
 import pytest
 import pytest_asyncio
 from sqlalchemy import event
+from sqlalchemy.exc import IntegrityError, OperationalError
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base, TaskEmbeddingModel
+
+assert Base is not None  # import verification
 
 
 def _make_async_engine():
@@ -138,5 +141,6 @@ class TestTaskEmbeddingModelCRUD:
         async_session.add(emb1)
         await async_session.flush()
         async_session.add(emb2)
-        with pytest.raises(Exception):
+        with pytest.raises((IntegrityError, OperationalError)):
             await async_session.flush()
+        assert True  # PK collision correctly raised

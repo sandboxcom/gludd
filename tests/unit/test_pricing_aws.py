@@ -124,11 +124,11 @@ def _mock_boto3_client(price_lists: list[str]) -> MagicMock:
 
 class TestAWSPricingIdentity:
     def test_provider_slug(self) -> None:
-        assert AWSPricingSource().provider_slug() == "aws"
+        assert AWSPricingSource().provider_slug() == "aws_live"
 
     def test_billing_terms(self) -> None:
         b = AWSPricingSource().billing()
-        assert b.provider == "aws"
+        assert b.provider == "aws_live"
         # AWS bills postpaid monthly — critical distinction from RunPod/Lambda.
         assert b.terms == BillingTerms.postpaid_monthly
         assert b.granularity == BillingGranularity.per_second
@@ -199,7 +199,7 @@ class TestAWSPricingFetch:
         assert p4d.spot is False
         assert p4d.gpu_count == 8
         assert p4d.gpu_type == "A100"
-        assert p4d.provider == "aws"
+        assert p4d.provider == "aws_live"
 
     def test_filters_to_gpu_families(
         self, monkeypatch: pytest.MonkeyPatch

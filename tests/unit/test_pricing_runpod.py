@@ -71,11 +71,11 @@ def _mock_client_post(mock_resp: MagicMock) -> MagicMock:
 
 class TestRunPodPricingIdentity:
     def test_provider_slug(self) -> None:
-        assert RunPodPricingSource().provider_slug() == "runpod"
+        assert RunPodPricingSource().provider_slug() == "runpod_live"
 
     def test_billing_terms(self) -> None:
         b = RunPodPricingSource().billing()
-        assert b.provider == "runpod"
+        assert b.provider == "runpod_live"
         assert b.terms == BillingTerms.prepaid_balance
         assert b.granularity == BillingGranularity.per_second
         assert b.spot_available is True
@@ -120,7 +120,7 @@ class TestRunPodPricingFetch:
         assert rtx_secure.usd_per_unit == pytest.approx(0.74 / 3600)
         assert rtx_secure.granularity == BillingGranularity.per_second
         assert rtx_secure.terms == BillingTerms.prepaid_balance
-        assert rtx_secure.provider == "runpod"
+        assert rtx_secure.provider == "runpod_live"
 
         rtx_spot = next(
             p for p in spot if p.gpu_type == "RTX 4090" and "spot" in p.sku
