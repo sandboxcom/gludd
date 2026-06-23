@@ -18,8 +18,9 @@ BILLING SEMANTICS ACCURACY NOTE:
 from __future__ import annotations
 
 import logging
+import os
 import time
-from typing import Protocol, runtime_checkable
+from typing import Any, Protocol, runtime_checkable
 
 import httpx
 
@@ -479,6 +480,196 @@ class RunPodSource:
             )
 
         return results
+
+
+# ---------------------------------------------------------------------------
+# RunPod — LIVE GraphQL compute prices (gpuTypes query)
+# ---------------------------------------------------------------------------
+# Source: POST https://api.runpod.io/graphql
+# Spec:   https://graphql-spec.runpod.io/ / https://docs.runpod.io/reference
+# Auth:   RUNPOD_API_KEY environment variable (sent as Authorization: Bearer).
+#
+# The gpuTypes query returns per-GPU-type live pricing across three tiers:
+#   securePrice    — on-demand "secure cloud" (non-interruptible), USD/GPU/hr
+#   communityPrice — "community cloud" (hosted by third parties; interruptible)
+#   spot           — deeply discounted spot (interruptible, reclaimed on demand)
+# RunPod bills per second from a prepaid balance, so we convert USD/hr → USD/s
+# to match the per_second granularity used by the static RunPodSource.
+# ---------------------------------------------------------------------------
+
+
+class RunPodPricingSource:
+    """FETCH STRATEGY: LIVE — POST https://api.runpod.io/graphql (gpuTypes query).
+
+    Queries RunPod's GraphQL API for live GPU pricing. Returns one
+    ``ComputePrice`` per (gpu_type, tier) combination across three tiers —
+    ``securePrice`` (on-demand), ``communityPrice`` (interruptible community
+    cloud), and ``spot`` (deeply discounted, interruptible) — when reported.
+
+    Auth: ``RUNPOD_API_KEY`` environment variable, sent as
+    ``Authorization: Bearer <key>``. If unset, the source skips cleanly
+    (returns ``[]`` and logs a warning) — it is dormant without credentials.
+
+    BILLING SEMANTICS (same PREPAID model as RunPodSource):
+      - Customer must maintain a positive credit balance.
+      - Usage deducted per second in real time.
+      - Balance = $0 → immediate pod termination.
+      - Community/spot pods are interruptible; secure (on-demand) is not.
+    """
+
+    _ENDPOINT = "https://api.runpod.io/graphql"
+    _SOURCE = "https://api.runpod.io/graphql"
+    _QUERY = (
+        "query GpuTypes { gpuTypes { id displayName memoryInGb "
+        "securePrice communityPrice spot } }"
+    )
+
+    def provider_slug(self) -> str:
+        return "runpod"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="runpod",
+            granularity=BillingGranularity.per_second,
+            terms=BillingTerms.prepaid_balance,
+            currency="USD",
+            min_charge=None,
+            spot_available=True,
+            notes=(
+                "PREPAID BALANCE REQUIRED. Live pricing via RunPod GraphQL API. "
+                "Usage deducted per second; balance exhaustion = immediate termination. "
+                "Secure cloud (on-demand) non-interruptible; community/spot interruptible. "
+                "Source: https://api.runpod.io/graphql"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        """RunPod does not offer a model API. Returns []."""
+        return []
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Fetch live GPU compute prices from the RunPod GraphQL API.
+
+        Returns an empty list on any error (fail-soft). Skips cleanly when
+        ``RUNPOD_API_KEY`` is not set.
+        """
+        api_key = os.environ.get("RUNPOD_API_KEY")
+        if not api_key:
+            logger.warning(
+                "RunPod GraphQL fetch skipped: RUNPOD_API_KEY not set"
+            )
+            return []
+
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.post(
+                    self._ENDPOINT,
+                    json={"query": self._QUERY},
+                    headers={
+                        "Authorization": f"Bearer {api_key}",
+                        "Content-Type": "application/json",
+                    },
+                )
+                if resp.status_code != 200:
+                    logger.warning(
+                        "RunPod GraphQL API returned HTTP %s", resp.status_code
+                    )
+                    return []
+                data = resp.json()
+        except Exception as exc:
+            logger.warning("RunPod GraphQL fetch failed: %s", exc)
+            return []
+
+        gpu_types = ((data.get("data") or {}).get("gpuTypes")) or []
+        if not gpu_types:
+            if data.get("errors"):
+                logger.warning(
+                    "RunPod GraphQL returned errors: %s", data["errors"]
+                )
+            else:
+                logger.warning("RunPod GraphQL returned no gpuTypes")
+            return []
+
+        fetched_at = time.time()
+        results: list[ComputePrice] = []
+
+        for gpu in gpu_types:
+            gpu_id = gpu.get("id") or ""
+            display_name = gpu.get("displayName") or gpu_id
+
+            secure_price = gpu.get("securePrice")
+            if secure_price is not None:
+                results.append(
+                    self._make_price(
+                        gpu_type=display_name,
+                        sku=f"{gpu_id}-secure",
+                        usd_per_hour=secure_price,
+                        spot=False,
+                        fetched_at=fetched_at,
+                        label="Secure cloud (on-demand)",
+                    )
+                )
+
+            community_price = gpu.get("communityPrice")
+            if community_price is not None:
+                results.append(
+                    self._make_price(
+                        gpu_type=display_name,
+                        sku=f"{gpu_id}-community",
+                        usd_per_hour=community_price,
+                        spot=True,
+                        fetched_at=fetched_at,
+                        label="Community cloud (interruptible)",
+                    )
+                )
+
+            spot_price = gpu.get("spot")
+            if spot_price is not None:
+                results.append(
+                    self._make_price(
+                        gpu_type=display_name,
+                        sku=f"{gpu_id}-spot",
+                        usd_per_hour=spot_price,
+                        spot=True,
+                        fetched_at=fetched_at,
+                        label="Spot (interruptible)",
+                    )
+                )
+
+        return results
+
+    @staticmethod
+    def _make_price(
+        *,
+        gpu_type: str,
+        sku: str,
+        usd_per_hour: Any,
+        spot: bool,
+        fetched_at: float,
+        label: str,
+    ) -> ComputePrice:
+        """Build a per-second ComputePrice from a USD/hour GraphQL field."""
+        try:
+            hourly = float(usd_per_hour)
+        except (TypeError, ValueError):
+            hourly = 0.0
+        usd_per_second = hourly / 3600.0
+        return ComputePrice(
+            provider="runpod",
+            sku=sku,
+            usd_per_unit=usd_per_second,
+            granularity=BillingGranularity.per_second,
+            spot=spot,
+            terms=BillingTerms.prepaid_balance,
+            fetched_at=fetched_at,
+            source=RunPodPricingSource._SOURCE,
+            gpu_count=1,
+            gpu_type=gpu_type,
+            notes=(
+                f"{label}. ${hourly:.2f}/hr = ${usd_per_second:.6f}/s. "
+                "Prepaid balance; per-second billing."
+            ),
+        )
 
 
 # ---------------------------------------------------------------------------

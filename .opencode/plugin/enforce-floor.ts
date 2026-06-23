@@ -34,7 +34,6 @@ import * as path from "node:path"
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
 const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
-const ACTIVE_WINDOW_MS = 45_000 // appended-to within 45s => actively streaming
 
 // Count live agents via the SAME ground-truth probe the shell hooks use
 // (scripts/agent_liveness.py), so the plugin and the hooks can never disagree.

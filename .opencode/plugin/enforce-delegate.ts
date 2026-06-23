@@ -24,7 +24,6 @@ import * as path from "node:path"
 // ============================================================================
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
-const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
 
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)

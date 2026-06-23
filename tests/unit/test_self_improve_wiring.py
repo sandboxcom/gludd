@@ -273,7 +273,7 @@ class TestEventLoopSelfImprovePhase:
                 persisted = [r for r in rows if r.title == "Add tests"]
                 assert len(persisted) == 1
                 assert persisted[0].work_type == "self_improve"
-                assert persisted[0].status == TodoStatus.APPROVAL_REQUIRED.value
+                assert persisted[0].status == TodoStatus.QUEUED.value
                 # "high" maps to a high integer priority.
                 assert persisted[0].priority >= 10
         finally:

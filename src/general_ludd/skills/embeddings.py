@@ -94,7 +94,7 @@ class HashEmbedder:
         vec = [0.0] * self.dim
         for token in _tokenize(text):
             feature = _stem(token)
-            h = hashlib.md5(feature.encode("utf-8")).digest()
+            h = hashlib.sha256(feature.encode("utf-8")).digest()  # nosec B324 — feature hashing, not crypto
             bucket = int.from_bytes(h[:8], "little") % self.dim
             vec[bucket] += 1.0
         norm = math.sqrt(sum(v * v for v in vec))
