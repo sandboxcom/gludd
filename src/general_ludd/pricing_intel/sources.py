@@ -1412,6 +1412,179 @@ class ZAISource:
 
 
 # ---------------------------------------------------------------------------
+# LiteLLM — LIVE JSON catalog for per-token pricing across providers
+# ---------------------------------------------------------------------------
+# Source: https://raw.githubusercontent.com/BerriAI/litellm/main/model_prices_and_context_window.json
+#         (public, no auth; a flat dict keyed by model_id)
+#
+# litellm maintains the canonical cross-provider pricing table. Each entry has:
+#   litellm_provider        — the upstream provider slug ("anthropic", "openai", ...)
+#   input_cost_per_token    — USD per single input token (multiply by 1000 for per-1K)
+#   output_cost_per_token   — USD per single output token
+#   max_tokens              — context window (tokens)
+#
+# A single JSON file covers every provider, so LiteLLMJSONSource is instantiated
+# once PER provider and filters client-side by ``litellm_provider``. The file
+# also contains a ``sample_spec`` metadata key which is naturally excluded by
+# the provider filter.
+# ---------------------------------------------------------------------------
+
+
+class LiteLLMJSONSource:
+    """FETCH STRATEGY: LIVE — BerriAI/litellm raw JSON catalog (public, no auth).
+
+    Fetches the litellm ``model_prices_and_context_window.json`` file and
+    filters it to a single upstream provider (set via the ``provider``
+    constructor argument, e.g. ``"anthropic"`` or ``"openai"``). Prices in the
+    file are USD-per-token; they are converted to USD-per-1K-tokens to match
+    the ModelPrice convention used by every other source.
+
+    Entries are silently skipped when they:
+      - lack a ``litellm_provider`` field or have a non-matching one,
+      - lack numeric ``input_cost_per_token`` / ``output_cost_per_token``,
+      - are not JSON objects (defensive against schema drift).
+
+    SLUG NOTE: Uses ``"litellm_<provider>"`` (e.g. ``"litellm_anthropic"``)
+    rather than the bare provider slug to avoid colliding with the static
+    ``AnthropicSource`` / ``OpenAISource`` in the catalog's first-match-wins
+    ``_source_for`` lookup. This keeps both the static baseline (always
+    available) and the live litellm source independently queryable through
+    ``PricingCatalog``.
+
+    Billing:
+      - terms: postpaid_per_use (litellm documents upstream provider rates;
+        billing semantics inherit from the upstream provider)
+      - granularity: per_token
+      - spot_available: False
+      - min_charge: None
+    """
+
+    _ENDPOINT = (
+        "https://raw.githubusercontent.com/BerriAI/litellm/main/"
+        "model_prices_and_context_window.json"
+    )
+
+    def __init__(self, provider: str) -> None:
+        """``provider`` is the upstream litellm_provider slug to filter on
+        (e.g. ``"anthropic"``, ``"openai"``)."""
+        self._provider = provider
+
+    def provider_slug(self) -> str:
+        return f"litellm_{self._provider}"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider=self.provider_slug(),
+            granularity=BillingGranularity.per_token,
+            terms=BillingTerms.postpaid_per_use,
+            currency="USD",
+            min_charge=None,
+            spot_available=False,
+            notes=(
+                f"Live per-token pricing via litellm JSON catalog, filtered to "
+                f"'{self._provider}' models. Billing semantics inherit from the "
+                "upstream provider (postpaid per use). "
+                f"Source: {self._ENDPOINT}"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        """Fetch live model prices from the litellm JSON catalog.
+
+        Filters entries to those whose ``litellm_provider`` matches the
+        constructor's ``provider`` argument and converts USD-per-token to
+        USD-per-1K-tokens. Returns an empty list on any error (fail-soft).
+        """
+        try:
+            with httpx.Client(timeout=20.0) as client:
+                resp = client.get(self._ENDPOINT)
+                if resp.status_code != 200:
+                    logger.warning(
+                        "LiteLLM JSON catalog returned HTTP %s", resp.status_code
+                    )
+                    return []
+                data = resp.json()
+        except Exception as exc:
+            logger.warning("LiteLLM JSON fetch failed: %s", exc)
+            return []
+
+        if not isinstance(data, dict):
+            logger.warning(
+                "LiteLLM JSON catalog parsed to %s, expected dict; skipping",
+                type(data).__name__,
+            )
+            return []
+
+        fetched_at = time.time()
+        results: list[ModelPrice] = []
+
+        for model_id, entry in data.items():
+            price = self._parse_entry(model_id, entry, fetched_at)
+            if price is not None:
+                results.append(price)
+
+        return results
+
+    def _parse_entry(
+        self,
+        model_id: str,
+        entry: Any,
+        fetched_at: float,
+    ) -> ModelPrice | None:
+        """Parse one litellm JSON entry into a ModelPrice, or None to skip.
+
+        Skips when:
+          - ``entry`` is not a dict,
+          - ``litellm_provider`` does not match this source's provider filter,
+          - ``input_cost_per_token`` / ``output_cost_per_token`` are missing
+            or non-numeric.
+        """
+        if not isinstance(entry, dict):
+            return None
+        if entry.get("litellm_provider") != self._provider:
+            return None
+
+        try:
+            input_per_token = float(entry.get("input_cost_per_token") or 0)
+            output_per_token = float(entry.get("output_cost_per_token") or 0)
+        except (TypeError, ValueError):
+            return None
+
+        # If the input cost field was entirely absent (None), entry.get returns
+        # None, `None or 0` collapses to 0, and float() succeeds. We want to
+        # skip entries that genuinely lack pricing rather than silently report
+        # a $0 price. Detect by checking for key presence.
+        if "input_cost_per_token" not in entry:
+            return None
+
+        # litellm reports USD-per-token; convert to USD-per-1K-tokens.
+        input_per_1k = input_per_token * 1000
+        output_per_1k = output_per_token * 1000
+
+        context_window: int | None
+        ctx_raw = entry.get("max_tokens") or entry.get("max_input_tokens")
+        try:
+            context_window = int(ctx_raw) if ctx_raw is not None else None
+        except (TypeError, ValueError):
+            context_window = None
+
+        return ModelPrice(
+            provider=self._provider,
+            model_id=model_id,
+            input_usd_per_1k=input_per_1k,
+            output_usd_per_1k=output_per_1k,
+            fetched_at=fetched_at,
+            source=self._ENDPOINT,
+            context_window=context_window,
+            notes=f"litellm_provider={self._provider}",
+        )
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        """LiteLLM is a model-pricing catalog; no compute offering. Returns []."""
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Registry: all available sources
 # ---------------------------------------------------------------------------
 
@@ -1422,6 +1595,8 @@ def all_sources() -> list[PricingSource]:
         OpenRouterSource(),
         AnthropicSource(),
         OpenAISource(),
+        LiteLLMJSONSource("anthropic"),
+        LiteLLMJSONSource("openai"),
         RunPodPricingSource(),
         RunPodSource(),
         LambdaLabsSource(),

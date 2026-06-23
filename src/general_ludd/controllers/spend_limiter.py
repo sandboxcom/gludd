@@ -34,9 +34,22 @@ import math
 import threading
 import time
 from collections.abc import Callable
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+from general_ludd.infra.pricing import token_cost_usd as _static_token_cost_usd
+
+if TYPE_CHECKING:
+    from general_ludd.pricing_intel.catalog import PricingCatalog
 
 logger = logging.getLogger(__name__)
+
+# Provider-candidate hints inferred from a model_id prefix. The catalog is
+# queried with these first (most specific source), then any remaining
+# registered provider slugs as a backstop.
+_PREFIX_PROVIDER_HINTS: tuple[tuple[str, tuple[str, ...]], ...] = (
+    ("claude-", ("anthropic", "openrouter")),
+    ("gpt-", ("openai", "openrouter")),
+)
 
 
 class SpendLimiter:
@@ -48,6 +61,13 @@ class SpendLimiter:
         clock:           Callable returning the current monotonic time (float).
                          Defaults to ``time.monotonic``.  Inject a fake clock
                          in tests for deterministic behaviour.
+        catalog:         Optional :class:`~general_ludd.pricing_intel.PricingCatalog`
+                         used as the PRIMARY source for
+                         :meth:`token_cost_usd`.  When the catalog returns no
+                         price for a model (or is omitted), the static table in
+                         :mod:`general_ludd.infra.pricing` is used as a
+                         fallback so cost projection never breaks due to a
+                         missing live price.
     """
 
     def __init__(
@@ -55,10 +75,12 @@ class SpendLimiter:
         limit_usd: float,
         window_seconds: float,
         clock: Callable[[], float] | None = None,
+        catalog: PricingCatalog | None = None,
     ) -> None:
         self._limit_usd = limit_usd
         self._window_seconds = window_seconds
         self._clock: Callable[[], float] = clock if clock is not None else time.monotonic
+        self._catalog = catalog
         # Each record: (timestamp_float, cost_usd_float)
         self._records: list[tuple[float, float]] = []
         # Re-entrant lock guards the check-and-record sequence so concurrent
@@ -81,6 +103,116 @@ class SpendLimiter:
         refused (fail closed).
         """
         return self._limit_usd > 0.0
+
+    # ------------------------------------------------------------------
+    # Cost projection
+    # ------------------------------------------------------------------
+
+    def token_cost_usd(
+        self,
+        model: str,
+        in_tokens: int,
+        out_tokens: int,
+        *,
+        provider: str | None = None,
+    ) -> float:
+        """USD cost for a model call, PricingCatalog primary, static fallback.
+
+        Resolution order:
+
+        1. If a :class:`~general_ludd.pricing_intel.PricingCatalog` is
+           configured, query it via ``model_price(provider, model_id)``.  The
+           provider is taken from the explicit ``provider`` arg when given;
+           otherwise it is inferred from the model_id prefix (e.g.
+           ``claude-*`` -> ``anthropic``) and then backfilled by every
+           registered provider slug.  The first non-``None`` ``ModelPrice``
+           wins.
+        2. On any miss, catalog error, or when no catalog is configured, fall
+           back to :func:`general_ludd.infra.pricing.token_cost_usd` (the
+           static ``PRICING`` table).  This guarantees cost projection never
+           breaks because a live price is unavailable.
+
+        Args:
+            model:      Model identifier (e.g. ``"claude-3-5-sonnet-20241022"``).
+            in_tokens:  Number of input/prompt tokens.
+            out_tokens: Number of output/completion tokens.
+            provider:   Optional explicit provider slug (e.g. ``"anthropic"``).
+                        When omitted, provider inference is used.
+
+        Returns:
+            Total cost in USD as a float.
+        """
+        price = self._catalog_model_price(model, provider=provider)
+        if price is not None:
+            inp_per_1k, out_per_1k = price
+            return inp_per_1k * (in_tokens / 1000.0) + out_per_1k * (out_tokens / 1000.0)
+        return _static_token_cost_usd(model, in_tokens, out_tokens)
+
+    def _catalog_model_price(
+        self,
+        model: str,
+        *,
+        provider: str | None = None,
+    ) -> tuple[float, float] | None:
+        """Return ``(input_usd_per_1k, output_usd_per_1k)`` from the catalog.
+
+        Returns ``None`` when no catalog is configured, no provider has the
+        model, or the catalog raises.  All exceptions are swallowed so the
+        caller falls back to the static table — a missing live price must
+        never break cost projection.
+        """
+        catalog = self._catalog
+        if catalog is None:
+            return None
+        candidates = self._provider_candidates(model, provider=provider)
+        for slug in candidates:
+            try:
+                price = catalog.model_price(slug, model)
+            except Exception as exc:
+                logger.warning(
+                    "SpendLimiter: catalog.model_price(%s, %s) raised %s; "
+                    "trying next provider / static fallback.",
+                    slug,
+                    model,
+                    exc,
+                )
+                continue
+            if price is not None:
+                return (price.input_usd_per_1k, price.output_usd_per_1k)
+        return None
+
+    def _provider_candidates(
+        self,
+        model: str,
+        *,
+        provider: str | None,
+    ) -> tuple[str, ...]:
+        """Order the provider slugs to try for ``model``.
+
+        Explicit ``provider`` wins outright.  Otherwise prefix hints are
+        placed first (deduplicated), then any other registered slugs follow
+        so every provider gets a chance before falling back to the static
+        table.
+        """
+        if provider is not None:
+            return (provider,)
+        hints: list[str] = []
+        model_lower = model.lower()
+        for prefix, slugs in _PREFIX_PROVIDER_HINTS:
+            if model_lower.startswith(prefix):
+                for slug in slugs:
+                    if slug not in hints:
+                        hints.append(slug)
+        # Backfill with every registered provider slug so unknown prefixes
+        # and hint misses still consult the full catalog before fallback.
+        try:
+            registered = self._catalog.provider_slugs() if self._catalog else []
+        except Exception:
+            registered = []
+        for slug in registered:
+            if slug not in hints:
+                hints.append(slug)
+        return tuple(hints)
 
     def record(
         self,

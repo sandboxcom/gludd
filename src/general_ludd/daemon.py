@@ -936,6 +936,13 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # Build a rolling-window limiter from budget config when configured.
         from general_ludd.controllers.spend_limiter import SpendLimiter
         from general_ludd.daemon_wiring import make_spend_guarded_executor
+        from general_ludd.pricing_intel import PricingCatalog
+
+        # PricingCatalog is the PRIMARY price source for cost projection;
+        # SpendLimiter.token_cost_usd() falls back to the static
+        # infra/pricing.py table when the catalog has no live price.  Shared
+        # across the limiter and any other subsystem that needs live rates.
+        pricing_catalog = PricingCatalog()
 
         spend_limiter: SpendLimiter | None = None
         if uc is not None:
@@ -951,6 +958,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     limit_usd=spend_window_usd,
                     window_seconds=spend_window_seconds,
                     clock=_time.time,
+                    catalog=pricing_catalog,
                 )
                 logger.info(
                     "SpendLimiter configured: limit=%.4f USD / %.0f s window",
@@ -980,16 +988,27 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # made its pre-checks purely reactive (could only block AFTER a prior
             # call's actual cost already crossed the limit, never the call that
             # would itself exceed it).
+            #
+            # Prefer the SpendLimiter's projection (PricingCatalog primary,
+            # static table fallback) when a limiter is wired; otherwise use the
+            # standalone static token_cost_usd() so projection still works when
+            # budgeting is disabled.
             from general_ludd.infra.pricing import token_cost_usd
 
             _projected_cost_usd = 0.0
             _default_profile = model_gateway.get_profile("default")
             if _default_profile is not None:
-                _projected_cost_usd = token_cost_usd(
-                    _default_profile.model_name or "__default__",
-                    min(_default_profile.max_input_tokens, 1000),
-                    _default_profile.max_output_tokens,
-                )
+                _project_model = _default_profile.model_name or "__default__"
+                _project_in = min(_default_profile.max_input_tokens, 1000)
+                _project_out = _default_profile.max_output_tokens
+                if spend_limiter is not None:
+                    _projected_cost_usd = spend_limiter.token_cost_usd(
+                        _project_model, _project_in, _project_out
+                    )
+                else:
+                    _projected_cost_usd = token_cost_usd(
+                        _project_model, _project_in, _project_out
+                    )
 
             async def _gateway_executor(task: AgentTask) -> str:
                 profile_id = "default"

@@ -7,22 +7,32 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — master@`10ec8ec`, CI running
+## Current State — master@`21016a0`
 
 ### MERGED:
 - `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `10ec8ec`
+- master advanced to `21016a0`
 
-### CI:
-- RUNNING on master@`10ec8ec` (not yet GREEN — do not treat as confirmed)
-- Awaits run completion before declaring the ship good
+### Tier 2 RAG Progress:
+- **Step 1 — TaskEmbeddingModel:** complete
+- **Step 2 — Alembic migration 007:** complete
+- **Step 3 — TaskEmbeddingStore:** complete
 
-### New Work on master (since `10ec8ec`):
-- Security fixes (batch-3 + batch-4 security items landed)
-- Self-improve Phase 1
-- Tier 1 RAG embeddings
-- RunPod + Z.AI pricing
-- CI watch speed improvements
+### Pricing:
+- LIVE sources registered: RunPod, Z.AI, AWS
+- PENDING: LiteLLM JSON source
+- Pricing catalog wired into spend limiter (pending)
+
+### Dead Code:
+- `orchestration/` identified as dead (unwired)
+- `pricing_intel/` identified as dead (unwired)
+
+### Connectors:
+- `UserConfig.connectors` field added — 82 modules unblocked
+
+### CI Watch:
+- `ci-verdict-fast` + `ci-verdict-loop` make targets added
+- Polling intervals lowered
 
 ### Tests:
 - 12,394 tests collected

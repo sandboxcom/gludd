@@ -9,12 +9,15 @@ Cache behavior:
   - Billing semantics are always returned from static source data (no fetch needed).
   - Use refresh=True on any fetch method to force re-fetch from sources.
 
-# TODO(integration): Wire PricingCatalog into the spend-limiter to replace
-# the static PRICING and INFRA_PRICING dicts in src/general_ludd/infra/pricing.py.
-# Wire an /api/pricing router facet that returns live catalog data as JSON.
-# Example integration points:
-#   - SpendLimiter.token_cost_usd() → use catalog.model_price(provider, model_id)
-#   - InfraTracker.gpu_cost_usd() → use catalog.compute_price("runpod", sku)
+# Integration status:
+#   [DONE] SpendLimiter.token_cost_usd() now uses catalog.model_price(provider,
+#          model_id) as the primary source with the static PRICING table in
+#          infra/pricing.py as fallback. See src/general_ludd/controllers/
+#          spend_limiter.py and the daemon wiring in src/general_ludd/daemon.py.
+#   [TODO] Wire an /api/pricing router facet that returns live catalog data as
+#          JSON.
+#   [TODO] InfraTracker.gpu_cost_usd() -> use catalog.compute_price("runpod", sku)
+#          to replace the static INFRA_PRICING dict.
 """
 
 from __future__ import annotations
