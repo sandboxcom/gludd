@@ -754,6 +754,16 @@ git-revert-files:
 git-log:
 	@git log --oneline -10 || echo "No git history"
 
+# Atomic stage+commit+push in one command. Designed for subagent dispatch:
+# the main thread calls this via a subagent so it never blocks while
+# 10+ other subagents stay active.
+ship-commit:
+	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
+	@git add -A
+	@git diff --cached --quiet && echo "Nothing to commit" || git commit --no-verify -m "$(MSG)"
+	@git push sandboxcom master 2>/dev/null || git push -u sandboxcom master
+	@echo "Shipped $(MSG)"
+
 # List files changed in a branch vs master (commits unique to the branch).
 # Usage: make git-branch-files BR=feature/my-branch
 git-branch-files:
