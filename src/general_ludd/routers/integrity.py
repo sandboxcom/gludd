@@ -85,14 +85,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/integrity/approve")
     async def admin_integrity_approve(req: dict[str, Any]) -> dict[str, Any]:
+        # AUTH: the signed path must resolve inside an allowed root, else a
+        # caller can sign/exfiltrate arbitrary files (e.g. /etc/passwd).
+        raw_path = req.get("path", "")
+        (path,) = _confine_scan_paths(app, [raw_path]) if raw_path else ("",)
         result = sign_change_openbao(
-            path=req.get("path", ""),
+            path=path,
             signer=req.get("signer", "admin"),
             reason=req.get("reason", ""),
         )
         _integrity_log.append({
             "action": "approved",
-            "path": req.get("path"),
+            "path": path,
             "reason": req.get("reason"),
             "signer": req.get("signer"),
             "timestamp": result.get("timestamp"),
@@ -102,14 +106,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/integrity/reject")
     async def admin_integrity_reject(req: dict[str, Any]) -> dict[str, Any]:
+        # AUTH: confine the path the same way approve does so the integrity log
+        # cannot be polluted with / referenced against out-of-root paths.
+        raw_path = req.get("path", "")
+        (path,) = _confine_scan_paths(app, [raw_path]) if raw_path else ("",)
         _integrity_log.append({
             "action": "rejected",
-            "path": req.get("path", ""),
+            "path": path,
             "reason": req.get("reason", ""),
             "signer": req.get("signer", "admin"),
             "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
         })
-        return {"path": req.get("path"), "status": "rejected"}
+        return {"path": path, "status": "rejected"}
 
     @app.get("/admin/integrity/log")
     async def admin_integrity_log() -> dict[str, Any]:
@@ -178,6 +186,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_gap_analysis(req: dict[str, Any] | None = None) -> dict[str, Any]:
         req = req or {}
         sprint_path = req.get("sprint_path", "")
+        # AUTH: confine sprint_path the same way as repo_root so the analyzer
+        # can't be pointed at arbitrary out-of-root files.
+        if sprint_path:
+            (sprint_path,) = _confine_scan_paths(app, [sprint_path])
         raw_root = req.get("repo_root", "")
         if raw_root and raw_root != ".":
             (repo_root,) = _confine_scan_paths(app, [raw_root])

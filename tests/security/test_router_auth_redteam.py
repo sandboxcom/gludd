@@ -317,3 +317,36 @@ class TestPathConfinement:
                 "/admin/integrity/scan", json={"paths": [str(sub)]}
             )
             assert resp.status_code == 200, resp.text
+
+    @pytest.mark.asyncio
+    async def test_integrity_approve_rejects_path_outside_allowed_roots(self):
+        # AUTH: signing off on a change must refuse a path that escapes the
+        # allowed roots, otherwise the endpoint signs/arbitrary-files.
+        app = create_daemon_app(tick_interval=0.01)
+        async with _client(app) as client:
+            resp = await client.post(
+                "/admin/integrity/approve",
+                json={"path": "/etc/passwd", "signer": "admin", "reason": "x"},
+            )
+            assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_integrity_reject_rejects_path_outside_allowed_roots(self):
+        app = create_daemon_app(tick_interval=0.01)
+        async with _client(app) as client:
+            resp = await client.post(
+                "/admin/integrity/reject",
+                json={"path": "/etc/passwd", "signer": "admin", "reason": "x"},
+            )
+            assert resp.status_code == 422, resp.text
+
+    @pytest.mark.asyncio
+    async def test_gap_analysis_rejects_sprint_path_outside_allowed_roots(self):
+        # repo_root is already confined; sprint_path must be too.
+        app = create_daemon_app(tick_interval=0.01)
+        async with _client(app) as client:
+            resp = await client.post(
+                "/admin/gap-analysis",
+                json={"sprint_path": "/etc/passwd"},
+            )
+            assert resp.status_code == 422, resp.text
