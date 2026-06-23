@@ -757,8 +757,15 @@ git-log:
 # Atomic stage+commit+push in one command. Designed for subagent dispatch:
 # the main thread calls this via a subagent so it never blocks while
 # 10+ other subagents stay active. Uses sandboxcom SSH key.
+# ENFORCES lint+typecheck+collect-check BEFORE committing (fast gate, ~10 sec).
+# This prevents the anti-TDD pattern of shipping code without any local validation.
 ship-commit:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make ship-commit MSG='message'"; exit 1; fi
+	@echo "=== FAST GATE: lint+typecheck+collect ==="
+	@$(MAKE) --no-print-directory lint
+	@$(MAKE) --no-print-directory typecheck
+	@$(MAKE) --no-print-directory collect-check
+	@echo "=== FAST GATE PASSED — committing ==="
 	@git add -A
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit --no-verify -m "$(MSG)"
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify sandboxcom master 2>/dev/null
