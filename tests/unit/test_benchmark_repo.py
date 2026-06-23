@@ -10,6 +10,7 @@ from sqlalchemy.ext.asyncio import (
     async_sessionmaker,
     create_async_engine,
 )
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base
 from general_ludd.db.repository import BenchmarkRepository, PromptProfileRepository
@@ -17,7 +18,11 @@ from general_ludd.db.repository import BenchmarkRepository, PromptProfileReposit
 
 @pytest.fixture
 async def engine():
-    eng = create_async_engine("sqlite+aiosqlite:///:memory:")
+    eng = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     async with eng.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     yield eng

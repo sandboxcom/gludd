@@ -10,6 +10,7 @@ from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base, TaskDecisionModel, TaskReturnModel
 from general_ludd.db.repository import TodoRepository
@@ -35,7 +36,12 @@ def _init_git_repo(path: str) -> None:
 
 
 async def _create_test_infra():
-    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        echo=False,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)

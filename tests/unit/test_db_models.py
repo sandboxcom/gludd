@@ -13,6 +13,7 @@ import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import (
     AuditEventModel,
@@ -38,7 +39,12 @@ from general_ludd.schemas.todo import TodoStatus
 
 
 def _make_async_engine():
-    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        echo=False,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
@@ -108,7 +114,7 @@ class TestTodoModel:
         assert todo.status == TodoStatus.BACKLOG
         assert todo.version == 1
 
-    async def test_todo_default_fields(self, async_session: AsyncSession):
+    async def test_todo_defaults_fields(self, async_session: AsyncSession):
         todo = TodoModel(title="Simple task")
         async_session.add(todo)
         await async_session.flush()
