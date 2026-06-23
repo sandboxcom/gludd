@@ -15,7 +15,7 @@ from typing import Any
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncEngine, AsyncSession, async_sessionmaker, create_async_engine
 
-from general_ludd.db.models import Base
+from general_ludd.db.models import Base, QueueModel
 from general_ludd.schemas.queue import INITIAL_QUEUES
 
 logger = logging.getLogger(__name__)
@@ -128,31 +128,36 @@ async def ensure_tables(engine: AsyncEngine) -> None:
 
 
 async def seed_initial_queues(session: AsyncSession) -> int:
-    # Seed via QueueRepository so existence checks + inserts go through the
-    # same persistence boundary the rest of the app uses (no raw SQL here).
-    from general_ludd.db.repository import QueueRepository
+    # Idempotent INSERT ... ON CONFLICT DO NOTHING. The prior check-then-insert
+    # (get_by_name -> create) was a TOCTOU race on queues.queue_name: two xdist
+    # workers both saw None and both INSERTed -> IntegrityError on the unique
+    # constraint. A single statement with on_conflict_do_nothing makes the loser
+    # a no-op, mirroring VariableNamespaceRepository.set_var (repository.py:683-708).
+    from sqlalchemy.dialects.sqlite import insert as sqlite_insert
 
-    repo = QueueRepository(session)
     count = 0
     for q in INITIAL_QUEUES:
-        if await repo.get_by_name(q.queue_name) is not None:
-            continue
-        await repo.create({
-            "queue_name": q.queue_name,
-            "queue_enabled": q.queue_enabled,
-            "priority_weight": q.priority_weight,
-            "resource_profile": q.resource_profile,
-            "hard_cap": q.hard_cap,
-            "soft_cap": q.soft_cap,
-            "pid_group": q.pid_group,
-            "allowed_playbooks": json_dumps(q.allowed_playbooks),
-            "allowed_model_profiles": json_dumps(q.allowed_model_profiles),
-            "allowed_prompt_profiles": json_dumps(q.allowed_prompt_profiles),
-            "required_molecule_coverage_profile": q.required_molecule_coverage_profile,
-            "max_error_rate": q.max_error_rate,
-            "retry_policy": json_dumps(q.retry_policy) if q.retry_policy else "{}",
-        })
-        count += 1
+        stmt = (
+            sqlite_insert(QueueModel)
+            .values(
+                queue_name=q.queue_name,
+                queue_enabled=q.queue_enabled,
+                priority_weight=q.priority_weight,
+                resource_profile=q.resource_profile,
+                hard_cap=q.hard_cap,
+                soft_cap=q.soft_cap,
+                pid_group=q.pid_group,
+                allowed_playbooks=json_dumps(q.allowed_playbooks),
+                allowed_model_profiles=json_dumps(q.allowed_model_profiles),
+                allowed_prompt_profiles=json_dumps(q.allowed_prompt_profiles),
+                required_molecule_coverage_profile=q.required_molecule_coverage_profile,
+                max_error_rate=q.max_error_rate,
+                retry_policy=json_dumps(q.retry_policy) if q.retry_policy else "{}",
+            )
+            .on_conflict_do_nothing(index_elements=["queue_name"])
+        )
+        result = await session.execute(stmt)
+        count += getattr(result, "rowcount", 0) or 0
     if count:
         await session.flush()
         logger.info("Seeded %d initial queues", count)

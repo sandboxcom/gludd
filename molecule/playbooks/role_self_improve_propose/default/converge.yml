@@ -21,8 +21,6 @@
         self_improve_enabled: true
         daemon_url: "http://127.0.0.1:{{ mock_port }}"
         psk: ""
-        repo_path: "{{ repo_path }}"
-        worktree_base: "{{ worktree_base }}"
         candidate_branch: "molecule/self-improve-candidate"
         agent_max_iterations: 2
         artifact_dir: "/tmp/gludd-self-improve-propose-{{ mock_port }}"

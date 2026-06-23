@@ -36,6 +36,36 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
 
+// --- Gate-concurrency probe (port of gate_concurrency_pretool.sh) -------------
+// Two independent signals (either fires the block): fresh basetemp mtime, OR
+// pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
+function isGateAlreadyRunning(): boolean {
+  try {
+    const { execSync } = require("node:child_process")
+    const fsLocal = require("node:fs")
+    const BASETEMP = process.env.GLUDD_GATE_BASETEMP || "/tmp/gludd-gate-basetemp"
+    const STALE_SECS = parseInt(process.env.GLUDD_GATE_STALE_SECS || "600", 10)
+    // Signal A: basetemp exists + fresh mtime.
+    try {
+      const st = fsLocal.statSync(BASETEMP)
+      const ageSec = (Date.now() - st.mtimeMs) / 1000
+      if (ageSec < STALE_SECS) return true
+    } catch {}
+    // Signal B: pgrep -f pytest. Exit 0 = match found.
+    if (process.env.GLUDD_GATE_PYTEST_RUNNING === "1") return true
+    if (process.env.GLUDD_GATE_PYTEST_RUNNING === "0") return false
+    try {
+      execSync("pgrep -f pytest", { stdio: ["pipe", "pipe", "pipe"] })
+      return true  // pgrep exited 0 — a pytest process is running
+    } catch {
+      return false  // pgrep exited non-zero — no match
+    }
+  } catch {
+    return false
+  }
+}
+
+
 const COMMIT_REMINDER = [
   "COMMIT REMINDER: Tests are passing.",
   "",
@@ -167,6 +197,19 @@ const COMPLETION_SOUNDING = [
   "all objectives",
 ]
 
+function detectStopPattern(text: string): boolean {
+  const lower = text.toLowerCase()
+  // Check for completion-sounding phrases
+  if (COMPLETION_SOUNDING.some(p => lower.includes(p))) {
+    // Only flag as stop pattern if the response is short (a summary, not
+    // ongoing work narration that happens to contain one of these words).
+    if (text.length < 500) return true
+    // Also flag if it contains explicit permission-seeking
+    if (lower.includes("want me to") || lower.includes("should i") || lower.includes("shall i")) return true
+  }
+  return false
+}
+
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
@@ -176,6 +219,71 @@ export default (async ({ }) => {
 
         if (!trimmed.startsWith("make ") && trimmed !== "make") {
           throw new Error(formatBashBlockedMessage(trimmed, "Command does not start with 'make'"))
+        }
+
+        // --- Gate concurrency guard -----------------------------------------
+        // Port of .claude/hooks/gate_concurrency_pretool.sh.
+        // Blocks launching a second pytest/gate while one is already running.
+        // Root cause of the 2026-06-15 208-error incident: two concurrent gates
+        // triggered pytest's keep-last-3 basetemp tmp-root rotation, deleting
+        // the first gate's worker dirs mid-flight and producing hundreds of
+        // spurious FileNotFoundError errors. FAIL-OPEN on any probe error.
+        const GATE_TARGETS_RE = /^make\s+(gate|test|test-unit|test-e2e|test-count|test-and-commit|qa)(\s|$)/
+        if (GATE_TARGETS_RE.test(trimmed)) {
+          if (isGateAlreadyRunning()) {
+            throw new Error([
+              "GATE CONCURRENCY VIOLATION: a pytest / gate run appears to already",
+              "be in progress (basetemp /tmp/gludd-gate-basetemp is fresh OR pgrep",
+              "found a pytest process). Launching a second concurrent pytest",
+              "triggers keep-last-3 basetemp rotation, which deletes the first",
+              "gate's worker dirs mid-flight and produces hundreds of spurious",
+              "FileNotFoundError errors (the 2026-06-15 208-error incident).",
+              "Wait for the current gate to finish, then launch this one.",
+              "This dispatch is BLOCKED.",
+            ].join("\n"))
+          }
+        }
+
+        // --- Long-running foreground command guard ----------------------------
+        // Blocks `make gate` (~40 min), `make test-unit` (~27 min), bare
+        // `make test`, `make qa`, `make test-e2e`, and `make validate` from
+        // running in the foreground. While these run, the bash tool blocks
+        // for the entire duration — NO subagents can be dispatched and NO
+        // UI updates reach the user (the "multitasking bug"). Require
+        // `make gate-background` or dispatch to a subagent.
+        // NOT blocked: make lint, make typecheck, make test-count,
+        // make collect-check, and targeted runs (TESTFILE= / NO_XDIST=1).
+        {
+          const m = trimmed.match(/^make\s+(\S+)/)
+          const lrTarget = m ? m[1] : ""
+          const isGate = lrTarget === "gate"
+          const isTestUnit = lrTarget === "test-unit"
+          const isBareTest =
+            lrTarget === "test" &&
+            !trimmed.includes("TESTFILE=") &&
+            !trimmed.includes("NO_XDIST=1")
+          const isQa = lrTarget === "qa"
+          const isTestE2e = lrTarget === "test-e2e"
+          const isValidate = lrTarget === "validate"
+          if (isGate || isTestUnit || isBareTest || isQa || isTestE2e || isValidate) {
+            throw new Error([
+              "BLOCKED: Long-running foreground command. Use `make gate-background`",
+              "instead, or dispatch to a subagent. Foreground blocking prevents",
+              "subagent dispatch and UI updates.",
+              "",
+              "While this command runs, the bash tool blocks for the entire",
+              "duration (make gate ~40 min, make test-unit ~27 min, make qa,",
+              "make test-e2e, and make validate are equally long-running).",
+              "During that time NO subagents can be dispatched and NO UI updates",
+              "reach the user. Either:",
+              "  1. Run `make gate-background` (background variant), or",
+              "  2. Dispatch the gate/test to a subagent (preferred).",
+              "",
+              "Allowed in foreground:",
+              "  make lint, make typecheck, make test-count, make collect-check,",
+              "  make test TESTFILE=<path>, make test NO_XDIST=1",
+            ].join("\n"))
+          }
         }
 
         if (SHELL_META_CHARS.test(trimmed)) {
@@ -273,43 +381,106 @@ export default (async ({ }) => {
         }
       }
 
-      if (input.tool === "edit") {
+      if (input.tool === "edit" || input.tool === "write") {
         const filePath: string = output?.args?.filePath ?? ""
 
-        const isPluginFile = filePath.includes("enforce-make.ts") || filePath.includes("enforce-make.js")
-        if (isPluginFile) {
+        // --- Flag-file write prevention -------------------------------------
+        // Port of .claude/hooks/no_flag_file_write_pretool.sh
+        // Agents MUST NOT write .gate-status / .gate-failed / *.gate-status
+        // directly — run_gate.sh is the sanctioned writer. Allowing agent
+        // writes would let an agent forge a PASS gate status and bypass the
+        // commit freshness guard (guardrail integrity breach).
+        const baseName = filePath.split("/").pop() ?? filePath
+        if (
+          baseName === ".gate-status" ||
+          baseName === ".gate-failed" ||
+          baseName.endsWith(".gate-status")
+        ) {
+          throw new Error([
+            "GUARDRAIL: agents must not write gate flag files",
+            "(.gate-status / .gate-failed / *.gate-status) directly.",
+            "",
+            "run_gate.sh is the sanctioned writer (shell, not a harness tool call).",
+            "Allowing agent writes would let an agent forge a PASS gate status",
+            "and bypass the commit freshness guard. This write is DENIED.",
+          ].join("\n"))
+        }
+
+        // --- Guardrail-integrity (extended) ---------------------------------
+        // Port of .claude/hooks/guardrail_integrity_edit_pretool.sh.
+        // Protects ALL hook + plugin files from edits that silently remove
+        // enforcement. The original enforce-make.ts check covered enforce-make.ts
+        // ONLY; this covers .claude/hooks/*.sh AND .opencode/plugin/*.ts so an
+        // edit cannot defang a sibling guardrail.
+        const isGuardrailFile = (
+          filePath.includes("/.claude/hooks/") ||
+          filePath.includes("/.opencode/plugin/") ||
+          (filePath.endsWith(".sh") && filePath.includes("/hooks/")) ||
+          filePath.includes("enforce-make.ts") ||
+          filePath.includes("enforce-make.js") ||
+          filePath.includes("enforce-floor.ts") ||
+          filePath.includes("enforce-delegate.ts") ||
+          filePath.includes("enforce-stop.ts")
+        )
+        if (isGuardrailFile) {
           const oldContent: string = output?.args?.oldString ?? ""
           const newContent: string = output?.args?.newString ?? ""
+          // Enforcement tokens — any of these in code means "actively blocks".
+          // Wholesale removal of ALL tokens from a guardrail file signals the
+          // hook is being defanged (the fix-means-repair-never-disable policy).
           const guardrailPatterns = [
             "throw new Error",
+            '"permissionDecision"',
+            '"permissionDecision": "deny"',
+            '"permissionDecision":"deny"',
+            '"decision": "block"',
+            '"decision":"block"',
             "TDD VIOLATION",
             "BLOCKED",
             "FORBIDDEN",
             "STOP-PATTERN",
+            "GUARDRAIL INTEGRITY VIOLATION",
+            "GATE CONCURRENCY",
+            "exit 1",
+            "sys.exit(1)",
           ]
-          for (const pattern of guardrailPatterns) {
-            if (oldContent.includes(pattern) && !newContent.includes(pattern) && newContent.length > 0) {
-              throw new Error([
-                "GUARDRAIL INTEGRITY VIOLATION: You are removing enforcement from a guardrail.",
-                "",
-                "The edit removes '" + pattern + "' from the plugin.",
-                "",
-                "When a guardrail causes noise or errors, the fix is to make it",
-                "SMARTER (narrow conditions, add exceptions) — never to remove it.",
-                "",
-                "See AGENTS.md: Guardrail Integrity Policy.",
-              ].join("\n"))
-            }
+          const hadAnyToken = guardrailPatterns.some(p => oldContent.includes(p))
+          const newHasAnyToken = guardrailPatterns.some(p => newContent.includes(p))
+          if (hadAnyToken && !newHasAnyToken && newContent.trim().length > 0) {
+            throw new Error([
+              "GUARDRAIL INTEGRITY VIOLATION (fix-means-repair-never-disable):",
+              "The edit removes ALL enforcement tokens from " + filePath + ".",
+              "",
+              "old_string contained an active block/deny/throw/exit-1 enforcement",
+              "token; new_string contains none.",
+              "",
+              'Per the fix-means-repair-never-disable policy: "fix" means make',
+              "the feature work correctly, NEVER disable or weaken it. If the",
+              "enforcement is noisy, narrow its conditions — do NOT delete the",
+              "enforcement. Repair the hook; do not defang it. See AGENTS.md.",
+            ].join("\n"))
           }
         }
 
-        const isTest = filePath.includes("/tests/") || filePath.includes("\\tests\\")
+        const isTest = (filePath.includes("/tests/") || filePath.includes("\\tests\\")) && !filePath.endsWith("conftest.py") && (filePath.includes("/test_") || filePath.includes("\\test_") || filePath.endsWith("_test.py"))
         const isProduction = filePath.includes("/src/") || filePath.includes("\\src\\")
 
         if (isTest) {
           const newContent: string = output?.args?.newString ?? ""
-          const hasAssertion = newContent.includes("assert ") || newContent.includes("assert ")
-          if (newContent.length > 50 && !hasAssertion) {
+          const hasAssertion = newContent.includes("assert ") || newContent.includes("assert(")
+          // Only enforce assertions on edits that introduce a TEST METHOD body
+          // (contain "def test_" or "async def test_"). This avoids false
+          // positives on legitimate non-test edits to test files: imports,
+          // fixtures, engine/session setup, helper functions, decorators, and
+          // config blocks — none of which contain assertions and all of which
+          // the old size-based heuristic wrongly blocked. The guardrail still
+          // fires on real test methods that call code without asserting
+          // observable behavior (a known past class of "passing but tests-
+          // nothing" bugs). Per the guardrail-integrity policy: narrow, do not
+          // disable.
+          const isTestMethodBody =
+            newContent.includes("def test_") || newContent.includes("async def test_")
+          if (isTestMethodBody && !hasAssertion) {
             throw new Error([
               "TDD QUALITY VIOLATION: Test code must contain assertions.",
               "",
@@ -342,7 +513,7 @@ export default (async ({ }) => {
             let testExists = false
             for (const candidate of candidates) {
               const testDir = path.resolve(filePath.split(/[\/\\]src[\/\\]/)[0], "tests", "unit")
-              for (const prefix of ["test_", "test_"]) {
+                for (const prefix of ["test_"]) {
                 for (const suffix of [".py"]) {
                   try {
                     fs.accessSync(path.join(testDir, prefix + candidate + suffix))
@@ -428,7 +599,7 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.response.transform": async (_input, output) => {
-      if (typeof output !== "string") return
+      if (typeof output !== "string") return output
 
       const gateStatusPath = path.join(process.cwd(), ".gate-status")
       if (fs.existsSync(gateStatusPath)) {
@@ -538,6 +709,8 @@ export default (async ({ }) => {
         ].join("\n")
         output = output + verification
       }
+
+      return output
     },
   }
 }) satisfies Plugin

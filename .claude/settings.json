@@ -1,4 +1,11 @@
 {
+  "env": {
+    "CLAUDE_AGENT_FLOOR": "10",
+    "CLAUDE_AGENT_CEILING": "16",
+    "GLUDD_FORCE_DELEGATE": "1",
+    "GLUDD_FORCE_DELEGATE_GRACE": "5",
+    "GLUDD_FORCE_DELEGATE_MAXBLOCK": "4"
+  },
   "hooks": {
     "SessionStart": [
       {
@@ -44,6 +51,10 @@
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/mainthread_budget.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/force_delegate_pretool.sh"
           }
         ]
       },
@@ -57,6 +68,10 @@
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/disk_discipline_pretool.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/worktree_disk_guard_pretool.sh"
           },
           {
             "type": "command",
@@ -110,6 +125,10 @@
     "Stop": [
       {
         "hooks": [
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_wait_stop.sh"
+          },
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/agent_floor_stop.sh"

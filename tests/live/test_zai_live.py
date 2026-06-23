@@ -25,11 +25,11 @@ def _get_zai_api_key() -> str | None:
 
 
 def _get_zai_base_url() -> str:
-    return os.environ.get("ZAI_BASE_URL", "https://open.bigmodel.cn/api/paas/v4")
+    return os.environ.get("ZAI_BASE_URL", "https://api.z.ai/api/coding/paas/v4")
 
 
 def _get_zai_model() -> str:
-    return os.environ.get("ZAI_MODEL", "glm-5.1")
+    return os.environ.get("ZAI_MODEL", "glm-4.6")
 
 
 def _build_zai_gateway() -> ModelGateway:
@@ -240,7 +240,7 @@ class TestZAIModelIdentity:
         content = response.content.lower()
         assert any(
             token in content
-            for token in ["glm", "5.1", "zhipu", "bigmodel"]
+            for token in ["glm", "4.6", "5.1", "zhipu", "bigmodel"]
         ), f"Model identity response did not contain expected tokens: {response.content}"
         assert len(response.content) > 20, (
             f"Response too short to be a proper identity reply: {response.content}"

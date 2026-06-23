@@ -25,10 +25,6 @@ import os
 from collections.abc import Mapping
 from dataclasses import dataclass
 
-# Re-exported so existing ``from general_ludd.security.auth import
-# is_path_within`` call sites keep importing it from here; the canonical
-# realpath jail now lives in ``security.sanitize`` (one implementation).
-from general_ludd.security.sanitize import is_path_within as is_path_within
 from general_ludd.security.ssrf import host_is_blocked
 from general_ludd.security.ssrf import is_url_blocked as _is_url_blocked
 
@@ -114,6 +110,33 @@ def require_auth_env(env: Mapping[str, str] | None = None) -> bool:
         "yes",
         "on",
     }
+
+
+def is_join_within(base: str, candidate: str) -> bool:
+    """True iff ``candidate`` resolves to a path inside ``base``.
+
+    ``candidate`` is joined onto ``base`` first, so a relative path is taken
+    relative to the base while an ABSOLUTE candidate replaces the base entirely
+    (the classic escape) — which this function then catches via ``commonpath``.
+    Both paths are passed through ``realpath`` so symlink and ``../`` escapes are
+    resolved before comparison. Pure string/filesystem-metadata work only; no
+    network, no blocking.
+    """
+    try:
+        base_real = os.path.realpath(base)
+        full = os.path.realpath(os.path.join(base_real, candidate))
+        common = os.path.commonpath([base_real, full])
+    except (ValueError, OSError):
+        # Mixed drives, embedded NULs, etc. -> treat as not contained.
+        return False
+    return common == base_real
+
+
+# Back-compat alias: ``is_path_within`` was the original name before the rename
+# to ``is_join_within``. Both names must resolve to the SAME object so that
+# identity checks (``is_path_within is is_join_within``) pass and call sites
+# that import either name get identical behaviour.
+is_path_within = is_join_within
 
 
 def _host_is_blocked(host: str) -> bool:

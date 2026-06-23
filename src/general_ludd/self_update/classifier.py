@@ -280,7 +280,7 @@ def classify(request: SelfUpdateRequest) -> SelfUpdatePlan:
     )
     # A code-tier or unknown change always proposes approval; config/scaffold
     # are decided downstream by the apply ladder (path guards may force it).
-    requires_approval = tier in (ApplyTier.CODE,) or kind is ChangeKind.UNKNOWN
+    requires_approval = tier in (ApplyTier.CODE,) or kind is ChangeKind.UNKNOWN or subsystem is Subsystem.SECURITY
 
     return SelfUpdatePlan(
         subsystem=subsystem,

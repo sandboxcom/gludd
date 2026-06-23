@@ -5,7 +5,27 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-18
+- 2026-06-23
+
+## Current State — Code committed + pushed, awaiting CI
+
+### Committed:
+- `3445abd` — guardrails + CI fixes (hook ports, gate-bypass fix, floor codification, FK constraint fix, TOCTOU, coverage shard, conftest deprecation, enforce-* bug fixes, ratchet cleanup, AGENTS.md dispatch rules)
+- `4d400c1` — StaticPool fixes
+
+### Pushed:
+- Branch: `sandboxcom/fix/self-update-sec`
+
+### PR:
+- #2 — https://github.com/sandboxcom/gludd/pull/2
+
+### CI:
+- Triggered via PR sync; awaiting results
+
+### Remaining:
+- Watch CI run on PR #2
+- Fix any new failures surfaced by CI
+- Merge to master once CI is green
 
 ## Wave 3 Ship — Status: GATE RUNNING, NOT YET CONFIRMED
 

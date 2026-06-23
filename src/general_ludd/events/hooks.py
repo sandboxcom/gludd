@@ -10,7 +10,33 @@ from typing import Any
 
 import httpx
 
+# Canonical SSRF predicate — the SINGLE source of truth shared by every guard
+# in the codebase (auth, sanitize, connectors). Do NOT re-implement blocklists
+# here; delegate so they can never drift apart.
+from general_ludd.security.ssrf import is_url_blocked
+
 logger = logging.getLogger(__name__)
+
+
+class SSRFBlockedError(ValueError):
+    """Raised when a webhook URL targets a non-routable or internal address."""
+
+
+def _ensure_safe_webhook_url(url: str) -> None:
+    """Raise :class:`SSRFBlockedError` if *url* must not be fetched.
+
+    Webhooks allow both http and https (matching the connector policy); the
+    literal host/IP/scheme decision is delegated to the canonical
+    :func:`is_url_blocked`. No DNS / no network — pair with
+    ``follow_redirects=False`` so a 30x to an internal address cannot bypass
+    this registration-time check.
+    """
+    if is_url_blocked(url, scheme_allowlist=("http", "https")):
+        raise SSRFBlockedError(
+            f"Webhook URL rejected by SSRF guard (internal/loopback/link-local/"
+            f"metadata or bad scheme): {url!r}"
+        )
+
 
 # Secret key patterns — if any of these substrings appear in a payload key
 # (case-insensitive), the key is stripped before the payload is forwarded to
@@ -105,6 +131,9 @@ class HookSystem:
         retry_count: int = 1,
         timeout_seconds: int = 10,
     ) -> str:
+        # SSRF guard: reject internal/loopback/link-local/metadata URLs up front
+        # so a bad target is never persisted in a HookRegistration.
+        _ensure_safe_webhook_url(url)
         # D-34: clamp at registration — a caller-supplied retry_count must never
         # be stored verbatim so that fire() can't loop 10000x on a slow endpoint.
         clamped_retry = min(max(1, retry_count), 5)
@@ -219,6 +248,9 @@ class HookSystem:
                             json=body,
                             headers=config.headers,
                             timeout=config.timeout_seconds,
+                            # Never auto-follow redirects: a 30x to an internal
+                            # address would bypass the registration-time SSRF check.
+                            follow_redirects=False,
                         ),
                     )
                     return
@@ -228,6 +260,7 @@ class HookSystem:
                         json=body,
                         headers=config.headers,
                         timeout=config.timeout_seconds,
+                        follow_redirects=False,
                     )
                 return
             except Exception as exc:

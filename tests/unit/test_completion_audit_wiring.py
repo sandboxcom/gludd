@@ -410,12 +410,17 @@ class TestQueueRepositoryWiring:
     @pytest.mark.asyncio
     async def test_seed_uses_queue_repository(self):
         from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+        from sqlalchemy.pool import StaticPool
 
         from general_ludd.db.models import Base
         from general_ludd.db.repository import QueueRepository
         from general_ludd.db.session import seed_initial_queues
 
-        engine = create_async_engine("sqlite+aiosqlite://")
+        engine = create_async_engine(
+            "sqlite+aiosqlite://",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
         factory = async_sessionmaker(engine, expire_on_commit=False)

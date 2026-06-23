@@ -31,16 +31,20 @@ class TestRealDaemonEnhancedStatus:
             assert resp.status_code == 200
             data = resp.json()
 
+            # config_dir / config_files / filestore_root are intentionally absent:
+            # they were removed as a security hardening measure (host-path leakage).
+            # The schema now emits non-path equivalents: config_file_count (int),
+            # filestore_available (bool), filestore_binaries (list).
             required = [
                 "version",
                 "uptime_ticks",
                 "todos_total",
                 "queue_depths",
                 "tick_metrics",
-                "config_dir",
-                "config_files",
-                "filestore_root",
+                "config_file_count",
+                "filestore_available",
                 "filestore_binaries",
+                "binary_versions",
                 "db_engine",
                 "db_url",
             ]
@@ -72,8 +76,11 @@ class TestRealDaemonEnhancedStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/status")
             data = resp.json()
-            assert "filestore_root" in data
-            assert data["filestore_root"] is not None
+            # filestore_root is intentionally absent (host-path leakage); the
+            # schema exposes availability as a boolean instead.
+            assert "filestore_root" not in data
+            assert "filestore_available" in data
+            assert isinstance(data["filestore_available"], bool)
             assert "filestore_binaries" in data
             assert isinstance(data["filestore_binaries"], list)
 
@@ -90,9 +97,12 @@ class TestRealDaemonEnhancedStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/status")
             data = resp.json()
-            assert "config_dir" in data
-            assert "config_files" in data
-            assert isinstance(data["config_files"], list)
+            # config_dir and config_files are intentionally absent (host-path
+            # leakage); the schema exposes a count integer instead.
+            assert "config_dir" not in data
+            assert "config_files" not in data
+            assert "config_file_count" in data
+            assert isinstance(data["config_file_count"], int)
 
     @pytest.mark.asyncio
     async def test_status_uptime_ticks_increments_after_event_loop_runs(self, transport):

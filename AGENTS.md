@@ -48,6 +48,25 @@ Enforced for tooling by `tests/unit/test_observability_guardrails.py`. Agent
 behavioral mirror: never go silent while the user is waiting — check in the
 foreground and report real state rather than launching a silent task and waiting.
 
+**CRITICAL: Always provide a visual status update.** Every response MUST produce
+visible output that opencode promotes to the UI. If you go silent for more than
+a few seconds without a tool call or status text, the user cannot tell whether
+work is progressing or has stalled — and a stalled-looking session WILL be
+interrupted. Specifically:
+
+- Between tool calls, output a 1-line status of what you're doing.
+- For long-running operations (gate, build, test suite), stream output via `tee`
+  or dispatch to a subagent that reports back — never run a 40-minute operation
+  silently in the foreground.
+- If you are thinking/planning, say so in one line before the next tool call.
+- If work is blocked, state the blocker and the workaround being attempted —
+  do NOT present options and ask "which do you want?" (that is the stop-and-ask
+  bug, blocked by `enforce-stop.ts` as of 2026-06-22).
+
+A response with NO visible output is indistinguishable from a hung session. The
+user will stop the work and ask "what are you working on?" — and that is YOUR
+bug, not theirs.
+
 ---
 
 ## Rationale and history
@@ -243,6 +262,29 @@ This is enforced by:
 - This `AGENTS.md` section — proactive instruction
 - `.opencode/plugin/enforce-make.ts` — `tool.execute.before` checks
 - `tests/unit/test_guardrails.py` — guardrail existence and behavior tests
+
+## Opencode Plugin Ports (Claude Hook Equivalents)
+
+The Claude Code layer (`.claude/hooks/*.sh`, 20 shell scripts registered in
+`.claude/settings.json`) and the opencode layer (`.opencode/plugin/*.ts`,
+4 TypeScript plugins registered in `opencode.json`) **enforce the same
+policies in parallel**. An opencode-only session gets the same guardrails as
+a Claude-only session. The port map:
+
+| Opencode plugin | Claude hook(s) ported |
+|---|---|
+| `enforce-make.ts` | `enforce_make_bash.sh`, `gate_concurrency_pretool.sh`, `guardrail_integrity_edit_pretool.sh`, `no_flag_file_write_pretool.sh` (Bash make-only, metachar deny, concurrent-gate block, guardrail-integrity across ALL hook/plugin files, `.gate-status` write block) |
+| `enforce-floor.ts` | `agent_floor_stop.sh`, `agent_floor_pretool.sh`, `agent_floor_posttool.sh`, `agent_ceiling_pretool.sh`, `agent_floor_userprompt.sh` (floor/ceiling bands via `agent_liveness.py`) |
+| `enforce-delegate.ts` | `model_utilization_pretool.sh`, `disk_discipline_pretool.sh`, `worktree_disk_guard_pretool.sh`, `force_delegate_pretool.sh`, `mainthread_budget.sh` (sonnet ratio, worktree disk guards, opt-in grind guard, main-thread delegation budget) |
+| `enforce-stop.ts` | `no_wait_stop.sh`, `multitasking_backlog_stop.sh`, `session_start_orchestrate.sh`, `no_blocking_questions_pretool.sh` (deferral-pattern block, open-backlog block, orchestration injection, question-tool deny) |
+
+Both layers are registered and active by default. The env-var knobs are
+shared (`CLAUDE_AGENT_FLOOR`, `GLUDD_FORCE_DELEGATE`, `GLUDD_NO_WAIT_ENFORCE`,
+`GLUDD_FLOOR_ENFORCE`, etc.) so operator configuration applies uniformly.
+
+Coverage tests: `tests/unit/test_opencode_plugin_ports.py` (per-plugin static
+checks), `tests/unit/test_guardrails.py` (3-layer existence checks),
+`scripts/test_*_hook.py` (behavioral harness tests for the shell layer).
 
 ## CRITICAL: "Fix" Means Repair, Never Disable
 
@@ -484,6 +526,38 @@ This is enforced by:
 - `Makefile` `test-and-commit` target — atomic test-then-commit
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: No-Commit-Bypass Policy
+
+**Every commit-shaped `make` target MUST enforce the `.gate-status` freshness+green check. There are NO exceptions for "feature branches", "stash conflicts", or "pre-existing failures".**
+
+The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make commit-no-verify`, rationalizing "pre-existing failures + env issue". That target existed for pre-commit hook stash conflicts — NOT for skipping the gate. The bypass was the bug.
+
+**Rules:**
+
+1. `make git-commit`, `make commit-no-verify`, `make commit-bootstrap`, `make git-commit-file` — ALL enforce the gate via `_gate-fresh-check`. The `--no-verify` flag on `commit-no-verify` skips ONLY the pre-commit hook stash, not the gate.
+2. `make repo-commit` is the ONLY documented escape hatch, for non-code meta-commits only (version bumps, release artifacts, docs). Using it to land code with a red gate is the SAME bug as the commit-no-verify bypass.
+3. `make test-and-commit` is allowlisted because it runs pytest inline — its own micro-gate.
+4. "Pre-existing failures" are NEVER an excuse to bypass. They are the work. Fix them.
+5. "Environmental issues" (expired credentials, network) are NEVER an excuse. Either fix the env issue or dispatch a research task to work around it.
+
+**Enforcement:** `tests/unit/test_commit_gate_freshness.py` structurally scans the Makefile for any target whose recipe invokes `git commit` without referencing `.gate-status` or `_gate-fresh-check`. Any new commit target MUST add the gate check or be explicitly allowlisted in the test with a documented reason.
+
+### CI-as-Gate Override
+
+When the local gate takes too long to complete (>30 min, common for large suites) and CI is the real validation mechanism, use:
+
+```
+make commit-no-verify MSG='...' GLUDD_CI_IS_GATE=1
+```
+
+This skips the local .gate-status freshness check (CI IS the gate) but STILL skips pre-commit hooks (--no-verify for stash conflicts). Use ONLY when:
+1. The local gate has timed out repeatedly (>2 attempts)
+2. Lint + typecheck pass locally
+3. Targeted tests pass locally
+4. CI will run on push/PR to validate
+
+This is NOT a bypass for a red gate — if tests are failing, fix them first.
+
 ## CRITICAL: Evidence-Based Response Policy
 
 Every factual claim MUST have supporting evidence from a tool call, file read, URL fetch, or test result.
@@ -657,6 +731,38 @@ Run through EVERY item below. Do NOT skip any. Fix all gaps immediately.
 7. Fix all gaps, run make test, commit green
 ```
 
+## Branch-landing integrity (codified)
+
+Three guardrails against the class of failures where commits land on the wrong
+branch, pushes silently no-op, or stale CI runs are misread as verdicts:
+
+**(a) Shared/RC branch mutations: main checkout only.**
+Mutations to a SHARED or RC branch (master, main, release/*) MUST happen on the
+main checkout (/Users/shawnwilson/gludd) or a non-isolated agent running there
+— NEVER in a worktree-isolated agent. A worktree-isolated agent branches off a
+divergent HEAD at creation time; any commits it makes go to its own branch,
+silently failing to advance the shared branch tip. The orchestrator can never
+observe the update via `git log master` on the main checkout.
+
+**(b) Verify the remote after every push.**
+After any push to sandboxcom, run:
+
+    make verify-remote BRANCH=<branch> SHA=<local-HEAD>
+
+This calls `git ls-remote sandboxcom` (using the sandboxcom SSH key, same
+pattern as `git-push-sandboxcom`) and asserts the remote tip matches the
+expected SHA. A silent "Everything up-to-date" push (where the branch was not
+actually advanced) exits non-zero with `REMOTE MISMATCH: remote=X expected=Y`.
+Never claim a push succeeded until `VERIFIED <branch>@<sha>` is printed.
+
+**(c) Never report a CI verdict whose headSha != the branch tip.**
+Use `make ci-verdict BRANCH=<branch>` instead of reading raw `ci-status`
+output. `ci-verdict` prints the latest run's headSha alongside its conclusion,
+and emits a loud `STALE RUN WARNING` if that headSha does not match the current
+local HEAD of the branch — making it structurally impossible to misread an old
+run as the verdict for a new push. A run only counts if its headSha matches the
+branch tip; otherwise the run is stale and must be discarded.
+
 This is enforced by:
 - This AGENTS.md section — proactive instruction
 - The session persistence policy — SESSION.md tracks known gaps
@@ -723,3 +829,303 @@ False blockers (parallelize, do NOT wait): independent features, additive new fi
 CI observation, research/planning. Before ever "waiting," apply the decision checklist:
 (a) mutates shared master tree now? (b) needs gate/commit/push now? (c) depends on
 unmerged code? All NO → not a blocker, spin a worktree agent. Full policy: `docs/ORCHESTRATION.md`.
+
+## CRITICAL: Release Pipeline Must Be CI-Green (codified)
+
+**Every release tag MUST be preceded by a passing "Build and Release" CI run on the
+exact commit being tagged. `make release-cut` enforces this as step 0 and aborts the
+entire release if CI is not green. The CI workflow independently enforces it too: the
+`release` job `needs: [gate]` (transitively via the platform build jobs), so a tag push
+cannot publish a GitHub Release if the gate fails.**
+
+### Rule
+Before `git-push-sandboxcom`/`git-tag-push` run, `scripts/require_ci_green.py` is called
+against HEAD. It queries GitHub Actions via `gh run list` and is fail-closed:
+
+| CI state | Exit | release-cut behaviour |
+|---|---|---|
+| completed + success | 0 (GREEN) | proceeds |
+| in_progress / queued / pending | 2 (PENDING) | ABORT — wait, retry |
+| failure / cancelled / timed_out / unknown | 1 (RED) | ABORT — fix CI, retry |
+| no matching run found | 1 (RED, fail-closed) | ABORT — push triggers a run; wait |
+
+### Enforcement (both sides)
+- **Client:** `scripts/require_ci_green.py` (pure `verdict_for()` unit-tested in
+  `tests/unit/test_require_ci_green.py`, 17 tests) → `make require-ci-green [SHA=…]` →
+  `make release-cut` step 0/4. The only sanctioned release command.
+- **CI:** `.github/workflows/build.yml` — `release` job `needs: [version, gate, …]`; the
+  gate runs on `v*` tag pushes. Broken code cannot publish a release.
+
+### Never
+- Never push a release tag manually (bypasses the client gate).
+- Never push fix-forward waves straight to `master` as if releasable. Use a
+  `release-candidate/*` branch, confirm its CI green, then `ship-ff` master to it.
+- Never claim "green" without a CI run id + SUCCESS conclusion for the exact SHA
+  (reinforces the no-unquantified-status-claims rule). Per-file `test-iso` is NOT the gate.
+
+## CRITICAL: A Release is an Artifact, Not a Tag (codified)
+
+**A version is NOT done until its Build-and-Release CI run is GREEN and
+`make verify-release-artifact TAG=<tag>` exits 0 (published assets confirmed).**
+
+This was codified after neither `v0.1.0-alpha.2` nor `v0.1.0-alpha.3` ever
+produced a downloadable artifact: the gate was red on both releases, so the
+`release` job (which `needs: [gate]`) was skipped.  Tags existed; artifacts did
+not.  Both releases were treated as "shipped" — a false claim.  This section is
+the machine-enforceable correction.
+
+### The rule (three bindings)
+
+1. **A version is NOT shipped until `make verify-release-artifact TAG=<tag>` passes.**
+   That command calls `scripts/verify_release_artifact.py` and exits 0 only when
+   `gh release view` returns a non-draft release with at least one downloadable
+   asset.  A tag in the repo with zero assets = NOT shipped.
+
+2. **Never bump to the next version while the current version lacks a green release
+   and confirmed artifact.**  "alpha.3 is done, starting alpha.4" is only valid
+   when `make verify-release-artifact TAG=v0.1.0-alpha.3` returns PASS.
+
+3. **A release/version task may only be marked completed with the artifact URL as
+   evidence.**  The completion entry in TASKS.md must include:
+   - The `gh release view` output showing `isDraft: false` and `assets: N` (N ≥ 1)
+   - The artifact download URL(s)
+   - The CI run id and `conclusion: success`
+   Without all three, the task is NOT complete — marking it done is a false claim
+   (see the no-unquantified-status-claims rule).
+
+### Enforcement (three layers)
+
+- **Script:** `scripts/verify_release_artifact.py` — exit 0 only if assets exist.
+  Fail-closed: no gh / no network / release missing = exit 1.
+- **Make:** `make verify-release-artifact TAG=<tag>` — the callable gate target.
+  `make release-cut` calls it as step 4/4 with a poll loop (async CI); if the
+  poll exhausts without seeing assets it exits non-zero with a loud warning so a
+  tag is never mistaken for a shipped release.
+- **Prompt (this section):** proactive instruction — the three rules above.
+
+### Tag vs. artifact — the key distinction
+
+| State | Meaning | Action |
+|---|---|---|
+| Tag pushed, CI still running | release job in flight | Wait; run `make verify-release-artifact` after CI completes |
+| Tag pushed, CI green, assets published | **SHIPPED** | Mark done with artifact URL as evidence |
+| Tag pushed, CI red/skipped, zero assets | **NOT SHIPPED** — broken release | Fix CI, cut a new release, do NOT bump version |
+| No tag, no run | Work in progress | Keep working |
+
+### Never
+
+- Never call a version "done" or "shipped" from a tag alone.
+- Never open a next-version epic/task while the current version has no artifact.
+- Never log a completion entry without the artifact URL and CI run id.
+- Never treat `make release-cut` success as proof of an artifact — only
+  `make verify-release-artifact` is the proof (it queries the actual GitHub Release).
+  If `release-cut` timed out on its poll, run `verify-release-artifact` manually
+  after CI finishes.
+
+## CRITICAL: Minimum 10 Subagents at All Times
+
+**You MUST maintain a MINIMUM of 10 concurrent subagent threads doing useful work at all times.** Never let the active count drop below 10 while work remains.
+
+**Steady-state dispatch rule:** The moment ANY subagent completes (or fails), you MUST immediately dispatch a replacement. Do NOT wait for the remaining batch to drain before dispatching more. The pipeline must stay primed at 10+ at all times.
+
+**How to maintain the floor:**
+1. After each subagent completion notification, immediately check: how many are still running?
+2. If <10, immediately dispatch (10 - running) new subagents on the next available work item.
+3. Never present a status report or summary and stop — always have 10 threads in flight.
+4. If you run out of known work items, dispatch research/audit/review subagents to FIND more work.
+
+**The floor was raised from 6 to 10 on 2026-06-22** by direct user mandate. The env var is `CLAUDE_AGENT_FLOOR=10`. The plugins (enforce-floor.ts, enforce-delegate.ts, enforce-stop.ts) all default to 10. The `.claude/settings.json` sets it to 10.
+
+**This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the count drops below 10.
+
+**See also:** the *Steady-state dispatch (the 10-agent floor)* subsection under Pipeline Orchestration Model below for the concrete behavioral rules (fast result processing, no long foreground ops, next-wave-ready, uniform-duration tasks, research as filler) that make maintaining this floor possible in practice.
+
+## Pipeline Orchestration Model
+
+The goal is a **continuous, pipelined** stream of subagent batches — not a
+sawtooth of "dispatch burst → drain to zero → repeat."  Draining to zero wastes
+the pool; the reconciliation cost is low compared to the dispatch-to-first-result
+latency, so keep batch N+1 in flight while batch N is reconciling.
+
+**1. Keep the pipeline primed.** As soon as batch N delivers results, the next
+batch of agents must already be running (or launch immediately).  Never let the
+active-agent count drop to zero while independent work remains.
+
+**2. Bias each new batch toward disjoint / new-file work.**  The real cost of
+pipelining is concurrent edits to the same hot files (`daemon.py`, `loop.py`,
+`gateway.py`) — those edits cannot be trivially unioned and require manual
+conflict resolution.  Work that touches distinct files reconciles cheaply.
+When hot-file edits are unavoidable, serialize them through the integrator (one
+at a time), and fill remaining agent slots with disjoint work.
+
+**3. Run one continuous integrator.**  A single integrator agent drains finished
+worktree commits onto the main branch in a steady stream.  Conflicts are resolved
+by keeping BOTH sides (union of independent fixes); gate must be green after each
+merge before the next one lands.
+
+**4. Bound the pipeline by two constraints.**
+- **(a) Hot-file concurrency:** at most ONE in-flight agent per hot file
+  (`daemon.py`, `loop.py`, `gateway.py`) at any given time.  More than one is a
+  guaranteed conflict.
+- **(b) Worktree disk:** each worktree-isolated agent creates a ~320 MB venv.
+  Prefer **non-isolated agents** for new-file work and read-only research — they
+  share the main venv and add no disk, but they MUST NOT run `git commit` or any
+  git mutation that would race the integrator.  When no worktree-isolated agents
+  are live, reclaim disk with `make clean-worktree-venvs`.  Cap simultaneous
+  worktree agents at ~5–6 to avoid ENOSPC deadlocks (see
+  [[gludd-disk-discipline]] memory).
+
+**Summary:** dispatch disjoint work in parallel → integrator merges continuously
+→ one integrator, one hot-file agent at a time → non-isolated agents for
+new-file / read-only tasks.
+
+### Subagent dispatch reliability rules
+
+Subagents fail when they try to run long operations. To maximize success rate:
+
+1. **Each subagent task must complete in under 5 minutes.** If a task takes longer, split it or run it in the foreground.
+2. **NEVER dispatch `make gate` to a subagent** — it takes 40 minutes and will be cancelled. Run it in the foreground with a heartbeat.
+3. **Each subagent gets ONE focused task** — one file to edit, one test to run, one research question. Don't bundle multiple concerns.
+4. **Read-only research tasks are the most reliable** — they never conflict and rarely time out.
+5. **File-editing tasks must specify exactly one file** — multiple-file edits risk conflicts with parallel agents.
+6. **Dispatch immediately when any agent completes** — do not wait for the batch to drain. The floor must stay at 10.
+
+### Steady-state dispatch (the 10-agent floor)
+
+The goal is a **continuous, pipelined** stream of subagent batches — not a sawtooth of "dispatch burst → drain to zero → repeat."
+
+**BEHAVIORAL RULES:**
+1. **Process results FAST.** When a batch of subagent results returns, scan them in under 30 seconds and immediately dispatch the next wave. Do NOT write long analysis prose between waves.
+2. **Never run long foreground operations.** `make gate` (40 min), `make test-unit` (27 min) — these block the bash tool and prevent ALL subagent dispatch. Use `make gate-background` or CI instead.
+3. **Always have the next wave ready.** Before the current batch returns, know what the next 10 tasks will be. The moment results arrive, dispatch — don't think, don't plan, dispatch.
+4. **Prefer uniform-duration tasks.** If all 10 tasks take ~2 min, they finish together and you refill immediately. If some take 30s and others 5min, you're at 3-4 agents for minutes waiting for the slow ones.
+5. **Read-only research tasks are the filler.** When you don't have 10 edit tasks, fill the remaining slots with research/audit/review tasks. They're reliable and always productive.
+
+## Codify Improvements (Meta-Rule)
+
+**When you discover a better way to work, codify it IN THE SAME SESSION before
+moving on.**  Applying a better approach once and forgetting it is a bug —
+identical to discovering a better algorithm, using it once, and then reverting
+to the old one.
+
+### The three codification layers (in priority order)
+
+1. **`AGENTS.md` (policy)** — captures the rule for every future agent reading
+   this file.  Add a new section or extend an existing one.  Keep it concise and
+   consistent with the voice of surrounding sections.
+2. **`.claude/hooks/` script (enforced behavior)** — a `PreToolUse` or
+   `PostToolUse` hook that *enforces* the rule mechanically.  Register it in
+   `.claude/settings.json`.  A hook is better than a prompt for patterns that
+   repeat and are hard to notice in the moment.
+3. **Memory (cross-session)** — write a memory entry when the insight needs to
+   survive session resets and applies globally, or is too detailed for AGENTS.md.
+
+Add a test for the guardrail where useful (e.g., for a hook that checks file
+content, add a unit test under `tests/unit/`).
+
+### Orchestration hooks — current state
+
+The no-wait and floor-enforcement orchestration hooks are **advisory by default**
+(they emit guidance but do not block):
+
+- `GLUDD_NO_WAIT_ENFORCE=1` — elevates the no-wait hook from advisory to
+  blocking (denies the tool call).
+- `GLUDD_FLOOR_ENFORCE=1` — elevates the floor hook from advisory to blocking.
+- **`GLUDD_FORCE_DELEGATE=1`** (`force_delegate_pretool.sh`, matcher `*`) — opt-in grind guard.
+  Denies targeted mutations (Edit/Write to non-memory paths; mutating Bash targets like
+  `git-commit`, `git-add`, `ship`, `gate`) when the live subagent count is below
+  `CLAUDE_AGENT_FLOOR` and the consecutive-targeted-call count exceeds
+  `GLUDD_FORCE_DELEGATE_GRACE` (default 3). Bounded escape after
+  `GLUDD_FORCE_DELEGATE_MAXBLOCK` (default 4) consecutive denials to prevent wedging.
+  Read-only tools (Read/Glob/Grep/Bash read-only targets/memory-path writes) and
+  Agent/Workflow dispatch are always allowed; Agent/Workflow dispatch also resets the
+  consecutive counter. Default off; enable when multitasking discipline is required.
+
+`agent_liveness.py` counts **Workflow subagents** (not just background tasks) as
+live agents for the purposes of the floor check.
+
+When you discover that a hook fires too aggressively or too rarely, narrow the
+check (see "Guardrail Integrity Policy") — do NOT remove the hook or make it
+permanently advisory when the intent is enforcement.
+
+## Constraints Are To Engineer Around
+
+**A constraint is a design prompt, never a dead end.**
+
+GitHub API granularity, local-gate OOM, make-only Bash, rate limits, job timeouts,
+"no make target for X", clock time — these are constraints. Constraints define the
+problem shape; they do not terminate it. When you hit a constraint, your job is to
+engineer around it, not to hand it back to the user.
+
+### The rule
+
+The phrase *"X isn't possible / it's a limitation / there's no way / we have to
+wait"* is ONLY acceptable when **immediately paired with the workaround being
+implemented OR a research task dispatched to find one.** A naked "can't" — or
+parking the problem in the user's lap — is a bug.
+
+> **If no workaround is obvious, that is a research task to dispatch, not a
+> stopping point.**
+
+### Worked example
+
+> "GitHub only exposes step results at completion — there's no way to get
+> live per-step status."
+
+Engineered around by:
+1. **Sharding the CI test job** so job-level failures surface within minutes (not
+   after a monolithic run), and
+2. **Live annotation polling** (`gh run watch` / annotation API on each job) so
+   partial results can be read before the overall run completes.
+
+The constraint (API granularity) shaped the solution (shard + poll); it did not
+end the conversation.
+
+### Forbidden responses
+
+- "The API doesn't support that." ← stop sign without a workaround
+- "It's a limitation of X — we'd have to wait." ← parking it on the user
+- "There's no way to do this without Y." ← dead end without research task
+- "We can't get that data; it isn't exposed." ← same, every time
+
+### Correct responses
+
+- "The API doesn't expose per-step status, but I can shard the job + poll
+  annotations — implementing now."
+- "No make target for X yet. Adding one."
+- "Rate-limited — backing off 60 s, then retrying."
+- "OOM on full gate locally. Running the slow tests in a CI PR instead."
+
+### Enforcement
+
+This is codified at all three levels:
+1. **This section** — proactive instruction for every agent reading AGENTS.md.
+2. **`.claude/hooks/no_wait_stop.sh` constraint-as-stopsign group** — when
+   `GLUDD_NO_WAIT_ENFORCE=1`, naked constraint phrasings block the turn-end.
+3. **`scripts/test_no_wait_hook.py`** — proves the constraint patterns block
+   in enforce mode.
+
+## Keep Opus Lean — Sonnet Carries the Token Load
+
+The expensive opus main thread must consume far fewer tokens than the cheap
+sonnet subagents.  Target: sonnet subagent tokens >= opus main-thread tokens
+at minimum; cost-weighted (opus ~5× sonnet $/token), aim for sonnet consuming
+SEVERAL TIMES the opus tokens.  Every opus token should buy
+coordination/judgment, not grunt work.
+
+**Levers (the controllable behaviors):**
+
+1. **Delegate ALL heavy reading/editing/testing to `model:'sonnet'` subagents —
+   never grind inline.**  File trawls, large diffs, test runs, research surveys,
+   multi-file edits: dispatch them.  Do not perform grunt work on the main thread.
+2. **Keep main-thread turns terse.**  Short replies; do NOT re-read large tool
+   outputs or transcripts into context; don't re-derive established facts; lean
+   on the memory index for session state.
+3. **Subagents return terse summaries + a file pointer**, keeping detail off the
+   main thread.  The main thread receives a punch-list, not the raw output.
+
+**Honest limit:** there is no live token meter on the main loop and no per-agent
+token accounting in hooks, so a true token-ratio hook is not feasible.  The
+enforceable proxy is the existing `model_utilization` `PreToolUse` hook
+(sonnet : non-sonnet dispatch-count ratio ≥ 10:1), which indirectly drives
+sonnet token dominance — plus the terse-main-thread discipline above.

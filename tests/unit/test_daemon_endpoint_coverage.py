@@ -261,7 +261,7 @@ class TestDaemonAdminEndpoints:
     def test_admin_register_hook(self, client):
         resp = client.post("/admin/hooks", json={
             "event_name": "todo.completed",
-            "url": "http://localhost:9999/hook",
+            "url": "https://webhooks.example.com/hook",
         })
         assert resp.status_code == 200
         data = resp.json()
@@ -270,7 +270,7 @@ class TestDaemonAdminEndpoints:
     def test_admin_register_list_delete_hook(self, client):
         reg = client.post("/admin/hooks", json={
             "event_name": "job.started",
-            "url": "http://localhost:9000/webhook",
+            "url": "https://webhooks.example.com/webhook",
         })
         assert reg.status_code == 200
         hook_id = reg.json()["hook_id"]

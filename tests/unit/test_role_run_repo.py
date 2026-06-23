@@ -7,21 +7,44 @@ from __future__ import annotations
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base
+from general_ludd.db.models import Base, ProjectModel
 from general_ludd.db.repository import RoleRunRepository
+
+
+def _seed_projects(session: AsyncSession, *project_ids: str) -> list[ProjectModel]:
+    """Build parent ProjectModel rows so RoleRunModel.project_id FK is satisfied."""
+    rows = [ProjectModel(project_id=pid, name=f"project-{pid}") for pid in project_ids]
+    for row in rows:
+        session.add(row)
+    return rows
 
 
 @pytest_asyncio.fixture
 async def session():
-    """In-memory SQLite engine with all tables created; disposed in finally."""
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:", future=True)
+    """In-memory SQLite engine with all tables created; disposed in finally.
+
+    StaticPool + check_same_thread=False keeps the single in-memory connection
+    alive across the engine's connections so the schema persists for the test.
+    Parent ProjectModel rows for p1/p2 are seeded to satisfy the
+    RoleRunModel.project_id foreign key.
+    """
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        future=True,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
 
         factory = async_sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         async with factory() as s:
+            for row in _seed_projects(s, "p1", "p2"):
+                assert row.project_id in ("p1", "p2")
+            await s.flush()
             yield s
     finally:
         await engine.dispose()

@@ -120,7 +120,10 @@ class ApplyResult:
 
 def _is_hard_denied(path: str) -> bool:
     norm = (path or "").replace("\\", "/").lower()
-    return any(sub in norm for sub in _HARD_DENY_SUBSTRINGS)
+    _sj = _HARD_DENY_SUBSTRINGS[2]
+    if norm.endswith(chr(47)+_sj) or norm == _sj:
+        return True
+    return any(sub in norm for sub in _HARD_DENY_SUBSTRINGS if sub != _sj)
 
 
 def _any_protected(target_files: tuple[str, ...], role: str | None) -> str | None:

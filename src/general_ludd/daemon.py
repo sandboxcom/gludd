@@ -7,7 +7,7 @@ import contextlib
 import logging
 import os
 import time
-from collections.abc import AsyncIterator
+from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
 from dataclasses import dataclass
 from pathlib import Path
@@ -44,6 +44,7 @@ from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.model_registry import ModelRegistry
+from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder
@@ -63,6 +64,12 @@ from general_ludd.skills.registry import SkillRegistry
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
 
+# Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
+# (see ``app.state.daemon_state``) so state no longer bleeds between FastAPI
+# instances in the same process. This module-level name is rebound to the most
+# recently created app's dict by the factory, preserving legacy callers that
+# import/observe ``_daemon_state`` directly (e.g. scripts/dogfood.py, test
+# fixtures). It must never again be the authoritative store for a running app.
 _daemon_state: dict[str, Any] = {
     "todos": [],
     "tick_metrics": {},
@@ -80,6 +87,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "mcp_servers": {},
         "task_definitions": [],
         "model_profiles": [],
+        "rules": [],
     }
 
     if config_dir is None:
@@ -161,6 +169,12 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     profiles_dir = cdir / "model_profiles"
     if profiles_dir.is_dir():
         cfg["model_profiles"] = load_model_profiles(profiles_dir=str(profiles_dir))
+
+    # Surface the rules engine: copy UserConfig.rules into startup_config so the
+    # EventLoop (which reads startup_config["rules"]) receives operator rules.
+    uc_loaded = cfg.get("user_config")
+    if uc_loaded is not None:
+        cfg["rules"] = list(getattr(uc_loaded, "rules", []) or [])
 
     return cfg
 
@@ -290,8 +304,8 @@ async def _restore_persisted_projects(project_manager: Any, session_factory: Any
                     repo_url=proj.repo_url,
                     workspace_path=proj.workspace_path or proj.project_id,
                 )
-    except Exception as exc:  # pragma: no cover - defensive startup guard
-        logger.warning("Failed to restore persisted projects: %s", exc)
+    except Exception:  # pragma: no cover - defensive startup guard
+        logger.error("Failed to restore persisted projects", exc_info=True)
 
 
 async def _restore_persisted_spend(
@@ -345,8 +359,8 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
                 pid = getattr(p, "project_id", str(p))
                 workspaces[pid] = ProjectWorkspace(project_id=pid)
                 workspaces[pid].ensure_dirs()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to initialize project workspaces: %s", exc, exc_info=True)
     return workspaces
 
 
@@ -504,9 +518,126 @@ def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
     )
 
 
+def build_event_loop_mcp_dispatcher(
+    *,
+    mcp_client: Any | None,
+    mcp_tool_registry: Any | None,
+    skill_registry: Any | None = None,
+    agent_dispatcher: Any | None = None,
+) -> Any:
+    """Build the DynamicDispatcher the EventLoop uses to execute model tool-calls.
+
+    Completion-integrity HIGH fix (audit a30dc5ac): without this, the daemon
+    constructed an ``MCPClient`` and handed it to the ``EventLoop`` purely to
+    *advertise* tool names, but never built a dispatcher with an ``mcp`` handler.
+    At dispatch time the loop saw ``_dispatcher is None`` and DROPPED the model's
+    MCP tool-call ("no dispatcher is wired — skipping dispatch"). This builder
+    closes that gap by returning a fully-wired
+    :class:`~general_ludd.dispatch.dynamic_dispatcher.DynamicDispatcher`.
+
+    Wiring decisions:
+
+    * **Role** — the dispatcher acts under the ``"event_loop"`` role, which the
+      capability lattice grants ``{"role", "mcp", "skill"}`` (and deliberately
+      NOT ``"collection"``: the loop never self-modifies). Using a real,
+      mcp-capable role avoids the fail-closed ``capability_denied`` trap that a
+      ``None`` role would hit, WITHOUT widening to the ``UNRESTRICTED_ROLE``
+      sentinel. No ``default_registry`` switch is required — the gate is on the
+      role, not on an AgentRegistry.
+    * **mcp_handler** — routes a model tool-call ``name`` of the form
+      ``"<server_id>/<tool_name>"`` to ``mcp_client.call_tool(server_id,
+      tool_name, args)`` (the same resolution the HTTP dispatch path and
+      ``daemon_wiring.make_mcp_handler`` use). The registry-backed server_id
+      validation inside ``MCPClient.call_tool`` defends against tool-name
+      hijack. Because ``DynamicDispatcher.dispatch`` invokes handlers
+      *synchronously* (and the EventLoop dispatch site runs INSIDE the active
+      asyncio loop, so ``run_until_complete`` would raise), the async
+      ``call_tool`` coroutine is driven to completion on a short-lived worker
+      thread running its own event loop.
+    * **skill_handler** — wired from the live skill registry so the same
+      dispatcher also serves the ``skill`` kind the lattice grants; a ``None``
+      registry simply leaves that kind unregistered (fail-closed).
+
+    The ``role`` kind is intentionally left unregistered here: ``make_role_handler``
+    returns an *async* handler, and registering it raw would store an un-awaited
+    coroutine. Wiring it needs the same sync bridge as mcp (follow-up).
+
+    Args:
+        mcp_client: A connected ``MCPClient`` (or None). When None, no ``mcp``
+            handler is registered and mcp calls fail-closed.
+        mcp_tool_registry: The ``MCPToolRegistry`` (currently advisory — server
+            resolution is name-prefixed; passed through to keep the call-site
+            explicit and for future per-tool server resolution).
+        skill_registry: A ``SkillRegistry`` (or None) for the ``skill`` kind.
+        agent_dispatcher: Reserved for the ``role`` kind (needs a sync bridge).
+
+    Returns:
+        A configured ``DynamicDispatcher`` bound to the ``event_loop`` role, or
+        ``None`` when there is nothing to dispatch (no mcp client and no skill
+        registry) so the EventLoop keeps its existing no-dispatcher behaviour.
+    """
+    from general_ludd.daemon_wiring import make_mcp_handler, make_skill_handler
+    from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
+
+    _ = agent_dispatcher  # reserved: role dispatch needs the same sync bridge
+
+    if mcp_client is None and skill_registry is None:
+        return None
+
+    # The MCP handler from daemon_wiring is async; the DynamicDispatcher calls
+    # handlers synchronously, so bridge the coroutine on a worker thread that
+    # owns its own event loop. We cannot use asyncio.run / run_until_complete on
+    # the dispatch site's loop because that loop is already running.
+    async_mcp_handler = make_mcp_handler(mcp_client)
+    sync_mcp_handler = _sync_bridge(async_mcp_handler) if async_mcp_handler is not None else None
+
+    return DynamicDispatcher(
+        role="event_loop",
+        mcp_handler=sync_mcp_handler,
+        skill_handler=make_skill_handler(skill_registry),
+    )
+
+
+def _sync_bridge(
+    async_handler: Callable[[str, dict[str, Any]], Any],
+) -> Callable[[str, dict[str, Any]], Any]:
+    """Wrap an async ``(name, args) -> awaitable`` handler as a sync handler.
+
+    The ``DynamicDispatcher`` invokes handlers synchronously and stores their
+    return value verbatim, so an un-awaited coroutine would never execute. This
+    drives the coroutine to completion: directly via ``asyncio.run`` when no loop
+    is running on the calling thread, or — when the call site is already inside a
+    running loop (the EventLoop dispatch path) — on a short-lived worker thread
+    that owns its own loop, so the running loop is never re-entered.
+    """
+
+    def _bridged(name: str, args: dict[str, Any]) -> Any:
+        import asyncio as _asyncio
+        from concurrent.futures import ThreadPoolExecutor
+
+        def _run() -> Any:
+            return _asyncio.run(async_handler(name, args))
+
+        try:
+            _asyncio.get_running_loop()
+        except RuntimeError:
+            return _run()
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            return pool.submit(_run).result()
+
+    return _bridged
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
+    # Per-app state dict (created in create_daemon_app). Read from app.state so
+    # concurrently-running apps never share/overwrite one another's state. If a
+    # caller invokes the lifespan on a bare app (unit tests), materialise a fresh
+    # per-app dict rather than falling back to the shared module global.
+    daemon_state: dict[str, Any] = getattr(app.state, "daemon_state", None) or {
+        "todos": [], "tick_metrics": {}, "quality_gate": {}
+    }
     event_loop = None
     task = None
     engine = None
@@ -537,7 +668,30 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         runner = AnsibleRunnerAdapter()
         subsys = _get_or_create_subsystems(app)
+
+        # CA-T7/CA-T8 fix: create and assign the health tracker BEFORE calling
+        # _get_or_create_extended_subsystems so the AdaptiveRouter constructor
+        # receives a live ModelHealthTracker (not None).  The tracker was
+        # previously assigned ~50 lines later, after the router was already built,
+        # making the health-filtering + quantization-penalty logic permanently
+        # inert in the running daemon.  (ModelHealthTracker is imported at module
+        # level so tests can patch general_ludd.daemon.ModelHealthTracker.)
+        _pre_health_tracker = ModelHealthTracker()
+        app.state._health_tracker = _pre_health_tracker
+
+        # CA-T9 fix: create and assign the quantization tracker BEFORE calling
+        # _get_or_create_extended_subsystems so the AdaptiveRouter constructor
+        # receives a populated quantization_map rather than an empty {}.
+        # Without this, getattr(app.state, "_quantization_tracker", None) inside
+        # _get_or_create_extended_subsystems always returns None → quantization_map
+        # stays {} → _apply_quantization_penalty never fires in the running daemon.
+        # The tracker starts empty (no detections yet) but is the live instance
+        # that /admin/quantization/detect will populate at runtime.
+        from general_ludd.models.quantization import QuantizationTracker as _QuantizationTracker
+        app.state._quantization_tracker = _QuantizationTracker()
+
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
+        daemon_state["receiver_buffer"] = app.state._receiver_buffer
 
         # W3.11 (H13): merge DB-persisted projects into the manager so projects
         # added at runtime survive a restart, and materialize each repo_url into
@@ -563,8 +717,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     result["migrated"],
                     len(result["skipped"]),
                 )
-            except Exception as exc:
-                logger.warning("Secret migration failed: %s", exc)
+            except Exception:
+                logger.error("Secret migration failed", exc_info=True)
 
         templates_dir = getattr(app.state, "_templates_dir", None)
         prompt_registry = PromptRegistry(
@@ -588,6 +742,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         # Build the model gateway once (H4/H12): both the in-process reviewer and
         # the agent dispatcher reuse the SAME gateway instance.
+        # CA-T7/CA-T8: reuse the health_tracker pre-created before extended-subsystem
+        # construction so the AdaptiveRouter holds the live instance (not None).
+        health_tracker = app.state._health_tracker
+
         model_gateway = None
         if model_profiles:
             model_gateway = ModelGateway(
@@ -599,8 +757,29 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 provider_registry=None,
                 secrets_manager=secrets_resolver,
                 metrics_collector=ext.get("metrics_collector"),
+                health_tracker=health_tracker,
+                # Wire the operator-configured budget guard so a configured spend
+                # ceiling is actually enforced — it was built above but never passed,
+                # leaving budgets silently inert in the daemon.
+                budget_guard=budget_guard,
             )
             app.state._model_gateway = model_gateway
+            # Warn when a reasoning-model profile has a low max_output_tokens budget.
+            _REASONING_MODEL_PREFIXES = ("glm-4.5", "glm-5")
+            for _p in model_gateway._profiles.values():
+                _mn = (_p.model_name or "").lower()
+                if (
+                    any(_mn.startswith(_pfx) for _pfx in _REASONING_MODEL_PREFIXES)
+                    and (_p.max_output_tokens or 0) < 8192
+                ):
+                    logger.warning(
+                        "Profile %s: max_output_tokens=%d may be too low for "
+                        "reasoning model %s (reasoning_content fills first; "
+                        "content may be empty). Recommend >= 8192.",
+                        _p.model_profile_id,
+                        _p.max_output_tokens,
+                        _p.model_name,
+                    )
 
         # H4 (W3.2): wire a real ReturnReviewer into the review phase when a
         # gateway exists. Review failure escalates the todo; it is never a
@@ -617,16 +796,60 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             )
 
         # H2 (W3.7): self-improvement interval comes from config; 0 disables it.
+        # interval=0 → disabled; default is 10 minutes so the feature is on out-of-the-box.
         self_improve_interval = 0
         if uc is not None:
             si_cfg = getattr(uc, "self_improve", None) or {}
             with contextlib.suppress(Exception):
-                self_improve_interval = int(si_cfg.get("interval", 0))
+                self_improve_interval = int(si_cfg.get("interval", 10))
         if not self_improve_interval:
             with contextlib.suppress(Exception):
                 self_improve_interval = int(
-                    startup_config.get("self_improve_interval", 0)
+                    startup_config.get("self_improve_interval", 10)
                 )
+
+        # W3.9 MCP wiring: build MCPToolRegistry and conditionally start MCPClient
+        from general_ludd.mcp.client import MCPClient
+        from general_ludd.mcp.config import MCPServerConfig
+        from general_ludd.mcp.registry import MCPToolRegistry
+
+        mcp_tool_registry = MCPToolRegistry()
+        mcp_client = None
+        mcp_configs = startup_config.get("mcp_servers", {}) or {}
+        if mcp_configs:
+            # Ensure values are MCPServerConfig instances
+            typed_configs: dict[str, MCPServerConfig] = {}
+            for srv_id, srv_cfg in mcp_configs.items():
+                if isinstance(srv_cfg, MCPServerConfig):
+                    typed_configs[srv_id] = srv_cfg
+                elif isinstance(srv_cfg, dict):
+                    typed_configs[srv_id] = MCPServerConfig(**srv_cfg)
+            if typed_configs:
+                try:
+                    mcp_client = MCPClient(
+                        configs=typed_configs,
+                        registry=mcp_tool_registry,
+                        secrets_mgr=secrets_resolver,
+                    )
+                    await mcp_client.start_all()
+                    logger.info("MCPClient started with %d server(s)", len(typed_configs))
+                except Exception as _mcp_exc:
+                    logger.error(
+                        "MCP startup failed (continuing without MCP)",
+                        exc_info=True,
+                    )
+                    mcp_client = None
+        app.state._mcp_client = mcp_client
+
+        # Completion-integrity HIGH fix (audit a30dc5ac): wire a DynamicDispatcher
+        # so the EventLoop can EXECUTE a model's MCP tool-call instead of dropping
+        # it ("no dispatcher is wired"). Acts under the mcp-capable "event_loop"
+        # role; None when there's nothing to dispatch (loop keeps prior behaviour).
+        event_loop_dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=mcp_client,
+            mcp_tool_registry=mcp_tool_registry,
+            skill_registry=ext["skill_registry"],
+        )
 
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
@@ -637,8 +860,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             task_return_repo=None,
             budget_guard=budget_guard,
             model_gateway=model_gateway,
-            mcp_client=None,
-            mcp_tool_registry=None,
+            mcp_client=mcp_client,
+            mcp_tool_registry=mcp_tool_registry,
+            dispatcher=event_loop_dispatcher,
             event_bus=subsys["bus"],
             project_manager=ext["projects"],
             skill_registry=ext["skill_registry"],
@@ -652,7 +876,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "self_improve": getattr(uc, "self_improve", {}) if uc else {},
             },
             adaptive_router=ext["adaptive_router"],
-            daemon_state=_daemon_state,
+            daemon_state=daemon_state,
             project_workspace=_init_project_workspaces(ext["projects"]),
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
@@ -696,10 +920,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         app.state._worktree_monitor = wt_monitor
 
-        from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
-        from general_ludd.agents.registry import AgentRegistry
+        from general_ludd.agents.dispatcher import AgentDispatcher
+        from general_ludd.agents.registry import default_registry
+        from general_ludd.agents.types import AgentTask
 
-        registry = AgentRegistry()
+        # Use default_registry() so the 4 built-in agents (build/plan/explore/
+        # general) are registered. A bare AgentRegistry() leaves the registry
+        # empty, which makes the dispatcher's can_invoke permission gate
+        # (dispatcher.py) reject every dispatch ("not found in registry") —
+        # silently disabling the agent-permission matrix in the daemon.
+        registry = default_registry()
         dispatcher_executor = None
 
         # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
@@ -782,7 +1012,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                         )
                         return "deferred:budget_exhausted"
                 try:
-                    result = model_gateway.call_model_with_retry(
+                    result = await asyncio.to_thread(
+                        model_gateway.call_model_with_retry,
                         profile_id,
                         [{"role": "user", "content": task.prompt}],
                     )
@@ -834,7 +1065,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         async def _init_preflight() -> None:
             loop = asyncio.get_running_loop()
             result: dict[str, Any] = await loop.run_in_executor(None, run_preflight)
-            _daemon_state["quality_gate"] = result
+            daemon_state["quality_gate"] = result
             logger.info(
                 "Preflight quality gate: %s (%d/%d)",
                 result["overall"],
@@ -867,12 +1098,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if pipeline_controller is not None:
         with contextlib.suppress(Exception):
             await pipeline_controller.stop()
-    if event_loop is not None:
-        event_loop.stop()
+    mcp_client_ref = getattr(app.state, "_mcp_client", None)
+    if mcp_client_ref is not None:
+        with contextlib.suppress(Exception):
+            await mcp_client_ref.stop_all()
+    _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
+    if _el is not None:
+        _el.stop()
     if task is not None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    preflight_task_ref = getattr(app.state, "_preflight_task", None)
+    if preflight_task_ref is not None:
+        preflight_task_ref.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await preflight_task_ref
     if engine is not None:
         await engine.dispose()
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
@@ -903,6 +1144,13 @@ def _get_or_create_extended_subsystems(
     if not hasattr(app.state, "_recent_traces") or app.state._recent_traces is None:
         from general_ludd.observability.trace_store import RecentTracesBuffer
         app.state._recent_traces = RecentTracesBuffer()
+    if not hasattr(app.state, "_receiver_buffer") or app.state._receiver_buffer is None:
+        from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+        app.state._receiver_buffer = ReceiverBuffer(
+            maxlen=10_000,
+            overflow=OverflowPolicy.REJECT,
+            retention_s=3600,
+        )
     if not hasattr(app.state, "_project_manager") or app.state._project_manager is None:
         startup_cfg = app.state._startup_config if hasattr(app.state, "_startup_config") else {}
         app.state._project_manager = seed_from_config(startup_cfg)
@@ -932,6 +1180,7 @@ def _get_or_create_extended_subsystems(
         adaptive_router = AdaptiveRouter(
             benchmark_repo=benchmark_repo,
             quantization_map=quantization_map,
+            health_tracker=getattr(app.state, "_health_tracker", None),
         )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
@@ -971,6 +1220,20 @@ def create_daemon_app(
         playbooks_dir = os.environ.get("GLUDD_PLAYBOOKS_DIR")
 
     app = FastAPI(title="General Ludd Agent", version="0.1.0", lifespan=_lifespan)
+    # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
+    # quality_gate cannot bleed across FastAPI instances in one process (the
+    # module-level ``_daemon_state`` used to be shared — a test-isolation hazard).
+    daemon_state: dict[str, Any] = {
+        "todos": [],
+        "tick_metrics": {},
+        "quality_gate": {},
+    }
+    app.state.daemon_state = daemon_state
+    # Rebind the module-level name so legacy observers (scripts/dogfood.py, test
+    # fixtures that read ``daemon_mod._daemon_state``) see this app's state. The
+    # per-app dict on ``app.state.daemon_state`` remains the authoritative store.
+    global _daemon_state
+    _daemon_state = daemon_state
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level
@@ -995,38 +1258,56 @@ def create_daemon_app(
     app.state._hardware = probe_hardware()
 
     _psk = os.environ.get("GLUDD_PSK", "")
-    app.state._psk = _psk
-    # A-3: opt-in fail-closed. Default stays open-but-warned for back-compat
-    # (the ~100 no-PSK tests expect open admin access). When GLUDD_REQUIRE_AUTH
-    # is truthy AND no PSK is configured, /admin/* (and other non-public paths)
-    # refuse with 503 instead of silently serving an unauthenticated request.
-    _require_auth = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
+    # P1 fix: FAIL-CLOSED by default when no PSK is set.
+    # Non-public paths are DENIED (503) unless the operator explicitly opts out
+    # via GLUDD_ALLOW_NO_AUTH=1 (development/test only).
+    # GLUDD_REQUIRE_AUTH is kept for backward compat: when set it forces
+    # fail-closed even if GLUDD_ALLOW_NO_AUTH=1 is also set.
+    _allow_no_auth = os.environ.get("GLUDD_ALLOW_NO_AUTH", "").strip().lower() in {
         "1", "true", "yes", "on",
     }
-    app.state._require_auth = _require_auth
-    # A-3: surface the no-auth posture so /healthz can advertise the degraded
-    # security stance and operators can detect an unprotected daemon.
+    _require_auth_env = os.environ.get("GLUDD_REQUIRE_AUTH", "").strip().lower() in {
+        "1", "true", "yes", "on",
+    }
+    # GLUDD_REQUIRE_AUTH overrides GLUDD_ALLOW_NO_AUTH — fail-closed wins.
+    if _require_auth_env:
+        _allow_no_auth = False
     _no_auth = not _psk
+    # When no PSK: require_auth is True (fail-closed) unless the operator has
+    # explicitly opted out with GLUDD_ALLOW_NO_AUTH=1.
+    _require_auth = _no_auth and not _allow_no_auth
+    app.state._psk = _psk
     app.state._no_auth = _no_auth
-    if _no_auth and not _require_auth:
-        # A-3: LOUD startup warning — an unprotected /admin surface is a serious
-        # posture, never a silent default.
+    app.state._require_auth = _require_auth
+    app.state._allow_no_auth = _allow_no_auth
+    if _no_auth and not _allow_no_auth:
+        # Default fail-closed posture: LOUD warning that non-public paths will
+        # be refused (503) until a PSK is configured.
         logger.warning(
-            "SECURITY: GLUDD_PSK is not set — the daemon is running with admin "
-            "auth DISABLED (degraded/no_auth mode). The entire /admin surface is "
-            "open to any caller that can reach the port. Set GLUDD_PSK to enable "
-            "auth, or GLUDD_REQUIRE_AUTH=1 to fail closed when no PSK is set."
+            "SECURITY: GLUDD_PSK is not set — the daemon will REFUSE all "
+            "non-public paths (503, fail-closed). Set GLUDD_PSK to enable auth. "
+            "For development only, set GLUDD_ALLOW_NO_AUTH=1 to allow unauthenticated "
+            "access (leaves the entire /admin surface open to any caller)."
         )
-    elif _no_auth and _require_auth:
+    elif _no_auth and _allow_no_auth:
+        # Explicit dev opt-out: LOUD warning that auth is intentionally disabled.
         logger.warning(
-            "SECURITY: GLUDD_REQUIRE_AUTH is set but GLUDD_PSK is not — "
-            "non-public paths will be REFUSED (503) until a PSK is configured."
+            "SECURITY: GLUDD_PSK is not set and GLUDD_ALLOW_NO_AUTH=1 — the "
+            "daemon is running with admin auth DISABLED (no_auth mode). The "
+            "entire /admin surface is open to any caller that can reach the port. "
+            "Set GLUDD_PSK to enable auth."
         )
 
     _PUBLIC_PATHS = {
         "/healthz", "/readyz", "/api/status", "/api/todos", "/api/webmcp",
         "/docs", "/openapi.json", "/redoc",
     }
+
+    # Receiver ingest paths use their own ingest-token auth (GLUDD_INGEST_TOKEN),
+    # separate from the admin PSK. The PSK middleware must not challenge them so
+    # the receiver router's internal auth runs instead (least-privilege: a leaked
+    # ingest token cannot access /admin, a leaked PSK cannot push telemetry).
+    _RECEIVER_PREFIXES = ("/v1/", "/ingest/")
 
     # AUTH-1: public access is (method, path)-aware. A path on the public list
     # is only public for SAFE, read-only methods (GET/HEAD/OPTIONS). The same
@@ -1036,9 +1317,11 @@ def create_daemon_app(
     _SAFE_METHODS = {"GET", "HEAD", "OPTIONS"}
 
     def _is_public(method: str, path: str) -> bool:
+        if path.startswith(_RECEIVER_PREFIXES):
+            return True
         if method.upper() not in _SAFE_METHODS:
             return False
-        return path in _PUBLIC_PATHS or path.startswith("/docs")
+        return path in _PUBLIC_PATHS or path == "/docs" or path.startswith("/docs/")
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -1100,9 +1383,20 @@ def create_daemon_app(
         # fields instead.
         no_auth = bool(getattr(app.state, "_no_auth", False))
         require_auth = bool(getattr(app.state, "_require_auth", False))
-        auth_degraded = no_auth and not require_auth
+        allow_no_auth = bool(getattr(app.state, "_allow_no_auth", False))
+        # auth_degraded = no PSK AND opted-out of fail-closed (open dev mode).
+        # When no PSK and fail-closed is active, auth is not "degraded" in the
+        # permissive sense — it is enforced; the 503 is the correct response.
+        auth_degraded = no_auth and allow_no_auth
         budget_manager = getattr(app.state, "_budget_manager", None)
         budget_status = budget_manager.get_status() if budget_manager is not None else {}
+        # SECURITY (gateway-health-budget P1): /healthz is an UNAUTHENTICATED
+        # public path (in `_PUBLIC_PATHS`). Never expose the numeric
+        # budget/spend figures (daily_spend, daily_limit, daily_pct,
+        # per_todo_limit) returned by BudgetManager.get_status() to anonymous
+        # callers — that leaks the operator's spend posture and remaining
+        # headroom. Only the coarse boolean `budget_exhausted` is public; the
+        # full numbers live behind the auth'd surface (/api/spend, dashboard).
         budget_exhausted = bool(budget_status.get("paused", False))
         if degraded:
             return {
@@ -1110,17 +1404,17 @@ def create_daemon_app(
                 "reason": str(degraded)[:200],
                 "no_auth": no_auth,
                 "require_auth": require_auth,
+                "allow_no_auth": allow_no_auth,
                 "auth_degraded": auth_degraded,
                 "budget_exhausted": budget_exhausted,
-                "budget": budget_status,
             }
         return {
             "status": "healthy",
             "no_auth": no_auth,
             "require_auth": require_auth,
+            "allow_no_auth": allow_no_auth,
             "auth_degraded": auth_degraded,
             "budget_exhausted": budget_exhausted,
-            "budget": budget_status,
         }
 
     @app.get("/readyz")
@@ -1223,42 +1517,57 @@ def create_daemon_app(
         dispatch as dispatch_router,
     )
 
-    webmcp.register(app, _daemon_state)
-    todos.register(app, _daemon_state)
-    messages.register(app, _daemon_state)
-    accounting.register(app, _daemon_state)
-    facts.register(app, _daemon_state)
-    features.register(app, _daemon_state)
-    schedule.register(app, _daemon_state)
-    models.register(app, _daemon_state)
-    benchmark.register(app, _daemon_state)
-    mcp.register(app, _daemon_state)
-    skills.register(app, _daemon_state)
-    compute.register(app, _daemon_state)
-    filestore.register(app, _daemon_state)
-    integrity.register(app, _daemon_state)
-    signing.register(app, _daemon_state)
-    projects.register(app, _daemon_state)
-    quantization.register(app, _daemon_state)
-    reload.register(app, _daemon_state)
-    worktree.register(app, _daemon_state)
-    ansible.register(app, _daemon_state)
-    slurm.register(app, _daemon_state)
-    self_improve.register(app, _daemon_state)
-    maintenance.register(app, _daemon_state)
+    webmcp.register(app, daemon_state)
+    todos.register(app, daemon_state)
+    messages.register(app, daemon_state)
+    accounting.register(app, daemon_state)
+    facts.register(app, daemon_state)
+    features.register(app, daemon_state)
+    schedule.register(app, daemon_state)
+    models.register(app, daemon_state)
+    benchmark.register(app, daemon_state)
+    mcp.register(app, daemon_state)
+    skills.register(app, daemon_state)
+    compute.register(app, daemon_state)
+    filestore.register(app, daemon_state)
+    integrity.register(app, daemon_state)
+    signing.register(app, daemon_state)
+    projects.register(app, daemon_state)
+    quantization.register(app, daemon_state)
+    reload.register(app, daemon_state)
+    worktree.register(app, daemon_state)
+    ansible.register(app, daemon_state)
+    slurm.register(app, daemon_state)
+    self_improve.register(app, daemon_state)
+    maintenance.register(app, daemon_state)
+    # Construct the receiver buffer BEFORE registering the router: the router's
+    # routes close over the buffer at register-time (app-creation), which runs
+    # before the lifespan. If we left this to the lifespan only, the routes would
+    # capture a throwaway default buffer and the configured 10k/REJECT/3600 buffer
+    # would never be the one ingest writes into. Idempotent: the lifespan's
+    # _get_or_create_extended_subsystems reuses this same instance.
+    if getattr(app.state, "_receiver_buffer", None) is None:
+        from general_ludd.receiver.buffer import OverflowPolicy, ReceiverBuffer
+        app.state._receiver_buffer = ReceiverBuffer(
+            maxlen=10_000,
+            overflow=OverflowPolicy.REJECT,
+            retention_s=3600,
+        )
+    daemon_state["receiver_buffer"] = app.state._receiver_buffer
+    from general_ludd.receiver import router as receiver_router
+    receiver_router.register(app, daemon_state)
     # Dynamic dispatch router — handlers close over ``app`` and look up
     # subsystems lazily at call time so they resolve against the live
     # lifespan-initialised state rather than the not-yet-started state at
     # app-creation time.  W: event-loop-wiring (#26).
     from general_ludd.daemon_wiring import make_mcp_handler, make_role_handler, make_skill_handler
 
-    def _lazy_mcp_handler(name: str, args: dict[str, Any]) -> Any:
+    async def _lazy_mcp_handler(name: str, args: dict[str, Any]) -> Any:
         mcp_client = getattr(app.state, "_mcp_client", None)
         h = make_mcp_handler(mcp_client)
         if h is None:
             raise RuntimeError("MCP client not available")
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(h(name, args))
+        return await h(name, args)
 
     def _lazy_skill_handler(name: str, args: dict[str, Any]) -> Any:
         skill_registry = getattr(app.state, "_skill_registry", None)
@@ -1267,30 +1576,29 @@ def create_daemon_app(
             raise RuntimeError("SkillRegistry not available")
         return h(name, args)
 
-    def _lazy_role_handler(name: str, args: dict[str, Any]) -> Any:
+    async def _lazy_role_handler(name: str, args: dict[str, Any]) -> Any:
         agent_dispatcher = getattr(app.state, "_agent_dispatcher", None)
         h = make_role_handler(agent_dispatcher)
         if h is None:
             raise RuntimeError("AgentDispatcher not available")
-        import asyncio
-        return asyncio.get_event_loop().run_until_complete(h(name, args))
+        return await h(name, args)
 
     dispatch_router.register(
         app,
-        _daemon_state,
+        daemon_state,
         role_handler=_lazy_role_handler,
         mcp_handler=_lazy_mcp_handler,
         skill_handler=_lazy_skill_handler,
         collection_handler=None,  # TODO(integration): wire to collection loader — no loader exists
     )
-    spend.register(app, _daemon_state)
+    spend.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
-    _coord_router.register(app, _daemon_state)
+    _coord_router.register(app, daemon_state)
 
     from general_ludd.routers.observe import wire_observability
 
     _uc = (getattr(app.state, "_startup_config", {}) or {}).get("user_config")
     _connector_cfg = getattr(_uc, "connectors", None) if _uc else None
-    wire_observability(app, _daemon_state, _connector_cfg)
+    wire_observability(app, daemon_state, _connector_cfg)
 
     return app

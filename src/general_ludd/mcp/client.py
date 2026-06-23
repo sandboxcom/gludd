@@ -55,10 +55,11 @@ class MCPClient:
         transport = self._transports.get(server_id)
         if transport is None:
             raise MCPTransportError(f"No transport for server: {server_id}")
-        registered = {t.name for t in self._registry.list_tools(server_id)}
-        if tool_name not in registered:
+        tool = self._registry.get_tool(tool_name)
+        if tool is None or tool.server_id != server_id:
             raise MCPTransportError(
-                f"Tool '{tool_name}' is not registered for server '{server_id}'"
+                f"Tool {tool_name!r} is not registered to server {server_id!r}; "
+                "refusing to dispatch (possible tool-name hijack attempt)."
             )
         return await transport.call_tool(tool_name, arguments)
 

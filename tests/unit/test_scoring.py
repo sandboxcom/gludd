@@ -601,7 +601,9 @@ class TestAdaptiveRouter:
         decision = await router.route(task_type=TaskType.BUG_FIX)
         assert decision.selected_model_profile_id == "bf16-model"
         assert decision.composite_score == 0.9
-        assert len(router._cache) == 0
+        # Cache has exactly 1 entry — the routing decision was cached normally.
+        # (No penalty means the score 0.9 was used unmodified, not that caching was skipped.)
+        assert len(router._cache) == 1
 
 
 class TestQuantizationWiring:

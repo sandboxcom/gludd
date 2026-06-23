@@ -14,9 +14,9 @@ class TestEventLoopE2E:
             "claim_unreviewed_task_returns",
             "dispatch_return_review_jobs",
             "evaluate_pid_controllers",
-            "evaluate_rules",
             "refill_task_buckets",
             "claim_runnable_todos",
+            "evaluate_rules",
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
             "self_improve",
@@ -64,6 +64,7 @@ class TestEventLoopE2E:
 
         from sqlalchemy import select
         from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
 
         from general_ludd.db.models import BucketLeaseModel
         from general_ludd.db.session import (
@@ -75,7 +76,11 @@ class TestEventLoopE2E:
             reclaim_expired_leases,
         )
 
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         try:
             await ensure_tables(engine)
             factory = create_async_session_factory(engine)

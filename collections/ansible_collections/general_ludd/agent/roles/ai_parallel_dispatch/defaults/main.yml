@@ -39,6 +39,13 @@ call_request_timeout: 120   # seconds; gludd_model_call's own request timeout
 barrier_retries: 60         # async_status retries per batch
 barrier_delay: 2            # seconds between async_status polls (60*2 = 120s)
 
+# Wall-clock ceiling the SUM-OVER-BATCHES assert checks against. Mirror the
+# operator's GLUDD_PLAYBOOK_TIMEOUT (default 300s; SIGKILL on the fork-child
+# group). batches run SEQUENTIALLY, so total ~= ceil(N/max_in_flight) *
+# (barrier_retries*barrier_delay); the assert in tasks/main.yml fails fast if
+# that product would blow this budget rather than getting SIGKILLed mid-run.
+playbook_timeout: "{{ lookup('env', 'GLUDD_PLAYBOOK_TIMEOUT') | default(300, true) | int }}"
+
 # ---- Required-subset join ---------------------------------------------------
 # Join policy. "all"      -> every dispatched call must finish (default).
 #             "required"  -> only calls flagged required:true must finish; the

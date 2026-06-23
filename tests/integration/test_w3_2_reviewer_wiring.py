@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.repository import TaskReturnRepository, TodoRepository
 from general_ludd.db.session import (
@@ -24,7 +25,11 @@ from general_ludd.schemas.todo import TodoStatus
 
 @pytest_asyncio.fixture
 async def session_factory():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     try:
         await ensure_tables(engine)
         yield create_async_session_factory(engine)

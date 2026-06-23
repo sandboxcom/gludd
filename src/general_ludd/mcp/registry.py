@@ -27,6 +27,20 @@ class MCPToolRegistry:
         self._server_tools: dict[str, list[str]] = {}
 
     def register_tool(self, server_id: str, tool: MCPTool) -> None:
+        # Security gate: reject tool-name collision across servers.
+        # If the same name is already registered to a *different* server, that
+        # is a configuration error (or a malicious server trying to shadow an
+        # existing tool) and must be refused.
+        existing = self._tools.get((server_id, tool.name))
+        if existing is None:
+            # Check whether any other server owns this name.
+            for (sid, n), _t in self._tools.items():
+                if n == tool.name and sid != server_id:
+                    raise ValueError(
+                        f"Tool name collision: '{tool.name}' is already owned by "
+                        f"server '{sid}'; server '{server_id}' cannot register it."
+                    )
+
         tool.server_id = server_id
         self._tools[(server_id, tool.name)] = tool
         if server_id not in self._server_tools:

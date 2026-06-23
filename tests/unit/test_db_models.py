@@ -13,6 +13,7 @@ import pytest_asyncio
 from sqlalchemy import event
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import (
     AuditEventModel,
@@ -38,7 +39,12 @@ from general_ludd.schemas.todo import TodoStatus
 
 
 def _make_async_engine():
-    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        echo=False,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     @event.listens_for(engine.sync_engine, "connect")
     def _set_sqlite_pragma(dbapi_conn, connection_record):
         cursor = dbapi_conn.cursor()
@@ -108,7 +114,7 @@ class TestTodoModel:
         assert todo.status == TodoStatus.BACKLOG
         assert todo.version == 1
 
-    async def test_todo_default_fields(self, async_session: AsyncSession):
+    async def test_todo_defaults_fields(self, async_session: AsyncSession):
         todo = TodoModel(title="Simple task")
         async_session.add(todo)
         await async_session.flush()
@@ -164,6 +170,11 @@ class TestTodoEventModel:
 
 class TestTaskReturnModel:
     async def test_create_task_return(self, async_session: AsyncSession):
+        # Seed parent Todo so the FK todo_id→todos is satisfied.
+        parent_todo = TodoModel(todo_id="TODO-ABCD1234", title="Parent todo for TR test")
+        async_session.add(parent_todo)
+        await async_session.flush()
+
         tr = TaskReturnModel(
             return_id="R-001",
             todo_id="TODO-ABCD1234",
@@ -186,6 +197,25 @@ class TestTaskReturnModel:
 
 class TestTaskDecisionModel:
     async def test_create_task_decision(self, async_session: AsyncSession):
+        # Seed parent Todo and TaskReturn so FK constraints are satisfied:
+        #   task_decisions.return_id → task_returns.return_id (NOT NULL FK)
+        #   task_returns.todo_id    → todos.todo_id (nullable FK, but we seed
+        #                             matched_todo_id for realistic coverage)
+        parent_todo = TodoModel(todo_id="TODO-ABCD1234", title="Parent todo for TD test")
+        async_session.add(parent_todo)
+        await async_session.flush()
+
+        parent_tr = TaskReturnModel(
+            return_id="R-001",
+            todo_id="TODO-ABCD1234",
+            job_id="J-001",
+            playbook="noop.yml",
+            queue="core",
+            status="created",
+        )
+        async_session.add(parent_tr)
+        await async_session.flush()
+
         td = TaskDecisionModel(
             return_id="R-001",
             matched_todo_id="TODO-ABCD1234",

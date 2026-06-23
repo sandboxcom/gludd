@@ -110,7 +110,67 @@ class TimeoutClassifier:
         if isinstance(exc, httpx.HTTPStatusError):
             return cls._classify_http_error(exc, response_body=response_body)
 
+        # OpenAI-SDK-wrapped errors. The openai client (used by langchain_openai,
+        # which is how the openai-compatible providers — including z.ai — are
+        # wired) does NOT raise raw httpx exceptions: it wraps a connection
+        # failure as openai.APIConnectionError, a timeout as openai.APITimeoutError,
+        # and a 4xx/5xx as openai.APIStatusError (with .status_code + .response).
+        # Without this branch every such failure classified as UNKNOWN and the
+        # gateway's retry/failover path never fired for the real provider path.
+        openai_kind = cls._classify_openai_error(exc, response_body=response_body)
+        if openai_kind is not None:
+            return openai_kind
+
         return TimeoutKind.UNKNOWN
+
+    @classmethod
+    def _classify_openai_error(
+        cls,
+        exc: BaseException,
+        *,
+        response_body: str | None = None,
+    ) -> TimeoutKind | None:
+        """Classify an openai-SDK exception, or return None if not one.
+
+        Imports openai lazily so the dependency stays optional. APITimeoutError
+        is a subclass of APIConnectionError, so order the checks timeout-first.
+        APIStatusError carries .status_code + an httpx.Response, which we route
+        through the same status-code logic used for raw httpx.HTTPStatusError so
+        the retry/failover decision is identical regardless of which layer
+        surfaced the error.
+        """
+        try:
+            import openai
+        except Exception:  # pragma: no cover - openai always present in practice
+            return None
+
+        if isinstance(exc, openai.APITimeoutError):
+            return TimeoutKind.READ_TIMEOUT
+        if isinstance(exc, openai.APIConnectionError):
+            return TimeoutKind.CONNECTION_TIMEOUT
+        if isinstance(exc, openai.APIStatusError):
+            import httpx
+
+            response = getattr(exc, "response", None)
+            status_code = getattr(exc, "status_code", None)
+            if isinstance(response, httpx.Response):
+                wrapped = httpx.HTTPStatusError(
+                    str(exc), request=response.request, response=response
+                )
+                return cls._classify_http_error(wrapped, response_body=response_body)
+            # No usable response object but we still have a status code: map it
+            # with the same code-based rules.
+            if isinstance(status_code, int):
+                if status_code == 429:
+                    return TimeoutKind.RATE_LIMITED
+                if status_code in _AUTH_ERROR_CODES:
+                    return TimeoutKind.AUTH_ERROR
+                if status_code in _RETRYABLE_SERVER_CODES:
+                    return TimeoutKind.PROVIDER_ERROR
+                if status_code == 400:
+                    return TimeoutKind.INVALID_REQUEST
+            return TimeoutKind.UNKNOWN
+        return None
 
     @classmethod
     def _classify_http_error(
@@ -293,6 +353,15 @@ _NON_RETRYABLE_KINDS: frozenset[TimeoutKind] = frozenset(
     }
 )
 
+# Overload kinds get a higher retry cap and longer backoff ceiling than the
+# fast-failover path used for transient connection errors.
+_OVERLOAD_KINDS: frozenset[TimeoutKind] = frozenset(
+    {
+        TimeoutKind.PROVIDER_ERROR,
+        TimeoutKind.RATE_LIMITED,
+    }
+)
+
 
 class TimeoutRetryPolicy:
     def __init__(
@@ -301,11 +370,15 @@ class TimeoutRetryPolicy:
         base_backoff_seconds: float = 1.0,
         max_backoff_seconds: float = 60.0,
         failover_after_retries: int = 3,
+        overload_max_retries: int = 10,
+        overload_max_backoff_seconds: float = 120.0,
     ) -> None:
         self._max_retries = max_retries
         self._base_backoff = base_backoff_seconds
         self._max_backoff = max_backoff_seconds
         self._failover_after = failover_after_retries
+        self._overload_max_retries = overload_max_retries
+        self._overload_max_backoff = overload_max_backoff_seconds
 
     def decide(
         self,
@@ -318,6 +391,23 @@ class TimeoutRetryPolicy:
             return RetryDecision(
                 should_retry=False,
                 reason=f"{kind.value} is not retryable",
+            )
+
+        # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) get a higher retry cap
+        # and a longer backoff ceiling. They do NOT flow into the fast-failover
+        # path used for transient connection errors.
+        if kind in _OVERLOAD_KINDS:
+            if attempt > self._overload_max_retries:
+                return RetryDecision(
+                    should_retry=False,
+                    should_failover=True,
+                    reason="overload max retries exhausted",
+                )
+            wait = self._compute_backoff(kind, attempt, retry_after_seconds, overload=True)
+            return RetryDecision(
+                should_retry=True,
+                wait_seconds=wait,
+                reason=f"retrying {kind.value} (overload) after {wait:.1f}s",
             )
 
         if attempt > self._max_retries:
@@ -349,6 +439,7 @@ class TimeoutRetryPolicy:
         kind: TimeoutKind,
         attempt: int,
         retry_after: float | None,
+        overload: bool = False,
     ) -> float:
         if kind == TimeoutKind.RATE_LIMITED and retry_after is not None:
             return max(retry_after, 1.0)
@@ -362,4 +453,5 @@ class TimeoutRetryPolicy:
         if kind == TimeoutKind.RATE_LIMITED:
             base = max(base, 1.0)
 
-        return float(min(base, self._max_backoff))
+        cap = self._overload_max_backoff if overload else self._max_backoff
+        return float(min(base, cap))

@@ -8,15 +8,6 @@ Endpoints (PSK auth applied by daemon middleware — not in _PUBLIC_PATHS):
 
 State is stored on ``app.state._file_claims`` (a FileClaimRegistry).
 Claims are ephemeral (in-memory only); they are lost on daemon restart.
-
-# TODO(integration): to wire this router into the daemon, the integrator must:
-#   1. In daemon.py, after the other router.register(app, ...) calls, add:
-#          from general_ludd.routers import coordination as _coord_router
-#          _coord_router.register(app, daemon_state)
-#   2. In routers/facts.py api_facts(), add to the returned dict:
-#          "coordination": _coordination_facet(app)
-#      where _coordination_facet is imported from this module:
-#          from general_ludd.routers.coordination import _coordination_facet
 """
 
 from __future__ import annotations

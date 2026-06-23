@@ -54,7 +54,7 @@ def make_dispatch_fn(
     DispatchLane handles overall ``target``/``floor`` saturation; the
     dispatcher's semaphore is a secondary per-role cap.
     """
-    from general_ludd.agents.dispatcher import AgentTask
+    from general_ludd.agents.types import AgentTask
 
     def _default_builder(unit_id: str) -> Any:
         return AgentTask(

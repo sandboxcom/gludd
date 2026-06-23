@@ -11,6 +11,11 @@ Every Bash command in this repo MUST be `make <target>`. Anything else (`ls`, `g
 - Branch: `make feature-start MSG='feature/x'`, `make feature-done MSG='feature/x'`
 - Need something new? Add a Makefile target, then run it. Never bypass.
 
+Note: `make gate`, `make test-unit`, and bare `make test` are BLOCKED by the
+enforce-make.ts plugin when run in the foreground (they block for 30+ minutes
+and prevent subagent dispatch). Use `make gate-background` instead, then check
+with `make gate-bg-check`. For targeted tests, use `make test TESTFILE=...`.
+
 File reads/edits use the Read/Edit/Write tools, not shell.
 
 ## Known traps
@@ -18,6 +23,15 @@ File reads/edits use the Read/Edit/Write tools, not shell.
 - `make test-failures` historically masked collection ERRORs ("No failures" on a broken suite). Trust full `make test` output until GLM_REMEDIATION_GUIDE.md Phase R1.1 lands.
 - Do NOT trust `SESSION.md` status claims; verify with gates. See `BUGS.md` for the incident history.
 - Run `make test-count` before any commit — collection errors mean no commit.
+
+## Opencode plugins
+
+All 4 plugins in `.opencode/plugin/` are registered and active in `opencode.json`. They enforce the same policies as the `.claude/hooks/*.sh` layer:
+
+- **`enforce-make.ts`** — Bash make-only policy: blocks non-make commands, metacharacters (`|`, `&&`, `;`, `$()`), concurrent gates, `.gate-status` writes, and edits that weaken guardrails across all hook/plugin files.
+- **`enforce-floor.ts`** — agent floor/ceiling bands via `agent_liveness.py`: keeps ≥10 (env: `CLAUDE_AGENT_FLOOR`) live subagents; blocks stops when below the floor.
+- **`enforce-delegate.ts`** — sonnet-dominant dispatch ratio (model utilization), worktree disk guards, opt-in force-delegate grind guard, and main-thread delegation budget.
+- **`enforce-stop.ts`** — deferral-pattern block (no-wait), open-backlog block, session-start orchestration injection, and `AskUserQuestion` deny (no blocking questions).
 
 ## Key documents
 

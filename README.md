@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.2 — 2026-06-18**
+**Status as of v0.1.0-alpha.3 — 2026-06-19**
 
 This table is regenerated/verified on every release cut (enforced by `make release-cut`).
 
@@ -267,7 +267,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Watchdog FileWatcher in integrity scanner (W4.3) | 100% | `tests/unit/test_w4_3_watchdog.py` 2 passed + 3 xpassed (FSEvents timing); `[15db868]` |
 | deptry installed; langchain/langgraph deferred (W4.5) | 100% | `tests/unit/test_w4_5_deps_audit.py`; `[15db868]` |
 | README claims measured / no hardcoded numbers (W5.5) | 100% | `tests/unit/test_status_snapshot.py::TestReadmeNoHardcodedMetrics` 5 passed; `[526104b]` |
-| `make release-cut` target exists and runs (enforcement of this table) | 0% | Target referenced in this table's header but not yet confirmed in Makefile; specced-not-verified |
+| `make release-cut` target exists and runs (enforcement of this table) | 100% | `Makefile:2488` (`release-cut` target, 4 steps: `require-ci-green` → `check-readme-status` → `git-push-sandboxcom` + `git-tag-push` → `verify-release-artifact`); referenced by AGENTS.md release-cut policy |
 
 ---
 
@@ -313,22 +313,30 @@ The following claims in the body of this README are broadly accurate but carry c
 
 ## Presentation
 
-A self-describing reveal.js deck — "gludd, honestly" — is generated from live
-E2E artifacts and committed design templates. Every maturity claim on a slide
-carries the same evidence token the README table carries; missing data renders
-an honest "NO DATA — run `make deck-data`" placeholder rather than a fabricated
-screenshot.
+> **Status: not yet implemented.** The `make deck`, `make deck-data`, and
+> `make deck-serve` targets referenced below are specced in
+> `docs/presentation/BUILD_TASK_LIST.md` and `DESIGN_revealjs_deck.md` but are
+> NOT defined in the `Makefile`. The `docs/presentation/deck/` source tree and
+> `scripts/build_deck.py` are also not yet committed. Do not invoke these
+> targets; they will fail with "No rule to make target".
+
+A self-describing reveal.js deck — "gludd, honestly" — is planned to be
+generated from live E2E artifacts and committed design templates. Every
+maturity claim on a slide is intended to carry the same evidence token the
+README table carries; missing data would render an honest "NO DATA — run
+`make deck-data`" placeholder rather than a fabricated screenshot.
 
 **Planned URL:** https://sandboxcom.github.io/gludd/
 
-> This link goes live once:
+> Once implemented, the link goes live when:
 > 1. GitHub Pages is enabled in repo settings (Source: GitHub Actions)
 > 2. The deck source (`docs/presentation/deck/`) is committed to `main`
 > 3. The `.github/workflows/pages.yml` workflow has run successfully
 >
-> Until then, build and preview locally with `make deck && make deck-serve`.
+> Until the targets exist and the above conditions are met, there is no local
+> or published deck to preview.
 
-Source: `docs/presentation/` | Design: `DESIGN_revealjs_deck.md` | Build tasks: `BUILD_TASK_LIST.md`
+Design: `docs/presentation/DESIGN_revealjs_deck.md` | Build task list: `docs/presentation/BUILD_TASK_LIST.md`
 
 ---
 

@@ -127,6 +127,15 @@ _BUILTIN: dict[str, RoleCapabilities] = {
         collections_self_modify=False,
         dispatch_kinds=frozenset({"role", "skill"}),
     ),
+    # Event-loop turn handler: may dispatch role/mcp/skill kinds when a model
+    # turn returns tool_calls.  Deliberately excludes "collection" — the loop
+    # never drives self-modification writes, so collections_self_modify stays
+    # False and the collection kind is absent from dispatch_kinds.
+    "event_loop": RoleCapabilities(
+        role="event_loop",
+        collections_self_modify=False,
+        dispatch_kinds=frozenset({"role", "mcp", "skill"}),
+    ),
 }
 
 #: The deny-everything baseline an unknown role receives.

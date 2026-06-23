@@ -4,15 +4,11 @@ When a model turn returns a tool_call request the DynamicDispatcher routes the
 call to the correct handler by ``kind``, captures the result, and returns a
 ``DispatchResult`` that can be written into a ``VariableStore`` so the next
 prompt turn reflects reality.
-
-# TODO(integration): call DynamicDispatcher from the event-loop turn handler
-# when a model returns tool_calls, then re-render the next prompt from the
-# VariableStore.  See event_loop/loop.py _dispatch_execute_job for the
-# integration point.
 """
 
 from __future__ import annotations
 
+import inspect
 import json
 import logging
 from collections.abc import Callable
@@ -34,12 +30,17 @@ PRIVILEGED_KINDS = frozenset({"role", "collection", "mcp", "skill"})
 # Explicit opt-in sentinel: the ONLY role value that bypasses the capability
 # gate entirely (e.g. trusted in-process call sites). A None role is no longer
 # unrestricted — it denies every privileged kind.
-UNRESTRICTED_ROLE = "__unrestricted__"
+#
+# SECURITY (D12): identity sentinel — a unique object() instance, not a string.
+# A string literal "__unrestricted__" could be forged by any caller that guesses
+# the value; object() identity can only be satisfied by holding a direct
+# reference to this module-level binding, making impersonation impossible.
+# All comparisons MUST use ``is`` / ``is not``, never ``==`` / ``!=``.
+UNRESTRICTED_ROLE: object = object()
 
 # Typed handler signature: takes (name, args) and returns any JSON-serialisable
-# value.  Handlers may be coroutines; DynamicDispatcher.dispatch is sync-only
-# but callers may wrap in asyncio if needed.  For unit tests inject plain
-# callables.
+# value.  Handlers may be coroutines; DynamicDispatcher.dispatch is async-aware
+# (awaits coroutine handlers).  For unit tests inject plain callables.
 Handler = Callable[[str, dict[str, Any]], Any]
 
 
@@ -135,14 +136,17 @@ def _parse_single(item: dict[str, Any]) -> ToolCall | None:
     if not isinstance(name_raw, str) or not name_raw:
         logger.debug("parse_tool_calls: skipping item without name: %s", item)
         return None
+    # Truncate caller-controlled strings before they flow into log lines and
+    # DispatchResult error strings (log-injection / unbounded-string guard).
+    name_str: str = name_raw[:256]
     # kind is required; if missing or wrong type treat as unknown so
     # dispatch fails-closed.
-    kind_str: str = str(kind_raw) if kind_raw is not None else "unknown"
+    kind_str: str = str(kind_raw)[:64] if kind_raw is not None else "unknown"
     args_raw = item.get("args", {})
     args: dict[str, Any] = args_raw if isinstance(args_raw, dict) else {}
     # We deliberately allow kind values not in the Literal union here so that
     # the dispatcher can handle them at dispatch time (fail-closed).
-    return ToolCall(kind=kind_str, name=name_raw, args=args)  # type: ignore[arg-type]
+    return ToolCall(kind=kind_str, name=name_str, args=args)  # type: ignore[arg-type]
 
 
 # ---------------------------------------------------------------------------
@@ -166,7 +170,7 @@ class DynamicDispatcher:
         mcp_handler: Handler | None = None,
         skill_handler: Handler | None = None,
         collection_handler: Handler | None = None,
-        role: str | None = None,
+        role: str | object | None = None,
     ) -> None:
         self._handlers: dict[str, Handler] = {}
         if role_handler is not None:
@@ -180,21 +184,29 @@ class DynamicDispatcher:
         # The acting role whose capability lattice gates every dispatch
         # (issue #58). A None role now FAILS CLOSED on privileged kinds (it is
         # NOT unrestricted); only the explicit ``UNRESTRICTED_ROLE`` sentinel
-        # bypasses the gate. When set to a real role, a tool-call kind the role
-        # lacks is denied BEFORE its handler is invoked.
-        self._role = role
+        # (identity check via ``is``) bypasses the gate. When set to a real
+        # role string, a tool-call kind the role lacks is denied BEFORE its
+        # handler is invoked.
+        self._role: str | object | None = role
 
-    def dispatch(self, call: ToolCall) -> DispatchResult:
-        """Dispatch a single ToolCall.  Returns DispatchResult — never raises."""
+    async def dispatch(self, call: ToolCall) -> DispatchResult:
+        """Dispatch a single ToolCall.  Returns DispatchResult — never raises.
+
+        Async so that coroutine handlers (async def) can be awaited directly,
+        eliminating the need for run_until_complete inside the handler (D11).
+        """
         kind = call.kind
 
         # Per-role capability lattice (issue #58): the gate fails closed unless
         # the role is the explicit UNRESTRICTED_ROLE sentinel. A None (unbound)
         # role denies every PRIVILEGED_KIND; a real role must hold the capability
         # the tool-call kind requires. The check runs BEFORE the handler.
-        if self._role != UNRESTRICTED_ROLE and (
+        #
+        # D12: use ``is not`` (identity) not ``!=`` (equality) — UNRESTRICTED_ROLE
+        # is now an object() sentinel; string equality would allow forgery.
+        if self._role is not UNRESTRICTED_ROLE and (
             (self._role is None and kind in PRIVILEGED_KINDS)
-            or (self._role is not None and not role_may_dispatch(self._role, kind))
+            or (self._role is not None and not role_may_dispatch(str(self._role), kind))
         ):
             logger.warning(
                 "DynamicDispatcher: role %r lacks capability for kind %r "
@@ -227,7 +239,12 @@ class DynamicDispatcher:
                 error=f"unknown_kind:{kind}",
             )
         try:
-            output = handler(call.name, call.args)
+            result = handler(call.name, call.args)
+            # D11: await coroutine handlers (async def) without run_until_complete.
+            if inspect.isawaitable(result):
+                output = await result
+            else:
+                output = result
             return DispatchResult(ok=True, kind=kind, name=call.name, output=output)
         except Exception as exc:
             logger.error(
@@ -243,9 +260,12 @@ class DynamicDispatcher:
                 error=str(exc),
             )
 
-    def dispatch_all(self, calls: list[ToolCall]) -> list[DispatchResult]:
+    async def dispatch_all(self, calls: list[ToolCall]) -> list[DispatchResult]:
         """Dispatch every ToolCall in order, accumulating results."""
-        return [self.dispatch(call) for call in calls]
+        results = []
+        for call in calls:
+            results.append(await self.dispatch(call))
+        return results
 
     def list_available(self) -> dict[str, list[str]]:
         """Return the set of registered handler kinds (no scanning)."""

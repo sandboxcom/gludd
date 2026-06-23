@@ -66,6 +66,35 @@ class TestAgentRegistryRegisterAndGet:
         assert reg.get("nonexistent") is None
 
 
+class TestAgentRegistrySeal:
+    def test_register_after_seal_raises(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="before",
+            description="registered before seal",
+            type=AgentType.SUBAGENT,
+        ))
+        reg.seal()
+        with pytest.raises(RuntimeError, match="sealed"):
+            reg.register(AgentConfig(
+                name="after",
+                description="must be rejected",
+                type=AgentType.SUBAGENT,
+            ))
+        # The pre-seal agent survives; the post-seal one never lands.
+        assert reg.get("before") is not None
+        assert reg.get("after") is None
+
+    def test_unsealed_registry_allows_register(self):
+        reg = AgentRegistry()
+        reg.register(AgentConfig(
+            name="ok",
+            description="no seal yet",
+            type=AgentType.SUBAGENT,
+        ))
+        assert reg.get("ok") is not None
+
+
 class TestAgentRegistryListSubagents:
     def test_agent_registry_list_subagents(self):
         reg = AgentRegistry()
@@ -243,7 +272,7 @@ class TestAgentDispatcher:
         assert result.status == "completed"
         assert result.output == "done"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_agent_dispatcher_dispatch_many_runs_concurrently(self, registry):
         execution_times: dict[str, float] = {}
 
@@ -269,7 +298,7 @@ class TestAgentDispatcher:
         assert all(r.status == "completed" for r in results)
         assert total < 0.3, f"Expected concurrent execution, took {total:.2f}s"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_agent_dispatcher_respects_max_concurrent(self, registry):
         active_count = 0
         max_observed = 0
@@ -293,7 +322,7 @@ class TestAgentDispatcher:
         assert len(results) == 6
         assert max_observed <= 3, f"Exceeded max_concurrent=3, saw {max_observed}"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_agent_dispatcher_tracks_active_dispatches(self, registry):
         dispatcher = AgentDispatcher(
             registry=registry,
@@ -306,7 +335,7 @@ class TestAgentDispatcher:
         assert result.status == "completed"
         assert result.agent_name == "explore"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_dispatch_one_unknown_agent_fails(self, registry):
         dispatcher = AgentDispatcher(
             registry=registry,
@@ -421,3 +450,14 @@ class TestDefaultAgents:
         assert "general" in sub_names
         assert "build" not in sub_names
         assert "plan" not in sub_names
+
+    def test_default_registry_is_sealed(self):
+        # default_registry() must seal so callers (e.g. the daemon) cannot
+        # mutate the agent-permission matrix after startup.
+        reg = default_registry()
+        with pytest.raises(RuntimeError, match="sealed"):
+            reg.register(AgentConfig(
+                name="rogue",
+                description="post-seal registration must be rejected",
+                type=AgentType.SUBAGENT,
+            ))

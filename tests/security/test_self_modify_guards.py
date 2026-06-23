@@ -219,7 +219,8 @@ class TestProtectedPathDenyList:
 # ---------------------------------------------------------------------------
 
 class TestDispatchConsultsCapabilityLattice:
-    def test_dispatch_denies_capability_role_lacks(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatch_denies_capability_role_lacks(self) -> None:
         from general_ludd.dispatch.dynamic_dispatcher import (
             DynamicDispatcher,
             ToolCall,
@@ -237,7 +238,7 @@ class TestDispatchConsultsCapabilityLattice:
             collection_handler=collection_handler,
             role="coder",
         )
-        result = dispatcher.dispatch(
+        result = await dispatcher.dispatch(
             ToolCall(kind="collection", name="gludd_db", args={})
         )
 
@@ -252,7 +253,8 @@ class TestDispatchConsultsCapabilityLattice:
             result.error or ""
         ).lower()
 
-    def test_dispatch_allows_capability_role_holds(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatch_allows_capability_role_holds(self) -> None:
         from general_ludd.dispatch.dynamic_dispatcher import (
             DynamicDispatcher,
             ToolCall,
@@ -269,7 +271,7 @@ class TestDispatchConsultsCapabilityLattice:
             collection_handler=collection_handler,
             role="self_improve_agent",
         )
-        result = dispatcher.dispatch(
+        result = await dispatcher.dispatch(
             ToolCall(kind="collection", name="gludd_db", args={})
         )
         assert result.ok is True, (
@@ -277,7 +279,8 @@ class TestDispatchConsultsCapabilityLattice:
         )
         assert invoked == ["gludd_db"]
 
-    def test_dispatch_without_role_denies_privileged_kinds(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatch_without_role_denies_privileged_kinds(self) -> None:
         # FAIL-CLOSED: an unbound (None) role must DENY every privileged kind,
         # BEFORE the handler runs. A missing role is no longer "unrestricted".
         from general_ludd.dispatch.dynamic_dispatcher import (
@@ -301,7 +304,7 @@ class TestDispatchConsultsCapabilityLattice:
             skill_handler=_handler,
         )
         for kind in PRIVILEGED_KINDS:
-            result = dispatcher.dispatch(ToolCall(kind=kind, name="x", args={}))
+            result = await dispatcher.dispatch(ToolCall(kind=kind, name="x", args={}))
             assert result.ok is False, (
                 f"unbound (None) role must DENY privileged kind {kind!r} "
                 f"fail-closed. result={result}"
@@ -315,7 +318,8 @@ class TestDispatchConsultsCapabilityLattice:
             f"privileged kind. invoked={invoked}"
         )
 
-    def test_dispatch_unrestricted_role_sentinel_permits(self) -> None:
+    @pytest.mark.asyncio
+    async def test_dispatch_unrestricted_role_sentinel_permits(self) -> None:
         # The explicit UNRESTRICTED_ROLE sentinel is the ONLY ungated path: it
         # permits every privileged kind (trusted in-process call sites opt in).
         from general_ludd.dispatch.dynamic_dispatcher import (
@@ -339,7 +343,7 @@ class TestDispatchConsultsCapabilityLattice:
             role=UNRESTRICTED_ROLE,
         )
         for kind in PRIVILEGED_KINDS:
-            result = dispatcher.dispatch(ToolCall(kind=kind, name="x", args={}))
+            result = await dispatcher.dispatch(ToolCall(kind=kind, name="x", args={}))
             assert result.ok is True, (
                 f"UNRESTRICTED_ROLE must permit privileged kind {kind!r}. "
                 f"result={result}"

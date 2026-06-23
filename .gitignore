@@ -17,6 +17,7 @@ build/
 *.egg-info/
 .gate-status
 .gate-failed
+.test-summary
 .secrets.baseline
 
 sandboxcom_github_rsa
@@ -36,6 +37,11 @@ id_dsa
 *.pfx
 
 scripts/scan-secrets.py
+
+# Z.AI / GLM API key material — never track (.zai.key also matches *.key above)
+zai.api
+.zai.key
+zai.key
 
 # ── Claude Code harness: transient / machine-local items ─────────────────────
 # Committed (safe to track): .claude/hooks/  .claude/settings.json  .claude/workflows/

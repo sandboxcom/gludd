@@ -12,6 +12,7 @@ import pytest
 from httpx import ASGITransport, AsyncClient
 
 from general_ludd.daemon import _daemon_state, create_daemon_app
+from general_ludd.secrets.env import EnvSecretsManager
 
 
 @pytest.fixture(autouse=True)
@@ -94,23 +95,31 @@ class TestBuildSecretsResolver:
 
         cfg = OpenBaoConfig(mode="external", external_url="http://localhost:8200")
         with patch(
-            "general_ludd.secrets.manager.SecretsManager",
+            "general_ludd.daemon.SecretsManager",
             side_effect=Exception("connection refused"),
-        ):
+        ) as MockMgr:
             result = build_secrets_resolver(openbao_config=cfg)
-            assert hasattr(result, "resolve")
+            assert MockMgr.called, "SecretsManager constructor must be attempted before fallback"
+            assert isinstance(result, EnvSecretsManager), (
+                f"failure path must fall back to EnvSecretsManager, got {type(result)!r}"
+            )
 
     def test_build_secrets_resolver_openbao_not_reachable(self):
         from general_ludd.daemon import build_secrets_resolver
         from general_ludd.secrets.config import OpenBaoConfig
 
-        cfg = OpenBaoConfig(mode="auto")
+        # Must supply external_url so that the auto+url branch (which calls
+        # SecretsManager) is exercised rather than the trivial "no url → env" path.
+        cfg = OpenBaoConfig(mode="auto", external_url="https://bao.example.internal:8200")
         with patch(
-            "general_ludd.secrets.manager.SecretsManager",
+            "general_ludd.daemon.SecretsManager",
             side_effect=Exception("connection refused"),
-        ):
+        ) as MockMgr:
             result = build_secrets_resolver(openbao_config=cfg)
-            assert hasattr(result, "resolve")
+            assert MockMgr.called, "SecretsManager constructor must be attempted before fallback"
+            assert isinstance(result, EnvSecretsManager), (
+                f"auto-mode unreachable path must fall back to EnvSecretsManager, got {type(result)!r}"
+            )
 
     def test_build_secrets_resolver_with_projects(self):
         from general_ludd.daemon import build_secrets_resolver
@@ -192,7 +201,7 @@ class TestApiStatusWithConfigDir:
             resp = await client.get("/api/status")
             assert resp.status_code == 200
             data = resp.json()
-            assert len(data["config_files"]) == 2
+            assert data["config_file_count"] == 2
 
 
 class TestApiListTodosWithStatusFilter:

@@ -17,6 +17,7 @@ correct behaviour:
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from sqlalchemy.ext.asyncio import AsyncSession
 
 from general_ludd.db.repository import ConcurrencyError
 from general_ludd.event_loop.loop import EventLoop
@@ -24,12 +25,10 @@ from general_ludd.schemas.todo import TodoStatus
 
 
 def _make_loop(**overrides):
-    session = AsyncMock()
+    session = MagicMock(spec=AsyncSession)
     db_result = MagicMock()
     db_result.scalars.return_value.all.return_value = []
     session.execute.return_value = db_result
-    session.flush = AsyncMock()
-    session.add = MagicMock()
     todo_repo = AsyncMock()
     task_return_repo = AsyncMock()
     defaults = dict(

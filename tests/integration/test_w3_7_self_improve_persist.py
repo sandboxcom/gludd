@@ -11,6 +11,7 @@ from unittest.mock import MagicMock
 
 import pytest_asyncio
 from sqlalchemy.ext.asyncio import create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.repository import TodoRepository
 from general_ludd.db.session import create_async_session_factory, ensure_tables
@@ -20,7 +21,11 @@ from general_ludd.schemas.todo import TodoStatus
 
 @pytest_asyncio.fixture
 async def session_factory():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     try:
         await ensure_tables(engine)
         yield create_async_session_factory(engine)
@@ -40,6 +45,7 @@ class TestSelfImprovePersistence:
              "work_type": "test", "priority": "high"},
         ]
 
+        import general_ludd.event_loop.loop as loop_mod
         import general_ludd.self_improve.harness as harness_mod
 
         fake_harness = MagicMock()
@@ -48,6 +54,7 @@ class TestSelfImprovePersistence:
         monkeypatch.setattr(
             harness_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness
         )
+        monkeypatch.setattr(loop_mod, "SelfImprovementHarness", lambda *a, **k: fake_harness)
 
         # interval=1 → runs every tick.
         loop = EventLoop(session=factory, self_improve_interval=1)

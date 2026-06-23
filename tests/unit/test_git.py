@@ -114,6 +114,26 @@ class TestWorktrees:
         assert git.remove_worktree(repo_path=repo_path, worktree_path=worktree_path) is True
         assert not os.path.isdir(worktree_path)
 
+    def test_remove_worktree_with_untracked_content(self, repo_with_commit):
+        """A worktree that has untracked files (e.g. an orchestrator marker or
+        agent work-in-progress) must still be removable. ``git worktree remove``
+        refuses without --force in that case, so remove_worktree must use --force.
+        Regression for the molecule test_gludd_worktree scenario, where the
+        gludd_worktree module plants a `.gludd_worktree_state` marker inside
+        the worktree before removal.
+        """
+        git, repo_path, tmp_path = repo_with_commit
+        worktree_path = str(tmp_path / "wt-untracked")
+        git.create_worktree(
+            repo_path=repo_path, branch_name="feature-untracked", worktree_path=worktree_path
+        )
+        # Drop an untracked file inside the worktree — mirrors the audit marker
+        # the gludd_worktree module writes, plus realistic agent WIP.
+        (tmp_path / "wt-untracked" / ".gludd_worktree_state").write_text("state=present\n")
+        (tmp_path / "wt-untracked" / "agent_scratch.txt").write_text("wip")
+        assert git.remove_worktree(repo_path=repo_path, worktree_path=worktree_path) is True
+        assert not os.path.isdir(worktree_path)
+
     def test_list_worktrees(self, repo_with_commit):
         git, repo_path, tmp_path = repo_with_commit
         worktree_path = str(tmp_path / "wt-list")

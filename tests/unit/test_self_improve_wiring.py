@@ -178,6 +178,7 @@ class TestEventLoopSelfImprovePhase:
         # (work_type=self_improve, high priority), not discard them into the
         # in-memory harness. Proven against a real in-memory session.
         from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
 
         from general_ludd.db.repository import TodoRepository
         from general_ludd.db.session import (
@@ -187,7 +188,11 @@ class TestEventLoopSelfImprovePhase:
         from general_ludd.schemas.todo import TodoStatus
         from general_ludd.self_improve.harness import SelfImprovementHarness
 
-        engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+        engine = create_async_engine(
+            "sqlite+aiosqlite:///:memory:",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         try:
             await ensure_tables(engine)
             factory = create_async_session_factory(engine)

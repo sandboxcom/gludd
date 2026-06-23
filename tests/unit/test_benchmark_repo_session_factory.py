@@ -8,8 +8,13 @@ from general_ludd.db.repository import BenchmarkRepository
 class TestBenchmarkRepositoryConstruction:
     def test_construct_with_session_factory(self):
         from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
 
-        engine = create_async_engine("sqlite+aiosqlite://")
+        engine = create_async_engine(
+            "sqlite+aiosqlite://",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         factory = async_sessionmaker(engine)
         repo = BenchmarkRepository(session_factory=factory)
         assert repo is not None
@@ -23,8 +28,13 @@ class TestBenchmarkRepositoryConstruction:
 
     async def test_record_result_with_session_factory(self):
         from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
 
-        engine = create_async_engine("sqlite+aiosqlite://")
+        engine = create_async_engine(
+            "sqlite+aiosqlite://",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         factory = async_sessionmaker(engine)
 
         from general_ludd.db.models import Base
@@ -55,8 +65,13 @@ class TestBenchmarkRepositoryConstruction:
 
     async def test_record_result_then_get_aggregate_scores(self):
         from sqlalchemy.ext.asyncio import create_async_engine
+        from sqlalchemy.pool import StaticPool
 
-        engine = create_async_engine("sqlite+aiosqlite://")
+        engine = create_async_engine(
+            "sqlite+aiosqlite://",
+            poolclass=StaticPool,
+            connect_args={"check_same_thread": False},
+        )
         factory = async_sessionmaker(engine)
 
         from general_ludd.db.models import Base

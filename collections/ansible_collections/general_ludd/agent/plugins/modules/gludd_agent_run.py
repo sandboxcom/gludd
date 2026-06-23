@@ -136,10 +136,14 @@ def _run_local(
         from general_ludd.models.gateway import ModelGateway  # type: ignore[import]
         from general_ludd.schemas.job import JobSpec  # type: ignore[import]
 
+        import uuid as _uuid
         gw = ModelGateway()
         loop_runner = ToolCallLoop(model_gateway=gw, max_iterations=max_iterations)
         job = JobSpec(
+            job_id=str(_uuid.uuid4()),
             todo_id="agent-run",
+            playbook="noop.yml",
+            queue="default",
             prompt_text=prompt,
             model_profile=model_profile or "",
         )

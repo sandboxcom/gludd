@@ -28,6 +28,31 @@ class CommandValidationError(ValueError):
     """Raised when a config-supplied test command fails safety validation."""
 
 
+def _validate_worktree_path(path: str) -> str:
+    """Validate a worktree path before use as subprocess cwd (D7).
+
+    Rejects:
+    * Paths beginning with ``-`` (would be parsed as a CLI option).
+    * Non-absolute paths (relative paths allow ``../`` traversal).
+
+    Returns the path unchanged on success.  Callers that need full symlink
+    confinement should use ``worktree.core.confine_worktree_path`` with an
+    explicit ``allowed_base``; ValidationRunner does not know its base so it
+    applies the weaker but still meaningful absolute-path guard.
+    """
+    if not path or not path.strip():
+        raise CommandValidationError("worktree_path must not be empty")
+    if path.startswith("-"):
+        raise CommandValidationError(
+            f"worktree_path begins with '-' (would be parsed as a CLI option): {path!r}"
+        )
+    if not path.startswith("/"):
+        raise CommandValidationError(
+            f"worktree_path must be an absolute path (got relative path): {path!r}"
+        )
+    return path
+
+
 def _validate_command(
     cmd: str, *, enforce_allowlist: bool, allowlist: frozenset[str]
 ) -> list[str]:
@@ -89,7 +114,7 @@ class ValidationRunner:
         runner_allowlist: frozenset[str] = _DEFAULT_RUNNER_ALLOWLIST,
     ) -> None:
         self.todo_id = todo_id
-        self.worktree_path = worktree_path
+        self.worktree_path = _validate_worktree_path(worktree_path)
         self.test_commands = test_commands
         self.enforce_runner_allowlist = enforce_runner_allowlist
         self.runner_allowlist = runner_allowlist

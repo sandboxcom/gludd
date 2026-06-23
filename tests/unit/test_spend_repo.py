@@ -9,14 +9,19 @@ from __future__ import annotations
 
 import pytest
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
-from general_ludd.db.models import Base
+from general_ludd.db.models import Base, ProjectModel
 from general_ludd.db.repository import SpendRepository
 
 
 @pytest.fixture
 async def session_factory():
-    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    engine = create_async_engine(
+        "sqlite+aiosqlite:///:memory:",
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)
@@ -24,6 +29,13 @@ async def session_factory():
         yield factory
     finally:
         await engine.dispose()
+
+
+async def _seed_project(session: AsyncSession, project_id: str) -> None:
+    """Seed a parent ProjectModel row so FK constraints on spend_records pass."""
+    assert project_id, "project_id required for FK parent row"
+    session.add(ProjectModel(project_id=project_id, name=f"test-{project_id}"))
+    await session.commit()
 
 
 @pytest.fixture
@@ -42,6 +54,7 @@ class TestSpendRepositoryAdd:
 
     async def test_add_with_project_id(self, session: AsyncSession) -> None:
         repo = SpendRepository(session)
+        await _seed_project(session, "proj-abc")
         row = await repo.add(ts=1000.0, cost_usd=0.5, kind="infra", project_id="proj-abc")
         assert row.project_id == "proj-abc"
 
@@ -104,6 +117,8 @@ class TestSpendRepositoryTotalSince:
 
     async def test_total_since_with_project_filter(self, session: AsyncSession) -> None:
         repo = SpendRepository(session)
+        await _seed_project(session, "proj-a")
+        await _seed_project(session, "proj-b")
         await repo.add(ts=100.0, cost_usd=3.0, kind="token", project_id="proj-a")
         await repo.add(ts=100.0, cost_usd=7.0, kind="token", project_id="proj-b")
         total_a = await repo.total_since(0.0, project_id="proj-a")
@@ -111,6 +126,8 @@ class TestSpendRepositoryTotalSince:
 
     async def test_total_since_no_project_filter_sums_all_projects(self, session: AsyncSession) -> None:
         repo = SpendRepository(session)
+        await _seed_project(session, "proj-a")
+        await _seed_project(session, "proj-b")
         await repo.add(ts=100.0, cost_usd=3.0, kind="token", project_id="proj-a")
         await repo.add(ts=100.0, cost_usd=7.0, kind="token", project_id="proj-b")
         total = await repo.total_since(0.0)

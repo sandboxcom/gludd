@@ -7,6 +7,8 @@ from __future__ import annotations
 
 import json
 
+import pytest
+
 from general_ludd.dispatch.dynamic_dispatcher import (
     UNRESTRICTED_ROLE,
     DispatchResult,
@@ -125,29 +127,33 @@ class TestDynamicDispatcherRouting:
             role=UNRESTRICTED_ROLE,
         )
 
-    def test_role_handler_called(self):
+    @pytest.mark.asyncio
+    async def test_role_handler_called(self):
         d = self._make_dispatcher()
-        result = d.dispatch(ToolCall(kind="role", name="planner", args={}))
+        result = await d.dispatch(ToolCall(kind="role", name="planner", args={}))
         assert result.ok is True
         assert result.output == "role:planner"
         assert result.kind == "role"
         assert result.name == "planner"
 
-    def test_mcp_handler_called_with_args(self):
+    @pytest.mark.asyncio
+    async def test_mcp_handler_called_with_args(self):
         d = self._make_dispatcher()
-        result = d.dispatch(ToolCall(kind="mcp", name="fs", args={"op": "read"}))
+        result = await d.dispatch(ToolCall(kind="mcp", name="fs", args={"op": "read"}))
         assert result.ok is True
         assert result.output == {"mcp_result": "fs", "args": {"op": "read"}}
 
-    def test_skill_handler_called(self):
+    @pytest.mark.asyncio
+    async def test_skill_handler_called(self):
         d = self._make_dispatcher()
-        result = d.dispatch(ToolCall(kind="skill", name="summarise", args={"q": 1}))
+        result = await d.dispatch(ToolCall(kind="skill", name="summarise", args={"q": 1}))
         assert result.ok is True
         assert "summarise" in result.output
 
-    def test_collection_handler_called(self):
+    @pytest.mark.asyncio
+    async def test_collection_handler_called(self):
         d = self._make_dispatcher()
-        result = d.dispatch(ToolCall(kind="collection", name="tasks", args={}))
+        result = await d.dispatch(ToolCall(kind="collection", name="tasks", args={}))
         assert result.ok is True
         assert result.output == ["tasks"]
 
@@ -157,32 +163,36 @@ class TestDynamicDispatcherRouting:
 # ---------------------------------------------------------------------------
 
 class TestDynamicDispatcherUnknownKind:
-    def test_unknown_kind_returns_error_result(self):
+    @pytest.mark.asyncio
+    async def test_unknown_kind_returns_error_result(self):
         d = DynamicDispatcher(
             role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
         )
-        result = d.dispatch(ToolCall(kind="unknown_xyz", name="foo", args={}))  # type: ignore[arg-type]
+        result = await d.dispatch(ToolCall(kind="unknown_xyz", name="foo", args={}))  # type: ignore[arg-type]
         assert result.ok is False
         assert result.error is not None
         assert "unknown_kind" in result.error
 
-    def test_no_handlers_at_all_fail_closed(self):
+    @pytest.mark.asyncio
+    async def test_no_handlers_at_all_fail_closed(self):
         d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        result = d.dispatch(ToolCall(kind="role", name="planner", args={}))
+        result = await d.dispatch(ToolCall(kind="role", name="planner", args={}))
         assert result.ok is False
 
-    def test_kind_not_registered_fail_closed(self):
+    @pytest.mark.asyncio
+    async def test_kind_not_registered_fail_closed(self):
         """Dispatcher has some handlers but the specific kind is absent."""
         d = DynamicDispatcher(
             skill_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
         )
-        result = d.dispatch(ToolCall(kind="mcp", name="tool", args={}))
+        result = await d.dispatch(ToolCall(kind="mcp", name="tool", args={}))
         assert result.ok is False
         assert "mcp" in (result.error or "")
 
-    def test_error_result_has_name_and_kind(self):
+    @pytest.mark.asyncio
+    async def test_error_result_has_name_and_kind(self):
         d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        result = d.dispatch(ToolCall(kind="role", name="my-tool", args={}))
+        result = await d.dispatch(ToolCall(kind="role", name="my-tool", args={}))
         assert result.name == "my-tool"
         assert result.kind == "role"
 
@@ -192,23 +202,25 @@ class TestDynamicDispatcherUnknownKind:
 # ---------------------------------------------------------------------------
 
 class TestDynamicDispatcherHandlerError:
-    def test_handler_exception_gives_error_result(self):
+    @pytest.mark.asyncio
+    async def test_handler_exception_gives_error_result(self):
         def _bad_handler(name: str, args: dict) -> str:
             raise RuntimeError("boom")
 
         d = DynamicDispatcher(role_handler=_bad_handler, role=UNRESTRICTED_ROLE)
-        result = d.dispatch(ToolCall(kind="role", name="bad", args={}))
+        result = await d.dispatch(ToolCall(kind="role", name="bad", args={}))
         assert result.ok is False
         assert "boom" in (result.error or "")
 
-    def test_handler_exception_does_not_raise(self):
+    @pytest.mark.asyncio
+    async def test_handler_exception_does_not_raise(self):
         """dispatch() must never propagate handler exceptions."""
         def _explode(name: str, args: dict) -> str:
             raise ValueError("explode")
 
         d = DynamicDispatcher(mcp_handler=_explode, role=UNRESTRICTED_ROLE)
         # Should not raise:
-        result = d.dispatch(ToolCall(kind="mcp", name="x", args={}))
+        result = await d.dispatch(ToolCall(kind="mcp", name="x", args={}))
         assert result.ok is False
 
 
@@ -217,7 +229,8 @@ class TestDynamicDispatcherHandlerError:
 # ---------------------------------------------------------------------------
 
 class TestDynamicDispatcherDispatchAll:
-    def test_dispatch_all_returns_list_same_length(self):
+    @pytest.mark.asyncio
+    async def test_dispatch_all_returns_list_same_length(self):
         d = DynamicDispatcher(
             role_handler=lambda n, a: "ok",
             skill_handler=lambda n, a: "skill-ok",
@@ -228,10 +241,11 @@ class TestDynamicDispatcherDispatchAll:
             ToolCall(kind="skill", name="scan"),
             ToolCall(kind="mcp", name="missing"),  # no mcp handler → fail-closed
         ]
-        results = d.dispatch_all(calls)
+        results = await d.dispatch_all(calls)
         assert len(results) == 3
 
-    def test_dispatch_all_mixed_ok_and_fail(self):
+    @pytest.mark.asyncio
+    async def test_dispatch_all_mixed_ok_and_fail(self):
         d = DynamicDispatcher(
             role_handler=lambda n, a: "ok", role=UNRESTRICTED_ROLE
         )
@@ -239,15 +253,17 @@ class TestDynamicDispatcherDispatchAll:
             ToolCall(kind="role", name="a"),
             ToolCall(kind="mcp", name="b"),   # unknown → fail
         ]
-        results = d.dispatch_all(calls)
+        results = await d.dispatch_all(calls)
         assert results[0].ok is True
         assert results[1].ok is False
 
-    def test_dispatch_all_empty_list(self):
+    @pytest.mark.asyncio
+    async def test_dispatch_all_empty_list(self):
         d = DynamicDispatcher(role=UNRESTRICTED_ROLE)
-        assert d.dispatch_all([]) == []
+        assert await d.dispatch_all([]) == []
 
-    def test_dispatch_all_order_preserved(self):
+    @pytest.mark.asyncio
+    async def test_dispatch_all_order_preserved(self):
         order: list[str] = []
 
         def _handler(name: str, args: dict) -> str:
@@ -256,7 +272,7 @@ class TestDynamicDispatcherDispatchAll:
 
         d = DynamicDispatcher(role_handler=_handler, role=UNRESTRICTED_ROLE)
         calls = [ToolCall(kind="role", name=n) for n in ["a", "b", "c"]]
-        d.dispatch_all(calls)
+        await d.dispatch_all(calls)
         assert order == ["a", "b", "c"]
 
 

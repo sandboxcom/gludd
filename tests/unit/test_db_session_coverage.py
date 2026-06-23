@@ -40,8 +40,9 @@ class TestGetAsyncSession:
 
         session = AsyncMock()
         factory = MagicMock()
-        factory.return_value.__aenter__ = AsyncMock(return_value=session)
-        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        factory.return_value = AsyncMock()
+        factory.return_value.__aenter__.return_value = session
+        factory.return_value.__aexit__.return_value = False
 
         gen = get_async_session(factory)
         result = await gen.__anext__()
@@ -54,14 +55,15 @@ class TestGetAsyncSession:
 
         session = AsyncMock()
         factory = MagicMock()
-        factory.return_value.__aenter__ = AsyncMock(return_value=session)
-        factory.return_value.__aexit__ = AsyncMock(return_value=False)
+        factory.return_value = AsyncMock()
+        factory.return_value.__aenter__.return_value = session
+        factory.return_value.__aexit__.return_value = False
 
         gen = get_async_session(factory)
         await gen.__anext__()
         with pytest.raises(RuntimeError):
             await gen.athrow(RuntimeError("boom"))
-        session.rollback.assert_called()
+        assert session.rollback.called
 
 
 class TestEnsureTables:

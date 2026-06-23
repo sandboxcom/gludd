@@ -5,6 +5,7 @@ import pytest_asyncio
 from fastapi import FastAPI
 from httpx import ASGITransport, AsyncClient
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import Base
 from general_ludd.db.repository import TodoRepository
@@ -13,7 +14,12 @@ from general_ludd.routers.todos import register
 
 @pytest_asyncio.fixture
 async def test_app():
-    engine = create_async_engine("sqlite+aiosqlite://", echo=False)
+    engine = create_async_engine(
+        "sqlite+aiosqlite://",
+        echo=False,
+        poolclass=StaticPool,
+        connect_args={"check_same_thread": False},
+    )
     try:
         async with engine.begin() as conn:
             await conn.run_sync(Base.metadata.create_all)

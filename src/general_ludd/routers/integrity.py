@@ -178,7 +178,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_gap_analysis(req: dict[str, Any] | None = None) -> dict[str, Any]:
         req = req or {}
         sprint_path = req.get("sprint_path", "")
-        repo_root = req.get("repo_root", ".")
+        raw_root = req.get("repo_root", "")
+        if raw_root and raw_root != ".":
+            (repo_root,) = _confine_scan_paths(app, [raw_root])
+        else:
+            roots = _scan_roots(app)
+            repo_root = roots[0] if roots else "."
         analyzer = GapAnalyzer()
         report = analyzer.analyze(sprint_path=sprint_path, repo_root=repo_root)
         return {

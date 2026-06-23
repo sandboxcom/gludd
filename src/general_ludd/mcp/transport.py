@@ -26,11 +26,12 @@ from general_ludd.mcp.registry import MCPTool
 # Anything not on this list is rejected by default (operator can opt out via
 # GLUDD_MCP_ALLOW_ANY_EXEC=1).
 _MCP_EXEC_ALLOWLIST = frozenset(
-    {"npx", "npm", "pnpm", "yarn", "uvx", "python", "python3", "node"}
+    {"npx", "npm", "pnpm", "yarn", "bunx", "uvx", "python", "python3", "node"}
 )
 
 # Package managers that fetch-and-run code from a remote index.
-_NPM_FAMILY_LAUNCHERS = frozenset({"npx", "npm", "pnpm", "yarn"})
+# D8: bunx added here so _REMOTE_FETCH_LAUNCHERS includes it and the pin gate fires.
+_NPM_FAMILY_LAUNCHERS = frozenset({"npx", "npm", "pnpm", "yarn", "bunx"})
 # pip-style runners that also download from a remote index.
 _UVX_FAMILY_LAUNCHERS = frozenset({"uvx"})
 # All launchers that need package-spec injection validation.
@@ -140,7 +141,7 @@ def _validate_launch_command(cmd: list[str]) -> None:
 # JS npm-family launchers whose package spec MUST be version-pinned (a mutable
 # dist-tag / range / bare name is a supply-chain substitution risk). uvx
 # (Python) is intentionally excluded — its pinning semantics differ.
-_NPM_FAMILY_LAUNCHERS = frozenset({"npm", "npx", "pnpm", "yarn", "bunx"})
+# D8: _NPM_FAMILY_LAUNCHERS is defined once at module top (includes bunx).
 
 
 def _validate_package_spec(cmd: list[str], launcher: str) -> None:

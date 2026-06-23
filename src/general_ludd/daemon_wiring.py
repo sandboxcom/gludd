@@ -131,7 +131,7 @@ def make_role_handler(
     async def _role_handler(name: str, args: dict[str, Any]) -> str:
         import time as _time
 
-        from general_ludd.agents.dispatcher import AgentTask
+        from general_ludd.agents.types import AgentTask
 
         task = AgentTask(
             task_id=f"role-{name}-{int(_time.monotonic() * 1000)}",

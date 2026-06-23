@@ -40,7 +40,7 @@ class TestWorkTypePlaybookRegistry:
     def test_all_work_types_have_playbook_entries(self):
         """Sanity: the map is non-empty and contains expected work types."""
         assert len(_WORK_TYPE_PLAYBOOK_MAP) > 0, "_WORK_TYPE_PLAYBOOK_MAP is empty"
-        expected_keys = {"code", "test", "analysis", "audit", "prompt", "self_improvement",
+        expected_keys = {"code", "test", "analysis", "audit", "prompt", "self_improve",
                          "dependency", "review"}
         for key in expected_keys:
             assert key in _WORK_TYPE_PLAYBOOK_MAP, (

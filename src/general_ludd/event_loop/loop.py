@@ -37,6 +37,7 @@ from general_ludd.schemas.queue import Queue
 from general_ludd.schemas.task_decision import TaskDecision
 from general_ludd.schemas.task_return import TaskReturn, TaskReturnStatus
 from general_ludd.schemas.todo import Todo, TodoStatus
+from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
 PHASE_ORDER = [
@@ -44,9 +45,9 @@ PHASE_ORDER = [
     "claim_unreviewed_task_returns",
     "dispatch_return_review_jobs",
     "evaluate_pid_controllers",
-    "evaluate_rules",
     "refill_task_buckets",
     "claim_runnable_todos",
+    "evaluate_rules",
     "dispatch_execute_jobs",
     "reconcile_completed_decisions",
     "self_improve",
@@ -108,7 +109,7 @@ def _work_type_to_task_type(work_type: str) -> Any:
 _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
     "code": "validate_task.yml", "test": "molecule_test.yml",
     "analysis": "gap_analysis.yml", "audit": "log_audit.yml",
-    "prompt": "prompt_eval.yml", "self_improvement": "self_improve_harness.yml",
+    "prompt": "prompt_eval.yml", "self_improve": "self_improve_harness.yml",
     "dependency": "dependency_update.yml", "review": "return_review.yml",
     "docs": "noop.yml", "infra": "noop.yml", "security": "noop.yml",
     "model": "noop.yml", "release": "noop.yml",
@@ -157,6 +158,7 @@ class EventLoop:
         self_improve_interval: int = 0,
         reviewer: Any | None = None,
         model_gateway: Any | None = None,
+        dispatcher: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -166,6 +168,7 @@ class EventLoop:
         self._self_improve_interval = self_improve_interval
         self._reviewer = reviewer
         self._model_gateway = model_gateway
+        self._dispatcher = dispatcher
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -188,6 +191,7 @@ class EventLoop:
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
+        self._background_tasks: set[asyncio.Task[Any]] = set()
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
         # Reconcile idempotency ledgers (defects F1/F2):
@@ -200,6 +204,9 @@ class EventLoop:
         self._applied_decisions: set[str] = set()
         self._pushed_work: set[str] = set()
         self._config_snapshot: dict[str, Any] = {}
+        # M14 (W3.14): single project selected per tick, shared across all phases.
+        # Reset to None at the end of every tick (see tick() finally block).
+        self._tick_project_id: str | None = None
         self._event_bus = event_bus
         self._project_manager = project_manager
         self._prompt_registry = prompt_registry
@@ -323,11 +330,26 @@ class EventLoop:
                 if live_lease is not None:
                     # Worker is still heartbeating (lease alive) -> do NOT reap.
                     continue
-                todo.status = TodoStatus.QUEUED.value
-                todo.updated_at = now
+                # Guarded compare-and-set: transition ACTIVE->QUEUED only if the
+                # row is STILL active at the version we read. A concurrent writer
+                # (claim, reconcile, manual edit) that moved the row makes the CAS
+                # affect zero rows -> ConcurrencyError, treated as a lost race and
+                # skipped. This mirrors claim_runnable()/transition()'s version +
+                # status guard so the reaper can never silently clobber a
+                # concurrent status write (the check-then-act race this method
+                # previously had when it assigned the ORM attribute directly).
+                try:
+                    await self._todo_repo.transition(
+                        todo.todo_id, TodoStatus.QUEUED, todo.version
+                    )
+                except ConcurrencyError as exc:
+                    logger.info(
+                        "Reaper lost version race for todo %s: %s — skipping",
+                        todo.todo_id, exc,
+                    )
+                    continue
                 reaped += 1
             if reaped:
-                await self._active_session.flush()
                 logger.info("Reaped %d stuck ACTIVE todos (no live lease)", reaped)
         except Exception as exc:
             logger.warning("Stuck-todo reaper failed: %s", exc)
@@ -341,35 +363,41 @@ class EventLoop:
             "todos_dispatched": 0, "decisions_applied": 0,
             "leases_reclaimed": 0,
         }
+        # M14 (W3.14): select ONE project per tick before phases run; reset after.
+        self._tick_project_id = self._select_tick_project_id()
         start = time.monotonic()
-        needs_own_session = self.session is None and self._session_factory is not None
-        if needs_own_session:
-            assert self._session_factory is not None
-            async with self._session_factory() as session:
-                self._active_session = session
-                self._todo_repo = TodoRepository(session)
-                self._task_return_repo = TaskReturnRepository(session)
-                self._audit_repo = AuditEventRepository(session)
-                self._variable_repo = VariableNamespaceRepository(session)
+        try:
+            needs_own_session = self.session is None and self._session_factory is not None
+            if needs_own_session:
+                assert self._session_factory is not None
+                async with self._session_factory() as session:
+                    self._active_session = session
+                    self._todo_repo = TodoRepository(session)
+                    self._task_return_repo = TaskReturnRepository(session)
+                    self._audit_repo = AuditEventRepository(session)
+                    self._variable_repo = VariableNamespaceRepository(session)
+                    await self._run_phases()
+                    try:
+                        await session.commit()
+                    except Exception as exc:
+                        logger.warning("Failed to commit tick session: %s", exc)
+                    self._active_session = None
+                    self._todo_repo = None
+                    self._task_return_repo = None
+                    self._audit_repo = None
+                    self._variable_repo = None
+            else:
+                if self.session is not None:
+                    self._active_session = self.session
+                    self._todo_repo = self._todo_repo or TodoRepository(self.session)
+                    self._task_return_repo = self._task_return_repo or TaskReturnRepository(self.session)
+                    self._audit_repo = self._audit_repo or AuditEventRepository(self.session)
+                    self._variable_repo = self._variable_repo or VariableNamespaceRepository(self.session)
                 await self._run_phases()
-                try:
-                    await session.commit()
-                except Exception as exc:
-                    logger.warning("Failed to commit tick session: %s", exc)
                 self._active_session = None
-                self._todo_repo = None
-                self._task_return_repo = None
-                self._audit_repo = None
-                self._variable_repo = None
-        else:
-            if self.session is not None:
-                self._active_session = self.session
-                self._todo_repo = self._todo_repo or TodoRepository(self.session)
-                self._task_return_repo = self._task_return_repo or TaskReturnRepository(self.session)
-                self._audit_repo = self._audit_repo or AuditEventRepository(self.session)
-                self._variable_repo = self._variable_repo or VariableNamespaceRepository(self.session)
-            await self._run_phases()
-            self._active_session = None
+        finally:
+            # M14 (W3.14): always reset tick-scoped project selection after the tick.
+            self._tick_project_id = None
         elapsed = time.monotonic() - start
         self._tick_metrics["tick_duration_ms"] = elapsed * 1000
         if self._daemon_state is not None:
@@ -415,22 +443,17 @@ class EventLoop:
             if shared_vars:
                 self._config_snapshot["shared_vars"] = shared_vars
 
-    def _select_tick_project(self) -> Any | None:
-        """M14 (W3.14): select ONE project per tick and reuse it everywhere.
+    def _select_tick_project_id(self) -> str | None:
+        """M14 (W3.14): select ONE project per tick and return its id.
 
-        The claim, review, and reconcile phases must all operate on the same
-        project; previously each called select_project() independently.
+        Called once at the start of tick(); the result is stored in
+        self._tick_project_id and shared across all phases within that tick.
+        All phases must read self._tick_project_id directly — never call
+        select_project() independently inside a phase.
         """
         if self._project_manager is None:
             return None
-        if "selected_project" in self._tick_state:
-            return self._tick_state["selected_project"]
         project = self._project_manager.select_project()
-        self._tick_state["selected_project"] = project
-        return project
-
-    def _tick_project_id(self) -> str | None:
-        project = self._select_tick_project()
         return project.project_id if project is not None else None
 
     def _estimated_dispatch_cost(self, item_count: int) -> float:
@@ -444,7 +467,7 @@ class EventLoop:
     async def _phase_claim_unreviewed_task_returns(self) -> None:
         if self._task_return_repo is None:
             return
-        project_id = self._tick_project_id()
+        project_id = self._tick_project_id
         claimed = await self._task_return_repo.claim_unreviewed(project_id=project_id)
         self._tick_state["claimed_returns"] = claimed
 
@@ -522,8 +545,11 @@ class EventLoop:
             result_summary=_safe_str(tr, "result_summary", "") or "",
         )
         try:
-            decision = self._reviewer.review_return(
-                task_return, candidate_todos=[], artifacts=[]
+            decision = await asyncio.to_thread(
+                self._reviewer.review_return,
+                task_return,
+                candidate_todos=[],
+                artifacts=[],
             )
         except Exception as exc:
             # Reviewer itself failed — escalate, never silent pass/complete.
@@ -634,14 +660,17 @@ class EventLoop:
     async def _phase_evaluate_rules(self) -> None:
         raw_rules = self.config.get("rules", [])
         rules = [r if isinstance(r, Rule) else Rule(**r) for r in raw_rules]
-        todos_ctx = self.config.get("todos", [])
+        # W4c: evaluate rules against the LIVE claimed todos for this tick (set by
+        # _phase_claim_runnable_todos, which now runs first per PHASE_ORDER), not the
+        # static self.config["todos"] — which is absent at runtime, so rules never fired.
+        todos_ctx = self._tick_state.get("claimed_todos", [])
         all_results: list[dict[str, Any]] = []
         for todo_ctx in todos_ctx:
             context = {"todo": todo_ctx}
             actions = evaluate_rules(rules, context)
             if actions:
                 all_results.append({
-                    "todo_id": todo_ctx.get("todo_id", ""),
+                    "todo_id": _safe_str(todo_ctx, "todo_id", ""),
                     "actions": [
                         {"rule_id": a.rule_id, "action_type": a.action_type, "params": a.params}
                         for a in actions
@@ -659,7 +688,7 @@ class EventLoop:
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
-        project_id = self._tick_project_id()
+        project_id = self._tick_project_id
         if project_id is not None:
             claimed = await self._todo_repo.claim_runnable(project_id=project_id)
         else:
@@ -907,6 +936,24 @@ class EventLoop:
             self._prompt_registry, resolved_prompt_profile,
             project_templates_dir=project_templates_dir, **task_context,
         )
+        # Fallback: the prompt_profile path above is PRIMARY, but a generation
+        # todo submitted via POST /api/todos has no prompt_profile, so
+        # _resolve_prompt_text_static returns None and the model would never be
+        # called (silent no-op). If no profile resolved a prompt but the todo
+        # carries a title/description, synthesize a minimal task prompt so the
+        # model IS invoked. This only fires when the primary path produced
+        # nothing; a real prompt_profile still wins.
+        if not prompt_text:
+            _fallback_title = task_context.get("todo_title") or ""
+            _fallback_desc = task_context.get("todo_description") or ""
+            _synthesized = f"Task: {_fallback_title}\n\n{_fallback_desc}".strip()
+            if _synthesized:
+                prompt_text = _synthesized
+                logger.info(
+                    "EventLoop: no prompt_profile resolved for todo %s; "
+                    "synthesized fallback prompt from title/description",
+                    getattr(todo, "todo_id", "?"),
+                )
         prompt_text = await self._append_message_queue_section(
             prompt_text, todo, project_id_val,
         )
@@ -947,6 +994,97 @@ class EventLoop:
                 )
             else:
                 model_response = None
+            if model_response is not None:
+                from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+                from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
+                calls = parse_tool_calls(model_response)
+                if len(calls) > MAX_CALLS_PER_REQUEST:
+                    logger.error(
+                        "EventLoop: model returned %d tool calls which exceeds cap %d — "
+                        "denying all (job %s)",
+                        len(calls),
+                        MAX_CALLS_PER_REQUEST,
+                        job_id,
+                    )
+                elif calls:
+                    if self._dispatcher is None:
+                        logger.warning(
+                            "EventLoop: model returned %d tool call(s) but no dispatcher "
+                            "is wired — skipping dispatch (job %s)",
+                            len(calls),
+                            job_id,
+                        )
+                    else:
+                        results = await self._dispatcher.dispatch_all(calls)
+                        ok_count = sum(1 for r in results if r.ok)
+                        err_count = len(results) - ok_count
+                        logger.info(
+                            "EventLoop: dispatched %d tool call(s): %d ok, %d error (job %s)",
+                            len(results),
+                            ok_count,
+                            err_count,
+                            job_id,
+                        )
+                        if eff_variable_repo is not None:
+                            for r in results:
+                                if r.ok:
+                                    import contextlib as _cl
+                                    with _cl.suppress(Exception):
+                                        await eff_variable_repo.set_var(
+                                            namespace="tool_results",
+                                            key=f"tool_result:{r.name}",
+                                            value=str(r.output),
+                                        )
+            if model_response is not None and self._benchmark_recorder is not None:
+                try:
+                    from general_ludd.event_loop.benchmark import record_job_benchmark
+                    _bt = asyncio.create_task(
+                        record_job_benchmark(
+                            self._benchmark_recorder,
+                            model_profile=resolved_model_profile,
+                            prompt_profile=resolved_prompt_profile,
+                            work_type=work_type,
+                            success=True,
+                            input_tokens=len(prompt_text or "") // 4,
+                        )
+                    )
+                    self._background_tasks.add(_bt)
+                    _bt.add_done_callback(self._background_tasks.discard)
+                except Exception:
+                    pass
+                # Trace-buffer feed (additive): the DB benchmark write above is
+                # preserved, but the trace→recorder→RecentTracesBuffer chain was
+                # never exercised, so /api/traces always reported count 0. Build a
+                # genuine ExecutionTrace with one completed span around the model
+                # generation (reusing the data already gathered above) and feed it
+                # through AutoBenchmarkRecorder.record_from_trace so the in-process
+                # recent-traces buffer reflects actually-captured telemetry.
+                try:
+                    from general_ludd.observability.tracer import ExecutionTrace
+                    _input_tokens = len(prompt_text or "") // 4
+                    _output_tokens = len(model_response or "") // 4
+                    _trace = ExecutionTrace(
+                        todo_id=_safe_str(todo, "todo_id", "") or "",
+                        work_type=work_type,
+                    )
+                    _span = _trace.start_span(name="model_generation", phase="generate")
+                    _span.complete(
+                        status="success",
+                        input_tokens=_input_tokens,
+                        output_tokens=_output_tokens,
+                        model_profile_id=resolved_model_profile,
+                        prompt_profile_id=resolved_prompt_profile,
+                    )
+                    self._active_traces[_trace.trace_id] = _trace
+                    _tbt = asyncio.create_task(
+                        self._benchmark_recorder.record_from_trace(
+                            _trace, success=True,
+                        )
+                    )
+                    self._background_tasks.add(_tbt)
+                    _tbt.add_done_callback(self._background_tasks.discard)
+                except Exception:
+                    pass
             self._runner.write_vars(job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
@@ -1078,7 +1216,7 @@ class EventLoop:
         if self._active_session is None or self._todo_repo is None:
             return
         stmt = select(TaskDecisionModel).order_by(TaskDecisionModel.created_at.desc()).limit(50)
-        project_id = self._tick_project_id()
+        project_id = self._tick_project_id
         if project_id is not None:
             stmt = stmt.where(TaskDecisionModel.project_id == project_id)
         result = await self._active_session.execute(stmt)
@@ -1247,7 +1385,6 @@ class EventLoop:
         if self._total_ticks % interval != 0:
             return
         try:
-            from general_ludd.self_improve.harness import SelfImprovementHarness
             harness = SelfImprovementHarness()
             findings = harness.run_gap_analysis()
             if not findings:
