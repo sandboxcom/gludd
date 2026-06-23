@@ -11,6 +11,11 @@ Every Bash command in this repo MUST be `make <target>`. Anything else (`ls`, `g
 - Branch: `make feature-start MSG='feature/x'`, `make feature-done MSG='feature/x'`
 - Need something new? Add a Makefile target, then run it. Never bypass.
 
+Note: `make gate`, `make test-unit`, and bare `make test` are BLOCKED by the
+enforce-make.ts plugin when run in the foreground (they block for 30+ minutes
+and prevent subagent dispatch). Use `make gate-background` instead, then check
+with `make gate-bg-check`. For targeted tests, use `make test TESTFILE=...`.
+
 File reads/edits use the Read/Edit/Write tools, not shell.
 
 ## Known traps

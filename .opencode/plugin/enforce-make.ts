@@ -245,11 +245,12 @@ export default (async ({ }) => {
         }
 
         // --- Long-running foreground command guard ----------------------------
-        // Blocks `make gate` (~40 min), `make test-unit` (~27 min), and bare
-        // `make test` from running in the foreground. While these run, the
-        // bash tool blocks for the entire duration — NO subagents can be
-        // dispatched and NO UI updates reach the user (the "multitasking
-        // bug"). Require `make gate-background` or dispatch to a subagent.
+        // Blocks `make gate` (~40 min), `make test-unit` (~27 min), bare
+        // `make test`, `make qa`, `make test-e2e`, and `make validate` from
+        // running in the foreground. While these run, the bash tool blocks
+        // for the entire duration — NO subagents can be dispatched and NO
+        // UI updates reach the user (the "multitasking bug"). Require
+        // `make gate-background` or dispatch to a subagent.
         // NOT blocked: make lint, make typecheck, make test-count,
         // make collect-check, and targeted runs (TESTFILE= / NO_XDIST=1).
         {
@@ -261,16 +262,20 @@ export default (async ({ }) => {
             lrTarget === "test" &&
             !trimmed.includes("TESTFILE=") &&
             !trimmed.includes("NO_XDIST=1")
-          if (isGate || isTestUnit || isBareTest) {
+          const isQa = lrTarget === "qa"
+          const isTestE2e = lrTarget === "test-e2e"
+          const isValidate = lrTarget === "validate"
+          if (isGate || isTestUnit || isBareTest || isQa || isTestE2e || isValidate) {
             throw new Error([
               "BLOCKED: Long-running foreground command. Use `make gate-background`",
               "instead, or dispatch to a subagent. Foreground blocking prevents",
               "subagent dispatch and UI updates.",
               "",
               "While this command runs, the bash tool blocks for the entire",
-              "duration (make gate ~40 min, make test-unit ~27 min). During",
-              "that time NO subagents can be dispatched and NO UI updates reach",
-              "the user. Either:",
+              "duration (make gate ~40 min, make test-unit ~27 min, make qa,",
+              "make test-e2e, and make validate are equally long-running).",
+              "During that time NO subagents can be dispatched and NO UI updates",
+              "reach the user. Either:",
               "  1. Run `make gate-background` (background variant), or",
               "  2. Dispatch the gate/test to a subagent (preferred).",
               "",

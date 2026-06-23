@@ -41,7 +41,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status gate-background gate-bg-check floor-plan gated-merge ship-async write-gate-safe-hook \
+        gate-async gate-status gate-background gate-bg-check gate-bg-wait floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
@@ -77,6 +77,7 @@ help:
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
 	@echo "  gate-background       Launch gate via nohup (non-blocking); log -> /tmp/gludd-gate-bg.log"
 	@echo "  gate-bg-check         Tail background gate log + check if PID is still alive"
+	@echo "  gate-bg-wait          BLOCK until background gate finishes (polls every 5s)"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
@@ -323,9 +324,14 @@ gate-background:
 	@echo "  make gate-status"
 	@echo "  make gate-bg-check"
 
-# Tail the background gate log and report whether the gate process is alive.
-# Exit 0 while the PID is running; exit 1 when it is dead/missing (gate finished
-# or was killed). Pairs with gate-background's /tmp/gludd-gate-bg.{log,pid}.
+# Non-blocking probe of the background gate. COUNTERINTUITIVE SEMANTICS:
+# exit 0 while the gate is RUNNING, exit 1 when it has FINISHED (or died).
+# In other words, `make gate-bg-check && echo done` prints "done" while the
+# gate is still in flight — NOT when it has finished. This is so a poll loop
+# can treat "still running" as the truthy/continue state and a dead PID as
+# the terminal/error state. Pairs with gate-background's
+# /tmp/gludd-gate-bg.{log,pid}. For a blocking wait that exits 0 on finish,
+# use `make gate-bg-wait`.
 gate-bg-check:
 	@if [ ! -f /tmp/gludd-gate-bg.pid ]; then \
 		echo "no /tmp/gludd-gate-bg.pid — gate-background not launched (or pid file removed)"; \
@@ -342,6 +348,33 @@ gate-bg-check:
 	echo "--- .gate-status ---"; \
 	if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status yet)"; fi; \
 	[ "$$STATE" = running ] && exit 0 || exit 1
+
+# Blocking wait for the background gate. Polls the recorded PID every 5 seconds
+# and returns once it is no longer alive (the gate finished, succeeded, or was
+# killed). Exit 0 means "the gate is done"; exit 1 means no PID file was found
+# (gate-background was never launched, or the pid file was removed). A poll
+# heartbeat is printed each iteration so the wait is observable (see the
+# no-unseen-events invariant in AGENTS.md). Intended use:
+#   make gate-background && make gate-bg-wait
+gate-bg-wait:
+	@if [ ! -f /tmp/gludd-gate-bg.pid ]; then \
+		echo "no /tmp/gludd-gate-bg.pid — gate-background not launched (or pid file removed)"; \
+		exit 1; \
+	fi
+	@PID=$$(cat /tmp/gludd-gate-bg.pid); \
+	echo "gate-bg-wait: waiting for gate PID $$PID (polling every 5s)"; \
+	i=0; \
+	while kill -0 $$PID 2>/dev/null; do \
+		i=$$((i+1)); \
+		echo "  [$$i] gate still RUNNING (PID $$PID) — $$(date +%H:%M:%S)"; \
+		sleep 5; \
+	done; \
+	echo "gate-bg-wait: PID $$PID no longer alive — gate finished"; \
+	echo "--- tail /tmp/gludd-gate-bg.log ---"; \
+	tail -40 /tmp/gludd-gate-bg.log 2>/dev/null || echo "(log empty or missing)"; \
+	echo "--- .gate-status ---"; \
+	if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status yet)"; fi; \
+	exit 0
 
 # Process-hygiene check: list any running pytest/molecule/gate so we never launch
 # a second concurrent run that collides with an in-flight one (see gate --basetemp).
