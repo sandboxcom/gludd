@@ -1098,7 +1098,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # _dispatch_execute_job call consults would_exceed() before running.
         # Set after construction (the limiter is built below the EventLoop) —
         # mirrors how _benchmark_recorder is attached above.
-        event_loop._spend_limiter = spend_limiter  # type: ignore[assignment]
+        event_loop._spend_limiter = spend_limiter
 
         # InfraTracker wraps infra_cost_usd() the same way SpendLimiter wraps
         # token_cost_usd(): PricingCatalog is the PRIMARY price source for GPU

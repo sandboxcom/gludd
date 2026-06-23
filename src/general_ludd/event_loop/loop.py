@@ -204,7 +204,7 @@ class EventLoop:
         self._reviewer = reviewer
         self._model_gateway = model_gateway
         self._dispatcher = dispatcher
-        self._spend_limiter = None  # assigned post-construction by the daemon
+        self._spend_limiter = spend_limiter  # may be overwritten post-construction by the daemon
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
