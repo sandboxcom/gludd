@@ -353,8 +353,8 @@ def _init_project_workspaces(project_manager: Any) -> dict[str, Any]:
                 pid = getattr(p, "project_id", str(p))
                 workspaces[pid] = ProjectWorkspace(project_id=pid)
                 workspaces[pid].ensure_dirs()
-        except Exception:
-            pass
+        except Exception as exc:
+            logger.warning("Failed to initialize project workspaces: %s", exc, exc_info=True)
     return workspaces
 
 
@@ -1093,6 +1093,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await task
+    preflight_task_ref = getattr(app.state, "_preflight_task", None)
+    if preflight_task_ref is not None:
+        preflight_task_ref.cancel()
+        with contextlib.suppress(asyncio.CancelledError):
+            await preflight_task_ref
     if engine is not None:
         await engine.dispose()
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)

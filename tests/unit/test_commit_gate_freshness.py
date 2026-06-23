@@ -106,10 +106,7 @@ class TestCommitTargetsEnforceGate:
         comment_start = header_start
         while comment_start > 0:
             prev_newline = content.rfind("\n", 0, comment_start - 1)
-            if prev_newline == -1:
-                line_start = 0
-            else:
-                line_start = prev_newline + 1
+            line_start = 0 if prev_newline == -1 else prev_newline + 1
             line = content[line_start:comment_start - 1] if prev_newline != -1 else content[:comment_start]
             if line.lstrip().startswith("#"):
                 comment_start = line_start

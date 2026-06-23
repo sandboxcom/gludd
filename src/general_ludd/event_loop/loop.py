@@ -330,11 +330,26 @@ class EventLoop:
                 if live_lease is not None:
                     # Worker is still heartbeating (lease alive) -> do NOT reap.
                     continue
-                todo.status = TodoStatus.QUEUED.value
-                todo.updated_at = now
+                # Guarded compare-and-set: transition ACTIVE->QUEUED only if the
+                # row is STILL active at the version we read. A concurrent writer
+                # (claim, reconcile, manual edit) that moved the row makes the CAS
+                # affect zero rows -> ConcurrencyError, treated as a lost race and
+                # skipped. This mirrors claim_runnable()/transition()'s version +
+                # status guard so the reaper can never silently clobber a
+                # concurrent status write (the check-then-act race this method
+                # previously had when it assigned the ORM attribute directly).
+                try:
+                    await self._todo_repo.transition(
+                        todo.todo_id, TodoStatus.QUEUED, todo.version
+                    )
+                except ConcurrencyError as exc:
+                    logger.info(
+                        "Reaper lost version race for todo %s: %s — skipping",
+                        todo.todo_id, exc,
+                    )
+                    continue
                 reaped += 1
             if reaped:
-                await self._active_session.flush()
                 logger.info("Reaped %d stuck ACTIVE todos (no live lease)", reaped)
         except Exception as exc:
             logger.warning("Stuck-todo reaper failed: %s", exc)
