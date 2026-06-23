@@ -172,3 +172,111 @@ class TestDaemonMcpDispatchWired:
             ToolCall(kind="mcp", name="files/read_file", args={})
         )
         assert "capability_denied" not in (result.error or "")
+
+
+class _FakeAgentDispatcher:
+    """AgentDispatcher stand-in that records dispatch_one invocations.
+
+    Mirrors the relevant slice of
+    :class:`general_ludd.agents.dispatcher.AgentDispatcher` — same
+    ``dispatch_one(task) -> AgentTaskResult`` shape — so the dispatcher under
+    test must reach the genuine routing path, not a bypass.
+    """
+
+    def __init__(self) -> None:
+        self.recorded: list[str] = []
+
+    async def dispatch_one(self, task: Any) -> Any:
+        from general_ludd.agents.dispatcher import AgentTaskResult
+
+        self.recorded.append(task.agent_name)
+        return AgentTaskResult(
+            task_id=task.task_id,
+            agent_name=task.agent_name,
+            status="ok",
+            output=f"executed:{task.agent_name}:{task.prompt}",
+        )
+
+
+class TestDaemonRoleDispatchWired:
+    """The daemon's EventLoop dispatcher must wire the ``role`` handler.
+
+    Mirrors the mcp wiring tests above but for the ``role`` kind. Before the
+    fix ``build_event_loop_mcp_dispatcher`` leaves ``agent_dispatcher`` unused
+    (reserved comment only) so the ``role`` kind is never registered; a
+    model-emitted role tool_call fails-closed with ``unknown kind`` instead of
+    reaching ``AgentDispatcher.dispatch_one``.
+    """
+
+    def test_role_kind_registered_when_agent_dispatcher_provided(self) -> None:
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=None,
+            mcp_tool_registry=None,
+            skill_registry=None,
+            agent_dispatcher=_FakeAgentDispatcher(),
+        )
+        assert dispatcher is not None
+        assert "role" in dispatcher.list_available()["registered_kinds"]
+
+    def test_none_returned_when_no_subsystems_at_all(self) -> None:
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        # Sanity: with no subsystems at all the builder still short-circuits.
+        dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=None,
+            mcp_tool_registry=None,
+            skill_registry=None,
+            agent_dispatcher=None,
+        )
+        assert dispatcher is None
+
+    @pytest.mark.asyncio
+    async def test_dispatcher_routes_role_call_to_agent_dispatcher(self) -> None:
+        """A model role tool_call is ROUTED to agent_dispatcher.dispatch_one."""
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        agent_dispatcher = _FakeAgentDispatcher()
+        dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=None,
+            mcp_tool_registry=None,
+            skill_registry=None,
+            agent_dispatcher=agent_dispatcher,
+        )
+        assert dispatcher is not None
+
+        call = ToolCall(
+            kind="role",
+            name="researcher",
+            args={"prompt": "summarize the README"},
+        )
+        result = await dispatcher.dispatch(call)
+
+        assert result.ok is True, f"dispatch failed: {result.error!r}"
+        # dispatch_one was called with the named role and the forwarded prompt.
+        assert agent_dispatcher.recorded == ["researcher"]
+        # The AgentTaskResult.output flowed back through the DispatchResult.
+        assert result.output == "executed:researcher:summarize the README"
+
+    @pytest.mark.asyncio
+    async def test_eventloop_dispatch_site_executes_role_call(self) -> None:
+        """Drive the EventLoop's own dispatch site for a role tool_call."""
+        from general_ludd.daemon import build_event_loop_mcp_dispatcher
+
+        agent_dispatcher = _FakeAgentDispatcher()
+        dispatcher = build_event_loop_mcp_dispatcher(
+            mcp_client=None,
+            mcp_tool_registry=None,
+            skill_registry=None,
+            agent_dispatcher=agent_dispatcher,
+        )
+        loop = EventLoop(dispatcher=dispatcher)
+        assert loop._dispatcher is not None
+
+        calls = [ToolCall(kind="role", name="researcher", args={"prompt": "hi"})]
+        results = await loop._dispatcher.dispatch_all(calls)
+
+        assert len(results) == 1
+        assert results[0].ok is True, f"dispatch failed: {results[0].error!r}"
+        assert agent_dispatcher.recorded == ["researcher"]

@@ -2,6 +2,26 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-alpha.3] — 2026-06-19
+
+Autonomy, pricing, and guardrail wave.
+
+### Added
+
+- Self-improve Phase 1+2: end-to-end wired (proposal → gate → persist → dispatch).
+- Pricing system: 15 source connectors, rolling-window `SpendLimiter`, and `/api/pricing` endpoints.
+- Tier 1+2 RAG: skill embeddings plus task-similarity retrieval for agent context.
+- Guardrail ports: Claude hooks → opencode (4 TypeScript plugins in `.opencode/plugin/`).
+- Orchestration floor: 10-subagent minimum enforced, plus foreground-block guardrail to keep the main thread dispatching.
+
+### Fixed
+
+- CI pipeline: test-matrix sharding, molecule runs, and `ci-verdict-fast` for stale-run detection.
+
+### Security
+
+- D1–D12: batch of twelve hardening fixes across connectors, dispatch, and secrets paths.
+
 ## [0.1.0-alpha.2] — 2026-06-18
 
 Integration wave.

@@ -558,10 +558,11 @@ def build_event_loop_mcp_dispatcher(
     * **skill_handler** — wired from the live skill registry so the same
       dispatcher also serves the ``skill`` kind the lattice grants; a ``None``
       registry simply leaves that kind unregistered (fail-closed).
-
-    The ``role`` kind is intentionally left unregistered here: ``make_role_handler``
-    returns an *async* handler, and registering it raw would store an un-awaited
-    coroutine. Wiring it needs the same sync bridge as mcp (follow-up).
+    * **role_handler** — wired from the live ``AgentDispatcher`` via
+      :func:`make_role_handler`. Like mcp, the handler is *async* and the
+      ``DynamicDispatcher`` invokes handlers synchronously, so it is driven to
+      completion through the same ``_sync_bridge`` (worker thread owning its
+      own loop) — registering it raw would store an un-awaited coroutine.
 
     Args:
         mcp_client: A connected ``MCPClient`` (or None). When None, no ``mcp``
@@ -570,32 +571,47 @@ def build_event_loop_mcp_dispatcher(
             resolution is name-prefixed; passed through to keep the call-site
             explicit and for future per-tool server resolution).
         skill_registry: A ``SkillRegistry`` (or None) for the ``skill`` kind.
-        agent_dispatcher: Reserved for the ``role`` kind (needs a sync bridge).
+        agent_dispatcher: An ``AgentDispatcher`` (or None) for the ``role``
+            kind. When None, no ``role`` handler is registered.
 
     Returns:
         A configured ``DynamicDispatcher`` bound to the ``event_loop`` role, or
-        ``None`` when there is nothing to dispatch (no mcp client and no skill
-        registry) so the EventLoop keeps its existing no-dispatcher behaviour.
+        ``None`` when there is nothing to dispatch (no mcp client, no skill
+        registry, and no agent dispatcher) so the EventLoop keeps its existing
+        no-dispatcher behaviour.
     """
-    from general_ludd.daemon_wiring import make_mcp_handler, make_skill_handler
+    from general_ludd.daemon_wiring import (
+        make_mcp_handler,
+        make_role_handler,
+        make_skill_handler,
+    )
     from general_ludd.dispatch.dynamic_dispatcher import DynamicDispatcher
 
-    _ = agent_dispatcher  # reserved: role dispatch needs the same sync bridge
-
-    if mcp_client is None and skill_registry is None:
+    if (
+        mcp_client is None
+        and skill_registry is None
+        and agent_dispatcher is None
+    ):
         return None
 
-    # The MCP handler from daemon_wiring is async; the DynamicDispatcher calls
-    # handlers synchronously, so bridge the coroutine on a worker thread that
-    # owns its own event loop. We cannot use asyncio.run / run_until_complete on
-    # the dispatch site's loop because that loop is already running.
+    # The MCP and role handlers from daemon_wiring are async; the
+    # DynamicDispatcher calls handlers synchronously, so bridge each coroutine
+    # on a worker thread that owns its own event loop. We cannot use
+    # asyncio.run / run_until_complete on the dispatch site's loop because
+    # that loop is already running.
     async_mcp_handler = make_mcp_handler(mcp_client)
     sync_mcp_handler = _sync_bridge(async_mcp_handler) if async_mcp_handler is not None else None
+
+    async_role_handler = make_role_handler(agent_dispatcher)
+    sync_role_handler = (
+        _sync_bridge(async_role_handler) if async_role_handler is not None else None
+    )
 
     return DynamicDispatcher(
         role="event_loop",
         mcp_handler=sync_mcp_handler,
         skill_handler=make_skill_handler(skill_registry),
+        role_handler=sync_role_handler,
     )
 
 
