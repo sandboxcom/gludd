@@ -65,6 +65,7 @@ jobs:
           make lint typecheck test-count smoke
         env:
           GLUDD_PSK: ""
+          GLUDD_XDIST: auto
 
   # Parallel test shards — 4 path-based groups × 2 Python versions = 8 jobs.
   # Each shard is independent: a failure in shard "unit-1" is reported at the
@@ -120,9 +121,13 @@ jobs:
         # redundant xml uploads; all other shards run with --no-cov.
         run: |
           TESTPATHS="${{ matrix.testpaths }}"
+          # --cov-fail-under=0 disables the pyproject.toml fail_under=70 gate,
+          # which only applies to a FULL test run.  A 1-of-4 shard tops out
+          # around ~59% and would otherwise fail the coverage gate every run.
           if [[ "${{ matrix.shard }}" == "unit-1" && "${{ matrix.python-version }}" == "3.11" ]]; then
             uv run python -m pytest $TESTPATHS \
               --cov=general_ludd --cov-report=term-missing --cov-report=xml \
+              --cov-fail-under=0 \
               -n auto --dist loadgroup -v || { RC=$?; [ $RC -eq 5 ] && exit 0 || exit $RC; }
           else
             uv run python -m pytest $TESTPATHS \

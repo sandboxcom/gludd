@@ -5,7 +5,23 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-18
+- 2026-06-23
+
+## Current State — Gate fixes + CI pipeline repair
+
+### Completed this session (uncommitted in working tree):
+- Ported all 20 Claude shell hooks to 4 opencode TypeScript plugins
+- Fixed commit-no-verify gate bypass (Makefile _gate-fresh-check)
+- Flipped NO_WAIT_ENFORCE to blocking default + ratchet-based stop-audit
+- Codified 10-subagent floor (CLAUDE_AGENT_FLOOR=10 across all layers)
+- CI fixes: FK constraint test fix, get_running_loop, seed_initial_queues TOCTOU, coverage gate shard fix
+- Fixed: conftest get_event_loop deprecation, enforce-delegate disk advisory bug, enforce-stop stale messages, enforce-make duplicate operands, greedy regexes bounded
+- Restored deleted dist/ files, cleaned up ratchet (18→14), bumped RATCHET_MAX
+- Added subagent dispatch reliability rules to AGENTS.md
+
+### Blockers:
+- Full gate needs to run (~40min) to get fresh green .gate-status for commit
+- CI was red on commit 06af9cc — fixes are in working tree but uncommitted
 
 ## Wave 3 Ship — Status: GATE RUNNING, NOT YET CONFIRMED
 

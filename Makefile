@@ -54,7 +54,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-cherry-pick git-cherry-continue git-cherry-abort git-show-diff \
         test-force-delegate-hook \
         test-worktree-disk-guard \
-        git-cherry-pick-commit git-amend-msg
+        git-cherry-pick-commit git-amend-msg \
+        test-other-shard
 
 help:
 	@echo "Usage: make [target]"
@@ -741,15 +742,23 @@ git-resolve-ours:
 repo-add-all:
 	@git add -A
 
+# Commit staged changes on a feature branch. Now ENFORCES the same
+# fresh+green gate as git-commit — the "feature branch" rationalization was
+# the 2026-06-22 bypass bug (an agent committed with a red gate here).
+# Use repo-commit only for the documented non-code meta-commit escape hatch.
 commit-bootstrap:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-bootstrap MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory _gate-fresh-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit -m "$(MSG)"
 
 # Commit staged changes skipping pre-commit hooks (--no-verify).
-# Use only when hooks fail due to stash/conflict from unrelated unstaged files
-# and the staged content is already lint/typecheck clean.
+# Use ONLY when hooks fail due to stash/conflict from unrelated unstaged files
+# AND the staged content is gate-green. The --no-verify flag skips the
+# pre-commit HOOK STASH only — NOT the gate-freshness check (added 2026-06-22
+# after an agent abused this target to commit a red-gate change).
 commit-no-verify:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make commit-no-verify MSG='message'"; exit 1; fi
+	@$(MAKE) --no-print-directory _gate-fresh-check
 	@git diff --cached --quiet && echo "Nothing to commit" || git commit --no-verify -m "$(MSG)"
 
 # Commit staged changes using a message FILE (avoids shell quoting of multi-line
@@ -1238,6 +1247,30 @@ gh-action-node:
 	@if [ -z "$(REPO)" ] || [ -z "$(TAG)" ]; then echo "Usage: make gh-action-node REPO=owner/name TAG=vX"; exit 1; fi
 	@echo "$(REPO)@$(TAG):"; curl -s "https://raw.githubusercontent.com/$(REPO)/$(TAG)/action.yml" | grep -i 'using:' || echo "  (no using: line / not found)"
 
+# Run the CI "other" shard (integration + e2e + security + top-level test files;
+# tests/live/ EXCLUDED — it needs live API keys). Uses a UNIQUE basetemp so it
+# coexists safely with concurrent unit shards (no gate-concurrency collision),
+# and writes a DURABLE junit XML the parse target reads. Single-process so it
+# does not contend on xdist worker dirs with the running unit runs.
+run-other-shard-iso:
+	@BT="/tmp/gludd-othershard-$$$$"; rm -rf "$$BT"; \
+	$(UV) run python -m pytest tests/integration/ tests/e2e/ tests/security/ tests/test_worker_d09_d10_d35.py \
+		-p no:cacheprovider --basetemp="$$BT" -q -rfE \
+		--junit-xml=/tmp/other_shard.xml; RC=$$?; rm -rf "$$BT"; \
+	echo "PYTEST_EXIT=$$RC"; exit 0
+
+# Parse the durable junit XML from run-other-shard-iso into counts + node ids.
+parse-other-shard:
+	@$(UV) run python -c "import xml.etree.ElementTree as ET, os; \
+p='/tmp/other_shard.xml'; \
+print('NO_XML_FILE — run make run-other-shard-iso first') if not os.path.exists(p) else None; \
+r=ET.parse(p).getroot() if os.path.exists(p) else None; \
+suites=([r] if r is not None and r.tag=='testsuite' else (list(r.iter('testsuite')) if r is not None else [])); \
+T=sum(int(s.get('tests',0)) for s in suites); F=sum(int(s.get('failures',0)) for s in suites); E=sum(int(s.get('errors',0)) for s in suites); S=sum(int(s.get('skipped',0)) for s in suites); \
+print('COUNTS tests=%d failures=%d errors=%d skipped=%d passed=%d'%(T,F,E,S,T-F-E-S)) if r is not None else None; \
+[print('FAIL '+(tc.get('classname','')+'::'+tc.get('name',''))) for s in suites for tc in s.iter('testcase') if tc.find('failure') is not None]; \
+[print('ERROR '+(tc.get('classname','')+'::'+tc.get('name',''))) for s in suites for tc in s.iter('testcase') if tc.find('error') is not None]"
+
 # Discover the CI run for the current git HEAD (waiting if it hasn't registered
 # yet — the unauthenticated runs list is cached ~60s), then watch it to its
 # RUN-LEVEL conclusion. One self-contained "push and watch" command.
@@ -1396,6 +1429,12 @@ patch-test:
 	@[ -n "$(FILE)" ] || { echo "Usage: make patch-test FILE='path' MATCH='old' REPLACE='new'"; exit 1; }
 	@python3 -c "import sys; c=open('$(FILE)').read(); c=c.replace('$(MATCH)','$(REPLACE)'); open('$(FILE)','w').write(c)"
 
+# Parse a pytest --junit-xml output file and print only failures/errors + summary.
+# Usage: make junit-failures XMLFILE=/tmp/shard1.xml
+XMLFILE ?= /tmp/junit.xml
+junit-failures:
+	@python3 scripts/junit_failures.py "$(XMLFILE)"
+
 fix-benchmark-mock:
 	@python3 -c "c=open('tests/unit/test_daemon_coverage_lift.py').read(); c=c.replace('class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_sf = MagicMock()','class TestBenchmarkRecordWithSession:\n    @pytest.mark.asyncio\n    async def test_benchmark_record_with_session(self, app, transport):\n        mock_session = MagicMock()\n        mock_session.commit = AsyncMock()\n        mock_sf = MagicMock()'); open('tests/unit/test_daemon_coverage_lift.py','w').write(c)"
 	@echo "Fixed benchmark mock"
@@ -1430,6 +1469,16 @@ git-checkout:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-checkout MSG='branch-name'"; exit 1; fi
 	@git checkout "$(MSG)"
 
+# Restore one or more files from HEAD (un-delete working-tree files that are
+# tracked but currently deleted/modified). Usage:
+#   make git-restore FILES='dist/README.md dist/install.sh'
+# Required because raw `git checkout HEAD -- <paths>` is forbidden by the
+# make-only Bash policy — agents have no other way to recover a deleted
+# tracked file.
+git-restore:
+	@[ -n "$(FILES)" ] || { echo "Usage: make git-restore FILES='path1 path2 ...'"; exit 1; }
+	@git checkout HEAD -- $(FILES) && echo "Restored: $(FILES)"
+
 git-merge:
 	@if [ -z "$(MSG)" ]; then echo "Usage: make git-merge MSG='branch-name'"; exit 1; fi
 	@git merge --no-ff "$(MSG)"
@@ -1449,6 +1498,12 @@ feature-done:
 	@echo "Building distributables..."
 	@$(MAKE) dist
 	@echo "Feature complete. Tests green, distributables built."
+
+# Run the CI "other" shard: integration + e2e + security + top-level test files.
+# Waits for any in-flight pytest to clear first (gate-concurrency hygiene).
+test-other-shard:
+	@$(MAKE) --no-print-directory wait-pytest
+	@$(UV) run python -m pytest tests/integration/ tests/e2e/ tests/security/ tests/test_worker_d09_d10_d35.py $(_XD) -v 2>&1
 
 preflight:
 	@echo "========================================"
@@ -1832,6 +1887,31 @@ gate-async:
 # Print the current .gate-status file (RUNNING/PASS/FAIL).
 gate-status:
 	@if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status found)"; fi
+
+# Reusable gate-freshness guard. Every commit-shaped target that lands code
+# MUST `$(MAKE) _gate-fresh-check` before `git commit`. Enforces:
+#   (a) .gate-status exists
+#   (b) every check (lint/typecheck/collect/test/smoke) is PASS
+#   (c) the status is <30 min old (no stale green)
+# Extracted 2026-06-22 after an agent committed with a red gate via
+# `commit-no-verify`, rationalizing "pre-existing failures + env issue" —
+# the bypass target is for pre-commit stash conflicts only, NOT for skipping
+# the gate. Gate integrity must hold across ALL commit targets.
+.PHONY: _gate-fresh-check
+_gate-fresh-check:
+	@if [ ! -f .gate-status ]; then echo "ERROR: .gate-status missing. Run 'make gate' first."; exit 1; fi
+	@for check in lint typecheck collect test smoke; do \
+		if ! grep -q "^$${check} PASS" .gate-status; then \
+			echo "ERROR: Gate $$check not PASS. Run 'make gate'."; exit 1; \
+		fi; \
+	done
+	@EPOCH=$$(grep "^epoch " .gate-status | awk '{print $$2}'); \
+	NOW=$$(date +%s); \
+	AGE=$$((NOW - EPOCH)); \
+	if [ $$AGE -gt 1800 ]; then \
+		echo "ERROR: .gate-status is $$AGE seconds old (>30 min). Run 'make gate'."; exit 1; \
+	fi
+	@echo "Gate fresh and green."
 
 # ---------------------------------------------------------------------------
 # Activate the BLOCKING gate-safe agent-floor Stop hook (#79/#78)
@@ -2665,3 +2745,8 @@ gh-run-failed-log:
 	@[ -n "$(ID)" ] || { echo "Usage: make gh-run-failed-log ID=<run-id>"; exit 1; }
 	@gh run view "$(ID)" -R sandboxcom/gludd --log-failed 2>&1 | tee /tmp/ci-failed-$(ID).log | tail -200 || echo "gh-run-failed-log-failed"
 	@echo "[gh-run-failed-log] full log saved to /tmp/ci-failed-$(ID).log"
+
+run-other-shard:
+	@$(MAKE) --no-print-directory wait-pytest
+	@$(UV) run python -m pytest tests/integration/ tests/e2e/ tests/security/ tests/test_worker_d09_d10_d35.py $(_XD) -v --junit-xml=/tmp/other_shard.xml -p no:randomly 2>&1 | tail -200; true
+

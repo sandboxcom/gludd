@@ -31,9 +31,9 @@ import * as path from "node:path"
 // route a trivially-correct change through merge ceremony. Holding the floor must
 // never force merge/worktree-cleanup work onto an already-finished task.
 
-const FLOOR = 6
-const TARGET = 10
-const CEILING = 12 // hard upper band — over this, stop adding agents and let them drain
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
+const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
+const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
 const ACTIVE_WINDOW_MS = 45_000 // appended-to within 45s => actively streaming
 
 // Count live agents via the SAME ground-truth probe the shell hooks use
@@ -46,10 +46,10 @@ function countActiveAgents(): number | null {
   try {
     const { execSync } = require("node:child_process")
     const out = execSync(
-      "python3 /Users/shawnwilson/gludd/scripts/agent_liveness.py --count",
+      "python3 " + path.join(process.cwd(), "scripts", "agent_liveness.py") + " --count",
       {
         timeout: 5000,
-        cwd: "/Users/shawnwilson/gludd",
+        cwd: process.cwd(),
         encoding: "utf8",
         stdio: ["pipe", "pipe", "pipe"],
         env: { ...process.env, FLOOR_PROBE_SECS: "0.6", FLOOR_TAIL_SECS: "12.0" },

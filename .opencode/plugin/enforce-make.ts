@@ -197,6 +197,19 @@ const COMPLETION_SOUNDING = [
   "all objectives",
 ]
 
+function detectStopPattern(text: string): boolean {
+  const lower = text.toLowerCase()
+  // Check for completion-sounding phrases
+  if (COMPLETION_SOUNDING.some(p => lower.includes(p))) {
+    // Only flag as stop pattern if the response is short (a summary, not
+    // ongoing work narration that happens to contain one of these words).
+    if (text.length < 500) return true
+    // Also flag if it contains explicit permission-seeking
+    if (lower.includes("want me to") || lower.includes("should i") || lower.includes("shall i")) return true
+  }
+  return false
+}
+
 export default (async ({ }) => {
   return {
     "tool.execute.before": async (input, output) => {
@@ -407,12 +420,12 @@ export default (async ({ }) => {
           }
         }
 
-        const isTest = filePath.includes("/tests/") || filePath.includes("\\tests\\")
+        const isTest = (filePath.includes("/tests/") || filePath.includes("\\tests\\")) && !filePath.endsWith("conftest.py") && (filePath.includes("/test_") || filePath.includes("\\test_") || filePath.endsWith("_test.py"))
         const isProduction = filePath.includes("/src/") || filePath.includes("\\src\\")
 
         if (isTest) {
           const newContent: string = output?.args?.newString ?? ""
-          const hasAssertion = newContent.includes("assert ") || newContent.includes("assert ")
+          const hasAssertion = newContent.includes("assert ") || newContent.includes("assert(")
           if (newContent.length > 50 && !hasAssertion) {
             throw new Error([
               "TDD QUALITY VIOLATION: Test code must contain assertions.",
@@ -446,7 +459,7 @@ export default (async ({ }) => {
             let testExists = false
             for (const candidate of candidates) {
               const testDir = path.resolve(filePath.split(/[\/\\]src[\/\\]/)[0], "tests", "unit")
-              for (const prefix of ["test_", "test_"]) {
+                for (const prefix of ["test_"]) {
                 for (const suffix of [".py"]) {
                   try {
                     fs.accessSync(path.join(testDir, prefix + candidate + suffix))
@@ -642,6 +655,8 @@ export default (async ({ }) => {
         ].join("\n")
         output = output + verification
       }
+
+      return output
     },
   }
 }) satisfies Plugin

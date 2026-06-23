@@ -117,6 +117,10 @@ class TestTaskReturnPersistence:
             await conn.run_sync(Base.metadata.create_all)
         factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         async with factory() as s:
+            # Seed parent todos required by FK: task_returns.todo_id → todos.todo_id
+            s.add(TodoModel(todo_id="TODO-001", title="Seed todo 1"))
+            s.add(TodoModel(todo_id="TODO-002", title="Seed todo 2"))
+            await s.commit()
             yield s
         await engine.dispose()
 
@@ -174,11 +178,25 @@ class TestDecisionPersistence:
             await conn.run_sync(Base.metadata.create_all)
         factory = sessionmaker(engine, class_=AsyncSession, expire_on_commit=False)
         async with factory() as s:
+            # Seed parent task_returns rows required by FK:
+            # task_decisions.return_id → task_returns.return_id
+            from general_ludd.db.models import TaskReturnModel
+            s.add(TaskReturnModel(
+                return_id="RET-001", job_id="EXEC-001",
+                playbook="noop.yml", queue="core",
+            ))
+            s.add(TaskReturnModel(
+                return_id="RET-003", job_id="EXEC-003",
+                playbook="noop.yml", queue="core",
+            ))
+            await s.commit()
             yield s
         await engine.dispose()
 
     @pytest.mark.asyncio
     async def test_decision_persisted_to_db(self, session: AsyncSession):
+        session.add(TodoModel(todo_id="TODO-001", title="Seed todo 1"))
+        await session.flush()
         decision = TaskDecisionModel(
             return_id="RET-001",
             matched_todo_id="TODO-001",
@@ -196,6 +214,8 @@ class TestDecisionPersistence:
     async def test_decision_with_project_id(self, session: AsyncSession):
         from general_ludd.db.models import ProjectModel
 
+        session.add(TodoModel(todo_id="TODO-003", title="Seed todo 3"))
+        await session.flush()
         project = ProjectModel(
             project_id="proj-abc",
             name="Test Project",

@@ -48,6 +48,25 @@ Enforced for tooling by `tests/unit/test_observability_guardrails.py`. Agent
 behavioral mirror: never go silent while the user is waiting — check in the
 foreground and report real state rather than launching a silent task and waiting.
 
+**CRITICAL: Always provide a visual status update.** Every response MUST produce
+visible output that opencode promotes to the UI. If you go silent for more than
+a few seconds without a tool call or status text, the user cannot tell whether
+work is progressing or has stalled — and a stalled-looking session WILL be
+interrupted. Specifically:
+
+- Between tool calls, output a 1-line status of what you're doing.
+- For long-running operations (gate, build, test suite), stream output via `tee`
+  or dispatch to a subagent that reports back — never run a 40-minute operation
+  silently in the foreground.
+- If you are thinking/planning, say so in one line before the next tool call.
+- If work is blocked, state the blocker and the workaround being attempted —
+  do NOT present options and ask "which do you want?" (that is the stop-and-ask
+  bug, blocked by `enforce-stop.ts` as of 2026-06-22).
+
+A response with NO visible output is indistinguishable from a hung session. The
+user will stop the work and ask "what are you working on?" — and that is YOUR
+bug, not theirs.
+
 ---
 
 ## Rationale and history
@@ -507,6 +526,22 @@ This is enforced by:
 - `Makefile` `test-and-commit` target — atomic test-then-commit
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: No-Commit-Bypass Policy
+
+**Every commit-shaped `make` target MUST enforce the `.gate-status` freshness+green check. There are NO exceptions for "feature branches", "stash conflicts", or "pre-existing failures".**
+
+The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make commit-no-verify`, rationalizing "pre-existing failures + env issue". That target existed for pre-commit hook stash conflicts — NOT for skipping the gate. The bypass was the bug.
+
+**Rules:**
+
+1. `make git-commit`, `make commit-no-verify`, `make commit-bootstrap`, `make git-commit-file` — ALL enforce the gate via `_gate-fresh-check`. The `--no-verify` flag on `commit-no-verify` skips ONLY the pre-commit hook stash, not the gate.
+2. `make repo-commit` is the ONLY documented escape hatch, for non-code meta-commits only (version bumps, release artifacts, docs). Using it to land code with a red gate is the SAME bug as the commit-no-verify bypass.
+3. `make test-and-commit` is allowlisted because it runs pytest inline — its own micro-gate.
+4. "Pre-existing failures" are NEVER an excuse to bypass. They are the work. Fix them.
+5. "Environmental issues" (expired credentials, network) are NEVER an excuse. Either fix the env issue or dispatch a research task to work around it.
+
+**Enforcement:** `tests/unit/test_commit_gate_freshness.py` structurally scans the Makefile for any target whose recipe invokes `git commit` without referencing `.gate-status` or `_gate-fresh-check`. Any new commit target MUST add the gate check or be explicitly allowlisted in the test with a documented reason.
+
 ## CRITICAL: Evidence-Based Response Policy
 
 Every factual claim MUST have supporting evidence from a tool call, file read, URL fetch, or test result.
@@ -871,6 +906,22 @@ the machine-enforceable correction.
   If `release-cut` timed out on its poll, run `verify-release-artifact` manually
   after CI finishes.
 
+## CRITICAL: Minimum 10 Subagents at All Times
+
+**You MUST maintain a MINIMUM of 10 concurrent subagent threads doing useful work at all times.** Never let the active count drop below 10 while work remains.
+
+**Steady-state dispatch rule:** The moment ANY subagent completes (or fails), you MUST immediately dispatch a replacement. Do NOT wait for the remaining batch to drain before dispatching more. The pipeline must stay primed at 10+ at all times.
+
+**How to maintain the floor:**
+1. After each subagent completion notification, immediately check: how many are still running?
+2. If <10, immediately dispatch (10 - running) new subagents on the next available work item.
+3. Never present a status report or summary and stop — always have 10 threads in flight.
+4. If you run out of known work items, dispatch research/audit/review subagents to FIND more work.
+
+**The floor was raised from 6 to 10 on 2026-06-22** by direct user mandate. The env var is `CLAUDE_AGENT_FLOOR=10`. The plugins (enforce-floor.ts, enforce-delegate.ts, enforce-stop.ts) all default to 10. The `.claude/settings.json` sets it to 10.
+
+**This is NOT optional.** Running with fewer than 10 subagents is a bug. The user will interrupt and ask why the floor isn't maintained. The enforce-floor.ts plugin will inject floor-breach directives if the count drops below 10.
+
 ## Pipeline Orchestration Model
 
 The goal is a **continuous, pipelined** stream of subagent batches — not a
@@ -909,6 +960,17 @@ merge before the next one lands.
 **Summary:** dispatch disjoint work in parallel → integrator merges continuously
 → one integrator, one hot-file agent at a time → non-isolated agents for
 new-file / read-only tasks.
+
+### Subagent dispatch reliability rules
+
+Subagents fail when they try to run long operations. To maximize success rate:
+
+1. **Each subagent task must complete in under 5 minutes.** If a task takes longer, split it or run it in the foreground.
+2. **NEVER dispatch `make gate` to a subagent** — it takes 40 minutes and will be cancelled. Run it in the foreground with a heartbeat.
+3. **Each subagent gets ONE focused task** — one file to edit, one test to run, one research question. Don't bundle multiple concerns.
+4. **Read-only research tasks are the most reliable** — they never conflict and rarely time out.
+5. **File-editing tasks must specify exactly one file** — multiple-file edits risk conflicts with parallel agents.
+6. **Dispatch immediately when any agent completes** — do not wait for the batch to drain. The floor must stay at 10.
 
 ## Codify Improvements (Meta-Rule)
 

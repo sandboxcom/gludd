@@ -29,10 +29,10 @@ import * as path from "node:path"
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "6", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10)
-const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "12", 10)
-const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE === "1"
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
+const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
+const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
+const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"  // DEFAULT: blocking (2026-06-22)
 
 // ============================================================================
 // HELPERS
@@ -80,8 +80,8 @@ const QUESTION_DENY_REASON = [
 // Blocks turn-end when the final message DEFERS to the user (permission-seek,
 // hold, "want me to...", "your call", etc.) OR uses constraint-as-stopsign
 // phrasings ("isn't possible", "limitation", "no way") without a workaround.
-// ADVISORY by default (2026-06-21 user directive); blocking via
-// GLUDD_NO_WAIT_ENFORCE=1.
+// BLOCKING by default (2026-06-22 user directive); make advisory via
+// GLUDD_NO_WAIT_ENFORCE=0.
 // Returns: null = allow response, string = replacement response (when blocking).
 // ============================================================================
 const NO_WAIT_PATTERNS: RegExp[] = [
@@ -95,12 +95,12 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\bwhen you'?re ready\b/i, /\bwhenever you'?re ready\b/i, /\bready when you are\b/i,
   /\bi'?ll hold\b/i, /\bholding (?:here|for|off)\b/i, /\bi'?ll wait\b/i, /\bi'?ll pause\b/i,
   /\bstanding by\b/i, /\bawait(?:ing)? your\b/i, /\bwaiting (?:for|on) (?:your|you|the)\b/i,
-  /\beither way\b.*\?/i, /\bpoint a fresh session\b/i, /\bfresh (?:context|session)\b/i,
+  /\beither way\b.{0,40}?\?/i, /\bpoint a fresh session\b/i, /\bfresh (?:context|session)\b/i,
   /\bif you'?d rather i proceed\b/i, /\bwant me to proceed\b/i, /\bproceed\?\s*$/i,
   /\blet me know (?:if|when|whether|which|what)\b/i,
   /\byour call\b/i, /\bup to you\b/i, /\bleave (?:it|that|this|the\b.*) to you\b/i,
   /\bor hold\b/i, /\bcommit or hold\b/i, /\bi'?ll leave (?:it|that|this)?\s*to (?:your|you)\b/i,
-  /\bi can (?:commit|push|apply|proceed|hold)\b.*\bor\b/i,
+  /\bi can (?:commit|push|apply|proceed|hold)\b.{0,30}?\bor\b/i,
   /\bwhich (?:would you|do you want|one)\b/i, /\bprefer (?:that )?i\b/i,
   // Constraint-as-stopsign (policy: "Constraints Are To Engineer Around")
   // A naked "can't / isn't possible / we have to wait" without a paired
@@ -123,13 +123,13 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\bremaining (?:work|step|steps|item|items|action|task)\b/i,
   /\b(?:still need to|yet to|left to|remains? to|the remaining)\b/i,
   /\brequires?\b.{0,24}?\b(?:pr\b|pull request|push|merge|manual)\b/i,
-  /\bwould (?:need|require) (?:a |an |to )?\b/i,
+  /\bwould (?:need|require) (?:a |an |to )?\b(?:pr|push|merge|manual|session|release)\b/i,
   /\bi have not (?:pushed|opened|taken|merged|run|applied|done|created)\b/i,
   /\bi haven'?t (?:pushed|opened|taken|merged|run|applied|done|created)\b/i,
   /\bnot yet (?:pushed|opened|taken|merged|run|applied|done|created)\b/i,
   /\bhave not taken\b/i, /\boutward action i have not\b/i,
-  /\bcaptured (?:for|as)\b.*\bfollow-?up\b/i, /\bfor a future pr\b/i,
-  /\bto get (?:a )?(?:ci|green|verdict|coverage)\b.*\b(?:requires?|need|would|open|push)\b/i,
+  /\bcaptured (?:for|as)\b.{0,40}?\bfollow-?up\b/i, /\bfor a future pr\b/i,
+  /\bto get (?:a )?(?:ci|green|verdict|coverage)\b.{0,40}?\b(?:requires?|need|would|open|push)\b/i,
 ]
 
 function detectNoWaitPattern(text: string): boolean {
@@ -145,7 +145,7 @@ function noWaitBlockResponse(): string {
     "(branches/RC, not master) — proceed. Only a genuinely IRREVERSIBLE",
     "+destructive action needs consent, raised explicitly, not a prose sign-off.",
     "",
-    "ADVISORY by default — blocking restored via GLUDD_NO_WAIT_ENFORCE=1.",
+    "BLOCKING by default (2026-06-22) — make advisory via GLUDD_NO_WAIT_ENFORCE=0.",
   ].join("\n")
 }
 
@@ -250,17 +250,61 @@ export default (async ({ }) => {
       }
     },
 
-    // --- Stop-pattern enforcement (no-wait + backlog) ------------------------
+    // --- Stop-pattern enforcement (no-wait + backlog + ratchet + pending-todos) ---
     // Runs in response.transform — examines the OUTGOING assistant message.
-    // - If NO_WAIT_ENFORCE=1 and a deferral/constraint-as-stopsign pattern is
-    //   detected, the response is REPLACED with a block directive.
-    // - If the multitasking backlog has open items, the response is REPLACED
-    //   with a backlog directive.
+    // The DEFAULT is ENFORCING (blocking) as of 2026-06-22. The advisory era
+    // (2026-06-21) allowed the agent to stop and ask "which option do you want?"
+    // — that was the bug. Set GLUDD_NO_WAIT_ENFORCE=0 to make it advisory again.
     "experimental.chat.response.transform": async (_input, output) => {
       try {
         if (typeof output !== "string") return output
 
-        // No-wait stop pattern (enforce mode only)
+        // --- RATCHET CHECK: if config/ratchet.yml has entries, the project has
+        // known-unfixed work. Any response that sounds like a completion report
+        // or a stop-to-ask is BLOCKED. This is the state-based check that catches
+        // stop patterns vocabulary lists miss. ---
+        const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+        if (fs.existsSync(ratchetPath)) {
+          const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
+          const ratchetEntries = ratchetContent.split("\n").filter(
+            l => l.trim() && !l.trim().startsWith("#") && l.includes(":")
+          )
+          if (ratchetEntries.length > 0) {
+            const lower = output.toLowerCase()
+            const soundsLikeStop = (
+              lower.includes("which do you want") ||
+              lower.includes("which would you") ||
+              lower.includes("which option") ||
+              lower.includes("what would you like") ||
+              lower.includes("do you want me to") ||
+              lower.includes("want me to") ||
+              lower.includes("should i") ||
+              lower.includes("shall i") ||
+              lower.includes("let me know") ||
+              lower.includes("your call") ||
+              lower.includes("up to you") ||
+              lower.includes("prefer") ||
+              lower.includes("options:") ||
+              lower.includes("option 1") ||
+              (lower.includes("options") && lower.includes("?"))
+            )
+            if (soundsLikeStop) {
+              return [
+                "⛔ STOP BLOCKED (pending-work audit): config/ratchet.yml has",
+                `${ratchetEntries.length} known-failure entries. The project has`,
+                "unfixed work. Your response presents options / asks permission",
+                "instead of DOING THE WORK. Per the Never-Block-on-Questions",
+                "policy: pick the highest-probability-success option, state the",
+                "assumption in one line, and EXECUTE. Do NOT present options and",
+                "ask which one the user wants. That is the stop-and-ask bug.",
+                "",
+                "DEFAULT TO ACTION NOW.",
+              ].join("\n")
+            }
+          }
+        }
+
+        // No-wait stop pattern (now ENFORCING by default — 2026-06-22)
         if (NO_WAIT_ENFORCE && detectNoWaitPattern(output)) {
           return noWaitBlockResponse()
         }

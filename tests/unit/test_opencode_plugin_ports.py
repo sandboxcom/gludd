@@ -150,6 +150,42 @@ class TestEnforceMakeFlagFileWriteBlock:
         assert ".gate-failed" in content or "gate-status" in content
 
 
+class TestEnforceMakeAssertionCheckScopedToTestFiles:
+    """The TDD assertion-required check must fire ONLY on actual test files,
+    not on fixtures/config files like conftest.py.
+
+    Regression: conftest.py holds pytest fixtures (no assertions needed), but
+    the broad `filePath.includes("/tests/")` classifier blocked legitimate
+    fixture edits. Narrowed to test_*.py / *_test.py per the guardrail
+    integrity policy (narrow, don't disable).
+    """
+
+    def _is_test_expr(self) -> str:
+        import re
+        src = ENFORCE_MAKE.read_text()
+        m = re.search(r'const isTest\s*=\s*([^\n]+)', src)
+        assert m, "isTest classification must exist in enforce-make.ts"
+        return m.group(1)
+
+    def test_is_test_excludes_conftest(self):
+        expr = self._is_test_expr()
+        # conftest.py must NOT be classified as a test file.
+        assert "conftest" in expr.lower(), (
+            f"isTest must explicitly exclude conftest.py (fixtures, not tests). "
+            f"Current expr: {expr!r}"
+        )
+
+    def test_is_test_narrowed_beyond_tests_dir(self):
+        expr = self._is_test_expr()
+        # A pure /tests/ substring check catches conftest.py — must be narrowed.
+        # Either a test_ prefix filter or a conftest exclusion qualifies.
+        narrowed = "conftest" in expr.lower() or "/test_" in expr or "\\test_" in expr
+        assert narrowed, (
+            f"isTest must be narrowed beyond '/tests/' substring to exclude "
+            f"non-test files. Current expr: {expr!r}"
+        )
+
+
 # --------------------------------------------------------------------------- #
 # enforce-delegate.ts — NEW plugin: model utilization + disk + force-delegate.
 # --------------------------------------------------------------------------- #
@@ -298,10 +334,17 @@ class TestNoWaitStopPort:
         content = ENFORCE_STOP.read_text()
         assert "GLUDD_NO_WAIT_ENFORCE" in content
 
-    def test_advisory_default(self):
-        # By default must be advisory (the 2026-06-21 user directive).
+    def test_blocking_default(self):
+        # The DEFAULT is ENFORCING (blocking) as of 2026-06-22. The advisory era
+        # (2026-06-21) allowed the agent to stop and ask permission — that was
+        # the "stop working" bug. The default must now be blocking.
         content = ENFORCE_STOP.read_text()
-        assert "advisory" in content.lower() or "default" in content.lower()
+        assert '"0"' in content or '!== "0"' in content, (
+            "NO_WAIT_ENFORCE must default to blocking (GLUDD_NO_WAIT_ENFORCE !== '0')"
+        )
+        assert "2026-06-22" in content, (
+            "enforce-stop.ts must document the default-flip date"
+        )
 
     def test_constraint_as_stopsign(self):
         # "Constraints Are To Engineer Around" policy — block naked "can't"

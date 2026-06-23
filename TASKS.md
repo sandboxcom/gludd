@@ -448,3 +448,16 @@ Goal: make .github/workflows/build.yml actually pass in real CI. Observed (sandb
 - [x] W16.1 — async-mock teardown leaks fixed + EventBus fresh-loop fallback + gate matrix fail-fast:false + CI observability/repro Makefile targets | evidence: make gate "ALL PASSED lint 0 typecheck 0 collect 0 test 0 smoke PASS"; tests/unit/test_event_loop.py + tests/unit/test_event_loop_coverage_lift.py + tests/unit/test_local_inference.py session.add/proc.terminate/proc.kill = MagicMock (sync); src/general_ludd/events/bus.py _dispatch_coro fresh new_event_loop; full suite green under Python 3.11 (parallel + 1-worker serial, matching CI ubuntu vCPU count) and 3.12 (coverage 91.22%) 4704299
   Root cause: test-side AsyncMock leaks. `session.add` (sync SQLAlchemy) and `process.terminate/kill` (sync subprocess) were mocked as AsyncMock, returning coroutines never awaited. Under CI ubuntu serial test ordering (4 vCPU -> xdist 1 worker) these were GC-collected during a later test's teardown and surfaced as hard "Event loop is closed" RuntimeErrors — not covered by the strict-xfail ratchet, so gate went red and every artifact build was skipped.
   Honesty note: the "Event loop is closed" failure could NOT be reproduced locally (macOS arm64) even under CI's exact 1-worker config — diagnosis is from the public CI check-run annotations plus unawaited-coroutine leak analysis. Job logs require admin (403 unauth). CI-green is therefore UNVERIFIED-in-CI at commit time; must be confirmed by the next sandboxcom run.
+
+## Phase W13 — Claude→opencode hook ports + commit-bypass bug fix (2026-06-22)
+
+### W13.1 — Port claude hooks to opencode TypeScript plugins
+
+- [x] W13.1 — Port 20 claude shell hooks to 4 opencode TypeScript plugins (enforce-make.ts extended, enforce-floor.ts registered, enforce-delegate.ts NEW, enforce-stop.ts NEW) so an opencode-only session gets the same guardrails as a Claude-only session | evidence: make test-specific TESTFILE=tests/unit/test_opencode_plugin_ports.py 46 passed; make test-guardrails 142 passed 1 skipped; make lint 0; make typecheck Success 50dbd1b
+
+### W13.2 — Fix commit-no-verify gate bypass (the "stop working" bug)
+
+- [x] W13.2a — Extracted _gate-fresh-check reusable make target; commit-no-verify + commit-bootstrap now enforce the same .gate-status freshness+green check as git-commit | evidence: make test-specific TESTFILE=tests/unit/test_commit_gate_freshness.py 7 passed (commit pending)
+- [x] W13.2b — Added make git-restore FILES='...' target (was missing — agents had no way to recover deleted tracked files under the make-only Bash policy) | evidence: make git-restore FILES='dist/README.md dist/binaries/opentofu dist/general-ludd.service dist/install.sh' Restored (commit pending)
+- [x] W13.2c — Restored deleted dist/ artifacts (test_installer.py was failing pre-existing because these were deleted from working tree) | evidence: make test-specific TESTFILE=tests/unit/test_installer.py 27 passed (commit pending)
+- [ ] W13.3 — CI pipeline fixes: FK constraint test fix (test_data_flow_e2e.py prerequisite todos), get_running_loop (test_daemon.py), seed_initial_queues TOCTOU (session.py on_conflict_do_nothing), coverage gate shard fix (build.yml --cov-fail-under=0), conftest get_event_loop deprecation | evidence: tests pass locally (commit pending)

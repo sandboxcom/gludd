@@ -44,6 +44,7 @@ from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.model_registry import ModelRegistry
+from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.dashboard_data import DashboardDataProvider
 from general_ludd.observability.otel_bridge import OTelBridge
 from general_ludd.observability.recorder import AutoBenchmarkRecorder
@@ -660,8 +661,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # receives a live ModelHealthTracker (not None).  The tracker was
         # previously assigned ~50 lines later, after the router was already built,
         # making the health-filtering + quantization-penalty logic permanently
-        # inert in the running daemon.
-        from general_ludd.models.timeout_detector import ModelHealthTracker
+        # inert in the running daemon.  (ModelHealthTracker is imported at module
+        # level so tests can patch general_ludd.daemon.ModelHealthTracker.)
         _pre_health_tracker = ModelHealthTracker()
         app.state._health_tracker = _pre_health_tracker
 
@@ -1085,8 +1086,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     if mcp_client_ref is not None:
         with contextlib.suppress(Exception):
             await mcp_client_ref.stop_all()
-    if event_loop is not None:
-        event_loop.stop()
+    _el = event_loop if event_loop is not None else getattr(app.state, "event_loop", None)
+    if _el is not None:
+        _el.stop()
     if task is not None:
         task.cancel()
         with contextlib.suppress(asyncio.CancelledError):

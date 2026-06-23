@@ -110,9 +110,7 @@ class TestPublishFailureAccounting:
         # a closed loop is leaked to sibling tests on this worker -- snapshot and
         # restore the policy's current event loop around the call.
         try:
-            prev_loop: asyncio.AbstractEventLoop | None = (
-                asyncio.get_event_loop_policy().get_event_loop()
-            )
+            prev_loop: asyncio.AbstractEventLoop | None = asyncio.get_running_loop()
         except RuntimeError:
             prev_loop = None
 

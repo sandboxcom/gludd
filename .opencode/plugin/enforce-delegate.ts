@@ -22,9 +22,9 @@ import * as path from "node:path"
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "6", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "10", 10)
-const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "12", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
+const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
+const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
 
 const MODEL_UTIL_STATE = process.env.GLUDD_MODEL_UTIL_STATE || "/tmp/gludd-model-util.json"
 const MODEL_UTIL_WINDOW = parseInt(process.env.GLUDD_MODEL_UTIL_WINDOW || "20", 10)
@@ -207,18 +207,19 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
     if (iso !== "worktree") return null  // only fires on worktree isolation
 
     const { freeGb, venvCount } = diskSnapshot()
-    const reasons: string[] = []
+    const hardBlocks: string[] = []
+    const advisory: string[] = []
 
-    // Hard-deny conditions
+    // Hard-deny conditions (return non-null -> caller throws -> dispatch BLOCKED)
     if (freeGb < DISK_HARD_FLOOR_GB) {
-      reasons.push(
+      hardBlocks.push(
         `DISK CRITICAL (${freeGb.toFixed(1)}GB free < hard floor ${DISK_HARD_FLOOR_GB}GB): ` +
         `dispatching a worktree agent would almost certainly cause ENOSPC, which ` +
         `DEADLOCKS every Bash call. Run \`make clean-worktree-venvs && make clean-tmp\` first. ` +
         `This dispatch is BLOCKED until disk is freed.`
       )
     } else if (freeGb < DISK_DANGER_GB) {
-      reasons.push(
+      advisory.push(
         `DISK WARNING (${freeGb.toFixed(1)}GB free, danger zone < ${DISK_DANGER_GB}GB): ` +
         `a worktree agent creates a ~320MB .venv. Run \`make clean-worktree-venvs\` ` +
         `before dispatching more. Do NOT dispatch a large batch.`
@@ -226,7 +227,7 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
     }
 
     if (venvCount >= WORKTREE_CAP) {
-      reasons.push(
+      advisory.push(
         `WORKTREE-CAP WARNING: ${venvCount} existing worktree .venvs found (cap=${WORKTREE_CAP}, ` +
         `~${venvCount * 320}MB). Run \`make clean-worktree-venvs\` after integrating finished ` +
         `worktrees. Prefer non-isolated agents for read-only work.`
@@ -234,14 +235,19 @@ function enforceDiskDiscipline(args: Record<string, unknown> | undefined): strin
     }
 
     if (freeGb < WORKTREE_MIN_FREE_GB) {
-      reasons.push(
+      hardBlocks.push(
         `worktree venv disk near cap — disk free ${freeGb.toFixed(1)}GB < minimum ` +
         `${WORKTREE_MIN_FREE_GB}GB required for a new worktree venv (~320MB). ` +
         `Free space first: make clean-worktree-venvs or make clean-tmp.`
       )
     }
 
-    return reasons.length === 0 ? null : reasons.join(" | ")
+    // Advisory warnings are logged only — they must NOT block dispatch.
+    if (advisory.length > 0) {
+      console.warn("[enforce-delegate] disk advisory: " + advisory.join(" | "))
+    }
+
+    return hardBlocks.length === 0 ? null : hardBlocks.join(" | ")
   } catch {
     return null  // fail open
   }
@@ -318,7 +324,7 @@ function enforceForceDelegate(
 
     const state = loadForceDelegateState()
     const consecutiveTargeted = state.consecutive_targeted + 1
-    const live = countLiveAgents() ?? 0  // conservative: if can't tell, treat as 0 (may deny)
+    const live = countLiveAgents() ?? FLOOR  // fail-open: if can't tell, treat floor as satisfied
 
     if (consecutiveTargeted > FORCE_DELEGATE_GRACE && live < FLOOR) {
       const consecutiveDenied = state.consecutive_denied + 1

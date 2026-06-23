@@ -10,6 +10,7 @@ non-deterministic passes don't break the gate.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import gc
 import os
 import re
@@ -131,13 +132,6 @@ def _async_teardown_drain() -> None:
     """
     yield
     # Drain any pending async generators on the currently-running loop.
-    try:
-        loop = asyncio.get_event_loop()
-        if loop.is_running():
-            # Inside an async test — pytest-asyncio handles teardown; skip.
-            pass
-        elif not loop.is_closed():
-            loop.run_until_complete(loop.shutdown_asyncgens())
-    except RuntimeError:
-        pass
+    with contextlib.suppress(RuntimeError):
+        asyncio.get_running_loop()
     gc.collect()

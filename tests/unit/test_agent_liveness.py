@@ -44,6 +44,14 @@ def tasks_dir(tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> Path:
     d = tmp_path / "tasks"
     d.mkdir()
     monkeypatch.setenv("GLUDD_TASKS_DIR", str(d))
+    # Isolate workflow-transcript scanning: point GLUDD_WORKFLOW_DIRS at an
+    # empty tmp dir so _workflow_transcript_files() takes the override branch
+    # (line 170: `if override:`) and globs an empty dir → returns [].  Without
+    # this the dev machine's real ~/.claude transcript tree leaks in and
+    # inflates counts (238 real transcripts != the 1 the tests expect).
+    wf = tmp_path / "workflows"
+    wf.mkdir()
+    monkeypatch.setenv("GLUDD_WORKFLOW_DIRS", str(wf))
     monkeypatch.delenv("FLOOR_LIVE_OVERRIDE", raising=False)
     return d
 
@@ -197,21 +205,30 @@ def test_override_non_digit_ignored(
 
 # --- 5. fail-safe on missing / unresolvable dir -----------------------------
 
-def test_missing_dir_resolves_none(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_dir_resolves_none(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GLUDD_TASKS_DIR", "/nonexistent/path/does/not/exist")
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    monkeypatch.setenv("GLUDD_WORKFLOW_DIRS", str(wf))
     monkeypatch.delenv("FLOOR_LIVE_OVERRIDE", raising=False)
     assert agent_liveness._tasks_dir() is None
 
 
-def test_missing_dir_live_count_zero(monkeypatch: pytest.MonkeyPatch) -> None:
+def test_missing_dir_live_count_zero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
     monkeypatch.setenv("GLUDD_TASKS_DIR", "/nonexistent/path/does/not/exist")
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    monkeypatch.setenv("GLUDD_WORKFLOW_DIRS", str(wf))
     monkeypatch.delenv("FLOOR_LIVE_OVERRIDE", raising=False)
     live, total, resolved = agent_liveness.live_count(window=120.0)
     assert (live, total, resolved) == (0, 0, None)
 
 
-def test_main_count_failsafe_zero(monkeypatch: pytest.MonkeyPatch, capsys) -> None:
+def test_main_count_failsafe_zero(monkeypatch: pytest.MonkeyPatch, tmp_path: Path, capsys) -> None:
     monkeypatch.setenv("GLUDD_TASKS_DIR", "/nonexistent/path/does/not/exist")
+    wf = tmp_path / "wf"
+    wf.mkdir()
+    monkeypatch.setenv("GLUDD_WORKFLOW_DIRS", str(wf))
     monkeypatch.delenv("FLOOR_LIVE_OVERRIDE", raising=False)
     rc = agent_liveness.main(["--count"])
     assert rc == 0

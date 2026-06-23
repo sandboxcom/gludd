@@ -284,7 +284,7 @@ class TestMCPClientWiring:
             if h is None:
                 raise RuntimeError("MCP client not available")
             import asyncio
-            return asyncio.get_event_loop().run_until_complete(h(name, args))
+            return asyncio.run(h(name, args))
 
         with pytest.raises(RuntimeError, match="MCP client not available"):
             _lazy_mcp_handler("some_server/some_tool", {"key": "value"})

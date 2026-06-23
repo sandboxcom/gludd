@@ -214,18 +214,69 @@ class TestDaemonStartupConfig:
         assert cfg["process_isolation"] is not None
 
 
+def _lifespan_patches(mock_loop):
+    """Return a contextlib.ExitStack with all patches needed for _lifespan tests."""
+    import contextlib as _contextlib
+    from unittest.mock import AsyncMock as _AsyncMock
+    from unittest.mock import MagicMock as _MagicMock
+    from unittest.mock import patch as _patch
+    stack = _contextlib.ExitStack()
+    cm = _MagicMock()
+    _mock_session = _MagicMock()
+    _mock_session.commit = _AsyncMock()
+    cm.__aenter__ = _AsyncMock(return_value=_mock_session)
+    cm.__aexit__ = _AsyncMock(return_value=False)
+    session_factory = _MagicMock(return_value=cm)
+    stack.enter_context(_patch("general_ludd.daemon.EventLoop", return_value=mock_loop))
+    _mock_engine = _MagicMock()
+    _mock_engine.dispose = _AsyncMock()
+    stack.enter_context(_patch("general_ludd.daemon.init_engine_from_config", return_value=_mock_engine))
+    stack.enter_context(_patch("general_ludd.daemon.ensure_tables", new_callable=_AsyncMock))
+    stack.enter_context(_patch("general_ludd.daemon.create_async_session_factory", return_value=session_factory))
+    stack.enter_context(_patch("general_ludd.daemon.seed_initial_queues", new_callable=_AsyncMock))
+    stack.enter_context(_patch("general_ludd.daemon.is_sqlite_url", return_value=False))
+    stack.enter_context(_patch("general_ludd.daemon.AnsibleRunnerAdapter", return_value=_MagicMock()))
+    stack.enter_context(_patch("general_ludd.daemon._get_or_create_subsystems", return_value={"bus": _MagicMock()}))
+    stack.enter_context(_patch(
+        "general_ludd.daemon._get_or_create_extended_subsystems",
+        return_value={
+            "projects": _MagicMock(),
+            "skill_registry": _MagicMock(),
+            "adaptive_router": _MagicMock(),
+            "metrics_collector": _MagicMock(),
+        },
+    ))
+    stack.enter_context(_patch("general_ludd.daemon._restore_persisted_projects", new_callable=_AsyncMock))
+    stack.enter_context(_patch("general_ludd.daemon.build_secrets_resolver", return_value=_MagicMock()))
+    stack.enter_context(_patch("general_ludd.daemon.PromptRegistry", return_value=_MagicMock()))
+    stack.enter_context(_patch("general_ludd.daemon.build_event_loop_mcp_dispatcher", return_value=None))
+    stack.enter_context(_patch("general_ludd.daemon._init_project_workspaces", return_value={}))
+    stack.enter_context(_patch("general_ludd.models.timeout_detector.ModelHealthTracker", return_value=_MagicMock()))
+    stack.enter_context(_patch("general_ludd.daemon.ModelHealthTracker", return_value=_MagicMock()))
+    # The lifespan shutdown path does `await task`, plus task.cancel() and
+    # task.add_done_callback(). A completed asyncio.Future supports all three
+    # and is directly awaitable; a bare AsyncMock instance is NOT awaitable
+    # (only calling it returns a coroutine), so use a resolved Future here.
+    import asyncio as _asyncio
+    _done_task = _asyncio.get_running_loop().create_future()
+    _done_task.set_result(None)
+    stack.enter_context(_patch("asyncio.create_task", return_value=_done_task))
+    return stack
+
+
 class TestDaemonLifespan:
     @pytest.mark.asyncio
     async def test_lifespan_creates_event_loop_and_task(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()
-        with patch("general_ludd.daemon.EventLoop", return_value=mock_loop):
+        with _lifespan_patches(mock_loop):
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
+            app.state._receiver_buffer = MagicMock()
             async with _lifespan(app):
                 assert app.state.event_loop is mock_loop
             mock_loop.stop.assert_called()
@@ -234,13 +285,14 @@ class TestDaemonLifespan:
     async def test_lifespan_stops_event_loop_on_shutdown(self):
         mock_loop = MagicMock()
         mock_loop.run_forever = AsyncMock()
-        with patch("general_ludd.daemon.EventLoop", return_value=mock_loop):
+        with _lifespan_patches(mock_loop):
             from fastapi import FastAPI
 
             from general_ludd.daemon import _lifespan
             app = FastAPI()
             app.state.tick_interval = 0.01
             app.state.event_loop = None
+            app.state._receiver_buffer = MagicMock()
             async with _lifespan(app):
                 pass
             mock_loop.stop.assert_called()
