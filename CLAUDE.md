@@ -19,6 +19,15 @@ File reads/edits use the Read/Edit/Write tools, not shell.
 - Do NOT trust `SESSION.md` status claims; verify with gates. See `BUGS.md` for the incident history.
 - Run `make test-count` before any commit — collection errors mean no commit.
 
+## Opencode plugins
+
+All 4 plugins in `.opencode/plugin/` are registered and active in `opencode.json`. They enforce the same policies as the `.claude/hooks/*.sh` layer:
+
+- **`enforce-make.ts`** — Bash make-only policy: blocks non-make commands, metacharacters (`|`, `&&`, `;`, `$()`), concurrent gates, `.gate-status` writes, and edits that weaken guardrails across all hook/plugin files.
+- **`enforce-floor.ts`** — agent floor/ceiling bands via `agent_liveness.py`: keeps ≥10 (env: `CLAUDE_AGENT_FLOOR`) live subagents; blocks stops when below the floor.
+- **`enforce-delegate.ts`** — sonnet-dominant dispatch ratio (model utilization), worktree disk guards, opt-in force-delegate grind guard, and main-thread delegation budget.
+- **`enforce-stop.ts`** — deferral-pattern block (no-wait), open-backlog block, session-start orchestration injection, and `AskUserQuestion` deny (no blocking questions).
+
 ## Key documents
 
 - `AGENTS.md` — full agent policy (TDD, completion, guardrail integrity). Binding here too.

@@ -612,3 +612,31 @@ class TestDirectDispatch:
         await loop._dispatch_review_job(tr)
         http_client.post.assert_called_once()
         assert "return-review" in http_client.post.call_args[0][0]
+
+
+class TestDaemonStateIsolation:
+    """Regression: the module-level ``_daemon_state`` dict was shared across every
+    FastAPI instance, so state (todos, tick_metrics, quality_gate) bled between
+    tests. Each ``create_daemon_app()`` must own a fresh per-app dict.
+    """
+
+    def test_each_app_gets_its_own_daemon_state_dict(self):
+        app_a = create_daemon_app(tick_interval=999.0)
+        app_b = create_daemon_app(tick_interval=999.0)
+        state_a = app_a.state.daemon_state
+        state_b = app_b.state.daemon_state
+        assert state_a is not state_b
+        # Mutating one app's state must not appear in the other's.
+        state_a["todos"].append({"todo_id": "ONLY-A"})
+        assert state_b["todos"] == []
+
+    def test_new_app_daemon_state_starts_empty(self):
+        # A previously created app must not contaminate a freshly built one.
+        first = create_daemon_app(tick_interval=999.0)
+        first.state.daemon_state["todos"].append({"todo_id": "LEFTOVER"})
+        first.state.daemon_state["tick_metrics"]["leaked"] = True
+
+        second = create_daemon_app(tick_interval=999.0)
+        assert second.state.daemon_state["todos"] == []
+        assert second.state.daemon_state["tick_metrics"] == {}
+        assert second.state.daemon_state["quality_gate"] == {}

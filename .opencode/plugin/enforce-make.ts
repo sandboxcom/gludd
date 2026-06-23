@@ -557,7 +557,7 @@ export default (async ({ }) => {
     },
 
     "experimental.chat.response.transform": async (_input, output) => {
-      if (typeof output !== "string") return
+      if (typeof output !== "string") return output
 
       const gateStatusPath = path.join(process.cwd(), ".gate-status")
       if (fs.existsSync(gateStatusPath)) {

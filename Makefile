@@ -2658,6 +2658,7 @@ git-push-branch:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom"
+	@echo "Run: make verify-remote BRANCH=$(TARGET) SHA=$$(git rev-parse HEAD)"
 
 # git-push-branch-nv: like git-push-branch but skips pre-push hooks (--no-verify).
 # Use ONLY when hooks fail due to stash/conflict from unrelated unstaged files
@@ -2667,6 +2668,7 @@ git-push-branch-nv:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
+	@echo "Run: make verify-remote BRANCH=$(TARGET) SHA=$$(git rev-parse HEAD)"
 
 # Idempotent PR opener: check if a PR for fix/self-update-sec already exists;
 # if none, create one targeting master. Reports URL either way.

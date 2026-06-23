@@ -64,6 +64,12 @@ from general_ludd.skills.registry import SkillRegistry
 
 logger = ProjectLogAdapter(logging.getLogger(__name__))
 
+# Back-compat default. ``create_daemon_app()`` builds a FRESH per-app dict
+# (see ``app.state.daemon_state``) so state no longer bleeds between FastAPI
+# instances in the same process. This module-level name is rebound to the most
+# recently created app's dict by the factory, preserving legacy callers that
+# import/observe ``_daemon_state`` directly (e.g. scripts/dogfood.py, test
+# fixtures). It must never again be the authoritative store for a running app.
 _daemon_state: dict[str, Any] = {
     "todos": [],
     "tick_metrics": {},
@@ -298,8 +304,8 @@ async def _restore_persisted_projects(project_manager: Any, session_factory: Any
                     repo_url=proj.repo_url,
                     workspace_path=proj.workspace_path or proj.project_id,
                 )
-    except Exception as exc:  # pragma: no cover - defensive startup guard
-        logger.warning("Failed to restore persisted projects: %s", exc)
+    except Exception:  # pragma: no cover - defensive startup guard
+        logger.error("Failed to restore persisted projects", exc_info=True)
 
 
 async def _restore_persisted_spend(
@@ -625,6 +631,14 @@ def _sync_bridge(
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
+    # Per-app state dict (created in create_daemon_app). Read from app.state so
+    # concurrently-running apps never share/overwrite one another's state. If a
+    # caller invokes the lifespan on a bare app (unit tests), materialise a fresh
+    # per-app dict rather than falling back to the shared module global.
+    daemon_state: dict[str, Any] = getattr(app.state, "daemon_state", None)
+    if daemon_state is None:
+        daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+        app.state.daemon_state = daemon_state
     event_loop = None
     task = None
     engine = None
@@ -678,7 +692,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         app.state._quantization_tracker = _QuantizationTracker()
 
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
-        _daemon_state["receiver_buffer"] = app.state._receiver_buffer
+        daemon_state["receiver_buffer"] = app.state._receiver_buffer
 
         # W3.11 (H13): merge DB-persisted projects into the manager so projects
         # added at runtime survive a restart, and materialize each repo_url into
@@ -704,8 +718,8 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     result["migrated"],
                     len(result["skipped"]),
                 )
-            except Exception as exc:
-                logger.warning("Secret migration failed: %s", exc)
+            except Exception:
+                logger.error("Secret migration failed", exc_info=True)
 
         templates_dir = getattr(app.state, "_templates_dir", None)
         prompt_registry = PromptRegistry(
@@ -821,7 +835,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     await mcp_client.start_all()
                     logger.info("MCPClient started with %d server(s)", len(typed_configs))
                 except Exception as _mcp_exc:
-                    logger.warning("MCP startup failed (continuing without MCP): %s", _mcp_exc)
+                    logger.error(
+                        "MCP startup failed (continuing without MCP)",
+                        exc_info=True,
+                    )
                     mcp_client = None
         app.state._mcp_client = mcp_client
 
@@ -860,7 +877,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "self_improve": getattr(uc, "self_improve", {}) if uc else {},
             },
             adaptive_router=ext["adaptive_router"],
-            daemon_state=_daemon_state,
+            daemon_state=daemon_state,
             project_workspace=_init_project_workspaces(ext["projects"]),
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
@@ -1049,7 +1066,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         async def _init_preflight() -> None:
             loop = asyncio.get_running_loop()
             result: dict[str, Any] = await loop.run_in_executor(None, run_preflight)
-            _daemon_state["quality_gate"] = result
+            daemon_state["quality_gate"] = result
             logger.info(
                 "Preflight quality gate: %s (%d/%d)",
                 result["overall"],
@@ -1204,6 +1221,20 @@ def create_daemon_app(
         playbooks_dir = os.environ.get("GLUDD_PLAYBOOKS_DIR")
 
     app = FastAPI(title="General Ludd Agent", version="0.1.0", lifespan=_lifespan)
+    # Per-app daemon state: each app owns a fresh dict so todos / tick_metrics /
+    # quality_gate cannot bleed across FastAPI instances in one process (the
+    # module-level ``_daemon_state`` used to be shared — a test-isolation hazard).
+    daemon_state: dict[str, Any] = {
+        "todos": [],
+        "tick_metrics": {},
+        "quality_gate": {},
+    }
+    app.state.daemon_state = daemon_state
+    # Rebind the module-level name so legacy observers (scripts/dogfood.py, test
+    # fixtures that read ``daemon_mod._daemon_state``) see this app's state. The
+    # per-app dict on ``app.state.daemon_state`` remains the authoritative store.
+    global _daemon_state
+    _daemon_state = daemon_state
     app.state.tick_interval = tick_interval
     app.state.event_loop = None
     app.state.log_level = log_level
@@ -1487,29 +1518,29 @@ def create_daemon_app(
         dispatch as dispatch_router,
     )
 
-    webmcp.register(app, _daemon_state)
-    todos.register(app, _daemon_state)
-    messages.register(app, _daemon_state)
-    accounting.register(app, _daemon_state)
-    facts.register(app, _daemon_state)
-    features.register(app, _daemon_state)
-    schedule.register(app, _daemon_state)
-    models.register(app, _daemon_state)
-    benchmark.register(app, _daemon_state)
-    mcp.register(app, _daemon_state)
-    skills.register(app, _daemon_state)
-    compute.register(app, _daemon_state)
-    filestore.register(app, _daemon_state)
-    integrity.register(app, _daemon_state)
-    signing.register(app, _daemon_state)
-    projects.register(app, _daemon_state)
-    quantization.register(app, _daemon_state)
-    reload.register(app, _daemon_state)
-    worktree.register(app, _daemon_state)
-    ansible.register(app, _daemon_state)
-    slurm.register(app, _daemon_state)
-    self_improve.register(app, _daemon_state)
-    maintenance.register(app, _daemon_state)
+    webmcp.register(app, daemon_state)
+    todos.register(app, daemon_state)
+    messages.register(app, daemon_state)
+    accounting.register(app, daemon_state)
+    facts.register(app, daemon_state)
+    features.register(app, daemon_state)
+    schedule.register(app, daemon_state)
+    models.register(app, daemon_state)
+    benchmark.register(app, daemon_state)
+    mcp.register(app, daemon_state)
+    skills.register(app, daemon_state)
+    compute.register(app, daemon_state)
+    filestore.register(app, daemon_state)
+    integrity.register(app, daemon_state)
+    signing.register(app, daemon_state)
+    projects.register(app, daemon_state)
+    quantization.register(app, daemon_state)
+    reload.register(app, daemon_state)
+    worktree.register(app, daemon_state)
+    ansible.register(app, daemon_state)
+    slurm.register(app, daemon_state)
+    self_improve.register(app, daemon_state)
+    maintenance.register(app, daemon_state)
     # Construct the receiver buffer BEFORE registering the router: the router's
     # routes close over the buffer at register-time (app-creation), which runs
     # before the lifespan. If we left this to the lifespan only, the routes would
@@ -1523,9 +1554,9 @@ def create_daemon_app(
             overflow=OverflowPolicy.REJECT,
             retention_s=3600,
         )
-    _daemon_state["receiver_buffer"] = app.state._receiver_buffer
+    daemon_state["receiver_buffer"] = app.state._receiver_buffer
     from general_ludd.receiver import router as receiver_router
-    receiver_router.register(app, _daemon_state)
+    receiver_router.register(app, daemon_state)
     # Dynamic dispatch router — handlers close over ``app`` and look up
     # subsystems lazily at call time so they resolve against the live
     # lifespan-initialised state rather than the not-yet-started state at
@@ -1555,20 +1586,20 @@ def create_daemon_app(
 
     dispatch_router.register(
         app,
-        _daemon_state,
+        daemon_state,
         role_handler=_lazy_role_handler,
         mcp_handler=_lazy_mcp_handler,
         skill_handler=_lazy_skill_handler,
         collection_handler=None,  # TODO(integration): wire to collection loader — no loader exists
     )
-    spend.register(app, _daemon_state)
+    spend.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
-    _coord_router.register(app, _daemon_state)
+    _coord_router.register(app, daemon_state)
 
     from general_ludd.routers.observe import wire_observability
 
     _uc = (getattr(app.state, "_startup_config", {}) or {}).get("user_config")
     _connector_cfg = getattr(_uc, "connectors", None) if _uc else None
-    wire_observability(app, _daemon_state, _connector_cfg)
+    wire_observability(app, daemon_state, _connector_cfg)
 
     return app
