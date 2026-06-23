@@ -59,7 +59,8 @@ class TestRepositorySkeleton:
         names = {q.queue_name for q in INITIAL_QUEUES}
         expected = {
             "intake", "core", "worker", "ansible", "model", "qa",
-            "infra", "dependency", "git", "self_improve", "audit", "manual_hold",
+            "infra", "dependency", "git", "self_improve", "self_update",
+            "audit", "manual_hold",
         }
         assert expected == names
 
