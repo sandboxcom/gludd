@@ -54,6 +54,7 @@ from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.quality.preflight import run_preflight
 from general_ludd.reload.worker_broadcast import WorkerBroadcaster
 from general_ludd.scoring.router import AdaptiveRouter
+from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
 from general_ludd.secrets.config import OpenBaoConfig
 from general_ludd.secrets.env import EnvSecretsManager
 from general_ludd.secrets.manager import SecretsManager
@@ -690,6 +691,30 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         from general_ludd.models.quantization import QuantizationTracker as _QuantizationTracker
         app.state._quantization_tracker = _QuantizationTracker()
 
+        # Tier 2 RAG routing: construct + seed TaskEmbeddingStore before the
+        # AdaptiveRouter is built so the router can borrow strength from
+        # neighboring task types via cosine similarity. The store holds a
+        # long-lived session (the router calls similarity_to() on every route),
+        # so the session is kept open for the app lifetime and closed in the
+        # lifespan teardown. ensure_embeddings() is idempotent — only empty rows
+        # are embedded, so a warm restart never recomputes paid-for vectors.
+        # Best-effort: on failure the store is left None and the router falls
+        # back to exact-match history.
+        app.state._embedding_store = None
+        app.state._embedding_session = None
+        try:
+            _embedding_session = session_factory()
+            _embedding_store = TaskEmbeddingStore(session=_embedding_session)
+            await _embedding_store.ensure_embeddings()
+            await _embedding_session.commit()
+            app.state._embedding_store = _embedding_store
+            app.state._embedding_session = _embedding_session
+        except Exception:
+            logger.error("TaskEmbeddingStore seeding failed", exc_info=True)
+            with contextlib.suppress(Exception):
+                if "_embedding_session" in locals():
+                    await _embedding_session.close()
+
         ext = _get_or_create_extended_subsystems(app, session_factory=session_factory)
         daemon_state["receiver_buffer"] = app.state._receiver_buffer
 
@@ -1135,6 +1160,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             await preflight_task_ref
     if engine is not None:
         await engine.dispose()
+    _embedding_session_ref = getattr(app.state, "_embedding_session", None)
+    if _embedding_session_ref is not None:
+        with contextlib.suppress(Exception):
+            await _embedding_session_ref.close()
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()
@@ -1200,6 +1229,7 @@ def _get_or_create_extended_subsystems(
             benchmark_repo=benchmark_repo,
             quantization_map=quantization_map,
             health_tracker=getattr(app.state, "_health_tracker", None),
+            embedding_store=getattr(app.state, "_embedding_store", None),
         )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
