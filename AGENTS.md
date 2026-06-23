@@ -990,16 +990,38 @@ Subagents fail when they try to run long operations. To maximize success rate:
 5. **File-editing tasks must specify exactly one file** — multiple-file edits risk conflicts with parallel agents.
 6. **Dispatch immediately when any agent completes** — do not wait for the batch to drain. The floor must stay at 10.
 
+### Main-thread command restriction (ANTI-STALL RULE)
+
+**The ONLY commands allowed on the main thread are:**
+- `make ci-verdict-fast BRANCH=<branch>` (<1 sec, read-only CI check)
+- `make ship-commit MSG='...'` (dispatch this to a subagent, not the main thread)
+- Task dispatch calls (near-instant)
+
+**NEVER run on the main thread:**
+- `make gate`, `make test-unit`, `make test`, `make qa`, `make test-e2e`, `make validate`
+- `make lint`, `make typecheck`, `make collect-check`, `make smoke` (dispatch to subagent)
+- `make git-add-all`, `make commit-no-verify`, `make git-push-branch-nv` (use `make ship-commit` via subagent instead)
+- ANY command that takes more than 3 seconds
+
+**Why:** The main thread blocks ALL subagent dispatch while it runs a command. A 30-second lint check = 30 seconds with 0 subagents running. A 40-minute gate = 40 minutes of total stall. The user sees this as "process malfunctioning."
+
+**Pattern for each wave:**
+1. Get 10 subagent results
+2. Write ZERO analysis text
+3. Immediately dispatch 10 new subagents — one does `make ship-commit`, nine do work
+4. Repeat
+
 ### Steady-state dispatch (the 10-agent floor)
 
 The goal is a **continuous, pipelined** stream of subagent batches — not a sawtooth of "dispatch burst → drain to zero → repeat."
 
 **BEHAVIORAL RULES:**
-1. **Process results FAST.** When a batch of subagent results returns, scan them in under 30 seconds and immediately dispatch the next wave. Do NOT write long analysis prose between waves.
+1. **Process results FAST.** When a batch of subagent results returns, scan them in under 5 seconds and immediately dispatch the next wave. Do NOT write ANY analysis prose between waves.
 2. **Never run long foreground operations.** `make gate` (40 min), `make test-unit` (27 min) — these block the bash tool and prevent ALL subagent dispatch. Use `make gate-background` or CI instead.
 3. **Always have the next wave ready.** Before the current batch returns, know what the next 10 tasks will be. The moment results arrive, dispatch — don't think, don't plan, dispatch.
 4. **Prefer uniform-duration tasks.** If all 10 tasks take ~2 min, they finish together and you refill immediately. If some take 30s and others 5min, you're at 3-4 agents for minutes waiting for the slow ones.
 5. **Read-only research tasks are the filler.** When you don't have 10 edit tasks, fill the remaining slots with research/audit/review tasks. They're reliable and always productive.
+6. **Dispatch commit+push AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'`. This keeps 9 productive tasks running while the commit happens in parallel.
 
 ## Codify Improvements (Meta-Rule)
 
