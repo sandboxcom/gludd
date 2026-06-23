@@ -1554,6 +1554,7 @@ def create_daemon_app(
         reload,
         schedule,
         self_improve,
+        self_update,
         signing,
         skills,
         slurm,
@@ -1588,6 +1589,7 @@ def create_daemon_app(
     ansible.register(app, daemon_state)
     slurm.register(app, daemon_state)
     self_improve.register(app, daemon_state)
+    self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
     # Construct the receiver buffer BEFORE registering the router: the router's
     # routes close over the buffer at register-time (app-creation), which runs

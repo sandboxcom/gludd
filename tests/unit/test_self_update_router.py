@@ -1,224 +1,312 @@
-"""Tests for the UpdateRequestRouter (self-update issue #81 part 1).
+"""TDD tests for the self-update FastAPI router (Phase 2 Step 2).
 
-The router turns a natural-language "update gludd: <text>" request into a
-deterministic :class:`UpdatePlan` describing WHAT to change, WHERE, the
-capability required to do it safely, a priority, and a risk level.
+The router exposes two PSK-gated admin endpoints that wrap the pure
+self-update pipeline (classifier -> apply ladder / priority backlog):
 
-Design contract under test:
+  * POST /admin/self-update/plan    -> classify -> apply_plan -> result
+  * POST /admin/self-update/enqueue -> classify -> to_todo_spec -> create todo
 
-* Most updates are config/yaml edits -> high priority, low risk, fast-track.
-* Role/playbook edits -> collections self-modify -> medium priority/risk.
-* Behavioural code changes -> code self-modify -> low auto-priority, high risk
-  (they need human review before landing).
-* An unmatchable request -> FAIL-SAFE: kind='config', risk='high', a
-  "needs human routing" rationale, and never a guessed code write.
-* Only paths that actually exist (per the injected ``path_exists``) are kept.
-
-The router is pure/deterministic and fully injectable, so every test pins a
-fake ``path_exists`` rather than touching the real filesystem.
+PSK gating is applied by the daemon middleware (same pattern as
+``routers/self_improve.py``); these unit tests exercise the endpoint logic
+directly via ``create_daemon_app``.
 """
 
 from __future__ import annotations
 
-import pytest
+from unittest.mock import patch
 
-from general_ludd.self_update import (
-    DEFAULT_SUBSYSTEM_MAP,
-    UpdatePlan,
-    UpdateRequest,
-    UpdateRequestRouter,
-    UpdateTarget,
+import pytest
+from httpx import ASGITransport, AsyncClient
+
+from general_ludd.daemon import create_daemon_app
+from general_ludd.self_update.apply import ApplyOutcome, ApplyResult, AuditRecord
+from general_ludd.self_update.model import (
+    ApplyTier,
+    ChangeKind,
+    SelfUpdatePlan,
+    SelfUpdateRequest,
+    Subsystem,
 )
 
 
-def _always_exists(_path: str) -> bool:
-    return True
+@pytest.fixture
+def app(tmp_path):
+    config_dir = tmp_path / "config"
+    config_dir.mkdir()
+    return create_daemon_app(config_dir=str(config_dir))
 
 
-def _never_exists(_path: str) -> bool:
-    return False
+@pytest.fixture
+def transport(app):
+    return ASGITransport(app=app)
 
 
-def _route(text: str, path_exists=_always_exists, subsystem_map=None) -> UpdatePlan:
-    router = UpdateRequestRouter(subsystem_map=subsystem_map, path_exists=path_exists)
-    return router.route(text)
-
-
-# ---------------------------------------------------------------------------
-# Dataclass shape
-# ---------------------------------------------------------------------------
-class TestDataclasses:
-    def test_update_request_holds_text(self) -> None:
-        req = UpdateRequest(text="update gludd: do a thing")
-        assert req.text == "update gludd: do a thing"
-
-    def test_update_target_fields(self) -> None:
-        tgt = UpdateTarget(kind="config", paths=["config/ratchet.yml"], subsystem="lint")
-        assert tgt.kind == "config"
-        assert tgt.paths == ["config/ratchet.yml"]
-        assert tgt.subsystem == "lint"
-
-    def test_update_plan_fields(self) -> None:
-        tgt = UpdateTarget(kind="config", paths=["config/ratchet.yml"], subsystem="lint")
-        plan = UpdatePlan(
-            target=tgt,
-            change_summary="x",
-            capability_required="config_write",
-            priority=8,
-            risk="low",
-            rationale="because",
-        )
-        assert plan.target is tgt
-        assert plan.capability_required == "config_write"
-        assert plan.priority == 8
-        assert plan.risk == "low"
-        assert plan.rationale == "because"
-
-
-# ---------------------------------------------------------------------------
-# Canonical routing cases from the task spec
-# ---------------------------------------------------------------------------
-class TestCanonicalRoutes:
-    def test_spend_window_is_config_high_priority(self) -> None:
-        plan = _route("update gludd: increase the spend window to 2h")
-        assert plan.target.subsystem == "budget"
-        assert plan.target.kind in ("config", "yaml")
-        assert plan.capability_required == "config_write"
-        assert plan.priority == 8
-        assert plan.risk == "low"
-
-    def test_role_verify_step_is_role_yaml_target(self) -> None:
-        plan = _route("update gludd: add a verify step to the security_review role")
-        assert plan.target.kind in ("role", "yaml")
-        assert plan.target.subsystem == "role"
-        assert plan.capability_required == "collections_self_modify"
-        assert plan.priority == 5
-        assert plan.risk == "medium"
-        # The named role must be resolved into its real role directory path.
-        assert any("security_review" in p for p in plan.target.paths)
-
-    def test_scheduler_behaviour_change_is_code_target(self) -> None:
-        plan = _route("update gludd: change how the scheduler picks the next task")
-        assert plan.target.kind == "code"
-        assert plan.target.subsystem == "scheduler"
-        assert plan.capability_required == "code_self_modify"
-        assert plan.priority == 3
-        assert plan.risk == "high"
-
-    def test_unmatchable_request_is_fail_safe(self) -> None:
-        plan = _route("update gludd: please frobnicate the wombat quux")
-        assert plan.target.kind == "config"
-        assert plan.risk == "high"
-        assert "needs human routing" in plan.rationale.lower()
-        assert plan.target.paths == []
-
-
-# ---------------------------------------------------------------------------
-# Subsystem classification breadth
-# ---------------------------------------------------------------------------
-class TestSubsystemClassification:
-    @pytest.mark.parametrize(
-        ("text", "subsystem"),
-        [
-            ("update gludd: raise the monthly budget cap", "budget"),
-            ("update gludd: lower the cost ceiling", "budget"),
-            ("update gludd: add a new model profile for claude", "model"),
-            ("update gludd: switch the default provider api base", "model"),
-            ("update gludd: tighten the lint gate ratchet", "lint"),
-            ("update gludd: add an xdist worker to ci", "lint"),
-            ("update gludd: rotate the vault secret alias", "secret"),
-            ("update gludd: add a new log source connector", "connector"),
-            ("update gludd: improve observability tracing", "connector"),
-        ],
+def _plan() -> SelfUpdatePlan:
+    return SelfUpdatePlan(
+        subsystem=Subsystem.CONFIG,
+        change_kind=ChangeKind.VALUE_EDIT,
+        target_files=("config/general-ludd.yml",),
+        apply_tier=ApplyTier.CONFIG,
+        requires_approval=False,
+        rationale="routed to subsystem=config (kw-score=2)",
+        confidence=0.75,
     )
-    def test_keyword_routes_to_subsystem(self, text: str, subsystem: str) -> None:
-        plan = _route(text)
-        assert plan.target.subsystem == subsystem
 
-    def test_config_subsystems_are_high_priority_low_risk(self) -> None:
-        for text in (
-            "update gludd: raise the budget cap",
-            "update gludd: add a model profile",
-            "update gludd: tighten the lint ratchet",
-            "update gludd: rotate a vault secret",
+
+def _audit() -> AuditRecord:
+    return AuditRecord(
+        outcome=ApplyOutcome.APPLIED,
+        subsystem=Subsystem.CONFIG.value,
+        change_kind=ChangeKind.VALUE_EDIT.value,
+        apply_tier=ApplyTier.CONFIG.value,
+        target_files=("config/general-ludd.yml",),
+        requested_by="operator",
+        reason="auto-applied config-tier change",
+        approved=False,
+    )
+
+
+class TestSelfUpdatePlanEndpoint:
+    @pytest.mark.asyncio
+    async def test_plan_returns_applied_result(self, transport):
+        with patch(
+            "general_ludd.routers.self_update.classify", return_value=_plan()
+        ) as mock_classify, patch(
+            "general_ludd.routers.self_update.apply_plan",
+            return_value=ApplyResult(
+                outcome=ApplyOutcome.APPLIED,
+                audit=_audit(),
+                landed_files=("config/general-ludd.yml",),
+            ),
+        ) as mock_apply:
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/plan",
+                    json={
+                        "raw_text": "increase the spend window to 2h",
+                        "requested_by": "operator",
+                    },
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "ok"
+                assert data["outcome"] == ApplyOutcome.APPLIED
+                assert data["applied"] is True
+                assert data["subsystem"] == Subsystem.CONFIG.value
+                assert data["change_kind"] == ChangeKind.VALUE_EDIT.value
+                assert data["apply_tier"] == ApplyTier.CONFIG.value
+                assert "config/general-ludd.yml" in data["landed_files"]
+                assert data["audit"]["outcome"] == ApplyOutcome.APPLIED
+
+                mock_classify.assert_called_once()
+                mock_apply.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_plan_classifies_raw_text_into_request(self, transport):
+        captured: dict[str, object] = {}
+
+        def _capture(request: SelfUpdateRequest) -> SelfUpdatePlan:
+            captured["request"] = request
+            return _plan()
+
+        with patch(
+            "general_ludd.routers.self_update.classify", side_effect=_capture
+        ), patch(
+            "general_ludd.routers.self_update.apply_plan",
+            return_value=ApplyResult(outcome=ApplyOutcome.APPLIED, audit=_audit()),
         ):
-            plan = _route(text)
-            assert plan.capability_required == "config_write"
-            assert plan.priority == 8
-            assert plan.risk == "low"
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/plan",
+                    json={
+                        "raw_text": "tune the spend cap",
+                        "requested_by": "ops",
+                        "approval_token": "tok-123",
+                    },
+                )
+                assert resp.status_code == 200
+                request = captured["request"]
+                assert isinstance(request, SelfUpdateRequest)
+                assert request.raw_text == "tune the spend cap"
+                assert request.requested_by == "ops"
+                assert request.approval_token == "tok-123"
+
+    @pytest.mark.asyncio
+    async def test_plan_accepts_text_alias_field(self, transport):
+        captured: dict[str, object] = {}
+
+        def _capture(request: SelfUpdateRequest) -> SelfUpdatePlan:
+            captured["request"] = request
+            return _plan()
+
+        with patch(
+            "general_ludd.routers.self_update.classify", side_effect=_capture
+        ), patch(
+            "general_ludd.routers.self_update.apply_plan",
+            return_value=ApplyResult(outcome=ApplyOutcome.APPLIED, audit=_audit()),
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/plan",
+                    json={"text": "bump the spend cap"},
+                )
+                assert resp.status_code == 200
+                assert captured["request"].raw_text == "bump the spend cap"
+
+    @pytest.mark.asyncio
+    async def test_plan_is_fail_soft_on_classifier_error(self, transport):
+        with patch(
+            "general_ludd.routers.self_update.classify",
+            side_effect=RuntimeError("classifier blew up"),
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/plan",
+                    json={"raw_text": "anything"},
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "error"
+                assert "classifier blew up" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_plan_is_fail_soft_on_apply_error(self, transport):
+        with patch(
+            "general_ludd.routers.self_update.classify", return_value=_plan()
+        ), patch(
+            "general_ludd.routers.self_update.apply_plan",
+            side_effect=ValueError("apply ladder failed"),
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/plan",
+                    json={"raw_text": "anything"},
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "error"
+                assert "apply ladder failed" in data["error"]
 
 
-# ---------------------------------------------------------------------------
-# Path existence verification
-# ---------------------------------------------------------------------------
-class TestPathVerification:
-    def test_nonexistent_paths_are_dropped(self) -> None:
-        # budget maps to several candidate paths; if none exist, fail-safe.
-        plan = _route("update gludd: raise the budget cap", path_exists=_never_exists)
-        assert plan.target.paths == []
-        assert plan.target.kind == "config"
-        assert plan.risk == "high"
-        assert "needs human routing" in plan.rationale.lower()
-
-    def test_only_existing_paths_kept(self) -> None:
-        kept = "config/ratchet.yml"
-
-        def only_ratchet(path: str) -> bool:
-            return path == kept
-
-        plan = _route("update gludd: tighten the lint ratchet", path_exists=only_ratchet)
-        assert plan.target.paths == [kept]
-
-    def test_custom_subsystem_map_overrides_default(self) -> None:
-        custom = {
-            "budget": {
-                "kind": "config",
-                "paths": ["config/ratchet.yml"],
-                "keywords": ["spend"],
-            }
+class TestSelfUpdateEnqueueEndpoint:
+    @pytest.mark.asyncio
+    async def test_enqueue_builds_todo_spec_and_appends(self, transport):
+        spec = {
+            "title": "self-update: config/value_edit",
+            "description": "tune the spend cap",
+            "priority": 85,
+            "queue": "self_update",
+            "work_type": "infra",
+            "risk_level": "low",
+            "tags": ["self-update", "tier:config"],
+            "created_by": "ops",
+            "approval_policy": "none",
         }
-        plan = _route(
-            "update gludd: change the spend window",
-            subsystem_map=custom,
-        )
-        assert plan.target.subsystem == "budget"
-        assert plan.target.paths == ["config/ratchet.yml"]
+        from general_ludd.daemon import _daemon_state
+
+        _daemon_state.setdefault("todos", [])
+        _daemon_state["todos"].clear()
+
+        with patch(
+            "general_ludd.routers.self_update.classify", return_value=_plan()
+        ), patch(
+            "general_ludd.routers.self_update.to_todo_spec", return_value=spec
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/enqueue",
+                    json={
+                        "raw_text": "tune the spend cap",
+                        "requested_by": "ops",
+                    },
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "ok"
+                assert data["queued"] is True
+                assert data["spec"] == spec
+                assert spec in _daemon_state["todos"]
+
+    @pytest.mark.asyncio
+    async def test_enqueue_passes_project_id_into_spec(self, transport):
+        captured: dict[str, object] = {}
+
+        def _capture(
+            plan: SelfUpdatePlan, request: SelfUpdateRequest, **kw: object
+        ) -> dict[str, object]:
+            captured.update(kw)
+            return {"title": "x", "priority": 1, "queue": "self_update"}
+
+        with patch(
+            "general_ludd.routers.self_update.classify", return_value=_plan()
+        ), patch(
+            "general_ludd.routers.self_update.to_todo_spec", side_effect=_capture
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/enqueue",
+                    json={
+                        "raw_text": "tune the spend cap",
+                        "project_id": "proj-7",
+                    },
+                )
+                assert resp.status_code == 200
+                assert captured.get("project_id") == "proj-7"
+
+    @pytest.mark.asyncio
+    async def test_enqueue_is_fail_soft_on_classifier_error(self, transport):
+        with patch(
+            "general_ludd.routers.self_update.classify",
+            side_effect=RuntimeError("nope"),
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/enqueue",
+                    json={"raw_text": "anything"},
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "error"
+                assert "nope" in data["error"]
+
+    @pytest.mark.asyncio
+    async def test_enqueue_is_fail_soft_on_spec_error(self, transport):
+        with patch(
+            "general_ludd.routers.self_update.classify", return_value=_plan()
+        ), patch(
+            "general_ludd.routers.self_update.to_todo_spec",
+            side_effect=KeyError("missing"),
+        ):
+            async with AsyncClient(
+                transport=transport, base_url="http://test"
+            ) as client:
+                resp = await client.post(
+                    "/admin/self-update/enqueue",
+                    json={"raw_text": "anything"},
+                )
+                assert resp.status_code == 200
+                data = resp.json()
+                assert data["status"] == "error"
 
 
-# ---------------------------------------------------------------------------
-# Code-vs-config decision boundary
-# ---------------------------------------------------------------------------
-class TestKindDecision:
-    def test_default_is_config_not_code(self) -> None:
-        # A budget tweak is expressible in config -> never escalate to code.
-        plan = _route("update gludd: raise the budget cap")
-        assert plan.target.kind != "code"
-
-    def test_behaviour_change_escalates_to_code(self) -> None:
-        plan = _route("update gludd: change how the scheduler dispatches work")
-        assert plan.target.kind == "code"
-        assert plan.capability_required == "code_self_modify"
-
-    def test_code_target_never_auto_high_priority(self) -> None:
-        plan = _route("update gludd: rewrite the scheduler parallel dispatch logic")
-        assert plan.priority <= 3
-        assert plan.risk == "high"
-
-
-# ---------------------------------------------------------------------------
-# Determinism
-# ---------------------------------------------------------------------------
-class TestDeterminism:
-    def test_same_input_same_plan(self) -> None:
-        a = _route("update gludd: increase the spend window to 2h")
-        b = _route("update gludd: increase the spend window to 2h")
-        assert a == b
-
-    def test_default_map_is_nonempty_and_well_formed(self) -> None:
-        assert DEFAULT_SUBSYSTEM_MAP
-        for name, spec in DEFAULT_SUBSYSTEM_MAP.items():
-            assert isinstance(name, str)
-            assert spec["kind"] in ("config", "yaml", "role", "code")
-            assert isinstance(spec["paths"], list)
-            assert isinstance(spec["keywords"], list)
-            assert spec["keywords"], f"{name} must have keywords"
+class TestSelfUpdateRouterRegistration:
+    def test_router_is_registered_on_daemon_app(self, app):
+        paths = {route.path for route in app.routes}
+        assert "/admin/self-update/plan" in paths
+        assert "/admin/self-update/enqueue" in paths

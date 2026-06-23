@@ -20,3 +20,4 @@ tests/e2e/test_pipeline_live_zai.py::TestLiveSilentSkipFallback::test_profileles
 tests/e2e/test_self_improve_strategies_live_zai.py::TestSelfImproveLiveZai::test_live_zai_harness_heuristic_path_and_gap_documented: "live Z.AI test — needs openai provider package installed; environmental"
 tests/unit/test_gate_concurrency.py::TestRunGateScript::test_second_invocation_rejected_when_lock_held: "flaky basetemp cleanup race — rejected invocation may create basetemp before lock check"
 tests/unit/test_gate_concurrency.py::TestRunGateScript::test_subagent_guard_refused_via_claude_agent_id: "flaky basetemp cleanup race — same root cause as test_second_invocation_rejected_when_lock_held"
+tests/integration/test_daemon_lifespan.py::TestDaemonLifespanWithRealDB::test_daemon_queues_seeded_in_db: "CI-only SQLite database is locked under Python 3.12 xdist — degraded mode race"

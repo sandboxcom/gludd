@@ -95,6 +95,10 @@ class UserConfig(BaseSettings):
     queues: list[dict[str, Any]] = []
     connectors: list[dict[str, Any]] = []
     self_improve: dict[str, Any] = {}
+    # Phase-2 self-update wiring (§7d daemon_integration_plan.md). Controls
+    # whether config-tier SelfUpdatePlans auto-apply without manual approval;
+    # fed into apply_plan(auto_apply_config=...) at apply.py:160.
+    self_update: dict[str, Any] = {"auto_apply_config": True}
     rules: list[Any] = []
     pipeline: PipelineConfigBlock = PipelineConfigBlock()
 

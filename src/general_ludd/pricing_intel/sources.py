@@ -1238,6 +1238,249 @@ class GCPSource:
 
 
 # ---------------------------------------------------------------------------
+# GCP — LIVE compute prices via Cloud Billing SKU catalog (google-cloud-billing)
+# ---------------------------------------------------------------------------
+# Source: Cloud Billing API — CloudCatalogClient.list_skus, parent
+#         ``services/6F81-5844-456A`` (Compute Engine).
+# Spec:   https://cloud.google.com/billing/docs/reference/rest/v1/services.skus/list
+# Auth:   ``GOOGLE_APPLICATION_CREDENTIALS`` environment variable pointing to a
+#         GCP service-account key JSON (standard Google Application Default
+#         Credentials chain). If unset, the source skips cleanly (returns
+#         ``[]`` and logs a warning) — it is dormant without credentials.
+#
+# Each SKU returned by list_skus carries a ``category`` (resource_family,
+# resource_group, usage_type) and a list of ``pricing_info`` entries. The
+# pricing_expression's first tiered_rate is the headline USD/hour rate for the
+# SKU, encoded as google.type.Money (whole ``units`` + fractional ``nanos``
+# where 1e9 nanos = 1 unit). GPU SKUs are identified by
+# ``category.resource_family == "Compute"`` AND (``resource_group == "GPU"``
+# OR the description mentions "GPU"/"Gpu"). GCP bills Linux VMs per second
+# (1-minute minimum), so we convert USD/hour to USD/second to match the
+# per_second granularity used by the static GCPSource.
+#
+# DEPENDENCY NOTE: google-cloud-billing is an OPTIONAL runtime dependency —
+# it is NOT yet listed in pyproject.toml. The class uses a lazy import inside
+# ``_get_client`` so the module imports cleanly without the SDK; a missing
+# dep simply makes the source dormant. Add ``google-cloud-billing>=0.10.0``
+# to pyproject.toml dependencies to activate live GCP pricing.
+# ---------------------------------------------------------------------------
+
+
+class GCPPricingSource:
+    """FETCH STRATEGY: LIVE — Cloud Billing SKU catalog (google-cloud-billing).
+
+    Queries the GCP Cloud Billing ``CloudCatalogClient.list_skus`` API for
+    Compute Engine (serviceId ``6F81-5844-456A``) and filters client-side for
+    GPU SKUs. Returns one ``ComputePrice`` per matching SKU, with per-second
+    pricing derived from the SKU's first ``tiered_rate`` (``Money.units`` +
+    ``Money.nanos`` / 1e9, divided by 3600).
+
+    Auth: ``GOOGLE_APPLICATION_CREDENTIALS`` environment variable pointing to
+    a service-account key JSON. If unset, the source skips cleanly (returns
+    ``[]`` and logs a warning) — it is dormant without credentials.
+
+    SLUG NOTE: Uses ``"gcp_live"`` (not ``"gcp"``) to avoid colliding
+    with the static ``GCPSource`` in the catalog's first-match-wins
+    ``_source_for`` lookup. This keeps both the static baseline (always
+    available, no credentials) and the live source (dormant without
+    credentials) independently queryable through ``PricingCatalog``.
+
+    BILLING SEMANTICS (same POSTPAID model as the static GCPSource):
+      - POSTPAID monthly invoice; no prepaid balance required.
+      - Per-second billing for VMs, 1-minute minimum per launch.
+      - Preemptible / Spot SKUs (``category.usage_type == "Preemptible"``)
+        are surfaced as ``spot=True``.
+    """
+
+    _COMPUTE_SERVICE_ID = "6F81-5844-456A"
+    _COMPUTE_PARENT = f"services/{_COMPUTE_SERVICE_ID}"
+    _SOURCE = (
+        "GCP Cloud Billing SKU catalog "
+        "(google-cloud-billing CloudCatalogClient.list_skus) — "
+        "https://cloud.google.com/billing/docs/reference/rest/v1/services.skus/list"
+    )
+
+    def provider_slug(self) -> str:
+        return "gcp_live"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="gcp_live",
+            granularity=BillingGranularity.per_second,
+            terms=BillingTerms.postpaid_monthly,
+            currency="USD",
+            min_charge=0.0,
+            spot_available=True,
+            notes=(
+                "POSTPAID MONTHLY. Live pricing via GCP Cloud Billing SKU "
+                "catalog (list_skus). Per-second billing (Linux); 1-minute "
+                "minimum per launch. No prepaid balance required. Preemptible "
+                "SKUs surfaced as spot. "
+                "Source: https://cloud.google.com/compute/gpus-pricing"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        """GCP Compute does not offer a model API (Vertex AI is separate). Returns []."""
+        return []
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Fetch live GPU compute prices from the GCP Cloud Billing SKU catalog.
+
+        Returns an empty list on any error (fail-soft). Skips cleanly when
+        ``GOOGLE_APPLICATION_CREDENTIALS`` is not set or ``google-cloud-billing``
+        is not installed.
+        """
+        if not os.environ.get("GOOGLE_APPLICATION_CREDENTIALS"):
+            logger.warning(
+                "GCP SKU fetch skipped: GOOGLE_APPLICATION_CREDENTIALS not set"
+            )
+            return []
+
+        try:
+            client = self._get_client()
+        except ImportError as exc:
+            logger.warning(
+                "GCP SKU fetch skipped: google-cloud-billing unavailable (%s)",
+                exc,
+            )
+            return []
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.warning("GCP SKU fetch skipped: %s", exc)
+            return []
+
+        try:
+            skus = self._fetch_skus(client)
+        except Exception as exc:
+            logger.warning("GCP list_skus failed: %s", exc)
+            return []
+
+        fetched_at = time.time()
+        results: list[ComputePrice] = []
+        for raw_sku in skus:
+            parsed = self._parse_sku(raw_sku, fetched_at)
+            if parsed is not None:
+                results.append(parsed)
+        return results
+
+    def _get_client(self) -> Any:
+        """Build a CloudCatalogClient. Raises ImportError if the SDK is missing.
+
+        Lazy import keeps the module loadable when google-cloud-billing (an
+        optional dep) is not installed; tests mock this method to avoid the
+        network/dep.
+        """
+        from google.cloud import billing  # type: ignore[import-not-found]
+
+        return billing.CloudCatalogClient()
+
+    def _fetch_skus(self, client: Any) -> list[Any]:
+        """Page through list_skus and return the raw SKU messages.
+
+        ``list_skus`` returns a paged iterable; we drain it into a list so any
+        paged-network error surfaces here (and is caught by the caller).
+        """
+        pager = client.list_skus(parent=self._COMPUTE_PARENT)
+        return list(pager)
+
+    def _parse_sku(self, raw_sku: Any, fetched_at: float) -> ComputePrice | None:
+        """Parse one SKU message into a ComputePrice, or None to skip.
+
+        Skips (returns None) when:
+          - the SKU is not in the Compute resource family,
+          - the SKU is not a GPU (resource_group != GPU AND description does
+            not mention "GPU"/"Gpu"),
+          - the SKU has no pricing_info or no tiered_rates,
+          - the USD hourly rate cannot be extracted.
+
+        Attribute access is defensive (``getattr`` with fallbacks) so partial
+        or schema-drifted messages are skipped rather than crashing the loop.
+        """
+        category = getattr(raw_sku, "category", None)
+        resource_family = str(getattr(category, "resource_family", "") or "")
+        if resource_family != "Compute":
+            return None
+
+        resource_group = str(getattr(category, "resource_group", "") or "")
+        description = str(getattr(raw_sku, "description", "") or "")
+        is_gpu = resource_group == "GPU" or "gpu" in description.lower()
+        if not is_gpu:
+            return None
+
+        usage_type = str(getattr(category, "usage_type", "") or "")
+        spot = usage_type == "Preemptible"
+
+        usd_per_hour = self._extract_hourly_usd(raw_sku)
+        if usd_per_hour is None:
+            return None
+
+        usd_per_second = usd_per_hour / 3600.0
+        sku_id = str(getattr(raw_sku, "sku_id", "") or "") or description
+        gpu_type = self._extract_gpu_type(description, resource_group)
+
+        return ComputePrice(
+            provider="gcp_live",
+            sku=sku_id,
+            usd_per_unit=usd_per_second,
+            granularity=BillingGranularity.per_second,
+            spot=spot,
+            terms=BillingTerms.postpaid_monthly,
+            fetched_at=fetched_at,
+            source=self._SOURCE,
+            gpu_count=None,
+            gpu_type=gpu_type,
+            notes=(
+                f"{'Preemptible/Spot' if spot else 'On-demand'} GPU SKU. "
+                f"${usd_per_hour:.4f}/hr = ${usd_per_second:.6f}/s. "
+                "1-min minimum per launch. "
+                f"resource_group={resource_group or 'n/a'}."
+            ),
+        )
+
+    @staticmethod
+    def _extract_gpu_type(description: str, resource_group: str) -> str:
+        """Pick a human-readable GPU label for the SKU.
+
+        Prefers the description (which usually embeds the accelerator family,
+        e.g. "A2 Highgpu 1G Gpu"), falling back to the resource_group.
+        """
+        if description:
+            return description
+        return resource_group or "GPU"
+
+    @staticmethod
+    def _extract_hourly_usd(raw_sku: Any) -> float | None:
+        """Pull the first tiered_rate USD/hour out of a SKU's pricing_info.
+
+        ``Money`` is encoded as whole ``units`` + fractional ``nanos`` where
+        1e9 nanos = 1 unit. Returns None when pricing is missing or malformed.
+        """
+        pricing_infos = getattr(raw_sku, "pricing_info", None) or []
+        if not pricing_infos:
+            return None
+        first_info = pricing_infos[0]
+        pricing_expr = getattr(first_info, "pricing_expression", None)
+        if pricing_expr is None:
+            return None
+        tiered_rates = getattr(pricing_expr, "tiered_rates", None) or []
+        if not tiered_rates:
+            return None
+        first_rate = tiered_rates[0]
+        unit_price = getattr(first_rate, "unit_price", None)
+        if unit_price is None:
+            return None
+        units = getattr(unit_price, "units", 0) or 0
+        nanos = getattr(unit_price, "nanos", 0) or 0
+        try:
+            total = float(units) + float(nanos) / 1e9
+        except (TypeError, ValueError):
+            return None
+        if total <= 0:
+            return None
+        return total
+
+
+# ---------------------------------------------------------------------------
 # HuggingFace Inference Endpoints — TODO (billing terms registered)
 # ---------------------------------------------------------------------------
 
@@ -1603,6 +1846,7 @@ def all_sources() -> list[PricingSource]:
         AWSSource(),
         AWSPricingSource(),
         GCPSource(),
+        GCPPricingSource(),
         HuggingFaceSource(),
         FireworksSource(),
         ZAISource(),

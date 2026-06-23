@@ -124,6 +124,11 @@ INITIAL_QUEUES: list[Queue] = [
         ],
     ),
     Queue(
+        queue_name="self_update",
+        resource_profile="hybrid",
+        allowed_playbooks=["noop.yml"],
+    ),
+    Queue(
         queue_name="audit",
         resource_profile="ai_heavy",
         allowed_playbooks=["noop.yml", "gap_analysis.yml", "log_audit.yml"],

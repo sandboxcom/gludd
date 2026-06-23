@@ -23,6 +23,7 @@ from general_ludd.db.session import (
     is_sqlite_url,
     run_wal_pragmas,
 )
+from general_ludd.schemas.queue import INITIAL_QUEUES
 
 
 class TestSqliteDefault:
@@ -312,9 +313,9 @@ class TestQueueSeeding:
 
         count = await seed_initial_queues(session)
         await session.flush()
-        assert count == 12
+        assert count == len(INITIAL_QUEUES)
         result = await session.execute(text("SELECT COUNT(*) FROM queues"))
-        assert result.scalar() == 12
+        assert result.scalar() == len(INITIAL_QUEUES)
 
     @pytest.mark.asyncio
     async def test_seed_idempotent(self, session: AsyncSession):
@@ -326,7 +327,7 @@ class TestQueueSeeding:
         await session.flush()
         assert count2 == 0
         result = await session.execute(text("SELECT COUNT(*) FROM queues"))
-        assert result.scalar() == 12
+        assert result.scalar() == len(INITIAL_QUEUES)
 
     @pytest.mark.asyncio
     async def test_core_queue_exists(self, session: AsyncSession):

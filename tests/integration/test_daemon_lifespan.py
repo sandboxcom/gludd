@@ -18,12 +18,14 @@ from fastapi.testclient import TestClient
 
 import general_ludd.daemon as daemon_mod
 from general_ludd.daemon import create_daemon_app
+from general_ludd.schemas.queue import INITIAL_QUEUES
 
 
 @pytest.fixture(autouse=True)
 def _reset_daemon_state():
     daemon_mod._daemon_state["todos"] = []
     daemon_mod._daemon_state["tick_metrics"] = {}
+    assert "todos" in daemon_mod._daemon_state
 
 
 def _make_db_config(tmp_path):
@@ -84,7 +86,9 @@ class TestDaemonLifespanWithRealDB:
                         text("SELECT COUNT(*) FROM queues")
                     )
                     count = result.scalar()
-                    assert count == 12, f"Expected 12 queues, got {count}"
+                    assert count == len(INITIAL_QUEUES), (
+                        f"Expected {len(INITIAL_QUEUES)} queues, got {count}"
+                    )
 
     def test_daemon_add_todo_and_list(self, tmp_path):
         config_dir = _make_db_config(tmp_path)
