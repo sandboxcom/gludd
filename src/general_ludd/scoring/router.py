@@ -13,6 +13,7 @@ from general_ludd.schemas.benchmark import (
     RoutingDecision,
     TaskType,
 )
+from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
 
 log = logging.getLogger(__name__)
 
@@ -26,6 +27,9 @@ class AdaptiveRouter:
         quality_weight: float = 0.8,
         quantization_map: dict[str, tuple[str, float]] | None = None,
         health_tracker: Any | None = None,
+        embedding_store: TaskEmbeddingStore | None = None,
+        similarity_alpha: float = 1.0,
+        similarity_floor: float = 0.0,
     ) -> None:
         self._repo = benchmark_repo
         self._min_samples = min_samples
@@ -33,6 +37,9 @@ class AdaptiveRouter:
         self._quality_weight = quality_weight
         self._quantization_map = quantization_map or {}
         self._health_tracker = health_tracker
+        self._embedding_store = embedding_store
+        self._similarity_alpha = similarity_alpha
+        self._similarity_floor = similarity_floor
         self._cache: dict[str, RoutingDecision] = {}
         self._cache_time: datetime | None = None
         self._cache_ttl_seconds: float = 300.0
@@ -99,7 +106,11 @@ class AdaptiveRouter:
                 estimated_cost_usd=best.avg_cost_usd,
                 sample_count=best.sample_count,
                 fallback=False,
-                reason="best_historical_score",
+                reason=(
+                    "best_historical_score_similarity"
+                    if best.task_type != task_type
+                    else "best_historical_score"
+                ),
             )
             return self._cache_and_return(cache_key, decision)
 
@@ -138,6 +149,17 @@ class AdaptiveRouter:
     ) -> RoutingCandidate | None:
         if self._repo is None:
             return None
+        if self._embedding_store is not None:
+            # Tier 2 RAG: borrow strength from neighboring task types via
+            # cosine similarity. If the query task has no embedding (KeyError),
+            # silently fall through to the exact-match path so the router is
+            # always usable even with a partially-seeded store.
+            try:
+                sims = await self._embedding_store.similarity_to(task_type)
+            except KeyError:
+                sims = None
+            if sims is not None:
+                return await self._get_best_with_embeddings(task_type, sims)
         aggregates = await self._repo.get_aggregate_scores(task_type=task_type.value)
         if not aggregates:
             return None
@@ -178,6 +200,74 @@ class AdaptiveRouter:
                 c,
             )
             for c in candidates
+        ]
+        return max(ranked, key=lambda pair: pair[0])[1]
+
+    def _similarity_weight(self, similarity: float) -> float:
+        """Quality multiplier applied to a candidate based on task-type similarity.
+
+        ``similarity_floor + similarity_alpha * similarity``. Exact-match
+        candidates (similarity=1.0) receive the full ``floor + alpha``; cross-type
+        candidates receive a fraction scaled by cosine similarity. With defaults
+        (alpha=1.0, floor=0.0) exact-match weight is 1.0 and a perfectly-similar
+        neighbor's weight approaches 1.0.
+        """
+        return self._similarity_floor + self._similarity_alpha * similarity
+
+    async def _get_best_with_embeddings(
+        self,
+        task_type: TaskType,
+        sims: dict[str, float],
+    ) -> RoutingCandidate | None:
+        """Cross-task-type candidate selection weighted by embedding similarity.
+
+        Queries ALL task types (``task_type=None``) rather than just the exact
+        match, then scales each candidate's quality by ``_similarity_weight`` so
+        that neighbors can lend evidence to the routing decision when direct
+        history is thin. The returned candidate keeps its RAW ``composite_score``
+        — the weighting affects ranking only, not the reported score.
+        """
+        aggregates = await self._repo.get_aggregate_scores(task_type=None)  # type: ignore[union-attr]
+        if not aggregates:
+            return None
+        weighted: list[tuple[RoutingCandidate, float]] = []
+        for agg in aggregates:
+            sample_count = int(agg.get("sample_count", 0))
+            if sample_count < self._min_samples:
+                continue
+            model_id = agg["model_profile_id"]
+            if (
+                self._health_tracker is not None
+                and not self._health_tracker.is_healthy(model_id, admit_probe=False)
+            ):
+                continue
+            agg_task_str = agg.get("task_type", task_type.value)
+            try:
+                agg_task_type = TaskType(agg_task_str)
+            except ValueError:
+                continue
+            composite = float(agg.get("composite_score", 0.0))
+            avg_cost = float(agg.get("avg_cost", 0.0))
+            similarity = (
+                1.0 if agg_task_str == task_type.value else sims.get(agg_task_str, 0.0)
+            )
+            candidate = RoutingCandidate(
+                prompt_profile_id=agg.get("prompt_profile_id"),
+                model_profile_id=model_id,
+                composite_score=composite,
+                avg_cost_usd=avg_cost,
+                sample_count=sample_count,
+                task_type=agg_task_type,
+            )
+            quality = self._apply_quantization_penalty(candidate) * (
+                self._similarity_weight(similarity)
+            )
+            weighted.append((candidate, quality))
+        if not weighted:
+            return None
+        max_cost = max((c.avg_cost_usd for c, _ in weighted), default=0.0)
+        ranked = [
+            (self._cost_adjusted_rank(c, q, max_cost), c) for c, q in weighted
         ]
         return max(ranked, key=lambda pair: pair[0])[1]
 
