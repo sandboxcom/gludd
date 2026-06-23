@@ -220,12 +220,6 @@ class TestCommitTargetsEnforceGate:
             if not has_gate_check:
                 offenders.append(target_name)
         assert not offenders, "Bypass: " + ", ".join(offenders)
-            if not has_gate_check:
-                offenders.append(target_name)
-        assert not offenders, (
-            "These commit-shaped targets bypass the .gate-status check: "
-            + ", ".join(offenders)
-        )
 
 
 class TestMakeGateStatusFile:
