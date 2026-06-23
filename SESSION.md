@@ -7,29 +7,25 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — MERGED to master, verified
+## Current State — master@`10ec8ec`, CI running
 
 ### MERGED:
-- `fix/self-update-sec` → master (merge commit `343282b`)
+- `fix/self-update-sec` → master (all previous work landed)
+- master advanced to `10ec8ec`
 
 ### CI:
-- GREEN on branch (run `28013209406`); master CI triggered on merge
-- All gate + test-shards + molecule passed
-- 86/86 scenarios, 12,320 tests
+- RUNNING on master@`10ec8ec` (not yet GREEN — do not treat as confirmed)
+- Awaits run completion before declaring the ship good
 
-### Pushed + Verified:
-- master@`343282b` on sandboxcom (verified)
+### New Work on master (since `10ec8ec`):
+- Security fixes (batch-3 + batch-4 security items landed)
+- Self-improve Phase 1
+- Tier 1 RAG embeddings
+- RunPod + Z.AI pricing
+- CI watch speed improvements
 
-## Wave 3 Ship — Status: GATE RUNNING, NOT YET CONFIRMED
-
-Tip commit: `6063e51` (built on `bd4cddb` + 9 fixes). Branch is FF-safe off master (`3223c67`). A clean-worktree gate is currently RUNNING to verify. Do NOT treat this as merged or green until the gate result lands.
-
-Wave 3 contents (committed, unverified green):
-- Integration batch 3: convergence fixes + feature packages + connector/registry layer
-- Observability connector layer batches 1+2: 16+ connector groups, normalize + model-deploy check
-- Security hardening: MCP hardening, webmcp dogfood, fs-write policy, conflict scanner, CI regression guards
-- 4 features: saturation controller (#42), feature-db dogfood (#29), capability_policy default-DENY (#44), execution-engine fixes (#48)
-- 220+ tests added
+### Tests:
+- 12,394 tests collected
 
 ## Fast-Follow Branches (awaiting post-ship gated-merge)
 
@@ -63,16 +59,16 @@ Hooks hardened and enforcing as of 2026-06-18:
 ## Ratchet Burn-Down Progress
 - Started: 93 entries (2026-06-11)
 - After session 4 (30d66a3): 23 entries — 17 strict + 6 flaky
-- Current: ~12 entries (2 strict + 10 flaky) — last verified 2026-06-16 against config/ratchet.yml
-- **Total burned**: ~81 entries (93 → ~12, ~87% reduction)
+- Current: 14 entries — last verified 2026-06-23 against config/ratchet.yml
+- **Total burned**: ~79 entries (93 → 14, ~85% reduction)
 
 ## Known Gaps / Next Steps
 
-1. **Ship gate result pending** — wave 3 gate must complete and pass before merge.
+1. **Master CI pending** — master@`10ec8ec` CI run must complete and pass; treat as unconfirmed until GREEN.
 2. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
 3. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
 4. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.
-5. **Ratchet strict entries** (~2 remaining) — daemon lifespan real DB, container-runtime tests.
+5. **Ratchet** — 14 entries remaining; continue burn-down after master CI confirms green.
 6. Work plan: `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass, still current).
 
 ## Historical Gate Status (2026-06-12, pre-wave-3)

@@ -46,7 +46,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
         ci-poll ci-jobs ci-annotations test-no-wait-hook \
-        verify-remote ci-verdict \
+        verify-remote ci-verdict ci-verdict-fast ci-verdict-loop \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
         gh-run-list gh-run-cancel ci-rerun gh-run-view gh-run-failed-log \
         commit-no-verify \
@@ -2728,7 +2728,56 @@ ci-verdict:
 	@LOCAL_HEAD=$$(git rev-parse "$(BRANCH)" 2>/dev/null || echo "UNKNOWN"); \
 	echo "local HEAD of $(BRANCH): $$LOCAL_HEAD"; \
 	RUN_JSON=$$(gh run list -R sandboxcom/gludd -L 5 --branch "$(BRANCH)" --json headSha,conclusion,status,databaseId,createdAt 2>/dev/null || echo "[]"); \
-	echo "$$RUN_JSON" | GLUDD_LOCAL_HEAD="$$LOCAL_HEAD" GLUDD_BRANCH="$(BRANCH)" $(PYTHON) -c "import sys, json, os; lh=os.environ['GLUDD_LOCAL_HEAD']; br=os.environ['GLUDD_BRANCH']; runs=json.load(sys.stdin); r=(runs[0] if runs else None); (print('ci-verdict: no runs found for branch '+br) or sys.exit(0)) if not r else None; hs=r.get('headSha','?'); concl=(r.get('conclusion') or r.get('status') or '?'); rid=r.get('databaseId','?'); created=r.get('createdAt','?'); print('Latest run %s created=%s' % (rid, created)); print('  headSha=%s  conclusion=%s' % (hs, concl)); stale=(lh != 'UNKNOWN' and not hs.startswith(lh[:7])); print('\n  !! STALE RUN WARNING: run headSha '+hs+' != local HEAD '+lh+'\n  !! This run does NOT reflect the current branch tip -- do NOT use it as a verdict.') if stale else print('  -> RUN MATCHES LOCAL HEAD: verdict = '+str(concl))"
+ 	echo "$$RUN_JSON" | GLUDD_LOCAL_HEAD="$$LOCAL_HEAD" GLUDD_BRANCH="$(BRANCH)" $(PYTHON) -c "import sys, json, os; lh=os.environ['GLUDD_LOCAL_HEAD']; br=os.environ['GLUDD_BRANCH']; runs=json.load(sys.stdin); r=(runs[0] if runs else None); (print('ci-verdict: no runs found for branch '+br) or sys.exit(0)) if not r else None; hs=r.get('headSha','?'); concl=(r.get('conclusion') or r.get('status') or '?'); rid=r.get('databaseId','?'); created=r.get('createdAt','?'); print('Latest run %s created=%s' % (rid, created)); print('  headSha=%s  conclusion=%s' % (hs, concl)); stale=(lh != 'UNKNOWN' and not hs.startswith(lh[:7])); print('\n  !! STALE RUN WARNING: run headSha '+hs+' != local HEAD '+lh+'\n  !! This run does NOT reflect the current branch tip -- do NOT use it as a verdict.') if stale else print('  -> RUN MATCHES LOCAL HEAD: verdict = '+str(concl))"
+
+# Fastest possible CI verdict — single `gh run list -L 1`, JSON output, no
+# local-HEAD comparison or createdAt lookup.  Parses status immediately and
+# prints GREEN / RED / PENDING in <1s.  Use this for hot-loop checks where
+# you only need the run's terminal state, not the stale-run audit that the
+# full `ci-verdict` provides.
+# Usage: make ci-verdict-fast [BRANCH=master]
+ci-verdict-fast:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make ci-verdict-fast BRANCH=<branch>"; exit 1; }
+	@RUN_JSON=$$(gh run list -R sandboxcom/gludd -L 1 --branch "$(BRANCH)" --json status,conclusion,headSha,databaseId 2>/dev/null || echo "[]"); \
+	echo "$$RUN_JSON" | $(PYTHON) -c "import sys, json; \
+		runs=json.load(sys.stdin); \
+		r=runs[0] if runs else None; \
+		(print('ci-verdict-fast: no runs found') or sys.exit(0)) if not r else None; \
+		status=r.get('status','?'); concl=r.get('conclusion'); hs=r.get('headSha','?'); rid=r.get('databaseId','?'); \
+		verdict='PENDING' if status!='completed' else ('GREEN' if concl=='success' else 'RED'); \
+		print('%s  run=%s headSha=%s status=%s conclusion=%s' % (verdict, rid, hs, status, concl))"
+
+# Poll the latest CI run on BRANCH every CI_VERDICT_INTERVAL seconds (default 10)
+# until it reaches a terminal state, with a timestamped heartbeat each cycle.
+# Exits 0 on GREEN, 1 on RED, 2 on timeout (CI_VERDICT_MAX_SEC, default 3600).
+# Streams each poll's verdict line so the wait is observable (no unseen events).
+# Usage: make ci-verdict-loop [BRANCH=master] [CI_VERDICT_INTERVAL=10] [CI_VERDICT_MAX_SEC=3600]
+CI_VERDICT_INTERVAL ?= 10
+CI_VERDICT_MAX_SEC ?= 3600
+ci-verdict-loop:
+	@[ -n "$(BRANCH)" ] || { echo "Usage: make ci-verdict-loop BRANCH=<branch>"; exit 1; }
+	@start=$$(date +%s); poll=0; \
+	while :; do \
+		now=$$(date +%s); elapsed=$$((now - start)); \
+		if [ $$elapsed -ge $(CI_VERDICT_MAX_SEC) ]; then \
+			echo "[ci-verdict-loop] TIMEOUT after $$elapsed s (CI_VERDICT_MAX_SEC=$(CI_VERDICT_MAX_SEC))"; \
+			exit 2; \
+		fi; \
+		poll=$$((poll + 1)); \
+		line=$$(gh run list -R sandboxcom/gludd -L 1 --branch "$(BRANCH)" --json status,conclusion,headSha,databaseId 2>/dev/null \
+			| $(PYTHON) -c "import sys, json; \
+				runs=json.load(sys.stdin); r=runs[0] if runs else None; \
+				verdict='EMPTY' if not r else ('PENDING' if r.get('status')!='completed' else ('GREEN' if r.get('conclusion')=='success' else 'RED')); \
+				d=r or {}; \
+				print('|'.join([verdict, d.get('status','?'), str(d.get('conclusion')), d.get('headSha','?'), str(d.get('databaseId','?'))]))"); \
+		ts=$$(date +%H:%M:%S); \
+		echo "[ci-verdict-loop $$ts elapsed=$${elapsed}s poll=#$$poll] $$line"; \
+		case "$$line" in \
+			GREEN\|*) echo "[ci-verdict-loop] DONE GREEN after $$elapsed s"; exit 0 ;; \
+			RED\|*)   echo "[ci-verdict-loop] DONE RED after $$elapsed s"; exit 1 ;; \
+		esac; \
+		sleep $(CI_VERDICT_INTERVAL); \
+	done
 
 git-push-branch:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
