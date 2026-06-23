@@ -1084,6 +1084,89 @@ class FireworksSource:
 
 
 # ---------------------------------------------------------------------------
+# Z.AI (GLM models) — STATIC table (no public pricing API; HTML page only)
+# ---------------------------------------------------------------------------
+# Source: https://docs.z.ai/guides/overview/pricing  (accessed 2026-Q2)
+# Z.AI publishes model pricing only as an HTML page — there is no
+# machine-readable pricing API. Prices below are recorded from that page and
+# expressed as USD per 1,000 tokens (the page lists USD per 1,000,000 tokens).
+# Billing: postpaid_per_use; per-token; no prepaid balance required.
+# ---------------------------------------------------------------------------
+
+# Format: (model_id, input_usd_per_1M, output_usd_per_1M, notes)
+_ZAI_PRICES_PER_1M: list[tuple[str, float, float, str]] = [
+    # https://docs.z.ai/guides/overview/pricing (2026-Q2)
+    ("glm-5.2", 1.4, 4.4, "GLM-5.2; flagship reasoning model"),
+    ("glm-5", 1.0, 3.2, "GLM-5; high-capability general model"),
+    ("glm-4.5", 0.6, 2.2, "GLM-4.5; cost-optimized model"),
+]
+
+_ZAI_SOURCE = "https://docs.z.ai/guides/overview/pricing"
+_ZAI_FETCHED_AT = 1735689600.0  # 2025-01-01 00:00 UTC (table recorded date)
+
+
+class ZAISource:
+    """FETCH STRATEGY: STATIC — hardcoded from https://docs.z.ai/guides/overview/pricing (2026-Q2).
+
+    Z.AI does not publish a machine-readable pricing API; prices are listed on an
+    HTML page and were transcribed into the static table below. The page quotes
+    USD per 1,000,000 tokens; we convert to USD per 1,000 tokens (divide by 1000)
+    to match the ModelPrice convention used by the other sources.
+
+    # TODO(integration): Add HTML scraping of the pricing page (or a Z.AI SDK
+    # metadata call) to refresh these rates automatically.
+
+    Billing:
+      - terms: postpaid_per_use (billed per API call; no prepaid balance)
+      - granularity: per_token
+      - spot_available: False (no spot concept for API calls)
+      - min_charge: None (no documented minimum per call)
+    """
+
+    def provider_slug(self) -> str:
+        return "zai"
+
+    def billing(self) -> ProviderBilling:
+        return ProviderBilling(
+            provider="zai",
+            granularity=BillingGranularity.per_token,
+            terms=BillingTerms.postpaid_per_use,
+            currency="USD",
+            min_charge=None,
+            spot_available=False,
+            notes=(
+                "Billed per API call per token; no prepaid balance required. "
+                "Prices listed as USD per 1M tokens on the pricing page; "
+                "converted to per-1K internally. "
+                "Source: https://docs.z.ai/guides/overview/pricing"
+            ),
+        )
+
+    def fetch_model_prices(self) -> list[ModelPrice]:
+        """Return static price table. Source documented; table dated 2026-Q2.
+
+        The page lists prices per 1,000,000 tokens; ModelPrice stores per-1,000,
+        so each value is divided by 1000.
+        """
+        return [
+            ModelPrice(
+                provider="zai",
+                model_id=model_id,
+                input_usd_per_1k=inp_per_1m / 1000.0,
+                output_usd_per_1k=out_per_1m / 1000.0,
+                fetched_at=_ZAI_FETCHED_AT,
+                source=_ZAI_SOURCE,
+                notes=notes,
+            )
+            for model_id, inp_per_1m, out_per_1m, notes in _ZAI_PRICES_PER_1M
+        ]
+
+    def fetch_compute_prices(self) -> list[ComputePrice]:
+        """Z.AI does not offer direct compute. Returns []."""
+        return []
+
+
+# ---------------------------------------------------------------------------
 # Registry: all available sources
 # ---------------------------------------------------------------------------
 
@@ -1100,4 +1183,5 @@ def all_sources() -> list[PricingSource]:
         GCPSource(),
         HuggingFaceSource(),
         FireworksSource(),
+        ZAISource(),
     ]
