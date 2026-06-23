@@ -41,7 +41,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         git-add-all help grep scan-secrets-fresh untrack \
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
-        gate-async gate-status floor-plan gated-merge ship-async write-gate-safe-hook \
+        gate-async gate-status gate-background gate-bg-check floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
@@ -75,6 +75,8 @@ help:
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
+	@echo "  gate-background       Launch gate via nohup (non-blocking); log -> /tmp/gludd-gate-bg.log"
+	@echo "  gate-bg-check         Tail background gate log + check if PID is still alive"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
 	@echo "  preflight             Preflight quality gate (coverage, lint, mypy, templates, etc.)"
@@ -299,6 +301,47 @@ gate:
 	@cat .gate-status
 	@if [ -f .gate-failed ]; then rm -f .gate-failed; exit 1; fi
 	@echo "Gate: ALL PASSED"
+
+# ---------------------------------------------------------------------------
+# gate-background: launch `make gate` via nohup so the foreground is NOT blocked.
+# Returns immediately. Output -> /tmp/gludd-gate-bg.log, PID -> /tmp/gludd-gate-bg.pid.
+# Refuses to launch a second time if the recorded PID is still alive (the gate
+# flock in scripts/run_gate.sh would reject it anyway). Check progress with
+# `tail -f /tmp/gludd-gate-bg.log`, `make gate-bg-check`, or `make gate-status`.
+# ---------------------------------------------------------------------------
+gate-background:
+	@if [ -f /tmp/gludd-gate-bg.pid ] && kill -0 $$(cat /tmp/gludd-gate-bg.pid) 2>/dev/null; then \
+		echo "gate-background already running (PID $$(cat /tmp/gludd-gate-bg.pid))"; \
+		echo "  tail -f /tmp/gludd-gate-bg.log"; \
+		echo "  make gate-bg-check"; \
+		exit 0; \
+	fi
+	@nohup $(MAKE) --no-print-directory gate > /tmp/gludd-gate-bg.log 2>&1 & \
+	echo $$! > /tmp/gludd-gate-bg.pid
+	@echo "gate launched in background (PID $$(cat /tmp/gludd-gate-bg.pid))"
+	@echo "  tail -f /tmp/gludd-gate-bg.log"
+	@echo "  make gate-status"
+	@echo "  make gate-bg-check"
+
+# Tail the background gate log and report whether the gate process is alive.
+# Exit 0 while the PID is running; exit 1 when it is dead/missing (gate finished
+# or was killed). Pairs with gate-background's /tmp/gludd-gate-bg.{log,pid}.
+gate-bg-check:
+	@if [ ! -f /tmp/gludd-gate-bg.pid ]; then \
+		echo "no /tmp/gludd-gate-bg.pid — gate-background not launched (or pid file removed)"; \
+		exit 1; \
+	fi
+	@PID=$$(cat /tmp/gludd-gate-bg.pid); \
+	if kill -0 $$PID 2>/dev/null; then \
+		echo "gate-background RUNNING (PID $$PID)"; STATE=running; \
+	else \
+		echo "gate-background FINISHED (PID $$PID not alive)"; STATE=finished; \
+	fi; \
+	echo "--- tail /tmp/gludd-gate-bg.log ---"; \
+	tail -40 /tmp/gludd-gate-bg.log 2>/dev/null || echo "(log empty or missing)"; \
+	echo "--- .gate-status ---"; \
+	if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status yet)"; fi; \
+	[ "$$STATE" = running ] && exit 0 || exit 1
 
 # Process-hygiene check: list any running pytest/molecule/gate so we never launch
 # a second concurrent run that collides with an in-flight one (see gate --basetemp).

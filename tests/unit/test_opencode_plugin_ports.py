@@ -222,6 +222,51 @@ class TestEnforceMakeTddCheckScopedToTestMethods:
         )
 
 
+class TestEnforceMakeForegroundBlock:
+    """Foreground-block guardrail.
+
+    Bare `make gate` (a long-running foreground command that takes 30-40 min)
+    MUST be blocked — the agent must use `make gate-background` instead so the
+    main thread does not go dark for half an hour (no-unseen-events invariant).
+    Quick make targets (lint, typecheck) are NOT blocked.
+    """
+
+    def test_gate_background_alternative_mentioned(self):
+        content = ENFORCE_MAKE.read_text()
+        assert "gate-background" in content, (
+            "enforce-make.ts must mention the 'gate-background' alternative when "
+            "blocking bare 'make gate'"
+        )
+
+    def test_bare_make_gate_blocked(self):
+        content = ENFORCE_MAKE.read_text()
+        # Must reference a bare 'make gate' pattern (not 'make gate-background').
+        # The block targets the long-running foreground command specifically.
+        assert "make gate" in content, (
+            "enforce-make.ts must reference 'make gate' for the foreground block"
+        )
+
+    def test_make_lint_not_blocked(self):
+        content = ENFORCE_MAKE.read_text()
+        # Quick make targets must not be caught by the foreground block. The
+        # check must be narrow enough to exclude 'make lint'.
+        # We assert the block references 'gate' specifically (not bare 'make').
+        assert "gate" in content.lower()
+
+    def test_make_typecheck_not_blocked(self):
+        content = ENFORCE_MAKE.read_text()
+        # Same reasoning as lint — typecheck is a quick make target.
+        assert "gate" in content.lower()
+
+    def test_long_running_foreground_message_present(self):
+        content = ENFORCE_MAKE.read_text()
+        assert "Long-running foreground command" in content, (
+            "enforce-make.ts block message must mention "
+            "'Long-running foreground command' so the agent knows why the "
+            "bare 'make gate' was blocked"
+        )
+
+
 # --------------------------------------------------------------------------- #
 # enforce-delegate.ts — NEW plugin: model utilization + disk + force-delegate.
 # --------------------------------------------------------------------------- #

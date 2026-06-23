@@ -272,7 +272,7 @@ class TestAgentDispatcher:
         assert result.status == "completed"
         assert result.output == "done"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_agent_dispatcher_dispatch_many_runs_concurrently(self, registry):
         execution_times: dict[str, float] = {}
 
@@ -298,7 +298,7 @@ class TestAgentDispatcher:
         assert all(r.status == "completed" for r in results)
         assert total < 0.3, f"Expected concurrent execution, took {total:.2f}s"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_agent_dispatcher_respects_max_concurrent(self, registry):
         active_count = 0
         max_observed = 0
@@ -322,7 +322,7 @@ class TestAgentDispatcher:
         assert len(results) == 6
         assert max_observed <= 3, f"Exceeded max_concurrent=3, saw {max_observed}"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_agent_dispatcher_tracks_active_dispatches(self, registry):
         dispatcher = AgentDispatcher(
             registry=registry,
@@ -335,7 +335,7 @@ class TestAgentDispatcher:
         assert result.status == "completed"
         assert result.agent_name == "explore"
 
-    @pytest.mark.asyncio()
+    @pytest.mark.asyncio
     async def test_dispatch_one_unknown_agent_fails(self, registry):
         dispatcher = AgentDispatcher(
             registry=registry,

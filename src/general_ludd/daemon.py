@@ -635,10 +635,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     # concurrently-running apps never share/overwrite one another's state. If a
     # caller invokes the lifespan on a bare app (unit tests), materialise a fresh
     # per-app dict rather than falling back to the shared module global.
-    daemon_state: dict[str, Any] = getattr(app.state, "daemon_state", None)
-    if daemon_state is None:
-        daemon_state = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
-        app.state.daemon_state = daemon_state
+    daemon_state: dict[str, Any] = getattr(app.state, "daemon_state", None) or {
+        "todos": [], "tick_metrics": {}, "quality_gate": {}
+    }
     event_loop = None
     task = None
     engine = None
