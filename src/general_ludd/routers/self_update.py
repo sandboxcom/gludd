@@ -64,7 +64,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         try:
             request = _request_from_payload(payload)
             plan = classify(request)
-            result = apply_plan(plan, request)
+            # Phase 2 Step 3: read the daemon-built audit_sink (constructed in
+            # _lifespan over AuditEventRepository) so every apply decision is
+            # persisted. Missing (e.g. boot before lifespan) -> None, which
+            # apply_plan treats as "no audit side-effect" (fail-soft).
+            audit_sink = getattr(app.state, "_self_update_audit_sink", None)
+            result = apply_plan(plan, request, audit_sink=audit_sink)
             return {
                 "status": "ok",
                 "outcome": result.outcome,

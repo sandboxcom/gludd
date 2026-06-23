@@ -25,7 +25,7 @@ from general_ludd.config.model_routing import ModelRoutingConfig, load_model_rou
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard
-from general_ludd.db.repository import BenchmarkRepository
+from general_ludd.db.repository import AuditEventRepository, BenchmarkRepository
 from general_ludd.db.session import (
     create_async_session_factory,
     ensure_tables,
@@ -629,6 +629,74 @@ def _sync_bridge(
     return _bridged
 
 
+# Tracks fire-and-forget self-update audit writes so the GC never reaps a task
+# mid-flight (asyncio only holds a weakref to tasks). Mirrors the pattern used
+# for the event-loop tick task.
+_SELF_UPDATE_AUDIT_TASKS: set[asyncio.Task[Any]] = set()
+
+
+def _build_self_update_audit_sink(
+    session_factory: Any,
+) -> Callable[[Any], None]:
+    """Build a sync ``AuditSink`` that persists self-update ``AuditRecord``s.
+
+    The apply ladder (``self_update.apply.apply_plan``) invokes its
+    ``audit_sink`` *synchronously* (see ``AuditSink = Callable[[AuditRecord],
+    None]``), but :class:`AuditEventRepository` is async. The returned closure
+    bridges the two: it opens no session inline and instead schedules a
+    fire-and-forget background task on the running loop (the sink is only ever
+    reached from inside an async router handler) which opens its own
+    short-lived session per record so it never shares state with the request
+    handler's session.
+
+    The sink is **fail-soft**: any persistence error is logged and swallowed —
+    an audit-write failure must never break the self-update endpoint, which
+    still returns the in-memory :class:`ApplyResult`. The full ``AuditRecord``
+    payload is serialised into ``details`` so no decision is lost invisibly
+    even when typed enumeration is absent (the event loop already uses raw
+    ``event_type`` strings like ``"return_reviewed"``, so ``"self_update_*"``
+    follows that precedent rather than extending the ``AuditEventType`` enum).
+    """
+
+    async def _persist(record: Any) -> None:
+        import json as _json
+
+        try:
+            async with session_factory() as session:
+                repo = AuditEventRepository(session)
+                await repo.create(
+                    event_type=f"self_update_{record.outcome}",
+                    entity_type="self_update",
+                    entity_id=record.requested_by,
+                    project_id="default",
+                    details=_json.dumps(record.as_dict()),
+                )
+                await session.commit()
+        except Exception:
+            logger.error(
+                "self_update audit-sink write failed (outcome=%s)",
+                getattr(record, "outcome", "?"),
+                exc_info=True,
+            )
+
+    def _sink(record: Any) -> None:
+        try:
+            task = asyncio.create_task(_persist(record))
+        except RuntimeError:
+            # No running loop (e.g. a unit test invoking apply_plan directly):
+            # audit is best-effort, so drop the row rather than raise.
+            logger.warning(
+                "self_update audit-sink skipped: no running event loop "
+                "(outcome=%s)",
+                getattr(record, "outcome", "?"),
+            )
+            return
+        _SELF_UPDATE_AUDIT_TASKS.add(task)
+        task.add_done_callback(_SELF_UPDATE_AUDIT_TASKS.discard)
+
+    return _sink
+
+
 @asynccontextmanager
 async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     tick_interval = app.state.tick_interval
@@ -657,6 +725,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         async with session_factory() as session:
             await seed_initial_queues(session)
             await session.commit()
+
+        # Phase 2 Step 3 (self-improve wiring): build the audit_sink closure over
+        # session_factory + AuditEventRepository and publish it on app.state so
+        # the /admin/self-update/plan router can pass it through to apply_plan.
+        # Built once here (after session_factory exists) so every request reuses
+        # the same sink; the sink opens its own short-lived session per record.
+        app.state._self_update_audit_sink = _build_self_update_audit_sink(
+            session_factory
+        )
 
         if is_sqlite_url(str(engine.url)):
             try:
@@ -1298,6 +1375,7 @@ def create_daemon_app(
     app.state._model_registry = None
     app.state._skill_registry = None
     app.state._adaptive_router = None
+    app.state._self_update_audit_sink = None
     app.state._startup_config = load_startup_config(config_dir)
     app.state._stats_start_time = time.monotonic()
     app.state._stats_requests = 0

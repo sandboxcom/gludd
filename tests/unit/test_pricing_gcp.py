@@ -31,7 +31,6 @@ from general_ludd.pricing_intel.models import (
 )
 from general_ludd.pricing_intel.sources import GCPPricingSource
 
-
 # ---------------------------------------------------------------------------
 # Helpers: build Cloud Billing SKU objects (mimic protobuf message shape)
 # ---------------------------------------------------------------------------

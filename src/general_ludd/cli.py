@@ -669,6 +669,18 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     slurm_list.add_argument("--daemon-url", default="http://localhost:8000")
     slurm_list.set_defaults(func=_cmd_slurm_list)
 
+    connectors_parser = sub.add_parser("connectors", help="Observability connector commands")
+    connectors_parser.set_defaults(func=None)
+    connectors_sub = connectors_parser.add_subparsers(dest="connectors_command")
+
+    connectors_list = connectors_sub.add_parser("list", help="List registered observability sources")
+    connectors_list.add_argument("--daemon-url", default="http://localhost:8000")
+    connectors_list.set_defaults(func=_cmd_connectors_list)
+
+    connectors_health = connectors_sub.add_parser("health", help="Probe health across registered sources")
+    connectors_health.add_argument("--daemon-url", default="http://localhost:8000")
+    connectors_health.set_defaults(func=_cmd_connectors_health)
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -686,6 +698,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "code": codeintel_parser,
         "quantization": quant_parser,
         "slurm": slurm_parser,
+        "connectors": connectors_parser,
     }
 
     return parser, subcommand_map
@@ -3122,6 +3135,44 @@ def _cmd_slurm_list(args: argparse.Namespace) -> None:
             print(f"  {j.get('job_id', '?'):<12} {j.get('state', '?'):<15} {j.get('exit_code', '')}")
     else:
         print("No Slurm jobs found.")
+
+
+def _cmd_connectors_list(args: argparse.Namespace) -> None:
+    data = _http_call("GET", f"{args.daemon_url}/api/observe/sources", timeout=10.0)
+    if data is None:
+        return
+    sources = data.get("sources", [])
+    if not sources:
+        print("No observability sources registered.")
+        print("Configure connectors in config/connectors.yml and restart the daemon.")
+        return
+    print(f"Observability sources: {len(sources)}")
+    for s in sources:
+        name = s.get("name", "?")
+        kind = s.get("kind", "?")
+        family = s.get("family", "?")
+        print(f"  {name:<24} {kind:<12} {family}")
+
+
+def _cmd_connectors_health(args: argparse.Namespace) -> None:
+    data = _http_call("GET", f"{args.daemon_url}/api/observe/health", timeout=10.0)
+    if data is None:
+        return
+    health = data.get("health", {})
+    if not health:
+        print("No observability sources registered.")
+        return
+    print(f"Connector health: {len(health)} source(s)")
+    for name, status in health.items():
+        ok = status.get("ok", False) if isinstance(status, dict) else False
+        icon = "OK" if ok else "FAIL"
+        detail = ""
+        if isinstance(status, dict):
+            if not ok and status.get("error"):
+                detail = f"  {status['error']}"
+            elif ok and status.get("latency_ms") is not None:
+                detail = f"  {status['latency_ms']}ms"
+        print(f"  [{icon}] {name}{detail}")
 
 
 if __name__ == "__main__":
