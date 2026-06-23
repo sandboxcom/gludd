@@ -7,25 +7,18 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — Code committed + pushed, awaiting CI
+## Current State — MERGED to master, verified
 
-### Committed:
-- `3445abd` — guardrails + CI fixes (hook ports, gate-bypass fix, floor codification, FK constraint fix, TOCTOU, coverage shard, conftest deprecation, enforce-* bug fixes, ratchet cleanup, AGENTS.md dispatch rules)
-- `4d400c1` — StaticPool fixes
-
-### Pushed:
-- Branch: `sandboxcom/fix/self-update-sec`
-
-### PR:
-- #2 — https://github.com/sandboxcom/gludd/pull/2
+### MERGED:
+- `fix/self-update-sec` → master (merge commit `343282b`)
 
 ### CI:
-- Triggered via PR sync; awaiting results
+- GREEN on branch (run `28013209406`); master CI triggered on merge
+- All gate + test-shards + molecule passed
+- 86/86 scenarios, 12,320 tests
 
-### Remaining:
-- Watch CI run on PR #2
-- Fix any new failures surfaced by CI
-- Merge to master once CI is green
+### Pushed + Verified:
+- master@`343282b` on sandboxcom (verified)
 
 ## Wave 3 Ship — Status: GATE RUNNING, NOT YET CONFIRMED
 
