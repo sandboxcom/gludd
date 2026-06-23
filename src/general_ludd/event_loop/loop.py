@@ -192,6 +192,8 @@ class EventLoop:
         reviewer: Any | None = None,
         model_gateway: Any | None = None,
         dispatcher: Any | None = None,
+        loc_ledger: Any | None = None,
+        spend_limiter: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -202,6 +204,7 @@ class EventLoop:
         self._reviewer = reviewer
         self._model_gateway = model_gateway
         self._dispatcher = dispatcher
+        self._spend_limiter = None  # assigned post-construction by the daemon
         self._stuck_timeout_minutes = 15
         self._max_retries = 3
         if isinstance(session, async_sessionmaker):
@@ -249,6 +252,10 @@ class EventLoop:
         if event_bus is not None:
             event_bus.subscribe("config_reloaded", self._on_config_reloaded)
         self._adaptive_router = adaptive_router
+        # LocLedger (accounting.ledger): the event loop records a per-commit
+        # lines-of-code delta here after every successful commit so the
+        # accounting router can report cumulative loc_changed per project.
+        self._loc_ledger = loc_ledger
 
     async def _append_message_queue_section(
         self, prompt_text: str | None, todo: Any, project_id: str | None
@@ -932,6 +939,25 @@ class EventLoop:
         execute path (those todos arm a code hot-rotation + reload, not a
         playbook run).
         """
+        # SpendLimiter pre-call gate: project this dispatch's cost and defer
+        # (skip) the job when it would push the rolling-window spend over the
+        # configured cap. would_exceed() is the non-mutating check — it never
+        # records spend, so the job remains queued and will be retried on a
+        # later tick once the window rolls forward. A None limiter (no cap
+        # configured) leaves dispatch unchanged.
+        limiter = self._spend_limiter
+        if limiter is not None:
+            projected = self._estimated_dispatch_cost(1)
+            if limiter.would_exceed(projected):
+                logger.warning(
+                    "SpendLimiter: deferring dispatch for todo %s — projected=%.6f "
+                    "window_spend=%.6f remaining=%.6f",
+                    _safe_str(todo, "todo_id", "?"),
+                    projected,
+                    limiter.window_spend(),
+                    limiter.remaining(),
+                )
+                return
         if _safe_str(todo, "queue") == "self_update":
             await self._apply_self_update_code(todo, _session_override=_session_override)
             return
@@ -1579,6 +1605,19 @@ class EventLoop:
                 await asyncio.to_thread(
                     repo.commit, f"[{todo.todo_id}] {todo.title}"
                 )
+                # Record the per-commit LOC delta into the accounting ledger
+                # (counted via git show --numstat). Best-effort: a counting
+                # failure must never abort the commit/push flow that follows.
+                if self._loc_ledger is not None:
+                    try:
+                        delta = await asyncio.to_thread(repo.lines_changed_in_commit)
+                        pid = getattr(todo, "project_id", None) or self._tick_project_id or ""
+                        self._loc_ledger.record_loc_changed(pid, delta)
+                    except Exception as loc_exc:
+                        logger.debug(
+                            "loc_changed recording failed for %s: %s",
+                            todo.todo_id, loc_exc,
+                        )
                 await asyncio.to_thread(repo.push, branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
                 self._maybe_open_pr(todo, worktree, branch_name)

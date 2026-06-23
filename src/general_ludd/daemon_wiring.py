@@ -7,10 +7,13 @@ entry points instead of the original ``None`` stubs.
 
 Wired entry points (W: event-loop-wiring)
 ------------------------------------------
-mcp_handler     → MCPClient.call_tool(server_id, tool_name, arguments)
-skill_handler   → SkillRegistry.get(name).body  (sync, cheap)
-role_handler    → AgentDispatcher.dispatch_one(AgentTask)  (async)
-collection_handler → None (no collection loader exists; kept as documented stub)
+mcp_handler        → MCPClient.call_tool(server_id, tool_name, arguments)
+skill_handler      → SkillRegistry.get(name).body  (sync, cheap)
+role_handler       → AgentDispatcher.dispatch_one(AgentTask)  (async)
+collection_handler → AnsibleRunnerAdapter.run_playbook(transient_one_task_pb)
+                      Builds a transient playbook that invokes the named
+                      Ansible collection module, registers it for the run,
+                      then unregisters. None when no adapter is supplied.
 
 SpendLimiter gate
 -----------------
@@ -146,6 +149,100 @@ def make_role_handler(
 
 
 # ---------------------------------------------------------------------------
+# Collection handler (Ansible module dispatch via AnsibleRunnerAdapter)
+# ---------------------------------------------------------------------------
+
+# A module name must be a dotted Ansible FQCN (``namespace.collection.module``
+# or ``namespace.module``). It becomes a YAML task key, so a malformed name
+# must be rejected before it is embedded in the transient playbook.
+_FQCN_RE = r"^[a-z0-9_]+(\.[a-z0-9_]+)+$"
+
+
+def make_collection_handler(
+    runner_adapter: Any | None,
+) -> Callable[[str, dict[str, Any]], Coroutine[Any, Any, dict[str, Any]]] | None:
+    """Return an async collection_handler callable or None if no adapter is available.
+
+    Handler signature: ``async (name: str, args: dict) -> dict[str, Any]``
+
+    Dispatches a named Ansible collection module (e.g.
+    ``ansible.builtin.command``) by building a transient one-task playbook
+    that invokes it on localhost, registering that playbook under the adapter
+    for the duration of the run, invoking ``AnsibleRunnerAdapter.run_playbook``
+    and returning its result dict. The transient playbook is unregistered in
+    a ``finally`` block so the adapter's registry is never left polluted.
+
+    Dispatch metadata is read from ``args`` under underscore-prefixed keys and
+    stripped before the rest is forwarded as module arguments:
+
+      * ``_timeout`` — forwarded to ``run_playbook(timeout=...)`` (default None
+        → the adapter's env-driven bound, ``GLUDD_PLAYBOOK_TIMEOUT``).
+      * ``_hosts`` — playbook ``hosts:`` target (default ``"localhost"``).
+
+    Args:
+        runner_adapter: An ``AnsibleRunnerAdapter`` (or duck-typed stand-in
+            exposing ``private_data_dir``, ``register_playbook``,
+            ``run_playbook`` and ``unregister_playbook``), or None.
+
+    Returns:
+        An async callable, or None when ``runner_adapter`` is None (the
+        DynamicDispatcher then fails-closed for the ``collection`` kind).
+    """
+    if runner_adapter is None:
+        return None
+
+    async def _collection_handler(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        import os
+        import re
+        import uuid
+
+        import yaml
+
+        # The module FQCN becomes a YAML task key. A malformed name could
+        # either corrupt the playbook or smuggle an arbitrary task directive
+        # — reject it before embedding.
+        if not re.match(_FQCN_RE, name):
+            raise ValueError(
+                f"collection module name must be a dotted FQCN "
+                f"(e.g. 'ansible.builtin.command'), got {name!r}"
+            )
+
+        # Copy so dispatch metadata can be peeled without mutating caller state.
+        task_args = dict(args)
+        timeout = task_args.pop("_timeout", None)
+        hosts = task_args.pop("_hosts", "localhost")
+
+        playbook = [
+            {
+                "hosts": hosts,
+                "connection": "local",
+                "gather_facts": False,
+                "tasks": [
+                    {"name": f"gludd_dispatch:{name}", name: task_args},
+                ],
+            }
+        ]
+
+        dispatch_dir = os.path.join(
+            runner_adapter.private_data_dir, "dispatch_playbooks"
+        )
+        os.makedirs(dispatch_dir, exist_ok=True)
+        playbook_path = os.path.join(dispatch_dir, f"{uuid.uuid4().hex}.yml")
+        with open(playbook_path, "w") as f:
+            yaml.safe_dump(playbook, f, default_flow_style=False)
+
+        transient_name = f"_dispatch_{uuid.uuid4().hex}"
+        runner_adapter.register_playbook(transient_name, playbook_path)
+        try:
+            result: dict[str, Any] = runner_adapter.run_playbook(transient_name, timeout=timeout)
+            return result
+        finally:
+            runner_adapter.unregister_playbook(transient_name)
+
+    return _collection_handler
+
+
+# ---------------------------------------------------------------------------
 # Convenience: build all handlers at once
 # ---------------------------------------------------------------------------
 
@@ -155,6 +252,7 @@ def build_dispatch_handlers(
     mcp_client: Any | None,
     skill_registry: Any | None,
     agent_dispatcher: Any | None,
+    runner_adapter: Any | None = None,
 ) -> dict[str, Callable[[str, dict[str, Any]], Any] | None]:
     """Build all dispatch handler callables from the daemon's live subsystems.
 
@@ -162,7 +260,7 @@ def build_dispatch_handlers(
         - mcp_handler
         - skill_handler
         - role_handler
-        - collection_handler  (always None — no collection loader implemented)
+        - collection_handler
 
     Any handler whose subsystem is None is also returned as None, meaning the
     DynamicDispatcher will fail-closed for that kind.
@@ -171,6 +269,9 @@ def build_dispatch_handlers(
         mcp_client:       Live MCPClient (or None).
         skill_registry:   Live SkillRegistry (or None).
         agent_dispatcher: Live AgentDispatcher (or None).
+        runner_adapter:   Live AnsibleRunnerAdapter (or None). When supplied,
+                          the ``collection`` kind is wired to dispatch Ansible
+                          modules via a transient one-task playbook.
 
     Returns:
         Dict of handler kind → callable | None.
@@ -179,9 +280,7 @@ def build_dispatch_handlers(
         "mcp_handler": make_mcp_handler(mcp_client),
         "skill_handler": make_skill_handler(skill_registry),
         "role_handler": make_role_handler(agent_dispatcher),
-        # TODO(integration): collection_handler — no collection loader exists;
-        # document as explicit stub so the dispatcher fails-closed cleanly.
-        "collection_handler": None,
+        "collection_handler": make_collection_handler(runner_adapter),
     }
 
 

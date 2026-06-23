@@ -332,6 +332,38 @@ class GitAutomation:
         result = self._run_git("rev-parse", "HEAD")
         return result.stdout.strip()
 
+    def lines_changed_in_commit(self, ref: str = "HEAD") -> int:
+        """Sum added+deleted lines introduced by the commit at ``ref`` (default HEAD).
+
+        Runs ``git show --numstat --format= <ref>`` and sums the added+deleted
+        columns across all files, skipping binary rows (``-`` markers). Used by
+        the accounting ledger to record a per-commit lines-of-code delta right
+        after :meth:`commit`. Fail-safe: any error (not a repo, no such ref, git
+        missing, timeout) returns 0 and never raises — a LOC count must never
+        abort a commit/push flow.
+        """
+        _reject_leading_dash(ref, kind="commit ref")
+        try:
+            proc = self._run_git("show", "--numstat", "--format=", ref, check=False)
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            return 0
+        if proc.returncode != 0:
+            return 0
+        total = 0
+        for line in proc.stdout.splitlines():
+            parts = line.split("\t")
+            if len(parts) < 3:
+                continue
+            added, deleted = parts[0], parts[1]
+            # Binary files report "-" for added/deleted; skip them.
+            if added == "-" or deleted == "-":
+                continue
+            try:
+                total += int(added) + int(deleted)
+            except ValueError:
+                continue
+        return total
+
     def clone(
         self,
         url: str,

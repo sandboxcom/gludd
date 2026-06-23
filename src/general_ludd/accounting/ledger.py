@@ -15,7 +15,9 @@ Aggregates, per project:
 All data sources are injected as simple callables so unit tests can supply
 fakes without hitting a live daemon or database.
 
-# TODO(integration): wire loc_changed to a real git-diff --numstat source
+loc_changed is accumulated by :class:`LocLedger` from per-commit deltas
+(counted via ``git show --numstat`` in ``git_automation.repo``) and exposed
+to :class:`Accountant` as the ``loc_provider`` callable.
 """
 from __future__ import annotations
 
@@ -159,3 +161,45 @@ class Accountant:
     def account_all(self) -> list[ProjectAccounting]:
         """Return an accounting snapshot for every known project."""
         return [self.account_for(pid) for pid in self._projects()]
+
+
+# ---------------------------------------------------------------------------
+# LocLedger — cumulative per-project lines-of-code accumulator
+# ---------------------------------------------------------------------------
+
+
+class LocLedger:
+    """Accumulates per-commit lines-of-code deltas, per project.
+
+    The event loop calls :meth:`record_loc_changed` after every git commit
+    (``delta`` counted via ``GitAutomation.lines_changed_in_commit``); the
+    :class:`Accountant` reads the running cumulative total through the bound
+    ``LocProvider`` returned by :meth:`as_provider`.
+
+    Stored on ``app.state._loc_ledger`` so the daemon (event loop writes) and
+    the accounting router (reads) share one accumulator.
+    """
+
+    def __init__(self) -> None:
+        self._totals: dict[str, int] = {}
+
+    def record_loc_changed(self, project_id: str, delta: int) -> int:
+        """Add ``delta`` to ``project_id``'s cumulative total; return the new total."""
+        added = int(delta)
+        if added < 0:
+            added = 0
+        if project_id:
+            self._totals[project_id] = self._totals.get(project_id, 0) + added
+        return self._totals.get(project_id, 0)
+
+    def total(self, project_id: str) -> int:
+        """Return the cumulative lines-of-code changed for ``project_id``."""
+        return self._totals.get(project_id, 0)
+
+    def as_provider(self) -> LocProvider:
+        """Return a :data:`LocProvider` callable bound to :meth:`total`."""
+        return self.total
+
+    def snapshot(self) -> dict[str, int]:
+        """Return a copy of the per-project cumulative totals."""
+        return dict(self._totals)

@@ -136,3 +136,70 @@ def test_loc_changed_skips_binary_rows(tmp_path: Path) -> None:
 
     # Only the text line counts: added=1, deleted=0 -> 1.
     assert _project_loc_changed(repo) == 1
+
+
+# ---------------------------------------------------------------------------
+# Tests: GitAutomation.lines_changed_in_commit (per-commit delta primitive)
+# ---------------------------------------------------------------------------
+
+from general_ludd.git_automation.repo import GitAutomation  # noqa: E402
+
+
+@_needs_git
+def test_lines_changed_in_commit_counts_added_plus_deleted(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init")
+    _run_git(repo, "config", "user.email", "t@example.com")
+    _run_git(repo, "config", "user.name", "Tester")
+    (repo / "f.txt").write_text("a\nb\nc\n")
+    _run_git(repo, "add", "f.txt")
+    _run_git(repo, "commit", "-m", "baseline")
+
+    # Second commit deletes the 3 baseline lines and adds 2 -> delta 5.
+    (repo / "f.txt").write_text("x\ny\n")
+    _run_git(repo, "add", "f.txt")
+    _run_git(repo, "commit", "-m", "change")
+
+    ga = GitAutomation(repo_path=str(repo))
+    assert ga.lines_changed_in_commit() == 5
+
+
+@_needs_git
+def test_lines_changed_in_commit_clean_commit_is_zero(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init")
+    _run_git(repo, "config", "user.email", "t@example.com")
+    _run_git(repo, "config", "user.name", "Tester")
+    # Empty commit introduces no line changes.
+    _run_git(repo, "commit", "--allow-empty", "-m", "empty")
+    ga = GitAutomation(repo_path=str(repo))
+    assert ga.lines_changed_in_commit() == 0
+
+
+@_needs_git
+def test_lines_changed_in_commit_skips_binary(tmp_path: Path) -> None:
+    repo = tmp_path / "repo"
+    repo.mkdir()
+    _run_git(repo, "init")
+    _run_git(repo, "config", "user.email", "t@example.com")
+    _run_git(repo, "config", "user.name", "Tester")
+    (repo / "t.txt").write_text("a\n")
+    (repo / "b.bin").write_bytes(b"\x00\x01")
+    _run_git(repo, "add", "t.txt", "b.bin")
+    _run_git(repo, "commit", "-m", "base")
+
+    # Text +1 line; binary changes (numstat '- -'); only text counts -> 1.
+    (repo / "t.txt").write_text("a\nb\n")
+    (repo / "b.bin").write_bytes(b"\x00\x01\x02\x03")
+    _run_git(repo, "add", "t.txt", "b.bin")
+    _run_git(repo, "commit", "-m", "mixed")
+
+    ga = GitAutomation(repo_path=str(repo))
+    assert ga.lines_changed_in_commit() == 1
+
+
+def test_lines_changed_in_commit_non_repo_is_zero(tmp_path: Path) -> None:
+    ga = GitAutomation(repo_path=str(tmp_path / "does-not-exist"))
+    assert ga.lines_changed_in_commit() == 0

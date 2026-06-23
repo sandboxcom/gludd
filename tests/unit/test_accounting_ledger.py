@@ -11,7 +11,56 @@ from dataclasses import dataclass
 
 import pytest
 
-from general_ludd.accounting.ledger import Accountant, ProjectAccounting
+from general_ludd.accounting.ledger import Accountant, LocLedger, ProjectAccounting
+
+# ---------------------------------------------------------------------------
+# Tests: LocLedger accumulator (per-commit deltas -> cumulative per-project)
+# ---------------------------------------------------------------------------
+
+
+class TestLocLedger:
+    def test_record_accumulates_per_project(self):
+        ledger = LocLedger()
+        assert ledger.record_loc_changed("p1", 5) == 5
+        assert ledger.record_loc_changed("p1", 3) == 8
+        assert ledger.total("p1") == 8
+
+    def test_projects_are_isolated(self):
+        ledger = LocLedger()
+        ledger.record_loc_changed("p1", 10)
+        ledger.record_loc_changed("p2", 4)
+        assert ledger.total("p1") == 10
+        assert ledger.total("p2") == 4
+
+    def test_total_zero_for_unknown_project(self):
+        assert LocLedger().total("never-seen") == 0
+
+    def test_as_provider_reads_cumulative_total(self):
+        ledger = LocLedger()
+        ledger.record_loc_changed("p1", 7)
+        provider = ledger.as_provider()
+        assert provider("p1") == 7
+        assert provider("p2") == 0
+
+    def test_as_provider_reflects_subsequent_records(self):
+        ledger = LocLedger()
+        provider = ledger.as_provider()
+        ledger.record_loc_changed("p1", 2)
+        ledger.record_loc_changed("p1", 6)
+        assert provider("p1") == 8
+
+    def test_negative_delta_clamped_to_zero(self):
+        ledger = LocLedger()
+        assert ledger.record_loc_changed("p1", -3) == 0
+        assert ledger.total("p1") == 0
+
+    def test_snapshot_is_a_copy(self):
+        ledger = LocLedger()
+        ledger.record_loc_changed("p1", 5)
+        snap = ledger.snapshot()
+        snap["p1"] = 999
+        assert ledger.total("p1") == 5
+
 
 # ---------------------------------------------------------------------------
 # Fake provider helpers

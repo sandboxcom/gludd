@@ -131,6 +131,102 @@ class TestRoleHandler:
         assert handler is None
 
 
+class TestCollectionHandler:
+    """collection_handler routes (module_fqcn, args) to AnsibleRunnerAdapter.run_playbook.
+
+    The handler builds a transient one-task playbook that invokes the named
+    Ansible collection module, runs it via the adapter, and returns the
+    runner's result dict. Mirrors the mcp/role handler contract.
+    """
+
+    def test_collection_handler_is_callable(self) -> None:
+        from general_ludd.daemon_wiring import make_collection_handler
+
+        adapter = MagicMock()
+        handler = make_collection_handler(adapter)
+        assert callable(handler)
+
+    def test_collection_handler_none_adapter_returns_none(self) -> None:
+        """When runner_adapter is None, make_collection_handler returns None."""
+        from general_ludd.daemon_wiring import make_collection_handler
+
+        handler = make_collection_handler(None)
+        assert handler is None
+
+    @pytest.mark.asyncio
+    async def test_collection_handler_routes_to_run_playbook(self) -> None:
+        """A module FQCN dispatches through the runner adapter's run_playbook.
+
+        Verifies the handler (a) registers a transient playbook under the
+        adapter, (b) invokes run_playbook with that name, (c) returns the
+        runner's result, and (d) cleans the transient entry afterwards.
+        """
+        from general_ludd.daemon_wiring import make_collection_handler
+
+        adapter = MagicMock()
+        adapter.private_data_dir = "/tmp/gludd-test-collection"
+        adapter.run_playbook.return_value = {"status": "successful", "rc": 0}
+        handler = make_collection_handler(adapter)
+
+        result = await handler(
+            "ansible.builtin.command",
+            {"cmd": "echo hi"},
+        )
+
+        # run_playbook was invoked exactly once with a transient name + args
+        assert adapter.run_playbook.called
+        call_kwargs = adapter.run_playbook.call_args
+        playbook_name = call_kwargs.args[0] if call_kwargs.args else call_kwargs.kwargs["playbook_name"]
+        # Transient name is namespaced so it cannot collide with user playbooks.
+        assert "_dispatch" in playbook_name or playbook_name.startswith("_")
+        # The result flows back unchanged.
+        assert result == {"status": "successful", "rc": 0}
+
+    @pytest.mark.asyncio
+    async def test_collection_handler_registers_and_unregisters_transient(self) -> None:
+        """The transient playbook is registered for the run then unregistered."""
+        from general_ludd.daemon_wiring import make_collection_handler
+
+        adapter = MagicMock()
+        adapter.private_data_dir = "/tmp/gludd-test-collection"
+        adapter.run_playbook.return_value = {"status": "successful", "rc": 0}
+        handler = make_collection_handler(adapter)
+
+        await handler("ansible.builtin.debug", {"msg": "hello"})
+
+        # register_playbook and unregister_playbook were each called once.
+        adapter.register_playbook.assert_called_once()
+        adapter.unregister_playbook.assert_called_once()
+        # The SAME transient name was registered, run, and unregistered.
+        registered_name = adapter.register_playbook.call_args.args[0]
+        run_name = (
+            adapter.run_playbook.call_args.args[0]
+            if adapter.run_playbook.call_args.args
+            else adapter.run_playbook.call_args.kwargs["playbook_name"]
+        )
+        unregistered_name = adapter.unregister_playbook.call_args.args[0]
+        assert registered_name == run_name == unregistered_name
+
+    @pytest.mark.asyncio
+    async def test_collection_handler_propagates_runner_failure(self) -> None:
+        """A failed run still returns the runner's result dict (no exception)."""
+        from general_ludd.daemon_wiring import make_collection_handler
+
+        adapter = MagicMock()
+        adapter.private_data_dir = "/tmp/gludd-test-collection"
+        adapter.run_playbook.return_value = {
+            "status": "failed",
+            "rc": 2,
+            "error": "module error",
+        }
+        handler = make_collection_handler(adapter)
+
+        result = await handler("ansible.builtin.shell", {"cmd": "false"})
+
+        assert result["status"] == "failed"
+        assert result["rc"] == 2
+
+
 # ---------------------------------------------------------------------------
 # 2. dispatch_router receives non-None handlers when subsystems exist
 # ---------------------------------------------------------------------------
@@ -156,8 +252,25 @@ class TestDispatchRouterRegistration:
         assert callable(handlers["mcp_handler"])
         assert callable(handlers["skill_handler"])
         assert callable(handlers["role_handler"])
-        # collection_handler remains None -- no real collection loader exists
+        # collection_handler stays None when no runner_adapter is supplied —
+        # the dispatcher fails-closed for the collection kind.
         assert handlers["collection_handler"] is None
+
+    def test_build_dispatch_handlers_wires_collection_when_adapter_provided(self) -> None:
+        """A runner_adapter wires the collection handler; the kind becomes live."""
+        from general_ludd.daemon_wiring import build_dispatch_handlers
+
+        handlers = build_dispatch_handlers(
+            mcp_client=None,
+            skill_registry=None,
+            agent_dispatcher=None,
+            runner_adapter=MagicMock(),
+        )
+        assert callable(handlers["collection_handler"])
+        # Other handlers remain None — no subsystem supplied.
+        assert handlers["mcp_handler"] is None
+        assert handlers["skill_handler"] is None
+        assert handlers["role_handler"] is None
 
     def test_build_dispatch_handlers_no_mcp_client_omits_mcp(self) -> None:
         from general_ludd.daemon_wiring import build_dispatch_handlers
