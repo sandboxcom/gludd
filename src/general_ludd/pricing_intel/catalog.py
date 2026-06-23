@@ -16,8 +16,10 @@ Cache behavior:
 #          spend_limiter.py and the daemon wiring in src/general_ludd/daemon.py.
 #   [TODO] Wire an /api/pricing router facet that returns live catalog data as
 #          JSON.
-#   [TODO] InfraTracker.gpu_cost_usd() -> use catalog.compute_price("runpod", sku)
-#          to replace the static INFRA_PRICING dict.
+#   [DONE] InfraTracker.gpu_cost_usd() -> use catalog.compute_price("runpod", sku)
+#          to replace the static INFRA_PRICING dict. See src/general_ludd/infra/pricing.py
+#          (InfraTracker.gpu_cost_usd at line 152, routing through
+#          _catalog_compute_price -> catalog.compute_price).
 """
 
 from __future__ import annotations

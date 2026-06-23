@@ -1079,6 +1079,19 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 )
         app.state._spend_limiter = spend_limiter
 
+        # InfraTracker wraps infra_cost_usd() the same way SpendLimiter wraps
+        # token_cost_usd(): PricingCatalog is the PRIMARY price source for GPU
+        # compute projection; infra/pricing.py:infra_cost_usd is the static
+        # fallback when the catalog misses / errors / returns a non-time
+        # granularity.  Shares the SAME pricing_catalog instance as the
+        # SpendLimiter so catalog refreshes are observed by both.  Published on
+        # app.state so routers/consumers can serve live compute pricing without
+        # re-instantiating the catalog (mirrors _pricing_catalog above).
+        from general_ludd.infra.pricing import InfraTracker
+
+        infra_tracker = InfraTracker(catalog=pricing_catalog)
+        app.state._infra_tracker = infra_tracker
+
         if model_gateway is not None:
             logger.info(
                 "Gateway-backed executor enabled with %d model profile(s)",

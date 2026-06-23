@@ -7,25 +7,27 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — master@`5a8a1a2`
+## Current State — master@`f47fd4e`
 
 ### MERGED:
 - `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `5a8a1a2`
+- master advanced to `f47fd4e`
 
-### Tier 2 RAG Progress:
-- **Step 1 — TaskEmbeddingModel:** complete
-- **Step 2 — Alembic migration 007:** complete
-- **Step 3 — TaskEmbeddingStore:** complete
+### Phase 2 — COMPLETE (all 7 steps done):
+- Self-update flow wired end-to-end
+- All seven Phase 2 steps finished
 
-### Pricing (nearly complete — 14 of 15 sources return real data):
-- LIVE sources registered: RunPod, Z.AI, AWS, + 11 more (14/15 returning real data)
+### InfraTracker:
+- Implemented and wired into the daemon/event loop
+
+### Pricing (15 of 16 sources returning real data):
+- LIVE sources registered: RunPod, Z.AI, AWS, + 12 more (15/16 returning real data)
 - **HuggingFace:** static table implemented (10 GPU instances)
-- **Fireworks:** LiteLLM JSON live source registered
+- **Fireworks:** LiteLLM JSON live source registered — still empty (only remaining gap)
 - **Endpoints:** `/api/pricing` and `/api/pricing/compute` added
 - **Connector CLI:** `list`, `health`, `query` commands
 - **Spend limiter:** wired to PricingCatalog
-- 1 source still pending
+- 1 source still pending (FireworksSource)
 
 ### Dead Code:
 - `orchestration/` identified as dead (unwired)
@@ -40,7 +42,7 @@
 - Gate passing, shards running
 
 ### Tests:
-- 12,394 tests collected
+- 12,592 tests collected
 
 ## Fast-Follow Branches (awaiting post-ship gated-merge)
 
@@ -61,8 +63,7 @@ Hooks hardened and enforcing as of 2026-06-18:
 - `make test-hooks` added: 20+ cases covering all hooks across all input paths
 - 3 memory→guardrail hooks being wired: `guardrail_integrity_edit_pretool.sh` (prevent disable-as-fix), plus agent floor/ceiling improvements
 
-## Current Gate Status
-## Current Gate Status (2026-06-18)
+## Current Gate Status (2026-06-23)
 <!-- gate:begin -->
 - lint PASS 0
 - typecheck FAIL 2
@@ -79,12 +80,13 @@ Hooks hardened and enforcing as of 2026-06-18:
 
 ## Known Gaps / Next Steps
 
-1. **Master CI pending** — master@`10ec8ec` CI run must complete and pass; treat as unconfirmed until GREEN.
+1. **Master CI pending** — master@`f47fd4e` CI run must complete and pass; treat as unconfirmed until GREEN.
 2. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
 3. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
 4. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.
 5. **Ratchet** — 14 entries remaining; continue burn-down after master CI confirms green.
-6. Work plan: `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass, still current).
+6. **FireworksSource** — only pricing source still returning no data; investigate.
+7. Work plan: `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass, still current).
 
 ## Historical Gate Status (2026-06-12, pre-wave-3)
 - lint PASS 0
