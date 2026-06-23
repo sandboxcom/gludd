@@ -636,24 +636,26 @@ class ModelGateway:
         def _is_retryable(exc: BaseException) -> bool:
             """Tenacity retry predicate: True → retry, False → re-raise.
 
-            max_retries is the caller's hard cap on retries for ALL kinds,
-            including overload kinds (PROVIDER_ERROR / RATE_LIMITED). Without
-            this guard, TimeoutRetryPolicy.decide() returns should_retry=True
-            for overload kinds up to overload_max_retries (default 10),
-            completely ignoring the caller-supplied max_retries. A test (or
-            production caller) that passes max_retries=1 would then get up to
-            10 total attempts instead of 2, exhausting any scripted sequence
-            and producing an AssertionError rather than the expected provider
-            exception.
+            The hard cap is kind-aware: overload kinds (PROVIDER_ERROR /
+            RATE_LIMITED) honor the dedicated ``overload_max_retries`` budget
+            (default 10), while transient kinds honor the caller-supplied
+            ``max_retries`` (default 3). A blanket ``max_retries`` cap for all
+            kinds defeated the overload budget — overload retries stopped at
+            attempt 4 instead of 10, never giving an overloaded provider time
+            to recover.
             """
             if not isinstance(exc, _retryable_exc_types):
-                return False
-            # Hard cap: honor the caller's max_retries for ALL kinds.
-            if _attempt_counter[0] > max_retries:
                 return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
             if kind in _NON_RETRYABLE_KINDS:
+                return False
+            # Kind-aware hard cap: overload kinds use the dedicated overload
+            # budget; transient kinds use the caller's max_retries.
+            effective_cap = (
+                policy._overload_max_retries if kind in _OVERLOAD_KINDS else max_retries
+            )
+            if _attempt_counter[0] > effective_cap:
                 return False
             decision = policy.decide(kind, _attempt_counter[0])
             return bool(decision.should_retry)

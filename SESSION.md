@@ -7,11 +7,11 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — master@`f47fd4e`
+## Current State — master@`4c06268`
 
 ### MERGED:
 - `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `f47fd4e`
+- master advanced to `4c06268`
 
 ### Phase 2 — COMPLETE (all 7 steps done):
 - Self-update flow wired end-to-end
@@ -20,14 +20,14 @@
 ### InfraTracker:
 - Implemented and wired into the daemon/event loop
 
-### Pricing (15 of 16 sources returning real data):
-- LIVE sources registered: RunPod, Z.AI, AWS, + 12 more (15/16 returning real data)
+### Pricing (15/15 sources COMPLETE):
+- LIVE sources registered: RunPod, Z.AI, AWS, + 12 more (15/15 returning real data)
 - **HuggingFace:** static table implemented (10 GPU instances)
-- **Fireworks:** LiteLLM JSON live source registered — still empty (only remaining gap)
+- **Fireworks:** FireworksSource removed — LiteLLM JSON source covers it (no remaining gap)
 - **Endpoints:** `/api/pricing` and `/api/pricing/compute` added
 - **Connector CLI:** `list`, `health`, `query` commands
 - **Spend limiter:** wired to PricingCatalog
-- 1 source still pending (FireworksSource)
+- All sources complete; no pending sources
 
 ### Dead Code:
 - `orchestration/` identified as dead (unwired)
@@ -42,7 +42,7 @@
 - Gate passing, shards running
 
 ### Tests:
-- 12,592 tests collected
+- 12,619 tests collected
 
 ## Fast-Follow Branches (awaiting post-ship gated-merge)
 
@@ -80,12 +80,12 @@ Hooks hardened and enforcing as of 2026-06-18:
 
 ## Known Gaps / Next Steps
 
-1. **Master CI pending** — master@`f47fd4e` CI run must complete and pass; treat as unconfirmed until GREEN.
-2. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
-3. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
-4. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.
-5. **Ratchet** — 14 entries remaining; continue burn-down after master CI confirms green.
-6. **FireworksSource** — only pricing source still returning no data; investigate.
+1. **Master CI pending** — master@`4c06268` CI run must complete and pass; treat as unconfirmed until GREEN.
+2. **A-05 overload retry cap** — fix in progress; bounding overload retry behavior.
+3. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
+4. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
+5. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.
+6. **Ratchet** — 14 entries remaining; continue burn-down after master CI confirms green.
 7. Work plan: `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass, still current).
 
 ## Historical Gate Status (2026-06-12, pre-wave-3)
