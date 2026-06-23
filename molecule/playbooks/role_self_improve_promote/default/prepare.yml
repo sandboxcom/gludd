@@ -3,8 +3,8 @@
 #   * a live importable leaf module (on PYTHONPATH) returning v1
 #   * a candidate source returning v2
 #   * an ab_verdict.json with promote:true
-#   * a health_url pointing at the mock daemon /readyz which returns non-200
-#     (the daemon has no /readyz route => 404) => health gate fails => ROLLBACK.
+#   * a health_url pointing at the mock daemon /readyz-degraded route which
+#     returns 200 + degraded=true => health gate fails => ROLLBACK.
 - name: Prepare - live module + candidate + promote verdict + mock daemon
   hosts: localhost
   connection: local

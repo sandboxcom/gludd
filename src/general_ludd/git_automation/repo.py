@@ -469,7 +469,13 @@ class GitAutomation:
         _reject_leading_dash(worktree_path, kind="worktree path")
         try:
             subprocess.run(
-                ["git", "worktree", "remove", "--", worktree_path],
+                # `--force`: a worktree being torn down by the orchestrator
+                # legitimately contains untracked/modified content — the
+                # gludd_worktree module plants an audit marker inside the
+                # worktree, and an agent worktree typically has WIP. The
+                # caller has already decided the worktree is done; --force
+                # discards only uncommitted state (the branch is retained).
+                ["git", "worktree", "remove", "--force", "--", worktree_path],
                 cwd=repo_path,
                 capture_output=True,
                 text=True,
