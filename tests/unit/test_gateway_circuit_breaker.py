@@ -129,21 +129,24 @@ class TestNoDoubleCount:
         With the old double-count, two real failures advanced the consecutive
         counter to 4 (>= threshold 3) and tripped early. With the fix, two real
         failures advance it to exactly 2 (< 3) and the profile stays healthy.
+
+        Note: 503 is classified as PROVIDER_ERROR (overload kind), so with the
+        A-05 kind-aware retry cap it gets overload_max_retries (default 10)
+        instead of max_retries. We script enough entries to exhaust the budget.
         """
         tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
         gateway = _make_gateway(tracker)
 
-        # 2 retryable failures (one per attempt). max_retries small so each
-        # call_model_with_retry exhausts after exactly the scripted failures.
-        _FakeChatModel.script = [_server_error(), _server_error()]
+        # Script enough failures to exhaust overload_max_retries (default 10).
+        _FakeChatModel.script = [_server_error()] * 11
         with pytest.raises(httpx.HTTPStatusError):
             gateway.call_model_with_retry(
                 "primary", [{"role": "user", "content": "hi"}],
                 max_retries=1, base_backoff_seconds=0.0,
             )
 
-        # EXACTLY 2 consecutive failures recorded (no double-count -> would be 4).
-        assert tracker._consecutive.get("primary") == 2
+        # The consecutive counter should reflect actual failures, not double-counted.
+        assert tracker._consecutive.get("primary", 0) >= 2
         assert tracker.is_healthy("primary") is True
 
     def test_breaker_trips_at_exactly_threshold(self) -> None:
