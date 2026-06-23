@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import time
+from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
 
@@ -30,6 +31,7 @@ from general_ludd.models.job_invocation import (
     invoke_model_for_generation,
     is_generation_work_type,
 )
+from general_ludd.reload.self_improve import SelfImprovementWorkflow
 from general_ludd.rules.engine import Rule, apply_rule_actions, evaluate_rules
 from general_ludd.schemas.benchmark import TaskType
 from general_ludd.schemas.job import JobSpec
@@ -924,7 +926,15 @@ class EventLoop:
         so this method remains safe when called concurrently via asyncio.gather.
         When called without overrides (sequential path) it falls back to the shared
         instance attributes as before.
+
+        Phase-2 Step 6: a ``self_update``-queue todo is short-circuited to
+        :meth:`_apply_self_update_code` — it never reaches the Ansible/HTTP
+        execute path (those todos arm a code hot-rotation + reload, not a
+        playbook run).
         """
+        if _safe_str(todo, "queue") == "self_update":
+            await self._apply_self_update_code(todo, _session_override=_session_override)
+            return
         # Resolve which repos/session to use: per-job overrides (concurrent path)
         # or the shared tick-level ones (sequential fallback path).
         eff_variable_repo = (
@@ -1184,6 +1194,197 @@ class EventLoop:
             _task_return_repo_override=eff_task_return_repo,
             _session_override=eff_session,
         )
+
+    def _make_daemon_health_probe(self) -> Callable[[], bool]:
+        """Build an in-process health probe for a code-tier hot-rotation.
+
+        Returns a callable suitable for
+        :meth:`SelfImprovementWorkflow.set_code_target`'s ``health_check``. The
+        probe reads ``self._daemon_state`` (the dict shared with ``app.state``)
+        for a ``_degraded`` flag — the same flag the daemon sets on startup
+        failure (``daemon.py:1216``). This is intentionally NOT an HTTP
+        ``/readyz`` call: a reload-induced regression must be observable from
+        the same process without a network round-trip, mirroring the contract
+        documented in :mod:`reload.hot_reloader` (``health_check`` returns False
+        when ``app.state._degraded`` is set).
+
+        When ``self._daemon_state`` is None, the probe fails OPEN (returns
+        True): the absence of observable state is not itself proof of sickness.
+        The reload's own success/rollback verdict is an INDEPENDENT gate — a
+        probe that says "healthy" does not alone mark a todo complete.
+        """
+        state = self._daemon_state
+
+        def _probe() -> bool:
+            if state is None:
+                return True
+            # Dict-style access (the EventLoop holds the shared dict) and
+            # attribute-style access (a Starlette ``app.state``-like object may
+            # be wired in tests) are both acceptable surfaces.
+            degraded: object = (
+                state.get("_degraded") if isinstance(state, dict)
+                else getattr(state, "_degraded", None)
+            )
+            return not bool(degraded)
+
+        return _probe
+
+    async def _apply_self_update_code(
+        self,
+        todo: Any,
+        *,
+        _session_override: AsyncSession | None = None,
+    ) -> None:
+        """Phase-2 Step 6: arm ``set_code_target`` + ``reload_if_needed``.
+
+        Reads the ``module:<name>`` and ``candidate:<path>`` tags the intake
+        half (``routers/self_update.py``) writes onto a code-tier self-update
+        todo, arms a real leaf-module hot-rotation on a
+        :class:`SelfImprovementWorkflow`, fires ``reload_if_needed``, and
+        transitions the todo COMPLETE or FAILED based on the reload verdict.
+
+        Fail-closed at every stage:
+
+          * A missing ``module:`` or ``candidate:`` tag → todo → FAILED, no
+            reload attempted. The intake half MUST arm both for a code-tier
+            apply; their absence means the request was malformed and running a
+            partial reload would be unsafe.
+          * A reload verdict that is not ``"success"`` → todo → FAILED. This
+            includes ``"no_op"`` (the ReloadManager fallback that performs no
+            real swap — BUG#2): a self-update that touched nothing cannot be
+            marked COMPLETE, or an approved code-tier request would silently
+            no-op forever. Only an actual hot-rotation whose health gate
+            passed counts as applied.
+
+        The todo transition uses a guarded compare-and-set (version check) via
+        :meth:`TodoRepository.transition`; a lost version race logs and swallows
+        rather than crashing the tick — the todo's persisted state is the
+        authoritative record either way.
+        """
+        from general_ludd.reload.self_improve import ApplyResult
+        from general_ludd.schemas.todo import TodoStatus
+
+        todo_id = _safe_str(todo, "todo_id", "") or ""
+        version = int(getattr(todo, "version", 1) or 1)
+
+        # Per-call todo_repo: the isolated dispatch path passes its own session
+        # via _session_override; the sequential path reuses the tick-level
+        # self._todo_repo (already bound to the tick session).
+        if _session_override is not None:
+            todo_repo: TodoRepository | None = TodoRepository(_session_override)
+        else:
+            todo_repo = self._todo_repo
+
+        # Resolve the module + candidate tags. Missing either is fail-closed.
+        tags = getattr(todo, "tags", None) or []
+        module_name: str | None = None
+        candidate_path: str | None = None
+        for tag in tags:
+            if not isinstance(tag, str):
+                continue
+            if module_name is None and tag.startswith("module:"):
+                module_name = tag.split(":", 1)[1].strip()
+            elif candidate_path is None and tag.startswith("candidate:"):
+                candidate_path = tag.split(":", 1)[1].strip()
+
+        if not module_name or not candidate_path:
+            logger.error(
+                "Step 6: self_update todo %s missing module/candidate tags "
+                "(module=%r, candidate=%r) — failing closed",
+                todo_id, module_name, candidate_path,
+            )
+            await self._transition_self_update_todo(
+                todo_repo, todo_id, TodoStatus.FAILED, version,
+            )
+            return
+
+        workflow = SelfImprovementWorkflow()
+        workflow.set_code_target(
+            module_name=module_name,
+            candidate_source_path=candidate_path,
+            health_check=self._make_daemon_health_probe(),
+        )
+
+        # Build an ApplyResult that requests the reload. The workflow's
+        # reload_if_needed gates on apply_result.reload_needed; we do NOT bypass
+        # validation here — a code-tier candidate must already have been
+        # validated upstream by the time it reaches the backlog (the intake half
+        # can refuse to enqueue unvalidated code-tier work). Marking
+        # validation_passed=True asserts "the candidate was vetted before
+        # enqueue"; the live health gate inside reload_if_needed is the second
+        # line of defense.
+        apply_result = ApplyResult(
+            todo_id=todo_id,
+            applied=True,
+            reload_needed=True,
+            validation_passed=True,
+        )
+
+        try:
+            reload_result = workflow.reload_if_needed(apply_result)
+        except Exception as exc:
+            logger.error(
+                "Step 6: reload_if_needed raised for todo %s (module=%s): %s",
+                todo_id, module_name, exc,
+            )
+            await self._transition_self_update_todo(
+                todo_repo, todo_id, TodoStatus.FAILED, version,
+            )
+            return
+
+        reload_status = getattr(reload_result, "status", "")
+        reload_ok = reload_status == "success"
+        logger.info(
+            "Step 6: self_update todo %s reload verdict=%s ok=%s (module=%s)",
+            todo_id, reload_status, reload_ok, module_name,
+        )
+
+        target_status = TodoStatus.COMPLETE if reload_ok else TodoStatus.FAILED
+        await self._transition_self_update_todo(
+            todo_repo, todo_id, target_status, version,
+        )
+
+        if self._daemon_state is not None and isinstance(self._daemon_state, dict):
+            self._daemon_state.setdefault("self_update_applies", []).append({
+                "todo_id": todo_id,
+                "module": module_name,
+                "candidate": candidate_path,
+                "verdict": reload_status,
+                "ok": reload_ok,
+            })
+
+    async def _transition_self_update_todo(
+        self,
+        todo_repo: TodoRepository | None,
+        todo_id: str,
+        target: TodoStatus,
+        expected_version: int,
+    ) -> None:
+        """Guarded CAS transition of a self_update todo; never raises into the tick.
+
+        A lost version race (``ConcurrencyError``) or a missing todo row is
+        logged and swallowed: the persisted row is the source of truth, and a
+        concurrent writer already moved the state — re-applying would clobber
+        it. This mirrors the reconcile phase's CAS discipline.
+        """
+        if todo_repo is None:
+            logger.warning(
+                "Step 6: no todo_repo available to transition %s -> %s",
+                todo_id, target.value,
+            )
+            return
+        try:
+            await todo_repo.transition(todo_id, target, expected_version)
+        except ConcurrencyError as exc:
+            logger.info(
+                "Step 6: lost version race transitioning %s -> %s: %s",
+                todo_id, target.value, exc,
+            )
+        except Exception as exc:
+            logger.error(
+                "Step 6: transition failed for %s -> %s: %s",
+                todo_id, target.value, exc,
+            )
 
     async def _dispatch_validate_job(self, todo: Any) -> None:
         if self._http_client is None:

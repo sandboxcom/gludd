@@ -69,14 +69,15 @@ class TestDaemonLifespanWithRealDB:
                 assert metrics["phases_completed"] >= 1
 
     @pytest.mark.asyncio
-    async def test_daemon_queues_seeded_in_db(self):
+    async def test_daemon_queues_seeded_in_db(self, tmp_path):
         from sqlalchemy import text
 
+        config_dir = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
         ):
-            app = create_daemon_app(tick_interval=0.01)
+            app = create_daemon_app(tick_interval=0.01, config_dir=config_dir)
             with TestClient(app):
                 engine = app.state._db_engine
                 assert engine is not None

@@ -28,8 +28,9 @@ Phase-2 wiring lands and the Phase-1 surface can be retired.
 
 The executable blueprint is **§7 of
 [`docs/design/daemon_integration_plan.md`](../../docs/design/daemon_integration_plan.md)**.
-The wiring is tracked as a 7-step sequence. Steps 1–4 are **DONE**; steps 5–7
-are **NOT DONE**. Step 6 is the critical gap blocking end-to-end self-updates.
+The wiring is tracked as a 7-step sequence. Steps 1–5 are **DONE**; Step 6 is
+**NOT DONE** (the critical gap); Step 7 is **PARTIAL**. Step 6 remains the
+single blocker for end-to-end self-updates.
 
 ### DONE
 
@@ -50,16 +51,26 @@ are **NOT DONE**. Step 6 is the critical gap blocking end-to-end self-updates.
 - **Step 4 — Register router.** `self_update.router` registered in
   `create_daemon_app`'s router block and in `routers/__init__.register_all`.
   PSK-gated (`/admin/*` is never public).
+- **Step 5 — Event-loop scheduler refinement (no new phase).** DONE. The
+  scheduler branch in `_dispatch_jobs_via_scheduler`
+  (`event_loop/loop.py:718-731`) now branches on
+  `todo.queue == "self_update"` and builds the `WorkItem` via
+  `priority.to_work_item(plan, todo_id)` so code-tier self-updates serialize
+  on the `self_update:code` resource label (`priority.py:26-29`). The tier is
+  reconstructed from the todo's `tier:` tag (`priority.py:88-91`). Covered by
+  15 unit tests.
+
+### PARTIAL
+
+- **Step 7 — Integration test.** `tests/integration/test_self_update_router_wired.py`
+  now exists with tests 1–4 DONE: config-tier auto-applies; protected-path
+  requests are `refused`; `/admin/self-update/enqueue` creates a prioritised
+  todo; admin PSK enforced. Tests 5–6 (code-tier apply triggers
+  `reload_if_needed`, and the full code-tier end-to-end path) are **blocked on
+  Step 6** — they cannot be written until `arm.set_code_target` + the daemon
+  reload hook exist.
 
 ### NOT DONE
-
-- **Step 5 — Event-loop scheduler refinement (no new phase).**
-  In `_dispatch_jobs_via_scheduler` (`event_loop/loop.py:718-731`), branch on
-  `todo.queue == "self_update"` and build the `WorkItem` via
-  `priority.to_work_item(plan, todo_id)` so code-tier self-updates serialize
-  on the `self_update:code` resource label (`priority.py:26-29`).
-  Reconstruct the tier from the todo's `tier:` tag (`priority.py:88-91`).
-  **Currently no scheduler branch exists — self-update todos are never dispatched.**
 
 - **Step 6 — `arm.set_code_target` + `reload_if_needed` (THE critical gap).**
   No code path exists yet to (a) arm a `set_code_target` mutation via
@@ -69,21 +80,18 @@ are **NOT DONE**. Step 6 is the critical gap blocking end-to-end self-updates.
   **never actually mutate code or reload the daemon**. This is the single
   blocking gap for end-to-end Phase-2 self-updates.
 
-- **Step 7 — Integration test.** `tests/integration/test_self_update_router_wired.py`
-  does not yet exist. It must prove: config-tier auto-applies; protected-path
-  requests are `refused`; `/admin/self-update/enqueue` creates a prioritised
-  todo; admin PSK enforced; code-tier apply triggers `reload_if_needed`
-  (depends on Step 6).
-
 ### Net state
 
 The scaffolding files (`model.py`, `classifier.py`, `apply.py`, `priority.py`)
-plus Steps 1–4 mean the **intake half** of the pipeline is wired: requests can
-be classified, applied at config tier, audited, and enqueued into the backlog.
-The **execution half** (Steps 5–7) is still unwritten, so code-tier
-self-updates cannot run. The scaffolding files remain in tree, tested, and
-required as the contract for the remaining execution-side wiring — deleting
-them would discard the spec for the work the design doc describes.
+plus Steps 1–5 mean the **intake half** of the pipeline is wired AND the
+scheduler dispatches self-update todos: requests can be classified, applied at
+config tier, audited, enqueued into the backlog, and picked up by the event
+loop. Step 7's integration tests (1–4) confirm the config-tier path end-to-end.
+The **execution half** remains incomplete: Step 6 (code-tier arming + reload)
+is still unwritten, and Step 7's tests 5–6 are blocked on it, so code-tier
+self-updates still cannot actually run. The scaffolding files remain in tree,
+tested, and required as the contract for the remaining execution-side wiring —
+deleting them would discard the spec for the work the design doc describes.
 
 ## Pointer
 

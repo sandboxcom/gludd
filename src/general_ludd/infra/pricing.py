@@ -15,6 +15,27 @@ not found in the respective table.
 
 from __future__ import annotations
 
+import logging
+from typing import TYPE_CHECKING
+
+from general_ludd.pricing_intel.models import BillingGranularity, ComputePrice
+
+if TYPE_CHECKING:
+    from general_ludd.pricing_intel.catalog import PricingCatalog
+
+logger = logging.getLogger(__name__)
+
+# Seconds covered by one billing unit, for the time-based granularities.
+# Used to normalize a ComputePrice of any granularity to a per-second rate.
+# Non-time granularities (per_token, per_request, flat) are intentionally
+# absent — they are not applicable to GPU-second billing and trigger the
+# static-table fallback instead.
+_GRANULARITY_SECONDS: dict[BillingGranularity, float] = {
+    BillingGranularity.per_second: 1.0,
+    BillingGranularity.per_minute: 60.0,
+    BillingGranularity.per_hour: 3600.0,
+}
+
 # ---------------------------------------------------------------------------
 # Token pricing  (USD per 1 000 tokens, as of 2025-Q4)
 # ---------------------------------------------------------------------------
@@ -94,3 +115,125 @@ def infra_cost_usd(kind: str, units: float) -> float:
     """
     rate = INFRA_PRICING.get(kind, INFRA_PRICING["__default__"])
     return rate * units
+
+
+class InfraTracker:
+    """GPU/compute cost projector: PricingCatalog primary, static fallback.
+
+    Wraps :func:`infra_cost_usd` so callers get live catalog prices when a
+    :class:`~general_ludd.pricing_intel.catalog.PricingCatalog` is available,
+    and the static ``INFRA_PRICING`` table otherwise.  Mirrors the fail-soft
+    pattern of :meth:`SpendLimiter.token_cost_usd`: a missing or erroring
+    catalog price NEVER breaks cost projection — the static table is used.
+
+    Args:
+        catalog:          Optional :class:`PricingCatalog` used as the PRIMARY
+                          source for :meth:`gpu_cost_usd`.  When the catalog
+                          returns no price for a SKU (or is omitted, or raises,
+                          or returns a non-time granularity), the static
+                          ``INFRA_PRICING`` table is used as a fallback.
+        default_provider: Provider slug queried when no explicit ``provider``
+                          is passed to :meth:`gpu_cost_usd`.  Defaults to
+                          ``"runpod"``.
+    """
+
+    def __init__(
+        self,
+        catalog: PricingCatalog | None = None,
+        default_provider: str = "runpod",
+    ) -> None:
+        self._catalog = catalog
+        self._default_provider = default_provider
+
+    # ------------------------------------------------------------------
+    # Cost projection
+    # ------------------------------------------------------------------
+
+    def gpu_cost_usd(
+        self,
+        sku: str,
+        gpu_seconds: float,
+        *,
+        provider: str | None = None,
+        spot: bool = False,
+    ) -> float:
+        """USD cost for GPU compute, PricingCatalog primary, static fallback.
+
+        Resolution order:
+
+        1. If a :class:`PricingCatalog` is configured, query it via
+           ``compute_price(provider, sku, spot)``.  The provider is taken
+           from the explicit ``provider`` arg when given; otherwise
+           ``default_provider`` is used.  The returned :class:`ComputePrice`
+           is normalized to a per-second rate from its billing granularity
+           (per_second / per_minute / per_hour).
+        2. On any miss, catalog error, non-time granularity, or when no
+           catalog is configured, fall back to
+           :func:`infra_cost_usd` with ``kind="gpu_second"`` (the static
+           ``INFRA_PRICING`` table).  This guarantees cost projection never
+           breaks because a live price is unavailable.
+
+        Args:
+            sku:          Compute SKU (e.g. ``"A100-SXM4-80GB-1x"``).
+            gpu_seconds:  Seconds of GPU time consumed.
+            provider:     Optional explicit provider slug (e.g. ``"aws"``).
+                          When omitted, ``default_provider`` is used.
+            spot:         If True, prefer spot pricing from the catalog.
+
+        Returns:
+            Total cost in USD as a float.
+        """
+        price = self._catalog_compute_price(sku, provider=provider, spot=spot)
+        if price is not None:
+            per_second = self._per_second_rate(price)
+            if per_second is not None:
+                return per_second * gpu_seconds
+        return infra_cost_usd("gpu_second", gpu_seconds)
+
+    # ------------------------------------------------------------------
+    # Internal helpers
+    # ------------------------------------------------------------------
+
+    def _catalog_compute_price(
+        self,
+        sku: str,
+        *,
+        provider: str | None,
+        spot: bool,
+    ) -> ComputePrice | None:
+        """Return a :class:`ComputePrice` from the catalog, or ``None``.
+
+        Returns ``None`` when no catalog is configured, the catalog misses,
+        or the catalog raises.  All exceptions are swallowed so the caller
+        falls back to the static table — a missing live price must never
+        break cost projection.
+        """
+        catalog = self._catalog
+        if catalog is None:
+            return None
+        slug = provider if provider is not None else self._default_provider
+        try:
+            return catalog.compute_price(slug, sku, spot=spot)
+        except Exception as exc:
+            logger.warning(
+                "InfraTracker: catalog.compute_price(%s, %s, spot=%s) raised %s; "
+                "falling back to static infra pricing.",
+                slug,
+                sku,
+                spot,
+                exc,
+            )
+            return None
+
+    @staticmethod
+    def _per_second_rate(price: ComputePrice) -> float | None:
+        """Normalize a :class:`ComputePrice` to USD-per-second.
+
+        Returns ``None`` for non-time granularities (per_token, per_request,
+        flat) which are not applicable to GPU-second billing; callers fall
+        back to the static table in that case.
+        """
+        seconds_per_unit = _GRANULARITY_SECONDS.get(price.granularity)
+        if seconds_per_unit is None:
+            return None
+        return price.usd_per_unit / seconds_per_unit

@@ -73,8 +73,9 @@ async def _seed_default_project(app: Any) -> None:
     guarantees the row lands on the same connection pool the audit sink uses,
     avoiding WAL-snapshot isolation issues across separate connections.
     """
-    from general_ludd.db.models import ProjectModel
     from sqlalchemy import select
+
+    from general_ludd.db.models import ProjectModel
 
     factory = app.state._session_factory
     async with factory() as session:
@@ -166,7 +167,7 @@ class TestSelfUpdateRouterWired:
         exercises the router -> apply_plan -> response wiring for the REFUSED
         path, which is the integration contract under test.
         """
-        config_dir, db_path = _make_db_config(tmp_path)
+        config_dir, _db_path = _make_db_config(tmp_path)
         protected_plan = SelfUpdatePlan(
             subsystem=Subsystem.CONFIG,
             change_kind=ChangeKind.VALUE_EDIT,
@@ -255,7 +256,7 @@ class TestSelfUpdateRouterWired:
         router already satisfies.
         """
         monkeypatch.setenv("GLUDD_PSK", "test-secret-key")
-        config_dir, db_path = _make_db_config(tmp_path)
+        config_dir, _db_path = _make_db_config(tmp_path)
         with patch(
             "general_ludd.ansible.runner.AnsibleRunnerAdapter",
             return_value=MagicMock(),
