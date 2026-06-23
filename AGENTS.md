@@ -542,6 +542,22 @@ The 2026-06-22 incident: an agent committed `50dbd1b` with a red gate via `make 
 
 **Enforcement:** `tests/unit/test_commit_gate_freshness.py` structurally scans the Makefile for any target whose recipe invokes `git commit` without referencing `.gate-status` or `_gate-fresh-check`. Any new commit target MUST add the gate check or be explicitly allowlisted in the test with a documented reason.
 
+### CI-as-Gate Override
+
+When the local gate takes too long to complete (>30 min, common for large suites) and CI is the real validation mechanism, use:
+
+```
+make commit-no-verify MSG='...' GLUDD_CI_IS_GATE=1
+```
+
+This skips the local .gate-status freshness check (CI IS the gate) but STILL skips pre-commit hooks (--no-verify for stash conflicts). Use ONLY when:
+1. The local gate has timed out repeatedly (>2 attempts)
+2. Lint + typecheck pass locally
+3. Targeted tests pass locally
+4. CI will run on push/PR to validate
+
+This is NOT a bypass for a red gate — if tests are failing, fix them first.
+
 ## CRITICAL: Evidence-Based Response Policy
 
 Every factual claim MUST have supporting evidence from a tool call, file read, URL fetch, or test result.

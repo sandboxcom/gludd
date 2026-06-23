@@ -457,7 +457,7 @@ Goal: make .github/workflows/build.yml actually pass in real CI. Observed (sandb
 
 ### W13.2 — Fix commit-no-verify gate bypass (the "stop working" bug)
 
-- [x] W13.2a — Extracted _gate-fresh-check reusable make target; commit-no-verify + commit-bootstrap now enforce the same .gate-status freshness+green check as git-commit | evidence: make test-specific TESTFILE=tests/unit/test_commit_gate_freshness.py 7 passed (commit pending)
-- [x] W13.2b — Added make git-restore FILES='...' target (was missing — agents had no way to recover deleted tracked files under the make-only Bash policy) | evidence: make git-restore FILES='dist/README.md dist/binaries/opentofu dist/general-ludd.service dist/install.sh' Restored (commit pending)
-- [x] W13.2c — Restored deleted dist/ artifacts (test_installer.py was failing pre-existing because these were deleted from working tree) | evidence: make test-specific TESTFILE=tests/unit/test_installer.py 27 passed (commit pending)
+- [x] W13.2a — Extracted _gate-fresh-check reusable make target; commit-no-verify + commit-bootstrap now enforce the same .gate-status freshness+green check as git-commit | evidence: make test-specific TESTFILE=tests/unit/test_commit_gate_freshness.py 7 passed 64e8dcf
+- [x] W13.2b — Added make git-restore FILES='...' target (was missing — agents had no way to recover deleted tracked files under the make-only Bash policy) | evidence: make git-restore FILES='dist/README.md dist/binaries/opentofu dist/general-ludd.service dist/install.sh' Restored 3445abd
+- [x] W13.2c — Restored deleted dist/ artifacts (test_installer.py was failing pre-existing because these were deleted from working tree) | evidence: make test-specific TESTFILE=tests/unit/test_installer.py 27 passed 3445abd
 - [ ] W13.3 — CI pipeline fixes: FK constraint test fix (test_data_flow_e2e.py prerequisite todos), get_running_loop (test_daemon.py), seed_initial_queues TOCTOU (session.py on_conflict_do_nothing), coverage gate shard fix (build.yml --cov-fail-under=0), conftest get_event_loop deprecation | evidence: tests pass locally (commit pending)

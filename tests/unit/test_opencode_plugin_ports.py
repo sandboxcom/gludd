@@ -186,6 +186,42 @@ class TestEnforceMakeAssertionCheckScopedToTestFiles:
         )
 
 
+class TestEnforceMakeTddCheckScopedToTestMethods:
+    """The TDD assertion-required check must fire ONLY when the edited content
+    introduces a TEST METHOD body ('def test_' / 'async def test_'), not on any
+    edit to a test file that happens to lack 'assert '.
+
+    Regression: the check fired on ANY >50-char edit to tests/ without an
+    assertion — blocking legitimate edits like imports, fixtures, engine/session
+    setup, helper functions, and decorators. Narrowed per the guardrail-integrity
+    policy: narrow, don't disable. Enforcement remains for assertion-less test
+    method bodies.
+    """
+
+    def _tdd_block(self) -> str:
+        content = ENFORCE_MAKE.read_text()
+        idx = content.find("TDD QUALITY VIOLATION")
+        assert idx != -1, "TDD QUALITY VIOLATION throw must exist in enforce-make.ts"
+        # Return the chars immediately preceding the throw to inspect its gate.
+        return content[max(0, idx - 700):idx]
+
+    def test_tdd_throw_gated_on_test_method_body(self):
+        block = self._tdd_block()
+        assert "def test_" in block and "async def test_" in block, (
+            "The TDD assertion throw must be gated on a test-method-body check "
+            "('def test_' / 'async def test_') so it only fires on real test "
+            f"methods, not on imports/fixtures/setup. Preceding block: {block!r}"
+        )
+
+    def test_tdd_throw_not_gated_on_bare_length_heuristic(self):
+        block = self._tdd_block()
+        assert "length > 50" not in block, (
+            "The TDD throw must not be gated on `newContent.length > 50` — that "
+            "heuristic caused false positives on any >50-char scaffolding edit. "
+            "Gate on test-method-body presence instead."
+        )
+
+
 # --------------------------------------------------------------------------- #
 # enforce-delegate.ts — NEW plugin: model utilization + disk + force-delegate.
 # --------------------------------------------------------------------------- #
