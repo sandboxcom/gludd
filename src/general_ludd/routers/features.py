@@ -7,9 +7,8 @@ Endpoints (PSK auth applied by daemon middleware — not in _PUBLIC_PATHS):
 
 PSK auth is applied by the daemon middleware (path is not public).
 
-# TODO(integration): gludd_features Ansible module + feature_audit role +
-# molecule scenario for /api/features + scripts/dogfood.py self-check
-# + Makefile target. Deferred to integration sprint.
+# Done: gludd_features Ansible module, feature_audit role, molecule scenario,
+# scripts/dogfood.py self-check, and Makefile target have all shipped.
 """
 from __future__ import annotations
 
