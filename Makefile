@@ -1312,7 +1312,7 @@ ci-wait-anon:
 			break; \
 		fi; \
 		echo "$$(date +%H:%M:%S) [heartbeat] run status=$$STATUS conclusion=$${CONCL:-pending} (waiting for run-level completion)"; \
-		sleep 20; \
+		sleep 10; \
 	done
 
 # Resolve an action repo's recent tags -> commit SHAs (public API, no auth) so we
@@ -1362,7 +1362,7 @@ ci-watch-head:
 	for i in $$(seq 1 40); do \
 		RUNID=$$(curl -s -H "Accept: application/vnd.github+json" "https://api.github.com/repos/sandboxcom/gludd/actions/runs?per_page=10" | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); runs=[r for r in d.get('workflow_runs',[]) if r['head_sha'].startswith('$$SHORT')]; print(runs[0]['id'] if runs else '')" 2>/dev/null); \
 		if [ -n "$$RUNID" ]; then echo "found run $$RUNID for $$SHORT"; break; fi; \
-		echo "$$(date +%H:%M:%S) [waiting] run for $$SHORT not registered yet ..."; sleep 15; \
+		echo "$$(date +%H:%M:%S) [waiting] run for $$SHORT not registered yet ..."; sleep 5; \
 	done; \
 	[ -n "$$RUNID" ] || { echo "no run appeared for $$SHORT"; exit 1; }; \
 	$(MAKE) --no-print-directory ci-wait-anon RUN=$$RUNID

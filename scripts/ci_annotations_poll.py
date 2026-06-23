@@ -83,7 +83,7 @@ def main() -> None:
         sys.exit(1)
 
     run_id = sys.argv[1]
-    interval = int(os.environ.get("CI_ANN_INTERVAL", "45"))
+    interval = int(os.environ.get("CI_ANN_INTERVAL", "20"))
     max_sec = int(os.environ.get("CI_ANN_MAX_SEC", "3600"))
     early_exit = os.environ.get("CI_ANN_EARLY_EXIT", "0") == "1"
 

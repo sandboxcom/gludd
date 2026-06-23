@@ -45,7 +45,7 @@ def main() -> None:
         sys.exit(1)
 
     run_id = sys.argv[1]
-    interval = int(os.environ.get("CI_POLL_INTERVAL", "60"))
+    interval = int(os.environ.get("CI_POLL_INTERVAL", "15"))
     max_sec = int(os.environ.get("CI_POLL_MAX_SEC", "1800"))
 
     print(f"[ci-poll] run={run_id} repo={REPO} interval={interval}s max={max_sec}s")

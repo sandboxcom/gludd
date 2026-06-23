@@ -312,7 +312,7 @@ class TestSelfImprovementHarnessOffline:
         # Override SelfImprovementHarness to point at our tmpdir
         with patch(
             "general_ludd.event_loop.loop.SelfImprovementHarness",
-            lambda: SelfImprovementHarness(repo_root=str(tmp_path)),
+            lambda **kwargs: SelfImprovementHarness(repo_root=str(tmp_path)),
         ):
             asyncio.run(loop._phase_self_improve())
 
