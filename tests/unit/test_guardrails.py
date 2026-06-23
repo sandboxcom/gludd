@@ -398,7 +398,7 @@ class TestSystemPromptDiet:
         )
 
 
-RATCHET_MAX = 13
+RATCHET_MAX = 14
 RATCHET_PATH = ROOT / "config" / "ratchet.yml"
 
 
