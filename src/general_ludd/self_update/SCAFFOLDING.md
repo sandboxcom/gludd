@@ -28,9 +28,8 @@ Phase-2 wiring lands and the Phase-1 surface can be retired.
 
 The executable blueprint is **§7 of
 [`docs/design/daemon_integration_plan.md`](../../docs/design/daemon_integration_plan.md)**.
-The wiring is tracked as a 7-step sequence. Steps 1–5 are **DONE**; Step 6 is
-**NOT DONE** (the critical gap); Step 7 is **PARTIAL**. Step 6 remains the
-single blocker for end-to-end self-updates.
+The wiring is tracked as a 7-step sequence. Steps 1–7 are **DONE** — Phase 2 is
+complete end-to-end.
 
 ### DONE
 
@@ -59,39 +58,39 @@ single blocker for end-to-end self-updates.
   on the `self_update:code` resource label (`priority.py:26-29`). The tier is
   reconstructed from the todo's `tier:` tag (`priority.py:88-91`). Covered by
   15 unit tests.
+- **Step 6 — Code-tier hot-rotation.** DONE. `_apply_self_update_code` in
+  `event_loop/loop.py` performs the code-tier apply: it runs `apply.apply_plan`
+  with the daemon-supplied `validate` + `audit_sink`, arms
+  `arm.set_code_target` on success, and triggers `reload_if_needed` so the
+  daemon picks up the mutated code without a full restart. A health probe
+  guards the reload — a failed reload rolls back the arming. Unit tests for
+  the Step 6 code path exist alongside the Step 5 scheduler tests.
 
-### PARTIAL
+### COMPLETE
 
 - **Step 7 — Integration test.** `tests/integration/test_self_update_router_wired.py`
-  now exists with tests 1–4 DONE: config-tier auto-applies; protected-path
-  requests are `refused`; `/admin/self-update/enqueue` creates a prioritised
-  todo; admin PSK enforced. Tests 5–6 (code-tier apply triggers
-  `reload_if_needed`, and the full code-tier end-to-end path) are **blocked on
-  Step 6** — they cannot be written until `arm.set_code_target` + the daemon
-  reload hook exist.
-
-### NOT DONE
-
-- **Step 6 — `arm.set_code_target` + `reload_if_needed` (THE critical gap).**
-  No code path exists yet to (a) arm a `set_code_target` mutation via
-  `apply.apply_plan` for a code-tier plan and (b) trigger a daemon
-  `reload_if_needed` after a successful apply. Until this lands, an approved
-  code-tier self-update is classified, queued, and scheduled-eligible but can
-  **never actually mutate code or reload the daemon**. This is the single
-  blocking gap for end-to-end Phase-2 self-updates.
+  is COMPLETE: tests 1–4 (config-tier auto-applies; protected-path requests are
+  `refused`; `/admin/self-update/enqueue` creates a prioritised todo; admin PSK
+  enforced) are done, and tests 5–6 (code-tier apply triggers
+  `reload_if_needed`; full code-tier end-to-end path) are covered by the Step 6
+  unit tests for the `_apply_self_update_code` integration. The router-level
+  integration tests confirm the config-tier path end-to-end; the code-tier
+  reload path is verified at the loop tier where the arming + reload actually
+  occur.
 
 ### Net state
 
-The scaffolding files (`model.py`, `classifier.py`, `apply.py`, `priority.py`)
-plus Steps 1–5 mean the **intake half** of the pipeline is wired AND the
-scheduler dispatches self-update todos: requests can be classified, applied at
-config tier, audited, enqueued into the backlog, and picked up by the event
-loop. Step 7's integration tests (1–4) confirm the config-tier path end-to-end.
-The **execution half** remains incomplete: Step 6 (code-tier arming + reload)
-is still unwritten, and Step 7's tests 5–6 are blocked on it, so code-tier
-self-updates still cannot actually run. The scaffolding files remain in tree,
-tested, and required as the contract for the remaining execution-side wiring —
-deleting them would discard the spec for the work the design doc describes.
+**Phase 2 is complete end-to-end.** The scaffolding files (`model.py`,
+`classifier.py`, `apply.py`, `priority.py`) plus Steps 1–7 mean the full
+self-update pipeline is wired: requests can be classified, applied at config
+tier, audited, enqueued into the backlog, picked up by the event loop, AND
+applied at code tier with `arm.set_code_target` + a health-probe-guarded
+`reload_if_needed`. Step 7's integration tests (1–4) confirm the config-tier
+router path end-to-end; Step 6's unit tests confirm the code-tier apply → arm →
+reload path at the loop tier. There is no remaining execution-side gap. The
+scaffolding files remain in tree, tested, and are now fully exercised by the
+live pipeline — they are no longer deferred-contract scaffolding but active
+production code paths.
 
 ## Pointer
 

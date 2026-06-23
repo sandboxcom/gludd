@@ -1,5 +1,20 @@
 """Natural-language -> :class:`UpdatePlan` routing for gludd self-update.
 
+.. deprecated::
+    This module is superseded by :mod:`general_ludd.self_update.classifier`,
+    which is the live routing path used by the daemon
+    (``src/general_ludd/routers/self_update.py`` imports ``classifier.classify``).
+    ``classifier`` produces the richer :class:`~general_ludd.self_update.model.SelfUpdatePlan`
+    and replaces this router's :class:`UpdatePlan`/``UpdateRequestRouter`` surface.
+
+    This module is retained ONLY because the operator CLI
+    ``scripts/gludd_update.py`` still consumes it via a lazy
+    ``importlib.import_module("general_ludd.self_update.router")`` lookup
+    (see ``ROUTER_MODULE`` in that script). New code MUST NOT import from here;
+    route through :func:`general_ludd.self_update.classifier.classify` instead.
+    When ``gludd_update.py`` is migrated to the classifier, this file and its
+    re-exports in ``__init__.py`` should be deleted.
+
 This module is the first stage of the self-update pipeline (issue #81). It
 takes a free-text request like::
 
