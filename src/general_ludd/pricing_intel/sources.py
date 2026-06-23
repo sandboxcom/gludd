@@ -1481,22 +1481,72 @@ class GCPPricingSource:
 
 
 # ---------------------------------------------------------------------------
-# HuggingFace Inference Endpoints — TODO (billing terms registered)
+# HuggingFace Inference Endpoints — STATIC dedicated-endpoint GPU table
+# ---------------------------------------------------------------------------
+# Source: https://huggingface.co/pricing#dedicated-endpoints (accessed 2025-Q4)
+#
+# HuggingFace sells "Dedicated Endpoints" — reserved GPU instances billed per
+# hour against a prepaid account balance. The pricing page lists per-instance
+# hourly rates by GPU type. No machine-readable public catalog exists (the
+# endpoint API at https://api.endpoints.huggingface.cloud/ requires an HF
+# token), so the table below is transcribed from the public pricing page.
+#
+# No public per-token pricing catalog exists for serverless inference (it is
+# metered against the account, not published as a price list), so
+# fetch_model_prices() returns [].
+#
+# BILLING SEMANTICS (PREPAID / PER-HOUR):
+#   - Dedicated endpoints bill per HOUR against a prepaid account balance.
+#   - Customer must maintain a positive balance; exhaustion stops endpoints.
+#   - Dedicated endpoints are RESERVED (non-interruptible) — no spot concept.
 # ---------------------------------------------------------------------------
 
+_HF_SOURCE = "https://huggingface.co/pricing#dedicated-endpoints"
+_HF_FETCHED_AT = 1735689600.0  # 2025-01-01 00:00 UTC (table recorded date)
+
+# Format: (sku, gpu_type, gpu_count, usd_per_hour)
+# Prices transcribed from https://huggingface.co/pricing (2025-Q4).
+# These are the dedicated-endpoint hourly rates for 1x GPU instances.
+_HF_DEDICATED_PRICES_STATIC: list[tuple[str, str, int, float]] = [
+    # Entry-tier GPUs
+    ("hf-t4-1x", "T4 16GB", 1, 0.60),
+    ("hf-a10g-1x", "A10G 24GB", 1, 1.05),
+    # Mid-tier Ada / Ampere
+    ("hf-l4-1x", "L4 24GB", 1, 1.05),
+    ("hf-l40s-1x", "L40S 48GB", 1, 1.95),
+    # A100 family — both VRAM variants
+    ("hf-a100-40gb-1x", "A100 40GB", 1, 4.13),
+    ("hf-a100-80gb-1x", "A100 80GB", 1, 4.50),
+    # High-tier Hopper
+    ("hf-h100-80gb-1x", "H100 80GB", 1, 11.00),
+    ("hf-h100-80gb-8x", "H100 80GB", 8, 88.00),
+    ("hf-h200-141gb-1x", "H200 141GB", 1, 13.00),
+    # Multi-GPU A100 80GB
+    ("hf-a100-80gb-8x", "A100 80GB", 8, 36.00),
+]
+
+
 class HuggingFaceSource:
-    """FETCH STRATEGY: TODO — billing terms registered; live price fetch not implemented.
+    """FETCH STRATEGY: STATIC — hardcoded from https://huggingface.co/pricing (2025-Q4).
 
-    # TODO(integration): HuggingFace Inference Endpoints pricing is available at:
-    # https://huggingface.co/pricing — per instance type, per-hour billing.
-    # API: GET https://api.endpoints.huggingface.cloud/v2/endpoint/
-    # (requires HF token, so not a public API)
-    # For hosted inference (serverless), see:
-    # https://huggingface.co/docs/inference-providers/en/index
+    HuggingFace publishes dedicated-endpoint GPU hourly rates on a public HTML
+    pricing page. There is no machine-readable public catalog, so the rates are
+    transcribed into ``_HF_DEDICATED_PRICES_STATIC`` and surfaced via
+    ``fetch_compute_prices()``. Per-token serverless pricing is metered against
+    the account and not published as a price list, so ``fetch_model_prices()``
+    returns ``[]``.
 
-    BILLING SEMANTICS:
-      - Serverless inference: per-token, postpaid_per_use. Free tier available.
-      - Dedicated endpoints: per-hour from a prepaid account balance.
+    # TODO(integration): HuggingFace Endpoint API exposes live per-instance
+    # pricing at https://api.endpoints.huggingface.cloud/v2/endpoint/ — it
+    # requires an HF token (not a public API), so it is not used here.
+
+    BILLING SEMANTICS (PREPAID / PER-HOUR):
+      - Dedicated endpoints bill per HOUR against a prepaid account balance.
+      - Customer must maintain a positive balance; balance exhaustion stops the
+        endpoint (no postpaid invoice for dedicated endpoints).
+      - Dedicated endpoints are reserved (non-interruptible) — no spot concept.
+      - Serverless (pay-per-token) inference is separate and metered against
+        the same balance; no public per-token price list exists.
     """
 
     def provider_slug(self) -> str:
@@ -1505,26 +1555,53 @@ class HuggingFaceSource:
     def billing(self) -> ProviderBilling:
         return ProviderBilling(
             provider="huggingface",
-            granularity=BillingGranularity.per_token,
-            terms=BillingTerms.postpaid_per_use,
+            granularity=BillingGranularity.per_hour,
+            terms=BillingTerms.prepaid_balance,
             currency="USD",
             min_charge=None,
             spot_available=False,
             notes=(
-                "Serverless inference: per-token postpaid. "
-                "Dedicated endpoints: per-hour billed to account balance (prepaid model). "
-                "Free tier available for low-volume inference. "
-                "Source: https://huggingface.co/pricing"
+                "Dedicated Endpoints bill per HOUR against a prepaid account "
+                "balance; balance exhaustion stops the endpoint. Reserved "
+                "(non-interruptible); no spot concept. Serverless per-token "
+                "inference is metered against the same balance but has no "
+                "public per-token price list. "
+                "Source: https://huggingface.co/pricing#dedicated-endpoints"
             ),
         )
 
     def fetch_model_prices(self) -> list[ModelPrice]:
-        """TODO(integration): live fetch not implemented. Returns []."""
+        """No public per-token pricing catalog exists for HuggingFace. Returns []."""
         return []
 
     def fetch_compute_prices(self) -> list[ComputePrice]:
-        """TODO(integration): live fetch not implemented. Returns []."""
-        return []
+        """Return static dedicated-endpoint GPU price table.
+
+        Prices are the raw per-hour rates from the public pricing page; because
+        granularity is ``per_hour``, ``usd_per_unit`` IS the USD/hour rate (no
+        /3600 conversion).
+        """
+        results: list[ComputePrice] = []
+        for sku, gpu_type, gpu_count, usd_per_hour in _HF_DEDICATED_PRICES_STATIC:
+            results.append(
+                ComputePrice(
+                    provider="huggingface",
+                    sku=sku,
+                    usd_per_unit=usd_per_hour,
+                    granularity=BillingGranularity.per_hour,
+                    spot=False,
+                    terms=BillingTerms.prepaid_balance,
+                    fetched_at=_HF_FETCHED_AT,
+                    source=_HF_SOURCE,
+                    gpu_count=gpu_count,
+                    gpu_type=gpu_type,
+                    notes=(
+                        f"Dedicated Endpoint (reserved). ${usd_per_hour:.2f}/hr. "
+                        "Billed per hour against prepaid account balance."
+                    ),
+                )
+            )
+        return results
 
 
 # ---------------------------------------------------------------------------
@@ -1840,6 +1917,7 @@ def all_sources() -> list[PricingSource]:
         OpenAISource(),
         LiteLLMJSONSource("anthropic"),
         LiteLLMJSONSource("openai"),
+        LiteLLMJSONSource("fireworks_ai"),
         RunPodPricingSource(),
         RunPodSource(),
         LambdaLabsSource(),

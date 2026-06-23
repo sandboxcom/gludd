@@ -46,12 +46,14 @@ lines if hookup is centralized there instead. No edit to ``daemon.py`` /
 from __future__ import annotations
 
 import logging
+from dataclasses import asdict
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
 from pydantic import BaseModel, Field
 
 from general_ludd.connectors.registry import ConnectorRegistry
+from general_ludd.pricing_intel.catalog import PricingCatalog
 
 logger = logging.getLogger(__name__)
 
@@ -72,6 +74,18 @@ class ObserveQueryRequest(BaseModel):
 def _get_registry(app: FastAPI) -> ConnectorRegistry | None:
     reg = getattr(app.state, "_connector_registry", None)
     return reg if isinstance(reg, ConnectorRegistry) else None
+
+
+def _get_pricing_catalog(app: FastAPI) -> PricingCatalog | None:
+    """Return the daemon-shared :class:`PricingCatalog`, or ``None``.
+
+    The daemon stores the same instance the SpendLimiter uses on
+    ``app.state._pricing_catalog`` (see ``daemon.py``). When no catalog is
+    present the pricing endpoints degrade to empty results rather than
+    erroring — a daemon running without pricing intel is a valid, safe state.
+    """
+    cat = getattr(app.state, "_pricing_catalog", None)
+    return cat if isinstance(cat, PricingCatalog) else None
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -124,6 +138,42 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "source": req.source,
             "records": records,
             "count": len(records),
+        }
+
+    @app.get("/api/pricing")
+    async def pricing_models(provider: str | None = None) -> dict[str, Any]:
+        """Return all model token prices from the :class:`PricingCatalog`.
+
+        PSK-gated by the daemon middleware (NOT in ``_PUBLIC_PATHS``), exactly
+        like the other ``/api/`` routes. An optional ``?provider=`` slug
+        forwards to ``catalog.all_model_prices(provider=...)``. Degrades to
+        ``{"prices": [], "count": 0}`` when no catalog is wired.
+        """
+        cat = _get_pricing_catalog(app)
+        if cat is None:
+            return {"prices": [], "count": 0}
+        prices = cat.all_model_prices(provider=provider)
+        return {
+            "prices": [asdict(p) for p in prices],
+            "count": len(prices),
+        }
+
+    @app.get("/api/pricing/compute")
+    async def pricing_compute(provider: str | None = None) -> dict[str, Any]:
+        """Return all compute instance prices from the :class:`PricingCatalog`.
+
+        PSK-gated by the daemon middleware (NOT in ``_PUBLIC_PATHS``), exactly
+        like the other ``/api/`` routes. An optional ``?provider=`` slug
+        forwards to ``catalog.all_compute_prices(provider=...)``. Degrades to
+        ``{"prices": [], "count": 0}`` when no catalog is wired.
+        """
+        cat = _get_pricing_catalog(app)
+        if cat is None:
+            return {"prices": [], "count": 0}
+        prices = cat.all_compute_prices(provider=provider)
+        return {
+            "prices": [asdict(p) for p in prices],
+            "count": len(prices),
         }
 
 

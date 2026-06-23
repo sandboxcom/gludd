@@ -1045,6 +1045,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # infra/pricing.py table when the catalog has no live price.  Shared
         # across the limiter and any other subsystem that needs live rates.
         pricing_catalog = PricingCatalog()
+        # Publish the catalog on app.state so /api/pricing (routers/observe.py)
+        # can serve the SAME instance the SpendLimiter consumes — not a second
+        # copy. Routers read it via ``_get_pricing_catalog(app)``.
+        app.state._pricing_catalog = pricing_catalog
 
         spend_limiter: SpendLimiter | None = None
         if uc is not None:

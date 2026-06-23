@@ -123,6 +123,9 @@ class TestLiteLLMIdentity:
     def test_openai_provider_slug(self) -> None:
         assert LiteLLMJSONSource("openai").provider_slug() == "litellm_openai"
 
+    def test_fireworks_ai_provider_slug(self) -> None:
+        assert LiteLLMJSONSource("fireworks_ai").provider_slug() == "litellm_fireworks_ai"
+
     def test_billing_terms_anthropic(self) -> None:
         b = LiteLLMJSONSource("anthropic").billing()
         assert isinstance(b, ProviderBilling)
@@ -375,7 +378,15 @@ class TestLiteLLMRegistration:
             "got: " + ", ".join(slugs)
         )
 
+    def test_fireworks_ai_registered(self) -> None:
+        slugs = [s.provider_slug() for s in all_sources()]
+        assert "litellm_fireworks_ai" in slugs, (
+            "LiteLLMJSONSource('fireworks_ai') must be registered in all_sources(); "
+            "got: " + ", ".join(slugs)
+        )
+
     def test_each_registered_once(self) -> None:
         slugs = [s.provider_slug() for s in all_sources()]
         assert slugs.count("litellm_anthropic") == 1
         assert slugs.count("litellm_openai") == 1
+        assert slugs.count("litellm_fireworks_ai") == 1

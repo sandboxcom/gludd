@@ -445,11 +445,11 @@ class TestBillingTermsPerProvider:
         assert b.spot_available is False
 
     def test_huggingface_billing_registered(self) -> None:
-        """HuggingFace billing terms must be registered (even though fetch is TODO)."""
+        """HuggingFace dedicated endpoints: per_hour + prepaid_balance (static table)."""
         b = HuggingFaceSource().billing()
         assert b.provider == "huggingface"
-        assert b.granularity == BillingGranularity.per_token
-        # TODO sources must still have valid billing terms
+        assert b.granularity == BillingGranularity.per_hour
+        assert b.terms == BillingTerms.prepaid_balance
         assert b.terms in BillingTerms
 
     def test_fireworks_billing_registered(self) -> None:
@@ -824,8 +824,12 @@ class TestFailSoftBehavior:
         assert prices == []
 
     def test_todo_sources_return_empty_lists(self) -> None:
-        """Sources marked TODO must return [] without crashing."""
-        for src in [HuggingFaceSource(), FireworksSource()]:
+        """Sources still marked TODO must return [] without crashing.
+
+        HuggingFace was promoted out of this set when its static dedicated-
+        endpoint table was implemented (see test_pricing_hf.py).
+        """
+        for src in [FireworksSource()]:
             assert src.fetch_model_prices() == [], f"{src.provider_slug()} model prices should be []"
             assert src.fetch_compute_prices() == [], f"{src.provider_slug()} compute prices should be []"
 

@@ -681,6 +681,16 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_health.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_health.set_defaults(func=_cmd_connectors_health)
 
+    connectors_query = connectors_sub.add_parser(
+        "query", help="Run a query against a named observability source"
+    )
+    connectors_query.add_argument("source", help="Registered source name to query")
+    connectors_query.add_argument(
+        "--spec", default="{}", help="Query spec as a JSON string (default: {})"
+    )
+    connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
+    connectors_query.set_defaults(func=_cmd_connectors_query)
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -3173,6 +3183,31 @@ def _cmd_connectors_health(args: argparse.Namespace) -> None:
             elif ok and status.get("latency_ms") is not None:
                 detail = f"  {status['latency_ms']}ms"
         print(f"  [{icon}] {name}{detail}")
+
+
+def _cmd_connectors_query(args: argparse.Namespace) -> None:
+    try:
+        spec = json.loads(args.spec) if args.spec else {}
+    except (json.JSONDecodeError, TypeError) as exc:
+        print(f"Error: --spec is not valid JSON: {exc}", file=sys.stderr)
+        sys.exit(1)
+    data = _http_call(
+        "POST",
+        f"{args.daemon_url}/api/observe/query",
+        json={"source": args.source, "spec": spec},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    records = data.get("records", [])
+    count = data.get("count", len(records))
+    source = data.get("source", args.source)
+    if not records:
+        print(f"No records from source '{source}'.")
+        return
+    print(f"Source '{source}': {count} record(s)")
+    for r in records:
+        print(f"  {r}")
 
 
 if __name__ == "__main__":
