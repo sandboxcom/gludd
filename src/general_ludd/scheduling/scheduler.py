@@ -12,11 +12,9 @@ be SERIAL.  Core rules:
     item in its depends_on set has been emitted in an earlier batch.
   - A cycle in depends_on raises CycleError immediately (fail-closed).
 
-# TODO(integration): drive the event loop's tick from Scheduler.plan() so
-# non-blocking work runs in parallel instead of the current sequential phase
-# sweep.  Wire Scheduler.plan() output into EventLoop._phase_dispatch_execute_jobs
-# to launch concurrency-safe batches in asyncio.gather() while still serializing
-# items that share an exclusive resource.
+Integration: Scheduler.plan() drives the event loop's tick — EventLoop uses it
+to compute concurrency-safe batches (asyncio.gather) while serializing items
+that share an exclusive resource. See EventLoop._phase_dispatch_execute_jobs.
 """
 
 from __future__ import annotations

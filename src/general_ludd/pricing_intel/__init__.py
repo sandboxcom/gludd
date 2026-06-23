@@ -6,8 +6,9 @@ This package provides structured access to:
 - Billing semantics: granularity (per-second/per-hour/per-token), terms (prepaid vs postpaid),
   minimum charges, spot availability
 
-# TODO(integration): Wire PricingCatalog into the spend-limiter to replace static
-# infra/pricing.py. Add /api/pricing facet to serve live rates to clients.
+Integration: PricingCatalog is wired into SpendLimiter (catalog=...) and used
+as the primary source for token_cost_usd(); a /api/pricing facet serves live
+rates to clients.
 
 Public API:
     from general_ludd.pricing_intel import PricingCatalog, BillingGranularity, BillingTerms

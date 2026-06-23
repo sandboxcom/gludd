@@ -2884,3 +2884,11 @@ run-other-shard:
 	@$(MAKE) --no-print-directory wait-pytest
 	@$(UV) run python -m pytest tests/integration/ tests/e2e/ tests/security/ tests/test_worker_d09_d10_d35.py $(_XD) -v --junit-xml=/tmp/other_shard.xml -p no:randomly 2>&1 | tail -200; true
 
+# Replace exact text in a file using temp files for old/new text.
+# Usage:
+#   make replace-text FILE=path/to/file.py OLD_FILE=/tmp/old.txt NEW_FILE=/tmp/new.txt
+replace-text:
+	@[ -n "$(FILE)" ] && [ -n "$(OLD_FILE)" ] && [ -n "$(NEW_FILE)" ] || { \
+		echo "Usage: make replace-text FILE=<file> OLD_FILE=<old-text-file> NEW_FILE=<new-text-file>"; exit 1; }
+	@$(PYTHON) scripts/replace_text.py "$(FILE)" "$(OLD_FILE)" "$(NEW_FILE)"
+

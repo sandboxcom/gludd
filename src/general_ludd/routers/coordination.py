@@ -52,9 +52,8 @@ def _get_registry(app: FastAPI) -> FileClaimRegistry:
 def _coordination_facet(app: FastAPI) -> dict[str, Any]:
     """Return a coordination snapshot suitable for /api/facts.
 
-    # TODO(integration): add "coordination": _coordination_facet(app) to the
-    # dict returned by api_facts() in routers/facts.py, and import this
-    # function at the top of that file.
+    Wired into routers/facts.py: imported as _coordination_facet and added to
+    the facts dict under the "coordination" key.
     """
     try:
         reg = _get_registry(app)

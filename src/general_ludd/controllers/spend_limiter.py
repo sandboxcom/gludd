@@ -14,17 +14,9 @@ Design notes
   tuples.  Old records (older than ``window_seconds``) are pruned lazily on
   every ``window_spend()`` call.
 
-# TODO(integration): wire SpendLimiter.would_exceed() into the dispatch path
-# before model calls so that every dispatch checks the rolling budget prior to
-# executing a model/infra action.  The check should look like:
-#
-#   projected = token_cost_usd(model, est_in_tokens, est_out_tokens)
-#   if spend_limiter.would_exceed(projected):
-#       logger.warning("Spend limiter: deferring dispatch, window=%s remaining=%s",
-#                      spend_limiter.window_spend(), spend_limiter.remaining())
-#       return  # defer/skip
-#   # ... execute model call ...
-#   spend_limiter.record(actual_cost, kind="token", model=model)
+Integration: would_exceed() is wired into the dispatch path via
+``make_spend_guarded_executor`` (daemon_wiring) and consulted in
+``EventLoop`` before every model/infra call.
 """
 
 from __future__ import annotations

@@ -7,15 +7,27 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — master@`4c06268`
+## Current State — master@`ef24d9c`
 
 ### MERGED:
 - `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `4c06268`
+- master advanced to `ef24d9c` (CI pending — treat as unconfirmed until GREEN)
 
 ### Phase 2 — COMPLETE (all 7 steps done):
 - Self-update flow wired end-to-end
 - All seven Phase 2 steps finished
+
+### EventLoop Wiring (new since 4c06268):
+- Collection handler + role dispatch wired into EventLoop
+- LOC ledger wired — `accounting/ledger.py` `loc_changed` now invoked from dispatch path
+- Spend limiter `would_exceed` wired into dispatch path (gates spend before each dispatch)
+
+### A-05 Overload Retry Cap — FIXED:
+- Retry behavior on overload now bounded (previously unbounded)
+
+### Multitasking Bugs — All 5 Documented:
+- 3 require restart to clear
+- 2 still active
 
 ### InfraTracker:
 - Implemented and wired into the daemon/event loop
@@ -42,7 +54,7 @@
 - Gate passing, shards running
 
 ### Tests:
-- 12,619 tests collected
+- 12,627 tests collected
 
 ## Fast-Follow Branches (awaiting post-ship gated-merge)
 
@@ -80,8 +92,8 @@ Hooks hardened and enforcing as of 2026-06-18:
 
 ## Known Gaps / Next Steps
 
-1. **Master CI pending** — master@`4c06268` CI run must complete and pass; treat as unconfirmed until GREEN.
-2. **A-05 overload retry cap** — fix in progress; bounding overload retry behavior.
+1. **Master CI pending** — master@`ef24d9c` CI run must complete and pass; treat as unconfirmed until GREEN.
+2. **Multitasking bugs** — 5 total documented; 3 need restart to clear, 2 still active. See `BUGS.md`.
 3. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
 4. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
 5. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.

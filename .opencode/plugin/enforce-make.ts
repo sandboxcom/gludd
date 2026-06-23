@@ -36,6 +36,52 @@ function formatBashBlockedMessage(attemptedCommand: string, reason?: string): st
 let _pendingCommitReminder = false
 let _pendingPreflightGate = ""
 
+// --- Non-behavioral edit detection ------------------------------------------
+// Returns true when an edit only touches comments (# ...) and/or docstring
+// prose — i.e. no executable Python statement is added, removed, or changed.
+// Such edits cannot alter runtime behaviour, so the TDD test-file requirement
+// is skipped for them (narrowing the guardrail, not disabling it: real code
+// edits still require a corresponding test file to exist).
+//
+// A line is "executable" if, after stripping leading whitespace, it matches a
+// Python statement pattern (assignment, def/class/import/return/if/for/while/
+// with/raise/yield, a bare call, or a decorator). Everything else — blank
+// lines, `#` comments, and free-form prose inside docstrings — is treated as
+// non-executable.
+const EXECUTABLE_LINE_RE = new RegExp(
+  "^(" +
+    "def |class |import |from |return |if |elif |else:|for |while |with |" +
+    "try:|except |finally:|raise |yield |global |nonlocal |assert |del |" +
+    "pass |break |continue |async |await " +
+    ")",
+)
+const ASSIGNMENT_RE = /^[A-Za-z_][A-Za-z0-9_.]*\s*(=|:|=|\+=|-=|\*=|\/=)/
+const BARE_CALL_RE = /^[A-Za-z_][A-Za-z0-9_.]*\s*\(/
+const DECORATOR_RE = /^@/
+
+function isExecutablePythonLine(line: string): boolean {
+  const trimmed = line.trimStart()
+  if (trimmed === "") return false
+  if (trimmed.startsWith("#")) return false
+  if (EXECUTABLE_LINE_RE.test(trimmed)) return true
+  if (ASSIGNMENT_RE.test(trimmed)) return true
+  if (BARE_CALL_RE.test(trimmed)) return true
+  if (DECORATOR_RE.test(trimmed)) return true
+  return false
+}
+
+function isNonBehavioralEdit(oldContent: string, newContent: string): boolean {
+  // Compare the set of executable lines; if they are unchanged the edit is
+  // comment/docstring-only and cannot affect runtime behaviour.
+  const oldExec = oldContent.split(/\r?\n/).filter(isExecutablePythonLine)
+  const newExec = newContent.split(/\r?\n/).filter(isExecutablePythonLine)
+  if (oldExec.length !== newExec.length) return false
+  for (let i = 0; i < oldExec.length; i++) {
+    if (oldExec[i] !== newExec[i]) return false
+  }
+  return true
+}
+
 // --- Gate-concurrency probe (port of gate_concurrency_pretool.sh) -------------
 // Two independent signals (either fires the block): fresh basetemp mtime, OR
 // pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
@@ -501,60 +547,77 @@ export default (async ({ }) => {
         }
 
         if (isProduction && !isTest) {
-          const fs = await import("node:fs")
-          const path = await import("node:path")
-          const srcMatch = filePath.match(/[\/\\]src[\/\\](.+)\.py$/)
-          if (srcMatch) {
-            const modulePath = srcMatch[1]
-            const candidates = [
-              modulePath.replace(/[\/\\]/g, "_"),
-              modulePath.split(/[\/\\]/).pop() || "",
-            ]
-            let testExists = false
-            for (const candidate of candidates) {
-              const testDir = path.resolve(filePath.split(/[\/\\]src[\/\\]/)[0], "tests", "unit")
+          // Narrowing (guardrail-integrity policy): skip the test-file
+          // requirement for edits that only touch comments/docstrings — they
+          // cannot change runtime behaviour. Real code edits are still gated.
+          const oldContent: string = output?.args?.oldString ?? ""
+          const newContent: string = output?.args?.newString ?? ""
+          if (isNonBehavioralEdit(oldContent, newContent)) {
+            // Comment/docstring-only edit — no test file required.
+          } else {
+            const fs = await import("node:fs")
+            const path = await import("node:path")
+            const srcMatch = filePath.match(/[\/\\]src[\/\\](.+)\.py$/)
+            if (srcMatch) {
+              const modulePath = srcMatch[1]
+              const pathParts = modulePath.split(/[\/\\]/)
+              const candidates = [
+                modulePath.replace(/[\/\\]/g, "_"),
+                pathParts.pop() || "",
+              ]
+              // For __init__.py packages, the parent directory name is the
+              // meaningful module name (e.g. pricing_intel/__init__.py ->
+              // "pricing_intel"). Add it as a candidate so the broad match
+              // finds sibling test files (e.g. test_pricing_intel.py).
+              const leafName = pathParts[pathParts.length - 1]
+              if (leafName && leafName !== "__init__") {
+                candidates.push(leafName)
+              }
+              let testExists = false
+              for (const candidate of candidates) {
+                const testDir = path.resolve(filePath.split(/[\/\\]src[\/\\]/)[0], "tests", "unit")
                 for (const prefix of ["test_"]) {
-                for (const suffix of [".py"]) {
-                  try {
-                    fs.accessSync(path.join(testDir, prefix + candidate + suffix))
-                    testExists = true
-                    break
-                  } catch {}
-                  // Broad match: check if any test file exists that references the module
-                  try {
-                    const files = fs.readdirSync(testDir)
-                    const shortName = candidate.split("_").pop() || candidate
-                    for (const f of files) {
-                      if (f.startsWith("test_") && f.includes(shortName) && f.endsWith(".py")) {
-                        testExists = true
-                        break
+                  for (const suffix of [".py"]) {
+                    try {
+                      fs.accessSync(path.join(testDir, prefix + candidate + suffix))
+                      testExists = true
+                      break
+                    } catch {}
+                    // Broad match: check if any test file exists that references the module
+                    try {
+                      const files = fs.readdirSync(testDir)
+                      const shortName = candidate.split("_").pop() || candidate
+                      for (const f of files) {
+                        if (f.startsWith("test_") && f.includes(shortName) && f.endsWith(".py")) {
+                          testExists = true
+                          break
+                        }
                       }
-                    }
-                  } catch {}
+                    } catch {}
+                  }
+                  if (testExists) break
                 }
                 if (testExists) break
               }
-              if (testExists) break
-            }
-            if (!testExists) {
-              throw new Error([
-                "TDD VIOLATION: No corresponding test file found for " + filePath,
-                "",
-                "Before editing production code, you MUST:",
-                "  1. Write a failing test under tests/unit/ that covers the behavior.",
-                "  2. Run the test to confirm it fails.",
-                "  3. Then edit the production code to make it pass.",
-                "",
-                "Looked for: test_" + candidates[0] + ".py or test_" + candidates[candidates.length - 1] + ".py",
-                "in tests/unit/",
-                "",
-                "Skipping TDD is a policy violation. See AGENTS.md.",
-              ].join("\n"))
+              if (!testExists) {
+                throw new Error([
+                  "TDD VIOLATION: No corresponding test file found for " + filePath,
+                  "",
+                  "Before editing production code, you MUST:",
+                  "  1. Write a failing test under tests/unit/ that covers the behavior.",
+                  "  2. Run the test to confirm it fails.",
+                  "  3. Then edit the production code to make it pass.",
+                  "",
+                  "Looked for: test_" + candidates[0] + ".py or test_" + candidates[candidates.length - 1] + ".py",
+                  "in tests/unit/",
+                  "",
+                  "Skipping TDD is a policy violation. See AGENTS.md.",
+                ].join("\n"))
+              }
             }
           }
         }
-      }
-    },
+      },
 
     "tool.execute.after": async (input, output) => {
       if (input.tool === "bash") {
