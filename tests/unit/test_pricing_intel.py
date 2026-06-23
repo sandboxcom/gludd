@@ -39,7 +39,6 @@ from general_ludd.pricing_intel.models import (
 from general_ludd.pricing_intel.sources import (
     AnthropicSource,
     AWSSource,
-    FireworksSource,
     GCPSource,
     HuggingFaceSource,
     LambdaLabsSource,
@@ -452,13 +451,6 @@ class TestBillingTermsPerProvider:
         assert b.terms == BillingTerms.prepaid_balance
         assert b.terms in BillingTerms
 
-    def test_fireworks_billing_registered(self) -> None:
-        """Fireworks billing terms must be registered (even though fetch is TODO)."""
-        b = FireworksSource().billing()
-        assert b.provider == "fireworks"
-        assert b.terms == BillingTerms.postpaid_per_use
-        assert b.granularity == BillingGranularity.per_token
-
     def test_prepaid_providers_not_postpaid(self) -> None:
         """Prepaid providers must not be classified as postpaid — critical correctness."""
         prepaid_providers = ["runpod", "lambda_labs"]
@@ -823,16 +815,6 @@ class TestFailSoftBehavior:
 
         assert prices == []
 
-    def test_todo_sources_return_empty_lists(self) -> None:
-        """Sources still marked TODO must return [] without crashing.
-
-        HuggingFace was promoted out of this set when its static dedicated-
-        endpoint table was implemented (see test_pricing_hf.py).
-        """
-        for src in [FireworksSource()]:
-            assert src.fetch_model_prices() == [], f"{src.provider_slug()} model prices should be []"
-            assert src.fetch_compute_prices() == [], f"{src.provider_slug()} compute prices should be []"
-
 
 # ---------------------------------------------------------------------------
 # All sources protocol compliance
@@ -872,7 +854,7 @@ class TestAllSourcesProtocolCompliance:
         static_only = [
             AnthropicSource(), OpenAISource(), RunPodSource(),
             LambdaLabsSource(), AWSSource(), GCPSource(),
-            HuggingFaceSource(), FireworksSource(),
+            HuggingFaceSource(),
         ]
         for src in static_only:
             result = src.fetch_model_prices()
@@ -884,7 +866,7 @@ class TestAllSourcesProtocolCompliance:
         static_only = [
             AnthropicSource(), OpenAISource(), RunPodSource(),
             LambdaLabsSource(), AWSSource(), GCPSource(),
-            HuggingFaceSource(), FireworksSource(),
+            HuggingFaceSource(),
         ]
         for src in static_only:
             result = src.fetch_compute_prices()

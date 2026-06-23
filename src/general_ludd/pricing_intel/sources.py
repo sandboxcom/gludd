@@ -1605,50 +1605,6 @@ class HuggingFaceSource:
 
 
 # ---------------------------------------------------------------------------
-# Fireworks AI — TODO (billing terms registered)
-# ---------------------------------------------------------------------------
-
-class FireworksSource:
-    """FETCH STRATEGY: TODO — billing terms registered; live price fetch not implemented.
-
-    # TODO(integration): Fireworks AI pricing at https://fireworks.ai/pricing
-    # Fireworks exposes pricing for hosted models (per-token). Use:
-    # GET https://api.fireworks.ai/inference/v1/models
-    # with an API key for the full model list. Pricing is in the model metadata.
-
-    BILLING SEMANTICS:
-      - Per-token billing, postpaid_per_use (credit card per call).
-      - Focus on fast inference (throughput-optimized).
-    """
-
-    def provider_slug(self) -> str:
-        return "fireworks"
-
-    def billing(self) -> ProviderBilling:
-        return ProviderBilling(
-            provider="fireworks",
-            granularity=BillingGranularity.per_token,
-            terms=BillingTerms.postpaid_per_use,
-            currency="USD",
-            min_charge=None,
-            spot_available=False,
-            notes=(
-                "Per-token billing. Postpaid per use (credit card). "
-                "Throughput-optimized; typically cheaper than OpenAI for OSS models. "
-                "Source: https://fireworks.ai/pricing"
-            ),
-        )
-
-    def fetch_model_prices(self) -> list[ModelPrice]:
-        """TODO(integration): live fetch not implemented. Returns []."""
-        return []
-
-    def fetch_compute_prices(self) -> list[ComputePrice]:
-        """TODO(integration): live fetch not implemented. Returns []."""
-        return []
-
-
-# ---------------------------------------------------------------------------
 # Z.AI (GLM models) — STATIC table (no public pricing API; HTML page only)
 # ---------------------------------------------------------------------------
 # Source: https://docs.z.ai/guides/overview/pricing  (accessed 2026-Q2)
@@ -1926,6 +1882,5 @@ def all_sources() -> list[PricingSource]:
         GCPSource(),
         GCPPricingSource(),
         HuggingFaceSource(),
-        FireworksSource(),
         ZAISource(),
     ]
