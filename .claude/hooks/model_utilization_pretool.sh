@@ -109,10 +109,52 @@ if env_share:
 target = cfg_target
 enforce = (enforce_env != "0")
 
+# --- Main-model detection (mirrors enforce-delegate.ts detectMainModel) ---
+# When the parent/main thread is not an expensive (opus-class) model, there is
+# no cost asymmetry to optimize and the harness may not expose model:"sonnet"
+# on the Task tool — enforcement is skipped (record-only) so dispatch is never
+# blocked by an unsatisfiable ratio.
+def _detect_main_model():
+    env_m = (os.environ.get("GLUDD_MAIN_MODEL") or os.environ.get("OPENCODE_MODEL") or "").strip().lower()
+    if env_m:
+        return env_m
+    # Config file: explicit GLUDD_MAIN_MODEL_FILE REPLACES the default path
+    # (either/or, not both) — so tests can isolate from the host's
+    # .claude/main_model by pointing the env var at a nonexistent path.
+    cfg_path = os.environ.get("GLUDD_MAIN_MODEL_FILE") or os.path.join(os.getcwd(), ".claude", "main_model")
+    if cfg_path and os.path.isfile(cfg_path):
+        try:
+            with open(cfg_path) as fh:
+                v = fh.read().strip().lower()
+                if v:
+                    return v
+        except Exception:
+            pass
+    # opencode.json model field
+    try:
+        with open(os.path.join(os.getcwd(), "opencode.json")) as fh:
+            cfg = json.load(fh)
+            m = (cfg.get("model") or cfg.get("defaultModel") or "").strip().lower()
+            if m:
+                return m
+    except Exception:
+        pass
+    return ""
+
+_EXPENSIVE_MARKERS = ("opus", "claude-3-opus", "claude-opus", "o1", "o3", "gpt-4", "gpt-4o")
+
+def _main_model_is_expensive():
+    m = _detect_main_model()
+    if not m:
+        return True  # fail-safe: unknown -> preserve old enforcement
+    return any(e in m for e in _EXPENSIVE_MARKERS)
+
+main_expensive = _main_model_is_expensive()
+
 # ----------------------------------------------------------------
 # ENFORCEMENT GATE (non-sonnet dispatches only)
 # ----------------------------------------------------------------
-if not is_sonnet and enforce:
+if not is_sonnet and enforce and main_expensive:
     # Grace: if we have fewer than GRACE_MIN samples, allow unconditionally.
     if pre_count < GRACE_MIN:
         # Still record and move on — no denial, no advisory.
@@ -187,7 +229,7 @@ non_share    = non_sonnet / total if total > 0 else 0.0
 # Advisory nudge (only for allowed non-sonnet dispatches that are
 # getting close to the ratio limit — helpful heads-up)
 # ----------------------------------------------------------------
-if not is_sonnet:
+if not is_sonnet and main_expensive:
     # How much headroom remains?
     # How many more non-sonnet dispatches can we fit before hitting the ceiling?
     # projected share was already >= target (we're past the gate).

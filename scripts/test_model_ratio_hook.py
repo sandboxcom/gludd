@@ -27,7 +27,14 @@ failures = []
 
 def run_hook(stdin_payload: str, state: list[str], env_extra: dict | None = None,
              target: float = 0.91, window: int = 20) -> tuple[int, dict | None, str]:
-    """Run the hook with a pre-seeded state and return (exit_code, parsed_output, raw_out)."""
+    """Run the hook with a pre-seeded state and return (exit_code, parsed_output, raw_out).
+
+    HERMETIC: the test must not inherit the host's GLUDD_MAIN_MODEL /
+    .claude/main_model setting — that would flip enforcement off for ALL cases.
+    We point GLUDD_MAIN_MODEL_FILE at a nonexistent path and strip GLUDD_MAIN_MODEL
+    from the inherited env by default. Cases that explicitly test non-expensive
+    detection (G/H) pass the override via env_extra.
+    """
     with tempfile.NamedTemporaryFile(mode="w", suffix=".json", delete=False) as sf:
         json.dump({"history": state}, sf)
         sf_path = sf.name
@@ -40,6 +47,11 @@ def run_hook(stdin_payload: str, state: list[str], env_extra: dict | None = None
     env["GLUDD_MODEL_UTIL_STATE"] = sf_path
     env["GLUDD_MODEL_UTIL_WINDOW"] = str(window)
     env["GLUDD_SONNET_TARGET_CONFIG"] = cfg_path
+    # Isolate from host main-model config so enforcement-active cases aren't
+    # accidentally skipped by a stray .claude/main_model on the test machine.
+    env["GLUDD_MAIN_MODEL_FILE"] = "/nonexistent-test-main-model-isolated"
+    env.pop("GLUDD_MAIN_MODEL", None)
+    env.pop("OPENCODE_MODEL", None)
     env.pop("GLUDD_SONNET_TARGET_SHARE", None)
     env.pop("GLUDD_MODEL_UTIL_ENFORCE", None)
     if env_extra:
@@ -174,10 +186,78 @@ def case_F():
     check("F2: not denied (enforcement off)", not is_denied(parsed), f"output={raw}")
 
 
+def case_G():
+    """Non-expensive main model (env override) → non-sonnet allowed even with no headroom.
+
+    Rationale: the sonnet-ratio enforcer exists to bias subagents toward a CHEAP
+    model when the PARENT is an EXPENSIVE one (opus). When the parent is itself
+    cheap (glm-5.2 / haiku / etc.), there is no cost asymmetry to optimize and
+    the harness may not expose model:"sonnet" on the Task tool — enforcement is
+    skipped (record-only) so dispatch is never blocked by an unsatisfiable ratio.
+    """
+    print("Case G: non-expensive main model (env) → opus allowed at limit")
+    state = ["sonnet"] * 10 + ["opus"]  # same no-headroom setup as case B
+    payload = json.dumps({"tool_input": {"model": "opus"}})
+    rc, parsed, raw = run_hook(payload, state, target=0.91,
+                               env_extra={"GLUDD_MAIN_MODEL": "glm-5.2"})
+    check("G1: exit 0", rc == 0, f"exit={rc}")
+    check("G2: not denied (non-expensive main)", not is_denied(parsed), f"output={raw}")
+    check("G3: no misleading advisory", raw == "" or "denied" not in raw, f"output={raw}")
+
+    # Also cover a no-model dispatch (inherits cheap parent) — must pass.
+    payload2 = json.dumps({"tool_input": {}})
+    rc2, parsed2, raw2 = run_hook(payload2, state, target=0.91,
+                                  env_extra={"GLUDD_MAIN_MODEL": "glm-5.2"})
+    check("G4: no-model dispatch allowed (non-expensive parent)",
+          not is_denied(parsed2), f"output={raw2}")
+
+
+def case_H():
+    """Non-expensive main model via config file → non-sonnet allowed at limit.
+
+    Same as case G but the detection comes from a .claude/main_model file rather
+    than an env var — this is the persistent per-environment path.
+    """
+    print("Case H: non-expensive main model (config file) → opus allowed at limit")
+    main_model_file = tempfile.NamedTemporaryFile(mode="w", suffix=".txt", delete=False)
+    main_model_file.write("glm-5.2\n")
+    main_model_file.close()
+    try:
+        state = ["sonnet"] * 10 + ["opus"]  # no headroom
+        payload = json.dumps({"tool_input": {"model": "opus"}})
+        rc, parsed, raw = run_hook(payload, state, target=0.91,
+                                   env_extra={"GLUDD_MAIN_MODEL_FILE": main_model_file.name})
+        check("H1: exit 0", rc == 0, f"exit={rc}")
+        check("H2: not denied (config-file non-expensive main)",
+              not is_denied(parsed), f"output={raw}")
+    finally:
+        os.unlink(main_model_file.name)
+
+
+def case_I():
+    """Expensive main model (opus) → enforcement still active (regression guard).
+
+    Ensures the main-model-aware skip did NOT silently disable enforcement for
+    the real opus-main use case the enforcer was built for.
+    """
+    print("Case I: expensive main model (opus) → enforcement still active")
+    state = ["sonnet"] * 10 + ["opus"]  # no headroom
+    payload = json.dumps({"tool_input": {"model": "opus"}})
+    rc, parsed, raw = run_hook(payload, state, target=0.91,
+                               env_extra={"GLUDD_MAIN_MODEL": "claude-3-opus-20240229"})
+    check("I1: exit 0", rc == 0, f"exit={rc}")
+    check("I2: DENIED (expensive main, no headroom)", is_denied(parsed), f"output={raw}")
+
+    # Unknown/empty main model → fail-safe to expensive (preserve old behavior).
+    rc2, parsed2, raw2 = run_hook(payload, state, target=0.91,
+                                  env_extra={"GLUDD_MAIN_MODEL": ""})
+    check("I3: unknown main model → fail-safe deny", is_denied(parsed2), f"output={raw2}")
+
+
 def main():
     print(f"\nHook: {HOOK}")
     print("=" * 60)
-    for fn in [case_A, case_B, case_C, case_D, case_E, case_F]:
+    for fn in [case_A, case_B, case_C, case_D, case_E, case_F, case_G, case_H, case_I]:
         print()
         fn()
 

@@ -131,6 +131,18 @@ function enforceModelUtilization(args: Record<string, unknown> | undefined): str
       return null
     }
 
+    // Non-sonnet dispatch on a NON-EXPENSIVE main thread (e.g. glm-5.2): there
+    // is no cost asymmetry to optimize — every subagent inherits the parent, and
+    // the harness may not expose model:"sonnet" on the Task tool at all. Enforcing
+    // a sonnet ratio here is structurally impossible and would block ALL dispatch.
+    // Record for visibility and allow; the cost guard is inert by design.
+    if (!mainModelIsExpensive()) {
+      history.push(model)
+      if (history.length > MODEL_UTIL_WINDOW) history.splice(0, history.length - MODEL_UTIL_WINDOW)
+      saveModelHistory(history)
+      return null
+    }
+
     // Non-sonnet dispatch. Grace: <3 samples = allow.
     if (history.length < 3) {
       history.push(model)
