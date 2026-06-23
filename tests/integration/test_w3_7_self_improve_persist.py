@@ -68,7 +68,11 @@ class TestSelfImprovePersistence:
                 f"self-improve todo not persisted; rows={titles}"
             )
             persisted = next(r for r in rows if r.title == "Add tests for x.py")
-            assert persisted.status == TodoStatus.APPROVAL_REQUIRED.value
+            # auto_queue defaults to True so generated todos are claimable by
+            # the event loop (regression: previously landed in APPROVAL_REQUIRED
+            # and were never promoted). Set self_improve.auto_queue: false to
+            # restore the human-gate behavior.
+            assert persisted.status == TodoStatus.QUEUED.value
 
         # The harness's in-memory enqueue must NOT be the persistence path.
         fake_harness.enqueue_todos.assert_not_called()

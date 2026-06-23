@@ -1385,7 +1385,7 @@ class EventLoop:
         if self._total_ticks % interval != 0:
             return
         try:
-            harness = SelfImprovementHarness()
+            harness = SelfImprovementHarness(model_gateway=self._model_gateway)
             findings = harness.run_gap_analysis()
             if not findings:
                 self._tick_metrics["self_improve_gaps"] = 0
@@ -1415,8 +1415,9 @@ class EventLoop:
         if self._todo_repo is None or self._active_session is None:
             return 0
         # Admission gate (W3.7): cap how many self-improve todos may be open at
-        # once and decide each admitted todo's initial status (default: a human
-        # gate via approval_required rather than auto-queuing self-generated work).
+        # once and decide each admitted todo's initial status. auto_queue
+        # defaults to True so generated todos are claimable by the event loop;
+        # set self_improve.auto_queue: false in config to require a human gate.
         from general_ludd.self_improve.gate import SelfImproveGate
 
         si_cfg = self.config.get("self_improve", {}) if isinstance(self.config, dict) else {}
@@ -1424,7 +1425,7 @@ class EventLoop:
             si_cfg = {}
         gate = SelfImproveGate(
             max_open=si_cfg.get("max_open", 10),
-            auto_queue=si_cfg.get("auto_queue", False),
+            auto_queue=si_cfg.get("auto_queue", True),
         )
         terminal = {
             TodoStatus.COMPLETE.value,

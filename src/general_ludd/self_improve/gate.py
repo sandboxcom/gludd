@@ -1,8 +1,10 @@
 """Admission gate for self-improvement todos.
 
 Caps how many self-improve todos may be open at once (runaway guard) and decides
-each admitted todo's initial status — defaulting to a human gate
-(approval_required) rather than auto-queuing self-generated work.
+each admitted todo's initial status — defaulting to ``QUEUED`` so generated
+work is claimable by the event loop. Set ``auto_queue=False`` (or
+``self_improve.auto_queue: false`` in config) to park self-generated work in
+``APPROVAL_REQUIRED`` for a human gate instead.
 """
 
 from __future__ import annotations
@@ -20,7 +22,7 @@ class GateDecision:
 
 
 class SelfImproveGate:
-    def __init__(self, max_open: int = 10, auto_queue: bool = False, allow_auto_promote: bool = False) -> None:
+    def __init__(self, max_open: int = 10, auto_queue: bool = True, allow_auto_promote: bool = False) -> None:
         self.max_open = max_open
         self.auto_queue = auto_queue
         self.allow_auto_promote = allow_auto_promote

@@ -100,9 +100,13 @@ class TestPlaybookKey:
 
 
 class TestSelfImproveGate:
-    def test_default_approval_required(self) -> None:
+    def test_default_auto_queues_for_claimability(self) -> None:
+        # Regression: auto_queue must default to True so generated self-improve
+        # todos land in QUEUED and are claimable by the event loop. The prior
+        # default (APPROVAL_REQUIRED) caused todos to stall forever because
+        # nothing ever promoted them. Config may still override to False.
         decision = SelfImproveGate().evaluate({}, open_count=0)
-        assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value
+        assert decision.initial_status == TodoStatus.QUEUED.value
         assert decision.admitted is True
 
     def test_auto_queue(self) -> None:
@@ -110,11 +114,14 @@ class TestSelfImproveGate:
         assert decision.initial_status == TodoStatus.QUEUED.value
 
     def test_auto_promote_off_keeps_approval(self) -> None:
-        decision = SelfImproveGate(allow_auto_promote=False).evaluate({}, open_count=0)
+        # allow_auto_promote is only meaningful when auto_queue=False (the
+        # promote branch runs inside the APPROVAL_REQUIRED path), so set the
+        # precondition explicitly rather than relying on a default.
+        decision = SelfImproveGate(auto_queue=False, allow_auto_promote=False).evaluate({}, open_count=0)
         assert decision.initial_status == TodoStatus.APPROVAL_REQUIRED.value
 
     def test_auto_promote_on_promotes_to_queued(self) -> None:
-        decision = SelfImproveGate(allow_auto_promote=True).evaluate({}, open_count=0)
+        decision = SelfImproveGate(auto_queue=False, allow_auto_promote=True).evaluate({}, open_count=0)
         assert decision.initial_status == TodoStatus.QUEUED.value
 
     def test_full_capacity_rejects(self) -> None:
@@ -243,3 +250,54 @@ class TestWriteConfigValue:
 
         data = yaml.safe_load(cfg.read_text())
         assert data["x"] == 42
+
+
+# ---------------------------------------------------------------------------
+# 15. EventLoop -> harness gateway wiring (Phase 1)
+# ---------------------------------------------------------------------------
+
+
+class TestEventLoopGatewayWiring:
+    """Phase 1: _phase_self_improve must forward EventLoop._model_gateway
+    into the SelfImprovementHarness constructor so the model-driven gap
+    analysis activates instead of always falling back to static analysis."""
+
+    async def test_gateway_forwarded_to_harness(self) -> None:
+        from unittest.mock import patch
+
+        from general_ludd.event_loop.loop import EventLoop
+
+        sentinel_gateway = object()
+        loop = EventLoop(
+            self_improve_interval=1,
+            daemon_state={},
+            model_gateway=sentinel_gateway,
+        )
+        loop._total_ticks = 1
+
+        with patch(
+            "general_ludd.event_loop.loop.SelfImprovementHarness"
+        ) as MockHarness:
+            instance = MockHarness.return_value
+            instance.run_gap_analysis.return_value = []
+            await loop._phase_self_improve()
+
+        MockHarness.assert_called_once_with(model_gateway=sentinel_gateway)
+
+    async def test_no_gateway_passes_none_to_harness(self) -> None:
+        from unittest.mock import patch
+
+        from general_ludd.event_loop.loop import EventLoop
+
+        loop = EventLoop(self_improve_interval=1, daemon_state={})
+        assert loop._model_gateway is None
+        loop._total_ticks = 1
+
+        with patch(
+            "general_ludd.event_loop.loop.SelfImprovementHarness"
+        ) as MockHarness:
+            instance = MockHarness.return_value
+            instance.run_gap_analysis.return_value = []
+            await loop._phase_self_improve()
+
+        MockHarness.assert_called_once_with(model_gateway=None)
