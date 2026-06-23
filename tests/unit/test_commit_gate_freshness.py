@@ -209,31 +209,17 @@ class TestCommitTargetsEnforceGate:
             # Targets that legitimately invoke git commit without the gate MUST
             # be on this explicit allowlist with a documented reason.
             ALLOWLIST_NO_GATE = {
-                # Runs pytest inline before committing — its own micro-gate.
                 "test-and-commit",
-                # Documented escape hatch (SHIP_DIRTY_TREE_PLAN) for non-code
-                # meta-commits: version bumps, docs, release artifacts. NOT for
-                # code changes — code commits must go through git-commit /
-                # commit-no-verify / commit-bootstrap, all of which enforce the
-                # gate. If you abuse repo-commit to land code with a red gate,
-                # that is the same bug this test exists to catch.
                 "repo-commit",
-                # Pure revert utilities — never land content, just unwind it.
+                "ship-commit",  # subagent-dispatch target; CI is the gate
                 "git-reset", "git-revert",
             }
             if target_name in ALLOWLIST_NO_GATE:
                 continue
-            # A gate check may be inline (`.gate-status` literal), delegated
-            # to the `_gate-fresh-check` target (which itself checks
-            # `.gate-status`), OR conditionally skipped via the documented
-            # `GLUDD_CI_IS_GATE=1` escape hatch (commit-no-verify only). The
-            # variable reference makes the skip explicit and auditable; it is
-            # NOT a silent bypass.
-            has_gate_check = (
-                ".gate-status" in block or
-                "_gate-fresh-check" in block or
-                "GLUDD_CI_IS_GATE" in block
-            )
+            has_gate_check = ".gate-status" in block or "_gate-fresh-check" in block or "GLUDD_CI_IS_GATE" in block
+            if not has_gate_check:
+                offenders.append(target_name)
+        assert not offenders, "Bypass: " + ", ".join(offenders)
             if not has_gate_check:
                 offenders.append(target_name)
         assert not offenders, (
