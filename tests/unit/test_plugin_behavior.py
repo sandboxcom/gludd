@@ -231,6 +231,134 @@ class TestEnforceStopNoWaitPatterns:
 
 
 # --------------------------------------------------------------------------- #
+# 3b. enforce-stop.ts — CONSTRAINT_AS_STOP_PATTERNS (self-heal guardrail)
+# --------------------------------------------------------------------------- #
+# Incident (2026-06-23): agent responded "restart opencode one more time" to a
+# recoverable state. The first-gen constraint phrases in NO_WAIT_PATTERNS did
+# not catch "restart opencode", "can't without", "limitation of", "we must
+# restart/wait/stop". A dedicated CONSTRAINT_AS_STOP_PATTERNS group was added
+# with its own detector + directive injection. These tests pin its existence.
+class TestEnforceStopConstraintPatterns:
+    """The constraint-as-stop self-heal group must exist and stay populated."""
+
+    def test_constraint_as_stop_patterns_array_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "CONSTRAINT_AS_STOP_PATTERNS" in src, (
+            "CONSTRAINT_AS_STOP_PATTERNS constant missing from enforce-stop.ts — "
+            "the constraint-as-stop self-heal guardrail (2026-06-23 incident) "
+            "has no pattern list"
+        )
+
+    def _extract_constraint_patterns_body(self) -> str:
+        """Extract the CONSTRAINT_AS_STOP_PATTERNS array body."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(
+            r"CONSTRAINT_AS_STOP_PATTERNS\s*:\s*RegExp\[\]\s*=\s*\[(.*?)\n\]",
+            src,
+            re.DOTALL,
+        )
+        assert m, (
+            "Could not extract CONSTRAINT_AS_STOP_PATTERNS array body — is the "
+            "declaration (CONSTRAINT_AS_STOP_PATTERNS: RegExp[] = [...]) intact?"
+        )
+        return m.group(1)
+
+    def test_constraint_patterns_include_restart_opencode(self):
+        """Must catch the incident phrase 'restart opencode'."""
+        body = self._extract_constraint_patterns_body()
+        assert "restart" in body and "opencode" in body, (
+            "CONSTRAINT_AS_STOP_PATTERNS missing 'restart opencode' — the exact "
+            "phrase from the 2026-06-23 incident is no longer detected"
+        )
+
+    def test_constraint_patterns_include_cannot_without(self):
+        """Must catch 'can't/cannot/not possible' + 'without/unless'."""
+        body = self._extract_constraint_patterns_body()
+        assert "without" in body and "unless" in body, (
+            "CONSTRAINT_AS_STOP_PATTERNS missing the 'can't without/unless' "
+            "precondition phrasing"
+        )
+
+    def test_constraint_patterns_include_limitation_of(self):
+        """Must catch '(limitation|constraint) of'."""
+        body = self._extract_constraint_patterns_body()
+        assert "limitation" in body and "constraint" in body, (
+            "CONSTRAINT_AS_STOP_PATTERNS missing '(limitation|constraint) of'"
+        )
+
+    def test_constraint_patterns_include_we_must_restart_wait_stop(self):
+        """Must catch 'we need/must (to) restart/wait/stop'."""
+        body = self._extract_constraint_patterns_body()
+        assert "need" in body and "must" in body, (
+            "CONSTRAINT_AS_STOP_PATTERNS missing 'we (need|must)( to)? (restart|wait|stop)'"
+        )
+
+    def test_constraint_patterns_has_minimum_entries(self):
+        """The group must have >= 7 entries (the incident-derived set)."""
+        body = self._extract_constraint_patterns_body()
+        body_no_comments = "\n".join(
+            line for line in body.splitlines()
+            if not line.strip().startswith("//")
+        )
+        # Each regex entry ends with /i, possibly followed by , and whitespace.
+        count = len(re.findall(r"/i,?\s*$", body_no_comments, re.MULTILINE))
+        if count < 7:
+            # Fallback counter: count /i occurrences in the de-commented body.
+            count = len(re.findall(r"/i\b", body_no_comments))
+        assert count >= 7, (
+            f"CONSTRAINT_AS_STOP_PATTERNS has only {count} entries — expected "
+            ">= 7 (restart-opencode, can't-without, have-to-wait, "
+            "limitation-of, no-way-to, isn't-possible, we-must-restart/wait/stop). "
+            "The constraint vocabulary was truncated."
+        )
+
+    def test_detect_constraint_as_stop_function_exists(self):
+        """The detector must exist and apply the patterns via .some()."""
+        src = ENFORCE_STOP.read_text()
+        assert "function detectConstraintAsStop" in src, (
+            "detectConstraintAsStop function missing — CONSTRAINT_AS_STOP_PATTERNS "
+            "is not wired to a detector"
+        )
+        assert re.search(
+            r"CONSTRAINT_AS_STOP_PATTERNS\.some\s*\(\s*p\s*=>\s*p\.test\s*\(\s*text\s*\)\s*\)",
+            src,
+        ), (
+            "detectConstraintAsStop must call "
+            "CONSTRAINT_AS_STOP_PATTERNS.some(p => p.test(text))"
+        )
+
+    def test_constraint_block_response_function_exists(self):
+        """The directive injector must exist and carry the workaround mandate."""
+        src = ENFORCE_STOP.read_text()
+        assert "function constraintBlockResponse" in src, (
+            "constraintBlockResponse function missing — the constraint case has "
+            "no distinct directive injection"
+        )
+        # Must carry the user-mandated directive language.
+        assert "CONSTRAINT DETECTED" in src, (
+            "constraintBlockResponse must emit 'CONSTRAINT DETECTED' header"
+        )
+        assert "workaround" in src, (
+            "constraintBlockResponse must instruct engineering a workaround"
+        )
+        assert "research task" in src, (
+            "constraintBlockResponse must offer dispatching a research task"
+        )
+
+    def test_constraint_detector_wired_into_response_transform(self):
+        """The response.transform hook must invoke detectConstraintAsStop."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"detectConstraintAsStop\s*\(\s*output\s*\)",
+            src,
+        ), (
+            "detectConstraintAsStop(output) is not called inside "
+            "experimental.chat.response.transform — the constraint guardrail "
+            "is dead code"
+        )
+
+
+# --------------------------------------------------------------------------- #
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:

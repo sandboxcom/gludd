@@ -38,6 +38,6 @@ esac
 if [ "$live" -lt "$FLOOR" ]; then
   deficit=$((TARGET - live)); [ "$deficit" -lt 1 ] && deficit=1
   msg="AGENT-FLOOR (advisory): ${live} live, below floor ${FLOOR} (band ${FLOOR}-${CEILING}). A drain happened. Consider delegating the next chunk of work to ${deficit} disjoint agent(s) / a Workflow to refill toward ${TARGET}, then HOLD inside the band. Doing this work inline on the main thread is what drains the floor — delegate it instead. Advisory, not a block."
-  printf '{"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":"%s"}}\n' "$msg"
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PostToolUse","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
 fi
 exit 0

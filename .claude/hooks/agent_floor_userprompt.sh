@@ -21,9 +21,9 @@ esac
 if [ "$live" -lt "$FLOOR" ]; then
   deficit=$((TARGET - live)); [ "$deficit" -lt 1 ] && deficit=1
   msg="AGENT-FLOOR status (turn start): ${live} live, below floor ${FLOOR} (band ${FLOOR}-${CEILING}). DELEGATE-FIRST: hand the next chunk to ${deficit} disjoint agent(s) / a Workflow to refill toward ${TARGET} rather than grinding it out inline — heavy main-thread work is what drains the floor. Then HOLD inside the band (do not re-dispatch while ${FLOOR}<=live<${CEILING})."
-  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$msg"
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
 elif [ "$live" -ge "$CEILING" ]; then
   msg="AGENT-CEILING status (turn start): ${live} subagent(s) streaming (ceiling ${CEILING}, target ${TARGET}). Do NOT dispatch more this turn; let the in-flight wave drain back toward ${TARGET}."
-  printf '{"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":"%s"}}\n' "$msg"
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
 fi
 exit 0

@@ -90,7 +90,7 @@ case "$EVENT" in
     echo "$rearm" > "$STREAK_FILE" 2>/dev/null || true
 
     msg="MAIN-THREAD BUDGET: ${streak} main-thread tool calls in a row with no delegation, and only ${live} subagent(s) live (target ${TARGET}). THIS is the grind-inline pattern that drains multitasking. Hand the remaining chunk to an Agent or a Workflow NOW instead of doing it inline — that resets this budget. (If subagent dispatch is blocked by a rate-limit/quota, this is expected; resume delegating once it clears.)"
-    printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
+    python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
     exit 0
     ;;
   *)

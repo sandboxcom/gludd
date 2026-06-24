@@ -7,11 +7,11 @@
 ## Last Updated
 - 2026-06-23
 
-## Current State — master@`ef24d9c`
+## Current State — master@`41befa8`
 
 ### MERGED:
 - `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `ef24d9c` (CI pending — treat as unconfirmed until GREEN)
+- master advanced to `41befa8` (CI pending — treat as unconfirmed until GREEN)
 
 ### Phase 2 — COMPLETE (all 7 steps done):
 - Self-update flow wired end-to-end
@@ -25,9 +25,10 @@
 ### A-05 Overload Retry Cap — FIXED:
 - Retry behavior on overload now bounded (previously unbounded)
 
-### Multitasking Bugs — All 5 Documented:
-- 3 require restart to clear
-- 2 still active
+### Multitasking Bugs — see authoritative source:
+- Authoritative root-cause analysis: `docs/audit/floor_breach_rootcause_2026-06-17.md`
+- BUGS.md contains no enumerated list of 5 bugs; the "5 documented" count is not grounded there
+- The 3 restart-bound bugs live in `.opencode/plugin/*.ts` (plugin code is loaded on opencode restart, not hot-reloaded)
 
 ### InfraTracker:
 - Implemented and wired into the daemon/event loop
@@ -41,9 +42,9 @@
 - **Spend limiter:** wired to PricingCatalog
 - All sources complete; no pending sources
 
-### Dead Code:
-- `orchestration/` identified as dead (unwired)
-- `pricing_intel/` identified as dead (unwired)
+### Dead Code (corrected 2026-06-23):
+- `orchestration/` — `.py` files are DELETED; only `__pycache__` remains (not "unwired", gone)
+- `pricing_intel/` — FULLY WIRED (daemon.py:1057, 12+ importers, 2 live HTTP endpoints `/api/pricing` and `/api/pricing/compute`). Not dead.
 
 ### Connectors:
 - `UserConfig.connectors` field added — 82 modules unblocked
@@ -77,10 +78,11 @@ Hooks hardened and enforcing as of 2026-06-18:
 
 ## Current Gate Status (2026-06-23)
 <!-- gate:begin -->
+From `.gate-status` (2026-06-24T00:25:28Z):
 - lint PASS 0
-- typecheck FAIL 2
+- typecheck PASS 0
 - collect PASS 0
-- test FAIL non-zero-exit
+- test INCOMPLETE (gate interrupted at test phase; no pass/fail recorded)
 
 <!-- gate:end -->
 
@@ -92,8 +94,8 @@ Hooks hardened and enforcing as of 2026-06-18:
 
 ## Known Gaps / Next Steps
 
-1. **Master CI pending** — master@`ef24d9c` CI run must complete and pass; treat as unconfirmed until GREEN.
-2. **Multitasking bugs** — 5 total documented; 3 need restart to clear, 2 still active. See `BUGS.md`.
+1. **Master CI pending** — master@`41befa8` CI run must complete and pass; treat as unconfirmed until GREEN.
+2. **Multitasking bugs** — root-cause analysis in `docs/audit/floor_breach_rootcause_2026-06-17.md`; restart-bound bugs live in `.opencode/plugin/*.ts` (clear on opencode restart).
 3. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
 4. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
 5. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.

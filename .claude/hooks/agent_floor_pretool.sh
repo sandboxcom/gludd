@@ -26,6 +26,6 @@ esac
 if [ "$live" -lt "$FLOOR" ]; then
   deficit=$((TARGET - live)); [ "$deficit" -lt 1 ] && deficit=1
   msg="AGENT-FLOOR (advisory): ${live} live, below floor ${FLOOR} (band ${FLOOR}-${CEILING}). When convenient, dispatch up to ${deficit} disjoint Agent call(s) to refill toward ${TARGET}, then HOLD — while live stays inside the ${FLOOR}-${CEILING} band do NOT dispatch more; just continue your work. Prefer a Workflow for sustained parallel work (steady pool). This does not block the current tool."
-  printf '{"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":"%s"}}\n' "$msg"
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
 fi
 exit 0

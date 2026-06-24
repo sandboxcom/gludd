@@ -128,12 +128,27 @@ patterns = [
     r"\bcaptured (?:for|as)\b.*\bfollow-?up\b", r"\bfor a future pr\b",
     r"\bto get (?:a )?(?:ci|green|verdict|coverage)\b.*\b(?:requires?|need|would|open|push)\b",
 ]
+# Constraint-as-stop self-heal patterns (2026-06-23). Checked separately so the
+# block reason can carry the workaround directive, not just the generic deferral
+# message. ADDITIVE to `patterns` above (overlap harmless; first match wins).
+constraint_patterns = [
+    r"\brestart (?:opencode|required|needed)\b",
+    r"\b(?:can'?t|cannot|not possible) (?:without|unless)\b",
+    r"\bhave to wait\b",
+    r"\b(?:limitation|constraint) of\b",
+    r"\b(?:no way|there'?s no way) to\b",
+    r"\bisn'?t possible\b",
+    r"\bwe (?:need|must)(?: to)? (?:restart|wait|stop)\b",
+]
 if any(re.search(p, low) for p in patterns):
     print("BLOCK")
+elif any(re.search(p, low) for p in constraint_patterns):
+    print("BLOCK_CONSTRAINT")
 PY
 )"
 
-if [ "$verdict" != "BLOCK" ]; then
+verdict_type="$(printf '%s' "$verdict" | head -1)"
+if [ "$verdict_type" != "BLOCK" ] && [ "$verdict_type" != "BLOCK_CONSTRAINT" ]; then
   # Not a deferral: this is a legitimate turn-end. Reset the consecutive-block
   # counter for this transcript and allow the stop.
   key="$(printf '%s' "$transcript" | cksum 2>/dev/null | awk '{print $1}')"
@@ -158,6 +173,10 @@ fi
 
 [ -n "$key" ] && printf '%s' "$n" > "$statefile" 2>/dev/null
 
-reason="STOP BLOCKED (no-wait): your final message DEFERS to the user / waits for go-ahead / offers to proceed 'if they want' instead of just doing it. Policy: NEVER wait on the user. Take the default/recommended action NOW, state the assumption in one line, and execute it. The work is reversible (branches/RC, not master) -- proceed. Only a genuinely IRREVERSIBLE+destructive action needs consent, raised via AskUserQuestion, not a prose sign-off."
+if [ "$verdict_type" = "BLOCK_CONSTRAINT" ]; then
+  reason="CONSTRAINT DETECTED: your final message frames a constraint (restart, wait, can't-be-done, limitation, no-way) as a terminal answer. Policy (AGENTS.md 'Constraints Are To Engineer Around'): a constraint is a design prompt, NEVER a dead end. Engineer a workaround NOW or dispatch a research task to find one. Do NOT park this on the user. Do NOT instruct the user to restart / wait / reconfigure. If no workaround is obvious, DISPATCH a research task (worktree agent) -- that is not a stopping point."
+else
+  reason="STOP BLOCKED (no-wait): your final message DEFERS to the user / waits for go-ahead / offers to proceed 'if they want' instead of just doing it. Policy: NEVER wait on the user. Take the default/recommended action NOW, state the assumption in one line, and execute it. The work is reversible (branches/RC, not master) -- proceed. Only a genuinely IRREVERSIBLE+destructive action needs consent, raised via AskUserQuestion, not a prose sign-off."
+fi
 python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":sys.argv[1]}))' "$reason" 2>/dev/null && exit 0
 exit 0

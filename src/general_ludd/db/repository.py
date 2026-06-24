@@ -261,6 +261,7 @@ class TodoRepository:
         status: str | None = None,
         project_id: str | None = None,
         limit: int | None = None,
+        offset: int = 0,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
@@ -270,6 +271,8 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.status == status)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        if offset:
+            stmt = stmt.offset(offset)
         if limit is not None:
             stmt = stmt.limit(limit)
         result = await self._session.execute(stmt)

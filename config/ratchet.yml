@@ -6,9 +6,6 @@
 # Format: node_id: reason
 # Used by: tests/conftest.py ratchet hook
 
-tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_touch_file_detected_without_full_rescan: "flaky watchdog FSEvents macOS latency — timing dependent under xdist parallel load"
-tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_new_file_detected: "flaky watchdog FSEvents macOS latency — timing dependent under xdist parallel load"
-tests/unit/test_w4_3_watchdog.py::TestFileWatcher::test_get_changes_clears_on_read: "flaky watchdog FSEvents macOS latency — timing dependent under xdist parallel load"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_starts_daemon_and_it_serves_healthz: "flaky TUI daemon start PTY — environment-dependent (xpasses when a PTY+daemon are available; strict=False so the xpass is non-fatal)"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_shows_running_after_daemon_start: "flaky TUI daemon start running — environment-dependent (xpasses when a PTY+daemon are available; strict=False so the xpass is non-fatal)"
 tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "flaky xdist race on hvac patch — pre-existing"

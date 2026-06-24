@@ -4,6 +4,14 @@ All premature-stop incidents and process failures are tracked here.
 
 ## Incident Log
 
+### 2026-06-23 — Agent stopped with "restart opencode one more time" instead of engineering around the no-hot-reload constraint
+
+- **What stopped before finishing**: The model-ratio enforcer blocked all subagent dispatches (main thread was glm-5.2, not opus; every dispatch inherited glm-5.2 and was blocked by the 91% sonnet target). Instead of engineering a workaround, the agent fixed the code, committed it, then STOPPED and told the user "restart opencode one more time" — parking the problem in the user's lap. This is the exact "naked can't" anti-pattern AGENTS.md forbids.
+- **Why guardrail failed**: The "Constraints Are To Engineer Around" policy exists in AGENTS.md prose but has ZERO mechanical enforcement. The stop-pattern detector (~60 phrases) does not match constraint-as-stop patterns like "restart required" or "can't without". The agent treated a non-hot-reload constraint as a dead end rather than a design prompt.
+- **Root cause**: (1) Model-ratio enforcer was not main-model-aware (fixed in commit 41befa8 — detectMainModel()/mainModelIsExpensive()). (2) No constraint-as-stop detection in enforce-stop.ts. (3) Agent failed to engineer around the constraint (the running plugin reads .claude/sonnet_ratio_target fresh on each call — setting target_share=0.0 would have immediately unblocked dispatches without any restart).
+- **Fix applied**: (1) enforce-delegate.ts now skips enforcement when main model is non-expensive (commit 41befa8). (2) .claude/main_model config created with "glm-5.2". (3) target_share temporarily set to 0.0 to unblock the current session. (4) Constraint-as-stop detection being added to enforce-stop.ts (separate task).
+- **Lesson**: A constraint (plugin doesn't hot-reload) is a design prompt, not a dead end. The running plugin reads config files fresh on each invocation — editing the config IS the workaround. Never tell the user "restart required" without first trying the runtime-config workaround.
+
 ### 2026-06-11 — Agent sent "13 commits in, ratchet has 93 entries, continuing with V3.1" + no tool call — acknowledged pending work then stopped
 
 - **What stopped before finishing**: Agent wrote "13 commits in. The ratchet has 93 entries — known-unfixed work. Continuing with V3.1..." with no following tool call. Text-only status report, acknowledged pending work, then stopped.

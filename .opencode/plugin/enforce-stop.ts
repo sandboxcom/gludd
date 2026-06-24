@@ -135,6 +135,65 @@ function detectNoWaitPattern(text: string): boolean {
   return NO_WAIT_PATTERNS.some(p => p.test(text))
 }
 
+// ============================================================================
+// CONSTRAINT-AS-STOP (self-heal guardrail — 2026-06-23)
+// A dedicated pattern group for the "naked constraint" stop pattern: the agent
+// hits a limitation and tells the user "restart opencode", "we have to wait",
+// "can't be done without X", etc. — parking the problem instead of engineering
+// a workaround. The incident (2026-06-23): the agent responded "restart
+// opencode one more time" to a recoverable state instead of fixing it.
+//
+// Policy: AGENTS.md "Constraints Are To Engineer Around" — a constraint is a
+// design prompt, NEVER a terminal answer. Detection here triggers a distinct
+// directive injection (constraintBlockResponse) that tells the agent to
+// engineer a workaround NOW or dispatch a research task, NOT park it on the
+// user.
+//
+// These patterns are ADDITIVE to NO_WAIT_PATTERNS (which already has a first
+// generation of constraint phrases). This group captures the specific
+// restart/defer phrasings the incident surfaced. Overlap is intentional and
+// harmless — detection short-circuits on first match.
+// ============================================================================
+const CONSTRAINT_AS_STOP_PATTERNS: RegExp[] = [
+  // Telling the user to restart the tool/session as a "fix"
+  /\brestart (?:opencode|required|needed)\b/i,
+  // "can't / cannot / not possible" + "without / unless" — naked precondition
+  /\b(?:can'?t|cannot|not possible) (?:without|unless)\b/i,
+  // Generic wait-deferral without a paired action
+  /\bhave to wait\b/i,
+  // "(limitation|constraint) of <tool>" — attributing a dead-end to the environment
+  /\b(?:limitation|constraint) of\b/i,
+  // "(no way|there's no way) to" — explicit dead-end framing
+  /\b(?:no way|there'?s no way) to\b/i,
+  // "isn't possible" — naked impossibility claim
+  /\bisn'?t possible\b/i,
+  // "we need/must (to) restart/wait/stop" — collective deferred-action framing.
+  // "to" is optional: "we must wait" and "we need to wait" are both constraints.
+  /\bwe (?:need|must)(?: to)? (?:restart|wait|stop)\b/i,
+]
+
+function detectConstraintAsStop(text: string): boolean {
+  return CONSTRAINT_AS_STOP_PATTERNS.some(p => p.test(text))
+}
+
+function constraintBlockResponse(): string {
+  return [
+    "⛔ CONSTRAINT DETECTED: your final message frames a constraint (restart,",
+    "wait, can't-be-done, limitation, no-way) as a terminal answer. Policy",
+    "(AGENTS.md 'Constraints Are To Engineer Around'): a constraint is a design",
+    "prompt, NEVER a dead end.",
+    "",
+    "Engineer a workaround NOW or dispatch a research task to find one.",
+    "Do NOT park this on the user. Do NOT instruct the user to restart / wait /",
+    "reconfigure. If no workaround is obvious, that is a research task to",
+    "DISPATCH (worktree agent), not a stopping point.",
+    "",
+    "Examples of correct responses: shard the job + poll annotations; add the",
+    "missing make target; back off and retry; run the slow test in CI instead",
+    "of locally. Pick one and EXECUTE.",
+  ].join("\n")
+}
+
 function noWaitBlockResponse(): string {
   return [
     "⛔ STOP BLOCKED (no-wait): your final message DEFERS to the user / waits",
@@ -306,6 +365,13 @@ export default (async ({ }) => {
         // No-wait stop pattern (now ENFORCING by default — 2026-06-22)
         if (NO_WAIT_ENFORCE && detectNoWaitPattern(output)) {
           return noWaitBlockResponse()
+        }
+
+        // Constraint-as-stop (self-heal — 2026-06-23): same enforcement gate as
+        // no-wait. When a constraint phrase is detected, inject the workaround
+        // directive so the agent engineers a solution instead of parking it.
+        if (NO_WAIT_ENFORCE && detectConstraintAsStop(output)) {
+          return constraintBlockResponse()
         }
 
         // Multitasking backlog (always enforces — it's a standing user directive

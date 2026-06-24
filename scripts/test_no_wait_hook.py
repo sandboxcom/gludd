@@ -183,6 +183,53 @@ with tempfile.TemporaryDirectory(prefix="hook_test_") as d:
     make_jsonl(p43, "GitHub only exposes step results at completion — there's no way to get live per-step status.")
     cases.append((43, "BLOCK", run_hook(json.dumps({"transcript_path": p43}))))
 
+    # ── CONSTRAINT-AS-STOP self-heal cases (2026-06-23 incident) ──────────────
+    # The agent responded "restart opencode one more time" to a recoverable state.
+    # These cases verify the new constraint_patterns group catches the restart/
+    # wait/precondition phrasings the first-gen constraint regex missed.
+
+    # Case 50: "restart opencode" (the incident phrase) -> BLOCK
+    p50 = os.path.join(d, "t50.jsonl")
+    make_jsonl(p50, "The plugin didn't reload — you'll need to restart opencode one more time.")
+    cases.append((50, "BLOCK", run_hook(json.dumps({"transcript_path": p50}))))
+
+    # Case 51: "cannot without" precondition (adjacent) -> BLOCK
+    p51 = os.path.join(d, "t51.jsonl")
+    make_jsonl(p51, "Cannot without the artifact URL — we'd need to confirm the release.")
+    cases.append((51, "BLOCK", run_hook(json.dumps({"transcript_path": p51}))))
+
+    # Case 52: "not possible unless" precondition (adjacent) -> BLOCK
+    p52 = os.path.join(d, "t52.jsonl")
+    make_jsonl(p52, "Not possible unless the CI quota resets first.")
+    cases.append((52, "BLOCK", run_hook(json.dumps({"transcript_path": p52}))))
+
+    # Case 53: "limitation of" attribution -> BLOCK
+    p53 = os.path.join(d, "t53.jsonl")
+    make_jsonl(p53, "That's a limitation of the GitHub API granularity.")
+    cases.append((53, "BLOCK", run_hook(json.dumps({"transcript_path": p53}))))
+
+    # Case 54: "constraint of" attribution -> BLOCK
+    p54 = os.path.join(d, "t54.jsonl")
+    make_jsonl(p54, "It's a constraint of the make-only bash policy.")
+    cases.append((54, "BLOCK", run_hook(json.dumps({"transcript_path": p54}))))
+
+    # Case 55: "we need to restart" -> BLOCK
+    p55 = os.path.join(d, "t55.jsonl")
+    make_jsonl(p55, "The config didn't take, so we need to restart the daemon.")
+    cases.append((55, "BLOCK", run_hook(json.dumps({"transcript_path": p55}))))
+
+    # Case 56: "we must wait" -> BLOCK
+    p56 = os.path.join(d, "t56.jsonl")
+    make_jsonl(p56, "The gate is still running, so we must wait for it to finish.")
+    cases.append((56, "BLOCK", run_hook(json.dumps({"transcript_path": p56}))))
+
+    # Case 57: clean workaround message -> NOBLOCK (no constraint phrasing at all;
+    # proves the new constraint_patterns do not over-match on normal status text).
+    p57 = os.path.join(d, "t57.jsonl")
+    make_jsonl(p57, "CI granularity is coarse, so I sharded the test job and I'm polling annotations — running now.")
+    cases.append((57, "NOBLOCK", run_hook(json.dumps({"transcript_path": p57}))))
+    # ── END CONSTRAINT-AS-STOP self-heal cases ─────────────────────────────────
+
     # ── END CONSTRAINT-AS-STOPSIGN cases ──────────────────────────────────────
 
     # Case 20: deferral phrase with NO enforce var set -> NOBLOCK (advisory mode).

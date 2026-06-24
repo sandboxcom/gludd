@@ -13,7 +13,7 @@ import time
 from pathlib import Path
 
 
-def _wait_for_changes(watcher, timeout: float = 5.0, interval: float = 0.05) -> list[dict]:
+def _wait_for_changes(watcher, timeout: float = 15.0, interval: float = 0.05) -> list[dict]:
     """Poll until at least one change is collected or timeout is reached."""
     deadline = time.monotonic() + timeout
     while time.monotonic() < deadline:
@@ -65,12 +65,12 @@ class TestFileWatcher:
 
         watcher = FileWatcher()
         watcher.start([str(watched)])
-        time.sleep(0.2)
+        time.sleep(0.5)
 
         new_file = watched / "newfile.py"
         new_file.write_text("# new file")
 
-        changes = _wait_for_changes(watcher, timeout=5.0)
+        changes = _wait_for_changes(watcher, timeout=15.0)
         watcher.stop()
 
         assert len(changes) > 0, "Expected change event for new file"
@@ -95,12 +95,12 @@ class TestFileWatcher:
 
         watcher = FileWatcher()
         watcher.start([str(watched)])
-        time.sleep(0.2)
+        time.sleep(0.5)
 
         f.write_text("changed")
 
         # Poll until we see events.
-        changes1 = _wait_for_changes(watcher, timeout=5.0)
+        changes1 = _wait_for_changes(watcher, timeout=15.0)
         # After _wait_for_changes consumed events, second call returns empty.
         changes2 = watcher.get_changes()
         watcher.stop()

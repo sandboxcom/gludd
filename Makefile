@@ -44,6 +44,7 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         gate-async gate-status gate-background gate-bg-check gate-bg-wait floor-plan gated-merge ship-async write-gate-safe-hook \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
+        git-tag-rm release-recut \
         git-ff-only ship-ff git-worktree-list git-worktree-remove git-ls-remote-sandboxcom \
         ci-poll ci-jobs ci-annotations test-no-wait-hook \
         verify-remote ci-verdict ci-verdict-fast ci-verdict-loop \
@@ -985,6 +986,14 @@ git-tag-push:
 	@git tag -a "$(TAG)" -m "$(if $(MSG),$(MSG),$(TAG))"
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
+
+# Delete a git tag locally and on sandboxcom remote.
+# Usage: make git-tag-rm TAG=v0.1.0-alpha.2
+git-tag-rm:
+	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-rm TAG=v0.1.0-alpha.N"; exit 1; }
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom ":refs/tags/$(TAG)" 2>/dev/null || echo "[git-tag-rm] remote tag $(TAG) not found or already deleted"
+	@git tag -d "$(TAG)" 2>/dev/null || echo "[git-tag-rm] local tag $(TAG) not found or already deleted"
+	@echo "[git-tag-rm] deleted tag $(TAG) (local + remote)"
 
 # --- CI observability (W16) ---
 ci-status:
@@ -2419,17 +2428,18 @@ test-hooks:
 	_MU_FUTURE=$$(python3 -c 'import time; print(int(time.time()) + 3600)'); \
 	_MU_PAST=$$(python3 -c 'import time; print(int(time.time()) - 3600)'); \
 	\
-	echo "[12a] NUDGE: active 2:1 window + sonnet below 67% -> emits additionalContext with 'target is' and 'MODEL-UTIL'"; \
+	echo "[12a] ENFORCE: active 2:1 window + opus-heavy (sonnet below 67%) -> DENY with 'MODEL-RATIO' and 'target=' in reason"; \
 	printf '%s\n' '{"history":["opus","opus","opus","opus","opus","opus","opus","opus","opus","opus"]}' > "$$_MU_STATE"; \
 	printf '%s\n' "{\"target_share\": 0.67, \"until_epoch\": $$_MU_FUTURE}" > "$$_MU_CFG"; \
 	OUT=$$(printf '%s' '{"tool_input":{"model":"opus","prompt":"do something"}}' | \
+	  GLUDD_MAIN_MODEL_FILE=/nonexistent-test-main-model-isolated \
 	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
 	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
 	echo "  exit=$$RC"; \
-	echo "  has_additionalContext=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("hookSpecificOutput",{}).get("additionalContext") else "no")' 2>/dev/null || echo 'PARSE_ERR')"; \
+	echo "  decision=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
 	if [ $$RC -ne 0 ]; then echo "  FAIL [12a]: exit $$RC (must be 0)"; OVERALL=FAIL; \
-	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); ac=hs.get("additionalContext",""); assert ac, "no additionalContext"; assert "MODEL-UTIL" in ac, "missing MODEL-UTIL"; assert "target is" in ac, "missing target is"; assert hs.get("permissionDecision") != "deny", "must not deny"' 2>/dev/null; then echo "  PASS [12a]: time-bound nudge present (MODEL-UTIL + target is), no deny, exit=0"; \
-	else echo "  FAIL [12a]: expected additionalContext with MODEL-UTIL and target is; got: $$OUT"; OVERALL=FAIL; fi; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); pd=hs.get("permissionDecision"); reason=hs.get("permissionDecisionReason",""); assert pd=="deny", "expected deny got "+str(pd); assert "MODEL-RATIO" in reason, "missing MODEL-RATIO"; assert "target=" in reason, "missing target="' 2>/dev/null; then echo "  PASS [12a]: enforcement deny present (MODEL-RATIO + target= in reason), exit=0"; \
+	else echo "  FAIL [12a]: expected deny with MODEL-RATIO and target=; got: $$OUT"; OVERALL=FAIL; fi; \
 	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [12a]: traceback in stderr"; OVERALL=FAIL; }; \
 	\
 	echo "[12b] SILENT: active 2:1 window + sonnet >= 67% -> exit=0, empty stdout"; \
@@ -2445,19 +2455,21 @@ test-hooks:
 	else echo "  FAIL [12b]: emitted nudge when sonnet at/above target; got: $$OUT"; OVERALL=FAIL; fi; \
 	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [12b]: traceback in stderr"; OVERALL=FAIL; }; \
 	\
-	echo "[12c] EXPIRED WINDOW: reverts to 10%-band; opus-heavy -> old nudge fires (has non-sonnet); sonnet-heavy -> silent"; \
+	echo "[12c] EXPIRED WINDOW: enforcement stays ACTIVE (expiry ignored); opus-heavy -> DENY; sonnet-heavy -> silent"; \
 	printf '%s\n' '{"history":["opus","opus","opus","opus","opus","opus","opus","opus","opus","opus"]}' > "$$_MU_STATE"; \
 	printf '%s\n' "{\"target_share\": 0.67, \"until_epoch\": $$_MU_PAST}" > "$$_MU_CFG"; \
 	OUT=$$(printf '%s' '{"tool_input":{"model":"opus","prompt":"do something"}}' | \
+	  GLUDD_MAIN_MODEL_FILE=/nonexistent-test-main-model-isolated \
 	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
 	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
 	echo "  exit=$$RC"; \
-	echo "  has_additionalContext=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print("yes" if d.get("hookSpecificOutput",{}).get("additionalContext") else "no")' 2>/dev/null || echo 'PARSE_ERR')"; \
+	echo "  decision=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("hookSpecificOutput",{}).get("permissionDecision","none"))' 2>/dev/null || echo 'PARSE_ERR')"; \
 	if [ $$RC -ne 0 ]; then echo "  FAIL [12c-nudge]: exit $$RC"; OVERALL=FAIL; \
-	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); ac=hs.get("additionalContext",""); assert ac, "no additionalContext"; assert "MODEL-UTIL" in ac, "missing MODEL-UTIL"; assert "non-sonnet" in ac, "missing non-sonnet (band mode)"' 2>/dev/null; then echo "  PASS [12c-nudge]: expired window -> band nudge with non-sonnet (not target-is)"; \
-	else echo "  FAIL [12c-nudge]: expected band nudge with non-sonnet; got: $$OUT"; OVERALL=FAIL; fi; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); hs=d.get("hookSpecificOutput",{}); pd=hs.get("permissionDecision"); reason=hs.get("permissionDecisionReason",""); assert pd=="deny", "expected deny (enforcement ignores expiry) got "+str(pd); assert "MODEL-RATIO" in reason, "missing MODEL-RATIO"; assert "target=" in reason, "missing target="' 2>/dev/null; then echo "  PASS [12c-nudge]: expired window -> enforcement DENY (MODEL-RATIO + target= in reason)"; \
+	else echo "  FAIL [12c-nudge]: expected deny with MODEL-RATIO and target=; got: $$OUT"; OVERALL=FAIL; fi; \
 	printf '%s\n' '{"history":["sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet","sonnet"]}' > "$$_MU_STATE"; \
 	OUT2=$$(printf '%s' '{"tool_input":{"model":"sonnet","prompt":"do something"}}' | \
+	  GLUDD_MAIN_MODEL_FILE=/nonexistent-test-main-model-isolated \
 	  GLUDD_MODEL_UTIL_STATE="$$_MU_STATE" GLUDD_MODEL_UTIL_WINDOW=20 GLUDD_SONNET_TARGET_CONFIG="$$_MU_CFG" \
 	  bash .claude/hooks/model_utilization_pretool.sh 2>/tmp/gludd-hook-stderr.txt); RC2=$$?; \
 	if [ $$RC2 -ne 0 ]; then echo "  FAIL [12c-silent]: exit $$RC2"; OVERALL=FAIL; \
@@ -2624,6 +2636,44 @@ release-cut:
 	echo "    make verify-release-artifact TAG=$(TAG)"; \
 	echo "  A release is an ARTIFACT, not a tag."; \
 	echo "==========================================================="; \
+	exit 1
+
+# release-recut: re-trigger the release CI job for an EXISTING tag whose release
+# was skipped (e.g. gate was red when the tag was originally pushed).  Deletes the
+# remote tag and re-pushes the local tag (preserving the commit it points to),
+# which GitHub Actions treats as a fresh tag-push event.  Does NOT create a new
+# tag — the local tag must already exist.
+#
+# Usage: make release-recut TAG=v0.1.0-alpha.2
+release-recut:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-recut TAG=v0.1.0-alpha.N"; exit 1; }
+	@echo "[release-recut] step 1/3 — verify local tag $(TAG) exists ..."
+	@git tag -l "$(TAG)" | grep -q . || { echo "ABORT: local tag $(TAG) does not exist. release-recut re-pushes an EXISTING local tag."; echo "  If the tag only exists remotely, run: make git-fetch-sandboxcom first, or create the tag manually."; exit 1; }
+	@echo "[release-recut] step 2/3 — delete remote tag and re-push (triggers release CI job) ..."
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom ":refs/tags/$(TAG)"
+	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
+	@echo "[release-recut] step 3/3 — verify published release artifact (polls up to $(VERIFY_POLLS)x every $(VERIFY_INTERVAL)s; CI release job runs async) ..."
+	@poll=0; while [ $$poll -lt $(VERIFY_POLLS) ]; do \
+		poll=$$((poll + 1)); \
+		echo "[release-recut] artifact poll $$poll/$(VERIFY_POLLS) at $$(date +%H:%M:%S) ..."; \
+		if $(MAKE) --no-print-directory verify-release-artifact TAG='$(TAG)'; then \
+			echo ""; \
+			echo "release-recut COMPLETE: $(TAG) re-pushed AND artifact confirmed published."; \
+			echo "  Artifact URL: run 'make release-view TAG=$(TAG)' for the download URL."; \
+			exit 0; \
+		fi; \
+		if [ $$poll -lt $(VERIFY_POLLS) ]; then \
+			echo "  [release-recut] asset not yet visible — waiting $(VERIFY_INTERVAL)s for CI release job ..."; \
+			sleep $(VERIFY_INTERVAL); \
+		fi; \
+	done; \
+	echo ""; \
+	echo "==========================================================="; \
+	echo "WARNING: TAG $(TAG) was re-pushed but artifact NOT yet confirmed."; \
+	echo "  The Build-and-Release CI job is still running or failed."; \
+	echo "  DO NOT treat this tag as a shipped release."; \
+	echo "  After the CI run completes, verify with:"; \
+	echo "    make verify-release-artifact TAG=$(TAG)"; \
 	exit 1
 
 # ---------------------------------------------------------------------------

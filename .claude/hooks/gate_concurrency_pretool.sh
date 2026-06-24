@@ -36,12 +36,24 @@ import sys, json, re
 try:
     d = json.load(sys.stdin)
     cmd = ((d.get("tool_input") or {}).get("command") or "").strip()
-    # Match only make targets that actually invoke pytest (not test-hooks, test-stop-hooks, etc.)
+    # Match only make targets that actually invoke the FULL pytest suite.
     # Using (\s|$) instead of \b to avoid matching 'test' within 'test-hooks' or 'test-scripts'.
-    # Explicit list: gate, test (bare), test-unit, test-e2e, test-count, test-and-commit, qa.
-    # test-hooks / test-stop-hooks are pure-bash and never launch pytest — they must NOT be blocked.
-    pattern = r"^make\s+(gate|test|test-unit|test-e2e|test-count|test-and-commit|qa)(\s|$)"
-    print("yes" if re.match(pattern, cmd) else "no")
+    # BLOCKED list: gate, test (bare), test-unit (bare), test-e2e, test-and-commit, qa, validate.
+    #   validate runs the full gate (lint + typecheck + collect + test + ansible syntax).
+    # EXEMPT (do not block even when pytest is running):
+    #   - test-count: collection-only gate, no test bodies executed.
+    #   - collect-check: collection-error check, no test bodies executed.
+    #   - test-hooks / test-stop-hooks: pure-bash harness, never launches pytest.
+    #   - test-unit TESTFILE=<path>: targeted single-file run, not the full suite.
+    pattern = r"^make\s+(gate|test|test-unit|test-e2e|test-and-commit|qa|validate)(\s|$)"
+    m = re.match(pattern, cmd)
+    if not m:
+        print("no")
+    elif m.group(1) == "test-unit" and re.search(r"TESTFILE=\S", cmd):
+        # Targeted single-file test — does not contend with a full-suite gate.
+        print("no")
+    else:
+        print("yes")
 except Exception:
     print("no")
 ' 2>/dev/null)"
