@@ -2938,6 +2938,16 @@ ci-rerun:
 	@[ -n "$(ID)" ] || { echo "Usage: make ci-rerun ID=<run-id>"; exit 1; }
 	@gh run rerun "$(ID)" -R sandboxcom/gludd && echo "Re-running run $(ID) (same headSha)" || echo "Re-run failed for $(ID)"
 
+# Cancel a running GHA run.
+# Usage: make ci-cancel ID=<run-id>
+ci-cancel:
+	@gh run cancel $(ID) -R sandboxcom/gludd || true
+
+# Re-run only the FAILED jobs of a GHA run (keeps successful jobs as-is).
+# Usage: make ci-rerun-failed ID=<run-id>
+ci-rerun-failed:
+	@gh run rerun $(ID) --failed -R sandboxcom/gludd || true
+
 # Show job/step status summary for a specific GHA run.
 # Usage: make gh-run-view ID=<run-id>
 gh-run-view:

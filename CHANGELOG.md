@@ -13,10 +13,24 @@ Autonomy, pricing, and guardrail wave.
 - Tier 1+2 RAG: skill embeddings plus task-similarity retrieval for agent context.
 - Guardrail ports: Claude hooks → opencode (4 TypeScript plugins in `.opencode/plugin/`).
 - Orchestration floor: 10-subagent minimum enforced, plus foreground-block guardrail to keep the main thread dispatching.
+- `enforce-deadline.ts`: 5-minute task timeout enforcement via `/tmp/gludd-task-deadlines.json` wall-clock tracking, emitting a `TASK DEADLINE EXCEEDED` warning when `GLUDD_TASK_TIMEOUT_MS` is breached.
+- `CONSTRAINT_AS_STOP_PATTERNS`: 7 + 8 new naked-constraint phrasings ("isn't possible", "we have to wait", etc.) for the no-wait-stop hook.
+- Passive-wait detection: hook now flags deferral/waiting patterns so silent stalls surface.
 
 ### Fixed
 
 - CI pipeline: test-matrix sharding, molecule runs, and `ci-verdict-fast` for stale-run detection.
+- CI release artifact: `tag_name` mismatch prevented assets from publishing on the matching GitHub Release.
+- Model-ratio enforcer: made main-model-aware so the sonnet-target nudge accounts for the orchestrator model, not just dispatched agents.
+- F6a/F6b status leak: hook messages no longer escape into user-facing UI.
+- `printf` hook hardening: safe format-string handling in shell hook templates.
+- Gate concurrency: tightened the pretool regex so it no longer over-matches legitimate concurrent runs.
+- Ratchet burn-down: drove `config/ratchet.yml` from 14 open entries down to 0 (or 4) by closing the underlying gaps.
+
+### Changed
+
+- `MAINTHREAD_THRESHOLD`: lowered 8 → 4 so the grind-inline budget trips sooner on undeligated main-thread work.
+- `isMainthreadTool`: narrowed to Edit/Write/Bash only, eliminating false positives from read-only tools.
 
 ### Security
 

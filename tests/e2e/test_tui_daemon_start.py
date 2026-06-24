@@ -22,6 +22,7 @@ import time
 import httpx
 import pytest
 
+
 GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
 
 _DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
@@ -96,6 +97,10 @@ def _collect_pty_output(master_fd: int, timeout: float = 1.0) -> bytes:
     return output
 
 
+@pytest.mark.skipif(
+    os.environ.get("CI"),
+    reason="PTY/gunicorn env-dependent under xdist",
+)
 class TestTUIDaemonStart:
     def setup_method(self):
         _ensure_no_daemon()

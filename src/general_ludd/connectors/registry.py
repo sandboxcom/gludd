@@ -52,8 +52,10 @@ from __future__ import annotations
 import contextlib
 import importlib
 import logging
+import pkgutil
 from typing import Any, Protocol, runtime_checkable
 
+from general_ludd.connectors import __path__ as _connectors_pkg_path
 from general_ludd.connectors.normalize import auth_family
 
 logger = logging.getLogger(__name__)
@@ -297,6 +299,19 @@ def _family_for(name: str, config: dict[str, Any]) -> str:
 
 _MODULE_ALLOWLIST_PREFIX = _CONNECTORS_PKG  # "general_ludd.connectors"
 
+# Strict allowlist of every importable connector module path under
+# ``general_ludd.connectors``. Built once at import time by scanning the package
+# directory (``pkgutil.iter_modules``), so it auto-maintains as connectors are
+# added/removed — but it NEVER contains anything outside this package.  This is
+# the D-30 fix: operator-controlled ``module``/``class`` config values are
+# hard-rejected unless they resolve to a path in this frozenset, closing the
+# arbitrary-code-execution hole where ``"module": "os"`` would have imported an
+# arbitrary stdlib/third-party module.
+_ALLOWED_CONNECTOR_MODULES: frozenset[str] = frozenset(
+    f"{_CONNECTORS_PKG}.{name}"
+    for _finder, name, _ispkg in pkgutil.iter_modules(_connectors_pkg_path)
+)
+
 
 # Methods every connector class MUST expose (class-level, never dynamic).
 # ``KIND`` and ``name`` are intentionally NOT checked here — they are
@@ -382,6 +397,19 @@ def _check_module_allowlist(path: str, *, selector: str) -> None:
             f"start with the required prefix {_MODULE_ALLOWLIST_PREFIX!r}. "
             f"Only connectors under general_ludd.connectors may be loaded from "
             f"operator config."
+        )
+
+    # D-30: strict allowlist — even within the connectors package, only a
+    # module that actually EXISTS as a connector submodule may be imported
+    # from operator config.  Blocks both arbitrary stdlib modules and
+    # hypothetical not-yet-existing paths inside the package namespace.
+    if mod_portion not in _ALLOWED_CONNECTOR_MODULES:
+        raise ValueError(
+            f"module import denied: {path!r} (selector={selector!r}) resolves "
+            f"to {mod_portion!r}, which is not in the connector allowlist "
+            f"({len(_ALLOWED_CONNECTOR_MODULES)} known connector modules under "
+            f"{_MODULE_ALLOWLIST_PREFIX!r}). Only concrete connector submodules "
+            f"may be loaded from operator config."
         )
 
 

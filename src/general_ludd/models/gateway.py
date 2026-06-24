@@ -865,10 +865,6 @@ class ModelGateway:
         # default) or its circuit is healthy; each fallback below is likewise
         # gated on is_healthy before it is attempted.
         tracker = self._health_tracker
-        if tracker is None or tracker.is_healthy(profile_id):
-            result = self._try_call_model(profile_id, messages, **kwargs)
-            if result is not None:
-                return result
 
         fallback_ids: list[str] = fallback_profiles or []
         if not fallback_ids:
@@ -876,13 +872,54 @@ class ModelGateway:
             if profile is not None:
                 fallback_ids = list(profile.fallback_profiles)
 
-        for fb_id in fallback_ids:
-            if tracker is not None and not tracker.is_healthy(fb_id):
-                continue
-            result = self._try_call_model(fb_id, messages, **kwargs)
+        # D-22: if every model in the chain (primary + fallbacks) is circuit-open,
+        # raise immediately instead of walking the loop and continuing past each
+        # unhealthy entry only to raise at the end. Walking an all-unhealthy chain
+        # amplifies retry storms because the caller sees a ValueError after a full
+        # no-op sweep and re-invokes, repeating the same useless walk.
+        if tracker is not None:
+            primary_healthy = tracker.is_healthy(profile_id)
+            any_healthy = primary_healthy or any(
+                tracker.is_healthy(fb) for fb in fallback_ids
+            )
+            if not any_healthy:
+                raise ValueError(
+                    f"All profiles in fallback chain for '{profile_id}' are "
+                    f"circuit-open; not attempting any"
+                )
+
+        last_exc: BaseException | None = None
+        if tracker is None or tracker.is_healthy(profile_id):
+            try:
+                result = self._try_call_model(profile_id, messages, **kwargs)
+            except Exception as exc:
+                # D-22: see below — a provider-level failure on the primary must
+                # fall through to the fallback chain, not abort the whole call.
+                last_exc = exc
+                result = None
             if result is not None:
                 return result
 
+        for fb_id in fallback_ids:
+            if tracker is not None and not tracker.is_healthy(fb_id):
+                continue
+            try:
+                result = self._try_call_model(fb_id, messages, **kwargs)
+            except Exception as exc:
+                # D-22: a provider-level failure from one fallback must NOT abort
+                # the whole chain. call_model already recorded the failure on the
+                # health tracker (record_timeout_on_failure), so the next
+                # iteration's is_healthy check will honour the freshly-opened
+                # circuit. Swallow here and continue to the next fallback so the
+                # is_healthy gate gets to skip the now-unhealthy model instead of
+                # the caller retrying the whole chain (retry-storm amplifier).
+                last_exc = exc
+                continue
+            if result is not None:
+                return result
+
+        if last_exc is not None:
+            raise last_exc
         raise ValueError(
             f"All profiles in fallback chain failed for '{profile_id}'"
         )
