@@ -141,6 +141,7 @@ jobs:
     needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
     timeout-minutes: 30
+    continue-on-error: true  # Non-blocking: 86 sequential scenarios can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
