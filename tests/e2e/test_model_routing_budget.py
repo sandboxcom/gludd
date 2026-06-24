@@ -100,6 +100,9 @@ class TestModelRouterBuildFromProfilesAuto:
 
 class TestGatewayFallbackChainIntegration:
     def test_gateway_fallback_chain_integration(self):
+        # D-24: per-profile budget rejections now propagate, so to exercise the
+        # fallback chain integration we give the primary an adequate budget and
+        # make its provider raise a non-budget error.
         primary = ModelProfile(
             model_profile_id="primary_prof",
             provider="openai",
@@ -107,7 +110,7 @@ class TestGatewayFallbackChainIntegration:
             provider_class_hint="ChatOpenAI",
             model_name="gpt-4",
             enabled=True,
-            run_budget_usd=0.001,
+            run_budget_usd=999.0,
             fallback_profiles=["fallback_prof"],
         )
         fallback = ModelProfile(
@@ -131,9 +134,24 @@ class TestGatewayFallbackChainIntegration:
         )
         FakeChat.return_value = fake_instance
 
+        # Primary provider fails with a non-budget error so fallback runs.
+        primary_fail = MagicMock()
+        primary_fail.invoke.side_effect = RuntimeError("primary provider down")
+
+        def _get_provider_class(provider, package=None, class_hint=None):
+            return primary_fail
+
+        original_call_model = gw.call_model
+
+        def _call_model_dispatch(profile_id, messages, **kwargs):
+            if profile_id == "primary_prof":
+                raise RuntimeError("primary provider down")
+            return original_call_model(profile_id, messages, **kwargs)
+
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChat),
+            patch.object(gw, "call_model", side_effect=_call_model_dispatch),
         ):
             resp = gw.call_model_with_fallback(
                 "primary_prof",
@@ -148,6 +166,9 @@ class TestGatewayFallbackChainIntegration:
 
 class TestGatewayFallbackAllExhausted:
     def test_gateway_fallback_all_exhausted(self):
+        # D-24: when the primary is over its per-profile budget, the
+        # BudgetExceededError propagates immediately rather than being silently
+        # swallowed and walking the whole unhealthy chain.
         bad1 = ModelProfile(
             model_profile_id="bad1",
             provider="openai",
@@ -172,7 +193,7 @@ class TestGatewayFallbackAllExhausted:
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=MagicMock()),
-            pytest.raises(ValueError, match="All profiles in fallback chain failed"),
+            pytest.raises(ValueError, match="over budget"),
         ):
             gw.call_model_with_fallback(
                 "bad1",

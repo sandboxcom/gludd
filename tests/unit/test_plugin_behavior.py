@@ -360,6 +360,90 @@ class TestEnforceStopConstraintPatterns:
 
 
 # --------------------------------------------------------------------------- #
+# 3c. enforce-stop.ts — STATE-BASED terminal-response detector (BUGS.md #1)
+# --------------------------------------------------------------------------- #
+# The Whac-A-Mole fix: instead of matching specific completion phrases, ask
+# whether (a) the repo has pending work AND (b) the response looks like a
+# finale. responseLooksTerminal detects tables, uppercase DONE/COMPLETE/SHIPPED,
+# long non-question bodies, and commit-hash patterns.
+class TestEnforceStopResponseLooksTerminal:
+    """responseLooksTerminal must exist and detect completion-shaped responses."""
+
+    def test_function_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "function responseLooksTerminal" in src, (
+            "responseLooksTerminal function missing from enforce-stop.ts — "
+            "the state-based terminal-response detector (BUGS.md #1) is gone"
+        )
+
+    def test_detects_markdown_table(self):
+        """A line with | ... | ... | must be flagged as terminal."""
+        src = ENFORCE_STOP.read_text()
+        # The TS regex literal uses pipe chars; just confirm the function body
+        # references a pipe-based table matcher.
+        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract responseLooksTerminal body"
+        body = m.group(1)
+        assert "|" in body, (
+            "responseLooksTerminal must include a markdown-table regex matching "
+            "'| ... | ... |' patterns"
+        )
+
+    def test_detects_uppercase_done_complete_shipped(self):
+        """Uppercase DONE/COMPLETE/SHIPPED banners must be flagged."""
+        src = ENFORCE_STOP.read_text()
+        for word in ("DONE", "COMPLETE", "SHIPPED"):
+            assert word in src, (
+                f"responseLooksTerminal must detect the uppercase '{word}' banner"
+            )
+
+    def test_detects_commit_hash_pattern(self):
+        """A 7-40 hex-char commit hash must be flagged as terminal."""
+        src = ENFORCE_STOP.read_text()
+        # The regex must reference the hex character class and the 7,40 range.
+        assert re.search(r"0-9a-f\]\{7,40\}", src), (
+            "responseLooksTerminal must include a commit-hash regex "
+            "(/[0-9a-f]{7,40}/) to detect pasted SHA patterns"
+        )
+
+    def test_detects_long_non_question_body(self):
+        """A >200-char body not ending in '?' must be flagged as terminal."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(r"length\s*>\s*200", src), (
+            "responseLooksTerminal must check text.length > 200 for the long-body "
+            "terminal signal"
+        )
+        assert re.search(r"\\\?\s*\$", src) or "?\\s*$" in src or "?\\$" in src, (
+            "responseLooksTerminal must check that the body does NOT end with a "
+            "question mark (the long-body signal only fires for non-questions)"
+        )
+
+    def test_wired_into_response_transform(self):
+        """The response.transform hook must invoke responseLooksTerminal."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"responseLooksTerminal\s*\(\s*output\s*\)",
+            src,
+        ), (
+            "responseLooksTerminal(output) is not called inside "
+            "experimental.chat.response.transform — the state-based guardrail "
+            "is dead code"
+        )
+
+    def test_state_check_blocks_when_ratchet_has_entries(self):
+        """The STATE-BASED STOP BLOCKED message must be present and reference
+        the ratchet entry count."""
+        src = ENFORCE_STOP.read_text()
+        assert "STATE-BASED STOP BLOCKED" in src, (
+            "The state-based block response is missing its "
+            "'STATE-BASED STOP BLOCKED' header"
+        )
+        assert "ratchetEntries.length" in src, (
+            "The state-based block must report the ratchet entry count"
+        )
+
+
+# --------------------------------------------------------------------------- #
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:

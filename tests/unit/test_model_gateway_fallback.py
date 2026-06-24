@@ -81,7 +81,13 @@ class TestFallbackOnProfileNotFound:
 
 
 class TestFallbackOnBudgetExceeded:
-    def test_fallback_on_budget_exceeded(self):
+    def test_budget_exceeded_propagates_d24(self):
+        # D-24: a per-profile budget rejection MUST propagate as a
+        # BudgetExceededError (a ValueError subclass) instead of being silently
+        # swallowed and routed around via the fallback chain. Previously
+        # _try_call_model caught *all* ValueErrors and returned None, so
+        # call_model_with_fallback treated the rejection as a soft failure and
+        # tried the next profile — bypassing the per-profile spending cap.
         primary = _make_profile("expensive", budget=0.001, fallback=["cheap"])
         cheap = _make_profile("cheap", budget=999.0)
         gw, reg = _make_gateway([primary, cheap])
@@ -94,19 +100,25 @@ class TestFallbackOnBudgetExceeded:
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+            pytest.raises(ValueError, match="over budget"),
         ):
-            resp = gw.call_model_with_fallback(
+            gw.call_model_with_fallback(
                 "expensive",
                 [{"role": "user", "content": "hi"}],
                 estimated_cost=5.0,
                 budget_remaining=100.0,
             )
 
-        assert resp.content == "from cheap"
+        # The fallback must NOT have been invoked: the per-profile cap on the
+        # primary is a hard rejection, not a soft hint.
+        assert not fake_instance.invoke.called
 
 
 class TestFallbackChainExhausted:
     def test_fallback_chain_exhausted_raises(self):
+        # D-24: when the primary is rejected for being over budget, that
+        # BudgetExceededError propagates immediately — the fallback chain is
+        # not walked, because the per-profile cap is a hard rejection.
         primary = _make_profile("bad1", budget=0.001, fallback=["bad2"])
         bad2 = _make_profile("bad2", budget=0.001)
         gw, reg = _make_gateway([primary, bad2])
@@ -114,7 +126,7 @@ class TestFallbackChainExhausted:
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=MagicMock()),
-            pytest.raises(ValueError, match="All profiles in fallback chain failed"),
+            pytest.raises(ValueError, match="over budget"),
         ):
             gw.call_model_with_fallback(
                 "bad1",
@@ -126,7 +138,10 @@ class TestFallbackChainExhausted:
 
 class TestFallbackPreservesCostTracking:
     def test_fallback_preserves_cost_tracking(self):
-        primary = _make_profile("expensive", budget=0.001, fallback=["cheap"])
+        # D-24: per-profile budget rejections now propagate, so to exercise the
+        # fallback cost-tracking path we make the PRIMARY fail with a non-budget
+        # provider error (RuntimeError) and let the cheap fallback serve.
+        primary = _make_profile("expensive_primary", budget=999.0, fallback=["cheap"])
         cheap = _make_profile(
             "cheap",
             budget=999.0,
@@ -140,12 +155,31 @@ class TestFallbackPreservesCostTracking:
         fake_instance.invoke.return_value = _fake_response("from cheap", cost_input=100, cost_output=50)
         FakeChatModel.return_value = fake_instance
 
+        # Primary provider raises a non-budget error so the fallback chain runs.
+        primary_fail = MagicMock()
+        primary_fail.invoke.side_effect = RuntimeError("primary provider down")
+
+        def _get_provider_class(provider, package=None, class_hint=None):
+            # The first registered profile (primary) gets the failing instance;
+            # everything else gets the succeeding one.
+            return primary_fail
+
+        # Simpler: route by checking which profile is calling. We patch
+        # call_model on the primary path instead.
+        original_call_model = gw.call_model
+
+        def _call_model_dispatch(profile_id, messages, **kwargs):
+            if profile_id == "expensive_primary":
+                raise RuntimeError("primary provider down")
+            return original_call_model(profile_id, messages, **kwargs)
+
         with (
             patch.object(reg, "is_installed", return_value=True),
             patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+            patch.object(gw, "call_model", side_effect=_call_model_dispatch),
         ):
             resp = gw.call_model_with_fallback(
-                "expensive",
+                "expensive_primary",
                 [{"role": "user", "content": "hi"}],
                 estimated_cost=5.0,
                 budget_remaining=100.0,

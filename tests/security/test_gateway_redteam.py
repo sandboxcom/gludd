@@ -209,8 +209,10 @@ def test_fallback_does_not_loop_holds():
 
 
 def test_fallback_treats_budget_rejection_as_failover():
-    """OUT OF SCOPE: failover swallows ValueError and fails over to the next
-    profile. Documented as-is (failover module not in this fix scope)."""
+    """D-24 (now IN SCOPE / FIXED): a per-profile budget rejection MUST
+    propagate as a ValueError instead of being silently swallowed and routed
+    around via the fallback chain. Previously _try_call_model caught *all*
+    ValueErrors and returned None, defeating the per-profile spending cap."""
     primary = _profile("primary", run_budget_usd=0.0, api_metered=True)
     fallback = _profile("fb", run_budget_usd=1000.0)
 
@@ -219,13 +221,13 @@ def test_fallback_treats_budget_rejection_as_failover():
 
     gw = _gateway_with(chat, [primary, fallback])
 
-    resp = gw.call_model_with_fallback(
-        "primary",
-        [{"role": "user", "content": "hi"}],
-        fallback_profiles=["fb"],
-        estimated_cost=5.0,
-    )
-    assert resp.content == "served-by-fallback"
+    with pytest.raises(ValueError, match="over budget"):
+        gw.call_model_with_fallback(
+            "primary",
+            [{"role": "user", "content": "hi"}],
+            fallback_profiles=["fb"],
+            estimated_cost=5.0,
+        )
 
 
 def test_failover_should_retry_substring_false_positive():

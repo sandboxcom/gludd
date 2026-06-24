@@ -51,6 +51,10 @@ class _SecretsResolver(Protocol):
 
 
 
+class BudgetExceededError(ValueError):
+    """Raised when a call is rejected by the budget gate (D-24 fix)."""
+
+
 class ModelProfile(BaseModel):
     model_profile_id: str
     role_names: list[str] = Field(default_factory=list)
@@ -249,14 +253,58 @@ class ModelGateway:
         return profile is not None and profile.enabled
 
     def check_budget(
-        self, profile_id: str, estimated_cost: float, budget_remaining: float
+        self,
+        profile_id: str,
+        estimated_cost: float,
+        budget_remaining: float,
+        *,
+        messages: list[dict[str, str]] | None = None,
     ) -> bool:
         profile = self._profiles.get(profile_id)
         if profile is None:
             return False
-        if estimated_cost > budget_remaining:
+        # D-21: do NOT trust the caller-provided estimated_cost. Re-estimate
+        # server-side from the actual messages + the profile's price rates, and
+        # use the MAX of (caller claim, server estimate) for the budget decision
+        # so a buggy / malicious caller cannot under-report cost to slip past
+        # the gate. If no messages are supplied, fall back to the caller value
+        # (preserves backward compatibility for callers that pre-computed cost).
+        server_cost = self.estimate_cost(profile, messages) if messages is not None else None
+        if server_cost is not None:
+            effective_cost = max(estimated_cost, server_cost)
+        else:
+            effective_cost = estimated_cost
+        if effective_cost > budget_remaining:
             return False
-        return not (profile.api_metered and estimated_cost > profile.run_budget_usd)
+        return not (profile.api_metered and effective_cost > profile.run_budget_usd)
+
+    @staticmethod
+    def estimate_cost(
+        profile: ModelProfile, messages: list[dict[str, str]] | None
+    ) -> float:
+        """Server-side cost re-estimation independent of the caller.
+
+        Approximates input tokens from the message content (~4 chars/token, a
+        standard rough heuristic) and assumes the model may emit up to its
+        ``max_output_tokens``. Multiplies both legs by the profile's price rates.
+        Returns 0.0 when messages is empty/None.
+        """
+        if not messages:
+            return 0.0
+        input_chars = 0
+        for m in messages:
+            content = ""
+            if isinstance(m, dict):
+                content = str(m.get("content", "") or "")
+            else:
+                content = str(getattr(m, "content", "") or "")
+            input_chars += len(content)
+        approx_input_tokens = input_chars // 4
+        approx_output_tokens = profile.max_output_tokens
+        return (
+            approx_input_tokens * profile.cost_per_input_token
+            + approx_output_tokens * profile.cost_per_output_token
+        )
 
     def list_profiles(self) -> list[ModelProfile]:
         return list(self._profiles.values())
@@ -275,7 +323,7 @@ class ModelGateway:
             raise ValueError(f"Profile '{profile_id}' not found")
 
         if not self.check_budget(profile_id, estimated_cost, budget_remaining):
-            raise ValueError(
+            raise BudgetExceededError(
                 f"Call to '{profile_id}' rejected: over budget "
                 f"(estimated={estimated_cost}, remaining={budget_remaining}, "
                 f"profile_budget={profile.run_budget_usd}"
@@ -839,6 +887,14 @@ class ModelGateway:
     ) -> ModelResponse | None:
         try:
             return self.call_model(profile_id, messages, **kwargs)
+        except BudgetExceededError:
+            # D-24: a budget rejection MUST propagate. Previously this was
+            # caught by the bare ``except (ValueError, ImportError)`` below and
+            # silently returned None, which call_model_with_fallback treated as
+            # a non-failure — so a profile whose own run_budget_usd was exceeded
+            # simply routed to a fallback with a larger budget cap, bypassing
+            # the per-profile ceiling. Re-raise so the caller sees the rejection.
+            raise
         except (ValueError, ImportError):
             return None
 
@@ -892,6 +948,8 @@ class ModelGateway:
         if tracker is None or tracker.is_healthy(profile_id):
             try:
                 result = self._try_call_model(profile_id, messages, **kwargs)
+            except BudgetExceededError:
+                raise
             except Exception as exc:
                 # D-22: see below — a provider-level failure on the primary must
                 # fall through to the fallback chain, not abort the whole call.
@@ -905,6 +963,10 @@ class ModelGateway:
                 continue
             try:
                 result = self._try_call_model(fb_id, messages, **kwargs)
+            except BudgetExceededError:
+                # D-24: budget rejection is a hard fail — do not continue the
+                # fallback chain (would bypass the per-profile spending cap).
+                raise
             except Exception as exc:
                 # D-22: a provider-level failure from one fallback must NOT abort
                 # the whole chain. call_model already recorded the failure on the

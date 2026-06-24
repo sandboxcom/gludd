@@ -139,6 +139,26 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\ball code work is (?:done|complete|committed)\b/i, // "all code work is DONE"
 ]
 
+// ============================================================================
+// STATE-BASED TERMINAL-RESPONSE DETECTOR (BUGS.md audit #1 anti-stop fix)
+// Instead of matching specific completion phrases (Whac-A-Mole), this asks two
+// state questions: (a) does the repo have pending work? (b) does this response
+// LOOK like a finale? If both are true, block regardless of wording.
+// Signals: markdown table, uppercase DONE/COMPLETE/SHIPPED, long non-question
+// body, commit-hash pattern (7-40 hex chars).
+// ============================================================================
+function responseLooksTerminal(text: string): boolean {
+  // Markdown table: a line with | ... | ... | (at least two pipes, real content)
+  if (/\|[^\n|]+\|[^\n|]+\|/.test(text)) return true
+  // Uppercase completion banner
+  if (/\b(?:DONE|COMPLETE|SHIPPED)\b/.test(text)) return true
+  // Long body that doesn't end with a question mark
+  if (text.length > 200 && !/\?\s*$/.test(text)) return true
+  // Commit hash pattern: 7-40 hex chars on a word boundary
+  if (/\b[0-9a-f]{7,40}\b/.test(text)) return true
+  return false
+}
+
 function detectNoWaitPattern(text: string): boolean {
   return NO_WAIT_PATTERNS.some(p => p.test(text))
 }
@@ -342,11 +362,34 @@ export default (async ({ }) => {
       try {
         if (typeof output !== "string") return output
 
-        // --- RATCHET CHECK: if config/ratchet.yml has entries, the project has
+        // --- STATE-BASED CHECK (BUGS.md audit #1): if ratchet has entries AND
+        // response looks terminal, block. This is the Whac-A-Mole fix: instead
+        // of matching specific phrases, ask 'does the repo have pending work?'
+        // AND 'does this response look like a finale?' If both are true, the
+        // response is BLOCKED regardless of wording. ---
+        const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+        if (fs.existsSync(ratchetPath)) {
+          const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
+          const ratchetEntries = ratchetContent.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
+          if (ratchetEntries.length > 0 && responseLooksTerminal(output)) {
+            return [
+              "⛔ STATE-BASED STOP BLOCKED: config/ratchet.yml has",
+              `${ratchetEntries.length} entries AND your response looks like a completion`,
+              "report (table, hash, DONE/COMPLETE). This is the Whac-A-Mole fix: instead",
+              "of matching specific phrases, this check asks 'does the repo have pending",
+              "work?' AND 'does this response look like a finale?' If both are true, the",
+              "response is BLOCKED regardless of wording.",
+              "",
+              "MAKE A TOOL CALL. Do NOT end your turn with a status report.",
+            ].join("\n")
+          }
+        }
+
+        // --- RATCHET CHECK (vocabulary-based): if config/ratchet.yml has entries,
+        // the project has
         // known-unfixed work. Any response that sounds like a completion report
         // or a stop-to-ask is BLOCKED. This is the state-based check that catches
         // stop patterns vocabulary lists miss. ---
-        const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
         if (fs.existsSync(ratchetPath)) {
           const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
           const ratchetEntries = ratchetContent.split("\n").filter(

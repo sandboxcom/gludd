@@ -1110,6 +1110,22 @@ ci-jobs:
 	@if [ -z "$(ID)" ]; then echo "Usage: make ci-jobs ID=<run-id>"; exit 1; fi
 	@gh run view $(ID) -R sandboxcom/gludd --json jobs 2>&1 | $(PYTHON) -c "import sys,json; d=json.load(sys.stdin); [print(j.get('databaseId'), j.get('status'), j.get('conclusion'), j.get('name')) for j in d.get('jobs',[])]" || echo "ci-jobs-failed"
 
+# Download the logs ZIP for a SPECIFIC rerun attempt of a run — for diagnosing
+# pre-rerun failures (attempt 1 = the original run, 2 = first rerun, etc.).
+# The /attempts/{ATTEMPT}/logs endpoint returns a zip; we download + extract it
+# to ./ci-attempt-logs/ and print the failing-step grep.
+# Usage: make ci-attempt-log RUN=<id> ATTEMPT=1
+#
+# NOTE: for in-progress (still-running) job monitoring use `make ci-job-ids`
+#       instead — attempts/logs are only available once an attempt completes.
+ci-attempt-log:
+	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-attempt-log RUN=<id> ATTEMPT=1"; exit 1; fi
+	@if [ -z "$(ATTEMPT)" ]; then echo "Usage: make ci-attempt-log RUN=<id> ATTEMPT=1"; exit 1; fi
+	@rm -rf ci-attempt-logs && mkdir -p ci-attempt-logs
+	@gh api repos/sandboxcom/gludd/actions/runs/$(RUN)/attempts/$(ATTEMPT)/logs > ci-attempt-logs/run-$(RUN)-attempt-$(ATTEMPT).zip 2>/dev/null \
+		&& (cd ci-attempt-logs && unzip -o run-$(RUN)-attempt-$(ATTEMPT).zip >/dev/null 2>&1 && echo "extracted -> $$(pwd)" && echo "--- failing lines ---" && grep -rhiE "error|fail|traceback|mypy|ruff|coverage|FAILED|no such|not found|Process completed" . | tail -80 || echo "ci-attempt-log-failed (zip may be empty or the attempt has no logs yet)") \
+		|| echo "ci-attempt-log-failed (attempt logs not yet available — is the attempt complete?)"
+
 # Print the job ids + names for a run (to feed ci-job-log).
 ci-job-ids:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-job-ids RUN=<id>"; exit 1; fi
