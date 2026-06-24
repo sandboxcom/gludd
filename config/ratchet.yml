@@ -10,4 +10,3 @@ tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_starts_daemon_a
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_shows_running_after_daemon_start: "flaky TUI daemon start running — environment-dependent (xpasses when a PTY+daemon are available; strict=False so the xpass is non-fatal)"
 tests/unit/test_tui_navigation_e2e.py::TestTabSpaceNavigation::test_enter_enters_submenu: "flaky StopIteration — pre-existing"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_daemon_not_running_shows_stopped: "flaky PTY stderr bleed under xdist parallel load — pkg_resources warning captured before TUI renders; passes in isolation"
-
