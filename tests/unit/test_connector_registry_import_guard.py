@@ -68,8 +68,11 @@ class TestCheckModuleAllowlist:
         # This mirrors what _resolve_factory does for a bare module name.
         _check_module_allowlist("general_ludd.connectors.prometheus", selector="module")
 
-    def test_module_connectors_pkg_itself_passes(self) -> None:
-        _check_module_allowlist("general_ludd.connectors", selector="module")
+    def test_module_connectors_pkg_itself_denied(self) -> None:
+        """The bare general_ludd.connectors package is NOT an importable
+        connector — only concrete submodules are allowed (D-30 fix)."""
+        with pytest.raises(ValueError, match="module import denied"):
+            _check_module_allowlist("general_ludd.connectors", selector="module")
 
     def test_module_os_rejected(self) -> None:
         with pytest.raises(ValueError, match="module import denied"):
