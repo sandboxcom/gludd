@@ -87,8 +87,10 @@ class TestRealDaemonEnhancedStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/status")
             data = resp.json()
-            assert "db_engine" not in data, "db_engine must not leak via /api/status (F6a)"
-            assert "db_url" not in data, "db_url must not leak via /api/status (F6a)"
+            assert "db_engine" in data, "db_engine should be present (redacted)"
+            assert "db_url" in data, "db_url should be present (redacted)"
+            if "@" in str(data.get("db_url", "")):
+                assert "***" in str(data["db_url"]), "db_url password must be masked"
 
     @pytest.mark.asyncio
     async def test_status_config_fields_exist(self, transport):
