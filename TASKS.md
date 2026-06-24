@@ -461,3 +461,14 @@ Goal: make .github/workflows/build.yml actually pass in real CI. Observed (sandb
 - [x] W13.2b — Added make git-restore FILES='...' target (was missing — agents had no way to recover deleted tracked files under the make-only Bash policy) | evidence: make git-restore FILES='dist/README.md dist/binaries/opentofu dist/general-ludd.service dist/install.sh' Restored 3445abd
 - [x] W13.2c — Restored deleted dist/ artifacts (test_installer.py was failing pre-existing because these were deleted from working tree) | evidence: make test-specific TESTFILE=tests/unit/test_installer.py 27 passed 3445abd
 - [ ] W13.3 — CI pipeline fixes: FK constraint test fix (test_data_flow_e2e.py prerequisite todos), get_running_loop (test_daemon.py), seed_initial_queues TOCTOU (session.py on_conflict_do_nothing), coverage gate shard fix (build.yml --cov-fail-under=0), conftest get_event_loop deprecation | evidence: tests pass locally (commit pending)
+
+## Session 2026-06-24 — Multitasking fix + anti-stop guardrail + CI artifact fix
+
+- [x] S1 — Model-ratio enforcer main-model-aware: enforce-delegate.ts skips enforcement when main model is non-expensive (glm-5.2); .claude/main_model config; shell hook ported | evidence: make test-model-ratio-hook 35/35 pass 41befa8
+- [x] S2 — Constraint-as-stop detection: 7 CONSTRAINT_AS_STOP_PATTERNS in enforce-stop.ts + no_wait_stop.sh; detectConstraintAsStop() + constraintBlockResponse(); 9 TS tests + 8 behavioral tests | evidence: make test-plugin-behavior 37 pass; make test-no-wait-hook 40 pass cdb5fe9
+- [x] S3 — CI release artifact fix: tag_name changed from env.VERSION to github.ref_name; added checkout+SBOM+LICENSE staging; 2 regression tests | evidence: tests/security/test_ci_workflow.py 07e2fc2
+- [x] S4 — Subagent deadline plugin: enforce-deadline.ts records dispatch timestamps, warns at 5-min limit (GLUDD_TASK_TIMEOUT_MS); registered in opencode.json; 8 tests | evidence: tests/unit/test_plugin_behavior.py::TestEnforceDeadlinePlugin 8 pass 5e3c678
+- [x] S5 — Printf hook hardening: 4 hooks converted from bare printf to python3 json.dumps (agent_floor_pretool/posttool/userprompt, mainthread_budget) | evidence: grep 'printf.*hookSpecificOutput' .claude/hooks/*.sh = 0 matches cdb5fe9
+- [x] S6 — Gate concurrency regex fix: test-count exempt, TESTFILE= carve-out, validate denied | evidence: make test-hooks GROUP 10 pass cdb5fe9
+- [x] S7 — Ratchet burn-down: 3 watchdog FSEvents entries removed (14→11); RATCHET_MAX 14→11; timeout 5.0→15.0 | evidence: make test-specific test_guardrails.py::TestRatchetGrowthGuard 2 pass cdb5fe9
+- [x] S8 — F6a/F6b CI fix: /api/status db_url/db_engine leak removed; pagination test _daemon_state binding fixed | evidence: make test-specific test_api_status_no_leak.py + test_todos_pagination.py 6 pass 85a667e

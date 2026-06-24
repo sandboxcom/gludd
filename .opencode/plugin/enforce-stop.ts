@@ -362,16 +362,18 @@ export default (async ({ }) => {
           }
         }
 
+        // Constraint-as-stop (self-heal — 2026-06-23): same enforcement gate as
+        // no-wait. Runs BEFORE the no-wait check so the constraint-specific
+        // directive wins for overlapping phrases ("isn't possible", "no way to",
+        // "have to wait"). When detected, inject the workaround directive so the
+        // agent engineers a solution instead of parking it.
+        if (NO_WAIT_ENFORCE && detectConstraintAsStop(output)) {
+          return constraintBlockResponse()
+        }
+
         // No-wait stop pattern (now ENFORCING by default — 2026-06-22)
         if (NO_WAIT_ENFORCE && detectNoWaitPattern(output)) {
           return noWaitBlockResponse()
-        }
-
-        // Constraint-as-stop (self-heal — 2026-06-23): same enforcement gate as
-        // no-wait. When a constraint phrase is detected, inject the workaround
-        // directive so the agent engineers a solution instead of parking it.
-        if (NO_WAIT_ENFORCE && detectConstraintAsStop(output)) {
-          return constraintBlockResponse()
         }
 
         // Multitasking backlog (always enforces — it's a standing user directive
