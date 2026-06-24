@@ -12,8 +12,6 @@ tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_exte
 tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_local_bootstrap_result: "flaky xdist race on hvac patch — pre-existing"
 tests/unit/test_tui_navigation_e2e.py::TestTabSpaceNavigation::test_enter_enters_submenu: "flaky StopIteration — pre-existing"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_daemon_not_running_shows_stopped: "flaky PTY stderr bleed under xdist parallel load — pkg_resources warning captured before TUI renders; passes in isolation"
-tests/e2e/test_pipeline_live_zai.py::TestLivePipelineZaiG7RealLoop::test_g7_real_event_loop_dispatch: "live Z.AI test — needs openai provider package installed; environmental"
-tests/e2e/test_pipeline_live_zai.py::TestLiveSilentSkipFallback::test_profileless_todo_now_calls_model: "live Z.AI test — needs openai provider package installed; environmental"
-tests/e2e/test_self_improve_strategies_live_zai.py::TestSelfImproveLiveZai::test_live_zai_harness_heuristic_path_and_gap_documented: "live Z.AI test — needs openai provider package installed; environmental"
+
 tests/unit/test_gate_concurrency.py::TestRunGateScript::test_second_invocation_rejected_when_lock_held: "flaky basetemp cleanup race — rejected invocation may create basetemp before lock check"
 tests/unit/test_gate_concurrency.py::TestRunGateScript::test_subagent_guard_refused_via_claude_agent_id: "flaky basetemp cleanup race — same root cause as test_second_invocation_rejected_when_lock_held"
