@@ -21,6 +21,21 @@ from general_ludd.prompts.registry import (
 TEMPLATES_DIR = str(Path(__file__).parent.parent.parent / "templates" / "prompts")
 
 
+@pytest.fixture(autouse=True)
+def _isolated_db(tmp_path, monkeypatch):
+    """Point the daemon at a fresh per-test SQLite file.
+
+    Without this, every test in this file (and any sibling run by the same
+    xdist worker) shares the default DB at ~/.local/share/general-ludd.
+    SQLAlchemy's ``create_all(checkfirst=True)`` does a check-then-create
+    without ``IF NOT EXISTS``, so two workers/Tests racing on the same file
+    raise ``sqlite3.OperationalError: table todo_events already exists`` and
+    the lifespan aborts before ``_prompt_registry`` is set — surfacing as
+    ``AttributeError: 'State' object has no attribute '_prompt_registry'``.
+    """
+    monkeypatch.setenv("GLUDD_DB_PATH", str(tmp_path / "test.db"))
+
+
 class TestPromptRegistryWiredToEventLoop:
     @pytest.fixture
     def app_with_templates(self):

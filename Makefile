@@ -1046,6 +1046,15 @@ verify-release-artifact:
 	@echo "[verify-release-artifact] checking $(TAG) on sandboxcom/gludd ..."
 	@$(UV) run python scripts/verify_release_artifact.py "$(TAG)"
 
+# ---------------------------------------------------------------------------
+# task-ttl-check: detect stale/frozen subagent tasks whose wall-clock elapsed
+# exceeds GLUDD_TASK_TIMEOUT_MS (default 300000 ms = 5 min). Reads the deadline
+# state file written by .opencode/plugin/enforce-deadline.ts.
+# Exit 0 = all fresh (or none tracked), 1 = stale tasks present.
+# ---------------------------------------------------------------------------
+task-ttl-check:
+	@python3 scripts/task_ttl_check.py --timeout $$(( $${GLUDD_TASK_TIMEOUT_MS:-300000} / 1000 )) || echo "WARNING: stale tasks detected"
+
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi
 	@gh run view "$(RUN)" -R sandboxcom/gludd --log-failed 2>&1 | tail -120 || echo "ci-faillog-failed"

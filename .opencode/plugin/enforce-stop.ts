@@ -177,7 +177,7 @@ const CONSTRAINT_AS_STOP_PATTERNS: RegExp[] = [
   // of the above patterns caught.
   /\bi('?m| am) monitoring\b/i,                    // "I'm monitoring"
   /\bmonitoring (?:ci|the (?:ci|pipeline|status))\b/i, // "monitoring CI/pipeline"
-  /\bwill .{0,20}?\b(?:wait|monitor|check back|hold|stand by)\b.{0,20}?\b(?:when|once|the moment|as soon as)\b/i, // "will wait/monitor X when/once Y"
+  /\bwill .{0,20}?\b(?:wait|monitor|check back|hold|stand by)\b.{0,20}?\b(?:when|once|until|the moment|as soon as)\b/i, // "will wait/monitor X when/once/until Y"
   /\bnothing else can be\b/i,                      // "nothing else can be committed/done"
   /\bi'?ll (?:wait|check back|poll)\b/i,           // "I'll wait/check back/poll"
   /\bwaiting for (?:ci|green|the pipeline)\b/i,    // "waiting for CI"

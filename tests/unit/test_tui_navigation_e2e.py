@@ -16,6 +16,7 @@ from __future__ import annotations
 import argparse
 import collections
 import contextlib
+import itertools
 from unittest.mock import MagicMock, patch
 
 _TermSize = collections.namedtuple("terminal_size", ["columns", "lines"])
@@ -101,8 +102,18 @@ def _tui_patches(os_read_keys: list[bytes]):
         # path span on empty reads forever — an infinite busy-loop that hung on
         # headless Linux/CI (no TTY) while passing on macOS. \x03 guarantees the
         # loop always exits, so a TUI test can never hang.
+        #
+        # Use an infinite generator (itertools.chain + cycle) rather than a fixed
+        # `[b"\x03"] * 100` list: some key sequences (e.g. Enter on a non-submenu
+        # item) drive the getch loop through more reads than expected on CI, which
+        # previously raised StopIteration once the tail list ran out. An endless
+        # stream of Ctrl-C can never be exhausted, so the patch is robust to any
+        # number of reads.
         stack.enter_context(
-            patch("os.read", side_effect=os_read_keys + [b"\x03"] * 100)
+            patch(
+                "os.read",
+                side_effect=itertools.chain(os_read_keys, itertools.repeat(b"\x03")),
+            )
         )
         stack.enter_context(
             patch("select.select", return_value=([1], [], []))

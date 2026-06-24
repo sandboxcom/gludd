@@ -249,6 +249,94 @@ class TestReleaseJobGating:
             "release job must stage THIRD_PARTY_LICENSES.md into release assets"
         )
 
+    def test_release_job_stages_all_platform_tarballs(self) -> None:
+        """The release job must download and stage ALL platform tarballs.
+
+        The build jobs upload artifacts named:
+          - gludd-linux-x86_64   (linux-amd64 tarball)
+          - gludd-macos-arm64    (macos-arm64 tarball)
+          - gludd-windows-x86_64 (windows-amd64 zip)
+          - gludd-linux-aarch64  (linux-aarch64 / termux tarball)
+
+        The release job's download-artifact step must use a pattern broad
+        enough to capture all of them (e.g. ``gludd-*``), not a single name.
+        """
+        wf = _load_workflow()
+        release_steps = wf["jobs"]["release"].get("steps", [])
+        download_steps = [
+            s for s in release_steps
+            if isinstance(s, dict) and "download-artifact" in s.get("uses", "")
+        ]
+        assert download_steps, (
+            "release job must have a download-artifact step to pull platform tarballs"
+        )
+        # The pattern field must be broad enough to match all gludd-* artifacts.
+        patterns = [str(s.get("with", {}).get("pattern", "")) for s in download_steps]
+        assert any("gludd-*" in p or "*" in p for p in patterns), (
+            "release download-artifact pattern must match all gludd-* artifacts; "
+            f"got patterns={patterns}"
+        )
+
+    def test_release_job_cleans_stale_release(self) -> None:
+        """The release job must delete any pre-existing release for the tag
+        before creating a new one.
+
+        Root cause of the alpha.2 "release already_exists" failure: a prior run
+        created the release record but failed mid-asset-upload. The next run's
+        ``softprops/action-gh-release`` then errored on the duplicate. The fix
+        is a ``gh release delete ... --yes`` step before the create step.
+        """
+        wf = _load_workflow()
+        release_steps = wf["jobs"]["release"].get("steps", [])
+        all_run_text = " ".join(
+            s.get("run", "") for s in release_steps if isinstance(s, dict)
+        )
+        assert "gh release delete" in all_run_text, (
+            "release job must have a 'gh release delete' cleanup step to handle "
+            "the 'release already_exists' error from action-gh-release"
+        )
+        # The cleanup must target the tag being released (github.ref_name).
+        assert "github.ref_name" in all_run_text, (
+            "release cleanup step must target ${{ github.ref_name }}"
+        )
+
+    def test_release_job_verifies_assets_after_publish(self) -> None:
+        """The release job must verify the published release has assets (>= 4).
+
+        This catches the alpha.2/alpha.3 failure mode where a tag was pushed and
+        a release record existed, but zero assets were attached (CI skipped the
+        release job or it errored mid-upload). A post-release verification step
+        makes that failure loud instead of silent.
+        """
+        wf = _load_workflow()
+        release_steps = wf["jobs"]["release"].get("steps", [])
+        # Find the step(s) AFTER the softprops/action-gh-release step.
+        gh_release_idx = None
+        for i, s in enumerate(release_steps):
+            if isinstance(s, dict) and "softprops/action-gh-release" in s.get("uses", ""):
+                gh_release_idx = i
+                break
+        assert gh_release_idx is not None, "release job must use softprops/action-gh-release"
+        post_release_steps = release_steps[gh_release_idx + 1:]
+        assert post_release_steps, (
+            "release job must have at least one step after action-gh-release "
+            "(the post-release asset verification step)"
+        )
+        post_run_text = " ".join(
+            s.get("run", "") for s in post_release_steps if isinstance(s, dict)
+        )
+        assert "gh release view" in post_run_text, (
+            "post-release step must use 'gh release view' to inspect the published release"
+        )
+        assert "assets" in post_run_text, (
+            "post-release step must inspect the release assets list"
+        )
+        # Must enforce a minimum asset count (>= 4: linux, macos, windows, termux
+        # at minimum — usually plus SBOM, LICENSE, THIRD_PARTY_LICENSES).
+        assert re.search(r"ASSET_COUNT|-lt\s+\d+|\.assets\s*\|\s*length", post_run_text), (
+            "post-release step must assert a minimum asset count (>= 4)"
+        )
+
 
 class TestWorkflowYAMLValidity:
     def test_workflow_is_valid_yaml(self) -> None:

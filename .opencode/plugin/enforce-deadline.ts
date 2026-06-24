@@ -18,6 +18,11 @@ import * as fs from "node:fs"
 // agent reading its own tool stream) sees it and can dispatch a replacement /
 // re-split the work. Observability beats silent hangs.
 //
+// STANDALONE CLI MIRROR: scripts/task_ttl_check.py reads the same state file
+// and is exposed as `make task-ttl-check`. The CLI is the gate-friendly face
+// of this plugin (usable from CI / make targets / shell); the plugin is the
+// live in-session face. Both must agree on the state file shape and TTL env.
+//
 // FAIL-OPEN: every code path is wrapped so an internal error NEVER wedges the
 // session. Worst case = no deadline enforcement (back to the old behavior),
 // never a blocked tool call.
