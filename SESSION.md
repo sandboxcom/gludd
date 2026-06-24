@@ -5,105 +5,49 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-23
+- 2026-06-24
 
-## Current State — master@`41befa8`
+## Current Work — Release Manager
 
-### MERGED:
-- `fix/self-update-sec` → master (all previous work landed)
-- master advanced to `41befa8` (CI pending — treat as unconfirmed until GREEN)
+Fixing missing release artifacts for v0.1.0-alpha.2 and v0.1.0-alpha.3. Neither
+version produced a downloadable artifact because their tags pointed at red-gate
+commits; the `release` CI job (`needs: [gate]`) was skipped.
 
-### Phase 2 — COMPLETE (all 7 steps done):
-- Self-update flow wired end-to-end
-- All seven Phase 2 steps finished
+### v0.1.0-alpha.2
+- **Root cause:** original tag `7516aaf` had 105 test failures → gate red → release skipped.
+- **Fix:** re-tagged at green commit `f1991f2` via new `make release-recut`.
+- **Status:** CI run `28074485254` in_progress. Awaiting green.
 
-### EventLoop Wiring (new since 4c06268):
-- Collection handler + role dispatch wired into EventLoop
-- LOC ledger wired — `accounting/ledger.py` `loc_changed` now invoked from dispatch path
-- Spend limiter `would_exceed` wired into dispatch path (gates spend before each dispatch)
+### v0.1.0-alpha.3
+- **Root cause:** merge resolution bug in `routers/todos.py` — `/api/status` response
+  was missing `config_file_count`, `db_engine`, `db_url` fields (lost during merge).
+- **Fix:** restored the missing fields. Committed as `07e2fc2`.
+- **Status:** pushed to remote, awaiting CI green.
 
-### A-05 Overload Retry Cap — FIXED:
-- Retry behavior on overload now bounded (previously unbounded)
+### New Tooling
+- `make git-tag-rm TAG=...` — delete a tag locally + on remote
+- `make release-recut TAG=...` — remove + re-tag a release at a different commit
+- `make git-tag-push` now accepts `COMMIT=<sha>` to tag a specific commit
 
-### Multitasking Bugs — see authoritative source:
-- Authoritative root-cause analysis: `docs/audit/floor_breach_rootcause_2026-06-17.md`
-- BUGS.md contains no enumerated list of 5 bugs; the "5 documented" count is not grounded there
-- The 3 restart-bound bugs live in `.opencode/plugin/*.ts` (plugin code is loaded on opencode restart, not hot-reloaded)
+## Last Commit
+- `07e2fc2` (alpha.3 merge-resolution fix)
 
-### InfraTracker:
-- Implemented and wired into the daemon/event loop
+## Known Gaps
 
-### Pricing (15/15 sources COMPLETE):
-- LIVE sources registered: RunPod, Z.AI, AWS, + 12 more (15/15 returning real data)
-- **HuggingFace:** static table implemented (10 GPU instances)
-- **Fireworks:** FireworksSource removed — LiteLLM JSON source covers it (no remaining gap)
-- **Endpoints:** `/api/pricing` and `/api/pricing/compute` added
-- **Connector CLI:** `list`, `health`, `query` commands
-- **Spend limiter:** wired to PricingCatalog
-- All sources complete; no pending sources
+1. **alpha.2 CI pending** — run `28074485254` must go green, then `make verify-release-artifact TAG=v0.1.0-alpha.2`.
+2. **alpha.3 CI pending** — must go green before `make release-cut TAG=v0.1.0-alpha.3`.
+3. Both versions still need artifact verification (tag alone ≠ shipped release).
 
-### Dead Code (corrected 2026-06-23):
-- `orchestration/` — `.py` files are DELETED; only `__pycache__` remains (not "unwired", gone)
-- `pricing_intel/` — FULLY WIRED (daemon.py:1057, 12+ importers, 2 live HTTP endpoints `/api/pricing` and `/api/pricing/compute`). Not dead.
+## Next Steps
 
-### Connectors:
-- `UserConfig.connectors` field added — 82 modules unblocked
+1. Wait for alpha.2 CI green → run `make verify-release-artifact TAG=v0.1.0-alpha.2`.
+2. Wait for alpha.3 CI green → run `make release-cut TAG=v0.1.0-alpha.3 MSG='...'`.
+3. After release-cut completes → verify artifact with `make verify-release-artifact`.
 
-### CI Watch:
-- `ci-verdict-fast` + `ci-verdict-loop` make targets added
-- Polling intervals lowered
-- Gate passing, shards running
+## Historical State
 
-### Tests:
-- 12,627 tests collected
-
-## Fast-Follow Branches (awaiting post-ship gated-merge)
-
-| Branch | Tip SHA | Contents | Gate State |
-|---|---|---|---|
-| feature/batch3-security | 85158c2 | F5b/F6a/F6b security features, 14/14 tests passing, ancestor-clean | Gate-clean, pending merge |
-| batch-4-security | building | D-04/05/06/29/30/31 security items | Building |
-| mt-6-watchdog | building | Watchdog/stall detection improvements | Building |
-| floor_controller-consolidated | building | Gate-safe + predictive floor controller | Building |
-
-Full cascade plan: `docs/integration/POSTSHIP_MERGE_CASCADE_2026-06-18.md`
-
-## Hooks — Current State
-
-Hooks hardened and enforcing as of 2026-06-18:
-- All hooks emit empty-or-valid-JSON + exit 0 (non-zero = hook error, not a block)
-- Block decisions use `{"decision":"block"}` (Stop) or `{"permissionDecision":"deny"}` (PreToolUse)
-- `make test-hooks` added: 20+ cases covering all hooks across all input paths
-- 3 memory→guardrail hooks being wired: `guardrail_integrity_edit_pretool.sh` (prevent disable-as-fix), plus agent floor/ceiling improvements
-
-## Current Gate Status (2026-06-23)
-<!-- gate:begin -->
-From `.gate-status` (2026-06-24T00:25:28Z):
-- lint PASS 0
-- typecheck PASS 0
-- collect PASS 0
-- test INCOMPLETE (gate interrupted at test phase; no pass/fail recorded)
-
-<!-- gate:end -->
-
-## Ratchet Burn-Down Progress
-- Started: 93 entries (2026-06-11)
-- After session 4 (30d66a3): 23 entries — 17 strict + 6 flaky
-- Current: 14 entries — last verified 2026-06-23 against config/ratchet.yml
-- **Total burned**: ~79 entries (93 → 14, ~85% reduction)
-
-## Known Gaps / Next Steps
-
-1. **Master CI pending** — master@`41befa8` CI run must complete and pass; treat as unconfirmed until GREEN.
-2. **Multitasking bugs** — root-cause analysis in `docs/audit/floor_breach_rootcause_2026-06-17.md`; restart-bound bugs live in `.opencode/plugin/*.ts` (clear on opencode restart).
-3. **F5a auth fail-open** — needs explicit user go/no-go before wiring. NOT proceeding without it.
-4. **D-backlog (D-07..D-47)** — catalogued in `docs/audit/NEW_FINDINGS`; not yet scheduled.
-5. **Backlog JSON mt-6/mt-7 SHAs** — need to be repointed to real builder commits once branches land.
-6. **Ratchet** — 14 entries remaining; continue burn-down after master CI confirms green.
-7. Work plan: `GLM_REMEDIATION_GUIDE_3.md` (2026-06-12 validation pass, still current).
-
-## Historical Gate Status (2026-06-12, pre-wave-3)
-- lint PASS 0
-- typecheck PASS 0
-- collect PASS 0
-- test PASS (gate ALL PASSED at 65fc28b)
+- master advanced to `41befa8` on 2026-06-23 (prior session).
+- Phase 2 (self-update flow) — COMPLETE.
+- 12,627 tests collected.
+- Ratchet: 14 entries remaining (started at 93, ~85% reduction).
+- Gate status last seen (2026-06-24T00:25:28Z): lint PASS, typecheck PASS, collect PASS, test INCOMPLETE (interrupted).
