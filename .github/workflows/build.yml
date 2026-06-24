@@ -313,18 +313,35 @@ jobs:
     env:
       VERSION: ${{ needs.version.outputs.version }}
     steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Generate SBOM
+        run: |
+          uv sync
+          make sbom
       - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c  # v8.0.1 (node24)
         with:
           path: artifacts
           pattern: gludd-*
           merge-multiple: true
-      - name: List artifacts
-        run: ls -la artifacts/
+      - name: Stage release assets
+        run: |
+          mkdir -p release-assets
+          cp -v artifacts/* release-assets/
+          cp -v dist/sbom.json release-assets/sbom.json
+          cp -v LICENSE release-assets/LICENSE
+          cp -v THIRD_PARTY_LICENSES.md release-assets/THIRD_PARTY_LICENSES.md
+          echo "--- staged release assets ---"
+          ls -la release-assets/
       - uses: softprops/action-gh-release@b4309332981a82ec1c5618f44dd2e27cc8bfbfda  # v3.0.0 (node24)
         with:
-          tag_name: ${{ env.VERSION }}
-          name: ${{ env.VERSION }}
+          # Use the REAL git tag (with "v" prefix), not the PEP 440 version.
+          # env.VERSION strips the leading "v" for pyproject.toml, but the git
+          # tag is "v0.1.0-alpha.2" — using VERSION here created a release for a
+          # non-existent tag, so assets never attached to the real pushed tag.
+          tag_name: ${{ github.ref_name }}
+          name: ${{ github.ref_name }}
           draft: false
           prerelease: true
-          files: artifacts/*
+          files: release-assets/*
           generate_release_notes: true

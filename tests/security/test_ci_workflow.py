@@ -204,6 +204,51 @@ class TestReleaseJobGating:
                 f"release job must depend on '{job_name}' build job"
             )
 
+    def test_release_job_tag_name_matches_git_tag(self) -> None:
+        """The release job's tag_name MUST use github.ref_name (the real git tag,
+        e.g. ``v0.1.0-alpha.2``), NOT env.VERSION (which strips the leading ``v``
+        to produce the PEP 440 version ``0.1.0-alpha.2``).
+
+        Root cause of the alpha.2/alpha.3 missing-artifact bug: ``tag_name`` was
+        set to ``${{ env.VERSION }}`` = ``0.1.0-alpha.2``, which does not match
+        the pushed git tag ``v0.1.0-alpha.2``. ``softprops/action-gh-release``
+        therefore created a release for a non-existent tag, so assets were never
+        attached to the real tag — ``make verify-release-artifact`` reported zero
+        assets.
+        """
+        wf = _load_workflow()
+        release_steps = wf["jobs"]["release"].get("steps", [])
+        gh_release_steps = [
+            s for s in release_steps
+            if isinstance(s, dict) and "softprops/action-gh-release" in s.get("uses", "")
+        ]
+        assert gh_release_steps, "release job must use softprops/action-gh-release"
+        with_field = gh_release_steps[0].get("with", {})
+        tag_name = with_field.get("tag_name", "")
+        assert "${{ github.ref_name" in tag_name, (
+            f"release job tag_name must use github.ref_name (the real git tag with 'v' prefix); "
+            f"got: {tag_name!r}. Using env.VERSION (without 'v') creates a release for a "
+            f"non-existent tag, so assets never attach to the real pushed tag."
+        )
+
+    def test_release_job_includes_sbom_and_licenses(self) -> None:
+        """The release job must stage sbom.json, LICENSE, and THIRD_PARTY_LICENSES.md
+        into the release assets, not just the platform tarballs."""
+        wf = _load_workflow()
+        release_steps = wf["jobs"]["release"].get("steps", [])
+        all_run_text = " ".join(
+            s.get("run", "") for s in release_steps if isinstance(s, dict)
+        )
+        assert "sbom" in all_run_text.lower(), (
+            "release job must generate/stage the SBOM"
+        )
+        assert "LICENSE" in all_run_text, (
+            "release job must stage LICENSE into release assets"
+        )
+        assert "THIRD_PARTY_LICENSES" in all_run_text, (
+            "release job must stage THIRD_PARTY_LICENSES.md into release assets"
+        )
+
 
 class TestWorkflowYAMLValidity:
     def test_workflow_is_valid_yaml(self) -> None:

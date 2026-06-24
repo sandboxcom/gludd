@@ -981,9 +981,14 @@ git-fetch-sandboxcom:
 # Create an annotated tag and push it to sandboxcom to trigger the tag-gated
 # release job (version -> gate -> builds -> release). Usage:
 #   make git-tag-push TAG=v0.1.0-alpha.1 MSG='alpha release'
+#   make git-tag-push TAG=v0.1.0-alpha.2 MSG='retag' COMMIT=f1991f2
 git-tag-push:
-	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [MSG='...']"; exit 1; }
-	@git tag -a "$(TAG)" -m "$(if $(MSG),$(MSG),$(TAG))"
+	@[ -n "$(TAG)" ] || { echo "Usage: make git-tag-push TAG=v0.1.0-alpha.N [MSG='...'] [COMMIT=<sha>]"; exit 1; }
+	@if [ -n "$(COMMIT)" ]; then \
+		git tag -a "$(TAG)" "$(COMMIT)" -m "$(if $(MSG),$(MSG),$(TAG))"; \
+	else \
+		git tag -a "$(TAG)" -m "$(if $(MSG),$(MSG),$(TAG))"; \
+	fi
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push sandboxcom "$(TAG)"
 	@echo "Pushed tag $(TAG) to sandboxcom/gludd (triggers release job)"
 

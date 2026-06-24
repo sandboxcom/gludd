@@ -194,6 +194,22 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         except Exception:
             pass
 
+        config_dir = getattr(app.state, "_config_dir", None)
+        config_file_count = 0
+        if config_dir and os.path.isdir(config_dir):
+            config_file_count = sum(
+                1 for f in os.listdir(config_dir)
+                if f.endswith(".yml") or f.endswith(".yaml")
+            )
+
+        db_engine_obj = getattr(app.state, "_db_engine", None)
+        db_url = str(db_engine_obj.url) if db_engine_obj else ""
+        db_engine_name = "none"
+        if "sqlite" in db_url:
+            db_engine_name = "sqlite"
+        elif "postgresql" in db_url:
+            db_engine_name = "postgresql"
+
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
         if not qg:
@@ -209,6 +225,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "binary_versions": known_versions,
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
+            "config_file_count": config_file_count,
+            "db_engine": db_engine_name,
+            "db_url": db_url,
         }
 
     @app.get("/api/deployments")

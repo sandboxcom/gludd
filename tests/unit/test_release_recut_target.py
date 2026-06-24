@@ -103,6 +103,23 @@ class TestReleaseRecut:
         )
 
 
+class TestGitTagPushCommitParam:
+    """git-tag-push supports an optional COMMIT=<sha> to tag a non-HEAD commit."""
+
+    def test_recipe_uses_COMMIT_variable(self):
+        recipe = _recipe("git-tag-push")
+        assert "$(COMMIT)" in recipe, (
+            "git-tag-push recipe must reference $(COMMIT) so a specific "
+            "commit can be tagged instead of HEAD"
+        )
+
+    def test_usage_message_mentions_COMMIT(self):
+        recipe = _recipe("git-tag-push")
+        assert "COMMIT=<sha>" in recipe, (
+            "git-tag-push usage message must mention COMMIT=<sha>"
+        )
+
+
 class TestPhonyList:
     """Both new targets must be declared in the .PHONY list."""
 
