@@ -140,18 +140,27 @@ jobs:
   molecule:
     needs: [version, gate, test-shard]
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 15
     continue-on-error: true  # Non-blocking: 86 sequential scenarios can be slow under runner load. Release does NOT need molecule (not in release.needs). Keep non-blocking so CI verdict reflects gate+test+builds, not molecule flakiness.
+    strategy:
+      # Don't cancel the remaining shards when one fails — we want all 4
+      # shard results reported every run. Each shard runs ~¼ of the 86
+      # scenarios, so wall time drops from ~30 min to ~15 min and a failure
+      # surfaces at shard granularity within minutes.
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
-      - name: Run all molecule scenarios
+      - name: Run molecule shard ${{ matrix.shard }}/4
         # The `default` (localhost) driver needs no container, so this runs on
         # plain GH runners. Each scenario starts its own stdlib mock daemon via
-        # prepare.yml — nothing external is required.
+        # prepare.yml — nothing external is required. Scenarios are sorted and
+        # split into 4 contiguous groups by molecule-test-shard.
         run: |
           uv sync
-          make molecule-test-all
+          make molecule-test-shard SHARD=${{ matrix.shard }}/4
         env:
           GLUDD_PSK: ""
 

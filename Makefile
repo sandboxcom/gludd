@@ -560,6 +560,39 @@ collection-modules:
 molecule-scenarios:
 	@ls -1 molecule/playbooks 2>/dev/null || echo "No scenarios found"
 
+# Run ONE of N shards of the molecule scenarios. Usage:
+#   make molecule-test-shard SHARD=1/4
+# SHARD is "K/N" (1-indexed). Scenarios under molecule/playbooks/ are sorted
+# and split into N contiguous groups; shard K runs only its group. Each
+# scenario's output goes to /tmp/gludd-molecule-<name>.log; a PASS/FAIL
+# summary is printed at the end (non-zero exit if any scenario in the shard
+# fails). Designed to parallelize the CI molecule job into 4 ~15-min shards.
+molecule-test-shard:
+	@if [ -z "$(SHARD)" ]; then echo "Usage: make molecule-test-shard SHARD=K/N (e.g. 1/4)"; exit 1; fi; \
+	K=$$(echo "$(SHARD)" | cut -d/ -f1); \
+	N=$$(echo "$(SHARD)" | cut -d/ -f2); \
+	if [ "$$K" -lt 1 ] || [ "$$K" -gt "$$N" ]; then echo "ERROR: shard $$K out of range [1,$$N]"; exit 1; fi; \
+	SCENARIOS=$$(ls -1 molecule/playbooks/ 2>/dev/null | sort); \
+	TOTAL=$$(echo "$$SCENARIOS" | grep -c .); \
+	echo "=== molecule-test-shard: $$K/$$N of $$TOTAL scenarios ==="; \
+	SIZE=$$(($$TOTAL / $$N)); \
+	REM=$$(($$TOTAL % $$N)); \
+	if [ "$$K" -le "$$REM" ]; then SIZE=$$((SIZE + 1)); START=$$((($$K - 1) * $$SIZE)); else START=$$((($$K - 1) * $$SIZE + $$REM)); fi; \
+	MINE=$$(echo "$$SCENARIOS" | sed -n "$$((START + 1)),$$((START + SIZE))p"); \
+	echo "shard $$K/$$N: $$SIZE scenarios (offset $$START)"; \
+	FAILED=""; PASSED=""; \
+	for s in $$MINE; do \
+		echo "--- running scenario: $$s (log: /tmp/gludd-molecule-$$s.log) ---"; \
+		if $(MAKE) --no-print-directory molecule-test SCENARIO="$$s" > "/tmp/gludd-molecule-$$s.log" 2>&1; then \
+			PASSED="$$PASSED $$s"; echo "    PASS $$s"; \
+		else \
+			FAILED="$$FAILED $$s"; echo "    FAIL $$s (see /tmp/gludd-molecule-$$s.log)"; \
+		fi; \
+	done; \
+	echo ""; echo "PASSED:$$PASSED"; \
+	if [ -n "$$FAILED" ]; then echo "FAILED:$$FAILED"; exit 1; fi; \
+	echo "=== molecule-test-shard $$K/$$N: ALL scenarios passed ==="
+
 # Run EVERY scenario under molecule/playbooks/ in sequence; fail if any fail.
 # Per-scenario output goes to /tmp/gludd-molecule-<name>.log; a PASS/FAIL
 # summary is printed at the end (and on failure exits non-zero).
