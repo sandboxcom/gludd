@@ -10,7 +10,8 @@
     "./.opencode/plugin/enforce-make.ts",
     "./.opencode/plugin/enforce-floor.ts",
     "./.opencode/plugin/enforce-delegate.ts",
-    "./.opencode/plugin/enforce-stop.ts"
+    "./.opencode/plugin/enforce-stop.ts",
+    "./.opencode/plugin/enforce-deadline.ts"
   ],
   "skills": {
     "paths": [".opencode/skills"]

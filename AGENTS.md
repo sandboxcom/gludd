@@ -983,7 +983,7 @@ new-file / read-only tasks.
 
 Subagents fail when they try to run long operations. To maximize success rate:
 
-1. **Each subagent task must complete in under 5 minutes.** If a task takes longer, split it or run it in the foreground.
+1. **Each subagent task must complete in under 5 minutes.** If a task takes longer, split it or run it in the foreground. **This limit is NOW MECHANICALLY ENFORCED** by `.opencode/plugin/enforce-deadline.ts` — every task/agent/workflow dispatch records a wall-clock start timestamp in `/tmp/gludd-task-deadlines.json`; on every subsequent tool call the plugin scans for tasks whose elapsed time exceeds `GLUDD_TASK_TIMEOUT_MS` (default 300000 ms = 5 min) and emits a loud `TASK DEADLINE EXCEEDED: task <id> ...` `console.warn`. The orchestrator (you) sees the warning in its tool stream and MUST act: re-split the work, dispatch a replacement, or run it in the foreground. Plugins cannot hard-kill a running task — the warning is the signal, the response is yours. `GLUDD_TASK_DEADLINE_ENABLED=0` disables it.
 2. **NEVER dispatch `make gate` to a subagent** — it takes 40 minutes and will be cancelled. Run it in the foreground with a heartbeat.
 3. **Each subagent gets ONE focused task** — one file to edit, one test to run, one research question. Don't bundle multiple concerns.
 4. **Read-only research tasks are the most reliable** — they never conflict and rarely time out.

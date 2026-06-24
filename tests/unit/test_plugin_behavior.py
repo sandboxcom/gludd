@@ -22,6 +22,7 @@ ENFORCE_MAKE = PLUGIN_DIR / "enforce-make.ts"
 ENFORCE_DELEGATE = PLUGIN_DIR / "enforce-delegate.ts"
 ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
 ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
+ENFORCE_DEADLINE = PLUGIN_DIR / "enforce-deadline.ts"
 
 
 # --------------------------------------------------------------------------- #
@@ -434,3 +435,80 @@ class TestEnforceFloorConstants:
             "Ceiling-breach branch (active > CEILING) missing — the guardrail "
             "cannot detect an over-staffed pool (disk/overload risk)"
         )
+
+
+# --------------------------------------------------------------------------- #
+# 5. enforce-deadline.ts — subagent task wall-clock timeout enforcement
+# --------------------------------------------------------------------------- #
+class TestEnforceDeadlinePlugin:
+    """The 5-minute subagent task limit is now mechanically enforced."""
+
+    def test_plugin_file_exists(self):
+        assert ENFORCE_DEADLINE.exists(), (
+            "enforce-deadline.ts missing — the wall-clock task timeout has no "
+            "mechanical enforcement"
+        )
+
+    def test_references_timeout_env_var(self):
+        src = ENFORCE_DEADLINE.read_text()
+        assert "GLUDD_TASK_TIMEOUT_MS" in src, (
+            "enforce-deadline.ts must reference GLUDD_TASK_TIMEOUT_MS env var"
+        )
+
+    def test_default_timeout_is_5_minutes(self):
+        """Default timeout must be 300000 ms (5 min) per AGENTS.md."""
+        src = ENFORCE_DEADLINE.read_text()
+        m = re.search(
+            r'GLUDD_TASK_TIMEOUT_MS\s*\|\|\s*["\'](\d+)["\']',
+            src,
+        )
+        assert m, "GLUDD_TASK_TIMEOUT_MS default literal not found"
+        assert m.group(1) == "300000", (
+            f"Default timeout is {m.group(1)}ms, expected 300000 (5 min)"
+        )
+
+    def test_records_dispatch_timestamps(self):
+        """On task dispatch the plugin must record Date.now() in state file."""
+        src = ENFORCE_DEADLINE.read_text()
+        assert re.search(r"\[id\]\s*=\s*Date\.now\(\)", src), (
+            "Plugin must record dispatch timestamp via d[id] = Date.now()"
+        )
+        assert "GLUDD_TASK_DEADLINE_STATE" in src, (
+            "State file path env var not referenced"
+        )
+
+    def test_warns_on_deadline_exceeded(self):
+        """Over-time tasks must emit a TASK DEADLINE EXCEEDED console.warn."""
+        src = ENFORCE_DEADLINE.read_text()
+        assert "console.warn" in src, (
+            "Plugin must emit console.warn to surface the breach"
+        )
+        assert "TASK DEADLINE EXCEEDED" in src, (
+            "Warning must carry the load-bearing 'TASK DEADLINE EXCEEDED' header"
+        )
+        assert re.search(r"elapsed\s*>\s*TASK_TIMEOUT_MS", src), (
+            "Deadline check must compare elapsed > TASK_TIMEOUT_MS"
+        )
+
+    def test_cleans_up_on_task_completion(self):
+        """tool.execute.after must remove the task id from the state file."""
+        src = ENFORCE_DEADLINE.read_text()
+        assert "tool.execute.after" in src, (
+            "Plugin must hook tool.execute.after to clean up completed tasks"
+        )
+        assert "delete d[id]" in src, (
+            "tool.execute.after must delete the completed task from the state file"
+        )
+
+    def test_fail_open_wraps_enforcement(self):
+        """Plugin must fail-open — an internal error never wedges the session."""
+        src = ENFORCE_DEADLINE.read_text()
+        assert re.search(r"catch\s*\{[^}]*fail open[^}]*\}", src), (
+            "Plugin must wrap enforcement in try/catch with 'fail open' comment"
+        )
+
+    def test_dispatch_tools_covered(self):
+        """Must hook task/agent/workflow dispatch tools."""
+        src = ENFORCE_DEADLINE.read_text()
+        for t in ("task", "agent", "workflow"):
+            assert f'"{t}"' in src, f"Dispatch tool '{t}' not covered by deadline plugin"
