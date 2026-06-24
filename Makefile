@@ -2973,4 +2973,3 @@ replace-text:
 	@[ -n "$(FILE)" ] && [ -n "$(OLD_FILE)" ] && [ -n "$(NEW_FILE)" ] || { \
 		echo "Usage: make replace-text FILE=<file> OLD_FILE=<old-text-file> NEW_FILE=<new-text-file>"; exit 1; }
 	@$(PYTHON) scripts/replace_text.py "$(FILE)" "$(OLD_FILE)" "$(NEW_FILE)"
-

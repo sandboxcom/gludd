@@ -22,7 +22,6 @@ import time
 import httpx
 import pytest
 
-
 GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
 
 _DAEMON_PID_DIR = os.path.expanduser("~/.local/share/general-ludd")
