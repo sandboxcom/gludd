@@ -270,10 +270,7 @@ class ModelGateway:
         # the gate. If no messages are supplied, fall back to the caller value
         # (preserves backward compatibility for callers that pre-computed cost).
         server_cost = self.estimate_cost(profile, messages) if messages is not None else None
-        if server_cost is not None:
-            effective_cost = max(estimated_cost, server_cost)
-        else:
-            effective_cost = estimated_cost
+        effective_cost = max(estimated_cost, server_cost) if server_cost is not None else estimated_cost
         if effective_cost > budget_remaining:
             return False
         return not (profile.api_metered and effective_cost > profile.run_budget_usd)
@@ -293,11 +290,7 @@ class ModelGateway:
             return 0.0
         input_chars = 0
         for m in messages:
-            content = ""
-            if isinstance(m, dict):
-                content = str(m.get("content", "") or "")
-            else:
-                content = str(getattr(m, "content", "") or "")
+            content = str(m.get("content", "") or "") if isinstance(m, dict) else str(getattr(m, "content", "") or "")
             input_chars += len(content)
         approx_input_tokens = input_chars // 4
         approx_output_tokens = profile.max_output_tokens
