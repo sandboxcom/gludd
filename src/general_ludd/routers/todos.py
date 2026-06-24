@@ -202,6 +202,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 if f.endswith(".yml") or f.endswith(".yaml")
             )
 
+        engine = getattr(app.state, "_db_engine", None)
+        if engine is not None:
+            db_url = engine.url.render_as_string(hide_password=True)
+            db_engine = engine.url.render_as_string(hide_password=True)
+        else:
+            db_url = "sqlite"
+            db_engine = "None"
+
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
         if not qg:
@@ -218,6 +226,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
             "config_file_count": config_file_count,
+            "db_url": db_url,
+            "db_engine": db_engine,
         }
 
     @app.get("/api/deployments")

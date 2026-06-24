@@ -44,6 +44,16 @@ commits; the `release` CI job (`needs: [gate]`) was skipped.
 2. Wait for alpha.3 CI green → run `make release-cut TAG=v0.1.0-alpha.3 MSG='...'`.
 3. After release-cut completes → verify artifact with `make verify-release-artifact`.
 
+## Current Gate Status
+
+<!-- gate:begin -->
+- lint PASS 0
+- typecheck PASS 0
+- collect PASS 0
+- test INCOMPLETE (interrupted)
+- smoke PASS
+<!-- gate:end -->
+
 ## Historical State
 
 - master advanced to `41befa8` on 2026-06-23 (prior session).

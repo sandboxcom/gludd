@@ -170,6 +170,19 @@ const CONSTRAINT_AS_STOP_PATTERNS: RegExp[] = [
   // "we need/must (to) restart/wait/stop" — collective deferred-action framing.
   // "to" is optional: "we must wait" and "we need to wait" are both constraints.
   /\bwe (?:need|must)(?: to)? (?:restart|wait|stop)\b/i,
+  // PASSIVE-WAIT patterns (2026-06-24 incident): agent declares it will wait
+  // for an external event instead of actively working. The agent said "I'm
+  // monitoring CI and will cut the release the moment it goes green. Nothing
+  // else can be committed meanwhile." — a textbook passive-wait stop that none
+  // of the above patterns caught.
+  /\bi('?m| am) monitoring\b/i,                    // "I'm monitoring"
+  /\bmonitoring (?:ci|the (?:ci|pipeline|status))\b/i, // "monitoring CI/pipeline"
+  /\bwill .{0,40}?\b(?:when|once|the moment|as soon as)\b/i, // "will X when/once Y"
+  /\bnothing else can be\b/i,                      // "nothing else can be committed/done"
+  /\bi'?ll (?:wait|check back|poll)\b/i,           // "I'll wait/check back/poll"
+  /\bwaiting for (?:ci|green|the pipeline)\b/i,    // "waiting for CI"
+  /\bstill (?:waiting|pending)\b/i,                // "still waiting/pending"
+  /\bblocked on\b/i,                               // "blocked on CI/gate"
 ]
 
 function detectConstraintAsStop(text: string): boolean {
@@ -178,19 +191,23 @@ function detectConstraintAsStop(text: string): boolean {
 
 function constraintBlockResponse(): string {
   return [
-    "⛔ CONSTRAINT DETECTED: your final message frames a constraint (restart,",
-    "wait, can't-be-done, limitation, no-way) as a terminal answer. Policy",
-    "(AGENTS.md 'Constraints Are To Engineer Around'): a constraint is a design",
-    "prompt, NEVER a dead end.",
+    "⛔ CONSTRAINT / PASSIVE-WAIT DETECTED: your final message frames a constraint",
+    "(restart, wait, can't-be-done, limitation, no-way) OR declares passive waiting",
+    "(monitoring, will-do-X-when-Y, nothing-else-can-be-done, blocked-on). Policy",
+    "(AGENTS.md 'Constraints Are To Engineer Around' + 'No Unseen Events'): a",
+    "constraint is a design prompt, NEVER a dead end. Passive waiting is NOT work.",
     "",
     "Engineer a workaround NOW or dispatch a research task to find one.",
     "Do NOT park this on the user. Do NOT instruct the user to restart / wait /",
-    "reconfigure. If no workaround is obvious, that is a research task to",
-    "DISPATCH (worktree agent), not a stopping point.",
+    "reconfigure. Do NOT declare 'I'm monitoring' or 'will do X when Y' — that is",
+    "a STOP disguised as activity. If CI is pending, DISPATCH a task to investigate",
+    "failures, burn ratchet entries, fix D-backlog items, or do ANY other useful",
+    "work in parallel. The wait itself is the bug.",
     "",
     "Examples of correct responses: shard the job + poll annotations; add the",
     "missing make target; back off and retry; run the slow test in CI instead",
-    "of locally. Pick one and EXECUTE.",
+    "of locally; dispatch a subagent to fix an unrelated issue while waiting.",
+    "Pick one and EXECUTE.",
   ].join("\n")
 }
 

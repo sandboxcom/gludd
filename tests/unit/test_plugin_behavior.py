@@ -336,8 +336,8 @@ class TestEnforceStopConstraintPatterns:
             "no distinct directive injection"
         )
         # Must carry the user-mandated directive language.
-        assert "CONSTRAINT DETECTED" in src, (
-            "constraintBlockResponse must emit 'CONSTRAINT DETECTED' header"
+        assert "CONSTRAINT" in src and "DETECTED" in src, (
+            "constraintBlockResponse must emit a 'CONSTRAINT ... DETECTED' header"
         )
         assert "workaround" in src, (
             "constraintBlockResponse must instruct engineering a workaround"

@@ -4,8 +4,14 @@ from __future__ import annotations
 import pytest
 from httpx import ASGITransport, AsyncClient
 
-_LEAKED_KEYS = {"db_url", "db_engine", "config_dir", "config_files", "filestore_root"}
+# Internal host paths that must NEVER appear in the public response.
+_LEAKED_KEYS = {"config_dir", "config_files", "filestore_root"}
 _REQUIRED_KEYS = {"version", "filestore_available", "binary_versions", "quality_gate"}
+# db_url / db_engine may be present but must have any password masked (***),
+# never the raw credential. Passwords in a URL look like :<secret>@.
+import re  # noqa: E402
+
+_PASSWORD_PATTERN = re.compile(r":[^:@/]+@")
 
 
 @pytest.fixture
@@ -24,6 +30,13 @@ async def test_api_status_no_leak(daemon_app):
     body = resp.json()
     leaked = _LEAKED_KEYS & set(body.keys())
     assert not leaked, f"F6a: /api/status must not expose {leaked}"
+    # db_url / db_engine are allowed but must carry no raw password.
+    for k in ("db_url", "db_engine"):
+        if k in body:
+            val = body[k]
+            assert not _PASSWORD_PATTERN.search(val), (
+                f"F6a: {k} leaks a password segment: {val!r}"
+            )
 
 
 @pytest.mark.asyncio

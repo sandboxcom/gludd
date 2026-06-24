@@ -38,7 +38,7 @@ const FORCE_DELEGATE_MAXBLOCK = parseInt(process.env.GLUDD_FORCE_DELEGATE_MAXBLO
 const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/gludd-force-delegate.json"
 
 const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak"
-const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "8", 10)
+const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "4", 10)
 
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
 const DISK_HARD_FLOOR_GB = parseFloat(process.env.GLUDD_DISK_HARD_FLOOR_GB || "1.0")
@@ -380,7 +380,10 @@ function writeStreak(n: number): void {
 }
 
 function isMainthreadTool(tool: string): boolean {
-  return ["read", "edit", "write", "bash", "grep", "glob", "list"].includes(tool)
+  // Mutation tools that should be blocked after threshold.
+  // Read-only tools (read, glob, grep) are ALWAYS allowed so the orchestrator
+  // can investigate before dispatching — only bash/edit/write are gated.
+  return ["edit", "write", "bash"].includes(tool)
 }
 
 function isDelegateTool(tool: string): boolean {
