@@ -7,6 +7,7 @@ D-35: JobSpec.timeout field; wait_for caps at GLUDD_JOB_TIMEOUT_MAX.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import os
 from typing import Any
 from unittest.mock import patch
@@ -223,10 +224,8 @@ class TestCleanupOnFailureD09:
         runner.write_vars = bad_write  # type: ignore[method-assign]
 
         client = _make_client(runner)
-        try:
+        with contextlib.suppress(Exception):
             client.post("/jobs/execute", json=_make_job(job_id="TESTJOBWV"), timeout=10)
-        except Exception:
-            pass
 
         job_dir = tmp_path / "TESTJOBWV"
         assert not job_dir.exists(), "job dir leaked after write_vars failure"
