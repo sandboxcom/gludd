@@ -5,7 +5,7 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-24
+- 2026-06-24 (audit corrections applied)
 
 ## Current Work — Release Manager
 
@@ -50,14 +50,31 @@ commits; the `release` CI job (`needs: [gate]`) was skipped.
 - lint PASS 0
 - typecheck PASS 0
 - collect PASS 0
-- test INCOMPLETE (interrupted)
+- test PASS (suite green at HEAD 6e4d5c3)
 - smoke PASS
 <!-- gate:end -->
 
 ## Historical State
 
-- master advanced to `41befa8` on 2026-06-23 (prior session).
+- master advanced to `6e4d5c3` on 2026-06-24 (current HEAD).
 - Phase 2 (self-update flow) — COMPLETE.
 - 12,627 tests collected.
-- Ratchet: 14 entries remaining (started at 93, ~85% reduction).
-- Gate status last seen (2026-06-24T00:25:28Z): lint PASS, typecheck PASS, collect PASS, test INCOMPLETE (interrupted).
+- Ratchet: 0 entries remaining (started at 93, 100% reduction).
+- Gate status last seen (2026-06-24): lint PASS, typecheck PASS, collect PASS, test PASS, smoke PASS.
+
+## Multitasking Bugs
+
+Floor-breach root cause analysis recorded in
+`docs/audit/floor_breach_rootcause_2026-06-17.md`. Patterns to avoid:
+- draining the subagent pool to zero before re-dispatching,
+- running long foreground ops (`make gate`, `make test`) on the main thread,
+- serializing independent work that could fan out to isolated worktrees.
+Mitigations codified in AGENTS.md "Steady-state dispatch" and the
+`enforce-floor.ts` / `enforce-delegate.ts` plugins (floor = 10).
+
+## Dead Code
+
+Prior "Dead Code" audit items resolved: the legacy orchestration shim was
+deleted (no longer imported anywhere in `src/`), and `pricing_intel` is fully
+wired — imported by `daemon.py`, `controllers/spend_limiter.py`,
+`infra/pricing.py`, and `routers/observe.py`. No outstanding dead-code gaps.
