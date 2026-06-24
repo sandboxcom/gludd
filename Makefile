@@ -2690,6 +2690,23 @@ release-recut:
 	echo "    make verify-release-artifact TAG=$(TAG)"; \
 	exit 1
 
+# release-create — manually create a GitHub Release with assets (fallback when CI release job fails).
+# Builds platform artifacts locally, stages them, and creates the release via gh.
+release-create:
+	@echo "[release-create] building artifacts locally..."
+	$(MAKE) build-executable
+	$(MAKE) sbom
+	@mkdir -p release-assets
+	@cp -v dist/gludd-* release-assets/ 2>/dev/null || true
+	@cp -v dist/sbom.json release-assets/ 2>/dev/null || true
+	@cp -v LICENSE release-assets/ 2>/dev/null || true
+	@cp -v THIRD_PARTY_LICENSES.md release-assets/ 2>/dev/null || true
+	@echo "[release-create] creating GitHub Release $(TAG)..."
+	gh release create "$(TAG)" release-assets/* --title "$(TAG)" --notes "$(MSG)" --prerelease || \
+		gh release upload "$(TAG)" release-assets/* --clobber
+	@echo "[release-create] verifying..."
+	$(MAKE) verify-release-artifact TAG=$(TAG)
+
 # ---------------------------------------------------------------------------
 # True fast-forward without re-running the gate
 # ---------------------------------------------------------------------------
