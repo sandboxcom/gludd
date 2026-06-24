@@ -128,7 +128,15 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\bnot yet (?:pushed|opened|taken|merged|run|applied|done|created)\b/i,
   /\bhave not taken\b/i, /\boutward action i have not\b/i,
   /\bcaptured (?:for|as)\b.{0,40}?\bfollow-?up\b/i, /\bfor a future pr\b/i,
-  /\bto get (?:a )?(?:ci|green|verdict|coverage)\b.{0,40}?\b(?:requires?|need|would|open|push)\b/i,
+  // Status-report-as-deliverable (2026-06-24 incident): agent presented a
+  // markdown status table + "The ONLY remaining blocker" + "You can help:
+  // check the Actions UI" + "The moment CI goes green, I execute" — a status
+  // report that ended the turn without a tool call. These patterns catch that.
+  /\bthe only (?:remaining|open|outstanding)\b/i,   // "the ONLY remaining blocker"
+  /\byou can (?:help|check|verify|look at)\b/i,      // "You can help: check..."
+  /\bstatus of (?:your|the|all|this)\b/i,            // "Status of your requests"
+  /\bthe moment\b/i,                                  // "The moment CI goes green" (standalone)
+  /\ball code work is (?:done|complete|committed)\b/i, // "all code work is DONE"
 ]
 
 function detectNoWaitPattern(text: string): boolean {
