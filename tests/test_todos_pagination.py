@@ -6,9 +6,9 @@ from httpx import ASGITransport, AsyncClient
 
 
 def _make_app_with_todos(n: int):
-    from general_ludd.daemon import _daemon_state, create_daemon_app
+    import general_ludd.daemon as dm
 
-    app = create_daemon_app(tick_interval=0.01)
+    app = dm.create_daemon_app(tick_interval=0.01)
     # No session factory — use in-memory daemon state.
     todos = [
         {
@@ -23,8 +23,8 @@ def _make_app_with_todos(n: int):
         }
         for i in range(n)
     ]
-    # Replace the shared list in-place so the app closure sees it.
-    _daemon_state["todos"][:] = todos
+    # Mutate the CURRENT module attribute (create_daemon_app rebinds _daemon_state).
+    dm._daemon_state["todos"][:] = todos
     return app, todos
 
 
