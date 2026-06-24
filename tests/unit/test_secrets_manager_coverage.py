@@ -35,11 +35,11 @@ class TestConnect:
     def test_connect_with_local_bootstrap_result(self):
         mgr = SecretsManager()
         mgr.bootstrap_local()
-        with patch("general_ludd.secrets.manager.hvac") as mock_hvac:
-            mock_hvac.Client.return_value = MagicMock()
+        mock_client = MagicMock()
+        with patch("general_ludd.secrets.manager.hvac.Client", return_value=mock_client) as mock_client_cls:
             mgr.connect()
-            mock_hvac.Client.assert_called_once()
-            assert mgr._client is mock_hvac.Client.return_value
+        mock_client_cls.assert_called_once()
+        assert mgr._client is mock_client
 
     def test_connect_without_external_or_bootstrap_raises(self):
         mgr = SecretsManager()

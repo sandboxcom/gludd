@@ -45,8 +45,6 @@ class TestRealDaemonEnhancedStatus:
                 "filestore_available",
                 "filestore_binaries",
                 "binary_versions",
-                "db_engine",
-                "db_url",
             ]
             for field in required:
                 assert field in data, f"Missing field '{field}' in status response"
@@ -89,8 +87,8 @@ class TestRealDaemonEnhancedStatus:
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/status")
             data = resp.json()
-            assert "db_engine" in data
-            assert "db_url" in data
+            assert "db_engine" not in data, "db_engine must not leak via /api/status (F6a)"
+            assert "db_url" not in data, "db_url must not leak via /api/status (F6a)"
 
     @pytest.mark.asyncio
     async def test_status_config_fields_exist(self, transport):

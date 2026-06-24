@@ -8,10 +8,6 @@
 
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_starts_daemon_and_it_serves_healthz: "flaky TUI daemon start PTY — environment-dependent (xpasses when a PTY+daemon are available; strict=False so the xpass is non-fatal)"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_shows_running_after_daemon_start: "flaky TUI daemon start running — environment-dependent (xpasses when a PTY+daemon are available; strict=False so the xpass is non-fatal)"
-tests/unit/test_secrets.py::TestOpenBaoSecretsManager::test_openbao_connect_external: "flaky xdist race on hvac patch — pre-existing"
-tests/unit/test_secrets_manager_coverage.py::TestConnect::test_connect_with_local_bootstrap_result: "flaky xdist race on hvac patch — pre-existing"
 tests/unit/test_tui_navigation_e2e.py::TestTabSpaceNavigation::test_enter_enters_submenu: "flaky StopIteration — pre-existing"
 tests/e2e/test_tui_daemon_start.py::TestTUIDaemonStart::test_tui_daemon_not_running_shows_stopped: "flaky PTY stderr bleed under xdist parallel load — pkg_resources warning captured before TUI renders; passes in isolation"
 
-tests/unit/test_gate_concurrency.py::TestRunGateScript::test_second_invocation_rejected_when_lock_held: "flaky basetemp cleanup race — rejected invocation may create basetemp before lock check"
-tests/unit/test_gate_concurrency.py::TestRunGateScript::test_subagent_guard_refused_via_claude_agent_id: "flaky basetemp cleanup race — same root cause as test_second_invocation_rejected_when_lock_held"

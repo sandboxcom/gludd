@@ -20,6 +20,7 @@ import re
 import subprocess
 import tempfile
 from pathlib import Path
+from uuid import uuid4
 
 # The script's basetemp is `mktemp -d /tmp/gludd-gate-XXXXXX` → basename is
 # "gludd-gate-" followed by ONLY alphanumerics. Test artifacts (workdirs, lock
@@ -311,13 +312,17 @@ class TestRunGateScript:
         workdir = Path(tempfile.mkdtemp(prefix="gludd-gate-test-"))
         (workdir / ".gate-status").write_text("")
 
-        before_temps = set(glob.glob("/tmp/gludd-gate-[A-Za-z0-9]*"))
+        # Unique basetemp prefix so concurrent test runs don't pollute each
+        # other's leak check.
+        prefix = f"/tmp/gludd-gate-test-{os.getpid()}-{uuid4().hex[:6]}"
+        before_temps = set(glob.glob(f"{prefix}-[A-Za-z0-9]*"))
 
         env = {
             **os.environ,
             "PYTEST_CMD": 'python3 -c "import sys; sys.exit(0)"',
             "GATE_LOCK_FILE": tempfile.mktemp(prefix="gludd-gate-subagent-lock-", dir="/tmp"),
             "CLAUDE_AGENT_ID": "test-agent-abc123",
+            "GATE_BASETEMP_PREFIX": prefix,
         }
         # Ensure the override is NOT set.
         env.pop("GLUDD_GATE_AUTHORIZED", None)
@@ -331,7 +336,7 @@ class TestRunGateScript:
             timeout=10,
         )
 
-        after_temps = set(glob.glob("/tmp/gludd-gate-[A-Za-z0-9]*"))
+        after_temps = set(glob.glob(f"{prefix}-[A-Za-z0-9]*"))
         new_dirs = {p for p in (after_temps - before_temps) if Path(p).is_dir()}
 
         assert result.returncode != 0, (

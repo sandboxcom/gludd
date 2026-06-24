@@ -75,16 +75,15 @@ class TestOpenBaoSecretsManager:
 
     def test_openbao_connect_external(self):
         mock_client = MagicMock()
-        with patch("general_ludd.secrets.manager.hvac") as mock_hvac:
-            mock_hvac.Client.return_value = mock_client
-            mgr = self._make_manager(
-                mode="external",
-                external_url="https://bao.example.com:8200",
-                external_token="s.ext-token",
-            )
+        mgr = self._make_manager(
+            mode="external",
+            external_url="https://bao.example.com:8200",
+            external_token="s.ext-token",
+        )
+        with patch("general_ludd.secrets.manager.hvac.Client", return_value=mock_client) as mock_client_cls:
             mgr.connect()
-            mock_hvac.Client.assert_called_once()
-            assert mgr._client is mock_client
+        mock_client_cls.assert_called_once()
+        assert mgr._client is mock_client
 
     def test_openbao_setup_approle(self):
         mgr = self._make_manager()
