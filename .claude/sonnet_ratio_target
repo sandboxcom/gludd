@@ -1,1 +1,1 @@
-{"target_share": 0.0, "until_epoch": 1784495559, "_note": "TEMPORARY 0.0 for glm-5.2 main session; permanent fix in enforce-delegate.ts mainModelIsExpensive() loads on next restart. Restore to 0.91 after restart if main thread is opus."}
+{"target_share": 0.0, "until_epoch": 1784495559, "_note": "TEMPORARY 0.0 for glm-5.2 main session; permanent fix in enforce-delegate.ts mainModelIsExpensive() loads on next restart."}

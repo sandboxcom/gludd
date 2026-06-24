@@ -108,6 +108,35 @@ function readTargetShare(): number {
   }
 }
 
+// Main-model detection — when the parent/main thread is NOT an expensive
+// (opus-class) model, there is no cost asymmetry to optimize: every subagent
+// inherits the parent, and the harness may not expose model:"sonnet" on the
+// Task tool. In that case enforcement is skipped (record-only).
+const MAIN_MODEL_FILE = process.env.GLUDD_MAIN_MODEL_FILE
+  || path.join(process.cwd(), ".claude", "main_model")
+const EXPENSIVE_MAIN_MARKERS = ["opus", "claude-3-opus", "claude-opus", "o1", "o3", "gpt-4", "gpt-4o"]
+
+function detectMainModel(): string {
+  const env = (process.env.GLUDD_MAIN_MODEL || process.env.OPENCODE_MODEL || "").trim().toLowerCase()
+  if (env) return env
+  try {
+    const v = fs.readFileSync(MAIN_MODEL_FILE, "utf8").trim().toLowerCase()
+    if (v) return v
+  } catch { /* not present */ }
+  try {
+    const cfg = JSON.parse(fs.readFileSync(path.join(process.cwd(), "opencode.json"), "utf8"))
+    const m = (cfg.model || cfg.defaultModel || "").toString().trim().toLowerCase()
+    if (m) return m
+  } catch { /* not present / no model field */ }
+  return ""
+}
+
+function mainModelIsExpensive(): boolean {
+  const m = detectMainModel()
+  if (!m) return true  // fail-safe: unknown -> preserve old behavior (enforce)
+  return EXPENSIVE_MAIN_MARKERS.some(e => m.includes(e))
+}
+
 // Only an EXPLICIT model:"sonnet" counts as sonnet. Absent/empty model inherits
 // the parent (expensive) and is treated as non-sonnet — the operator must set
 // model:"sonnet" explicitly to earn headroom.
