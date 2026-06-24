@@ -67,6 +67,16 @@ class TestPrepareJobDirsD10:
         with pytest.raises(FileExistsError):
             runner.prepare_job_dirs("JOBDUP")
 
+    def test_duplicate_error_message_is_clear(self, tmp_path: Any) -> None:
+        """D-10: the FileExistsError message names the job_id and refuses overwrite."""
+        runner = AnsibleRunnerAdapter(private_data_dir=str(tmp_path))
+        runner.prepare_job_dirs("JOBMSG")
+        with pytest.raises(FileExistsError) as exc_info:
+            runner.prepare_job_dirs("JOBMSG")
+        msg = str(exc_info.value)
+        assert "JOBMSG" in msg
+        assert "already exists" in msg.lower()
+
     def test_subdirs_created_with_exist_ok(self, tmp_path: Any) -> None:
         runner = AnsibleRunnerAdapter(private_data_dir=str(tmp_path))
         dirs = runner.prepare_job_dirs("JOBSUB")
@@ -158,6 +168,68 @@ class TestCleanupOnFailureD09:
         assert resp.status_code == 200
         job_dir = tmp_path / "TESTJOBOK"
         assert job_dir.exists()
+
+    def test_job_dir_removed_on_timeout(self, tmp_path: Any) -> None:
+        """D-09: a job that times out must still have its workspace cleaned up.
+
+        asyncio.wait_for raises TimeoutError (an Exception) — covered by the
+        except handler — but this guards against a regression that narrows the
+        handler (e.g. except BaseException removal) silently leaking the dir.
+        """
+        runner = AnsibleRunnerAdapter(private_data_dir=str(tmp_path))
+        noop = tmp_path / "noop.yml"
+        noop.write_text("---\n- hosts: all\n  tasks: []\n")
+        runner.registry["noop.yml"] = str(noop)
+
+        import threading
+        _release = threading.Event()
+
+        def stalling_run(playbook_name: str, **kwargs: Any) -> dict[str, Any]:
+            _release.wait(timeout=5.0)
+            return {"status": "successful", "rc": 0, "events": [], "artifacts": []}  # pragma: no cover
+
+        runner.run_playbook = stalling_run  # type: ignore[method-assign]
+
+        client = _make_client(runner)
+        try:
+            client.post(
+                "/jobs/execute",
+                json=_make_job(job_id="TESTJOBTIMEOUT", timeout=0.05),
+                timeout=10,
+            )
+        except Exception:
+            pass
+        finally:
+            _release.set()
+
+        job_dir = tmp_path / "TESTJOBTIMEOUT"
+        assert not job_dir.exists(), "job dir leaked after timeout"
+
+    def test_job_dir_removed_when_write_vars_raises(self, tmp_path: Any) -> None:
+        """D-09: cleanup must also cover failures BEFORE run_playbook runs.
+
+        write_vars lives inside the same try block as run_playbook, so a
+        failure there must still tear down the prepared workspace.
+        """
+        runner = AnsibleRunnerAdapter(private_data_dir=str(tmp_path))
+        noop = tmp_path / "noop.yml"
+        noop.write_text("---\n- hosts: all\n  tasks: []\n")
+        runner.registry["noop.yml"] = str(noop)
+
+        def bad_write(*args: Any, **kwargs: Any) -> None:
+            raise OSError("simulated write failure")
+
+        runner.run_playbook = lambda **k: {"rc": 0}  # never reached  # type: ignore[method-assign]
+        runner.write_vars = bad_write  # type: ignore[method-assign]
+
+        client = _make_client(runner)
+        try:
+            client.post("/jobs/execute", json=_make_job(job_id="TESTJOBWV"), timeout=10)
+        except Exception:
+            pass
+
+        job_dir = tmp_path / "TESTJOBWV"
+        assert not job_dir.exists(), "job dir leaked after write_vars failure"
 
 
 # ---------------------------------------------------------------------------

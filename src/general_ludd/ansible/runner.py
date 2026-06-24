@@ -87,7 +87,13 @@ class AnsibleRunnerAdapter:
             "inventory": os.path.join(job_dir, "inventory"),
             "artifacts": os.path.join(job_dir, "artifacts"),
         }
-        os.makedirs(job_dir, exist_ok=False)
+        try:
+            os.makedirs(job_dir, exist_ok=False)
+        except FileExistsError as exc:
+            raise FileExistsError(
+                f"Job workspace already exists for job_id={job_id!r} "
+                f"(dir={job_dir}). Refusing to overwrite an existing job workspace."
+            ) from exc
         for d in (v for k, v in dirs.items() if k != "root"):
             os.makedirs(d, exist_ok=True)
         return dirs

@@ -50,17 +50,25 @@ commits; the `release` CI job (`needs: [gate]`) was skipped.
 - lint PASS 0
 - typecheck PASS 0
 - collect PASS 0
-- test PASS (suite green at HEAD 6e4d5c3)
+- test PASS (284+ tests green at HEAD d4f684d)
 - smoke PASS
 <!-- gate:end -->
 
 ## Historical State
 
-- master advanced to `6e4d5c3` on 2026-06-24 (current HEAD).
-- Phase 2 (self-update flow) — COMPLETE.
-- 12,627 tests collected.
+- master advanced to `d4f684d` on 2026-06-24 (current HEAD).
 - Ratchet: 0 entries remaining (started at 93, 100% reduction).
-- Gate status last seen (2026-06-24): lint PASS, typecheck PASS, collect PASS, test PASS, smoke PASS.
+- Gate status last seen (2026-06-24): lint PASS, typecheck PASS, collect PASS, test PASS (284+), smoke PASS.
+- CI run for `d4f684d` is pending at time of writing.
+
+## Known Gaps
+
+None open. CI for `d4f684d` pending — verify green before next release-cut.
+
+## Next Steps
+
+1. Await CI green for `d4f684d`.
+2. After green → proceed with next release-cut per TASKS.md.
 
 ## Multitasking Bugs
 
