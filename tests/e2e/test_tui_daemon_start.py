@@ -97,7 +97,7 @@ def _collect_pty_output(master_fd: int, timeout: float = 1.0) -> bytes:
 
 
 @pytest.mark.skipif(
-    os.environ.get("CI"),
+    os.environ.get("CI") is not None,
     reason="PTY/gunicorn env-dependent under xdist",
 )
 class TestTUIDaemonStart:
