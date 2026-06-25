@@ -160,7 +160,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             results = [t for t in results if t.get("project_id") == project_id]
         return {"todos": results, "count": len(results)}
 
-    @app.get("/api/status")
+    @app.get(
+        "/api/status",
+        summary="Get daemon status, queue depths, and hardware info",
+        description=(
+            "Observability snapshot: version, uptime ticks, per-queue counts, "
+            "tick metrics, filestore + binary versions, quality gate, hardware "
+            "profile. Public GET."
+        ),
+    )
     async def api_status() -> dict[str, Any]:
         factory = _get_session_factory(app)
         queue_depths: dict[str, int] = {}

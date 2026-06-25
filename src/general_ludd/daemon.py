@@ -1598,7 +1598,14 @@ def create_daemon_app(
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
 
-    @app.get("/healthz")
+    @app.get(
+        "/healthz",
+        summary="Liveness probe — daemon process is alive",
+        description=(
+            "Returns 200 with security-posture + budget flags when alive; "
+            "503 on degraded startup. Public, no auth."
+        ),
+    )
     async def healthz() -> dict[str, Any]:
         degraded = getattr(app.state, "_degraded", None)
         # A-3: advertise the no-auth security posture so operators (and the
@@ -1643,7 +1650,14 @@ def create_daemon_app(
             "budget_exhausted": budget_exhausted,
         }
 
-    @app.get("/readyz")
+    @app.get(
+        "/readyz",
+        summary="Readiness probe — daemon can accept work",
+        description=(
+            "200 when ready (not degraded, event loop alive); 503 otherwise. "
+            "Public, no auth."
+        ),
+    )
     async def readyz() -> Any:
         """Readiness probe (N1/C6, W3.4): 503 when degraded or event-loop done/cancelled.
 

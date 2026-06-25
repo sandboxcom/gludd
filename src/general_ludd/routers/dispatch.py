@@ -80,7 +80,15 @@ def register(
         while len(_recent_dispatches) > _MAX_RECENT_DISPATCHES:
             _recent_dispatches.pop(0)
 
-    @app.post("/api/dispatch")
+    @app.post(
+        "/api/dispatch",
+        summary="Dispatch tool calls (MCP/skill/role/collection)",
+        description=(
+            "HTTP shim over DynamicDispatcher: supply tool_calls "
+            "[{kind,name,args}]. Capability-gated; capped at 20 calls/request "
+            "(D-16). PSK-authenticated."
+        ),
+    )
     async def api_dispatch(body: dict[str, Any]) -> dict[str, Any]:
         """Dispatch one or more tool-call requests from a model turn.
 

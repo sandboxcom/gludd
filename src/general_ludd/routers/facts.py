@@ -303,7 +303,16 @@ def _schedule_facet(app: FastAPI) -> dict[str, Any]:
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
-    @app.get("/api/facts")
+    @app.get(
+        "/api/facts",
+        summary="Get consolidated daemon facts for playbooks",
+        description=(
+            "Unified read-only snapshot of daemon state: work queue, todos, "
+            "model profiles, routing, budget, metrics, traces, codebase "
+            "intelligence, features, accounting, scheduling, coordination. "
+            "PSK-authenticated."
+        ),
+    )
     async def api_facts(project_id: str | None = None) -> dict[str, Any]:
         work: dict[str, Any] = {}
         todos: dict[str, Any] = {}

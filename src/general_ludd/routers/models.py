@@ -369,7 +369,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "model_recommendation": recommendation,
         }
 
-    @app.post("/admin/models/call")
+    @app.post(
+        "/admin/models/call",
+        summary="Call a model with a prompt via the gateway",
+        description=(
+            "Synchronous single-turn generation with optional system prompt, "
+            "explicit/auto-routed model profile, and best-effort "
+            "structured-output hints. Returns text + chosen profile + token "
+            "usage. Budget-gated, PSK-authenticated."
+        ),
+    )
     async def admin_models_call(request: Request) -> dict[str, Any]:
         """W6.2: model generation endpoint for Ansible modules and external callers.
 
@@ -541,7 +550,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         except Exception as exc:
             raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
 
-    @app.post("/admin/models/workflow")
+    @app.post(
+        "/admin/models/workflow",
+        summary="Run the multi-step LangGraph workflow (classify→select→generate→review)",
+        description=(
+            "Quality-gated multi-step model workflow with adaptive routing and "
+            "retries. Returns final content, model, quality score, retry count, "
+            "warnings. Budget-gated, PSK-authenticated."
+        ),
+    )
     async def admin_models_workflow(request: Request) -> dict[str, Any]:
         """Run the multi-step LangGraph workflow over a chat-message list.
 
