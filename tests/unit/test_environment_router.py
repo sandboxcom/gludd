@@ -167,3 +167,86 @@ def test_no_secret_leaks_anywhere_in_response(client: TestClient) -> None:
             assert forbidden not in m, (
                 f"roster entry leaked a credential field: {forbidden} in {m!r}"
             )
+
+
+# ---------------------------------------------------------------------------
+# GET /api/environment/advise — per-task advice surface
+# ---------------------------------------------------------------------------
+
+
+def _advise(client: TestClient, **params: Any) -> dict[str, Any]:
+    """GET /api/environment/advise with the PSK and return the JSON body."""
+    resp = client.get(
+        "/api/environment/advise",
+        params=params,
+        headers={"Authorization": f"Bearer {_PSK}"},
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()
+
+
+def test_advise_unauthenticated_is_refused(client: TestClient) -> None:
+    resp = client.get("/api/environment/advise", params={"work_type": "feature"})
+    assert resp.status_code == 401
+
+
+def test_advise_returns_contract_for_feature(client: TestClient) -> None:
+    body = _advise(client, work_type="feature", prompt_tokens=2000)
+    # Top-level contract keys.
+    for key in (
+        "task_type",
+        "recommendation",
+        "route",
+        "est_cost_usd",
+        "use_workflow",
+        "workflow_reason",
+        "resource_hints",
+    ):
+        assert key in body, f"missing advise key: {key}"
+    assert body["task_type"] == "feature"
+    # recommendation carries model_profile + the classes.
+    rec = body["recommendation"]
+    assert "model_profile" in rec
+    for sub in (
+        "reason",
+        "composite_score",
+        "fallback",
+        "sample_count",
+        "latency_class",
+        "quality_class",
+    ):
+        assert sub in rec
+    # route + cost + hints contract.
+    assert "selected_model_profile_id" in body["route"]
+    assert "selected_prompt_profile_id" in body["route"]
+    assert isinstance(body["est_cost_usd"], float)
+    for hint in ("prefer_local", "budget_ok", "budget_warning", "context_fits"):
+        assert hint in body["resource_hints"]
+
+
+def test_advise_use_workflow_true_for_feature(client: TestClient) -> None:
+    body = _advise(client, work_type="feature")
+    # A gateway is wired and budget is unconstrained -> workflow recommended.
+    assert body["use_workflow"] is True
+    assert body["workflow_reason"]
+
+
+def test_advise_use_workflow_false_for_docs(client: TestClient) -> None:
+    body = _advise(client, work_type="docs")
+    assert body["use_workflow"] is False
+    assert "docs" in body["workflow_reason"]
+
+
+def test_advise_never_500_on_bare_app() -> None:
+    """A FastAPI app with NO wired state must still return a 200 fallback."""
+    app = FastAPI()
+    register(app, {})  # no app.state deps wired at all
+    bare = TestClient(app)
+    resp = bare.get("/api/environment/advise", params={"work_type": "feature"})
+    assert resp.status_code == 200, resp.text
+    body = resp.json()
+    # Fallback recommendation: never raises, never 500s.
+    assert body["task_type"] == "feature"
+    assert "recommendation" in body
+    assert "model_profile" in body["recommendation"]
+    assert isinstance(body["est_cost_usd"], float)

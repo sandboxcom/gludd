@@ -36,10 +36,43 @@ from typing import Any
 from fastapi import FastAPI
 from pydantic import BaseModel
 
-from general_ludd.controllers.environment_advisor import build_optimization_hints
+from general_ludd.controllers.environment_advisor import (
+    build_advice,
+    build_optimization_hints,
+)
 from general_ludd.routers.facts import _spend_facet
 
 logger = logging.getLogger(__name__)
+
+# work_type (free-form, playbook-facing) -> TaskType enum member for adaptive
+# routing. The advise surface accepts the orchestration vocabulary (feature /
+# bugfix / refactor / review / docs / chat / classify); TaskType has no chat or
+# classify member, so unmapped values fall back to FEATURE (mirroring
+# routers/models.py's TaskType(...) -> TaskType.FEATURE fallback).
+_WORK_TYPE_TO_TASK_TYPE: dict[str, str] = {
+    "feature": "feature",
+    "bugfix": "bug_fix",
+    "bug_fix": "bug_fix",
+    "refactor": "refactor",
+    "review": "code_review",
+    "code_review": "code_review",
+    "test": "test_write",
+    "test_write": "test_write",
+    "docs": "documentation",
+    "documentation": "documentation",
+    "debug": "debugging",
+    "debugging": "debugging",
+    "optimize": "optimization",
+    "optimization": "optimization",
+    "security": "security_fix",
+    "security_fix": "security_fix",
+    "integration": "integration",
+    # chat / classify have no TaskType member -> caller falls back to FEATURE.
+}
+
+# Default nominal output-token estimate for the cost projection when the caller
+# does not (cannot) know the completion size up front.
+_DEFAULT_EXPECTED_OUTPUT_TOKENS = 1024
 
 # The ansible gludd_* modules a job can always invoke against the daemon, even
 # when no MCP server is wired. Kept as the fail-soft floor for the tools catalog.
@@ -96,6 +129,197 @@ class EnvironmentBrief(BaseModel):
     queues: list[dict[str, Any]] = []
     system: dict[str, Any] = {}
     optimization: dict[str, Any] = {}
+
+
+class AdviceBrief(BaseModel):
+    """Per-task advice surface for ``GET /api/environment/advise``."""
+
+    task_type: str = ""
+    recommendation: dict[str, Any] = {}
+    route: dict[str, Any] = {}
+    est_cost_usd: float = 0.0
+    use_workflow: bool = False
+    workflow_reason: str = ""
+    resource_hints: dict[str, Any] = {}
+
+
+async def _resolve_advice(
+    app: FastAPI,
+    *,
+    work_type: str,
+    prompt_tokens: int | None,
+    priority: str,
+) -> dict[str, Any]:
+    """Gather the per-task advice for *work_type* from live app.state.
+
+    Does ALL the app.state / network I/O (adaptive routing, profile lookup,
+    cost projection, budget gate, health), then delegates the pure decision
+    logic to ``controllers.environment_advisor.build_advice``. Wrapped so any
+    failure yields the advisor's fallback recommendation rather than a 500.
+    """
+    from general_ludd.controllers.environment_advisor import _advice_fallback
+
+    try:
+        # 1) Adaptive routing decision. Prefer the LIVE router on app.state,
+        #    fall back to a fresh AdaptiveRouter() (mirrors models.py).
+        from general_ludd.schemas.benchmark import TaskType
+        from general_ludd.scoring.router import AdaptiveRouter
+
+        router = getattr(app.state, "_adaptive_router", None)
+        if router is None or not hasattr(router, "route"):
+            router = AdaptiveRouter()
+
+        task_value = _WORK_TYPE_TO_TASK_TYPE.get(
+            (work_type or "").strip().lower(), "feature"
+        )
+        try:
+            task_type = TaskType(task_value)
+        except ValueError:  # pragma: no cover - mapping table is closed
+            task_type = TaskType.FEATURE
+
+        recommendation: dict[str, Any] = {
+            "selected_prompt_profile_id": None,
+            "selected_model_profile_id": "default",
+            "composite_score": 0.0,
+            "estimated_cost_usd": 0.0,
+            "sample_count": 0,
+            "fallback": True,
+            "reason": "insufficient_historical_data",
+        }
+        try:
+            decision = await router.route(task_type)
+            recommendation = {
+                "selected_prompt_profile_id": decision.selected_prompt_profile_id,
+                "selected_model_profile_id": decision.selected_model_profile_id,
+                "composite_score": decision.composite_score,
+                "estimated_cost_usd": decision.estimated_cost_usd,
+                "sample_count": (
+                    max(decision.sample_count, 1) if not decision.fallback else 0
+                ),
+                "fallback": decision.fallback,
+                "reason": decision.reason,
+            }
+        except Exception as exc:  # pragma: no cover - defensive
+            logger.debug("advise: adaptive routing failed: %s", exc)
+
+        # 2) Resolve the chosen profile's characteristic fields from the gateway.
+        gateway = getattr(app.state, "_model_gateway", None)
+        gateway_present = gateway is not None and hasattr(gateway, "list_profiles")
+        chosen_id = recommendation.get("selected_model_profile_id")
+        profile: dict[str, Any] = {}
+        has_local_or_free_profile = False
+        if gateway_present and gateway is not None:
+            try:
+                prof_obj = None
+                if hasattr(gateway, "get_profile") and chosen_id:
+                    prof_obj = gateway.get_profile(chosen_id)
+                if prof_obj is not None:
+                    profile = {
+                        "model_profile_id": getattr(
+                            prof_obj, "model_profile_id", chosen_id
+                        ),
+                        "model_name": getattr(prof_obj, "model_name", None),
+                        "context_window": getattr(prof_obj, "context_window", None),
+                        "max_output_tokens": getattr(
+                            prof_obj, "max_output_tokens", None
+                        ),
+                        "quality_class": getattr(prof_obj, "quality_class", None),
+                    }
+                # A "local/free" profile = not api_metered (no per-token spend).
+                for p in gateway.list_profiles():
+                    if getattr(p, "enabled", False) and not getattr(
+                        p, "api_metered", True
+                    ):
+                        has_local_or_free_profile = True
+                        break
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("advise: profile lookup failed: %s", exc)
+
+        # 3) Health of the chosen model (degraded latency when unhealthy).
+        healthy = True
+        health_tracker = getattr(app.state, "_health_tracker", None)
+        if health_tracker is not None and chosen_id:
+            try:
+                healthy = bool(
+                    health_tracker.is_healthy(chosen_id, admit_probe=False)
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("advise: health check failed: %s", exc)
+
+        # 4) Cost projection. Prefer the spend-limiter (live catalog), else the
+        #    static infra pricing table.
+        in_tokens = prompt_tokens if isinstance(prompt_tokens, int) else 0
+        out_tokens = _DEFAULT_EXPECTED_OUTPUT_TOKENS
+        model_name = profile.get("model_name") or chosen_id or "__default__"
+        est_cost_usd: float | None = None
+        limiter = getattr(app.state, "_spend_limiter", None)
+        if limiter is not None and hasattr(limiter, "token_cost_usd"):
+            try:
+                est_cost_usd = float(
+                    limiter.token_cost_usd(model_name, in_tokens, out_tokens)
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("advise: limiter cost projection failed: %s", exc)
+        if est_cost_usd is None:
+            try:
+                from general_ludd.infra.pricing import (
+                    token_cost_usd as _static_cost,
+                )
+
+                est_cost_usd = float(
+                    _static_cost(model_name, in_tokens, out_tokens)
+                )
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("advise: static cost projection failed: %s", exc)
+                est_cost_usd = 0.0
+
+        # 5) Budget gate.
+        budget_ok = True
+        budget_warning = False
+        budget_remaining_usd: float | None = None
+        guard = getattr(app.state, "_budget_guard", None)
+        if guard is not None and hasattr(guard, "check_all_limits"):
+            try:
+                verdict = guard.check_all_limits(estimated_cost=est_cost_usd)
+                if isinstance(verdict, dict):
+                    budget_ok = bool(verdict.get("allowed", True))
+                    rem = verdict.get("remaining_budget")
+                    if isinstance(rem, (int, float)):
+                        budget_remaining_usd = float(rem)
+                        # Warn when remaining headroom is thin relative to cost.
+                        if est_cost_usd and budget_remaining_usd < est_cost_usd * 3:
+                            budget_warning = True
+                    if not budget_ok:
+                        budget_warning = True
+            except Exception as exc:  # pragma: no cover - defensive
+                logger.debug("advise: budget gate failed: %s", exc)
+
+        # 6) Hardware: is a local model permitted on this host?
+        local_model_allowed = False
+        hardware = getattr(app.state, "_hardware", None)
+        if hardware is not None:
+            local_model_allowed = bool(
+                getattr(hardware, "local_model_allowed", False)
+            )
+
+        return build_advice(
+            work_type=work_type,
+            priority=priority,
+            recommendation=recommendation,
+            profile=profile,
+            est_cost_usd=est_cost_usd,
+            prompt_tokens=prompt_tokens,
+            healthy=healthy,
+            gateway_present=gateway_present,
+            local_model_allowed=local_model_allowed,
+            has_local_or_free_profile=has_local_or_free_profile,
+            budget_ok=budget_ok,
+            budget_warning=budget_warning,
+            budget_remaining_usd=budget_remaining_usd,
+        )
+    except Exception as exc:  # pragma: no cover - never 500 the route
+        logger.debug("advise resolution failed entirely: %s", exc)
+        return _advice_fallback(work_type)
 
 
 def _models_facet(app: FastAPI) -> list[dict[str, Any]]:
@@ -394,3 +618,44 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             system=system,
             optimization=optimization,
         )
+
+    @app.get(
+        "/api/environment/advise",
+        response_model=AdviceBrief,
+        summary="Per-task model + workflow recommendation for a running job",
+        description=(
+            "Read-only, per-task advice: given a work_type (and optional "
+            "prompt_tokens / priority) it returns the recommended model "
+            "profile (via the adaptive router), a projected cost, whether to "
+            "drive the multi-step langgraph workflow vs a single-shot router "
+            "call, and resource hints (prefer_local / budget_ok / "
+            "budget_warning / context_fits). On insufficient history or any "
+            "internal error it returns a safe fallback recommendation and "
+            "never a 500. Sits behind the same PSK middleware as "
+            "/api/environment."
+        ),
+    )
+    async def api_environment_advise(
+        work_type: str,
+        prompt_tokens: int | None = None,
+        priority: str = "quality",
+    ) -> AdviceBrief:
+        # priority is a soft hint; clamp unknown values to the safe default.
+        prio = (priority or "quality").strip().lower()
+        if prio not in ("cost", "quality", "latency"):
+            prio = "quality"
+        try:
+            advice = await _resolve_advice(
+                app,
+                work_type=work_type,
+                prompt_tokens=prompt_tokens,
+                priority=prio,
+            )
+        except Exception as exc:  # pragma: no cover - _resolve_advice is guarded
+            logger.debug("advise route failed: %s", exc)
+            from general_ludd.controllers.environment_advisor import (
+                _advice_fallback,
+            )
+
+            advice = _advice_fallback(work_type)
+        return AdviceBrief(**advice)

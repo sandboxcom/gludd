@@ -11,7 +11,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 from types import ModuleType
-from typing import Any
+from typing import Any, ClassVar
 
 import pytest
 
@@ -33,13 +33,21 @@ def _load_module() -> ModuleType:
 class _FakeAnsibleModule:
     """Stand-in for ansible.module_utils.basic.AnsibleModule."""
 
-    def __init__(self, argument_spec: dict[str, Any], supports_check_mode: bool) -> None:
+    def __init__(
+        self,
+        argument_spec: dict[str, Any],
+        supports_check_mode: bool,
+        params: dict[str, Any] | None = None,
+    ) -> None:
         self.argument_spec = argument_spec
         self.supports_check_mode = supports_check_mode
-        self.params = {
+        self.params = params or {
             "daemon_url": "http://localhost:8000",
             "psk": "test-psk",
             "timeout": 30,
+            "work_type": None,
+            "prompt_tokens": None,
+            "priority": "quality",
         }
         self.exited: dict[str, Any] | None = None
         self.failed: dict[str, Any] | None = None
@@ -52,9 +60,11 @@ class _FakeAnsibleModule:
 
 
 class _FakeClient:
-    """Records the path GET-ed and returns a canned environment brief."""
+    """Records every path GET-ed and returns a canned environment / advise brief."""
 
     last_path: str | None = None
+    paths: ClassVar[list[str]] = []
+    last_params: dict[str, Any] | None = None
 
     def __init__(self, base_url: str, psk: str, timeout: int) -> None:
         self.base_url = base_url
@@ -63,6 +73,32 @@ class _FakeClient:
 
     def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
         type(self).last_path = path
+        type(self).paths.append(path)
+        if params is not None:
+            type(self).last_params = params
+        if path == "/api/environment/advise":
+            return {
+                "task_type": (params or {}).get("work_type", "feature"),
+                "recommendation": {
+                    "model_profile": "flagship",
+                    "latency_class": "standard",
+                    "quality_class": "high",
+                },
+                "route": {
+                    "selected_model_profile_id": "flagship",
+                    "selected_prompt_profile_id": None,
+                },
+                "est_cost_usd": 0.02,
+                "use_workflow": True,
+                "workflow_reason": "feature benefits from workflow",
+                "resource_hints": {
+                    "prefer_local": False,
+                    "budget_ok": True,
+                    "budget_warning": False,
+                    "context_fits": True,
+                },
+                "_status": 200,
+            }
         return {
             "models": [{"profile_id": "flagship", "enabled": True}],
             "routing": {"default_profile": "flagship"},
@@ -91,6 +127,7 @@ def test_main_gets_api_environment_and_injects_facts(
 ) -> None:
     fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
     _FakeClient.last_path = None
+    _FakeClient.paths = []
 
     monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
     monkeypatch.setattr(module, "GluddClient", _FakeClient)
@@ -99,6 +136,8 @@ def test_main_gets_api_environment_and_injects_facts(
 
     # It hit the environment endpoint, not facts/metrics.
     assert _FakeClient.last_path == "/api/environment"
+    # work_type unset -> NO advise call was made.
+    assert "/api/environment/advise" not in _FakeClient.paths
 
     # It injected the snapshot under ansible_facts.gludd_environment, read-only.
     assert fake_mod.failed is None
@@ -131,3 +170,83 @@ def test_unauthorized_status_fails(
     assert fake_mod.exited is None
     assert fake_mod.failed is not None
     assert fake_mod.failed["status"] == 401
+
+
+def test_work_type_set_makes_second_advise_call_and_merges(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(
+        argument_spec={},
+        supports_check_mode=True,
+        params={
+            "daemon_url": "http://localhost:8000",
+            "psk": "test-psk",
+            "timeout": 30,
+            "work_type": "feature",
+            "prompt_tokens": 2000,
+            "priority": "quality",
+        },
+    )
+    _FakeClient.last_path = None
+    _FakeClient.paths = []
+    _FakeClient.last_params = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _FakeClient)
+
+    module.main()
+
+    # Both endpoints were hit: the base snapshot AND the per-task advice.
+    assert "/api/environment" in _FakeClient.paths
+    assert "/api/environment/advise" in _FakeClient.paths
+    # The advise params were forwarded.
+    assert _FakeClient.last_params is not None
+    assert _FakeClient.last_params["work_type"] == "feature"
+    assert _FakeClient.last_params["prompt_tokens"] == 2000
+    assert _FakeClient.last_params["priority"] == "quality"
+
+    # advice merged under the env fact, read-only.
+    assert fake_mod.failed is None
+    assert fake_mod.exited is not None
+    assert fake_mod.exited["changed"] is False
+    env = fake_mod.exited["ansible_facts"]["gludd_environment"]
+    assert "advice" in env
+    assert env["advice"]["use_workflow"] is True
+    assert env["advice"]["recommendation"]["model_profile"] == "flagship"
+    # Transport keys stripped from the merged advice too.
+    assert "_status" not in env["advice"]
+
+
+def test_advise_failure_fails_the_module(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(
+        argument_spec={},
+        supports_check_mode=True,
+        params={
+            "daemon_url": "http://localhost:8000",
+            "psk": "test-psk",
+            "timeout": 30,
+            "work_type": "feature",
+            "prompt_tokens": None,
+            "priority": "quality",
+        },
+    )
+
+    class _AdviseFailsClient(_FakeClient):
+        def get(
+            self, path: str, params: dict[str, Any] | None = None
+        ) -> dict[str, Any]:
+            if path == "/api/environment/advise":
+                return {"_status": 500}
+            return super().get(path, params)
+
+    _AdviseFailsClient.paths = []
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _AdviseFailsClient)
+
+    module.main()
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed is not None
+    assert fake_mod.failed["status"] == 500

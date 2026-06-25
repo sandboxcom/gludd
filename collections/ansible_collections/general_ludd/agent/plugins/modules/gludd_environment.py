@@ -30,6 +30,28 @@ DOCUMENTATION:
       description: Request timeout in seconds.
       type: int
       default: 30
+    work_type:
+      description:
+        - When set, ALSO query C(GET /api/environment/advise?work_type=...) and
+          merge the per-task recommendation under
+          C(ansible_facts.gludd_environment.advice). Free-form work kind, e.g.
+          C(feature), C(bugfix), C(refactor), C(review), C(docs), C(chat).
+        - When unset (the default) no advise call is made and no C(advice) key
+          is added.
+      type: str
+    prompt_tokens:
+      description:
+        - Optional prompt size (tokens) forwarded to the advise endpoint so the
+          cost projection and context-fit hint are accurate. Only used when
+          C(work_type) is set.
+      type: int
+    priority:
+      description:
+        - Optimization priority forwarded to the advise endpoint. Only used when
+          C(work_type) is set.
+      type: str
+      choices: [cost, quality, latency]
+      default: quality
 
 EXAMPLES:
   - name: Load gludd environment brief
@@ -86,6 +108,13 @@ def main() -> None:
             daemon_url=dict(type="str", default="http://localhost:8000"),
             psk=dict(type="str", default="", no_log=True),
             timeout=dict(type="int", default=30),
+            work_type=dict(type="str"),
+            prompt_tokens=dict(type="int"),
+            priority=dict(
+                type="str",
+                default="quality",
+                choices=["cost", "quality", "latency"],
+            ),
         ),
         supports_check_mode=True,
     )
@@ -113,6 +142,44 @@ def main() -> None:
         return
 
     snapshot = {k: v for k, v in resp.items() if not k.startswith("_")}
+
+    # When work_type is set, ALSO fetch the per-task advice and merge it under
+    # ``advice``. Read-only and check-mode safe — a second GET, never a write.
+    work_type = module.params.get("work_type")
+    if work_type:
+        params: dict[str, object] = {
+            "work_type": work_type,
+            "priority": module.params.get("priority") or "quality",
+        }
+        prompt_tokens = module.params.get("prompt_tokens")
+        if prompt_tokens is not None:
+            params["prompt_tokens"] = prompt_tokens
+        advise_resp = client.get("/api/environment/advise", params=params)
+        if advise_resp.get("_error"):
+            module.fail_json(
+                **error_result(f"daemon error (advise): {advise_resp['_error']}")
+            )
+            return
+        advise_status = advise_resp.get("_status", 0)
+        if advise_status == 401:
+            module.fail_json(
+                **error_result(
+                    "unauthorized (bad or missing PSK)", status=401
+                )
+            )
+            return
+        if advise_status not in (200, 201):
+            module.fail_json(
+                **error_result(
+                    f"gludd_environment advise failed (HTTP {advise_status})",
+                    status=advise_status,
+                )
+            )
+            return
+        snapshot["advice"] = {
+            k: v for k, v in advise_resp.items() if not k.startswith("_")
+        }
+
     module.exit_json(
         **ok_result({"ansible_facts": {"gludd_environment": snapshot}}, changed=False)
     )
