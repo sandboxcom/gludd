@@ -1186,14 +1186,22 @@ class ProjectRelationshipRepository:
         return result.scalar_one_or_none()
 
     async def list_for_project(
-        self, project_id: str, relation_type: str | None = None
+        self,
+        project_id: str,
+        relation_type: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
     ) -> list[ProjectRelationshipModel]:
         stmt = select(ProjectRelationshipModel).where(
             ProjectRelationshipModel.project_id == project_id
         )
         if relation_type is not None:
             stmt = stmt.where(ProjectRelationshipModel.relation_type == relation_type)
-        stmt = stmt.order_by(ProjectRelationshipModel.id)
+        stmt = (
+            stmt.order_by(ProjectRelationshipModel.id)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1206,10 +1214,13 @@ class ProjectRelationshipRepository:
         return edges[0] if edges else None
 
     async def list_children(
-        self, project_id: str
+        self, project_id: str, limit: int | None = None, offset: int = 0
     ) -> list[ProjectRelationshipModel]:
         return await self.list_for_project(
-            project_id, relation_type=RelationType.CHILD.value
+            project_id,
+            relation_type=RelationType.CHILD.value,
+            limit=limit,
+            offset=offset,
         )
 
     async def remove(self, rel_id: str) -> bool:

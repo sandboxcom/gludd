@@ -360,6 +360,103 @@ class TestProjectRelationshipRepository:
         assert await repo.remove("rel-doesnotexist") is False
 
 
+class TestListForProjectCap:
+    """``list_for_project`` (and ``list_children``) must bound the result set at
+    ``_DEFAULT_LIST_LIMIT`` so a project with thousands of edges can't DoS the
+    /api/environment facet via unbounded memory / response size (P12 gap)."""
+
+    async def _seed_children(
+        self, session: AsyncSession, project_id: str, count: int, start: int = 0
+    ) -> None:
+        # Bulk-insert distinct child edges directly via the model so each row is
+        # unique on (project_id, relation_type, location_kind, location_value).
+        # ``start`` lets callers append more rows without colliding on the unique
+        # tuple (project_id, relation_type, location_kind, location_value).
+        for i in range(start, start + count):
+            session.add(
+                ProjectRelationshipModel(
+                    project_id=project_id,
+                    relation_type=RelationType.CHILD.value,
+                    location_kind=LocationKind.DIRECTORY.value,
+                    location_value=f"./svc-{i:05d}",
+                )
+            )
+        await session.flush()
+
+    async def test_list_for_project_caps_at_default_limit(
+        self, async_session: AsyncSession
+    ):
+        from general_ludd.db.repository import _DEFAULT_LIST_LIMIT
+
+        await _make_project(async_session, "proj-big", "big")
+        await self._seed_children(async_session, "proj-big", _DEFAULT_LIST_LIMIT + 100)
+        edges = await repo_list(async_session, "proj-big")
+        assert len(edges) == _DEFAULT_LIST_LIMIT
+
+    async def test_explicit_limit_returns_at_most_limit(
+        self, async_session: AsyncSession
+    ):
+        await _make_project(async_session, "proj-big", "big")
+        await self._seed_children(async_session, "proj-big", 50)
+        repo = ProjectRelationshipRepository(async_session)
+        edges = await repo.list_for_project("proj-big", limit=10)
+        assert len(edges) == 10
+        # An explicit limit above the hard cap is still clamped to the default.
+        from general_ludd.db.repository import _DEFAULT_LIST_LIMIT
+
+        await self._seed_children(
+            async_session, "proj-big", _DEFAULT_LIST_LIMIT + 100, start=50
+        )
+        capped = await repo.list_for_project(
+            "proj-big", limit=_DEFAULT_LIST_LIMIT * 10
+        )
+        assert len(capped) == _DEFAULT_LIST_LIMIT
+
+    async def test_relation_type_filter_still_works_with_cap(
+        self, async_session: AsyncSession
+    ):
+        await _make_project(async_session, "proj-mix", "mix")
+        await self._seed_children(async_session, "proj-mix", 20)
+        # Add a few non-child edges of a different relation_type.
+        for i in range(5):
+            async_session.add(
+                ProjectRelationshipModel(
+                    project_id="proj-mix",
+                    relation_type=RelationType.EXTERNAL.value,
+                    location_kind=LocationKind.URL.value,
+                    location_value=f"https://api-{i}.example.com",
+                )
+            )
+        await async_session.flush()
+        repo = ProjectRelationshipRepository(async_session)
+        children = await repo.list_for_project(
+            "proj-mix", relation_type=RelationType.CHILD.value
+        )
+        assert len(children) == 20
+        assert all(c.relation_type == RelationType.CHILD.value for c in children)
+
+    async def test_list_children_caps_at_default_limit(
+        self, async_session: AsyncSession
+    ):
+        from general_ludd.db.repository import _DEFAULT_LIST_LIMIT
+
+        await _make_project(async_session, "proj-kids", "kids")
+        await self._seed_children(
+            async_session, "proj-kids", _DEFAULT_LIST_LIMIT + 100
+        )
+        repo = ProjectRelationshipRepository(async_session)
+        children = await repo.list_children("proj-kids")
+        assert len(children) == _DEFAULT_LIST_LIMIT
+        # Explicit limit honored through the delegating wrapper.
+        few = await repo.list_children("proj-kids", limit=7)
+        assert len(few) == 7
+
+
+async def repo_list(session: AsyncSession, project_id: str, **kw):
+    repo = ProjectRelationshipRepository(session)
+    return await repo.list_for_project(project_id, **kw)
+
+
 class TestForeignKeyBehavior:
     async def test_cascade_on_owning_project_delete(
         self, async_session: AsyncSession
