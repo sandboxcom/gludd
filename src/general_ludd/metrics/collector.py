@@ -1,8 +1,14 @@
 from __future__ import annotations
 
 import time
+from collections import deque
 from dataclasses import dataclass, field
 from typing import Any
+
+# Per-model bounded history of recent failure descriptions kept for flakiness
+# detection (get_recent_failures / is_flaky). Memory is bounded to this many
+# entries per model regardless of how many calls a model accumulates.
+_FAILURE_RING_MAXLEN = 50
 
 
 @dataclass
@@ -111,6 +117,11 @@ class MetricsCollector:
     def __init__(self) -> None:
         self._agents: dict[str, AgentMetrics] = {}
         self._global_model_usage: dict[str, ModelUsage] = {}
+        # Bounded per-model ring of recent failure descriptions (most-recent
+        # appended last). Keyed by model_profile_id (the same key used in
+        # _global_model_usage). Each deque is capped at _FAILURE_RING_MAXLEN so
+        # total memory stays bounded no matter how many calls occur.
+        self._recent_failures: dict[str, deque[str]] = {}
 
     def register_agent(
         self, agent_id: str, agent_name: str = "", project: str = ""
@@ -148,6 +159,7 @@ class MetricsCollector:
         input_tokens: int,
         output_tokens: int,
         success: bool,
+        error: str | None = None,
         **kwargs: Any,
     ) -> None:
         agent = self._agents.get(agent_id)
@@ -162,6 +174,61 @@ class MetricsCollector:
         self._global_model_usage[model_id].record_call(
             input_tokens, output_tokens, success
         )
+        # Append-on-failure to the bounded per-model failure ring. This is the
+        # ONLY behavioral extension of the recording API: cost/token/success
+        # accounting above is unchanged. `error` is optional and defaults to a
+        # generic marker, so existing callers (which never pass it) are
+        # unaffected and successful calls never touch the ring.
+        if not success:
+            ring = self._recent_failures.get(model_id)
+            if ring is None:
+                ring = deque(maxlen=_FAILURE_RING_MAXLEN)
+                self._recent_failures[model_id] = ring
+            ring.append(error if error else "unspecified failure")
+
+    def get_recent_failures(
+        self, model_profile_id: str, window_calls: int = 10
+    ) -> list[str]:
+        """Return up to ``window_calls`` recent failure descriptions for a model.
+
+        Most-recent first. Returns an empty list for an unknown model or any
+        non-positive window. Never raises — flakiness detection must be safe to
+        call from the optimization advisor on the hot path.
+        """
+        try:
+            if window_calls <= 0:
+                return []
+            ring = self._recent_failures.get(model_profile_id)
+            if not ring:
+                return []
+            # ring holds oldest..newest; reverse for most-recent-first, then cap.
+            return list(reversed(ring))[:window_calls]
+        except Exception:
+            return []
+
+    def is_flaky(
+        self,
+        model_profile_id: str,
+        threshold: float = 0.7,
+        min_calls: int = 4,
+    ) -> bool:
+        """True when a model looks flaky: enough calls AND low success rate.
+
+        A model is flaky when it has at least ``min_calls`` total calls AND its
+        overall ``success_rate`` is strictly below ``threshold``. We use the
+        cumulative ``ModelUsage.success_rate`` (no recent-window rate is cheaply
+        available — only the bounded failure ring is retained, not a rolling
+        per-call success/fail sequence). Unknown model -> False. Never raises.
+        """
+        try:
+            usage = self._global_model_usage.get(model_profile_id)
+            if usage is None:
+                return False
+            if usage.total_calls < min_calls:
+                return False
+            return usage.success_rate < threshold
+        except Exception:
+            return False
 
     def get_global_model_usage(self) -> dict[str, ModelUsage]:
         return dict(self._global_model_usage)
