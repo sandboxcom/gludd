@@ -373,7 +373,12 @@ class TestModelGatewayRecordsUsage:
             credential_alias="openai_key",
             cost_per_input_token=0.01,
             cost_per_output_token=0.03,
-            run_budget_usd=100.0,
+            # Server-side budget re-estimation (D-21) prices the call at up to
+            # max_output_tokens (8000) * cost_per_output_token (0.03) = ~240 USD,
+            # so run_budget_usd must comfortably exceed that or the budget gate
+            # (gateway.py check_budget, api_metered defaults True) rejects the
+            # call before usage metadata can be recorded.
+            run_budget_usd=10000.0,
         )
 
         gw = ModelGateway(
@@ -724,7 +729,7 @@ class TestCacheKeyLockEviction:
             def get(self, key):
                 return _store.get(key)
 
-            def set(self, key, value, ttl=None):
+            def set(self, key, value, ttl=None, expire=None, **kwargs):
                 _store[key] = value
 
         return ModelGateway(profiles=[profile], response_cache=_DictCache()), _store
@@ -753,7 +758,7 @@ class TestCacheKeyLockEviction:
             def get(self, key):
                 return _store.get(key)
 
-            def set(self, key, value, ttl=None):
+            def set(self, key, value, ttl=None, expire=None, **kwargs):
                 _store[key] = value
 
         gw = ModelGateway(
@@ -801,7 +806,7 @@ class TestCacheKeyLockEviction:
             def get(self, key):
                 return _store.get(key)
 
-            def set(self, key, value, ttl=None):
+            def set(self, key, value, ttl=None, expire=None, **kwargs):
                 _store[key] = value
 
         profiles = []
