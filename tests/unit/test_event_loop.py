@@ -516,6 +516,56 @@ class TestOneProjectPerTick:
             "_tick_project_id must be reset to None after tick completes (W3.14)"
         )
 
+    @pytest.mark.asyncio
+    async def test_select_project_invoked_once_even_when_weighting_varies(self):
+        """M14/W3.14: the underlying project_manager.select_project() must be
+        invoked exactly ONCE per tick, and the SAME selected project must reach
+        both the claim phase and the review phase.
+
+        This stubs select_project() to return a DIFFERENT project on every call
+        (the worst case for a random/weighted selector): if any phase called
+        select_project() independently, the two phases would target different
+        projects in the same tick — the cross-project incoherence W3.14 fixes.
+        Asserting exactly one call + a single shared project proves selection is
+        hoisted once per tick and threaded down, not re-rolled per phase.
+        """
+        # A project_manager whose select_project() yields a fresh project each
+        # call, so any second invocation would change the selected project.
+        projects = [MagicMock(project_id=f"proj-{i}") for i in range(10)]
+        project_manager = MagicMock()
+        project_manager.select_project.side_effect = projects
+
+        loop, _ = _make_loop(project_manager=project_manager)
+
+        seen_projects: list[str | None] = []
+
+        async def _record_claim_phase() -> None:
+            seen_projects.append(loop._tick_project_id)
+
+        async def _record_review_phase() -> None:
+            seen_projects.append(loop._tick_project_id)
+
+        with patch.object(
+            loop, "_phase_claim_runnable_todos", side_effect=_record_claim_phase
+        ), patch.object(
+            loop,
+            "_phase_claim_unreviewed_task_returns",
+            side_effect=_record_review_phase,
+        ):
+            await loop.tick()
+
+        # select_project() called exactly once for the whole tick — never re-rolled
+        # per phase (which, given the side_effect, would have produced proj-1, etc.).
+        assert project_manager.select_project.call_count == 1, (
+            "project_manager.select_project() must be called exactly once per tick; "
+            f"got {project_manager.select_project.call_count} (W3.14: select once, share)"
+        )
+        # Both phases observed the SAME selected project (the first one).
+        assert seen_projects == ["proj-0", "proj-0"], (
+            "claim and review phases must share the single per-tick project; "
+            f"got {seen_projects} (W3.14 cross-project incoherence)"
+        )
+
 
 class TestSpendLimiterCharges:
     """Bug 1: SpendLimiter must record spend (try_charge), not just check (would_exceed)."""
