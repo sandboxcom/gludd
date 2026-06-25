@@ -40,6 +40,7 @@ class _FakeAnsibleModule:
         self.params = {
             "op": "similar",
             "text": "diagnose a flaky 500 in the request handler",
+            "corpus": "skills",
             "text_a": None,
             "text_b": None,
             "texts": None,
@@ -277,6 +278,102 @@ def test_similar_is_default_op(
 
     assert _FakeClient.last_path == "/api/embeddings/similar"
     assert fake_mod.failed is None
+
+
+class _SearchClient(_FakeClient):
+    """Records the search POST and returns a canned search snapshot."""
+
+    def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        type(self).last_path = path
+        type(self).last_body = body
+        return {
+            "corpus": "skills",
+            "query_embedding_dim": 256,
+            "embedding_method": "hash",
+            "query_embedding": None,
+            "results": [
+                {
+                    "rank": 1,
+                    "name": "deep-research",
+                    "source_text": "Fan out web searches ...",
+                    "similarity_score": 0.71,
+                    "metadata": {"category": "research", "tags": ["web"]},
+                },
+            ],
+            "_status": 200,
+        }
+
+
+def test_search_op_posts_search_and_injects_facts(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "search"
+    fake_mod.params["text"] = "search the web and write a researched report"
+    fake_mod.params["corpus"] = "skills"
+    fake_mod.params["top_k"] = 3
+    _SearchClient.last_path = None
+    _SearchClient.last_body = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _SearchClient)
+
+    module.main()
+
+    assert _SearchClient.last_path == "/api/embeddings/search"
+    assert _SearchClient.last_body is not None
+    assert _SearchClient.last_body["text"] == fake_mod.params["text"]
+    assert _SearchClient.last_body["corpus"] == "skills"
+    assert _SearchClient.last_body["top_k"] == 3
+    assert _SearchClient.last_body["include_embeddings"] is False
+    # Search must not carry the compare/similar-only keys.
+    assert "text_a" not in _SearchClient.last_body
+    assert "work_type" not in _SearchClient.last_body
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited is not None
+    assert fake_mod.exited["changed"] is False
+    snap = fake_mod.exited["ansible_facts"]["gludd_embed"]
+    assert "_status" not in snap
+    assert snap["corpus"] == "skills"
+    assert snap["results"][0]["name"] == "deep-research"
+    assert snap["results"][0]["rank"] == 1
+
+
+def test_search_op_task_types_corpus(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "search"
+    fake_mod.params["corpus"] = "task_types"
+    _SearchClient.last_body = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _SearchClient)
+
+    module.main()
+
+    assert _SearchClient.last_path == "/api/embeddings/search"
+    assert _SearchClient.last_body is not None
+    assert _SearchClient.last_body["corpus"] == "task_types"
+    assert fake_mod.failed is None
+
+
+def test_search_op_missing_text_fails(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "search"
+    fake_mod.params["text"] = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _SearchClient)
+
+    module.main()
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed is not None
+    assert fake_mod.failed["failed"] is True
 
 
 def test_daemon_error_fails(

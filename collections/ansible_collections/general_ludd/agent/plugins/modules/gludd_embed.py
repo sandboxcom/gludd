@@ -18,6 +18,12 @@ DOCUMENTATION:
       strings -> merge/dedupe; divergent -> escalate). Supply C(texts) (2+)
       instead for the full pairwise similarity matrix. The snapshot is injected
       under C(ansible_facts.gludd_embed).
+    - With C(op=search) queries C(POST /api/embeddings/search) to take a string
+      a bot produced (C(text)) and search a real corpus with it (RAG search),
+      returning the C(top_k) most-similar items ranked by cosine similarity.
+      C(corpus) selects the corpus — C(skills) (the live skill registry,
+      descriptions matched on the fly) or C(task_types) (the canonical task
+      types). The snapshot is injected under C(ansible_facts.gludd_embed).
     - Read-only and check-mode safe — it performs no writes (C(changed=False)).
     - Similarity is computed over the same embedding layer the adaptive router
       uses (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set
@@ -27,15 +33,24 @@ DOCUMENTATION:
       description:
         - Which embeddings operation to run. C(similar) ranks canonical task
           types for C(text); C(compare) measures pairwise similarity of
-          C(text_a)/C(text_b) (or a C(texts) batch).
+          C(text_a)/C(text_b) (or a C(texts) batch); C(search) takes C(text)
+          and searches the C(corpus) for the C(top_k) most-similar items.
       type: str
-      choices: [similar, compare]
+      choices: [similar, compare, search]
       default: similar
     text:
       description:
-        - The work description to match against the canonical task types.
-          Required when C(op=similar).
+        - The work description to match against the canonical task types
+          (C(op=similar)) or the query string to search the corpus with
+          (C(op=search)). Required for both.
       type: str
+    corpus:
+      description:
+        - The real corpus to search when C(op=search). C(skills) matches the
+          live skill registry; C(task_types) matches the canonical task types.
+      type: str
+      choices: [skills, task_types]
+      default: skills
     text_a:
       description: First string to compare. Used (with C(text_b)) when C(op=compare).
       type: str
@@ -49,11 +64,15 @@ DOCUMENTATION:
       type: list
       elements: str
     include_embeddings:
-      description: When true (C(op=compare)), the computed embedding vectors are returned.
+      description:
+        - When true, the computed embedding vectors are returned — the pairwise
+          vectors for C(op=compare), or the query vector for C(op=search).
       type: bool
       default: false
     top_k:
-      description: Number of similar task types to return (1-20).
+      description:
+        - Number of items to return (1-20) — similar task types for
+          C(op=similar), or corpus matches for C(op=search).
       type: int
       default: 5
     work_type:
@@ -105,6 +124,21 @@ EXAMPLES:
       msg: "near-duplicate, dedupe"
     when: ansible_facts.gludd_embed.similarity | default(0) > 0.9
 
+  - name: Search the skills corpus with a string the bot produced
+    general_ludd.agent.gludd_embed:
+      op: search
+      corpus: skills
+      text: "{{ bot_request }}"
+      top_k: 3
+    register: hit
+
+  - name: Use the best-matching skill
+    ansible.builtin.debug:
+      msg: >-
+        Best skill is {{ ansible_facts.gludd_embed.results[0].name }}
+        ({{ ansible_facts.gludd_embed.results[0].similarity_score }})
+    when: ansible_facts.gludd_embed.results | length > 0
+
 RETURN:
   ansible_facts:
     description: Facts dict containing the C(gludd_embed) snapshot.
@@ -119,6 +153,10 @@ RETURN:
           - For C(op=compare): the snapshot with C(similarity) (pairwise form) or
             C(matrix) (batch form), C(embedding_method), C(dim), and optionally
             C(embeddings).
+          - For C(op=search): the snapshot with C(corpus), C(results) (ranked
+            items, each with C(rank)/C(name)/C(source_text)/C(similarity_score)/
+            C(metadata)), C(query_embedding_dim), C(embedding_method), and
+            optionally C(query_embedding).
         type: dict
         returned: always
 """
@@ -144,8 +182,13 @@ except ImportError:
 def main() -> None:
     module = AnsibleModule(
         argument_spec=dict(
-            op=dict(type="str", choices=["similar", "compare"], default="similar"),
+            op=dict(
+                type="str",
+                choices=["similar", "compare", "search"],
+                default="similar",
+            ),
             text=dict(type="str"),
+            corpus=dict(type="str", choices=["skills", "task_types"], default="skills"),
             text_a=dict(type="str"),
             text_b=dict(type="str"),
             texts=dict(type="list", elements="str"),
@@ -185,6 +228,17 @@ def main() -> None:
             body["text_b"] = text_b
         else:
             body["texts"] = texts
+    elif op == "search":
+        if not module.params.get("text"):
+            module.fail_json(**error_result("op=search requires text"))
+            return
+        path = "/api/embeddings/search"
+        body = {
+            "text": module.params["text"],
+            "corpus": module.params["corpus"],
+            "top_k": module.params["top_k"],
+            "include_embeddings": module.params["include_embeddings"],
+        }
     else:  # op == "similar" (default, back-compat)
         if not module.params.get("text"):
             module.fail_json(

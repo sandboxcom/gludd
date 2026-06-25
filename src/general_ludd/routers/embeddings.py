@@ -14,6 +14,17 @@ form (``texts``) instead returns the full symmetric pairwise similarity matrix.
 Both reuse the SAME default-embedder selection as ``/similar`` so the score is
 comparable across surfaces.
 
+``POST /api/embeddings/search`` is the generic RAG-search surface: a role takes
+a string a bot produced and searches a real corpus with it, getting back the
+top-k most-similar items ranked by cosine similarity. v1 ships two real
+corpora — ``skills`` (the live :class:`~general_ludd.skills.registry.SkillRegistry`
+on ``app.state._skill_registry``; each skill's ``description`` is embedded
+on-the-fly, no schema change) and ``task_types`` (delegates to the same
+canonical task-type logic as ``/similar``). Any other ``corpus`` value is
+rejected by pydantic (422). It reuses the SAME default embedder as ``/similar``
+and ``/compare`` so the scores are comparable. Fully defensive: an empty/absent
+registry or any embed failure yields a 200 with empty ``results`` — never a 500.
+
 v1 is canonical-task-types-only: the store holds the 10 canonical
 :class:`~general_ludd.schemas.benchmark.TaskType` descriptions. The handler:
 
@@ -145,6 +156,50 @@ class EmbeddingCompareResponse(BaseModel):
     embedding_method: str = "hash"
     dim: int = 0
     embeddings: list[list[float]] | None = None
+
+
+class EmbeddingSearchRequest(BaseModel):
+    """Request body for POST /api/embeddings/search.
+
+    ``corpus`` is constrained (pattern) to the two REAL v1 corpora: ``skills``
+    (the live SkillRegistry, descriptions embedded on the fly) and
+    ``task_types`` (the canonical task-type vectors, delegating to /similar).
+    Any other value (memory/todos are future) is rejected by pydantic (422).
+    """
+
+    text: str = Field(..., description="The query string to search the corpus with.")
+    corpus: str = Field(
+        "skills",
+        pattern="^(skills|task_types)$",
+        description="Which real corpus to search: 'skills' or 'task_types'.",
+    )
+    top_k: int = Field(
+        5, ge=1, le=20, description="Number of corpus items to return."
+    )
+    include_embeddings: bool = Field(
+        False,
+        description="When true, the query embedding vector is returned.",
+    )
+
+
+class SearchResultItem(BaseModel):
+    """One ranked corpus item."""
+
+    rank: int
+    name: str
+    source_text: str
+    similarity_score: float
+    metadata: dict[str, Any] = Field(default_factory=dict)
+
+
+class EmbeddingSearchResponse(BaseModel):
+    """Response body for POST /api/embeddings/search."""
+
+    corpus: str = "skills"
+    query_embedding_dim: int = 0
+    embedding_method: str = "hash"
+    query_embedding: list[float] | None = None
+    results: list[SearchResultItem] = Field(default_factory=list)
 
 
 def _get_session_factory(app: FastAPI) -> Any:
@@ -290,6 +345,126 @@ def _compare(req: EmbeddingCompareRequest) -> EmbeddingCompareResponse:
         )
 
 
+async def _search_task_types(
+    app: FastAPI, req: EmbeddingSearchRequest
+) -> EmbeddingSearchResponse:
+    """corpus=task_types: delegate to the canonical /similar ranking.
+
+    Reuses :func:`_similar` verbatim (the canonical task-type vectors) and
+    adapts its rows to the generic ``SearchResultItem`` shape so the search
+    surface stays uniform across corpora.
+    """
+    similar = await _similar(
+        app,
+        EmbeddingSimilarRequest(
+            text=req.text,
+            top_k=req.top_k,
+            work_type=None,
+            include_embedding=req.include_embeddings,
+        ),
+    )
+    results = [
+        SearchResultItem(
+            rank=i + 1,
+            name=r.task_type,
+            source_text=r.canonical_text,
+            similarity_score=r.similarity_score,
+            metadata={"embedding_dim": r.embedding_dim},
+        )
+        for i, r in enumerate(similar.results)
+    ]
+    return EmbeddingSearchResponse(
+        corpus="task_types",
+        query_embedding_dim=similar.query_embedding_dim,
+        embedding_method=similar.embedding_method,
+        query_embedding=similar.query_embedding,
+        results=results,
+    )
+
+
+def _search_skills(req: EmbeddingSearchRequest, registry: Any) -> EmbeddingSearchResponse:
+    """corpus=skills: embed each skill description on the fly, cosine-rank.
+
+    The skill corpus has no stored vectors (zero schema change): the live
+    SkillRegistry's ``list_skills()`` is read, each ``Skill.description`` is
+    embedded with the SAME default embedder as /similar and /compare, and the
+    query is ranked against them. An absent registry, an empty skill set, or
+    any embed failure degrades to an empty result set (the caller wraps this so
+    the route is a 200, never a 500).
+    """
+    embedder = _select_default_embedder()
+    method = _method_of(embedder)
+
+    query_vec = embedder.embed(req.text)
+    query_dim = len(query_vec)
+
+    skills: list[Any] = []
+    if registry is not None and hasattr(registry, "list_skills"):
+        try:
+            skills = list(registry.list_skills())
+        except Exception as exc:  # degrade, never 500
+            logger.debug("skill listing failed: %s", exc)
+            skills = []
+
+    scored: list[SearchResultItem] = []
+    for skill in skills:
+        description = getattr(skill, "description", "") or ""
+        if not description:
+            continue
+        try:
+            skill_vec = embedder.embed(description)
+        except Exception as exc:  # skip the bad one, keep ranking the rest
+            logger.debug("skill embed failed: %s", exc)
+            continue
+        if len(skill_vec) != query_dim:
+            continue
+        score = cosine_similarity(query_vec, skill_vec)
+        scored.append(
+            SearchResultItem(
+                rank=0,  # assigned after sort
+                name=getattr(skill, "name", ""),
+                source_text=description,
+                similarity_score=score,
+                metadata={
+                    "category": getattr(skill, "category", "") or "",
+                    "tags": list(getattr(skill, "tags", []) or []),
+                },
+            )
+        )
+
+    scored.sort(key=lambda r: r.similarity_score, reverse=True)
+    scored = scored[: req.top_k]
+    for i, item in enumerate(scored):
+        item.rank = i + 1
+
+    return EmbeddingSearchResponse(
+        corpus="skills",
+        query_embedding_dim=query_dim,
+        embedding_method=method,
+        query_embedding=query_vec if req.include_embeddings else None,
+        results=scored,
+    )
+
+
+async def _search(
+    app: FastAPI, req: EmbeddingSearchRequest
+) -> EmbeddingSearchResponse:
+    """Dispatch a corpus search; never 500s (degrades to empty results)."""
+    if req.corpus == "task_types":
+        try:
+            return await _search_task_types(app, req)
+        except Exception as exc:  # never 500
+            logger.debug("task_types search failed: %s", exc)
+            return EmbeddingSearchResponse(corpus="task_types")
+    # corpus == "skills" (pydantic guarantees one of the two).
+    try:
+        registry = getattr(app.state, "_skill_registry", None)
+        return _search_skills(req, registry)
+    except Exception as exc:  # never 500
+        logger.debug("skills search failed: %s", exc)
+        return EmbeddingSearchResponse(corpus="skills")
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/api/embeddings/similar", response_model=EmbeddingSimilarResponse)
     async def api_embeddings_similar(
@@ -328,3 +503,32 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ``texts`` (pairwise matrix). Never 500s on embedder failure.
         """
         return _compare(req)
+
+    @app.post(
+        "/api/embeddings/search",
+        response_model=EmbeddingSearchResponse,
+        summary="Search a real corpus (skills/task_types) by embedding similarity",
+        description=(
+            "Take a string a bot produced and search a real corpus with it (RAG "
+            "search): returns the top_k most-similar corpus items ranked by "
+            "cosine similarity. v1 corpora: `skills` (the live SkillRegistry — "
+            "each skill description is embedded on the fly, no schema change) and "
+            "`task_types` (the canonical task-type vectors, delegating to the "
+            "/similar logic). Any other `corpus` value is rejected (422). Reuses "
+            "the same default embedder as /similar and /compare; "
+            "`embedding_method` is \"openai\" or \"hash\". Defensive: an absent/"
+            "empty corpus or any embed failure degrades to a 200 with empty "
+            "`results`; bad input -> 422."
+        ),
+    )
+    async def api_embeddings_search(
+        req: EmbeddingSearchRequest,
+    ) -> EmbeddingSearchResponse:
+        """Search a real corpus for the items most similar to ``text``.
+
+        Read-only. ``corpus`` is ``skills`` (default) or ``task_types``. Returns
+        the ranked matches (highest cosine similarity first), the query
+        embedding dimensionality, the resolved embedding method, and — when
+        ``include_embeddings`` is set — the query vector itself. Never 500s.
+        """
+        return await _search(app, req)

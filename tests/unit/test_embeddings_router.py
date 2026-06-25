@@ -368,3 +368,218 @@ def test_compare_batch_embedder_failure_yields_empty_matrix(
     body = resp.json()
     assert body["matrix"] == []
     assert body["similarity"] is None
+
+
+# --- POST /api/embeddings/search --------------------------------------------
+
+
+class _StubSkill:
+    """Minimal stand-in for general_ludd.skills.skill.Skill."""
+
+    def __init__(
+        self,
+        name: str,
+        description: str,
+        *,
+        category: str = "",
+        tags: list[str] | None = None,
+    ) -> None:
+        self.name = name
+        self.description = description
+        self.category = category
+        self.tags = tags or []
+
+
+class _StubRegistry:
+    """Minimal SkillRegistry: exposes list_skills()."""
+
+    def __init__(self, skills: list[_StubSkill]) -> None:
+        self._skills = skills
+
+    def list_skills(self) -> list[_StubSkill]:
+        return list(self._skills)
+
+
+def _search_client(
+    monkeypatch: pytest.MonkeyPatch,
+    *,
+    registry: Any = None,
+    seeded_factory: Any = None,
+) -> TestClient:
+    """A search client over the offline HashEmbedder.
+
+    ``registry`` is published on ``app.state._skill_registry`` for the skills
+    corpus; ``seeded_factory`` is the canonical-task-type store for the
+    task_types corpus (delegates to /similar).
+    """
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = seeded_factory
+    app.state._skill_registry = registry
+    embeddings.register(app, {})
+    return TestClient(app)
+
+
+def test_search_skills_returns_ranked_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _StubRegistry(
+        [
+            _StubSkill(
+                "deep-research",
+                "Fan out web searches, fetch sources, verify claims, "
+                "synthesize a cited research report.",
+                category="research",
+                tags=["web"],
+            ),
+            _StubSkill(
+                "compute-resource-discovery",
+                "Discover per-provider compute resources and auto-select "
+                "GPU/CPU based on budget and workload.",
+                category="infra",
+            ),
+            _StubSkill(
+                "web-toolkit",
+                "Fetch web pages, parse HTML, search and crawl with SSRF "
+                "hardening and offline fallback.",
+                category="web",
+            ),
+        ]
+    )
+    client = _search_client(monkeypatch, registry=registry)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "search the web and write a researched report with sources",
+            "corpus": "skills",
+            "top_k": 2,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "skills"
+    assert body["embedding_method"] == "hash"
+    assert body["query_embedding_dim"] > 0
+    assert body["query_embedding"] is None  # default include_embeddings=False
+    results = body["results"]
+    assert 0 < len(results) <= 2
+    # Ranked by similarity descending; ranks are 1-based and contiguous.
+    scores = [r["similarity_score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+    assert [r["rank"] for r in results] == list(range(1, len(results) + 1))
+    for r in results:
+        assert 0.0 <= r["similarity_score"] <= 1.0
+        assert r["name"]
+        assert r["source_text"]
+        assert "category" in r["metadata"]
+    # The research-shaped query should surface deep-research at the top.
+    assert results[0]["name"] == "deep-research"
+
+
+def test_search_skills_include_embeddings_returns_query_vector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _StubRegistry(
+        [_StubSkill("a-skill", "do a thing with files and tools")]
+    )
+    client = _search_client(monkeypatch, registry=registry)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "thing", "include_embeddings": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["query_embedding"], list)
+    assert len(body["query_embedding"]) == body["query_embedding_dim"]
+
+
+def test_search_task_types_delegates_to_similar(
+    monkeypatch: pytest.MonkeyPatch, seeded_factory
+) -> None:
+    client = _search_client(monkeypatch, seeded_factory=seeded_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "Diagnose and fix a defect causing wrong output",
+            "corpus": "task_types",
+            "top_k": 3,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "task_types"
+    assert body["embedding_method"] == "hash"
+    results = body["results"]
+    assert 0 < len(results) <= 3
+    assert [r["rank"] for r in results] == list(range(1, len(results) + 1))
+    for r in results:
+        assert r["name"]  # the task_type value
+        assert r["source_text"]  # canonical_text
+        assert "embedding_dim" in r["metadata"]
+    # A bug-fix-shaped query should surface bug_fix / debugging near the top.
+    top_names = {r["name"] for r in results}
+    assert top_names & {"bug_fix", "debugging"}
+
+
+def test_search_empty_skill_registry_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _search_client(monkeypatch, registry=_StubRegistry([]))
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "skills"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "skills"
+    assert body["results"] == []
+    assert body["embedding_method"] == "hash"
+
+
+def test_search_no_registry_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No skill registry on app.state degrades to empty results, not 500."""
+    client = _search_client(monkeypatch, registry=None)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "skills"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["results"] == []
+
+
+def test_search_missing_text_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _search_client(monkeypatch, registry=_StubRegistry([]))
+    resp = client.post("/api/embeddings/search", json={"corpus": "skills"})
+    assert resp.status_code == 422
+
+
+def test_search_unknown_corpus_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _search_client(monkeypatch, registry=_StubRegistry([]))
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "x", "corpus": "memory"}
+    )
+    assert resp.status_code == 422
+
+
+def test_search_top_k_out_of_range_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _search_client(monkeypatch, registry=_StubRegistry([]))
+    too_high = client.post(
+        "/api/embeddings/search", json={"text": "x", "top_k": 21}
+    )
+    assert too_high.status_code == 422
+    too_low = client.post(
+        "/api/embeddings/search", json={"text": "x", "top_k": 0}
+    )
+    assert too_low.status_code == 422
+
+
+def test_search_defaults_corpus_to_skills(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    registry = _StubRegistry([_StubSkill("s", "embed and rank skill description")])
+    client = _search_client(monkeypatch, registry=registry)
+    resp = client.post("/api/embeddings/search", json={"text": "rank"})
+    assert resp.status_code == 200
+    assert resp.json()["corpus"] == "skills"
