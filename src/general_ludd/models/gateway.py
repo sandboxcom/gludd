@@ -125,6 +125,34 @@ class ModelResponse:
     tool_calls: list[dict[str, Any]] | None = None
 
 
+def _extract_retry_after_seconds(exc: BaseException) -> float | None:
+    """Parse the ``Retry-After`` header (seconds form) from a 429 response.
+
+    Per RFC 7231 the value may be either a delta-seconds integer or an HTTP-date.
+    Only the integer form is honored here; an HTTP-date or a missing/garbage
+    header returns ``None`` so the caller falls back to exponential backoff.
+    The header is read from the ``httpx.Response`` attached to an
+    ``httpx.HTTPStatusError`` or an ``openai.APIStatusError`` (whose
+    ``.response`` is itself an ``httpx.Response``).
+    """
+    response = getattr(exc, "response", None)
+    if response is None:
+        return None
+    headers = getattr(response, "headers", None)
+    if headers is None:
+        return None
+    try:
+        raw = headers.get("retry-after") or headers.get("Retry-After")
+    except Exception:  # pragma: no cover - defensive against odd header objects
+        return None
+    if not raw:
+        return None
+    try:
+        return max(0.0, float(raw))
+    except (TypeError, ValueError):
+        return None
+
+
 def _extract_tool_calls(raw_response: Any) -> list[dict[str, Any]] | None:
     """Normalize a provider response's tool calls into the nested OpenAI shape.
 
@@ -719,7 +747,21 @@ class ModelGateway:
             if exc is not None and isinstance(exc, _retryable_exc_types):
                 kind = TimeoutClassifier.classify(exc)
                 is_overload = kind in _OVERLOAD_KINDS
-                wait_s = policy._compute_backoff(kind, _attempt_counter[0], None, overload=is_overload)
+                # D-23: thread the server-supplied Retry-After header through
+                # to the backoff policy. Without this, a 429 carrying
+                # "Retry-After: 30" was ignored — the policy fell through to
+                # the fixed exponential backoff instead of honoring the
+                # provider's directed wait. _compute_backoff returns
+                # max(retry_after, 1.0) for RATE_LIMITED when this is set.
+                retry_after = _extract_retry_after_seconds(exc)
+                import sys as _sys
+                print(f"D23DEBUG kind={kind} retry_after={retry_after} attempt={_attempt_counter[0]}", file=_sys.stderr)
+                wait_s = policy._compute_backoff(
+                    kind,
+                    _attempt_counter[0],
+                    retry_after,
+                    overload=is_overload,
+                )
                 if wait_s > 0:
                     _time.sleep(wait_s)
 

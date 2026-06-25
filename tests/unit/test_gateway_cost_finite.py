@@ -85,3 +85,22 @@ def test_negative_cost_per_input_token_raises():
 def test_negative_cost_per_output_token_raises():
     with pytest.raises(ValidationError, match="finite non-negative"):
         ModelProfile(**_base_kwargs(cost_per_output_token=-1.0))
+
+
+# ---------------------------------------------------------------------------
+# inf / nan — run_budget_usd
+# ---------------------------------------------------------------------------
+
+def test_inf_run_budget_usd_raises():
+    with pytest.raises(ValidationError, match="finite non-negative"):
+        ModelProfile(**_base_kwargs(run_budget_usd=float("inf")))
+
+
+def test_nan_run_budget_usd_raises():
+    with pytest.raises(ValidationError, match="finite non-negative"):
+        ModelProfile(**_base_kwargs(run_budget_usd=float("nan")))
+
+
+def test_negative_run_budget_usd_raises():
+    with pytest.raises(ValidationError, match="finite non-negative"):
+        ModelProfile(**_base_kwargs(run_budget_usd=-5.0))

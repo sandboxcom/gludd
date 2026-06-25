@@ -338,6 +338,42 @@ class TestReleaseJobGating:
         )
 
 
+    def test_release_job_generates_sha256sums_aggregate(self) -> None:
+        """The release job must generate a SHA256SUMS aggregate file covering all
+        staged assets and include it in the published release files.
+
+        This gives consumers a single checksum manifest to verify every asset
+        (tarballs, SBOM, licenses) in one ``sha256sum -c SHA256SUMS`` invocation,
+        rather than verifying each per-file .sha256 sidecar individually.
+        """
+        wf = _load_workflow()
+        release_steps = wf["jobs"]["release"].get("steps", [])
+        all_run_text = " ".join(
+            s.get("run", "") for s in release_steps if isinstance(s, dict)
+        )
+        assert "sha256sum *" in all_run_text or "sha256sum *" in all_run_text, (
+            "release job must run 'sha256sum *' over the staged release assets to "
+            "produce a SHA256SUMS aggregate manifest"
+        )
+        assert "SHA256SUMS" in all_run_text, (
+            "release job must write the aggregate checksums to a file named SHA256SUMS"
+        )
+        # The SHA256SUMS file must land in release-assets/ so action-gh-release's
+        # `files: release-assets/*` glob picks it up automatically.
+        release_files_glob = ""
+        for s in release_steps:
+            if not isinstance(s, dict):
+                continue
+            if "softprops/action-gh-release" in s.get("uses", ""):
+                with_field = s.get("with", {})
+                release_files_glob = str(with_field.get("files", ""))
+        assert "release-assets/*" in release_files_glob, (
+            "release job action-gh-release 'files' must glob release-assets/* so the "
+            "generated SHA256SUMS file is included as a release asset; "
+            f"got files={release_files_glob!r}"
+        )
+
+
 class TestWorkflowYAMLValidity:
     def test_workflow_is_valid_yaml(self) -> None:
         """parse without error"""

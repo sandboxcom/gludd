@@ -215,3 +215,103 @@ def test_release_job_is_tag_gated_and_needs_all_builds() -> None:
         "all four platform build jobs (linux, macos, windows, termux) so the "
         f"release waits for every artifact. Found needs: {sorted(needs_set)}"
     )
+
+
+def test_test_shard_collects_coverage_on_every_shard() -> None:
+    """Guard: every test-shard matrix leg must collect coverage data.
+
+    CI incident: coverage was only collected on the ``unit-1`` / Python 3.11
+    shard (all other 7 shards used ``--no-cov``), so the published coverage
+    report represented ~¼ of the suite and systematically understated real
+    coverage.  Each shard must run pytest with ``--cov=general_ludd`` (no
+    shard may pass ``--no-cov``) so the downstream ``coverage`` job has data
+    from every shard to merge.
+    """
+    wf = _load_build_workflow()
+    shard = wf["jobs"].get("test-shard")
+    assert shard is not None, (
+        "CI regression: the 'test-shard' job vanished from build.yml."
+    )
+    steps = shard.get("steps", [])
+    test_steps = [
+        s for s in steps
+        if "Test" in str(s.get("name", "")) and "cov" in str(s.get("run", "")).lower()
+    ]
+    assert test_steps, (
+        "CI regression: no test-shard step runs pytest with --cov. Every shard "
+        "must emit .coverage data so the 'coverage' aggregation job can merge it."
+    )
+    for step in test_steps:
+        run = str(step.get("run", ""))
+        assert "--cov=general_ludd" in run, (
+            "CI regression: a test-shard step dropped --cov=general_ludd. "
+            f"Step {step.get('name')!r} run block: {run!r}"
+        )
+        assert "--no-cov" not in run, (
+            "CI regression: a test-shard step uses --no-cov, which silos its "
+            "coverage and defeats the aggregation job. Step "
+            f"{step.get('name')!r} must use --cov instead."
+        )
+
+
+def test_coverage_aggregation_job_exists() -> None:
+    """Guard: a dedicated coverage-aggregation job must exist and merge shards.
+
+    CI incident: with 8 parallel test-shards and no aggregation step, coverage
+    was never combined across shards — the only published report came from a
+    single shard and missed ~75% of the suite.  This test pins the fix:
+
+      - A ``coverage`` job exists in build.yml.
+      - It ``needs: [test-shard]`` so it runs after every shard finishes.
+      - It downloads the per-shard coverage artifacts (``download-artifact``
+        with a ``coverage-*`` pattern).
+      - It runs ``coverage combine`` to merge the shard data files into one.
+      - It uploads a merged ``coverage.xml`` artifact.
+    """
+    wf = _load_build_workflow()
+    jobs = wf["jobs"]
+    assert "coverage" in jobs, (
+        "CI regression: the 'coverage' aggregation job vanished from build.yml. "
+        "Without it, per-shard .coverage files are never combined and the "
+        "published report only reflects one shard (~25% of the suite)."
+    )
+    cov = jobs["coverage"]
+
+    needs = cov.get("needs", [])
+    if isinstance(needs, str):
+        needs = [needs]
+    assert "test-shard" in needs, (
+        "CI regression: the 'coverage' job does not depend on 'test-shard', so "
+        "it could run before any shard produced coverage data. "
+        f"Found needs: {needs!r}"
+    )
+
+    # Serialize each step's run/uses/with so we can assert on the download
+    # pattern (which lives in the `with:` block, not run/uses).
+    step_blobs = [
+        "\n".join(f"{k}: {v}" for k, v in s.items())
+        for s in cov.get("steps", [])
+    ]
+    step_runs = "\n".join(str(s.get("run", "")) for s in cov.get("steps", []))
+    combined = step_runs + "\n" + "\n".join(step_blobs)
+    assert "download-artifact" in combined, (
+        "CI regression: the 'coverage' job has no download-artifact step — it "
+        "cannot fetch the per-shard .coverage data files to merge them."
+    )
+    assert "coverage-" in combined, (
+        "CI regression: the 'coverage' job's download-artifact step does not "
+        "target the per-shard 'coverage-*' artifacts, so shard data would not "
+        "be fetched for merging."
+    )
+    assert "coverage combine" in step_runs, (
+        "CI regression: the 'coverage' job does not invoke 'coverage combine', "
+        "so per-shard data files are never merged into a single report."
+    )
+    assert "coverage xml" in step_runs, (
+        "CI regression: the 'coverage' job does not invoke 'coverage xml', so "
+        "no canonical Cobertura report is produced from the merged data."
+    )
+    assert "upload-artifact" in combined, (
+        "CI regression: the 'coverage' job does not upload the merged "
+        "coverage.xml artifact, so the combined report is not retained."
+    )

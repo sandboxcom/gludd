@@ -789,6 +789,9 @@ git-revert-files:
 git-log:
 	@git log --oneline -10 || echo "No git history"
 
+git-log-dated:
+	@git log --format='%h %ad %s' --date=short -20 || echo "No git history"
+
 # Atomic stage+commit+push in one command. Designed for subagent dispatch:
 # the main thread calls this via a subagent so it never blocks while
 # 10+ other subagents stay active. Uses sandboxcom SSH key.

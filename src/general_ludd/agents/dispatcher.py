@@ -72,11 +72,8 @@ class AgentDispatcher:
                 output=f"Agent '{task.agent_name}' is disabled",
             )
         if task.invoker_name and not self._registry.can_invoke(task.invoker_name, task.agent_name):
-            return AgentTaskResult(
-                task_id=task.task_id,
-                agent_name=task.agent_name,
-                status="failed",
-                output=f"Permission denied: '{task.invoker_name}' cannot dispatch '{task.agent_name}'",
+            raise PermissionError(
+                f"'{task.invoker_name}' is not permitted to dispatch '{task.agent_name}'"
             )
 
         semaphore = self._get_semaphore(task.agent_name)
