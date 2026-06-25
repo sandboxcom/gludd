@@ -1,0 +1,38 @@
+---
+# langgraph_decision role defaults
+# A model-backed decision role: run a langgraph workflow over a prompt, have a
+# langgraph decision node judge the result, optionally revise once, then surface
+# the decision back to gludd and write an artifact for human inspection.
+#
+# All variables can be overridden in playbook vars or extra-vars. Every
+# gludd-supplied var is referenced through `| default(...)` in tasks/main.yml.
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""   # no_log in tasks; prefer GLUDD_PSK env var
+
+# Model routing
+model_profile: ""        # explicit model profile ID; defaulted to 'default' in tasks
+
+# Work / decision shape
+work_type: "analysis"
+decision_options:
+  - "proceed"
+  - "revise"
+  - "reject"
+quality_threshold: 0.6
+max_retries: 2
+
+# Capability identity for the per-role default-DENY db policy
+# (capability_policy.py). The decision is surfaced back to gludd via
+# todo_update_status; "agent_task" grants exactly {todo_get, todo_update_status}.
+# Override to a wider role only if you need more db ops.
+capability_role: "agent_task"
+
+# Inputs (gludd dynamic vars / extra-vars). Each is `default()`-guarded in tasks.
+prompt_text: ""
+skill_body: ""
+todo_id: ""
+
+# Artifact output
+artifact_dir: "/tmp/harness-langgraph"

@@ -1,0 +1,31 @@
+---
+# Exercise the REAL gludd_langgraph_workflow module against POST /admin/models/workflow.
+- name: Converge - run langgraph workflow via mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8860', true) }}"
+    daemon_url: "http://127.0.0.1:{{ mock_port }}"
+
+  tasks:
+    - name: Run gludd_langgraph_workflow with explicit model_profile
+      general_ludd.agent.gludd_langgraph_workflow:
+        prompt: "Implement a function that returns the answer to everything."
+        system: "You are a careful coder."
+        work_type: "code"
+        model_profile: "mock-profile"
+        max_retries: 2
+        quality_threshold: 0.6
+        daemon_url: "{{ daemon_url }}"
+      register: workflow_result
+
+    - name: Persist result for verify
+      ansible.builtin.copy:
+        content: "{{ workflow_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-workflow.json"
+        mode: "0644"
+
+    - name: Show workflow result
+      ansible.builtin.debug:
+        var: workflow_result

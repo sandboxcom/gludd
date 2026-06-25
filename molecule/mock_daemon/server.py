@@ -17,7 +17,8 @@ shape matches what each module parses:
   GET  /api/messages                  -> 200 {"messages":[...]}             (gludd_message receive)
   POST /api/messages                  -> 201 created message                (gludd_message send)
   POST /api/messages/<id>/ack         -> 200 {"acked":true}                 (gludd_message ack)
-  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call / gludd_agent_run HTTP)
+  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call / gludd_agent_run / gludd_langchain_generate / gludd_langgraph_decision)
+  POST /admin/models/workflow         -> 200 {"content":..,"quality_score":..} (gludd_langgraph_workflow)
   GET  /api/todos/<id>                 -> 200 todo record                    (gludd_db todo_get)
   PATCH /api/todos/<id>               -> 200 {"status":..}                  (gludd_db todo_update_status)
   GET  /api/resource-preferences      -> 200 {"preference":..}              (gludd_db resource_preference)
@@ -403,10 +404,34 @@ def _dispatch_response(payload: dict) -> dict:
 
 
 def _model_call_response(payload: dict) -> dict:
+    # The langgraph/langchain decision module sends response_format="json" (and an
+    # options list) and parses resp["text"] as JSON {"decision":..,"rationale":..}.
+    # For those requests return a JSON-string text the decision module can parse
+    # into a valid decision; for plain model_call/langchain_generate requests keep
+    # the human-readable "[mock-daemon] ..." text (gludd_model_call asserts on it).
+    if payload.get("response_format") == "json" or payload.get("options"):
+        text = json.dumps({"decision": "proceed", "rationale": "looks correct"})
+    else:
+        text = "[mock-daemon] applied the requested change."
     return {
-        "text": "[mock-daemon] applied the requested change.",
+        "text": text,
         "model_profile_id": payload.get("model_profile") or "mock-profile",
         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+
+
+def _workflow_response(payload: dict) -> dict:
+    # Mirrors POST /admin/models/workflow: the daemon runs a generate->review->retry
+    # LangGraph loop server-side and returns the best content + quality metadata.
+    # gludd_langgraph_workflow parses content/model/prompt_profile/quality_score/
+    # retries/warnings out of this body.
+    return {
+        "content": "def solution(): return 42",
+        "model": "glm-4.6",
+        "prompt": "coder",
+        "quality_score": 0.82,
+        "retries": 1,
+        "warnings": [],
     }
 
 
@@ -508,6 +533,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         payload = self._read_body()
         if path == "/admin/models/call":
             self._send_json(200, _model_call_response(payload))
+        elif path == "/admin/models/workflow":
+            self._send_json(200, _workflow_response(payload))
         elif path == "/api/messages":
             self._send_json(201, _message_created(payload))
         elif path.startswith("/api/messages/") and path.endswith("/ack"):

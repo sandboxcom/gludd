@@ -6,10 +6,29 @@ import importlib
 import importlib.util
 import logging
 from dataclasses import dataclass
+from typing import Any
 
 from general_ludd.schemas.todo import Todo, TodoStatus, WorkType
 
 logger = logging.getLogger(__name__)
+
+# Import name (underscore), NOT the pip distribution name "langchain-openai".
+_DEFAULT_PROVIDER_PACKAGE = "langchain_openai"
+_DEFAULT_CLASS_HINT = "ChatOpenAI"
+
+
+def _profile_attr(profile: Any, name: str) -> Any:
+    """Read a field from a profile that may be a dict OR a ModelProfile-like object."""
+    if isinstance(profile, dict):
+        return profile.get(name)
+    return getattr(profile, name, None)
+
+
+def _normalize_package(package: Any) -> str:
+    """Coerce to a Python IMPORT name. Empty/None -> default; hyphens -> underscores."""
+    if not package or not isinstance(package, str) or not package.strip():
+        return _DEFAULT_PROVIDER_PACKAGE
+    return package.strip().replace("-", "_")
 
 
 @dataclass
@@ -30,6 +49,33 @@ class ProviderRegistry:
             package_name=package,
             class_hint=class_hint,
         )
+
+    @classmethod
+    def from_profiles(cls, profiles: Any) -> ProviderRegistry:
+        """Build a populated ProviderRegistry from an iterable of model profiles.
+
+        Each profile may be a dict OR a ModelProfile-like object exposing
+        ``provider``, ``provider_package`` and ``provider_class_hint``. The
+        provider name defaults to ``"openai"``, the package to the IMPORT name
+        ``langchain_openai`` (NOT the pip name ``langchain-openai``) and the
+        class hint to ``ChatOpenAI``. Providers are de-duplicated by name;
+        the first profile seen for a given provider wins.
+
+        This is the shared factory the gateways must use: every gateway built
+        in src/ currently passes ``provider_registry=None``, so live model
+        calls raise "No provider registry configured". Wiring this factory into
+        daemon.py / worker app / models.py fixes that.
+        """
+        registry = cls()
+        for profile in profiles or []:
+            name = _profile_attr(profile, "provider") or "openai"
+            if name in registry._providers:
+                # De-dup by provider name: first profile wins.
+                continue
+            package = _normalize_package(_profile_attr(profile, "provider_package"))
+            class_hint = _profile_attr(profile, "provider_class_hint") or _DEFAULT_CLASS_HINT
+            registry.register_provider(name=name, package=package, class_hint=class_hint)
+        return registry
 
     def get_provider_info(self, name: str) -> ProviderInfo | None:
         return self._providers.get(name)

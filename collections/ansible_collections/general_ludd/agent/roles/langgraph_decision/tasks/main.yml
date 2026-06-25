@@ -1,0 +1,136 @@
+---
+# langgraph_decision role — model-backed decision lifecycle
+#
+# Flow:
+#   1. Resolve inputs (prompt / system / todo) with default()-guards
+#   2. Assert a non-empty prompt
+#   3. Run the langgraph workflow over the prompt           (block begin)
+#   4. Have the langgraph decision node judge the result
+#   5. On a 'revise' verdict, re-run the workflow once with reviewer feedback
+#   6. Assemble the langgraph_result summary
+#   7. Surface the decision back to gludd (todo_update_status)
+#   8. Write a success artifact for human inspection
+#   rescue: write a failure artifact, then fail the play
+#   always: (none required — no external resource to release)
+
+- name: Resolve langgraph decision inputs
+  ansible.builtin.set_fact:
+    # prompt_text is the primary input; fall back to model_response (the one
+    # extravar gludd always exposes for generation work_types) so the role is
+    # usable even when only model_response is wired.
+    _lg_prompt: "{{ prompt_text | default(model_response | default('', true), true) }}"
+    _lg_system: "{{ skill_body | default('', true) }}"
+    _lg_todo: "{{ todo_id | default('', true) }}"
+
+- name: Validate a prompt is available
+  ansible.builtin.assert:
+    that:
+      - _lg_prompt | length > 0
+    fail_msg: >-
+      langgraph_decision requires a non-empty prompt: set `prompt_text`
+      (or ensure `model_response` is exposed). Neither was provided.
+    success_msg: "Prompt resolved ({{ _lg_prompt | length }} chars)"
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# ---- main decision lifecycle block ----
+- name: Langgraph decision lifecycle
+  block:
+
+    - name: Run langgraph workflow over the prompt
+      general_ludd.agent.gludd_langgraph_workflow:
+        prompt: "{{ _lg_prompt }}"
+        system: "{{ _lg_system }}"
+        work_type: "{{ work_type }}"
+        model_profile: "{{ model_profile | default('default', true) }}"
+        max_retries: "{{ max_retries }}"
+        quality_threshold: "{{ quality_threshold }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: _lg_wf
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Judge the workflow result with the langgraph decision node
+      general_ludd.agent.gludd_langgraph_decision:
+        prompt: "{{ _lg_wf.content }}"
+        options: "{{ decision_options }}"
+        model_profile: "{{ model_profile | default('default', true) }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: _lg_dec
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Re-run workflow once with reviewer feedback (revise branch)
+      general_ludd.agent.gludd_langgraph_workflow:
+        prompt: "{{ _lg_prompt }}\n\nReviewer feedback: {{ _lg_dec.rationale | default('', true) }}"
+        system: "{{ _lg_system }}"
+        work_type: "{{ work_type }}"
+        model_profile: "{{ model_profile | default('default', true) }}"
+        max_retries: "{{ max_retries }}"
+        quality_threshold: "{{ quality_threshold }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: _lg_wf_revised
+      no_log: "{{ psk | length > 0 }}"
+      when: _lg_dec.decision | default('') == 'revise'
+
+    - name: Select the effective workflow result (revised if it ran)
+      ansible.builtin.set_fact:
+        _lg_wf_final: "{{ _lg_wf_revised if (_lg_dec.decision | default('') == 'revise') else _lg_wf }}"
+        _lg_retries: "{{ 1 if (_lg_dec.decision | default('') == 'revise') else 0 }}"
+
+    - name: Assemble the langgraph decision result
+      ansible.builtin.set_fact:
+        langgraph_result:
+          todo_id: "{{ _lg_todo }}"
+          decision: "{{ _lg_dec.decision | default('') }}"
+          rationale: "{{ _lg_dec.rationale | default('') }}"
+          quality_score: "{{ _lg_wf_final.quality_score | default(0) }}"
+          content_excerpt: "{{ (_lg_wf_final.content | default(''))[:500] }}"
+          retries: "{{ _lg_retries | int }}"
+
+    - name: Surface the decision back to gludd
+      general_ludd.agent.gludd_db:
+        op: todo_update_status
+        todo_id: "{{ _lg_todo }}"
+        # Map the decision onto a todo status: proceed => done, anything
+        # else (revise/reject/unknown) leaves the work flagged for follow-up.
+        status: "{{ 'done' if (_lg_dec.decision | default('') == 'proceed') else 'blocked' }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        role: "{{ capability_role }}"
+      register: _lg_db
+      failed_when: false
+      no_log: "{{ psk | length > 0 }}"
+      when: _lg_todo | length > 0
+
+    - name: Write success result artifact
+      ansible.builtin.copy:
+        content: "{{ langgraph_result | combine({'status': 'success'}) | to_nice_json }}"
+        dest: "{{ artifact_dir }}/langgraph_decision_result.json"
+        mode: "0644"
+
+    - name: Emit decision completion
+      ansible.builtin.debug:
+        msg: >-
+          langgraph_decision: decision={{ langgraph_result.decision }}
+          quality={{ langgraph_result.quality_score }}
+          retries={{ langgraph_result.retries }}
+          todo={{ _lg_todo | default('(none)') }}
+
+  rescue:
+
+    - name: Write failure result artifact
+      ansible.builtin.copy:
+        content: "{{ {'todo_id': _lg_todo, 'status': 'failed', 'work_type': work_type, 'error': (ansible_failed_result.msg | default('langgraph_decision failed'))} | to_nice_json }}"
+        dest: "{{ artifact_dir }}/langgraph_decision_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: "langgraph_decision failed for todo {{ _lg_todo | default('(none)') }} — see failure artifact in {{ artifact_dir }}"
