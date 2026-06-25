@@ -382,25 +382,26 @@ class TodoRepository:
         """Aggregate todo facts: counts by status / queue / work_type, oldest age,
         backlog size. Reused by the /api/facts aggregation endpoint."""
         _pid = self._resolve_pid(project_id)
-        stmt = select(TodoModel)
+        from sqlalchemy import func
+
+        async def _group_counts(column: Any) -> dict[str, int]:
+            stmt = select(column, func.count()).group_by(column)
+            if _pid is not None:
+                stmt = stmt.where(TodoModel.project_id == _pid)
+            result = await self._session.execute(stmt)
+            return {key: count for key, count in result.all()}
+
+        by_status = await _group_counts(TodoModel.status)
+        by_queue = await _group_counts(TodoModel.queue)
+        by_work_type = await _group_counts(TodoModel.work_type)
+
+        oldest_stmt = select(func.min(TodoModel.created_at))
         if _pid is not None:
-            stmt = stmt.where(TodoModel.project_id == _pid)
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        by_status: dict[str, int] = {}
-        by_queue: dict[str, int] = {}
-        by_work_type: dict[str, int] = {}
-        oldest_created: datetime | None = None
-        for r in rows:
-            by_status[r.status] = by_status.get(r.status, 0) + 1
-            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
-            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
-            created = r.created_at
-            if created is not None:
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=UTC)
-                if oldest_created is None or created < oldest_created:
-                    oldest_created = created
+            oldest_stmt = oldest_stmt.where(TodoModel.project_id == _pid)
+        oldest_created = (await self._session.execute(oldest_stmt)).scalar()
+        if oldest_created is not None and oldest_created.tzinfo is None:
+            oldest_created = oldest_created.replace(tzinfo=UTC)
+
         oldest_age_seconds: float | None = None
         if oldest_created is not None:
             oldest_age_seconds = (datetime.now(UTC) - oldest_created).total_seconds()
@@ -408,7 +409,7 @@ class TodoRepository:
             TodoStatus.QUEUED.value, 0
         )
         return {
-            "total": len(rows),
+            "total": sum(by_status.values()),
             "by_status": by_status,
             "by_queue": by_queue,
             "by_work_type": by_work_type,
