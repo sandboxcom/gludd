@@ -176,8 +176,7 @@ def _first_protected(target_paths: list[str]) -> str | None:
                 if (
                     marker in lowered_segments
                     or marker in resolved_segments
-                    or marker == basename_lowered
-                    or marker == basename_stem_lowered
+                    or marker in (basename_lowered, basename_stem_lowered)
                 ):
                     return path
             else:
