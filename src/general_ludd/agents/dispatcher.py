@@ -105,6 +105,15 @@ class AgentDispatcher:
                     output=output,
                     duration_seconds=duration,
                 )
+            except asyncio.CancelledError:
+                # Re-raise cancellation so it propagates instead of being
+                # swallowed by the broad `except Exception` below. In Python
+                # 3.11+ asyncio.CancelledError is a BaseException, but it is
+                # still caught by `except Exception` in some interpreters /
+                # code paths (and historically was an Exception subclass);
+                # an explicit re-raise keeps graceful shutdown / dispatch_many
+                # timeout cancellation distinguishable from genuine failures.
+                raise
             except Exception as exc:
                 duration = time.monotonic() - start
                 logger.exception("Task %s failed", task.task_id)

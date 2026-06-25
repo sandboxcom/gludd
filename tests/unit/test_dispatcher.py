@@ -192,3 +192,66 @@ class TestDispatchPermittedInvoker:
 
         assert result.status == "completed", f"Expected completed, got {result.status!r}"
         assert "executed:target" in result.output
+
+
+async def _cancelled_executor(task: AgentTask) -> str:
+    """Executor that raises CancelledError, simulating cooperative cancellation
+    (e.g. dispatch_many's timeout drain cancelling the underlying future)."""
+    raise asyncio.CancelledError
+
+
+async def _raising_executor(task: AgentTask) -> str:
+    """Executor that raises an ordinary exception (a genuine task failure)."""
+    raise RuntimeError("boom")
+
+
+class TestDispatchOneCancellation:
+    def test_cancelled_error_is_reraised_not_swallowed(self) -> None:
+        """If the executed coroutine raises CancelledError, dispatch_one must
+        re-raise it (propagate cancellation) rather than convert it into a
+        status='failed' AgentTaskResult — otherwise graceful shutdown /
+        dispatch_many timeout cancellation is masked as a genuine failure."""
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        dispatcher = AgentDispatcher(registry, executor=_cancelled_executor)
+
+        task = AgentTask(
+            task_id="t-cancel",
+            agent_name="worker",
+            description="do work",
+            prompt="run it",
+        )
+
+        raised = False
+        try:
+            _run(dispatcher.dispatch_one(task))
+        except asyncio.CancelledError:
+            raised = True
+
+        assert raised, "CancelledError must propagate, not become a failed result"
+        # The active-count finally-block must still have decremented.
+        assert dispatcher.active_count == 0, (
+            f"active_count leaked on cancellation: {dispatcher.active_count}"
+        )
+
+    def test_ordinary_exception_becomes_failed_result(self) -> None:
+        """A non-cancellation exception must still be caught and converted into a
+        status='failed' AgentTaskResult carrying the error message (the broad
+        `except Exception` path is unchanged)."""
+        registry = _make_registry()
+        registry.register(_subagent_config("worker"))
+        dispatcher = AgentDispatcher(registry, executor=_raising_executor)
+
+        task = AgentTask(
+            task_id="t-fail",
+            agent_name="worker",
+            description="do work",
+            prompt="run it",
+        )
+        result = _run(dispatcher.dispatch_one(task))
+
+        assert result.status == "failed", f"Expected failed, got {result.status!r}"
+        assert "boom" in result.output, f"Expected error text in output, got: {result.output!r}"
+        assert dispatcher.active_count == 0, (
+            f"active_count leaked on failure: {dispatcher.active_count}"
+        )
