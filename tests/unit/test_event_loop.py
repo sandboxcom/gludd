@@ -678,10 +678,13 @@ class TestLedgerBounds:
         new decision must leave the set at or below _MAX_LEDGER_SIZE."""
         loop, mocks = _make_loop()
 
-        # Pre-fill beyond the cap.
+        # Pre-fill beyond the cap. P3: _applied_decisions is now an OrderedDict
+        # used as a bounded LRU set, so seed via _ledger_add (which evicts as it
+        # goes); to force an overfull pre-condition we bypass the helper and fill
+        # the OrderedDict directly so the reconcile insert is what trims it.
         cap = loop._MAX_LEDGER_SIZE
         for i in range(cap + 1):
-            loop._applied_decisions.add(f"fake-id:{i}")
+            loop._applied_decisions[f"fake-id:{i}"] = None
 
         assert len(loop._applied_decisions) > cap, "pre-condition: ledger must be overfull"
 
@@ -751,6 +754,98 @@ class TestLedgerBounds:
             f"_active_traces must be pruned to <= {trace_cap}; "
             f"got {len(loop._active_traces)}"
         )
+
+    def test_ledger_add_stays_bounded_and_keeps_recent_lru(self):
+        """P3: driving many inserts through _ledger_add must keep the ledger at
+        or below _MAX_LEDGER_SIZE AND retain the MOST RECENT ids (LRU), never an
+        arbitrary subset — so the idempotency guarantee holds across the window."""
+        loop, _ = _make_loop()
+        cap = loop._MAX_LEDGER_SIZE
+        ledger = loop._applied_decisions
+
+        # Drive cap + extra insertions of distinct keys.
+        extra = 250
+        for i in range(cap + extra):
+            loop._ledger_add(ledger, f"dec:{i}")
+
+        # Bound holds exactly: never exceeds the cap.
+        assert len(ledger) == cap, (
+            f"ledger must stay == cap ({cap}) after {cap + extra} inserts; "
+            f"got {len(ledger)}"
+        )
+
+        # LRU semantics: the most-recent `cap` keys survive; the oldest `extra`
+        # were evicted FIFO (this is the correctness win over an unordered set
+        # that could evict a still-recent id and re-open the re-apply window).
+        for i in range(extra):  # the oldest `extra` keys must be gone
+            assert f"dec:{i}" not in ledger, f"oldest key dec:{i} should be evicted"
+        for i in range(extra, cap + extra):  # the most-recent `cap` keys survive
+            assert f"dec:{i}" in ledger, f"recent key dec:{i} must survive"
+
+    def test_ledger_add_reinsert_refreshes_recency(self):
+        """P3: re-inserting an existing key moves it to the MRU end so it is not
+        evicted as 'oldest' — protecting a still-touched idempotency id."""
+        loop, _ = _make_loop()
+        cap = loop._MAX_LEDGER_SIZE
+        ledger = loop._pushed_work
+
+        # Fill to exactly the cap.
+        for i in range(cap):
+            loop._ledger_add(ledger, f"work:{i}")
+        # Re-touch the OLDEST key -> it should become most-recent and survive the
+        # next eviction; instead the second-oldest (work:1) is dropped.
+        loop._ledger_add(ledger, "work:0")
+        loop._ledger_add(ledger, "work:new")
+
+        assert len(ledger) == cap
+        assert "work:0" in ledger, "re-touched key must be refreshed, not evicted"
+        assert "work:new" in ledger, "newest key must be present"
+        assert "work:1" not in ledger, "the now-oldest key must be the eviction victim"
+
+    @pytest.mark.asyncio
+    async def test_self_update_applies_audit_list_stays_bounded(self):
+        """P3: the daemon-state self_update_applies audit list must not grow
+        without bound — driving many successful self_update applies must leave it
+        at or below _MAX_SELF_UPDATE_APPLIES with the most recent entries kept."""
+        daemon_state: dict = {}
+        loop, mocks = _make_loop(daemon_state=daemon_state)
+        mocks["todo_repo"].transition = AsyncMock()
+
+        cap = loop._MAX_SELF_UPDATE_APPLIES
+        extra = 30
+
+        # A successful reload verdict so each apply records an audit entry.
+        # _apply_self_update_code reads getattr(reload_result, "status", "") and
+        # treats "success" as ok -> appends to the audit list.
+        ok_reload = MagicMock()
+        ok_reload.status = "success"
+
+        with patch(
+            "general_ludd.event_loop.loop.SelfImprovementWorkflow"
+        ) as MockWorkflow:
+            instance = MockWorkflow.return_value
+            instance.reload_if_needed.return_value = ok_reload
+
+            for i in range(cap + extra):
+                todo = Todo(
+                    title=f"self-update {i}",
+                    todo_id=f"SU-{i}",
+                    status=TodoStatus.ACTIVE,
+                    queue="self_update",
+                    work_type="code",
+                    version=1,
+                    tags=[f"module:mod{i}", f"candidate:/tmp/cand{i}.py"],
+                )
+                await loop._apply_self_update_code(todo)
+
+        applies = daemon_state["self_update_applies"]
+        assert len(applies) == cap, (
+            f"self_update_applies must be bounded to {cap}; got {len(applies)}"
+        )
+        # Most-recent entries survive; the oldest `extra` were trimmed from front.
+        kept_ids = {entry["todo_id"] for entry in applies}
+        assert f"SU-{cap + extra - 1}" in kept_ids, "newest apply must be retained"
+        assert "SU-0" not in kept_ids, "oldest apply must be trimmed"
 
 
 class TestBackgroundTaskTracking:

@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
@@ -259,8 +260,19 @@ class EventLoop:
         #   _pushed_work        — todo (work) ids whose completed work has already
         #     been pushed; guarantees the push fires exactly once and is never
         #     duplicated across ticks (F2: completed-work push lost/double).
-        self._applied_decisions: set[str] = set()
-        self._pushed_work: set[str] = set()
+        #
+        # P3 (unbounded ledger growth): these are bounded LRU sets. Each is an
+        # insertion-ordered ``OrderedDict`` used as an ordered set (value is an
+        # ignored ``None``); when it exceeds ``_MAX_LEDGER_SIZE`` the OLDEST key is
+        # evicted in O(1) via ``popitem(last=False)``. Insertion-order eviction is
+        # deliberate: a naive ``set`` drop picks an ARBITRARY (unordered) victim and
+        # could evict a still-recent key, re-opening the F1/F2 re-apply / re-push
+        # window. FIFO-by-insertion evicts the genuinely-oldest id first, which is
+        # the one least likely to still be in flight — preserving idempotency across
+        # the bounded window without the O(n) ``list(set)`` materialisation the old
+        # set-prune incurred at capacity.
+        self._applied_decisions: OrderedDict[str, None] = OrderedDict()
+        self._pushed_work: OrderedDict[str, None] = OrderedDict()
         self._config_snapshot: dict[str, Any] = {}
         # M14 (W3.14): single project selected per tick, shared across all phases.
         # Reset to None at the end of every tick (see tick() finally block).
@@ -1550,13 +1562,23 @@ class EventLoop:
         )
 
         if self._daemon_state is not None and isinstance(self._daemon_state, dict):
-            self._daemon_state.setdefault("self_update_applies", []).append({
+            # P3 (unbounded ledger growth): this audit list grows by one entry per
+            # successful self_update reload and was NEVER pruned — over a long-lived
+            # daemon it accumulates without bound. Bound it to the last
+            # ``_MAX_SELF_UPDATE_APPLIES`` entries. It stays a plain ``list`` (NOT a
+            # deque) so it remains JSON-serialisable and index-/slice-able for the
+            # daemon consumers that surface it via app.state; we trim from the FRONT
+            # so the most recent applies (the ones an operator cares about) survive.
+            applies = self._daemon_state.setdefault("self_update_applies", [])
+            applies.append({
                 "todo_id": todo_id,
                 "module": module_name,
                 "candidate": candidate_path,
                 "verdict": reload_status,
                 "ok": reload_ok,
             })
+            if len(applies) > self._MAX_SELF_UPDATE_APPLIES:
+                del applies[: len(applies) - self._MAX_SELF_UPDATE_APPLIES]
 
     async def _transition_self_update_todo(
         self,
@@ -1709,15 +1731,8 @@ class EventLoop:
                 )
                 continue
             # Transition committed: this decision is now applied exactly once.
-            self._applied_decisions.add(decision_id)
-            # Prune ledger to prevent unbounded growth (MED audit finding).
-            if len(self._applied_decisions) > self._MAX_LEDGER_SIZE:
-                # Drop the oldest half; sets are unordered so we keep a recent
-                # arbitrary half — idempotency is best-effort across very long
-                # running sessions, not a hard invariant past the window.
-                surplus = len(self._applied_decisions) - self._MAX_LEDGER_SIZE // 2
-                for _old in list(self._applied_decisions)[:surplus]:
-                    self._applied_decisions.discard(_old)
+            # P3: bounded LRU insert — evicts the oldest id (FIFO) past the cap.
+            self._ledger_add(self._applied_decisions, decision_id)
             reconciled += 1
             if (
                 new_status == TodoStatus.COMPLETE
@@ -1773,12 +1788,8 @@ class EventLoop:
                 todo.todo_id, exc,
             )
             return True
-        self._pushed_work.add(todo.todo_id)
-        # Prune ledger to prevent unbounded growth (MED audit finding).
-        if len(self._pushed_work) > self._MAX_LEDGER_SIZE:
-            surplus = len(self._pushed_work) - self._MAX_LEDGER_SIZE // 2
-            for _old in list(self._pushed_work)[:surplus]:
-                self._pushed_work.discard(_old)
+        # P3: bounded LRU insert — evicts the oldest id (FIFO) past the cap.
+        self._ledger_add(self._pushed_work, todo.todo_id)
         return False
 
     def _decision_to_status(self, decision: str) -> TodoStatus | None:
@@ -1890,12 +1901,44 @@ class EventLoop:
             self._tick_metrics["self_improve_gaps"] = 0
 
     # Maximum entries kept in the per-instance idempotency ledgers.
-    # Beyond this cap, the oldest entries are evicted so the sets never grow
-    # without bound (unbounded-memory defect: audit finding MED).
+    # Beyond this cap, the oldest entry is evicted (FIFO) so the ledgers never
+    # grow without bound (P3: unbounded-memory defect, audit finding MED).
     _MAX_LEDGER_SIZE: ClassVar[int] = 10_000
+
+    def _ledger_add(self, ledger: OrderedDict[str, None], key: str) -> None:
+        """Insert ``key`` into a bounded LRU ledger, evicting the oldest past cap.
+
+        P3 (unbounded ledger growth): ``ledger`` is an insertion-ordered
+        ``OrderedDict`` used as an ordered set. A re-inserted key is moved to the
+        most-recently-used end (``move_to_end``) so an id that is still being
+        touched is never the eviction victim; a genuinely new key is appended and,
+        if the ledger now exceeds ``_MAX_LEDGER_SIZE``, the OLDEST key is dropped in
+        O(1) via ``popitem(last=False)``.
+
+        This replaces the previous ``set`` + ``list(set)[:surplus]`` prune, which
+        (a) materialised the whole ledger into a list at capacity (O(n) spike) and
+        (b) evicted an ARBITRARY victim because a ``set`` has no order — which could
+        forget a still-relevant recent id and re-open the F1/F2 re-apply / re-push
+        window. FIFO-by-insertion keeps the most recent ``_MAX_LEDGER_SIZE`` ids,
+        which is exactly the set most likely to still be in flight.
+        """
+        if key in ledger:
+            ledger.move_to_end(key)
+            return
+        ledger[key] = None
+        # Evict oldest-first until at-or-below the cap. A ``while`` (not a single
+        # ``if``) is deliberate: it also re-bounds a ledger that was somehow seeded
+        # over the cap, so the invariant ``len(ledger) <= _MAX_LEDGER_SIZE`` holds
+        # after every insert regardless of prior state.
+        while len(ledger) > self._MAX_LEDGER_SIZE:
+            ledger.popitem(last=False)
     # Maximum in-memory ExecutionTrace entries. Each trace is small (~1 KB)
     # so 1 000 entries is safe even under heavy dispatch rates.
     _MAX_ACTIVE_TRACES: ClassVar[int] = 1_000
+    # P3: cap the daemon-state self_update audit list (one entry per successful
+    # self_update reload). 500 recent applies is ample for operator inspection
+    # while the list stays small and JSON-serialisable on app.state.
+    _MAX_SELF_UPDATE_APPLIES: ClassVar[int] = 500
 
     _PRIORITY_MAP: ClassVar[dict[str, int]] = {
         "low": 0, "medium": 5, "high": 10, "critical": 20,
