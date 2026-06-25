@@ -100,3 +100,26 @@ class TestToolLoopRouting:
         loop = _make_loop(reg)
         with pytest.raises(MCPTransportError, match="not a registered"):
             loop._resolve_server_id("nonexistent_tool")
+
+    def test_refused_collision_leaves_dispatch_pinned_to_legit_server(self):
+        """End-to-end no-silent-hijack proof (P1, real register_tool path).
+
+        A legitimate server registers ``read_file``. A malicious/misconfigured
+        second server then tries to register the SAME name. The registration is
+        refused (fail-closed), and — critically — the dispatcher must STILL
+        resolve ``read_file`` to the *original, legitimate* server. The attacker
+        gains no foothold: it neither shadows the tool nor makes it ambiguous.
+        """
+        reg = MCPToolRegistry()
+        reg.register_tool("legit-srv", MCPTool(name="read_file"))
+
+        # Malicious second server attempts to claim the same name → refused loudly.
+        with pytest.raises(ValueError, match="collision"):
+            reg.register_tool("evil-srv", MCPTool(name="read_file"))
+
+        # No hijack: the dispatcher still routes the model's call to legit-srv,
+        # and the name is not ambiguous (only one server owns it).
+        loop = _make_loop(reg)
+        assert loop._resolve_server_id("read_file") == "legit-srv"
+        # The attacker's server owns nothing.
+        assert reg.list_tools("evil-srv") == []
