@@ -2186,6 +2186,8 @@ test-hooks:
 	_jv() { s=$$(cat); [ -z "$$s" ] && return 0; printf '%s' "$$s" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; }; \
 	_tb() { grep -q 'Traceback\|^Error' /tmp/gludd-hook-stderr.txt 2>/dev/null && echo "TRACEBACK" || echo "CLEAN"; }; \
 	echo ""; echo "--- GROUP 1: agent_floor_stop.sh (Stop hook) ---"; \
+	_FOV_BAK=/tmp/gludd-floor-override.hooktest-bak.$$$$; \
+	if [ -e /tmp/gludd-floor-override ]; then mv /tmp/gludd-floor-override "$$_FOV_BAK" 2>/dev/null || true; echo "  [iso] moved live /tmp/gludd-floor-override aside for GROUP 1 (restored after)"; fi; \
 	echo "[1a] FLOOR=999 active=false -> exit=0, decision=block"; \
 	OUT=$$(printf '%s' '{"stop_hook_active":false}' | CLAUDE_AGENT_FLOOR=999 FLOOR_LIVE_OVERRIDE=0 bash .claude/hooks/agent_floor_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
 	echo "  exit=$$RC stdout=$$OUT stderr_tb=$$(_tb)"; \
@@ -2226,6 +2228,7 @@ test-hooks:
 	elif [ -z "$$OUT" ]; then echo "  INFO [1f]: empty (fail-open, no task-dir)"; \
 	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert "999-12" not in d.get("reason","")' 2>/dev/null; then echo "  PASS [1f]: band not inverted"; \
 	else echo "  FAIL [1f]: 999-12 in reason or invalid JSON"; OVERALL=FAIL; fi; \
+	if [ -e "$$_FOV_BAK" ]; then mv "$$_FOV_BAK" /tmp/gludd-floor-override 2>/dev/null || true; echo "  [iso] restored live /tmp/gludd-floor-override after GROUP 1"; fi; \
 	\
 	echo ""; echo "--- GROUP 2: multitasking_backlog_stop.sh (Stop hook) ---"; \
 	echo "[2a] stop_hook_active=true -> exit=0, no block"; \
@@ -2654,6 +2657,67 @@ test-hooks:
 	echo "[13f] FAIL-OPEN: garbage stdin -> exit=0, empty"; \
 	OUT=$$(printf 'NOT JSON' | bash .claude/hooks/no_flag_file_write_pretool.sh 2>/dev/null); RC=$$?; \
 	[ $$RC -eq 0 ] && echo "  PASS [13f]: fail-open on garbage stdin" || { echo "  FAIL [13f]: exit $$RC"; OVERALL=FAIL; }; \
+	\
+	echo ""; echo "--- GROUP 14: api_error_resilience_stop.sh (Stop hook) ---"; \
+	_AR_STATE=/tmp/gludd-hooktest-api-resilience-state-$$$$; \
+	rm -f "$$_AR_STATE"; \
+	echo "[14a] FAIL-OPEN: empty stdin (WINDOW=0 -> no file counts as recent) -> exit=0, empty"; \
+	OUT=$$(printf '' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" GLUDD_API_RESILIENCE_WINDOW=0 bash .claude/hooks/api_error_resilience_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT") stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [14a]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [14a]: empty exit=0 (fail-open, no recent failures)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null; then echo "  PASS [14a]: exit=0, valid JSON (a real fresh failing task .output exists in this live session -> block is correct)"; \
+	else echo "  FAIL [14a]: invalid JSON stdout; got: $$OUT"; OVERALL=FAIL; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [14a]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[14b] FAIL-OPEN: garbage stdin -> exit=0, no traceback"; \
+	OUT=$$(printf 'NOT JSON AT ALL' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" bash .claude/hooks/api_error_resilience_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [14b]: exit $$RC"; OVERALL=FAIL; \
+	else echo "  PASS [14b]: exit=0 on garbage stdin"; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [14b]: traceback in stderr"; OVERALL=FAIL; }; \
+	\
+	echo "[14c] ESCAPE: stop_hook_active=true -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":true}' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" bash .claude/hooks/api_error_resilience_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [14c]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [14c]: empty exit=0 (anti-wedge escape)"; \
+	else echo "  FAIL [14c]: blocked despite stop_hook_active=true; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[14d] DISABLED: GLUDD_API_RESILIENCE=0 -> exit=0, empty"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_API_RESILIENCE=0 GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" bash .claude/hooks/api_error_resilience_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [14d]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [14d]: empty exit=0 (disabled via toggle)"; \
+	else echo "  FAIL [14d]: emitted output when disabled; got: $$OUT"; OVERALL=FAIL; fi; \
+	\
+	echo "[14e] BLOCK: a fresh task .output with a transient-failure signature -> exit=0, {decision:block} + 'API-ERROR RESILIENCE' in reason"; \
+	_AR_FAKE_ROOT=/private/tmp/claude-hooktest-$$$$/x-gludd/sess-hooktest/tasks; \
+	mkdir -p "$$_AR_FAKE_ROOT" 2>/dev/null; \
+	printf 'agent ran a while\nthen: 529 overloaded_error overloaded\nstalled: no progress\n' > "$$_AR_FAKE_ROOT/fail.output"; \
+	rm -f "$$_AR_STATE"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" GLUDD_API_RESILIENCE_WINDOW=900 bash .claude/hooks/api_error_resilience_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC decision=$$(printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); print(d.get("decision","none"))' 2>/dev/null || echo 'PARSE_ERR/none') stderr_tb=$$(_tb)"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [14e]: exit $$RC (must be 0)"; OVERALL=FAIL; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("decision")=="block", "decision="+str(d.get("decision")); assert "API-ERROR RESILIENCE" in d.get("reason",""), "missing marker"' 2>/dev/null; then echo "  PASS [14e]: decision=block with 'API-ERROR RESILIENCE' in reason, exit=0 (block-path)"; \
+	else echo "  INFO/FAIL [14e]: expected block with marker; got: $$OUT (if a REAL fresh failing task .output is present in this live session glob, the fake may be shadowed -- treated as FAIL only if not a block)"; \
+	  printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("decision")=="block" else 1)' 2>/dev/null || { echo "  FAIL [14e]: not a block"; OVERALL=FAIL; }; fi; \
+	[ "$$(_tb)" = "CLEAN" ] || { echo "  FAIL [14e]: traceback in stderr"; OVERALL=FAIL; }; \
+	rm -rf "/private/tmp/claude-hooktest-$$$$" 2>/dev/null || true; \
+	\
+	echo "[14f] NO-FAILURE: only a fresh NO-signature task .output recent (WINDOW=0 excludes live-session files) -> exit=0, empty (allow stop)"; \
+	_AR_OK_ROOT=/private/tmp/claude-hooktestok-$$$$/x-gludd/sess-hooktest/tasks; \
+	mkdir -p "$$_AR_OK_ROOT" 2>/dev/null; \
+	printf 'agent ran fine\ncompleted the task and returned a result\n' > "$$_AR_OK_ROOT/ok.output"; \
+	rm -f "$$_AR_STATE"; \
+	OUT=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" GLUDD_API_RESILIENCE_WINDOW=0 bash .claude/hooks/api_error_resilience_stop.sh 2>/tmp/gludd-hook-stderr.txt); RC=$$?; \
+	echo "  exit=$$RC stdout=$$([ -z "$$OUT" ] && echo '(empty=correct)' || echo "$$OUT")"; \
+	if [ $$RC -ne 0 ]; then echo "  FAIL [14f]: exit $$RC"; OVERALL=FAIL; \
+	elif [ -z "$$OUT" ]; then echo "  PASS [14f]: empty exit=0 (no transient-failure signature -> allow stop)"; \
+	elif printf '%s' "$$OUT" | python3 -c 'import json,sys; d=json.load(sys.stdin); assert d.get("decision")=="block"' 2>/dev/null; then echo "  INFO [14f]: a same-second fresh failing task .output exists in this live session -> block is correct here (not a fake-file failure)"; \
+	else echo "  FAIL [14f]: unexpected non-block output; got: $$OUT"; OVERALL=FAIL; fi; \
+	rm -rf "/private/tmp/claude-hooktestok-$$$$" 2>/dev/null || true; \
+	rm -f "$$_AR_STATE"; \
 	\
 	echo ""; \
 	echo "========================================================"; \

@@ -146,6 +146,10 @@
           },
           {
             "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/api_error_resilience_stop.sh"
+          },
+          {
+            "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/multitasking_backlog_stop.sh"
           }
         ]
