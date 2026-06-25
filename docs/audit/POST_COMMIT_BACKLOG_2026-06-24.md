@@ -46,7 +46,7 @@ commits are below the log window but verified via the session's commit map.
 | Dep3 cryptography ≥ 48.0.1 | DONE | commit `713307b` (in log window) |
 | Dep4 pydantic-settings ≥ 2.14.2 | DONE | commit `713307b` (in log window) |
 | Dep5 msgpack ≥ 1.2.1 | DONE | commit `713307b` (in log window) |
-| Dep6 diskcache CVE (no upstream fix) | **OPEN** | compensating control / risk doc not yet added |
+| Dep6 diskcache CVE (no upstream fix) | DONE | compensating control: `models/response_cache.py` creates the cache dir `0o700` + `chmod`s on open; risk documented in `SECURITY.md` "Known dependency advisories"; permission test in `tests/unit/test_response_cache.py::test_cache_dir_is_owner_only` |
 | SF1 slurm command injection | VERIFIED SAFE | no vuln found — arg-list / validated execution |
 | SF2 self-update auth deps | VERIFIED SAFE | no vuln — PSK middleware covers `/admin/self-update/*` |
 
@@ -55,7 +55,6 @@ commits are below the log window but verified via the session's commit map.
 - **P3** unbounded ledger growth (TTL/maxlen eviction).
 - **D3** stale audit-file citations sweep/tombstone.
 - **D4** 3 stale docstrings.
-- **Dep6** diskcache CVE compensating control + risk doc.
 - **W3.x deeper items** and **project-hierarchy phase 3** — not yet built (phase 2
   relationships landed `5beeee6`/`6e36f19`; phase 3 outstanding).
 - **CI-1 / F-E / F-F** security findings — track per `POST_ALPHA4_SECURITY_FINDINGS`
@@ -66,7 +65,7 @@ commits are below the log window but verified via the session's commit map.
 **[2026-06-25: Dep1 INVALID — langchain/langgraph are IN USE by the ModelGateway +
 `/admin/models/workflow`; KEEP. Only CVE lower-bound bumps (Dep2-5) applied in `713307b`.]**
 
-**Tally:** 26 DONE, 5 OPEN (P3, D3, D4, Dep6, plus the unbuilt W3.x/hierarchy-phase-3),
+**Tally:** 27 DONE, 4 OPEN (P3, D3, D4, plus the unbuilt W3.x/hierarchy-phase-3),
 1 STALE (P5), 1 WONTFIX/INVALID (Dep1), 2 VERIFIED-SAFE (SF1, SF2).
 
 ---
