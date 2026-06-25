@@ -38,6 +38,12 @@ def _make_profile(profile_id="test-p", model_name="test"):
     profile.api_base_alias = None
     profile.cost_per_input_token = 0.000001
     profile.cost_per_output_token = 0.000002
+    # D-21: estimate_cost() reads these numeric token-budget fields when it
+    # re-estimates cost server-side (gateway.check_budget). A bare MagicMock
+    # would return MagicMocks here and break the numeric min()/comparison, so
+    # mirror the real ModelProfile defaults (max_output_tokens=8000).
+    profile.max_output_tokens = 8000
+    profile.max_input_tokens = 8000
     return profile
 
 
