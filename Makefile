@@ -19,6 +19,10 @@ discover-osq:
 	@echo "=== skill .md files (non-worktree) ===" ; find . -name '*.md' -path '*skills*' -not -path '*/.claude/*' -not -path '*/.venv/*' 2>/dev/null
 	@echo "=== skill search dirs in code ===" ; grep -rn 'discover_skills\|skills_dir\|SKILLS_DIR\|skills_path' src/general_ludd --include='*.py' -l 2>/dev/null
 	@echo "=== registry ===" ; grep -rn 'discover_skills' src/general_ludd --include='*.py' 2>/dev/null
+	@echo "=== molecule anywhere ===" ; find collections -path '*molecule*' -not -path '*/.claude/*' 2>/dev/null
+	@echo "=== subprocess in modules ===" ; grep -rln 'subprocess\|run_command' collections/ansible_collections/general_ludd/agent/plugins/modules 2>/dev/null
+	@echo "=== filestore root path resolution ===" ; grep -rn 'root_path\|GLUDD_FILESTORE\|filestore_root' src/general_ludd/filestore/store.py 2>/dev/null
+	@echo "=== gludd_skill module ===" ; cat collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_skill.py 2>/dev/null
 
 PYTHON := python3
 UV := uv
@@ -2119,7 +2123,7 @@ pip-upgrade:
 	@PIP_INDEX_URL=https://pypi.org/simple $(UV) run python -m pip install --upgrade 'pip>=26.1.2'
 	@$(UV) run python -m pip --version
 
-security: sast sbom pip-audit
+security: sast sbom pip-audit-gate
 
 qa: lint typecheck test healthcheck
 	@echo "QA gate passed."
