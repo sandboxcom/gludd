@@ -1874,7 +1874,9 @@ class EventLoop:
             # H2 (W3.7): persist through TodoRepository so the generated work
             # survives the tick (the in-memory harness.enqueue_todos discarded
             # them). Fall back to nothing if no repo/session is available.
-            enqueued = await self._persist_self_improve_todos(todos)
+            enqueued = await self._persist_self_improve_todos(
+                todos, project_id=self._tick_project_id
+            )
             if self._daemon_state is not None:
                 self._daemon_state["self_improve_last_analysis"] = {
                     "findings": findings, "findings_count": len(findings),
@@ -1899,7 +1901,9 @@ class EventLoop:
         "low": 0, "medium": 5, "high": 10, "critical": 20,
     }
 
-    async def _persist_self_improve_todos(self, todos: list[dict[str, Any]]) -> int:
+    async def _persist_self_improve_todos(
+        self, todos: list[dict[str, Any]], project_id: str | None = None
+    ) -> int:
         if self._todo_repo is None or self._active_session is None:
             return 0
         # Admission gate (W3.7): cap how many self-improve todos may be open at
@@ -1920,7 +1924,11 @@ class EventLoop:
             TodoStatus.FAILED.value,
             TodoStatus.CANCELLED.value,
         }
-        existing = await self._todo_repo.list_by_work_type("self_improve")
+        # W3.7/H2: scope the open-todo count per project so one tenant's
+        # self-improve todos cannot consume another tenant's max_open cap.
+        existing = await self._todo_repo.list_by_work_type(
+            "self_improve", project_id=project_id
+        )
         open_count = sum(
             1 for t in existing if _safe_str(t, "status") not in terminal
         )
@@ -1941,6 +1949,9 @@ class EventLoop:
                 "work_type": "self_improve",
                 "priority": priority,
                 "created_by": "self_improve_harness",
+                # W3.7/H2: stamp the tick's tenant scope so persisted
+                # self-improve todos are not orphaned with project_id=NULL.
+                "project_id": project_id,
             }
             try:
                 await self._todo_repo.create(payload)
