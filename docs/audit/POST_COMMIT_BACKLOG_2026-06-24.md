@@ -4,6 +4,73 @@ Consolidated from 6 parallel audit runs. Items within each section ordered highe
 
 ---
 
+## Reconciliation — 2026-06-25 session
+
+Most items in this backlog were implemented and committed during the 2026-06-25 session
+on `feature/alpha4-green-the-gate`. Original content below is **preserved as history** —
+this table is the authoritative current status. Commits visible in the current `make git-log`
+window (10 entries): `599d96b` (P12), `2f6388a` (D1), `713307b` (Dep2-5). All other listed
+commits are below the log window but verified via the session's commit map.
+
+| Item | Status | Commit / Note |
+|------|--------|---------------|
+| P1 status_summary N+1 | DONE | commit `4306bcf`, below log window |
+| P2 sync I/O blocks async startup | DONE | commit `2066541`, below log window |
+| P3 unbounded ledger growth | **OPEN** | not yet built — needs TTL/`maxlen` eviction on ledger collections |
+| P4 prompt-template re-parse per dispatch | DONE | commit `b87018c`, below log window |
+| P5 session-per-job thrash | STALE | already pooled (no defect) — invalid finding |
+| P6 work_summary N+1 | DONE | commit `dd1802d`, below log window |
+| P7 history_summary unbounded fetch | DONE | commit `dd1802d`, below log window |
+| P8 count_by_role Python GROUP BY | DONE | commit `b6c74b4`, below log window |
+| P9 unread_counts Python GROUP BY | DONE | commit `09ca091`, below log window |
+| P10 list_for_task_type full scan | DONE | commit `09ca091`, below log window |
+| P11 purge_expired row-by-row delete | DONE | commit `09ca091`, below log window |
+| P12 unbounded `.all()` pagination | DONE | commit `599d96b` (in log window) |
+| A1 admin_selftest to_thread | DONE | commit `e74249a`, below log window |
+| A2 gather without timeout | DONE | commit `18d3abe` (+ `ea3fb43` CancelledError), below log window |
+| A3 `_background_tasks` lock | DONE | commit `4bb61a5`, below log window |
+| E1 silent except-pass core loop | DONE | commit `98c6b1e`, below log window |
+| E2 silent except-pass worker | DONE | commit `d868d5d`, below log window |
+| E3 silent except job invocation | DONE | commit `2ff61ac`, below log window |
+| C1 `/readyz` tests | DONE | commit `04ac307`, below log window |
+| C2 to_thread/timeout_detector tests | DONE | commit `5745c29`, below log window |
+| C3 worker.build_gateway tests | DONE | commit `5745c29`, below log window |
+| C4 MCP transport pin tests | DONE | commit `057f3f3`, below log window |
+| C5 integrity scanner tests | DONE | commit `057f3f3`, below log window |
+| D1 router OpenAPI docs (wave 1) | DONE | commit `2f6388a` (in log window) — waves 2/3 below |
+| D2 SECURITY.md / operator guide | DONE | commit `c3256d5`, below log window |
+| D3 stale audit-file citations | **OPEN** | sweep/tombstone not yet done |
+| D4 stale docstrings | **OPEN** | 3 docstrings not yet updated |
+| Dep1 langchain/langgraph removal | **WONTFIX** | INVALID — langchain/langgraph are IN USE by ModelGateway + `/admin/models/workflow`. KEEP. See Dep1 correction below. |
+| Dep2 starlette ≥ 1.3.1 | DONE | commit `713307b` (in log window) |
+| Dep3 cryptography ≥ 48.0.1 | DONE | commit `713307b` (in log window) |
+| Dep4 pydantic-settings ≥ 2.14.2 | DONE | commit `713307b` (in log window) |
+| Dep5 msgpack ≥ 1.2.1 | DONE | commit `713307b` (in log window) |
+| Dep6 diskcache CVE (no upstream fix) | **OPEN** | compensating control / risk doc not yet added |
+| SF1 slurm command injection | VERIFIED SAFE | no vuln found — arg-list / validated execution |
+| SF2 self-update auth deps | VERIFIED SAFE | no vuln — PSK middleware covers `/admin/self-update/*` |
+
+### Still-OPEN (genuinely not yet built)
+
+- **P3** unbounded ledger growth (TTL/maxlen eviction).
+- **D3** stale audit-file citations sweep/tombstone.
+- **D4** 3 stale docstrings.
+- **Dep6** diskcache CVE compensating control + risk doc.
+- **W3.x deeper items** and **project-hierarchy phase 3** — not yet built (phase 2
+  relationships landed `5beeee6`/`6e36f19`; phase 3 outstanding).
+- **CI-1 / F-E / F-F** security findings — track per `POST_ALPHA4_SECURITY_FINDINGS`
+  if still open (not reconciled here; verify separately).
+
+### Dep1 correction
+
+**[2026-06-25: Dep1 INVALID — langchain/langgraph are IN USE by the ModelGateway +
+`/admin/models/workflow`; KEEP. Only CVE lower-bound bumps (Dep2-5) applied in `713307b`.]**
+
+**Tally:** 26 DONE, 5 OPEN (P3, D3, D4, Dep6, plus the unbuilt W3.x/hierarchy-phase-3),
+1 STALE (P5), 1 WONTFIX/INVALID (Dep1), 2 VERIFIED-SAFE (SF1, SF2).
+
+---
+
 ## PERFORMANCE
 
 | # | Title | File:Line | Issue | Fix | Severity |
@@ -95,6 +162,7 @@ response models; Wave 2 = batch one-line summaries; Wave 3 = typed response mode
 ## Top 5 — Do First
 
 1. **Dep1** — Drop langchain/langchain-openai/langgraph: zero usage, 2 HIGH CVEs, pure subtraction.
+   *[2026-06-25: Dep1 INVALID — langchain/langgraph are IN USE by the ModelGateway + `/admin/models/workflow`; KEEP. Only CVE lower-bound bumps (Dep2-5) applied in `713307b`.]*
 2. **Dep2/Dep3** — Bump starlette + cryptography: two HIGH CVEs, single-line pyproject.toml changes.
 3. **E1** — Silent except-pass in `event_loop/loop.py` (5 sites): hides all runtime errors in the core loop.
 4. **A1** — `admin_selftest` subprocess blocking the event loop (`routers/integrity.py:220`): can stall all async traffic.
