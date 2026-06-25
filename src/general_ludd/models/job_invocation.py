@@ -178,7 +178,7 @@ def _record_generation_benchmark(
                         _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
                     else:
                         loop.run_until_complete(result)
-                except RuntimeError:
-                    pass
-    except Exception:
-        pass
+                except RuntimeError as exc:
+                    logger.warning("Could not schedule async benchmark record: %s", exc, exc_info=True)
+    except Exception as exc:
+        logger.warning("Benchmark recording failed for %s/%s: %s", model_profile, work_type, exc, exc_info=True)
