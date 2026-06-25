@@ -1,0 +1,25 @@
+---
+# Env-fact-driven agent orchestration: gather the consolidated environment brief
+# + per-work-type advice, then branch to the right action module (multi-step
+# LangGraph workflow vs single-shot routed model call) under a budget guard,
+# surfacing status back to gludd. Every gludd-supplied var is default()-guarded.
+- name: Agent-orchestration playbook (env-advice-driven branching)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    work_type: "{{ work_type | default('feature') }}"
+    prompt_text: "{{ prompt_text | default(model_response | default('', true)) }}"
+    skill_body: "{{ skill_body | default('') }}"
+    todo_id: "{{ todo_id | default('') }}"
+    min_remaining_usd: "{{ min_remaining_usd | default(0.02) }}"
+    quality_threshold: "{{ quality_threshold | default(0.6) }}"
+    max_retries: "{{ max_retries | default(2) }}"
+    capability_role: "{{ capability_role | default('agent_task') }}"
+    enable_db_read: "{{ enable_db_read | default(true) }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-agent-orchestrate') }}"
+
+  roles:
+    - general_ludd.agent.agent_orchestrate

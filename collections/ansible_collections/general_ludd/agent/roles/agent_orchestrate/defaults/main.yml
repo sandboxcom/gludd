@@ -1,0 +1,47 @@
+---
+# agent_orchestrate role defaults — env-fact-driven action dispatch.
+#
+# Flow (tasks/main.yml):
+#   1. gather gludd_environment WITH work_type (snapshot + advice block)
+#   2. GUARD: defer (end_play + deferred artifact) when run budget is below the
+#      floor OR the advisor says budget_ok is false
+#   3. optional gludd_db todo_get for context
+#   4. BRANCH on advice.use_workflow -> gludd_langgraph_workflow (quality) vs
+#      gludd_model_call (single-shot), using advice.recommendation.model_profile
+#   5. assemble + write the result artifact
+#   6. optional gludd_db todo_update_status to surface status back to gludd
+#
+# Every gludd-supplied var is referenced through `| default(...)` in tasks.
+
+# Daemon connectivity
+daemon_url: "http://localhost:8000"
+psk: ""                       # no_log in tasks; prefer GLUDD_PSK env var
+
+# Work shape (drives advice + routing)
+work_type: "feature"          # e.g. feature | bugfix | refactor | review | docs | chat
+prompt_text: ""               # primary generation/decision input
+skill_body: ""                # optional system instruction
+todo_id: ""                   # optional todo to surface status back to
+prompt_tokens: ""             # optional prompt size forwarded to the advisor
+
+# Budget floor: below this remaining run budget (USD), defer instead of acting.
+# The advisor's own budget_ok flag is the other defer trigger.
+min_remaining_usd: 0.02
+
+# Quality knobs (passed through to the workflow path)
+quality_threshold: 0.6
+max_retries: 2
+
+# Capability identity for the per-role default-DENY db policy
+# (capability_policy.py). "agent_task" grants exactly
+# {todo_get, todo_update_status}; widen only if you write more.
+capability_role: "agent_task"
+
+# Optional sub-action toggles (db read ON by default; vcc/bert OFF by default).
+enable_db_read: true          # fetch the todo before acting (todo_get)
+enable_vcc: false             # version-control commit step — see ROLE_COLLECTION design §1.5
+vcc_repo_path: ""             # used only when enable_vcc and todo/output is committed
+enable_bert: false            # RAG/embedding similarity hint — NET-NEW endpoint, off
+
+# Artifact output
+artifact_dir: "/tmp/harness-agent-orchestrate"

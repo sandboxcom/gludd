@@ -1,0 +1,51 @@
+---
+# Exercise the REAL agent_orchestrate role across all three of its decision
+# paths against the mock daemon:
+#   1. work_type=feature -> advice.use_workflow TRUE  -> gludd_langgraph_workflow
+#      (POST /admin/models/workflow), status surfaced via PATCH /api/todos/<id>.
+#   2. work_type=docs    -> advice.use_workflow FALSE -> gludd_model_call
+#      (POST /admin/models/call),     status surfaced via PATCH /api/todos/<id>.
+#   3. min_remaining_usd above the mock's run_remaining_usd -> DEFER (budget_floor)
+#      -> writes a deferred artifact and ends the play WITHOUT any model call.
+- name: Converge - run agent_orchestrate role across its branches
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    daemon: "http://127.0.0.1:{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+  tasks:
+    - name: BRANCH 1 - workflow path (work_type=feature)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_orchestrate
+      vars:
+        work_type: "feature"
+        prompt_text: "Implement a function that reverses a linked list."
+        daemon_url: "{{ daemon }}"
+        psk: ""
+        todo_id: "TODO-MOL-WF"
+        artifact_dir: "/tmp/gludd-agent-orchestrate-wf-{{ mock_port }}"
+
+    - name: BRANCH 2 - single-shot path (work_type=docs)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_orchestrate
+      vars:
+        work_type: "docs"
+        prompt_text: "Draft a release note for v1.2.0."
+        daemon_url: "{{ daemon }}"
+        psk: ""
+        todo_id: "TODO-MOL-SS"
+        artifact_dir: "/tmp/gludd-agent-orchestrate-ss-{{ mock_port }}"
+
+    - name: BRANCH 3 - deferral path (budget floor above remaining)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_orchestrate
+      vars:
+        work_type: "feature"
+        prompt_text: "This should never reach a model call."
+        daemon_url: "{{ daemon }}"
+        psk: ""
+        todo_id: "TODO-MOL-DEFER"
+        # Mock budget.run_remaining_usd is 5.0; a 99.0 floor forces the defer.
+        min_remaining_usd: 99.0
+        artifact_dir: "/tmp/gludd-agent-orchestrate-defer-{{ mock_port }}"

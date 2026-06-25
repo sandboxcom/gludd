@@ -32,6 +32,8 @@ shape matches what each module parses:
   POST /api/dispatch                  -> 200 {"result":{...}}                (gludd_dispatch dispatch)
   GET  /api/dispatch/available        -> 200 {"handlers":[...]}              (gludd_dispatch available)
   GET  /api/dispatch/recent           -> 200 {"records":[...]}               (gludd_dispatch recent)
+  GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
+  GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -47,7 +49,7 @@ import json
 import os
 import sys
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
 
 
 # ---------------------------------------------------------------------------
@@ -299,6 +301,92 @@ VERIFY_SUMMARY = {
 }
 
 
+# Consolidated environment brief shaped like routers/environment.py
+# EnvironmentBrief. budget.run_remaining_usd is the field the agent_orchestrate
+# role's budget-floor guard reads; keep it comfortably above the default floor so
+# the role proceeds to act (the deferral path is exercised by overriding
+# min_remaining_usd / work_type in the scenario).
+ENVIRONMENT_SNAPSHOT = {
+    "models": [
+        {
+            "profile_id": "mock-profile",
+            "provider": "mock",
+            "model": "glm-4.6",
+            "enabled": True,
+            "quality_class": "high",
+            "context_window": 128000,
+            "max_output_tokens": 4096,
+            "api_metered": True,
+        },
+    ],
+    "routing": {
+        "default_profile": "mock-profile",
+        "weak_model_profile": "mock-weak",
+        "roles": {},
+    },
+    "budget": {
+        "run_remaining_usd": 5.0,
+        "run_limit_usd": 10.0,
+        "run_spent_usd": 5.0,
+        "elapsed_seconds": 42.0,
+        "window": None,
+    },
+    "compute": {"providers": [], "gpu_types": [], "configured": None},
+    "tools": [],
+    "skills": [],
+    "queues": [{"name": "todos", "depth": 3}],
+    "system": {"cpu_count": 4, "python_version": "3.12.0"},
+    "optimization": {"hints": [], "recommended_profile_for": {}},
+}
+
+# Work types the REAL advisor (controllers/environment_advisor.py
+# _WORKFLOW_WORK_TYPES) routes through the multi-step LangGraph workflow. The
+# mock mirrors that set so the role's advice.use_workflow branch is genuinely
+# exercised for both true (feature/bugfix/refactor/review) and false (docs/chat/
+# classify and anything else).
+_WORKFLOW_WORK_TYPES = ("feature", "bugfix", "refactor", "review")
+
+
+def _advice_response(work_type: str) -> dict:
+    """Per-work-type advice block, shaped like routers/environment.py AdviceBrief.
+
+    use_workflow follows the real advisor's workflow set so the agent_orchestrate
+    role branches to the workflow module for feature/bugfix/refactor/review and
+    to the single-shot router for everything else.
+    """
+    wt = (work_type or "").strip().lower()
+    use_workflow = wt in _WORKFLOW_WORK_TYPES
+    return {
+        "task_type": work_type,
+        "recommendation": {
+            "model_profile": "mock-profile",
+            "reason": "mock_recommendation",
+            "composite_score": 0.81,
+            "fallback": False,
+            "sample_count": 5,
+            "latency_class": "standard",
+            "quality_class": "high",
+        },
+        "route": {
+            "selected_model_profile_id": "mock-profile",
+            "selected_prompt_profile_id": "default",
+        },
+        "est_cost_usd": 0.0021,
+        "use_workflow": use_workflow,
+        "workflow_reason": (
+            f"work_type '{wt}' benefits from gated multi-step workflow"
+            if use_workflow
+            else f"work_type '{wt}' is single-shot"
+        ),
+        "resource_hints": {
+            "prefer_local": False,
+            "budget_ok": True,
+            "budget_warning": False,
+            "context_fits": True,
+        },
+    }
+
+
 def _schedule_response(payload: dict) -> dict:
     """Return a concurrency-safe batched plan for the submitted work items.
 
@@ -524,6 +612,12 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"handlers": list(DISPATCH_HANDLERS)})
         elif path == "/api/dispatch/recent":
             self._send_json(200, {"records": list(DISPATCH_RECENT)})
+        elif path == "/api/environment":
+            self._send_json(200, dict(ENVIRONMENT_SNAPSHOT))
+        elif path == "/api/environment/advise":
+            qs = parse_qs(urlparse(self.path).query)
+            work_type = (qs.get("work_type", [""]) or [""])[0]
+            self._send_json(200, _advice_response(work_type))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 

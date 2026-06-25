@@ -1,0 +1,121 @@
+---
+- name: Verify - agent_orchestrate branched correctly and wrote each artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}.pid"
+    mock_log: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}.log"
+    wf_artifact: "/tmp/gludd-agent-orchestrate-wf-{{ mock_port }}/agent_orchestrate_result.json"
+    ss_artifact: "/tmp/gludd-agent-orchestrate-ss-{{ mock_port }}/agent_orchestrate_result.json"
+    defer_artifact: "/tmp/gludd-agent-orchestrate-defer-{{ mock_port }}/agent_orchestrate_result.json"
+  tasks:
+
+    # ---- BRANCH 1: workflow path artifact ---------------------------------
+    - name: Load workflow-path artifact
+      ansible.builtin.slurp:
+        src: "{{ wf_artifact }}"
+      register: wf_raw
+
+    - name: Parse workflow-path artifact
+      ansible.builtin.set_fact:
+        wf: "{{ wf_raw.content | b64decode | from_json }}"
+
+    - name: Assert workflow path took the langgraph branch and produced content
+      ansible.builtin.assert:
+        that:
+          - wf.todo_id == 'TODO-MOL-WF'
+          - wf.status == 'success'
+          - wf.path == 'workflow'
+          - wf.model_profile is defined
+          - wf.content_excerpt | length > 0
+        fail_msg: "workflow-path artifact wrong: {{ wf }}"
+        success_msg: "agent_orchestrate workflow branch ok: path={{ wf.path }} profile={{ wf.model_profile }}"
+
+    # ---- BRANCH 2: single-shot path artifact ------------------------------
+    - name: Load single-shot-path artifact
+      ansible.builtin.slurp:
+        src: "{{ ss_artifact }}"
+      register: ss_raw
+
+    - name: Parse single-shot-path artifact
+      ansible.builtin.set_fact:
+        ss: "{{ ss_raw.content | b64decode | from_json }}"
+
+    - name: Assert single-shot path took the model_call branch and produced content
+      ansible.builtin.assert:
+        that:
+          - ss.todo_id == 'TODO-MOL-SS'
+          - ss.status == 'success'
+          - ss.path == 'single_shot'
+          - ss.model_profile is defined
+          - ss.content_excerpt | length > 0
+        fail_msg: "single-shot-path artifact wrong: {{ ss }}"
+        success_msg: "agent_orchestrate single-shot branch ok: path={{ ss.path }} profile={{ ss.model_profile }}"
+
+    # ---- BRANCH 3: deferral path artifact ---------------------------------
+    - name: Load deferral-path artifact
+      ansible.builtin.slurp:
+        src: "{{ defer_artifact }}"
+      register: defer_raw
+
+    - name: Parse deferral-path artifact
+      ansible.builtin.set_fact:
+        defer: "{{ defer_raw.content | b64decode | from_json }}"
+
+    - name: Assert deferral path deferred on the budget floor
+      ansible.builtin.assert:
+        that:
+          - defer.todo_id == 'TODO-MOL-DEFER'
+          - defer.status == 'deferred'
+          - defer.path == 'deferred'
+          - defer.reason == 'budget_floor'
+        fail_msg: "deferral-path artifact wrong: {{ defer }}"
+        success_msg: "agent_orchestrate deferral branch ok: reason={{ defer.reason }}"
+
+    # ---- prove the over-the-wire calls actually happened ------------------
+    - name: Load mock daemon request log
+      ansible.builtin.slurp:
+        src: "{{ mock_log }}"
+      register: log_raw
+
+    - name: Decode mock daemon request log
+      ansible.builtin.set_fact:
+        mock_requests: "{{ log_raw.content | b64decode }}"
+
+    - name: Assert the role gathered env + advice and exercised both action modules
+      ansible.builtin.assert:
+        that:
+          # env + advice gather (gludd_environment with work_type set)
+          - "'GET /api/environment' in mock_requests"
+          - "'GET /api/environment/advise' in mock_requests"
+          # workflow branch hit the workflow endpoint
+          - "'POST /admin/models/workflow' in mock_requests"
+          # single-shot branch hit the model-call endpoint
+          - "'POST /admin/models/call' in mock_requests"
+          # status surfaced back to gludd for the two acting branches
+          - "'PATCH /api/todos/TODO-MOL-WF' in mock_requests"
+          - "'PATCH /api/todos/TODO-MOL-SS' in mock_requests"
+          # deferral branch made NO model call or status update for its todo
+          - "'PATCH /api/todos/TODO-MOL-DEFER' not in mock_requests"
+        fail_msg: >-
+          agent_orchestrate did not exercise the expected over-the-wire calls.
+          Mock request log: {{ mock_requests }}
+        success_msg: "agent_orchestrate over-the-wire branching verified against the mock daemon"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove artifact dirs
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "/tmp/gludd-agent-orchestrate-wf-{{ mock_port }}"
+        - "/tmp/gludd-agent-orchestrate-ss-{{ mock_port }}"
+        - "/tmp/gludd-agent-orchestrate-defer-{{ mock_port }}"
+      failed_when: false

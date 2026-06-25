@@ -1,0 +1,25 @@
+---
+galaxy_info:
+  role_name: agent_orchestrate
+  author: Agentic Harness Agent
+  description: >
+    Env-fact-driven agent orchestration role: gather the consolidated
+    environment brief + per-work-type advice (gludd_environment with work_type
+    set), guard on budget/advisor deferral, then BRANCH on advice.use_workflow
+    to drive either the multi-step LangGraph workflow (gludd_langgraph_workflow)
+    or a single-shot routed model call (gludd_model_call), using
+    advice.recommendation.model_profile. Optionally reads the todo for context
+    and surfaces the result status back to gludd. Wraps the action in
+    block/rescue/always and writes a result artifact (success | failed |
+    deferred) for human inspection. This is the role/collection orchestration
+    layer that realizes "read dynamic env facts -> pick the right action module".
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
