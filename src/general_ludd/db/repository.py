@@ -486,21 +486,26 @@ class TaskReturnRepository:
         """In-flight/claimed task-return counts by status / queue / work_type.
 
         Task returns represent dispatched work; this is the "work" facet of
-        /api/facts. Reused, not duplicated, by the facts endpoint."""
-        stmt = select(TaskReturnModel)
-        if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        by_status: dict[str, int] = {}
-        by_queue: dict[str, int] = {}
-        by_work_type: dict[str, int] = {}
-        for r in rows:
-            by_status[r.status] = by_status.get(r.status, 0) + 1
-            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
-            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
+        /api/facts. Reused, not duplicated, by the facts endpoint.
+
+        Aggregated in SQL via ``GROUP BY`` per facet (P6) rather than loading
+        every row and counting in Python — mirrors ``TodoRepository.status_summary``.
+        ``status``/``queue``/``work_type`` are all NOT NULL on TaskReturnModel, so
+        no None bucket can occur (no NULL-key handling needed)."""
+        from sqlalchemy import func
+
+        async def _group_counts(column: Any) -> dict[str, int]:
+            stmt = select(column, func.count()).group_by(column)
+            if project_id is not None:
+                stmt = stmt.where(TaskReturnModel.project_id == project_id)
+            result = await self._session.execute(stmt)
+            return {key: count for key, count in result.all()}
+
+        by_status = await _group_counts(TaskReturnModel.status)
+        by_queue = await _group_counts(TaskReturnModel.queue)
+        by_work_type = await _group_counts(TaskReturnModel.work_type)
         return {
-            "total": len(rows),
+            "total": sum(by_status.values()),
             "by_status": by_status,
             "by_queue": by_queue,
             "by_work_type": by_work_type,
@@ -509,16 +514,35 @@ class TaskReturnRepository:
     async def history_summary(
         self, project_id: str | None = None, recent_limit: int = 10
     ) -> dict[str, Any]:
-        """Recent returns + success/failure rates (exit_code 0 == success)."""
-        stmt = select(TaskReturnModel)
+        """Recent returns + success/failure rates (exit_code 0 == success).
+
+        Split into (a) an aggregate count query (total + successes via
+        ``func.count``/``func.sum(case(...))``) and (b) a separate ordered+LIMITed
+        query for the recent slice (P7), rather than loading every row just to
+        count and head-slice. ``exit_code`` is NOT NULL, so a return is a success
+        iff ``exit_code == 0`` exactly as the old Python loop computed."""
+        from sqlalchemy import case, func
+
+        agg_stmt = select(
+            func.count(),
+            func.sum(case((TaskReturnModel.exit_code == 0, 1), else_=0)),
+        )
         if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        stmt = stmt.order_by(TaskReturnModel.created_at.desc())
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        total = len(rows)
-        successes = sum(1 for r in rows if r.exit_code == 0)
+            agg_stmt = agg_stmt.where(TaskReturnModel.project_id == project_id)
+        total, successes_raw = (await self._session.execute(agg_stmt)).one()
+        total = total or 0
+        # func.sum over zero rows is SQL NULL -> coerce to 0 (matches the old
+        # ``sum(1 for ...)`` which is 0 on an empty result set).
+        successes = successes_raw or 0
         failures = total - successes
+
+        recent_stmt = select(TaskReturnModel)
+        if project_id is not None:
+            recent_stmt = recent_stmt.where(TaskReturnModel.project_id == project_id)
+        recent_stmt = recent_stmt.order_by(
+            TaskReturnModel.created_at.desc()
+        ).limit(recent_limit)
+        recent_rows = list((await self._session.execute(recent_stmt)).scalars().all())
         recent = [
             {
                 "return_id": r.return_id,
@@ -527,7 +551,7 @@ class TaskReturnRepository:
                 "exit_code": r.exit_code,
                 "created_at": str(r.created_at) if r.created_at else None,
             }
-            for r in rows[:recent_limit]
+            for r in recent_rows
         ]
         return {
             "total_returns": total,
