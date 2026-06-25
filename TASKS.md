@@ -472,3 +472,7 @@ Goal: make .github/workflows/build.yml actually pass in real CI. Observed (sandb
 - [x] S6 — Gate concurrency regex fix: test-count exempt, TESTFILE= carve-out, validate denied | evidence: make test-hooks GROUP 10 pass cdb5fe9
 - [x] S7 — Ratchet burn-down: 3 watchdog FSEvents entries removed (14→11); RATCHET_MAX 14→11; timeout 5.0→15.0 | evidence: make test-specific test_guardrails.py::TestRatchetGrowthGuard 2 pass cdb5fe9
 - [x] S8 — F6a/F6b CI fix: /api/status db_url/db_engine leak removed; pagination test _daemon_state binding fixed | evidence: make test-specific test_api_status_no_leak.py + test_todos_pagination.py 6 pass 85a667e
+
+## Release v0.1.0-alpha.3 — SHIPPED (2026-06-24)
+
+- [x] RELEASE-alpha.3 — v0.1.0-alpha.3 published with 11 artifacts | evidence: make verify-release-artifact TAG=v0.1.0-alpha.3 PASS; https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.3; CI GREEN on 009af30 run 28135312354

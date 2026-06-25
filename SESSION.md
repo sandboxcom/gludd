@@ -22,7 +22,7 @@ commits; the `release` CI job (`needs: [gate]`) was skipped.
 - **Root cause:** merge resolution bug in `routers/todos.py` — `/api/status` response
   was missing `config_file_count`, `db_engine`, `db_url` fields (lost during merge).
 - **Fix:** restored the missing fields. Committed as `07e2fc2`.
-- **Status:** pushed to remote, awaiting CI green.
+- **Status:** SHIPPED — 11 artifacts at https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.3
 
 ### New Tooling
 - `make git-tag-rm TAG=...` — delete a tag locally + on remote
@@ -41,8 +41,8 @@ commits; the `release` CI job (`needs: [gate]`) was skipped.
 ## Next Steps
 
 1. Wait for alpha.2 CI green → run `make verify-release-artifact TAG=v0.1.0-alpha.2`.
-2. Wait for alpha.3 CI green → run `make release-cut TAG=v0.1.0-alpha.3 MSG='...'`.
-3. After release-cut completes → verify artifact with `make verify-release-artifact`.
+2. alpha.3 SHIPPED — 11 artifacts at https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.3.
+3. After alpha.2 artifact verified → close out release manager work.
 
 ## Current Gate Status
 
