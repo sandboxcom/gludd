@@ -327,7 +327,7 @@ def _make_budget_gated_executor(
         todo_check = budget.check_todo_budget(todo_id, projected_cost_usd)
         if not todo_check["allowed"]:
             return _BM_DEFERRED
-        daily_check = budget.check_daily_budget(projected_cost_usd)
+        daily_check = budget.check_daily_budget_reserved(todo_id, projected_cost_usd)
         if not daily_check["allowed"]:
             return _BM_DEFERRED
         result = await executor(*args, **kwargs)
@@ -479,4 +479,6 @@ class TestBudgetManagerGatedExecutor:
         assert result["allowed"] is True
         status = budget.get_status()
         assert status["paused"] is False
-        assert status["daily_spend"] == pytest.approx(0.0)
+        # The rollover zeroed the prior day's spend; the new 0.5 charge is all
+        # that remains on the fresh window's ledger (not the pre-rollover total).
+        assert status["daily_spend"] == pytest.approx(0.5)

@@ -274,6 +274,11 @@ test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
 	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v
 
+test-specific-summary:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific-summary TESTFILE='tests/unit -k budget'"; exit 1; fi
+	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt | tail -8; \
+	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt || echo "No FAILED/ERROR lines"
+
 test-count:
 	@$(UV) run python -m pytest tests/ --co -q 2>&1 | tail -3
 
