@@ -71,6 +71,19 @@ PHASE_ORDER = [
 ]
 
 
+# Two-phase generation (keystone): Phase 1 (``invoke_model_for_generation``) is
+# tool-free BY DESIGN (CA-T9) — it asks the model for text and never binds tools.
+# Phase 2 runs the fully-built ``ToolCallLoop`` for work types whose execution
+# genuinely needs autonomous tool use (the model decides which MCP tools to call,
+# the loop executes them, feeds results back, and iterates). This frozenset is the
+# (tunable) gate for which work types get Phase 2; it is deliberately conservative
+# — only investigative/refinement work types that benefit from tool access — so
+# pure code/bugfix/docs generation stays Phase-1-only and CA-T9 still holds for
+# them. Phase 2 additionally requires both an MCP client and a model gateway to be
+# wired; absent either, the tick falls through to Phase-1-only output.
+_TOOL_USE_WORK_TYPES: frozenset[str] = frozenset({"analysis", "audit"})
+
+
 def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
     val = getattr(obj, attr, default)
     return val if isinstance(val, str) else default
@@ -1312,6 +1325,98 @@ class EventLoop:
                                             job_id,
                                             exc_info=True,
                                         )
+            # Phase 2 (keystone): autonomous tool use via the ToolCallLoop.
+            #
+            # Phase 1 above is tool-free by design (CA-T9): it produces text and,
+            # if the model emitted STRUCTURED tool_calls, those are dispatched
+            # once. Phase 2 is the genuine agentic loop — for tool-requiring work
+            # types it binds the live MCP tools (list_tools -> tools=), lets the
+            # model choose+call them, executes via the MCP client, feeds results
+            # back, and iterates until the model stops requesting tools. This is
+            # what makes autonomous tool action FUNCTIONAL (not merely
+            # dispatch-wired) end to end.
+            #
+            # Gated so it NEVER runs for pure-generation work types (code/bugfix/
+            # docs stay Phase-1-only, preserving CA-T9 for them), and only when an
+            # MCP client AND a model gateway are wired. Wrapped so any failure
+            # logs + falls through without breaking the tick.
+            if (
+                work_type in _TOOL_USE_WORK_TYPES
+                and self._mcp_client is not None
+                and self._model_gateway is not None
+            ):
+                try:
+                    from general_ludd.execution.tool_loop import ToolCallLoop
+
+                    tool_loop = ToolCallLoop(
+                        model_gateway=self._model_gateway,
+                        mcp_client=self._mcp_client,
+                        mcp_registry=self._mcp_tool_registry,
+                    )
+                    # Use the Phase-1 generated text as additional context so the
+                    # tool-driven phase REFINES the analysis rather than starting
+                    # blind; fall back to the raw prompt when Phase 1 produced
+                    # nothing.
+                    phase2_user = prompt_text or ""
+                    if model_response:
+                        phase2_user = (
+                            f"{phase2_user}\n\n"
+                            f"Initial analysis (refine using the available tools):\n"
+                            f"{model_response}"
+                        ).strip()
+                    phase2_job = JobSpec(
+                        job_id=job_id,
+                        todo_id=_safe_str(todo, "todo_id", "") or "",
+                        playbook=playbook,
+                        queue=_safe_str(todo, "queue", "core") or "core",
+                        work_type=work_type,
+                        resource_profile=_safe_str(todo, "resource_profile", "low_resource")
+                        or "low_resource",
+                        model_profile=resolved_model_profile,
+                        prompt_profile=resolved_prompt_profile,
+                        prompt_text=phase2_user,
+                        skill_body=skill_body,
+                        project_id=project_id_val,
+                    )
+                    tool_result = await tool_loop.run_with_tools(
+                        phase2_job,
+                        skill_body or "",
+                        phase2_user,
+                    )
+                    logger.info(
+                        "EventLoop: Phase-2 ToolCallLoop completed for %s job %s "
+                        "(work_type=%s)",
+                        _safe_str(todo, "todo_id", "?"),
+                        job_id,
+                        work_type,
+                    )
+                    # Persist the tool-loop output alongside the Phase-1 dispatch
+                    # results so the autonomous tool action is recorded on the job
+                    # trace (mirrors how dispatch_all results are persisted above).
+                    if eff_variable_repo is not None and tool_result:
+                        try:
+                            await eff_variable_repo.set_var(
+                                namespace="tool_results",
+                                key=f"tool_loop_result:{job_id}",
+                                value=str(tool_result),
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Failed to persist Phase-2 tool_loop_result (job %s)",
+                                job_id,
+                                exc_info=True,
+                            )
+                except Exception:
+                    # Phase 2 is additive: a tool-loop failure must NOT break the
+                    # tick. Log loudly and fall through to the playbook run with
+                    # the Phase-1 output intact.
+                    logger.warning(
+                        "EventLoop: Phase-2 ToolCallLoop failed for job %s "
+                        "(work_type=%s) — falling through to Phase-1 output",
+                        job_id,
+                        work_type,
+                        exc_info=True,
+                    )
             if model_response is not None and self._benchmark_recorder is not None:
                 try:
                     from general_ludd.event_loop.benchmark import record_job_benchmark

@@ -71,16 +71,37 @@ def invoke_model_for_generation(
     and a simple scoring pass/fail flag.  This satisfies the CA-T11 integrity
     requirement that a score is recorded on the daemon async execute path.
 
-    Tool-use on the generation path: when the model emits structured tool/function
-    calls (``ModelResponse.tool_calls``), they are returned to the caller (the
-    daemon ``loop.py`` and worker ``app.py`` dispatch sites) which routes them
-    through the ``DynamicDispatcher`` so model-driven tool actions (MCP/git/file
-    writes) actually fire.  Previously this helper returned only ``content`` and
-    the callers re-parsed the TEXT via ``parse_tool_calls`` — which cannot recover
-    the structured calls — so model-driven actions were silently discarded on
-    both the daemon and worker generation paths.  The structured ``tool_calls``
-    are the same ones the ``ToolCallLoop`` consumes; we hand them straight to the
-    dispatcher rather than round-tripping through text.
+    Two-phase generation (CA-T9, keystone):
+
+    * **Phase 1 — this helper — is tool-free BY DESIGN.**  It asks the model for
+      text and deliberately does NOT pass ``tools=`` to ``call_model``.  Binding
+      dispatch-tools into every plain text-generation call would be a risky
+      behaviour change (the model could emit tool-call JSON on tasks where no
+      tool-call loop is running to consume it), so this boundary is intentional
+      and is asserted by ``test_generation_path_is_tool_free_by_design`` /
+      ``test_source_confirms_generation_path_skips_tools``.  Do NOT add ``tools=``
+      here.
+    * **Phase 2 — autonomous tool use — lives in the event loop, NOT here.**  For
+      tool-requiring work types (``event_loop.loop._TOOL_USE_WORK_TYPES``) the
+      event loop instantiates the fully-built ``ToolCallLoop``
+      (``execution/tool_loop.py``), which binds the live MCP tools
+      (``list_tools`` -> ``tools=``), lets the model choose+call them, executes
+      via the MCP client, and iterates on tool results.  That is where
+      model-driven file-writes / git / MCP actions actually fire under model
+      control.
+
+    Tool-use on the Phase-1 generation path (this helper): when the model emits
+    structured tool/function calls (``ModelResponse.tool_calls``) of its own
+    accord, they are returned to the caller (the daemon ``loop.py`` and worker
+    ``app.py`` dispatch sites) which routes them through the ``DynamicDispatcher``
+    so a single round of model-driven tool actions (MCP/git/file writes) still
+    fires.  Previously this helper returned only ``content`` and the callers
+    re-parsed the TEXT via ``parse_tool_calls`` — which cannot recover the
+    structured calls — so model-driven actions were silently discarded on both
+    the daemon and worker generation paths.  The structured ``tool_calls`` are the
+    same ones the ``ToolCallLoop`` consumes; we hand them straight to the
+    dispatcher rather than round-tripping through text.  The full multi-turn
+    agentic loop, however, is Phase 2's ``ToolCallLoop`` — not this helper.
     """
     if not prompt_text:
         logger.warning(
