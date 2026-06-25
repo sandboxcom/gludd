@@ -75,8 +75,14 @@ def build_gateway_from_config() -> ModelGateway | None:
             provider_registry=ProviderRegistry.from_profiles(profiles),
             secrets_manager=EnvSecretsManager(),
         )
-    except Exception as exc:  # pragma: no cover - defensive config path
-        logger.warning("Worker gateway construction failed: %s", exc)
+    except Exception:  # pragma: no cover - defensive config path
+        # E2: best-effort config fallback — the worker degrades to no model
+        # calls rather than failing. Surface the full traceback (exc_info) so the
+        # failure is OBSERVABLE instead of silently swallowed.
+        logger.warning(
+            "Worker gateway construction failed; falling back to no model calls",
+            exc_info=True,
+        )
         return None
 
 
@@ -128,8 +134,14 @@ def build_dispatcher_from_config() -> Any:
             role="event_loop",
             skill_handler=make_skill_handler(registry),
         )
-    except Exception as exc:  # pragma: no cover - defensive config path
-        logger.warning("Worker dispatcher construction failed: %s", exc)
+    except Exception:  # pragma: no cover - defensive config path
+        # E2: best-effort config fallback — the worker keeps its detect-only
+        # path rather than failing. Surface the full traceback (exc_info) so the
+        # failure is OBSERVABLE instead of silently swallowed.
+        logger.warning(
+            "Worker dispatcher construction failed; falling back to detect-only",
+            exc_info=True,
+        )
         return None
 
 
