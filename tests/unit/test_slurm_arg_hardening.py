@@ -153,6 +153,37 @@ def test_submit_rejects_injection_extra_args(adapter: SlurmAdapter) -> None:
     run.assert_not_called()
 
 
+@pytest.mark.parametrize(
+    "bad_output",
+    [
+        "/tmp/out.log\n#SBATCH --partition=hijack",
+        "/tmp/out.log\r#SBATCH --account=victim",
+        "/tmp/out\x00.log",
+    ],
+)
+def test_submit_rejects_newline_nul_in_output(adapter: SlurmAdapter, bad_output: str) -> None:
+    # The ``#SBATCH --output=`` path is embedded directly into a directive line;
+    # a newline/CR would inject an extra ``#SBATCH`` directive and a NUL would
+    # truncate the path. All three must be rejected fail-closed before sbatch runs.
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run, pytest.raises(ValueError):
+        adapter.submit("echo hi", output=bad_output)
+    run.assert_not_called()
+
+
+def test_submit_normal_output_path_passes(adapter: SlurmAdapter) -> None:
+    # A legitimate output path (slashes, %-patterns, dots, spaces) is accepted and
+    # rides as a single ``#SBATCH --output=`` directive with no injected extras.
+    with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
+        run.return_value = _ok_run(stdout="Submitted batch job 4242\n")
+        job_id = adapter.submit("echo hi", output="/var/log/slurm/job_%j.out")
+    assert job_id == "4242"
+    script = run.call_args.kwargs["input"]
+    if isinstance(script, bytes):
+        script = script.decode()
+    assert "#SBATCH --output=/var/log/slurm/job_%j.out" in script
+    assert script.count("#SBATCH --output") == 1
+
+
 def test_submit_normal_builds_list_argv_and_script(adapter: SlurmAdapter) -> None:
     with mock.patch("general_ludd.infra.slurm.subprocess.run") as run:
         run.return_value = _ok_run(stdout="Submitted batch job 4242\n")

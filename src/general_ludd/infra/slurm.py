@@ -78,6 +78,27 @@ def _require_extra_arg(value: str) -> str:
     return value
 
 
+def _require_output(value: str) -> str:
+    """Fail-closed validation for the ``#SBATCH --output=`` path.
+
+    Unlike name/partition/etc. an output path is intentionally not charset-
+    restricted (paths can legitimately contain ``/``, ``.``, ``%`` patterns and
+    spaces). But it IS embedded into a ``#SBATCH --output=`` directive line, so a
+    newline (``\\n``/``\\r``) would inject an extra ``#SBATCH`` directive into the
+    generated script and a NUL would truncate the path. Reject all three, mirroring
+    the ``extra_args`` newline/NUL guard. (Authenticated-admin defense-in-depth, not
+    shell injection.)
+    """
+    if (
+        not isinstance(value, str)
+        or "\n" in value
+        or "\r" in value
+        or "\x00" in value
+    ):
+        raise ValueError(f"invalid Slurm output path {value!r}: no newlines/NUL")
+    return value
+
+
 class SlurmNotInstalledError(Exception):
     """Raised when Slurm commands are not available on the system."""
 
@@ -186,6 +207,7 @@ class SlurmAdapter:
             gpus=gpus,
             memory=memory,
             time_limit=time_limit,
+            output=output,
             extra_args=extra_args,
         )
         if self._is_remote:
@@ -218,13 +240,16 @@ class SlurmAdapter:
         gpus: str | None,
         memory: str | None,
         time_limit: str | None,
+        output: str | None,
         extra_args: list[str] | None,
     ) -> None:
         """Fail-closed validation of all user/config-supplied submit params.
 
-        ``command`` and ``output`` are deliberately not charset-restricted here:
-        ``command`` is the script body (arbitrary shell by design) and ``output``
-        is a path. But name/partition/gpus/memory/time_limit are embedded into
+        ``command`` is deliberately not charset-restricted here: it is the script
+        body (arbitrary shell by design). ``output`` is a path, so it is NOT
+        charset-restricted either — but it IS embedded into a ``#SBATCH --output=``
+        directive line, so it is checked for newlines/NUL (which would inject an
+        extra directive). name/partition/gpus/memory/time_limit are embedded into
         ``#SBATCH`` directive lines, so a newline or shell metacharacter in any
         of them would let a caller inject an extra directive or break out of the
         intended argument — exactly the injection this hardening prevents.
@@ -239,6 +264,8 @@ class SlurmAdapter:
             _require_name(memory, "memory")
         if time_limit is not None:
             _require_time(time_limit)
+        if output is not None:
+            _require_output(output)
         if extra_args is not None:
             for arg in extra_args:
                 _require_extra_arg(arg)
