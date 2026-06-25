@@ -23,10 +23,14 @@ Layers
 
 from __future__ import annotations
 
+import logging
+import math
 import operator
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Valid KIND values for the four marker source subtypes.
 PIPELINE_KIND = "pipeline"
@@ -35,6 +39,43 @@ METRIC_KIND = "metrics"
 TRACE_KIND = "traces"
 
 VALID_KINDS = frozenset({PIPELINE_KIND, LOG_KIND, METRIC_KIND, TRACE_KIND})
+
+# --------------------------------------------------------------------------- #
+# Boundary numeric policy (NaN / Inf)
+# --------------------------------------------------------------------------- #
+# External backends can hand back non-finite floats (NaN / +Inf / -Inf) for a
+# metric ``value`` or an event ``ts`` — a parse error, a divide-by-zero on the
+# backend, a sentinel encoded as ``inf``. Non-finite floats poison everything
+# downstream: NaN compares ``False`` against everything (corrupting the
+# ``_sort_by_ts`` order and any associate() window math), and either value
+# silently corrupts aggregation/scoring/comparison the moment a caller sums or
+# ranks it.
+#
+# POLICY (coerce-to-sentinel, not reject): both ``value`` and ``ts`` are already
+# *optional* in the contract (``float | None``) — ``value=None`` means "no metric
+# payload", ``ts=None`` means "backend attached no timestamp" (and sorts last).
+# A non-finite float is therefore coerced to ``None`` (the documented sentinel)
+# rather than raised, so one poisoned row from a flaky backend degrades to a
+# null-but-well-formed record instead of aborting the whole fan-out — matching
+# the resilience contract of ``find()``. The coercion is logged (WARNING) so a
+# truncated/poisoned upstream is never silently swallowed.
+
+
+def _finite_or_none(value: float | None) -> float | None:
+    """Coerce a non-finite float (NaN / +Inf / -Inf) to ``None`` per boundary policy.
+
+    Finite floats and ``None`` pass through unchanged. A non-finite float is
+    coerced to ``None`` (the documented "no numeric payload" / "no timestamp"
+    sentinel) and the coercion is logged so a poisoned upstream is observable.
+    """
+    if value is None:
+        return None
+    if not math.isfinite(value):
+        logger.warning(
+            "connectors: coercing non-finite numeric (%r) to None at boundary", value
+        )
+        return None
+    return value
 
 
 # --------------------------------------------------------------------------- #
@@ -93,14 +134,20 @@ def normalized_record(
 
     Connectors should funnel every backend row through this so the facade can
     rely on all eight keys being present.
+
+    Boundary numeric policy: a non-finite ``ts`` or ``value`` (NaN / +Inf / -Inf)
+    handed back by an external backend is coerced to ``None`` (the documented
+    "no timestamp" / "no numeric payload" sentinel) so it cannot poison the
+    ts-sort, window correlation, or any downstream aggregation/scoring. The
+    coercion is logged at WARNING level. See :func:`_finite_or_none`.
     """
     return NormalizedRecord(
-        ts=ts,
+        ts=_finite_or_none(ts),
         source=source,
         kind=kind,
         level_or_status=level_or_status,
         message=message,
-        value=value,
+        value=_finite_or_none(value),
         labels=labels if labels is not None else {},
         raw=raw,
     )
@@ -190,6 +237,13 @@ class Observability:
     facade can fan a query across whatever backends an operator has wired up.
     """
 
+    # Hard cap on the merged result set of a single ``find()`` fan-out. A
+    # malicious or pathological backend can return an effectively unbounded list
+    # from ``query()``; without a ceiling the merge would buffer the whole thing
+    # in memory. The cap bounds memory to a sane working-set size; truncation is
+    # logged (WARNING) so it is never silent (observability invariant).
+    MAX_FIND_RESULTS = 10_000
+
     def __init__(self, registry: SourceRegistry) -> None:
         self._registry = registry
 
@@ -203,6 +257,11 @@ class Observability:
         ``query()`` raises, the exception is captured as an ``"error"``-level
         normalized record attributed to that source and the fan-out continues —
         one flaky backend never aborts the whole ``find``.
+
+        Bounded result set: the merged result is capped at
+        :attr:`MAX_FIND_RESULTS` so a malicious/huge backend response cannot blow
+        memory. When the cap is hit the merge stops accumulating and the
+        truncation is logged at WARNING level (never silent).
         """
         if kinds is None:
             sources = self._registry.all()
@@ -210,10 +269,15 @@ class Observability:
             wanted = set(kinds)
             sources = [s for s in self._registry.all() if s.KIND in wanted]
 
+        cap = self.MAX_FIND_RESULTS
         merged: list[dict[str, Any]] = []
+        truncated = False
         for source in sources:
+            if len(merged) >= cap:
+                truncated = True
+                break
             try:
-                merged.extend(source.query(spec))
+                rows = list(source.query(spec))
             except Exception as exc:
                 # Resilience is the whole point: a single source blowing up must
                 # never abort the fan-out — capture it as an error record.
@@ -226,7 +290,21 @@ class Observability:
                         raw=exc,
                     )
                 )
-                merged.append(error_rec)
+                rows = [error_rec]
+
+            remaining = cap - len(merged)
+            if len(rows) > remaining:
+                merged.extend(rows[:remaining])
+                truncated = True
+                break
+            merged.extend(rows)
+
+        if truncated:
+            logger.warning(
+                "connectors: find() result set truncated at MAX_FIND_RESULTS=%d "
+                "(a backend returned more records than the cap)",
+                cap,
+            )
 
         return self._sort_by_ts(merged)
 
