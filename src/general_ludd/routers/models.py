@@ -436,9 +436,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         model_profile_id: str | None = body.get("model_profile")
         route_task_type: str | None = body.get("route_task_type")
-        # max_tokens available for future use when gateway exposes token limits per-call
-        _max_tokens: int = int(body.get("max_tokens", 2048))
-        del _max_tokens  # currently unused — call_model controls this via profile config
+        # The caller-supplied output cap. The gateway does not yet forward this
+        # to the provider (per-call token limits come from profile config), but
+        # it IS threaded into the budget gate as requested_max_output_tokens so
+        # a call that caps its output is estimated at its real (smaller) cost
+        # instead of the worst-case profile.max_output_tokens — without this a
+        # low-run_budget_usd deployment rejected every metered call (D-21
+        # over-conservatism). estimate_cost min()s it against the profile cap, so
+        # a caller cannot use it to under-report below the profile's capacity.
+        try:
+            requested_max_output_tokens: int | None = int(body.get("max_tokens", 2048))
+        except (TypeError, ValueError):
+            requested_max_output_tokens = None
+        if requested_max_output_tokens is not None and requested_max_output_tokens <= 0:
+            requested_max_output_tokens = None
 
         # B5: budget gate — fail-closed when guard exhausted or degraded startup.
         _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
@@ -537,10 +548,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
         try:
             import asyncio
+            import functools
             response = await asyncio.to_thread(
-                gateway.call_model,
-                used_profile_id,
-                messages,
+                functools.partial(
+                    gateway.call_model,
+                    used_profile_id,
+                    messages,
+                    requested_max_output_tokens=requested_max_output_tokens,
+                )
             )
             return {
                 "text": response.content,

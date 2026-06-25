@@ -328,6 +328,7 @@ class ModelGateway:
         budget_remaining: float,
         *,
         messages: list[dict[str, str]] | None = None,
+        requested_max_output_tokens: int | None = None,
     ) -> bool:
         profile = self._profiles.get(profile_id)
         if profile is None:
@@ -338,7 +339,17 @@ class ModelGateway:
         # so a buggy / malicious caller cannot under-report cost to slip past
         # the gate. If no messages are supplied, fall back to the caller value
         # (preserves backward compatibility for callers that pre-computed cost).
-        server_cost = self.estimate_cost(profile, messages) if messages is not None else None
+        #
+        # requested_max_output_tokens (D-21 over-conservatism fix) is threaded
+        # into estimate_cost so a call that caps its output tokens is estimated
+        # at its real (smaller) cost instead of the worst-case max_output_tokens.
+        # estimate_cost min()s it against profile.max_output_tokens, so the
+        # estimate stays upper-bounded and the under-report protection holds.
+        server_cost = (
+            self.estimate_cost(profile, messages, requested_max_output_tokens)
+            if messages is not None
+            else None
+        )
         effective_cost = max(estimated_cost, server_cost) if server_cost is not None else estimated_cost
         if effective_cost > budget_remaining:
             return False
@@ -346,14 +357,35 @@ class ModelGateway:
 
     @staticmethod
     def estimate_cost(
-        profile: ModelProfile, messages: list[dict[str, str]] | None
+        profile: ModelProfile,
+        messages: list[dict[str, str]] | None,
+        requested_max_output_tokens: int | None = None,
     ) -> float:
         """Server-side cost re-estimation independent of the caller.
 
         Approximates input tokens from the message content (~4 chars/token, a
-        standard rough heuristic) and assumes the model may emit up to its
-        ``max_output_tokens``. Multiplies both legs by the profile's price rates.
-        Returns 0.0 when messages is empty/None.
+        standard rough heuristic). Multiplies both legs by the profile's price
+        rates. Returns 0.0 when messages is empty/None.
+
+        Output leg (D-21 over-conservatism fix): by default the estimate assumes
+        the model may emit up to its ``max_output_tokens`` (worst case). This is
+        deliberately pessimistic so a caller cannot under-report cost to slip
+        past the budget gate. But it ALSO meant every metered call on a
+        low-``run_budget_usd`` deployment was rejected at the per-profile cap
+        (line ~345) against a worst-case figure of e.g. 8000 tokens, even when
+        the real call requested only a handful of output tokens — a silent
+        self-DoS on legitimate work.
+
+        When ``requested_max_output_tokens`` is provided, the output leg uses
+        ``min(requested_max_output_tokens, profile.max_output_tokens)`` so a call
+        that genuinely caps its output gets a realistic (smaller) estimate. The
+        ``min`` keeps the estimate UPPER-BOUNDED by the profile's capacity:
+        security is preserved because a caller can never request MORE output than
+        the profile permits, so it can never use this path to under-estimate
+        below what the model could actually emit under the profile's own cap.
+        Omitting the argument (or passing a non-positive value) preserves the
+        EXACT prior behavior (worst-case ``profile.max_output_tokens``), so the
+        existing D-21 rejection tests still hold.
         """
         if not messages:
             return 0.0
@@ -362,7 +394,12 @@ class ModelGateway:
             content = str(m.get("content", "") or "") if isinstance(m, dict) else str(getattr(m, "content", "") or "")
             input_chars += len(content)
         approx_input_tokens = input_chars // 4
-        approx_output_tokens = profile.max_output_tokens
+        if requested_max_output_tokens is not None and requested_max_output_tokens > 0:
+            approx_output_tokens = min(
+                requested_max_output_tokens, profile.max_output_tokens
+            )
+        else:
+            approx_output_tokens = profile.max_output_tokens
         return (
             approx_input_tokens * profile.cost_per_input_token
             + approx_output_tokens * profile.cost_per_output_token
@@ -378,13 +415,28 @@ class ModelGateway:
         *,
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
+        requested_max_output_tokens: int | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
 
-        if not self.check_budget(profile_id, estimated_cost, budget_remaining, messages=messages):
+        # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
+        # knows it will cap the model's output (e.g. the /admin/models/call
+        # `max_tokens` field), thread it into the budget gate so the call is
+        # estimated at its real cost instead of the worst-case max_output_tokens.
+        # It is NOT forwarded to the provider via **kwargs (the gateway controls
+        # per-call token limits through profile config today); it only sharpens
+        # the budget estimate. estimate_cost min()s it against the profile cap so
+        # the under-report protection is preserved.
+        if not self.check_budget(
+            profile_id,
+            estimated_cost,
+            budget_remaining,
+            messages=messages,
+            requested_max_output_tokens=requested_max_output_tokens,
+        ):
             raise BudgetExceededError(
                 f"Call to '{profile_id}' rejected: over budget "
                 f"(estimated={estimated_cost}, remaining={budget_remaining}, "

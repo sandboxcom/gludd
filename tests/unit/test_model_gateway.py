@@ -699,6 +699,155 @@ class TestCheckBudgetServerSideReEstimation:
             )
 
 
+class TestRequestedMaxOutputTokensBudgetEstimate:
+    """D-21 over-conservatism fix: requested_max_output_tokens lets a call that
+    caps its output be estimated at its real (smaller) cost instead of the
+    worst-case profile.max_output_tokens — without weakening the under-report
+    protection (the estimate is still min()'d against the profile cap).
+
+    Without the param the worst-case estimate is used (the existing D-21
+    rejection behaviour is preserved, asserted in
+    TestCheckBudgetServerSideReEstimation above).
+    """
+
+    def _make_gateway(self, run_budget_usd: float = 0.5) -> tuple:
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
+
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="lowbudget",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            api_metered=True,
+            run_budget_usd=run_budget_usd,
+            # Worst-case output leg = 8000 * 0.001 = 8.0 USD >> 0.5 budget, so a
+            # call estimated at max_output_tokens is rejected. A call that caps
+            # output at 50 tokens estimates ~50 * 0.001 = 0.05 USD < 0.5 → allowed.
+            cost_per_input_token=0.0,
+            cost_per_output_token=0.001,
+            max_output_tokens=8000,
+        )
+        gw = ModelGateway(profiles=[profile], provider_registry=reg)
+        return gw, reg
+
+    def test_check_budget_rejects_without_requested_cap(self):
+        """No requested cap → worst-case max_output_tokens estimate → rejected
+        against the modest run_budget_usd (D-21 security behaviour preserved)."""
+        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        msg = [{"role": "user", "content": "hi"}]
+        # 8000 * 0.001 = 8.0 USD output leg > 0.5 budget → rejected.
+        assert gw.check_budget(
+            "lowbudget",
+            estimated_cost=0.0,
+            budget_remaining=float("inf"),
+            messages=msg,
+        ) is False
+
+    def test_check_budget_allows_with_small_requested_cap(self):
+        """A small requested_max_output_tokens → realistic small estimate →
+        ALLOWED against the same modest run_budget_usd that rejected the
+        worst-case estimate."""
+        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        msg = [{"role": "user", "content": "hi"}]
+        # 50 * 0.001 = 0.05 USD output leg < 0.5 budget → allowed.
+        assert gw.check_budget(
+            "lowbudget",
+            estimated_cost=0.0,
+            budget_remaining=float("inf"),
+            messages=msg,
+            requested_max_output_tokens=50,
+        ) is True
+
+    def test_requested_cap_cannot_exceed_profile_max(self):
+        """Security: requesting MORE than the profile cap cannot inflate the
+        estimate below the profile's real worst case — it is min()'d to the
+        profile max, so a giant requested value yields the same worst-case
+        (rejecting) estimate as no cap at all."""
+        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        msg = [{"role": "user", "content": "hi"}]
+        # Request 10x the profile cap; estimate uses min(80000, 8000)=8000 →
+        # 8.0 USD > 0.5 → still rejected (cannot bypass the gate upward).
+        assert gw.check_budget(
+            "lowbudget",
+            estimated_cost=0.0,
+            budget_remaining=float("inf"),
+            messages=msg,
+            requested_max_output_tokens=80_000,
+        ) is False
+
+    def test_estimate_cost_uses_min_of_requested_and_profile_max(self):
+        """Unit-level: estimate_cost output leg = min(requested, profile max)."""
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+
+        profile = ModelProfile(
+            model_profile_id="p",
+            cost_per_input_token=0.0,
+            cost_per_output_token=0.001,
+            max_output_tokens=8000,
+            enabled=True,
+        )
+        msg = [{"role": "user", "content": "hi"}]
+        # No cap → worst case 8000 * 0.001 = 8.0
+        assert ModelGateway.estimate_cost(profile, msg) == pytest.approx(8.0)
+        # Small cap → 50 * 0.001 = 0.05
+        assert ModelGateway.estimate_cost(
+            profile, msg, requested_max_output_tokens=50
+        ) == pytest.approx(0.05)
+        # Cap above profile max → min()'d to 8000 → 8.0 (unchanged worst case)
+        assert ModelGateway.estimate_cost(
+            profile, msg, requested_max_output_tokens=99_999
+        ) == pytest.approx(8.0)
+        # Non-positive cap is ignored → worst case (defensive backward-compat)
+        assert ModelGateway.estimate_cost(
+            profile, msg, requested_max_output_tokens=0
+        ) == pytest.approx(8.0)
+
+    def test_call_model_allows_capped_call_on_low_budget(self):
+        """End-to-end through call_model: a call that would be rejected under the
+        worst-case estimate succeeds when it passes a small
+        requested_max_output_tokens, on a low run_budget_usd deployment."""
+        from unittest.mock import MagicMock, patch
+
+        gw, reg = self._make_gateway(run_budget_usd=0.5)
+        msg = [{"role": "user", "content": "hi"}]
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.return_value = MagicMock(
+            content="ok",
+            usage_metadata={"input_tokens": 1, "output_tokens": 1},
+        )
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+        ):
+            # Worst-case (no cap) would raise BudgetExceededError; with the cap
+            # the budget gate passes and the call returns normally.
+            resp = gw.call_model(
+                "lowbudget",
+                msg,
+                requested_max_output_tokens=50,
+            )
+        assert resp.content == "ok"
+
+    def test_call_model_rejects_uncapped_call_on_low_budget(self):
+        """The inverse: same low-budget profile, NO requested cap → the
+        worst-case estimate rejects (D-21 security still enforced)."""
+        from general_ludd.models.gateway import BudgetExceededError
+
+        gw, _reg = self._make_gateway(run_budget_usd=0.5)
+        msg = [{"role": "user", "content": "hi"}]
+        with pytest.raises(BudgetExceededError):
+            gw.call_model("lowbudget", msg)
+
+
 class TestCacheKeyLockEviction:
     """Bug regression: _cache_key_locks dict must not grow unboundedly.
 
