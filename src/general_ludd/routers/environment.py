@@ -31,9 +31,9 @@ import logging
 import os
 import shutil
 import sys
-from typing import Any
+from typing import Annotated, Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, Query
 from pydantic import BaseModel
 
 from general_ludd.controllers.environment_advisor import (
@@ -636,9 +636,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ),
     )
     async def api_environment_advise(
-        work_type: str,
-        prompt_tokens: int | None = None,
-        priority: str = "quality",
+        # work_type is reflected into the response (task_type / workflow_reason)
+        # so cap its length to bound the response and avoid echoing an
+        # unbounded operator-supplied string (NEW-ENV-1).
+        work_type: Annotated[str, Query(max_length=64)],
+        # prompt_tokens feeds the cost projection; a negative value would yield a
+        # negative est_cost_usd and silently suppress the budget warning
+        # (NEW-ENV-2). Bound it to [0, 2_000_000] — larger than any real context
+        # window, small enough to keep the multiply trivial.
+        prompt_tokens: Annotated[int | None, Query(ge=0, le=2_000_000)] = None,
+        priority: Annotated[str, Query(max_length=16)] = "quality",
     ) -> AdviceBrief:
         # priority is a soft hint; clamp unknown values to the safe default.
         prio = (priority or "quality").strip().lower()

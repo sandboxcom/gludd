@@ -237,6 +237,32 @@ def test_advise_use_workflow_false_for_docs(client: TestClient) -> None:
     assert "docs" in body["workflow_reason"]
 
 
+def test_advise_rejects_negative_prompt_tokens(client: TestClient) -> None:
+    """A negative prompt_tokens would yield a negative est_cost and silently
+    suppress the budget warning; the ge=0 Query bound rejects it with a 422.
+
+    422 is request-validation (distinct from the never-500 server-error
+    contract), and it fires before the handler so the fallback path is bypassed.
+    """
+    resp = client.get(
+        "/api/environment/advise",
+        params={"work_type": "feature", "prompt_tokens": -5},
+        headers={"Authorization": f"Bearer {_PSK}"},
+    )
+    assert resp.status_code == 422
+
+
+def test_advise_rejects_oversized_work_type(client: TestClient) -> None:
+    """work_type is reflected into the response (task_type / workflow_reason);
+    an over-long string is rejected rather than echoed back unbounded."""
+    resp = client.get(
+        "/api/environment/advise",
+        params={"work_type": "x" * 200},
+        headers={"Authorization": f"Bearer {_PSK}"},
+    )
+    assert resp.status_code == 422
+
+
 def test_advise_never_500_on_bare_app() -> None:
     """A FastAPI app with NO wired state must still return a 200 fallback."""
     app = FastAPI()
