@@ -4,6 +4,7 @@ import json
 import logging
 import os
 from dataclasses import dataclass, field
+from dataclasses import fields as dataclass_fields
 from pathlib import Path
 from typing import Any
 
@@ -31,6 +32,7 @@ class DownloadedModel:
     engine: str = "vllm"
     size_bytes: int = 0
     downloaded_at: float = 0.0
+    revision: str | None = None
 
 
 class ModelRegistry:
@@ -93,17 +95,31 @@ class ModelRegistry:
         api = self._get_api()
         return list(api.list_repo_files(repo_id=model_id))
 
-    def download(self, model_id: str, filename: str | None = None, engine: str = "vllm") -> DownloadedModel:
+    def download(
+        self,
+        model_id: str,
+        filename: str | None = None,
+        engine: str = "vllm",
+        revision: str | None = None,
+    ) -> DownloadedModel:
         import time
 
         from huggingface_hub import hf_hub_download, snapshot_download
 
+        if revision is None:
+            logger.warning(
+                "Downloading model %s without a pinned revision; tracking mutable main HEAD "
+                "(supply-chain risk). Pass revision=<sha|tag> to pin.",
+                model_id,
+            )
+
         if filename:
-            local_path = hf_hub_download(
+            local_path = hf_hub_download(  # nosec B615 - revision forwarded; None warned above
                 repo_id=model_id,
                 filename=filename,
                 cache_dir=str(self._cache_dir),
                 token=self._hf_token,
+                revision=revision,
             )
             downloaded = DownloadedModel(
                 model_id=model_id,
@@ -111,18 +127,21 @@ class ModelRegistry:
                 filename=filename,
                 engine=engine,
                 downloaded_at=time.time(),
+                revision=revision,
             )
         else:
-            local_path = snapshot_download(
+            local_path = snapshot_download(  # nosec B615 - revision forwarded; None warned above
                 repo_id=model_id,
                 cache_dir=str(self._cache_dir),
                 token=self._hf_token,
+                revision=revision,
             )
             downloaded = DownloadedModel(
                 model_id=model_id,
                 local_path=local_path,
                 engine=engine,
                 downloaded_at=time.time(),
+                revision=revision,
             )
         p = Path(local_path)
         if p.exists():
@@ -158,10 +177,13 @@ class ModelRegistry:
         if path.exists():
             try:
                 data = json.loads(path.read_text())
+                known = {f.name for f in dataclass_fields(DownloadedModel)}
                 for item in data:
-                    dm = DownloadedModel(**item)
+                    # Tolerate legacy indexes missing `revision` (default applies) and
+                    # ignore any unexpected keys from future schema versions.
+                    dm = DownloadedModel(**{k: v for k, v in item.items() if k in known})
                     self._downloaded[dm.model_id] = dm
-            except (json.JSONDecodeError, KeyError):
+            except (json.JSONDecodeError, KeyError, TypeError):
                 logger.warning("Failed to load model index")
 
     def _save_index(self) -> None:
@@ -176,6 +198,7 @@ class ModelRegistry:
                     "engine": dm.engine,
                     "size_bytes": dm.size_bytes,
                     "downloaded_at": dm.downloaded_at,
+                    "revision": dm.revision,
                 }
             )
         path.write_text(json.dumps(data, indent=2))
