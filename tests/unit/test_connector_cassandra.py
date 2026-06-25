@@ -8,6 +8,7 @@ from typing import Any
 from general_ludd.connectors.cassandra_stats import (
     CassandraStatsSource,
     _parse_prometheus,
+    _split_sample,
 )
 
 _ROWS: dict[str, list[dict[str, Any]]] = {
@@ -96,6 +97,36 @@ def test_prometheus_scrape_parsing() -> None:
 
     # Unrelated lines never leak into any group.
     assert all("unrelated" not in r["metric"] for r in comp + tp)
+
+
+def test_nan_inf_sample_value_sanitized_to_none() -> None:
+    # JMX/Prometheus samples whose value is NaN/Inf must parse to value None
+    # (unified sanitize_metric_value policy) and must not raise. Prometheus text
+    # spells these "NaN", "+Inf", "-Inf".
+    text = (
+        'cassandra_compaction_pending_compactions{keyspace="app",table="events"} NaN\n'
+        'cassandra_compaction_pending_other{keyspace="app",table="events"} +Inf\n'
+        'cassandra_compaction_pending_third{keyspace="app",table="events"} -Inf\n'
+        'cassandra_compaction_pending_real{keyspace="app",table="events"} 0.0\n'
+    )
+    rows = _parse_prometheus(text, "compactionstats")
+    by = {r["metric"]: r for r in rows}
+    # NaN/Inf samples are dropped by _parse_prometheus (value is None -> skipped).
+    assert "cassandra_compaction_pending_compactions" not in by
+    assert "cassandra_compaction_pending_other" not in by
+    assert "cassandra_compaction_pending_third" not in by
+    # A finite 0.0 sample is a real value and is kept.
+    assert by["cassandra_compaction_pending_real"]["value"] == 0.0
+
+
+def test_split_sample_nan_inf_returns_none() -> None:
+    # _split_sample routes the value through sanitize_metric_value: NaN/Inf -> None,
+    # never raising. 0.0 is a real sample and is preserved.
+    assert _split_sample("metric_nan NaN")[2] is None
+    assert _split_sample("metric_inf +Inf")[2] is None
+    assert _split_sample("metric_ninf -Inf")[2] is None
+    assert _split_sample("metric_zero 0.0")[2] == 0.0
+    assert _split_sample("metric_bad notanumber")[2] is None
 
 
 def test_no_hardcoded_credentials_or_shell() -> None:

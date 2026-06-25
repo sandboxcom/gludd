@@ -18,6 +18,7 @@ import logging
 import os
 from typing import Any, ClassVar, Protocol, runtime_checkable
 
+from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 logger = logging.getLogger(__name__)
@@ -194,7 +195,7 @@ class JaegerSource:
             "kind": self.KIND,
             "level_or_status": "error" if _span_has_error(span) else "ok",
             "message": f"{service} {operation}".strip(),
-            "value": duration,
+            "value": sanitize_metric_value(duration),
             "labels": {
                 "trace_id": trace_id,
                 "span_id": span_id,

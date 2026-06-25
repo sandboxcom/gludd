@@ -30,6 +30,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["NewRelicSource"]
@@ -230,7 +231,7 @@ class NewRelicSource:
     def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
         ts = _coerce_ts(row)
         ts_keys = frozenset(k for k in _TIMESTAMP_KEYS if k in row)
-        value = _first_numeric_aggregate(row, skip=ts_keys)
+        value = sanitize_metric_value(_first_numeric_aggregate(row, skip=ts_keys))
 
         labels: dict[str, Any] = {
             k: v
