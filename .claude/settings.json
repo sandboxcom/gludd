@@ -1,10 +1,12 @@
 {
   "env": {
-    "CLAUDE_AGENT_FLOOR": "10",
+    "CLAUDE_AGENT_FLOOR": "7",
     "CLAUDE_AGENT_CEILING": "16",
     "GLUDD_FORCE_DELEGATE": "1",
     "GLUDD_FORCE_DELEGATE_GRACE": "5",
-    "GLUDD_FORCE_DELEGATE_MAXBLOCK": "4"
+    "GLUDD_FORCE_DELEGATE_MAXBLOCK": "4",
+    "GLUDD_NO_WAIT_ENFORCE": "1",
+    "GLUDD_FLOOR_ENFORCE": "1"
   },
   "hooks": {
     "SessionStart": [

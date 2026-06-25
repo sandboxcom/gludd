@@ -1,5 +1,23 @@
 # CLAUDE.md — read before your first tool call
 
+## Multitasking: maintain the agent floor (binding EVERY turn, open→close)
+
+Keep at least the agent floor (live value in `/tmp/gludd-floor-override`, default in
+`.claude/settings.json` `CLAUDE_AGENT_FLOOR`) of **async subagents alive at ALL times**
+this session. In EVERY response, if below the floor, FIRST dispatch async `Agent` calls
+to refill BEFORE doing main-thread work. The pool is **decoupled from the current task** —
+do NOT let it drain when the active task goes sequential (gate/commit/edits/waiting).
+
+- There is ALWAYS work to hold the floor: the security/audit backlog (`docs/audit/`),
+  test-coverage gaps, perf/async/error-handling audits, adversarial review of in-flight
+  changes, the codebase-audit findings. NEVER say "no work left" — dispatch read-only
+  auditors/reviewers/proposers.
+- Use async `Agent` dispatches, **NOT the `Workflow` tool** — Workflows surface a
+  permission prompt that BLOCKS the operator and stops work. Forbidden here.
+- Live count: `scripts/agent_liveness.py` (`make liveness-debug`). Floor enforced by
+  `.claude/hooks/agent_floor_stop.sh`, tunable via `/tmp/gludd-floor-override`. Full
+  policy: `docs/MULTITASKING_POLICY.md`.
+
 ## Bash policy: make targets ONLY
 
 Every Bash command in this repo MUST be `make <target>`. Anything else (`ls`, `git`, `find`, `tail`, `python`, `uv`, pipes, `&&`, `;`) is denied by permission rules (`opencode.json`, mirrored in this harness) and by `.opencode/plugin/enforce-make.ts`.

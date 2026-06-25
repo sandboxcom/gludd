@@ -9,6 +9,11 @@
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
 TARGET="${CLAUDE_AGENT_TARGET:-10}"
 CEILING="${CLAUDE_AGENT_CEILING:-12}"
+# Live floor override (see agent_floor_stop.sh): a valid integer in this file wins.
+if [ -r /tmp/gludd-floor-override ]; then
+  _fov="$(cat /tmp/gludd-floor-override 2>/dev/null)"
+  case "$_fov" in ''|*[!0-9]*) : ;; *) FLOOR="$_fov" ;; esac
+fi
 
 live="$(cd /Users/shawnwilson/gludd 2>/dev/null && \
   FLOOR_PROBE_SECS="${FLOOR_PROBE_SECS:-0.6}" FLOOR_TAIL_SECS="${FLOOR_TAIL_SECS:-12}" \
@@ -20,7 +25,7 @@ esac
 
 if [ "$live" -lt "$FLOOR" ]; then
   deficit=$((TARGET - live)); [ "$deficit" -lt 1 ] && deficit=1
-  msg="AGENT-FLOOR status (turn start): ${live} live, below floor ${FLOOR} (band ${FLOOR}-${CEILING}). DELEGATE-FIRST: hand the next chunk to ${deficit} disjoint agent(s) / a Workflow to refill toward ${TARGET} rather than grinding it out inline — heavy main-thread work is what drains the floor. Then HOLD inside the band (do not re-dispatch while ${FLOOR}<=live<${CEILING})."
+  msg="AGENT-FLOOR status (turn start): ${live} live, below floor ${FLOOR} (band ${FLOOR}-${CEILING}). DELEGATE-FIRST: hand the next chunk to ${deficit} disjoint async Agent(s) (NOT Workflows — they prompt + block the operator) to refill toward ${TARGET} rather than grinding it out inline — heavy main-thread work is what drains the floor. Then HOLD inside the band (do not re-dispatch while ${FLOOR}<=live<${CEILING})."
   python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"UserPromptSubmit","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
 elif [ "$live" -ge "$CEILING" ]; then
   msg="AGENT-CEILING status (turn start): ${live} subagent(s) streaming (ceiling ${CEILING}, target ${TARGET}). Do NOT dispatch more this turn; let the in-flight wave drain back toward ${TARGET}."
