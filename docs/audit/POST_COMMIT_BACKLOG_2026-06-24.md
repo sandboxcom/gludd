@@ -13,6 +13,15 @@ Consolidated from 6 parallel audit runs. Items within each section ordered highe
 | P3 | unbounded ledger growth | `event_loop/loop.py` | Ledgers accumulate without eviction (partially fixed) | Add TTL-based expiry or `maxlen` on ledger collections | MEDIUM |
 | P4 | prompt-template re-parse per dispatch | `agents/dispatcher.py` (dispatch path) | Template parsed from string on every invocation | Cache parsed template at agent-load time | MEDIUM |
 | P5 | session-per-job thrash | `db/repository.py` (job dispatch path) | New DB session created per job call | Use a shared session pool / session factory scoped to request | MEDIUM |
+| P6 | work_summary N+1 (CONFIRMED 2026-06-25) | `db/repository.py:484-506` TaskReturnRepository.work_summary | `select(TaskReturnModel)` all rows + Python count by status/queue/work_type (feeds /api/facts) | 3× `func.count()`+`group_by` queries | HIGH |
+| P7 | history_summary unbounded fetch | `db/repository.py:508-537` | Selects ALL task returns (no LIMIT despite recent_limit=10) just to count + head-slice | aggregate `count()`/`sum(case)` + separate `.order_by().limit()` | HIGH |
+| P8 | count_by_role Python GROUP BY | `db/repository.py:1350-1360` | Loads all role-run rows, counts per role in Python | `select(role, func.count()).group_by(role)` | MEDIUM |
+| P9 | unread_counts Python GROUP BY + Python TTL | `db/repository.py:1081-1100` | Loads all unread, counts per recipient in Python; TTL filtered in Python (unbounded) | push TTL into WHERE + `group_by(recipient)` | MEDIUM |
+| P10 | list_for_task_type full scan + Python JSON filter | `db/repository.py:901-915` | Selects ALL prompt profiles, parses task_types JSON per row in Python | SQLite json_each/LIKE prefilter + Python backstop | MEDIUM |
+| P11 | purge_expired row-by-row delete | `db/repository.py:1066-1079` | Fetch all TTL rows + per-row `session.delete()` (N deletes) | single set-based `delete().where(...)` + rowcount | MEDIUM |
+| P12 | unbounded `.all()` list methods | `db/repository.py` (list_all/list_by_* across Todo/PromptProfile/Queue/Project/Feature/RoleRun/Spend) | several read methods can return whole table, no LIMIT | add optional limit/offset + server-side max (copy TodoRepository.list_all shape) | LOW |
+
+NOTE (2026-06-25 audit): P1 status_summary N+1 is CONFIRMED STILL PRESENT (the GROUP BY patch in POST_COMMIT_VERIFIED_PATCHES_2026-06-24.md is unapplied). `count_active`, `BenchmarkRepository.get_aggregate_scores`, `SpendRepository.total_since` already use correct SQL aggregation — the model the HIGH fixes should follow. The per-row guarded UPDATE in `claim_runnable`/`claim_unreviewed` is a deliberate optimistic-concurrency pattern (NOT a perf defect).
 
 ---
 
