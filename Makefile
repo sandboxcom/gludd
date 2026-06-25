@@ -370,7 +370,11 @@ gate:
 	fi
 	@echo "[gate $$(date +%H:%M:%S)] phase 2/5 typecheck (mypy, ~30-60s) ..."
 	@printf "typecheck " >> .gate-status
-	@TC_ERRS=$$($(UV) run mypy src 2>&1 | grep -c 'error:'); \
+	@# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3): mypy on 407 files is a
+	@# memory hog and must draw from the SAME `gludd-heavy` pool as standalone
+	@# typecheck/pytest, so a gate's internal mypy can't exceed the cap when agents
+	@# are also running heavy ops. Mirrors the standalone `typecheck` target.
+	@TC_ERRS=$$($(HEAVY_SEM) $(UV) run mypy src 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
 	@echo "[gate $$(date +%H:%M:%S)] phase 3/5 collect ..."

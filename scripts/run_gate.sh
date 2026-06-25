@@ -159,7 +159,16 @@ if [ -n "${PYTEST_CMD}" ]; then
     # disable it inside the subshell so the exit code is always captured.
     ( set +e; eval "${PYTEST_CMD}"; echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
 else
-    ( set +e; uv run python -m pytest tests/ \
+    # HEAVY-OP CAP: route the gate's pytest through the SAME portable fcntl
+    # semaphore (scripts/heavy_sem.py) and the SAME `gludd-heavy` slot pool +
+    # HEAVY_MAX_PAR (default 3) that the standalone `make test*` recipes use, so
+    # a gate's pytest can't push total heavy concurrency past the cap when agents
+    # are also running tests. This COMPOSES with the gate's own flock above
+    # (/tmp/gludd-gate.lock serializes whole gates; heavy_sem bounds total heavy
+    # concurrency host-wide) — no deadlock, since the gate never re-acquires its
+    # own lock. python3 is already required by this script (XDIST_WORKERS above).
+    ( set +e; python3 scripts/heavy_sem.py "${HEAVY_MAX_PAR:-3}" gludd-heavy -- \
+        uv run python -m pytest tests/ \
         -n "${XDIST_WORKERS}" --dist loadgroup -q \
         --basetemp="${BASETEMP}"; \
       echo $? > "${RC_FILE}" ) 2>&1 | tee "${LOG_FILE}"
