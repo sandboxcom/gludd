@@ -867,7 +867,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             template_dir=templates_dir,
             event_bus=subsys["bus"],
         )
-        prompt_registry.refresh()
+        # P2 (perf): refresh() globs the template dir and read_text()s each *.j2
+        # file — blocking filesystem IO. Offload it so the daemon-boot coroutine
+        # does not stall the event loop while templates load. Return value is
+        # unused; error handling is unchanged (an unreadable dir still raises and
+        # is caught by the outer startup try/except → degraded mode).
+        await asyncio.to_thread(prompt_registry.refresh)
         app.state._prompt_registry = prompt_registry
 
         # Build budget guard from config
@@ -1257,7 +1262,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
-        synced = bootloader.sync_bundled_to_filestore()
+        # P2 (perf): sync_bundled_to_filestore() read_bytes() each bundled binary
+        # (multi-MB) and write_bytes() it into the filestore — blocking IO that
+        # would stall the loop on boot. Offload to a thread; the returned list of
+        # synced names and the method's own internal try/except are unchanged.
+        synced = await asyncio.to_thread(bootloader.sync_bundled_to_filestore)
         if synced:
             logger.info("Synced bundled binaries to filestore: %s", ", ".join(synced))
 

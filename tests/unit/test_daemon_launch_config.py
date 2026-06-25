@@ -102,6 +102,33 @@ class TestBuildDaemonStartCmd:
         assert "--bind" in cmd
         assert "0.0.0.0:8000" in cmd
 
+    def test_build_cmd_default_host_is_loopback(self):
+        # Secure-by-default: with no explicit host, the daemon binds to the
+        # loopback interface (127.0.0.1), not the wildcard 0.0.0.0.
+        cmd = _build_daemon_start_cmd(port=8000, workers=1)
+        assert "127.0.0.1:8000" in cmd
+        assert "0.0.0.0:8000" not in cmd
+
+    def test_build_cmd_explicit_external_host_preserved(self):
+        # Explicit opt-in to an external bind must still work — only the
+        # *default* changed, not the ability to bind the wildcard interface.
+        cmd = _build_daemon_start_cmd(host="0.0.0.0", port=9000, workers=1)
+        assert "0.0.0.0:9000" in cmd
+
+    def test_daemon_parser_default_host_is_loopback(self):
+        from general_ludd.cli import build_parser
+
+        parser, _ = build_parser()
+        args = parser.parse_args(["daemon"])
+        assert args.host == "127.0.0.1"
+
+    def test_daemon_parser_explicit_host_overrides_default(self):
+        from general_ludd.cli import build_parser
+
+        parser, _ = build_parser()
+        args = parser.parse_args(["daemon", "--host", "0.0.0.0"])
+        assert args.host == "0.0.0.0"
+
 
 class TestCreateDaemonAppReadsEnvFallback:
     def test_config_dir_from_env_fallback(self, tmp_path):
