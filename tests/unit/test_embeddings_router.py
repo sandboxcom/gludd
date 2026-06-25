@@ -212,3 +212,159 @@ def test_no_session_factory_returns_empty_not_500() -> None:
     body = resp.json()
     assert body["results"] == []
     assert body["embedding_method"] == "hash"
+
+
+# --- POST /api/embeddings/compare -------------------------------------------
+
+
+def _compare_client(monkeypatch: pytest.MonkeyPatch) -> TestClient:
+    """A client whose compare path resolves to the offline HashEmbedder."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    # compare does not touch the session factory, but keep app.state coherent.
+    app.state._session_factory = None
+    embeddings.register(app, {})
+    return TestClient(app)
+
+
+def test_compare_identical_strings_is_one(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _compare_client(monkeypatch)
+    text = "the request handler intermittently returns 500 errors"
+    resp = client.post(
+        "/api/embeddings/compare", json={"text_a": text, "text_b": text}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matrix"] is None
+    assert body["embedding_method"] == "hash"
+    assert body["dim"] > 0
+    assert body["embeddings"] is None  # include_embeddings default False
+    assert body["similarity"] == pytest.approx(1.0, abs=1e-6)
+
+
+def test_compare_unrelated_strings_lower_than_identical(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={
+            "text_a": "deploy the kubernetes cluster to the staging region",
+            "text_b": "bake a chocolate cake with vanilla frosting",
+        },
+    )
+    assert resp.status_code == 200
+    sim = resp.json()["similarity"]
+    assert sim is not None
+    assert sim < 0.9  # clearly divergent strings
+
+
+def test_compare_include_embeddings_toggle(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={"text_a": "alpha", "text_b": "beta", "include_embeddings": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["embeddings"], list)
+    assert len(body["embeddings"]) == 2
+    assert len(body["embeddings"][0]) == body["dim"]
+
+
+def test_compare_batch_matrix_is_symmetric_with_unit_diagonal(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={"texts": ["fix the bug", "fix the bug", "write documentation"]},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["similarity"] is None
+    matrix = body["matrix"]
+    assert len(matrix) == 3
+    for i in range(3):
+        assert matrix[i][i] == pytest.approx(1.0, abs=1e-6)
+        for j in range(3):
+            assert matrix[i][j] == pytest.approx(matrix[j][i], abs=1e-9)
+    # Two identical strings -> ~1.0; the third differs.
+    assert matrix[0][1] == pytest.approx(1.0, abs=1e-6)
+    assert matrix[0][2] < 1.0
+
+
+def test_compare_missing_both_forms_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post("/api/embeddings/compare", json={})
+    assert resp.status_code == 422
+
+
+def test_compare_only_text_a_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post("/api/embeddings/compare", json={"text_a": "lonely"})
+    assert resp.status_code == 422
+
+
+def test_compare_single_text_batch_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post("/api/embeddings/compare", json={"texts": ["only one"]})
+    assert resp.status_code == 422
+
+
+def test_compare_both_forms_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={"text_a": "a", "text_b": "b", "texts": ["a", "b"]},
+    )
+    assert resp.status_code == 422
+
+
+def test_compare_embedder_failure_degrades_to_200_not_500(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broken embedder degrades to 200 with similarity=None, never a 500."""
+    client = _compare_client(monkeypatch)
+
+    class _BoomEmbedder:
+        def embed(self, text: str) -> list[float]:
+            raise RuntimeError("embedder exploded")
+
+    monkeypatch.setattr(
+        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
+    )
+    resp = client.post(
+        "/api/embeddings/compare", json={"text_a": "x", "text_b": "y"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["similarity"] is None
+    assert body["matrix"] is None
+
+
+def test_compare_batch_embedder_failure_yields_empty_matrix(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _compare_client(monkeypatch)
+
+    class _BoomEmbedder:
+        def embed(self, text: str) -> list[float]:
+            raise RuntimeError("embedder exploded")
+
+    monkeypatch.setattr(
+        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
+    )
+    resp = client.post(
+        "/api/embeddings/compare", json={"texts": ["a", "b", "c"]}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["matrix"] == []
+    assert body["similarity"] is None

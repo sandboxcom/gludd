@@ -1,10 +1,18 @@
-"""Embedding/RAG similarity API: POST /api/embeddings/similar.
+"""Embedding/RAG similarity API: POST /api/embeddings/similar and /compare.
 
 Read-only surface over the canonical task-type embedding layer the
 :class:`~general_ludd.scoring.router.AdaptiveRouter` already uses (Tier 2 RAG
 routing). A role/playbook can ask "find the task types most similar to this
 work description" so it can borrow a good model/prompt from a neighboring task
 type.
+
+``POST /api/embeddings/compare`` is a second, complementary surface: it takes
+two arbitrary strings (``text_a``/``text_b``) produced by separate
+bots/agents and returns their pairwise cosine similarity, so a role can decide
+how to proceed (near-duplicate -> merge/dedupe; divergent -> escalate). A batch
+form (``texts``) instead returns the full symmetric pairwise similarity matrix.
+Both reuse the SAME default-embedder selection as ``/similar`` so the score is
+comparable across surfaces.
 
 v1 is canonical-task-types-only: the store holds the 10 canonical
 :class:`~general_ludd.schemas.benchmark.TaskType` descriptions. The handler:
@@ -33,10 +41,17 @@ import logging
 from typing import Any
 
 from fastapi import FastAPI
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
-from general_ludd.scoring.task_embeddings import TaskEmbeddingStore
-from general_ludd.skills.embeddings import OpenAIEmbedder, cosine_similarity
+from general_ludd.scoring.task_embeddings import (
+    TaskEmbeddingStore,
+    _select_default_embedder,
+)
+from general_ludd.skills.embeddings import (
+    Embedder,
+    OpenAIEmbedder,
+    cosine_similarity,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -74,6 +89,62 @@ class EmbeddingSimilarResponse(BaseModel):
     query_embedding_dim: int = 0
     results: list[SimilarTaskResult] = Field(default_factory=list)
     embedding_method: str = "hash"
+
+
+class EmbeddingCompareRequest(BaseModel):
+    """Request body for POST /api/embeddings/compare.
+
+    Two mutually-exclusive forms are accepted:
+
+    - the pairwise form: ``text_a`` AND ``text_b`` (both required) -> the
+      single cosine similarity between the two strings;
+    - the batch form: ``texts`` (a list of >= 2 strings) -> the full symmetric
+      pairwise similarity matrix among them.
+
+    Exactly one form must be supplied; anything else is rejected (422).
+    """
+
+    text_a: str | None = Field(
+        None, description="First string to compare (pairwise form)."
+    )
+    text_b: str | None = Field(
+        None, description="Second string to compare (pairwise form)."
+    )
+    texts: list[str] | None = Field(
+        None,
+        description=(
+            "Batch form: 2+ strings; returns the pairwise similarity matrix."
+        ),
+    )
+    include_embeddings: bool = Field(
+        False,
+        description="When true, the computed embedding vectors are returned.",
+    )
+
+    @model_validator(mode="after")
+    def _check_form(self) -> EmbeddingCompareRequest:
+        has_pair = self.text_a is not None and self.text_b is not None
+        has_batch = self.texts is not None and len(self.texts) >= 2
+        if has_pair == has_batch:
+            raise ValueError(
+                "supply either (text_a AND text_b) OR texts with len >= 2"
+            )
+        return self
+
+
+class EmbeddingCompareResponse(BaseModel):
+    """Response body for POST /api/embeddings/compare.
+
+    For the pairwise form, ``similarity`` is set and ``matrix`` is None. For the
+    batch form, ``matrix`` is the symmetric pairwise matrix (1.0 on the
+    diagonal) and ``similarity`` is None.
+    """
+
+    similarity: float | None = None
+    matrix: list[list[float]] | None = None
+    embedding_method: str = "hash"
+    dim: int = 0
+    embeddings: list[list[float]] | None = None
 
 
 def _get_session_factory(app: FastAPI) -> Any:
@@ -151,6 +222,74 @@ async def _similar(
         return EmbeddingSimilarResponse(embedding_method="hash")
 
 
+def _method_of(embedder: Embedder | None) -> str:
+    """Report which embedder backend was resolved ("openai"/"hash")."""
+    if isinstance(embedder, OpenAIEmbedder):
+        return "openai"
+    return "hash"
+
+
+def _compare(req: EmbeddingCompareRequest) -> EmbeddingCompareResponse:
+    """Embed the supplied strings and compute pairwise cosine similarity.
+
+    Uses the SAME default-embedder selection as ``/similar`` (via
+    :func:`_select_default_embedder`) so scores are comparable across surfaces.
+    Fully defensive: any embedder/IO failure degrades to a 200 with
+    ``similarity=None``/empty matrix and the resolved method — never a 500.
+    Validation (which form was supplied) is enforced by the pydantic model, so
+    bad input is a 422 before this handler runs.
+    """
+    try:
+        embedder = _select_default_embedder()
+    except Exception as exc:  # never 500 on embedder construction
+        logger.debug("embedder selection failed: %s", exc)
+        return EmbeddingCompareResponse(similarity=None, embedding_method="hash")
+
+    method = _method_of(embedder)
+
+    try:
+        if req.texts is not None:
+            vectors = [embedder.embed(t) for t in req.texts]
+            dim = len(vectors[0]) if vectors else 0
+            n = len(vectors)
+            matrix: list[list[float]] = [[0.0] * n for _ in range(n)]
+            for i in range(n):
+                matrix[i][i] = 1.0
+                for j in range(i + 1, n):
+                    score = cosine_similarity(vectors[i], vectors[j])
+                    matrix[i][j] = score
+                    matrix[j][i] = score
+            return EmbeddingCompareResponse(
+                similarity=None,
+                matrix=matrix,
+                embedding_method=method,
+                dim=dim,
+                embeddings=vectors if req.include_embeddings else None,
+            )
+
+        # Pairwise form — text_a/text_b guaranteed non-None by the validator.
+        vec_a = embedder.embed(req.text_a or "")
+        vec_b = embedder.embed(req.text_b or "")
+        similarity = cosine_similarity(vec_a, vec_b)
+        return EmbeddingCompareResponse(
+            similarity=similarity,
+            matrix=None,
+            embedding_method=method,
+            dim=len(vec_a),
+            embeddings=[vec_a, vec_b] if req.include_embeddings else None,
+        )
+    except Exception as exc:  # never 500 on embed/similarity failure
+        logger.debug("embeddings compare failed: %s", exc)
+        empty_matrix: list[list[float]] | None = (
+            [] if req.texts is not None else None
+        )
+        return EmbeddingCompareResponse(
+            similarity=None,
+            matrix=empty_matrix,
+            embedding_method=method,
+        )
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/api/embeddings/similar", response_model=EmbeddingSimilarResponse)
     async def api_embeddings_similar(
@@ -164,3 +303,28 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         ``include_embedding`` is set — the query vector itself.
         """
         return await _similar(app, req)
+
+    @app.post(
+        "/api/embeddings/compare",
+        response_model=EmbeddingCompareResponse,
+        summary="Compare two strings (or a batch) by embedding similarity",
+        description=(
+            "Embed two arbitrary strings produced by separate bots/agents and "
+            "return their pairwise cosine similarity so a role can decide how "
+            "to proceed (near-duplicate -> merge/dedupe; divergent -> "
+            "escalate). Supply `text_a` AND `text_b` for the single-pair form "
+            "(sets `similarity`), or `texts` (2+) for the batch form (sets the "
+            "symmetric `matrix`, 1.0 on the diagonal). Reuses the same default "
+            "embedder as /similar; `embedding_method` is \"openai\" or \"hash\". "
+            "Defensive: failures degrade to 200 with no score; bad input -> 422."
+        ),
+    )
+    async def api_embeddings_compare(
+        req: EmbeddingCompareRequest,
+    ) -> EmbeddingCompareResponse:
+        """Compute pairwise embedding similarity between strings.
+
+        Read-only. Either ``text_a``+``text_b`` (single similarity) or
+        ``texts`` (pairwise matrix). Never 500s on embedder failure.
+        """
+        return _compare(req)

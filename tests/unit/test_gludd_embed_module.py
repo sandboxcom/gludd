@@ -38,10 +38,15 @@ class _FakeAnsibleModule:
         self.argument_spec = argument_spec
         self.supports_check_mode = supports_check_mode
         self.params = {
+            "op": "similar",
             "text": "diagnose a flaky 500 in the request handler",
+            "text_a": None,
+            "text_b": None,
+            "texts": None,
             "top_k": 5,
             "work_type": None,
             "include_embedding": False,
+            "include_embeddings": False,
             "daemon_url": "http://localhost:8000",
             "psk": "test-psk",
             "timeout": 30,
@@ -169,6 +174,109 @@ def test_unauthorized_status_fails(
     assert fake_mod.exited is None
     assert fake_mod.failed is not None
     assert fake_mod.failed["status"] == 401
+
+
+class _CompareClient(_FakeClient):
+    """Records the compare POST and returns a canned compare snapshot."""
+
+    def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        type(self).last_path = path
+        type(self).last_body = body
+        return {
+            "similarity": 0.93,
+            "matrix": None,
+            "embedding_method": "hash",
+            "dim": 256,
+            "embeddings": None,
+            "_status": 200,
+        }
+
+
+def test_compare_op_posts_compare_and_injects_facts(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "compare"
+    fake_mod.params["text_a"] = "agent one says merge the duplicate records"
+    fake_mod.params["text_b"] = "agent two says merge the duplicate rows"
+    _CompareClient.last_path = None
+    _CompareClient.last_body = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _CompareClient)
+
+    module.main()
+
+    assert _CompareClient.last_path == "/api/embeddings/compare"
+    assert _CompareClient.last_body is not None
+    assert _CompareClient.last_body["text_a"] == fake_mod.params["text_a"]
+    assert _CompareClient.last_body["text_b"] == fake_mod.params["text_b"]
+    assert _CompareClient.last_body["include_embeddings"] is False
+    # Pairwise form must not carry the batch key.
+    assert "texts" not in _CompareClient.last_body
+
+    assert fake_mod.failed is None
+    assert fake_mod.exited is not None
+    assert fake_mod.exited["changed"] is False
+    snap = fake_mod.exited["ansible_facts"]["gludd_embed"]
+    assert "_status" not in snap
+    assert snap["similarity"] == 0.93
+    assert snap["embedding_method"] == "hash"
+
+
+def test_compare_op_batch_posts_texts(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "compare"
+    fake_mod.params["texts"] = ["one", "two", "three"]
+    _CompareClient.last_path = None
+    _CompareClient.last_body = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _CompareClient)
+
+    module.main()
+
+    assert _CompareClient.last_path == "/api/embeddings/compare"
+    assert _CompareClient.last_body is not None
+    assert _CompareClient.last_body["texts"] == ["one", "two", "three"]
+    assert "text_a" not in _CompareClient.last_body
+    assert fake_mod.failed is None
+
+
+def test_compare_op_missing_both_forms_fails(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "compare"
+    # No text_a/text_b, no texts.
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _CompareClient)
+
+    module.main()
+
+    assert fake_mod.exited is None
+    assert fake_mod.failed is not None
+    assert fake_mod.failed["failed"] is True
+
+
+def test_similar_is_default_op(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    """With no op set, the module still hits /similar (back-compat)."""
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    # op defaults to "similar" in the fake's params, mirroring the spec default.
+    _FakeClient.last_path = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _FakeClient)
+
+    module.main()
+
+    assert _FakeClient.last_path == "/api/embeddings/similar"
+    assert fake_mod.failed is None
 
 
 def test_daemon_error_fails(

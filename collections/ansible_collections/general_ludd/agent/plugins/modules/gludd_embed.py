@@ -5,21 +5,53 @@
 """
 DOCUMENTATION:
   module: gludd_embed
-  short_description: Find the canonical task types most similar to a work description
+  short_description: Embedding similarity over the daemon's bert surface
   description:
-    - Queries the daemon's read-only C(POST /api/embeddings/similar) endpoint and
-      returns the ranked similar canonical task types under
-      C(ansible_facts.gludd_embed) so a playbook (or the model running a job) can
-      borrow a good model/prompt from a semantically-neighboring task type.
+    - With C(op=similar) (the default) queries the daemon's read-only
+      C(POST /api/embeddings/similar) endpoint and returns the ranked similar
+      canonical task types under C(ansible_facts.gludd_embed) so a playbook (or
+      the model running a job) can borrow a good model/prompt from a
+      semantically-neighboring task type.
+    - With C(op=compare) queries C(POST /api/embeddings/compare) to measure the
+      pairwise similarity of two strings (C(text_a)/C(text_b)) produced by
+      separate bots/agents — so a role can decide how to proceed (near-duplicate
+      strings -> merge/dedupe; divergent -> escalate). Supply C(texts) (2+)
+      instead for the full pairwise similarity matrix. The snapshot is injected
+      under C(ansible_facts.gludd_embed).
     - Read-only and check-mode safe — it performs no writes (C(changed=False)).
-    - v1 covers the 10 canonical task types only. The similarity is computed over
-      the same embedding layer the adaptive router uses (HashEmbedder offline,
-      OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).
+    - Similarity is computed over the same embedding layer the adaptive router
+      uses (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set
+      on the daemon).
   options:
-    text:
-      description: The work description to match against the canonical task types.
+    op:
+      description:
+        - Which embeddings operation to run. C(similar) ranks canonical task
+          types for C(text); C(compare) measures pairwise similarity of
+          C(text_a)/C(text_b) (or a C(texts) batch).
       type: str
-      required: true
+      choices: [similar, compare]
+      default: similar
+    text:
+      description:
+        - The work description to match against the canonical task types.
+          Required when C(op=similar).
+      type: str
+    text_a:
+      description: First string to compare. Used (with C(text_b)) when C(op=compare).
+      type: str
+    text_b:
+      description: Second string to compare. Used (with C(text_a)) when C(op=compare).
+      type: str
+    texts:
+      description:
+        - Batch form for C(op=compare) — a list of 2+ strings; returns the
+          pairwise similarity matrix instead of a single score.
+      type: list
+      elements: str
+    include_embeddings:
+      description: When true (C(op=compare)), the computed embedding vectors are returned.
+      type: bool
+      default: false
     top_k:
       description: Number of similar task types to return (1-20).
       type: int
@@ -61,6 +93,18 @@ EXAMPLES:
         ({{ ansible_facts.gludd_embed.results[0].similarity_score }})
     when: ansible_facts.gludd_embed.results | length > 0
 
+  - name: Compare two strings from separate agents to decide merge vs escalate
+    general_ludd.agent.gludd_embed:
+      op: compare
+      text_a: "{{ agent_one_output }}"
+      text_b: "{{ agent_two_output }}"
+    register: cmp
+
+  - name: Treat near-duplicates as a merge
+    ansible.builtin.debug:
+      msg: "near-duplicate, dedupe"
+    when: ansible_facts.gludd_embed.similarity | default(0) > 0.9
+
 RETURN:
   ansible_facts:
     description: Facts dict containing the C(gludd_embed) snapshot.
@@ -69,9 +113,12 @@ RETURN:
     contains:
       gludd_embed:
         description:
-          - The similarity snapshot with C(results) (ranked task types),
+          - For C(op=similar): the snapshot with C(results) (ranked task types),
             C(query_embedding_dim), C(embedding_method), and optionally
             C(query_embedding).
+          - For C(op=compare): the snapshot with C(similarity) (pairwise form) or
+            C(matrix) (batch form), C(embedding_method), C(dim), and optionally
+            C(embeddings).
         type: dict
         returned: always
 """
@@ -97,10 +144,15 @@ except ImportError:
 def main() -> None:
     module = AnsibleModule(
         argument_spec=dict(
-            text=dict(type="str", required=True),
+            op=dict(type="str", choices=["similar", "compare"], default="similar"),
+            text=dict(type="str"),
+            text_a=dict(type="str"),
+            text_b=dict(type="str"),
+            texts=dict(type="list", elements="str"),
             top_k=dict(type="int", default=5),
             work_type=dict(type="str"),
             include_embedding=dict(type="bool", default=False),
+            include_embeddings=dict(type="bool", default=False),
             daemon_url=dict(type="str", default="http://localhost:8000"),
             psk=dict(type="str", default="", no_log=True),
             timeout=dict(type="int", default=30),
@@ -108,21 +160,53 @@ def main() -> None:
         supports_check_mode=True,
     )
 
+    op = module.params["op"]
+
+    if op == "compare":
+        text_a = module.params.get("text_a")
+        text_b = module.params.get("text_b")
+        texts = module.params.get("texts")
+        has_pair = text_a is not None and text_b is not None
+        has_batch = texts is not None and len(texts) >= 2
+        if has_pair == has_batch:
+            module.fail_json(
+                **error_result(
+                    "op=compare requires either (text_a AND text_b) OR "
+                    "texts with len >= 2"
+                )
+            )
+            return
+        path = "/api/embeddings/compare"
+        body: dict[str, object] = {
+            "include_embeddings": module.params["include_embeddings"],
+        }
+        if has_pair:
+            body["text_a"] = text_a
+            body["text_b"] = text_b
+        else:
+            body["texts"] = texts
+    else:  # op == "similar" (default, back-compat)
+        if not module.params.get("text"):
+            module.fail_json(
+                **error_result("op=similar requires text")
+            )
+            return
+        path = "/api/embeddings/similar"
+        body = {
+            "text": module.params["text"],
+            "top_k": module.params["top_k"],
+            "include_embedding": module.params["include_embedding"],
+        }
+        if module.params.get("work_type"):
+            body["work_type"] = module.params["work_type"]
+
     client = GluddClient(
         base_url=module.params["daemon_url"],
         psk=module.params["psk"],
         timeout=module.params["timeout"],
     )
 
-    body: dict[str, object] = {
-        "text": module.params["text"],
-        "top_k": module.params["top_k"],
-        "include_embedding": module.params["include_embedding"],
-    }
-    if module.params.get("work_type"):
-        body["work_type"] = module.params["work_type"]
-
-    resp = client.post("/api/embeddings/similar", body=body)
+    resp = client.post(path, body=body)
     if resp.get("_error"):
         module.fail_json(**error_result(f"daemon error: {resp['_error']}"))
         return
