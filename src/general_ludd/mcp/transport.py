@@ -163,6 +163,11 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
 
     args_after_launcher = cmd[1:]
     found_spec = False
+    # True once a package spec has been supplied via --package/-p (space or
+    # inline form). After that, the next bare positional is the BINARY to run
+    # from the already-pinned package (e.g. ``npx --package pkg@1.2.3 some-cmd``)
+    # — NOT another package spec to fetch — so it must not be re-validated.
+    spec_from_flag = False
 
     def _check_spec(arg: str) -> None:
         """Apply metacharacter and version-pin checks to a single spec."""
@@ -192,6 +197,7 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
             spec = args_after_launcher[i + 1]
             _check_spec(spec)
             found_spec = True
+            spec_from_flag = True
             i += 2
             continue
         if arg.startswith("--package=") or arg.startswith("-p="):
@@ -199,9 +205,16 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
             spec = arg.split("=", 1)[1]
             _check_spec(spec)
             found_spec = True
+            spec_from_flag = True
             i += 1
             continue
         if not arg.startswith("-"):
+            if spec_from_flag:
+                # A pinned package was already supplied via --package/-p, so
+                # this bare positional is the command to execute FROM that
+                # package (e.g. ``npx --package pkg@1.2.3 some-cmd``). It is
+                # not a package spec to fetch — do not re-validate it.
+                break
             # First positional non-flag arg is the package spec.
             _check_spec(arg)
             found_spec = True
