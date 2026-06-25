@@ -70,6 +70,14 @@
         dest: "{{ artifact_dir }}/dependency_update_result.json"
         mode: "0644"
 
+    # PHASE-2 MCP directive: a dependency update may install new Galaxy
+    # collections/roles (new resources). Regenerate the MCP tool defs + topics
+    # so the newly-installed surface is exposed to the model. Non-fatal/warn on
+    # failure — see mcp_sync.yml.
+    - name: Sync MCP tool defs + topics for newly-installed resources
+      ansible.builtin.include_tasks: mcp_sync.yml
+      when: not ansible_check_mode
+
   rescue:
 
     - name: Write failure result artifact

@@ -29,3 +29,12 @@ enable_git_push: false   # must be explicitly set to true to push
 # Daemon connectivity
 daemon_url: "http://localhost:8000"
 psk: ""   # prefer GLUDD_PSK env var
+
+# ---- MCP sync (PHASE-2 directive) ----
+# After the model authors new content, ensure created resources carry a
+# DOCUMENTATION block (stub if missing) and regenerate the MCP tool defs +
+# topics. Runs in the worktree so artifacts are committed with the change.
+mcp_sync_enabled: true
+mcp_authoring_stub: true         # inject a DOCUMENTATION stub if an authored module lacks one
+mcp_repo_root: ""                # repo root to run the generators in (default: worktree path / repo_path)
+mcp_gen_python: "python3"        # interpreter used to run the MCP scripts

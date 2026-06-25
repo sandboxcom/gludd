@@ -80,6 +80,14 @@
       no_log: "{{ psk | length > 0 }}"
       when: not ansible_check_mode
 
+    # PHASE-2 MCP directive: after the model authors new content, ensure any
+    # created resource carries a DOCUMENTATION block (stub if missing) and
+    # regenerate the MCP tool defs + topics — BEFORE the commit so the refreshed
+    # MCP surface is committed alongside the authored code.
+    - name: Sync MCP tool defs + topics for authored resources
+      ansible.builtin.include_tasks: mcp_sync.yml
+      when: not ansible_check_mode
+
     - name: Commit changes in worktree
       general_ludd.agent.gludd_git:
         path: "{{ _ic_path | default(repo_path) }}"

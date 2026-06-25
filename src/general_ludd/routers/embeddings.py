@@ -71,6 +71,13 @@ from general_ludd.skills.embeddings import (
 
 logger = logging.getLogger(__name__)
 
+# Cap on how many top-level keys of an audit event's ``details`` JSON contribute
+# to its searchable text. ``AuditEventModel.details`` is an unconstrained Text
+# column, so a runaway/malicious payload could otherwise carry an unbounded
+# number of keys; combined with the 500-char per-value cap this bounds the
+# source_text (and thus per-event embed cost/memory) of an events search.
+_MAX_DETAILS_KEYS = 100
+
 
 class EmbeddingSimilarRequest(BaseModel):
     """Request body for POST /api/embeddings/similar."""
@@ -714,7 +721,10 @@ def _event_details_summary(raw: Any) -> str:
     payload contributes searchable terms. Anything that is not a well-formed
     JSON object — None, malformed text, a non-dict payload — degrades to an
     empty string rather than raising, so a single bad row can never break a
-    search. Nested/complex values are stringified compactly and bounded.
+    search. Both the number of keys (``_MAX_DETAILS_KEYS``) and the size of each
+    value (500 chars) are bounded, so a runaway/oversized ``details`` payload
+    (the column has no size constraint) can never blow up the source text and,
+    transitively, the embed cost/memory of a search.
     """
     if not isinstance(raw, str) or not raw:
         return ""
@@ -726,6 +736,10 @@ def _event_details_summary(raw: Any) -> str:
         return ""
     parts: list[str] = []
     for key, value in parsed.items():
+        # Cap the number of keys so a details dict with an unbounded key count
+        # can't produce an unboundedly large source_text (memory amplification).
+        if len(parts) >= _MAX_DETAILS_KEYS:
+            break
         if value is None:
             continue
         if isinstance(value, (str, int, float, bool)):

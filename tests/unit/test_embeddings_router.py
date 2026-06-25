@@ -1461,6 +1461,85 @@ def test_search_events_malformed_details_json_does_not_break(
     assert "not-json" not in item["source_text"]
 
 
+def test_event_details_summary_caps_key_count() -> None:
+    """A details dict with many keys is bounded to _MAX_DETAILS_KEYS terms.
+
+    Directly exercises the resource-abuse guard: an unbounded-key payload must
+    not produce an unboundedly large source_text (memory amplification).
+    """
+    import json as _json
+
+    from general_ludd.routers.embeddings import (
+        _MAX_DETAILS_KEYS,
+        _event_details_summary,
+    )
+
+    big = {f"k{i}": "v" for i in range(_MAX_DETAILS_KEYS * 5)}
+    summary = _event_details_summary(_json.dumps(big))
+    # The summary is "k0=v k1=v ..."; count the emitted key=value terms.
+    terms = summary.split(" ")
+    assert len(terms) == _MAX_DETAILS_KEYS
+
+
+def test_event_details_summary_caps_value_size() -> None:
+    """A single huge value is truncated to 500 chars (no unbounded term)."""
+    import json as _json
+
+    from general_ludd.routers.embeddings import _event_details_summary
+
+    summary = _event_details_summary(_json.dumps({"blob": "a" * 100000}))
+    # "blob=" prefix + 500 truncated value chars.
+    assert summary == "blob=" + "a" * 500
+
+
+@pytest_asyncio.fixture
+async def high_key_event_factory(session_factory):
+    """``session_factory`` seeded with one event carrying many details keys."""
+    import json as _json
+
+    from general_ludd.routers.embeddings import _MAX_DETAILS_KEYS
+
+    await _seed_events(
+        session_factory,
+        [
+            {
+                "event_type": "noisy_event",
+                "entity_type": "todo",
+                "entity_id": "todo-noisy",
+                "project_id": "proj-noisy",
+                "details": _json.dumps(
+                    {f"k{i}": "x" for i in range(_MAX_DETAILS_KEYS * 4)}
+                ),
+            }
+        ],
+    )
+    return session_factory
+
+
+def test_search_events_high_key_count_details_is_bounded(
+    monkeypatch: pytest.MonkeyPatch, high_key_event_factory
+) -> None:
+    """End-to-end: a many-key details event still ranks (200), bounded text.
+
+    Proof the high-key-count guard holds through the handler: no hang/OOM, and
+    the source_text carries at most _MAX_DETAILS_KEYS details terms.
+    """
+    from general_ludd.routers.embeddings import _MAX_DETAILS_KEYS
+
+    client = _events_client(monkeypatch, seeded_factory=high_key_event_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "noisy event todo", "corpus": "events"},
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 1
+    src = results[0]["source_text"]
+    # event_type + entity_type + at most _MAX_DETAILS_KEYS "k=v" terms.
+    terms = src.split(" ")
+    assert len(terms) <= _MAX_DETAILS_KEYS + 2
+
+
 def test_search_events_skips_eventless_row(
     monkeypatch: pytest.MonkeyPatch,
 ) -> None:

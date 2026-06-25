@@ -27,3 +27,10 @@ enable_git_push: false
 # Daemon connectivity
 daemon_url: "http://localhost:8000"
 psk: ""
+
+# ---- MCP sync (PHASE-2 directive) ----
+# Regenerate MCP tool defs + topics after a dependency/collection install so
+# newly-installed resources are exposed to the model. Non-fatal.
+mcp_sync_enabled: true
+mcp_repo_root: ""                # repo root to run the generator in (default: repo_path or cwd)
+mcp_gen_python: "python3"        # interpreter used to run the MCP scripts
