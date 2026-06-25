@@ -2719,6 +2719,29 @@ test-hooks:
 	rm -rf "/private/tmp/claude-hooktestok-$$$$" 2>/dev/null || true; \
 	rm -f "$$_AR_STATE"; \
 	\
+	echo "[14g] FINGERPRINT: run#1 (NEW failure) BLOCKS; run#2 (SAME failure, unchanged fingerprint) RESETS+ALLOWS (no block); run#3 (NEW failure file) BLOCKS again"; \
+	_AR_FP_ROOT=/private/tmp/claude-hooktestfp-$$$$/x-gludd/sess-hooktest/tasks; \
+	mkdir -p "$$_AR_FP_ROOT" 2>/dev/null; \
+	printf 'agent died\n529 overloaded_error overloaded\nstalled: no progress\n' > "$$_AR_FP_ROOT/fail1.output"; \
+	rm -f "$$_AR_STATE"; \
+	_is_block() { printf '%s' "$$1" | python3 -c 'import json,sys; d=json.load(sys.stdin); sys.exit(0 if d.get("decision")=="block" else 1)' 2>/dev/null; }; \
+	OUT1=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" GLUDD_API_RESILIENCE_WINDOW=900 bash .claude/hooks/api_error_resilience_stop.sh 2>/dev/null); \
+	if _is_block "$$OUT1"; then echo "  PASS [14g.1]: run#1 NEW failure -> block"; \
+	else echo "  FAIL [14g.1]: run#1 expected block; got: $$OUT1"; OVERALL=FAIL; fi; \
+	OUT2=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" GLUDD_API_RESILIENCE_WINDOW=900 bash .claude/hooks/api_error_resilience_stop.sh 2>/dev/null); RC2=$$?; \
+	if [ $$RC2 -eq 0 ] && ! _is_block "$$OUT2"; then echo "  PASS [14g.2]: run#2 SAME failure (unchanged fingerprint) -> reset+allow (no block)"; \
+	else echo "  FAIL [14g.2]: run#2 expected non-block reset; rc=$$RC2 got: $$OUT2"; OVERALL=FAIL; fi; \
+	CNT2=$$(awk '{print $$1}' "$$_AR_STATE" 2>/dev/null); \
+	if [ "$$CNT2" = "0" ]; then echo "  PASS [14g.3]: run#2 reset trigger count to 0 in state"; \
+	else echo "  FAIL [14g.3]: run#2 expected count=0; got: '$$CNT2'"; OVERALL=FAIL; fi; \
+	sleep 1; \
+	printf 'another agent died\n503 Service Unavailable\nstream watchdog\n' > "$$_AR_FP_ROOT/fail2.output"; \
+	OUT3=$$(printf '%s' '{"stop_hook_active":false}' | GLUDD_API_RESILIENCE_STATE="$$_AR_STATE" GLUDD_API_RESILIENCE_WINDOW=900 bash .claude/hooks/api_error_resilience_stop.sh 2>/dev/null); \
+	if _is_block "$$OUT3"; then echo "  PASS [14g.4]: run#3 NEW failure file (changed fingerprint) -> block again"; \
+	else echo "  FAIL [14g.4]: run#3 expected block on new failure; got: $$OUT3"; OVERALL=FAIL; fi; \
+	rm -rf "/private/tmp/claude-hooktestfp-$$$$" 2>/dev/null || true; \
+	rm -f "$$_AR_STATE"; \
+	\
 	echo ""; \
 	echo "========================================================"; \
 	echo "  test-hooks OVERALL: $$OVERALL"; \

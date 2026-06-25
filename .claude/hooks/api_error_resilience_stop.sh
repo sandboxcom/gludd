@@ -50,6 +50,7 @@ _sig='stalled: no progress|stream watchdog|hit your session limit|session limit 
 
 _failed=0
 _recent_secs="${GLUDD_API_RESILIENCE_WINDOW:-900}"   # 15 min
+_fpinput=""   # accumulates "<file>:<mtime>\n" lines for the failure-set fingerprint
 for f in "${_taskglob[@]}"; do
   [ -f "$f" ] || continue
   # only files touched within the recent window
@@ -59,26 +60,61 @@ for f in "${_taskglob[@]}"; do
   # tail-only scan (last ~4KB) for a terminal failure signature
   if tail -c 4096 "$f" 2>/dev/null | grep -qiE "$_sig"; then
     _failed=$((_failed + 1))
+    _fpinput="${_fpinput}${f}:${_mt}
+"
   fi
 done
 
 [ "$_failed" -eq 0 ] && exit 0   # no recent transient failures -> allow stop
+
+# --- Fingerprint of the current failure set ----------------------------------
+# Identify WHICH failures these are (sorted <file>:<mtime> list), so we only fire
+# on a NEW transient failure — not re-counting the SAME already-handled dead
+# agents every Stop and escalating the backoff against a static, recovered set.
+# Use stdlib tools (sort + cksum, or md5); fail-open to an empty fingerprint if
+# unavailable so a missing tool can never wedge — an empty fingerprint just makes
+# every run look "changed" (the old always-fire behavior), never blocks the user.
+_fingerprint=""
+if [ -n "$_fpinput" ]; then
+  _fingerprint="$(printf '%s' "$_fpinput" | sort 2>/dev/null | cksum 2>/dev/null | tr -d ' \t' 2>/dev/null)"
+  case "$_fingerprint" in ''|*[!0-9]*) _fingerprint="" ;; esac
+fi
 
 # --- Exponential backoff state ------------------------------------------------
 # Track consecutive resilience triggers so repeated overload backs off and is
 # eventually allowed to rest (anti-wedge), instead of tight-looping a re-dispatch
 # against a provider that is down.
 _state="${GLUDD_API_RESILIENCE_STATE:-/tmp/gludd-api-resilience-state}"
-_count=0; _last=0
+_count=0; _last=0; _stored_fp=""
 if [ -r "$_state" ]; then
-  read -r _count _last < "$_state" 2>/dev/null
+  # Format: "<count> <epoch> [<fingerprint>]". Backward-tolerant: an old
+  # "<count> <epoch>" line (no fingerprint) reads _stored_fp="" -> treated as no
+  # stored fingerprint -> first-time path (fires), never crashes on the old format.
+  read -r _count _last _stored_fp < "$_state" 2>/dev/null
   case "$_count" in ''|*[!0-9]*) _count=0 ;; esac
   case "$_last" in ''|*[!0-9]*) _last=0 ;; esac
+  case "$_stored_fp" in *[!0-9]*) _stored_fp="" ;; esac
 fi
+
+# --- STALE failure set: same fingerprint as last trigger -> reset + allow ------
+# The current failures are the SAME dead agents we already fired on (no NEW
+# transient failure since). Don't keep blocking + escalating the backoff on an
+# already-handled, recovered set: RESET the streak to 0 and ALLOW the stop.
+# (Only when we have a real fingerprint on both sides — empty means "unknown",
+# which must fall through to the fire path, never silently reset.)
+if [ -n "$_fingerprint" ] && [ "$_fingerprint" = "$_stored_fp" ]; then
+  printf '%s %s %s\n' "0" "$_now" "$_fingerprint" > "$_state" 2>/dev/null || true
+  msg="API-RESILIENCE: ${_failed} recent transient-failure agent(s), but the failure set is UNCHANGED since the last trigger (already handled/recovered — no NEW failure). Resetting backoff and allowing stop; not re-blocking on stale failures."
+  python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"Stop","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
+  exit 0
+fi
+
 # Reset the streak if it has been quiet for a while (errors are no longer a burst).
 if [ "$((_now - _last))" -gt $((_recent_secs * 2)) ]; then _count=0; fi
 _count=$((_count + 1))
-printf '%s %s\n' "$_count" "$_now" > "$_state" 2>/dev/null || true
+# Store the NEW fingerprint alongside count+epoch so the next run can detect
+# whether the failure set changed again.
+printf '%s %s %s\n' "$_count" "$_now" "$_fingerprint" > "$_state" 2>/dev/null || true
 
 # Backoff seconds: 30,60,120,240,480 capped at 600. The model is asked to wait
 # this long before re-dispatching when a burst is ongoing.
