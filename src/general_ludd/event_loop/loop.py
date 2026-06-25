@@ -118,7 +118,6 @@ def _resolve_prompt_text_static(
                     prompt_profile,
                     exc_info=True,
                 )
-                pass
     if prompt_registry is None:
         return None
     try:
@@ -441,7 +440,18 @@ class EventLoop:
                     try:
                         await session.commit()
                     except Exception as exc:
-                        logger.warning("Failed to commit tick session: %s", exc)
+                        # Data-loss event: the whole tick's writes are dropped. Log
+                        # loudly + roll back so the failed txn doesn't leak through
+                        # context-exit. Do NOT re-raise: run_forever re-raises and
+                        # would kill the daemon loop. Orphaned ACTIVE todos are
+                        # reclaimed by reclaim_expired_leases / _reap_stuck_todos.
+                        logger.error(
+                            "Failed to commit tick session (writes lost): %s",
+                            exc,
+                            exc_info=True,
+                        )
+                        with contextlib.suppress(Exception):
+                            await session.rollback()
                     self._active_session = None
                     self._todo_repo = None
                     self._task_return_repo = None
@@ -636,7 +646,7 @@ class EventLoop:
             )
             return
         if self._audit_repo is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await self._audit_repo.create(
                     event_type="return_reviewed",
                     entity_type="task_return",
@@ -649,6 +659,15 @@ class EventLoop:
                             "matched_todo_id": decision.matched_todo_id,
                         }
                     ),
+                )
+            except Exception:
+                # Audit trail is best-effort; a write failure must not abort the
+                # review (the decision is already applied). Log so a broken audit
+                # sink is visible.
+                logger.warning(
+                    "Audit write failed for return_reviewed event %s",
+                    return_id,
+                    exc_info=True,
                 )
         logger.info(
             "In-process review for return %s -> %s", return_id, decision.decision
@@ -705,8 +724,16 @@ class EventLoop:
             queues = [Queue(**q) if isinstance(q, dict) else q for q in queues_data]
             active_jobs = 0
             if self._todo_repo is not None and self._active_session is not None:
-                with contextlib.suppress(Exception):
+                try:
                     active_jobs = await self._todo_repo.count_active()
+                except Exception:
+                    # Best-effort load signal: a count failure falls back to 0
+                    # (treated as idle). Log at debug so a broken query is visible
+                    # without changing the fall-through behaviour.
+                    logger.debug(
+                        "count_active failed; using active_jobs=0",
+                        exc_info=True,
+                    )
             snapshot = LoadSnapshot(
                 loadavg_1m=load_1, loadavg_5m=load_5, loadavg_10m=load_10,
                 logical_cpu_count=cpu_count, cpu_percent=cpu_pct,
@@ -762,12 +789,25 @@ class EventLoop:
             holder = f"tick-{self._total_ticks}"
             for todo in claimed:
                 bucket_key = _safe_str(todo, "queue", "core") or "core"
-                with contextlib.suppress(Exception):
+                todo_id = _safe_str(todo, "todo_id", "") or ""
+                try:
                     await acquire_lease(
                         self._active_session,
-                        bucket_key=f"{bucket_key}:{_safe_str(todo, 'todo_id', '')}",
+                        bucket_key=f"{bucket_key}:{todo_id}",
                         holder_id=holder,
                         project_id=project_id,
+                    )
+                except Exception as exc:
+                    # A CLAIMED todo with no lease row can only be recovered by the
+                    # slow _reap_stuck_todos fallback, so the failure must be
+                    # visible. Keep swallowing (per-todo best-effort) so one bad
+                    # lease write does not abort claiming the rest of the batch.
+                    logger.warning(
+                        "Lease acquisition failed for todo %s (bucket=%s): %s",
+                        todo_id,
+                        bucket_key,
+                        exc,
+                        exc_info=True,
                     )
 
     async def _phase_dispatch_execute_jobs(self) -> None:
@@ -1158,12 +1198,23 @@ class EventLoop:
                         if eff_variable_repo is not None:
                             for r in results:
                                 if r.ok:
-                                    import contextlib as _cl
-                                    with _cl.suppress(Exception):
+                                    try:
                                         await eff_variable_repo.set_var(
                                             namespace="tool_results",
                                             key=f"tool_result:{r.name}",
                                             value=str(r.output),
+                                        )
+                                    except Exception:
+                                        # Best-effort persistence of a tool result;
+                                        # the dispatch already succeeded. Keep
+                                        # swallowing per-result so one bad write
+                                        # does not abort the rest, but log it.
+                                        logger.debug(
+                                            "Failed to persist tool_result for %s "
+                                            "(job %s)",
+                                            r.name,
+                                            job_id,
+                                            exc_info=True,
                                         )
             if model_response is not None and self._benchmark_recorder is not None:
                 try:
@@ -1181,7 +1232,13 @@ class EventLoop:
                     self._background_tasks.add(_bt)
                     _bt.add_done_callback(self._background_tasks.discard)
                 except Exception:
-                    pass
+                    # Best-effort fire-and-forget benchmark write: a scheduling
+                    # failure must never abort dispatch. Keep swallowing but make
+                    # a persistently-dead recorder visible at debug.
+                    logger.debug(
+                        "Benchmark recorder scheduling failed (non-fatal)",
+                        exc_info=True,
+                    )
                 # Trace-buffer feed (additive): the DB benchmark write above is
                 # preserved, but the trace→recorder→RecentTracesBuffer chain was
                 # never exercised, so /api/traces always reported count 0. Build a
@@ -1220,7 +1277,13 @@ class EventLoop:
                     self._background_tasks.add(_tbt)
                     _tbt.add_done_callback(self._background_tasks.discard)
                 except Exception:
-                    pass
+                    # Best-effort trace-buffer feed (telemetry only): a failure
+                    # here must never abort dispatch. Keep swallowing but log at
+                    # debug so a broken trace pipeline is observable.
+                    logger.debug(
+                        "Trace-buffer feed failed (non-fatal)",
+                        exc_info=True,
+                    )
             self._runner.write_vars(job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
@@ -1608,7 +1671,7 @@ class EventLoop:
             ):
                 push_failures += 1
             if self._audit_repo is not None:
-                with contextlib.suppress(Exception):
+                try:
                     from general_ludd.db.models import AuditEventType
                     await self._audit_repo.record_typed(
                         AuditEventType.TODO_STATUS_CHANGED,
@@ -1618,6 +1681,15 @@ class EventLoop:
                             "old": todo.status, "new": new_status.value,
                             "decision": d.decision,
                         },
+                    )
+                except Exception:
+                    # Audit trail is best-effort; the transition is already
+                    # applied. Log so a broken audit sink is visible without
+                    # aborting reconcile.
+                    logger.warning(
+                        "Audit write failed for todo status change %s",
+                        todo.todo_id,
+                        exc_info=True,
                     )
         self._tick_metrics["decisions_applied"] = reconciled
         self._tick_metrics["push_failures"] = push_failures
@@ -1822,8 +1894,17 @@ class EventLoop:
             except Exception as exc:
                 logger.warning("Failed to persist self-improve todo: %s", exc)
         if persisted:
-            with contextlib.suppress(Exception):
+            try:
                 await self._active_session.flush()
+            except Exception:
+                # Best-effort flush of newly-persisted self-improve todos; the
+                # tick-level commit will retry the flush. Log so a persistent
+                # flush failure is visible.
+                logger.warning(
+                    "Flush of %d self-improve todo(s) failed",
+                    persisted,
+                    exc_info=True,
+                )
         return persisted
 
     async def _phase_emit_tick_metrics(self) -> None:
