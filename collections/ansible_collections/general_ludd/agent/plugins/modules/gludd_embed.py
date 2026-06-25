@@ -47,9 +47,11 @@ DOCUMENTATION:
     corpus:
       description:
         - The real corpus to search when C(op=search). C(skills) matches the
-          live skill registry; C(task_types) matches the canonical task types.
+          live skill registry; C(task_types) matches the canonical task types;
+          C(prompts) matches the persisted prompt profiles (each prompt_text
+          embedded on the fly).
       type: str
-      choices: [skills, task_types]
+      choices: [skills, task_types, prompts]
       default: skills
     text_a:
       description: First string to compare. Used (with C(text_b)) when C(op=compare).
@@ -188,7 +190,11 @@ def main() -> None:
                 default="similar",
             ),
             text=dict(type="str"),
-            corpus=dict(type="str", choices=["skills", "task_types"], default="skills"),
+            corpus=dict(
+                type="str",
+                choices=["skills", "task_types", "prompts"],
+                default="skills",
+            ),
             text_a=dict(type="str"),
             text_b=dict(type="str"),
             texts=dict(type="list", elements="str"),

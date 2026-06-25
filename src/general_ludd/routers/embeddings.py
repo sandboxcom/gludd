@@ -16,11 +16,13 @@ comparable across surfaces.
 
 ``POST /api/embeddings/search`` is the generic RAG-search surface: a role takes
 a string a bot produced and searches a real corpus with it, getting back the
-top-k most-similar items ranked by cosine similarity. v1 ships two real
+top-k most-similar items ranked by cosine similarity. It ships three real
 corpora — ``skills`` (the live :class:`~general_ludd.skills.registry.SkillRegistry`
 on ``app.state._skill_registry``; each skill's ``description`` is embedded
-on-the-fly, no schema change) and ``task_types`` (delegates to the same
-canonical task-type logic as ``/similar``). Any other ``corpus`` value is
+on-the-fly, no schema change), ``task_types`` (delegates to the same canonical
+task-type logic as ``/similar``), and ``prompts`` (the persisted
+:class:`~general_ludd.db.models.PromptProfileModel` corpus; each ``prompt_text``
+is embedded on-the-fly, no schema change). Any other ``corpus`` value is
 rejected by pydantic (422). It reuses the SAME default embedder as ``/similar``
 and ``/compare`` so the scores are comparable. Fully defensive: an empty/absent
 registry or any embed failure yields a 200 with empty ``results`` — never a 500.
@@ -179,10 +181,12 @@ class EmbeddingCompareResponse(BaseModel):
 class EmbeddingSearchRequest(BaseModel):
     """Request body for POST /api/embeddings/search.
 
-    ``corpus`` is constrained (pattern) to the two REAL v1 corpora: ``skills``
-    (the live SkillRegistry, descriptions embedded on the fly) and
-    ``task_types`` (the canonical task-type vectors, delegating to /similar).
-    Any other value (memory/todos are future) is rejected by pydantic (422).
+    ``corpus`` is constrained (pattern) to the REAL v1 corpora: ``skills``
+    (the live SkillRegistry, descriptions embedded on the fly), ``task_types``
+    (the canonical task-type vectors, delegating to /similar), and ``prompts``
+    (the persisted :class:`PromptProfileModel.prompt_text` corpus, embedded on
+    the fly — no schema change). Any other value (traces/metrics/events/system/
+    osquery are later phases) is rejected by pydantic (422).
     """
 
     text: str = Field(
@@ -192,8 +196,10 @@ class EmbeddingSearchRequest(BaseModel):
     )
     corpus: str = Field(
         "skills",
-        pattern="^(skills|task_types)$",
-        description="Which real corpus to search: 'skills' or 'task_types'.",
+        pattern="^(skills|task_types|prompts)$",
+        description=(
+            "Which real corpus to search: 'skills', 'task_types', or 'prompts'."
+        ),
     )
     top_k: int = Field(
         5, ge=1, le=20, description="Number of corpus items to return."
@@ -226,6 +232,25 @@ class EmbeddingSearchResponse(BaseModel):
 
 def _get_session_factory(app: FastAPI) -> Any:
     return getattr(app.state, "_session_factory", None)
+
+
+def _parse_json_list(raw: Any) -> list[Any]:
+    """Defensively decode a JSON-array column value to a list.
+
+    PromptProfileModel stores ``tags``/``task_types`` as JSON-encoded strings
+    (defaulting to ``"[]"``). Anything that is not a well-formed JSON array
+    (None, malformed text, a non-list payload) degrades to an empty list rather
+    than raising, so a single bad row can never break a search.
+    """
+    if isinstance(raw, list):
+        return list(raw)
+    if not isinstance(raw, str) or not raw:
+        return []
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return []
+    return list(parsed) if isinstance(parsed, list) else []
 
 
 def _embedding_method(store: TaskEmbeddingStore) -> str:
@@ -468,6 +493,95 @@ def _search_skills(req: EmbeddingSearchRequest, registry: Any) -> EmbeddingSearc
     )
 
 
+async def _search_prompts(
+    app: FastAPI, req: EmbeddingSearchRequest
+) -> EmbeddingSearchResponse:
+    """corpus=prompts: embed each persisted prompt_text on the fly, cosine-rank.
+
+    Mirrors :func:`_search_skills` exactly but over the persisted
+    :class:`~general_ludd.db.models.PromptProfileModel` corpus. No stored vectors
+    (zero schema change): a session is opened from ``app.state._session_factory``,
+    :class:`~general_ludd.db.repository.PromptProfileRepository`'s ``list_all`` is
+    read (capped at ``_DEFAULT_LIST_LIMIT``), each ``prompt_text`` is embedded
+    with the SAME default embedder as /similar and /compare, and the query is
+    ranked against them. An absent factory, an empty prompt set, or any embed
+    failure degrades to an empty result set (the caller wraps this so the route
+    is a 200, never a 500). ``tags``/``task_types`` are JSON-decoded defensively.
+    """
+    from general_ludd.db.repository import (
+        _DEFAULT_LIST_LIMIT,
+        PromptProfileRepository,
+    )
+
+    embedder = _select_default_embedder()
+    method = _method_of(embedder)
+
+    query_vec = embedder.embed(req.text)
+    query_dim = len(query_vec)
+
+    factory = _get_session_factory(app)
+    if factory is None:
+        return EmbeddingSearchResponse(
+            corpus="prompts",
+            query_embedding_dim=query_dim,
+            embedding_method=method,
+            query_embedding=query_vec if req.include_embeddings else None,
+            results=[],
+        )
+
+    rows: list[Any] = []
+    async with factory() as session:
+        repo = PromptProfileRepository(session)
+        try:
+            rows = list(await repo.list_all(limit=_DEFAULT_LIST_LIMIT))
+        except Exception as exc:  # degrade, never 500
+            logger.debug("prompt listing failed: %s", exc)
+            rows = []
+
+    scored: list[SearchResultItem] = []
+    for row in rows:
+        prompt_text = getattr(row, "prompt_text", "") or ""
+        if not prompt_text:
+            continue
+        try:
+            prompt_vec = embedder.embed(prompt_text)
+        except Exception as exc:  # skip the bad one, keep ranking the rest
+            logger.debug("prompt embed failed: %s", exc)
+            continue
+        if len(prompt_vec) != query_dim:
+            continue
+        score = cosine_similarity(query_vec, prompt_vec)
+        scored.append(
+            SearchResultItem(
+                rank=0,  # assigned after sort
+                name=getattr(row, "name", "") or "",
+                source_text=prompt_text,
+                similarity_score=score,
+                metadata={
+                    "source": getattr(row, "source", "") or "",
+                    "tags": _parse_json_list(getattr(row, "tags", None)),
+                    "task_types": _parse_json_list(
+                        getattr(row, "task_types", None)
+                    ),
+                    "version": getattr(row, "version", "") or "",
+                },
+            )
+        )
+
+    scored.sort(key=lambda r: r.similarity_score, reverse=True)
+    scored = scored[: req.top_k]
+    for i, item in enumerate(scored):
+        item.rank = i + 1
+
+    return EmbeddingSearchResponse(
+        corpus="prompts",
+        query_embedding_dim=query_dim,
+        embedding_method=method,
+        query_embedding=query_vec if req.include_embeddings else None,
+        results=scored,
+    )
+
+
 async def _search(
     app: FastAPI, req: EmbeddingSearchRequest
 ) -> EmbeddingSearchResponse:
@@ -478,7 +592,13 @@ async def _search(
         except Exception as exc:  # never 500
             logger.debug("task_types search failed: %s", exc)
             return EmbeddingSearchResponse(corpus="task_types")
-    # corpus == "skills" (pydantic guarantees one of the two).
+    if req.corpus == "prompts":
+        try:
+            return await _search_prompts(app, req)
+        except Exception as exc:  # never 500
+            logger.debug("prompts search failed: %s", exc)
+            return EmbeddingSearchResponse(corpus="prompts")
+    # corpus == "skills" (pydantic guarantees one of the three).
     try:
         registry = getattr(app.state, "_skill_registry", None)
         return _search_skills(req, registry)
@@ -529,14 +649,19 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post(
         "/api/embeddings/search",
         response_model=EmbeddingSearchResponse,
-        summary="Search a real corpus (skills/task_types) by embedding similarity",
+        summary=(
+            "Search a real corpus (skills/task_types/prompts) by embedding "
+            "similarity"
+        ),
         description=(
             "Take a string a bot produced and search a real corpus with it (RAG "
             "search): returns the top_k most-similar corpus items ranked by "
             "cosine similarity. v1 corpora: `skills` (the live SkillRegistry — "
-            "each skill description is embedded on the fly, no schema change) and "
+            "each skill description is embedded on the fly, no schema change), "
             "`task_types` (the canonical task-type vectors, delegating to the "
-            "/similar logic). Any other `corpus` value is rejected (422). Reuses "
+            "/similar logic), and `prompts` (the persisted prompt_profiles — "
+            "each prompt_text embedded on the fly, no schema change). Any other "
+            "`corpus` value is rejected (422). Reuses "
             "the same default embedder as /similar and /compare; "
             "`embedding_method` is \"openai\" or \"hash\". Defensive: an absent/"
             "empty corpus or any embed failure degrades to a 200 with empty "
@@ -548,7 +673,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     ) -> EmbeddingSearchResponse:
         """Search a real corpus for the items most similar to ``text``.
 
-        Read-only. ``corpus`` is ``skills`` (default) or ``task_types``. Returns
+        Read-only. ``corpus`` is ``skills`` (default), ``task_types``, or
+        ``prompts``. Returns
         the ranked matches (highest cosine similarity first), the query
         embedding dimensionality, the resolved embedding method, and — when
         ``include_embeddings`` is set — the query vector itself. Never 500s.

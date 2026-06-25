@@ -663,3 +663,240 @@ def test_search_defaults_corpus_to_skills(
     resp = client.post("/api/embeddings/search", json={"text": "rank"})
     assert resp.status_code == 200
     assert resp.json()["corpus"] == "skills"
+
+
+# --- POST /api/embeddings/search (corpus=prompts) ----------------------------
+#
+# The prompts corpus has no stored vectors (zero schema change): the handler
+# reads PromptProfileRepository.list_all(), embeds each ``prompt_text`` on the
+# fly with the same default HashEmbedder, and cosine-ranks the query against
+# them. These tests seed real prompt_profiles rows into the in-memory async DB
+# via the repository's upsert, then assert ranking/metadata/degradation.
+
+
+async def _seed_prompts(factory: Any, rows: list[dict[str, Any]]) -> None:
+    """Insert the given prompt-profile dicts via the real repository upsert."""
+    from general_ludd.db.repository import PromptProfileRepository
+
+    async with factory() as session:
+        repo = PromptProfileRepository(session)
+        for row in rows:
+            await repo.upsert(row)
+        await session.commit()
+
+
+@pytest_asyncio.fixture
+async def prompts_factory(session_factory):
+    """``session_factory`` seeded with three distinct prompt profiles."""
+    import json as _json
+
+    await _seed_prompts(
+        session_factory,
+        [
+            {
+                "name": "bug-hunter",
+                "source": "github",
+                "prompt_text": (
+                    "Diagnose and fix the defect causing the request handler "
+                    "to intermittently return wrong output and 500 errors."
+                ),
+                "tags": _json.dumps(["debugging", "backend"]),
+                "task_types": _json.dumps(["bug_fix"]),
+                "version": "v2",
+            },
+            {
+                "name": "doc-writer",
+                "source": "internal",
+                "prompt_text": (
+                    "Write clear user-facing documentation and a tutorial for "
+                    "the new feature, with examples."
+                ),
+                "tags": _json.dumps(["docs"]),
+                "task_types": _json.dumps(["documentation"]),
+                "version": "latest",
+            },
+            {
+                "name": "perf-tuner",
+                "source": "internal",
+                "prompt_text": (
+                    "Profile and optimize the slow hot path to reduce latency."
+                ),
+                "tags": "[]",
+                "task_types": "[]",
+                "version": "latest",
+            },
+        ],
+    )
+    return session_factory
+
+
+def test_search_prompts_returns_ranked_results(
+    monkeypatch: pytest.MonkeyPatch, prompts_factory
+) -> None:
+    client = _search_client(monkeypatch, seeded_factory=prompts_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "diagnose and fix a defect causing wrong output and 500s",
+            "corpus": "prompts",
+            "top_k": 2,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "prompts"
+    assert body["embedding_method"] == "hash"
+    assert body["query_embedding_dim"] > 0
+    assert body["query_embedding"] is None  # default include_embeddings=False
+    results = body["results"]
+    assert 0 < len(results) <= 2
+    # Ranked by similarity descending; ranks are 1-based and contiguous.
+    scores = [r["similarity_score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+    assert [r["rank"] for r in results] == list(range(1, len(results) + 1))
+    for r in results:
+        assert 0.0 <= r["similarity_score"] <= 1.0
+        assert r["name"]
+        assert r["source_text"]
+        md = r["metadata"]
+        assert set(md) == {"source", "tags", "task_types", "version"}
+        assert isinstance(md["tags"], list)
+        assert isinstance(md["task_types"], list)
+    # The bug-fix-shaped query should surface bug-hunter at the top.
+    assert results[0]["name"] == "bug-hunter"
+    top_md = results[0]["metadata"]
+    assert top_md["source"] == "github"
+    assert top_md["version"] == "v2"
+    assert top_md["task_types"] == ["bug_fix"]
+    assert "debugging" in top_md["tags"]
+
+
+def test_search_prompts_include_embeddings_returns_query_vector(
+    monkeypatch: pytest.MonkeyPatch, prompts_factory
+) -> None:
+    client = _search_client(monkeypatch, seeded_factory=prompts_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "optimize", "corpus": "prompts", "include_embeddings": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["query_embedding"], list)
+    assert len(body["query_embedding"]) == body["query_embedding_dim"]
+
+
+def test_search_prompts_top_k_caps_results(
+    monkeypatch: pytest.MonkeyPatch, prompts_factory
+) -> None:
+    client = _search_client(monkeypatch, seeded_factory=prompts_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "prompts", "top_k": 1},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) == 1
+
+
+def test_search_prompts_empty_store_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch, session_factory
+) -> None:
+    """An empty prompt_profiles table yields 200 + empty results, never 500."""
+    client = _search_client(monkeypatch, seeded_factory=session_factory)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "prompts"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "prompts"
+    assert body["results"] == []
+    assert body["embedding_method"] == "hash"
+
+
+def test_search_prompts_no_session_factory_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No session factory degrades to empty prompts results, never a 500."""
+    client = _search_client(monkeypatch, seeded_factory=None)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "prompts"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "prompts"
+    assert body["results"] == []
+
+
+def test_search_prompts_missing_text_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _search_client(monkeypatch, seeded_factory=None)
+    resp = client.post("/api/embeddings/search", json={"corpus": "prompts"})
+    assert resp.status_code == 422
+
+
+def test_search_prompts_accepted_by_pydantic(
+    monkeypatch: pytest.MonkeyPatch, session_factory
+) -> None:
+    """corpus=prompts passes the pydantic pattern (not a 422 like memory)."""
+    client = _search_client(monkeypatch, seeded_factory=session_factory)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "x", "corpus": "prompts"}
+    )
+    assert resp.status_code == 200
+
+
+def test_search_prompts_embed_failure_degrades_to_200(
+    monkeypatch: pytest.MonkeyPatch, prompts_factory
+) -> None:
+    """A broken embedder degrades the prompts search to 200, never a 500."""
+
+    class _BoomEmbedder:
+        def embed(self, text: str) -> list[float]:
+            raise RuntimeError("embedder exploded")
+
+    monkeypatch.setattr(
+        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
+    )
+    client = _search_client(monkeypatch, seeded_factory=prompts_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "prompts"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["corpus"] == "prompts"
+
+
+@pytest_asyncio.fixture
+async def malformed_meta_factory(session_factory):
+    """``session_factory`` seeded with one row carrying non-JSON tags/task_types."""
+    await _seed_prompts(
+        session_factory,
+        [
+            {
+                "name": "broken-meta",
+                "source": "internal",
+                "prompt_text": "rank this prompt despite broken metadata",
+                "tags": "not-json{",
+                "task_types": "also-not-json",
+                "version": "latest",
+            }
+        ],
+    )
+    return session_factory
+
+
+def test_search_prompts_malformed_tags_json_does_not_break(
+    monkeypatch: pytest.MonkeyPatch, malformed_meta_factory
+) -> None:
+    """A row whose tags/task_types are not valid JSON degrades to empty lists."""
+    client = _search_client(monkeypatch, seeded_factory=malformed_meta_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "rank this prompt", "corpus": "prompts"},
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 1
+    md = results[0]["metadata"]
+    assert md["tags"] == []
+    assert md["task_types"] == []
