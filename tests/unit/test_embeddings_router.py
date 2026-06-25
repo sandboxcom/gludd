@@ -370,6 +370,86 @@ def test_compare_batch_embedder_failure_yields_empty_matrix(
     assert body["similarity"] is None
 
 
+# --- Resource-abuse bounds (quadratic-DoS / unbounded-string guards) ---------
+
+
+def test_compare_texts_over_100_is_422(monkeypatch: pytest.MonkeyPatch) -> None:
+    """texts with 101 items -> 422 (bounds the O(n^2) similarity matrix)."""
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare", json={"texts": ["x"] * 101}
+    )
+    assert resp.status_code == 422
+
+
+def test_compare_texts_exactly_100_is_ok(monkeypatch: pytest.MonkeyPatch) -> None:
+    """texts with exactly 100 items is within the cap -> 200."""
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare", json={"texts": ["x"] * 100}
+    )
+    assert resp.status_code == 200
+    matrix = resp.json()["matrix"]
+    assert len(matrix) == 100
+    assert len(matrix[0]) == 100
+
+
+def test_compare_text_a_over_per_string_cap_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A single text_a over the 20000-char cap -> 422 (no unbounded embed)."""
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={"text_a": "a" * 20001, "text_b": "b"},
+    )
+    assert resp.status_code == 422
+
+
+def test_compare_texts_item_over_per_string_cap_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A batch item over the 20000-char cap -> 422 via the model_validator."""
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare",
+        json={"texts": ["ok", "a" * 20001]},
+    )
+    assert resp.status_code == 422
+
+
+def test_compare_normal_small_inputs_still_pass(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Normal small inputs are unaffected by the new bounds."""
+    client = _compare_client(monkeypatch)
+    resp = client.post(
+        "/api/embeddings/compare", json={"text_a": "hello", "text_b": "world"}
+    )
+    assert resp.status_code == 200
+    assert resp.json()["similarity"] is not None
+
+
+def test_similar_text_over_per_string_cap_is_422(client: TestClient) -> None:
+    """A /similar text over the 20000-char cap -> 422."""
+    resp = client.post(
+        "/api/embeddings/similar", json={"text": "a" * 20001}
+    )
+    assert resp.status_code == 422
+
+
+def test_search_text_over_per_string_cap_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A /search text over the 20000-char cap -> 422."""
+    client = _search_client(monkeypatch, registry=_StubRegistry([]))
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "a" * 20001, "corpus": "skills"},
+    )
+    assert resp.status_code == 422
+
+
 # --- POST /api/embeddings/search --------------------------------------------
 
 

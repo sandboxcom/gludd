@@ -70,7 +70,11 @@ logger = logging.getLogger(__name__)
 class EmbeddingSimilarRequest(BaseModel):
     """Request body for POST /api/embeddings/similar."""
 
-    text: str = Field(..., description="The work description to match against.")
+    text: str = Field(
+        ...,
+        max_length=20000,
+        description="The work description to match against (max 20000 chars).",
+    )
     top_k: int = Field(
         5, ge=1, le=20, description="Number of similar task types to return."
     )
@@ -116,15 +120,21 @@ class EmbeddingCompareRequest(BaseModel):
     """
 
     text_a: str | None = Field(
-        None, description="First string to compare (pairwise form)."
+        None,
+        max_length=20000,
+        description="First string to compare (pairwise form; max 20000 chars).",
     )
     text_b: str | None = Field(
-        None, description="Second string to compare (pairwise form)."
+        None,
+        max_length=20000,
+        description="Second string to compare (pairwise form; max 20000 chars).",
     )
     texts: list[str] | None = Field(
         None,
+        max_length=100,
         description=(
-            "Batch form: 2+ strings; returns the pairwise similarity matrix."
+            "Batch form: 2+ strings (max 100); returns the pairwise similarity "
+            "matrix. Each string is capped at 20000 chars."
         ),
     )
     include_embeddings: bool = Field(
@@ -140,6 +150,14 @@ class EmbeddingCompareRequest(BaseModel):
             raise ValueError(
                 "supply either (text_a AND text_b) OR texts with len >= 2"
             )
+        # Bound each batch string so a single request can't embed an
+        # unbounded amount of text (O(n) embed cost / per-string blow-up).
+        if self.texts is not None:
+            for item in self.texts:
+                if len(item) > 20000:
+                    raise ValueError(
+                        "each item in texts must be <= 20000 chars"
+                    )
         return self
 
 
@@ -167,7 +185,11 @@ class EmbeddingSearchRequest(BaseModel):
     Any other value (memory/todos are future) is rejected by pydantic (422).
     """
 
-    text: str = Field(..., description="The query string to search the corpus with.")
+    text: str = Field(
+        ...,
+        max_length=20000,
+        description="The query string to search the corpus with (max 20000 chars).",
+    )
     corpus: str = Field(
         "skills",
         pattern="^(skills|task_types)$",
