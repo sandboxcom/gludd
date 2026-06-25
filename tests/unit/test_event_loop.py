@@ -156,7 +156,7 @@ class TestEventLoop:
 
         with patch(
             "general_ludd.event_loop.loop.invoke_model_for_generation",
-            return_value="GENERATED OUTPUT",
+            return_value=("GENERATED OUTPUT", None),
         ):
             await loop._dispatch_execute_job(todo)
 
@@ -592,7 +592,7 @@ class TestSpendLimiterCharges:
 
         with patch(
             "general_ludd.event_loop.loop.invoke_model_for_generation",
-            return_value="OUTPUT",
+            return_value=("OUTPUT", None),
         ):
             await loop._dispatch_execute_job(todo)
 
@@ -624,7 +624,7 @@ class TestSpendLimiterCharges:
 
         with patch(
             "general_ludd.event_loop.loop.invoke_model_for_generation",
-            return_value="OUTPUT",
+            return_value=("OUTPUT", None),
         ) as mock_invoke:
             await loop._dispatch_execute_job(todo)
 
@@ -746,7 +746,7 @@ class TestLedgerBounds:
 
         with patch(
             "general_ludd.event_loop.loop.invoke_model_for_generation",
-            return_value="GENERATED OUTPUT",
+            return_value=("GENERATED OUTPUT", None),
         ):
             await loop._dispatch_execute_job(todo)
 

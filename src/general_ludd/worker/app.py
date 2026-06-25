@@ -97,8 +97,13 @@ _UNSET: Any = object()
 
 def _invoke_gateway_for_job(
     gateway: ModelGateway, job: JobSpec
-) -> str | None:
-    """Call the model for a generation job. Returns the generated text or None."""
+) -> tuple[str | None, list[dict[str, Any]] | None]:
+    """Call the model for a generation job.
+
+    Returns a ``(content, tool_calls)`` tuple: the generated text and the
+    model's STRUCTURED tool/function calls (OpenAI-nested shape), or ``None``
+    for each when absent.
+    """
     return invoke_model_for_generation(
         gateway,
         job_id=job.job_id,
@@ -246,22 +251,27 @@ def create_app(
         # C1 (W3.1): for generation work types, invoke the model gateway and
         # feed its output into the playbook extravars and the job result.
         model_response: str | None = None
+        model_tool_calls: list[dict[str, Any]] | None = None
         gw = application.state.gateway
         if gw is not None and is_generation_work_type(job.work_type):
-            model_response = _invoke_gateway_for_job(gw, job)
+            model_response, model_tool_calls = _invoke_gateway_for_job(gw, job)
 
-        # Parse tool calls from the model response. When a DynamicDispatcher is
+        # Dispatch the model's STRUCTURED tool_calls. When a DynamicDispatcher is
         # wired (mirrors the daemon's EventLoop pattern), EXECUTE the calls via
         # ``dispatch_all`` and surface the results. When no dispatcher is
         # available, fall back to the conservative detect-only path so the gap
-        # is still observable in logs and the response dict.
+        # is still observable in logs and the response dict. The legacy path
+        # re-parsed the model TEXT (parse_tool_calls), which cannot recover the
+        # structured calls, so model-driven tool actions were silently discarded.
         tool_calls_detected: list[dict[str, object]] = []
         tool_dispatch_results: list[dict[str, object]] = []
         if model_response is not None:
-            from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+            from general_ludd.dispatch.dynamic_dispatcher import (
+                structured_tool_calls_to_calls,
+            )
             from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
 
-            calls = parse_tool_calls(model_response)
+            calls = structured_tool_calls_to_calls(model_tool_calls)
             if len(calls) > MAX_CALLS_PER_REQUEST:
                 logger.warning(
                     "Worker /jobs/execute: model returned %d tool call(s) which exceeds "

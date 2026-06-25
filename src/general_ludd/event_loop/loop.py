@@ -1221,7 +1221,7 @@ class EventLoop:
             if self._model_gateway is not None and is_generation_work_type(
                 _safe_str(todo, "work_type", "code") or "code"
             ):
-                model_response = await asyncio.to_thread(
+                model_response, model_tool_calls = await asyncio.to_thread(
                     invoke_model_for_generation,
                     self._model_gateway,
                     job_id=job_id,
@@ -1233,10 +1233,17 @@ class EventLoop:
                 )
             else:
                 model_response = None
+                model_tool_calls = None
             if model_response is not None:
-                from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+                from general_ludd.dispatch.dynamic_dispatcher import (
+                    structured_tool_calls_to_calls,
+                )
                 from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
-                calls = parse_tool_calls(model_response)
+                # Dispatch the model's STRUCTURED tool_calls directly. The legacy
+                # path re-parsed the TEXT (parse_tool_calls(model_response)) which
+                # cannot recover the structured calls, so model-driven tool actions
+                # were silently discarded on this path.
+                calls = structured_tool_calls_to_calls(model_tool_calls)
                 if len(calls) > MAX_CALLS_PER_REQUEST:
                     logger.error(
                         "EventLoop: model returned %d tool calls which exceeds cap %d — "

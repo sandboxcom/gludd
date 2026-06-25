@@ -166,7 +166,7 @@ class TestCAT12CostTracking:
 
         gw, budget, metrics = self._build_gateway()
 
-        content = invoke_model_for_generation(
+        content, _tool_calls = invoke_model_for_generation(
             gw,
             job_id="EXEC-T12",
             work_type="code",
@@ -552,7 +552,7 @@ class TestCAT16ContextCompactorUsed:
                 profiles=[_make_profile()],
                 provider_registry=_FakeProviderRegistry(),
             )
-            content = invoke_model_for_generation(
+            content, _tool_calls = invoke_model_for_generation(
                 gw,
                 job_id="EXEC-T16",
                 work_type="code",
@@ -629,10 +629,12 @@ class TestDispatchPathReachesGeneration:
 
         captured: dict[str, Any] = {}
 
-        def _fake_invoke(gateway: Any, **kwargs: Any) -> str:
+        def _fake_invoke(
+            gateway: Any, **kwargs: Any
+        ) -> tuple[str, list[dict[str, Any]] | None]:
             captured["gateway"] = gateway
             captured["kwargs"] = kwargs
-            return "MODEL OUT"
+            return "MODEL OUT", None
 
         # Patch the symbol as imported into the event_loop module namespace.
         monkeypatch.setattr(loop_mod, "invoke_model_for_generation", _fake_invoke)

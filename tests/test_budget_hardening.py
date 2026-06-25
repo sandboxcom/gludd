@@ -231,7 +231,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_exhausted_guard(),
         )
-        assert result is None
+        assert result == (None, None)
 
     def test_no_guard_proceeds(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -242,7 +242,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=None,
         )
-        assert result == "generated text"
+        assert result[0] == "generated text"
 
     def test_headroom_guard_proceeds(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -253,7 +253,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_headroom_guard(),
         )
-        assert result == "generated text"
+        assert result[0] == "generated text"
 
     def test_missing_allowed_key_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -263,7 +263,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_missing_allowed_guard(),
         )
-        assert result is None
+        assert result == (None, None)
 
     def test_nondict_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -273,7 +273,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_nondict_guard(),
         )
-        assert result is None
+        assert result == (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -684,7 +684,7 @@ class TestBudgetPreCheckRealInstances:
             skill_body=None,
             budget_guard=limiter,
         )
-        assert result == "generated"
+        assert result[0] == "generated"
 
     def test_invoke_real_spend_limiter_over_limit_returns_none(self):
         """invoke_model_for_generation returns None when real SpendLimiter is exhausted."""
@@ -705,5 +705,5 @@ class TestBudgetPreCheckRealInstances:
             skill_body=None,
             budget_guard=limiter,
         )
-        assert result is None
+        assert result == (None, None)
         gw.call_model.assert_not_called()

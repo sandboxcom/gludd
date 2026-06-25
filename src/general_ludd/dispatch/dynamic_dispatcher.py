@@ -149,6 +149,48 @@ def _parse_single(item: dict[str, Any]) -> ToolCall | None:
     return ToolCall(kind=kind_str, name=name_str, args=args)  # type: ignore[arg-type]
 
 
+def structured_tool_calls_to_calls(
+    tool_calls: list[dict[str, Any]] | None,
+) -> list[ToolCall]:
+    """Convert a model's STRUCTURED tool/function calls into ``ToolCall`` objects.
+
+    ``tool_calls`` is the OpenAI-nested shape carried on
+    ``ModelResponse.tool_calls`` (the same list the ``ToolCallLoop`` consumes)::
+
+        {"id": str, "type": "function",
+         "function": {"name": str, "arguments": <json-string-or-dict>}}
+
+    These structured calls carry NO ``kind`` field (the only kind-resolution in
+    this system is the literal ``kind`` key read by ``parse_tool_calls`` — there
+    is no registry name→kind lookup).  Model-emitted function/tool calls are the
+    MCP/function tools the ``ToolCallLoop`` routes straight to its MCP client, so
+    we tag them ``kind="mcp"`` to mirror that working reference path.  The
+    ``arguments`` payload is JSON-decoded when it is a string (matching
+    ``ToolCallLoop``'s handling); a decode failure yields empty args.
+    """
+    if not tool_calls:
+        return []
+    calls: list[ToolCall] = []
+    for tc in tool_calls:
+        if not isinstance(tc, dict):
+            continue
+        fn = tc.get("function", {})
+        if not isinstance(fn, dict):
+            continue
+        name_raw = fn.get("name", "")
+        if not isinstance(name_raw, str) or not name_raw:
+            continue
+        args_raw = fn.get("arguments", {})
+        if isinstance(args_raw, str):
+            try:
+                args_raw = json.loads(args_raw)
+            except (json.JSONDecodeError, ValueError):
+                args_raw = {}
+        args: dict[str, Any] = args_raw if isinstance(args_raw, dict) else {}
+        calls.append(ToolCall(kind="mcp", name=name_raw[:256], args=args))
+    return calls
+
+
 # ---------------------------------------------------------------------------
 # DynamicDispatcher
 # ---------------------------------------------------------------------------
