@@ -890,13 +890,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         model_gateway = None
         if model_profiles:
+            from general_ludd.models.provider_registry import ProviderRegistry
+
+            _resolved_profiles = [
+                p if isinstance(p, ModelProfile) else ModelProfile(**p)
+                for p in model_profiles
+                if isinstance(p, (ModelProfile, dict))
+            ]
             model_gateway = ModelGateway(
-                profiles=[
-                    p if isinstance(p, ModelProfile) else ModelProfile(**p)
-                    for p in model_profiles
-                    if isinstance(p, (ModelProfile, dict))
-                ],
-                provider_registry=None,
+                profiles=_resolved_profiles,
+                # CI-1 fix: register each profile's provider so live calls have a
+                # usable provider class. With provider_registry=None the gateway's
+                # _registry was None and every live call raised "No provider registry
+                # configured" — the daemon could not make a single live model call.
+                provider_registry=ProviderRegistry.from_profiles(_resolved_profiles),
                 secrets_manager=secrets_resolver,
                 metrics_collector=ext.get("metrics_collector"),
                 health_tracker=health_tracker,

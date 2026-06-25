@@ -65,9 +65,16 @@ def build_gateway_from_config() -> ModelGateway | None:
                 profiles.append(ModelProfile(**data))
         if not profiles:
             return None
+        from general_ludd.models.provider_registry import ProviderRegistry
         from general_ludd.secrets.env import EnvSecretsManager
 
-        return ModelGateway(profiles=profiles, secrets_manager=EnvSecretsManager())
+        # CI-1 fix: register providers so the worker's gateway can make live calls
+        # (provider_registry omitted → None → "No provider registry configured").
+        return ModelGateway(
+            profiles=profiles,
+            provider_registry=ProviderRegistry.from_profiles(profiles),
+            secrets_manager=EnvSecretsManager(),
+        )
     except Exception as exc:  # pragma: no cover - defensive config path
         logger.warning("Worker gateway construction failed: %s", exc)
         return None
