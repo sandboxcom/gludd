@@ -43,6 +43,19 @@ from general_ludd.schemas.todo import Todo, TodoStatus
 from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
+
+
+class _FileClaimConflict(Exception):
+    """Raised when a todo's git-delivery would clobber a file held by another
+    live worker (#31 multi-agent safety).
+
+    Treated by the completed-work push path exactly like any other delivery
+    failure: the work id is left OUT of the pushed ledger so the commit is
+    retried on a later tick (after the conflicting worker releases its claim),
+    rather than two todos committing the same file simultaneously.
+    """
+
+
 PHASE_ORDER = [
     "load_config_snapshot",
     "claim_unreviewed_task_returns",
@@ -208,6 +221,7 @@ class EventLoop:
         dispatcher: Any | None = None,
         loc_ledger: Any | None = None,
         spend_limiter: Any | None = None,
+        file_claim_registry: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -290,6 +304,12 @@ class EventLoop:
         # lines-of-code delta here after every successful commit so the
         # accounting router can report cumulative loc_changed per project.
         self._loc_ledger = loc_ledger
+        # #31 (multi-agent safety): the shared FileClaimRegistry (also stored on
+        # app.state._file_claims and surfaced via /api/coordination + /api/facts).
+        # The git-delivery path (_try_commit_completed_work) claims a todo's
+        # affected files here BEFORE committing and releases them after, so two
+        # concurrent todos can never write+commit the same file in the same tick.
+        self._file_claims = file_claim_registry
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -1809,13 +1829,57 @@ class EventLoop:
         return mapping.get(decision)
 
     async def _try_commit_completed_work(self, todo: Any) -> None:
-        """H6: commit/branch/push completed work via git automation."""
+        """H6: commit/branch/push completed work via git automation.
+
+        #31 (multi-agent safety): this is the git-DELIVERY path — the ONLY point
+        where a todo's affected files are actually known. They cannot be reserved
+        at dispatch/claim time: the model has not run, no worktree changes exist,
+        so claiming an empty set then would be a no-op. Here the worktree has been
+        written, so ``repo.changed_files()`` yields the real affected paths. We
+        therefore claim those files in the shared FileClaimRegistry BEFORE the
+        commit, refuse to proceed if another live worker already holds an
+        overlapping file (deferring this commit to a later tick rather than
+        clobbering), and release the claim once delivery finishes (success OR
+        failure). A None registry leaves behaviour unchanged.
+        """
         branch_name = getattr(todo, "branch_name", None) or f"gludd-{todo.todo_id.lower()}"
         worktree = getattr(todo, "worktree", None)
         if worktree:
+            from general_ludd.git_automation.repo import GitAutomation
+            repo = GitAutomation(worktree)
+            registry = self._file_claims
+            worker_id = _safe_str(todo, "todo_id", "") or str(id(todo))
+            claimed = False
             try:
-                from general_ludd.git_automation.repo import GitAutomation
-                repo = GitAutomation(worktree)
+                # #31: discover the worktree's affected files (uncommitted changes)
+                # and atomically reserve them before touching git. If another live
+                # worker already holds one of these files, DEFER — release our
+                # just-made claim and raise so the F3 retry path re-attempts this
+                # commit on a later tick (after the other worker releases), instead
+                # of two todos committing the same file simultaneously.
+                if registry is not None:
+                    affected = await asyncio.to_thread(repo.changed_files)
+                    if affected:
+                        registry.claim(worker_id, affected)
+                        claimed = True
+                        conflicts = registry.overlaps(worker_id)
+                        if conflicts:
+                            registry.release(worker_id)
+                            claimed = False
+                            blocking = sorted(
+                                {w for ws in conflicts.values() for w in ws}
+                            )
+                            logger.info(
+                                "#31: deferring commit for todo %s — files %s "
+                                "overlap active worker(s) %s; will retry next tick",
+                                worker_id,
+                                sorted(conflicts),
+                                blocking,
+                            )
+                            raise _FileClaimConflict(
+                                f"file-claim conflict for {worker_id}: "
+                                f"{sorted(conflicts)} held by {blocking}"
+                            )
                 # M (LIVE stall fix): commit/push shell out to blocking git.
                 # Even with a per-subprocess timeout, a 60s blocking call inside
                 # the async tick would freeze every other coroutine. Offload to a
@@ -1844,9 +1908,18 @@ class EventLoop:
                 # F3: surface (don't swallow) so the caller can detect the
                 # COMPLETE-but-unpushed split-brain and retry. The caller decides
                 # whether to mark the work pushed — a raised failure leaves it
-                # unmarked so the push is retried, never silently lost.
-                logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
+                # unmarked so the push is retried, never silently lost. A
+                # _FileClaimConflict is the same shape of "retry next tick" signal.
+                if not isinstance(exc, _FileClaimConflict):
+                    logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
                 raise
+            finally:
+                # #31: release the claim once delivery settles (committed+pushed
+                # OR failed) so the next tick's worker can take overlapping files.
+                # release() is a no-op when we never claimed (registry None /
+                # no affected files / conflict already released above).
+                if registry is not None and claimed:
+                    registry.release(worker_id)
 
     def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
         """F1: open a PR for completed work when git_automation.open_pr is set.

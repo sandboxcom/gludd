@@ -1035,6 +1035,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
             self_improve_interval=self_improve_interval,
+            # #31 (multi-agent safety): share the coordination router's
+            # FileClaimRegistry (created in routers/coordination.register and
+            # surfaced via /api/coordination + /api/facts) with the event loop's
+            # git-delivery path so concurrent todos cannot clobber the same file.
+            file_claim_registry=getattr(app.state, "_file_claims", None),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
