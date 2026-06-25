@@ -19,52 +19,53 @@ _XDIST_WORKERS := $(shell python3 -c "import os; v=os.environ.get('GLUDD_XDIST')
 _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
 # ---------------------------------------------------------------------------
-# Pytest concurrency cap (flock semaphore). The operator observed 20+ stacked
-# `make test-*` shells overloading the host: every agent that fires a pytest
-# recipe spawns an xdist worker pool, and nothing bounded how many ran at once.
-# PYTEST_MAX_PAR is a HARD cap on how many pytest sessions can run concurrently
-# across ALL agents on this machine (default 2). Each capped recipe routes its
-# pytest command through $(PYTEST_SEM): a small N-slot flock pool under /tmp.
+# Heavy-op concurrency governor (PORTABLE fcntl semaphore). The operator
+# observed 20+ stacked `make test-*` shells overloading the host: every agent
+# that fires a pytest recipe spawns an xdist worker pool (and mypy on 407 files
+# is itself a memory hog), and nothing bounded how many MEMORY-heavy ops ran at
+# once. The previous cap (commit 2d43c54) used the GNU `flock` BINARY, which
+# stock macOS does NOT ship — so on this dev host the wrapper DEGRADED to "run
+# uncapped" and was a SILENT NO-OP: concurrent pytest still collided with
+# Killed:9 and the full `-n 2` suite still OOM'd.
 #
-# Mechanism (N-slot pool, robust in make-recipe shell):
-#   _gludd_pytest_run() tries to grab one of PYTEST_MAX_PAR slot lock files with
-#   a NON-BLOCKING flock (flock -n). The first free slot wins and runs the
-#   command under `flock ... <cmd>`, so the kernel auto-releases the slot the
-#   instant the pytest process exits — even if it is killed (no manual cleanup,
-#   no deadlock from an orphaned holder). If every slot is busy it BLOCKS on
-#   slot 1 with a bounded wait (flock -w 1800) so it queues instead of piling
-#   on, and a waiter can never hang forever (30-min ceiling, then it proceeds).
+# This replaces it with scripts/heavy_sem.py: a portable counting semaphore
+# built on Python's `fcntl.flock` (stdlib on every POSIX host, always reachable
+# via `uv run`/python3 — so it works on macOS AND Linux). It caps the SHARED
+# heavy resource, NOT the agent count: 20 agents may be alive, but only
+# HEAVY_MAX_PAR pytest+mypy ops execute concurrently; the rest queue briefly.
 #
-#   PYTEST_MAX_PAR=1 make test-unit   -> full serialization (one at a time)
-#   PYTEST_MAX_PAR=2 (default)        -> at most two concurrent pytest sessions
-#   PYTEST_MAX_PAR=8 make test-unit   -> looser cap when the host can take it
+# Mechanism (one shared N-slot pool, prefix `gludd-heavy`):
+#   heavy_sem.py probes /tmp/gludd-heavy.<i>.lock (i=0..N-1) with a NON-blocking
+#   fcntl.flock(LOCK_EX|LOCK_NB). The first free slot wins; the held fd is kept
+#   open and the command is exec'd via os.execvp, so the kernel auto-releases
+#   the slot the instant the op exits — even on kill/OOM (no stale locks, no
+#   deadlock). If every slot is busy it BLOCKS on slot 0 with a bounded wait
+#   (~1800s ceiling, then proceeds uncapped) so it queues instead of piling on
+#   and a waiter can never hang forever. Any acquire error -> exec uncapped (the
+#   cap is host-protection, never a correctness gate). It prints a one-line
+#   stderr note ("heavy_sem: slot N/3 acquired") so the cap is visibly working —
+#   not the silent no-op the flock-binary version was on macOS.
 #
-# Capped recipes: test, test-unit, test-specific, test-specific-summary,
-# test-integration, test-e2e, test-guardrails, test-db, test-scripts.
-# (Collection-only / dry recipes like test-count/collect-check are NOT capped —
-# they don't spin worker pools.) `make ps-pytest` / `make kill-stray` are the
-# companion census/cleanup targets and are unaffected.
+#   HEAVY_MAX_PAR=1 make test-unit   -> full serialization (one heavy op total)
+#   HEAVY_MAX_PAR=3 (default)        -> at most 3 concurrent heavy ops (pytest+mypy)
+#   HEAVY_MAX_PAR=8 make test-unit   -> looser cap when the host can take it
+#
+# Governed recipes (share the single `gludd-heavy` pool): test, test-unit,
+# test-specific, test-specific-summary, test-integration, test-e2e,
+# test-tui-daemon, test-guardrails, test-db, test-scripts, AND typecheck (mypy).
+# Collection-only / light recipes (test-count, collect-check, lint) are NOT
+# governed — they don't spin worker pools and ruff is fast. `make ps-pytest` /
+# `make kill-stray` and the gate flock in run_gate.sh are unaffected.
 # ---------------------------------------------------------------------------
-PYTEST_MAX_PAR ?= 2
-# $(PYTEST_SEM) <pytest command ...> — acquire a slot, then exec the command
-# under flock so the slot frees on process exit. Single-quoted body keeps make
-# from expanding the shell $i; only $(PYTEST_MAX_PAR) is substituted by make.
-# GNU flock is required for the non-blocking slot probe (-n) and bounded wait
-# (-w). Stock macOS ships NO flock binary; a macOS dev may have GNU flock via
-# brew (util-linux). When flock is absent the wrapper DEGRADES to running the
-# command directly (no cap) rather than failing the tests — the cap is a
-# host-protection optimization, never a correctness gate. On Linux/CI (where
-# the 20-stacked-shell overload actually happens) flock is present and the cap
-# is enforced. `flock --version` distinguishes GNU flock from a non-GNU/absent
-# binary (BSD has no flock; GNU prints a version).
-PYTEST_SEM = _gludd_pytest_run() { \
-	if ! command -v flock >/dev/null 2>&1 || ! flock --version >/dev/null 2>&1; then "$$@"; return $$?; fi; \
-	for i in $$(seq 1 $(PYTEST_MAX_PAR)); do \
-		exec 9>"/tmp/gludd-pytest-slot.$$i"; \
-		if flock -n 9; then "$$@"; return $$?; fi; \
-	done; \
-	exec 9>"/tmp/gludd-pytest-slot.1"; flock -w 1800 9; "$$@"; return $$?; \
-	}; _gludd_pytest_run
+# Default 3: the full `-n 2` suite OOMs and concurrent pytest collided with
+# Killed:9, so ~3 heavy ops is the sane ceiling for this host's RAM.
+HEAVY_MAX_PAR ?= 3
+# $(HEAVY_SEM) <heavy command ...> — acquire a slot from the shared N-slot pool,
+# then the script exec's the command (lock auto-frees on exit). One shared slot
+# prefix (`gludd-heavy`) means pytest + mypy draw from the SAME pool, so total
+# heavy concurrency across the host is bounded by HEAVY_MAX_PAR. Only
+# $(HEAVY_MAX_PAR) is substituted by make; everything else is passed verbatim.
+HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
 
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
@@ -181,8 +182,9 @@ help:
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
-	@echo "  (pytest recipes are flock-capped at PYTEST_MAX_PAR concurrent sessions,"
-	@echo "   default 2; PYTEST_MAX_PAR=1 make test-unit forces full serialization)"
+	@echo "  (pytest + typecheck are governed by a portable fcntl semaphore at"
+	@echo "   HEAVY_MAX_PAR concurrent heavy ops, default 3; works on macOS + Linux;"
+	@echo "   HEAVY_MAX_PAR=1 make test-unit forces full serialization)"
 	@echo "  ps-pytest             List running pytest/gate sessions"
 	@echo ""
 	@echo "  --- Git ---"
@@ -308,30 +310,32 @@ lint:
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
 
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3) — mypy on 407 files is a
+# memory hog and shares the `gludd-heavy` pool with pytest. See sem block above.
 typecheck:
-	@$(UV) run mypy src
+	@$(HEAVY_SEM) $(UV) run mypy src
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2) — see semaphore block above.
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3) — see sem block above.
 test:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(PYTEST_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
+		$(HEAVY_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
 	else \
-		$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/ $(_XD) -v; \
+		$(HEAVY_SEM) $(UV) run python -m pytest tests/unit/ $(_XD) -v; \
 	fi
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(PYTEST_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -v
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-specific-summary:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific-summary TESTFILE='tests/unit -k budget'"; exit 1; fi
-	@$(PYTEST_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt | tail -8; \
+	@$(HEAVY_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt | tail -8; \
 	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt || echo "No FAILED/ERROR lines"
 
 test-count:
@@ -607,29 +611,29 @@ run-watched:
 	done; \
 	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-integration:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/integration/ $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/integration/ $(_XD) -v
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-e2e:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/e2e/ $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/e2e/ $(_XD) -v
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-tui-daemon:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-guardrails:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py $(_XD) -v
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-db:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
 
-# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
+# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-scripts:
-	@$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript $(_XD) -v
+	@$(HEAVY_SEM) $(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript $(_XD) -v
 
 healthcheck:
 	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
