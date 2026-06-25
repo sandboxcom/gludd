@@ -240,7 +240,16 @@ class EventLoop:
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
+        # A3: fire-and-forget background tasks (benchmark / trace writes).
+        # A strong reference is held here so a still-running task is never
+        # garbage-collected mid-flight. Mutations use the idiomatic
+        # add + add_done_callback(discard) pattern (both ops individually atomic
+        # under the GIL); the only COMPOUND access — the shutdown drain, which
+        # snapshots → cancels → awaits — is serialised by _bg_tasks_lock so a
+        # concurrent discard during the drain can never raise "set changed size
+        # during iteration".
         self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._bg_tasks_lock = asyncio.Lock()
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
         # Reconcile idempotency ledgers (defects F1/F2):
@@ -269,6 +278,42 @@ class EventLoop:
         # lines-of-code delta here after every successful commit so the
         # accounting router can report cumulative loc_changed per project.
         self._loc_ledger = loc_ledger
+
+    def _track_background_task(self, task: asyncio.Task[Any]) -> None:
+        """Register a fire-and-forget task so its reference is held until done.
+
+        A3: keeps a strong reference in ``self._background_tasks`` (so the task
+        is never GC'd while running) and arms a done-callback that discards it on
+        completion (so the set drains to empty and never leaks). ``set.add`` and
+        ``set.discard`` are each atomic under the GIL, and ``add_done_callback``
+        fires immediately if the task is already complete — so this is safe to
+        call from any coroutine without a lock. The lock guards only the COMPOUND
+        shutdown drain in :meth:`_drain_background_tasks`.
+        """
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _drain_background_tasks(self, *, cancel: bool = True) -> None:
+        """Cancel + await all tracked background tasks (used on shutdown).
+
+        A3: iterates a SNAPSHOT (``list(self._background_tasks)``) taken under
+        ``_bg_tasks_lock`` so a concurrent done-callback ``discard`` cannot mutate
+        the set while we read it — the read-modify-await sequence here is the only
+        compound access to the set and is the one that genuinely needs the lock.
+        Cancellation is best-effort: each task's done-callback removes it from the
+        live set as it settles, so after the gather the set drains to empty.
+        """
+        async with self._bg_tasks_lock:
+            pending = list(self._background_tasks)
+        if not pending:
+            return
+        if cancel:
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+        # gather a snapshot (never the live set) with return_exceptions so a
+        # cancelled/failed background task can't propagate into shutdown.
+        await asyncio.gather(*pending, return_exceptions=True)
 
     async def _append_message_queue_section(
         self, prompt_text: str | None, todo: Any, project_id: str | None
@@ -500,6 +545,18 @@ class EventLoop:
 
     def stop(self) -> None:
         self._running = False
+
+    async def shutdown(self) -> None:
+        """Stop ticking and drain all in-flight background tasks.
+
+        A3: cancels + awaits the fire-and-forget benchmark/trace tasks so the
+        process does not exit with running tasks (which would emit
+        "Task was destroyed but it is pending" warnings and could lose telemetry
+        writes mid-flush). Safe to call concurrently with task creation — the
+        drain reads a snapshot under ``_bg_tasks_lock``.
+        """
+        self._running = False
+        await self._drain_background_tasks()
 
     def get_available_tools(self) -> list[str]:
         if self._mcp_tool_registry is None:
@@ -1229,8 +1286,7 @@ class EventLoop:
                             input_tokens=len(prompt_text or "") // 4,
                         )
                     )
-                    self._background_tasks.add(_bt)
-                    _bt.add_done_callback(self._background_tasks.discard)
+                    self._track_background_task(_bt)
                 except Exception:
                     # Best-effort fire-and-forget benchmark write: a scheduling
                     # failure must never abort dispatch. Keep swallowing but make
@@ -1274,8 +1330,7 @@ class EventLoop:
                             _trace, success=True,
                         )
                     )
-                    self._background_tasks.add(_tbt)
-                    _tbt.add_done_callback(self._background_tasks.discard)
+                    self._track_background_task(_tbt)
                 except Exception:
                     # Best-effort trace-buffer feed (telemetry only): a failure
                     # here must never abort dispatch. Keep swallowing but log at

@@ -701,3 +701,111 @@ class TestLedgerBounds:
             f"_active_traces must be pruned to <= {trace_cap}; "
             f"got {len(loop._active_traces)}"
         )
+
+
+class TestBackgroundTaskTracking:
+    """A3: _background_tasks must be mutated race-safely.
+
+    The fire-and-forget benchmark/trace writes register via
+    _track_background_task (strong-ref add + add_done_callback(discard)) so no
+    running task is GC'd and the set drains to empty when they finish. Shutdown
+    cancels + awaits a SNAPSHOT so a concurrent discard cannot raise
+    "set changed size during iteration".
+    """
+
+    @pytest.mark.asyncio
+    async def test_tracked_tasks_drain_to_empty_when_complete(self):
+        """Many concurrently-registered tasks: none lost, set drains to empty."""
+        import asyncio
+
+        loop = EventLoop()
+
+        async def _work(i: int) -> int:
+            await asyncio.sleep(0)
+            return i
+
+        tasks = [asyncio.ensure_future(_work(i)) for i in range(50)]
+        for t in tasks:
+            loop._track_background_task(t)
+
+        # All references held while pending (no GC drop).
+        assert len(loop._background_tasks) == 50
+
+        results = await asyncio.gather(*tasks)
+        # Let the done-callbacks (set.discard) run.
+        await asyncio.sleep(0)
+
+        assert results == list(range(50))
+        assert len(loop._background_tasks) == 0, (
+            "every completed task must discard itself; set must drain to empty"
+        )
+
+    @pytest.mark.asyncio
+    async def test_already_done_task_is_tracked_then_discarded(self):
+        """Registering an already-completed task must not leak it (callback fires)."""
+        import asyncio
+
+        loop = EventLoop()
+
+        async def _instant() -> str:
+            return "done"
+
+        task = asyncio.ensure_future(_instant())
+        await task  # complete BEFORE tracking
+        loop._track_background_task(task)
+        # add_done_callback on an already-done task schedules the callback soon.
+        await asyncio.sleep(0)
+
+        assert task not in loop._background_tasks
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancels_and_drains_inflight_tasks(self):
+        """shutdown() must cancel + await in-flight tasks, iterating a snapshot."""
+        import asyncio
+
+        loop = EventLoop()
+        loop._running = True
+
+        async def _long() -> None:
+            await asyncio.sleep(3600)  # would hang without cancellation
+
+        tasks = [asyncio.ensure_future(_long()) for _ in range(20)]
+        for t in tasks:
+            loop._track_background_task(t)
+
+        assert len(loop._background_tasks) == 20
+
+        # Must return promptly (cancels rather than waiting out the sleeps).
+        await asyncio.wait_for(loop.shutdown(), timeout=5.0)
+
+        assert loop._running is False
+        assert all(t.cancelled() for t in tasks)
+        await asyncio.sleep(0)
+        assert len(loop._background_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_drain_safe_under_concurrent_discard(self):
+        """A drain must not raise even if tasks settle (discard) mid-iteration.
+
+        This is the "set changed size during iteration" guard: the drain reads a
+        snapshot under the lock, so callbacks discarding from the live set while
+        we gather can never corrupt the iteration.
+        """
+        import asyncio
+
+        loop = EventLoop()
+
+        async def _quick(i: int) -> int:
+            # Stagger completion so some tasks finish (and discard) while the
+            # drain is in flight.
+            await asyncio.sleep(0.001 * (i % 5))
+            return i
+
+        tasks = [asyncio.ensure_future(_quick(i)) for i in range(40)]
+        for t in tasks:
+            loop._track_background_task(t)
+
+        # No exception (e.g. RuntimeError: set changed size during iteration).
+        await asyncio.wait_for(loop._drain_background_tasks(cancel=False), timeout=5.0)
+        await asyncio.sleep(0)
+        assert len(loop._background_tasks) == 0
