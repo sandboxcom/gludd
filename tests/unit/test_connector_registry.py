@@ -345,3 +345,49 @@ class TestClassInterfaceValidation:
         )
         assert reg.get("ok") is not None
         assert reg.errors() == []
+
+
+# --------------------------------------------------------------------------- #
+# Transport-requiring connectors must NOT be silently dropped (regression).
+#
+# Eight real connectors used to hard-require an injected transport and raised at
+# construction. Since the registry only ever calls ``factory(config)`` (single
+# arg, no transport), those raises meant every such source landed in ``errors()``
+# and never appeared in ``list_sources()`` — silently dropped. They now fall back
+# to a real stdlib transport, so building them from operator config (the real
+# ``module`` selector path) succeeds and they are reachable. No network is
+# touched: construction only validates the (public, non-internal) base_url.
+# --------------------------------------------------------------------------- #
+_TRANSPORT_CONNECTOR_CONFIGS = [
+    {"name": "prom", "kind": "metrics", "module": "prometheus",
+     "base_url": "https://prom.example.com:9090"},
+    {"name": "dd", "kind": "logs", "module": "datadog",
+     "site": "https://api.datadoghq.com"},
+    {"name": "thanos", "kind": "metrics", "module": "thanos",
+     "base_url": "https://thanos.example.com:10902"},
+    {"name": "nagios", "kind": "metrics", "module": "nagios",
+     "base_url": "https://nagios.example.com"},
+    {"name": "nats", "kind": "metrics", "module": "nats",
+     "base_url": "https://nats.example.com"},
+    {"name": "kafka", "kind": "metrics", "module": "kafka_exporter",
+     "base_url": "https://kafka-exporter.example.com:9308"},
+    {"name": "rabbit", "kind": "metrics", "module": "rabbitmq",
+     "base_url": "https://rabbit.example.com"},
+    {"name": "splunk", "kind": "metrics", "module": "splunk_observability",
+     "base_url": "https://api.us0.signalfx.com"},
+]
+
+
+class TestTransportConnectorsNotDropped:
+    def test_all_eight_build_with_no_injected_transport(self) -> None:
+        # The registry calls factory(config) with NO transport — exactly the
+        # production path. All eight must construct and appear in list_sources().
+        reg = ConnectorRegistry.from_config(
+            [dict(c) for c in _TRANSPORT_CONNECTOR_CONFIGS]
+        )
+        assert reg.errors() == [], reg.errors()
+        listed = {s["name"] for s in reg.list_sources()}
+        assert listed == {c["name"] for c in _TRANSPORT_CONNECTOR_CONFIGS}
+        # And each is a live, addressable source.
+        for cfg in _TRANSPORT_CONNECTOR_CONFIGS:
+            assert reg.get(cfg["name"]) is not None

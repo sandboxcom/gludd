@@ -153,9 +153,16 @@ def test_site_defaults_to_public_datadog() -> None:
     assert t.calls[0]["url"].startswith("https://api.datadoghq.com")
 
 
-def test_transport_must_be_injected() -> None:
-    with pytest.raises(ValueError):
-        DatadogSource({"site": "https://api.datadoghq.com"})
+def test_constructs_with_default_transport() -> None:
+    # No transport injected: the connector falls back to a real stdlib transport
+    # (so the registry's single-arg ``factory(config)`` build succeeds and the
+    # source is NOT silently dropped from ``list_sources()``). No network is
+    # touched at construction time.
+    from general_ludd.connectors.datadog import _default_http_request
+
+    src = DatadogSource({"site": "https://api.datadoghq.com"})
+    assert src._http_request is _default_http_request
+    assert src.name
 
 
 def test_no_hardcoded_secrets_in_source() -> None:

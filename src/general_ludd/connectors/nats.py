@@ -40,11 +40,13 @@ Record shape (one dict per sample)::
 from __future__ import annotations
 
 import ipaddress
+import json as _json
 import os
 import time
+import urllib.request
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 # Injectable transport signature: (url, params, headers, timeout) -> (status, json)
 HttpGet = Callable[..., "tuple[int, Any]"]
@@ -63,6 +65,32 @@ _BLOCKED_HOSTNAMES = frozenset(
 
 _DEFAULT_TIMEOUT = 10.0
 _DEFAULT_MONITOR_PORT = 8222
+
+
+def _default_http_get(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = _DEFAULT_TIMEOUT,
+) -> tuple[int, Any]:
+    """Real, time-bound stdlib transport used when none is injected.
+
+    Matches the ``(url, params, headers, timeout) -> (status, json)`` contract.
+    Only ``http``/``https`` are allowed; the request is bounded by an explicit
+    timeout. The mocked tests never reach this path.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
+    if params:
+        sep = "&" if parsed.query else "?"
+        url = f"{url}{sep}{urlencode(params, doseq=True)}"
+    req = urllib.request.Request(url, headers=headers or {}, method="GET")
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        status = int(resp.getcode() or 0)
+        body = resp.read()
+    parsed_body: Any = _json.loads(body) if body else {}
+    return status, parsed_body
 
 
 def _strip_brackets(host: str) -> str:
@@ -135,13 +163,10 @@ class NatsSource:
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        if http_get is None:
-            raise ValueError("http_get transport must be injected")
-
         base_url = config.get("base_url", "")
         self._base_url = _validate_base_url(base_url)
         self._token_env = config.get("token_env")
-        self._http_get = http_get
+        self._http_get = http_get or _default_http_get
         self._timeout = float(timeout)
         self.kind = KIND
         host = urlsplit(self._base_url).netloc

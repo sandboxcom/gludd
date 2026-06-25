@@ -46,11 +46,13 @@ Record shape (one dict per datapoint)::
 from __future__ import annotations
 
 import ipaddress
+import json as _json
 import os
 import time
+import urllib.request
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
 # Injectable transport signature:
 #   (method, url, params, headers, json, timeout) -> (status, json)
@@ -69,6 +71,39 @@ _BLOCKED_HOSTNAMES = frozenset(
 )
 
 _DEFAULT_TIMEOUT = 10.0
+
+
+def _default_http_request(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+    json: Any = None,
+    timeout: float = _DEFAULT_TIMEOUT,
+) -> tuple[int, Any]:
+    """Real, time-bound stdlib transport used when none is injected.
+
+    Matches the connector's
+    ``(method, url, *, params, headers, json, timeout) -> (status, json)``
+    contract. Only ``http``/``https`` are allowed; the request is bounded by an
+    explicit timeout. The mocked tests never reach this path.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
+    if params:
+        sep = "&" if parsed.query else "?"
+        url = f"{url}{sep}{urlencode(params, doseq=True)}"
+    data = _json.dumps(json).encode("utf-8") if json is not None else None
+    req = urllib.request.Request(
+        url, data=data, headers=headers or {}, method=method.upper()
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        status = int(resp.getcode() or 0)
+        body = resp.read()
+    parsed_body: Any = _json.loads(body) if body else {}
+    return status, parsed_body
 
 
 def _strip_brackets(host: str) -> str:
@@ -138,14 +173,11 @@ class SplunkObservabilitySource:
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        if http_request is None:
-            raise ValueError("http_request transport must be injected")
-
         base_url = config.get("base_url", "")
         self._base_url = _validate_base_url(base_url)
         # Access token is resolved from the environment only.
         self._token_env = config.get("token_env")
-        self._http_request = http_request
+        self._http_request = http_request or _default_http_request
         self._timeout = float(timeout)
         self.kind = KIND
         host = urlsplit(self._base_url).netloc
