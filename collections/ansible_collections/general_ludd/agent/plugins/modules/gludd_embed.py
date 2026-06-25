@@ -22,8 +22,10 @@ DOCUMENTATION:
       a bot produced (C(text)) and search a real corpus with it (RAG search),
       returning the C(top_k) most-similar items ranked by cosine similarity.
       C(corpus) selects the corpus — C(skills) (the live skill registry,
-      descriptions matched on the fly) or C(task_types) (the canonical task
-      types). The snapshot is injected under C(ansible_facts.gludd_embed).
+      descriptions matched on the fly), C(task_types) (the canonical task
+      types), C(prompts) (the persisted prompt profiles), or C(traces) (recent
+      execution traces, work_type/phase/span descriptions matched on the fly).
+      The snapshot is injected under C(ansible_facts.gludd_embed).
     - Read-only and check-mode safe — it performs no writes (C(changed=False)).
     - Similarity is computed over the same embedding layer the adaptive router
       uses (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set
@@ -49,9 +51,10 @@ DOCUMENTATION:
         - The real corpus to search when C(op=search). C(skills) matches the
           live skill registry; C(task_types) matches the canonical task types;
           C(prompts) matches the persisted prompt profiles (each prompt_text
-          embedded on the fly).
+          embedded on the fly); C(traces) matches recent execution traces (each
+          trace's work_type/phase labels/span descriptions embedded on the fly).
       type: str
-      choices: [skills, task_types, prompts]
+      choices: [skills, task_types, prompts, traces]
       default: skills
     text_a:
       description: First string to compare. Used (with C(text_b)) when C(op=compare).
@@ -192,7 +195,7 @@ def main() -> None:
             text=dict(type="str"),
             corpus=dict(
                 type="str",
-                choices=["skills", "task_types", "prompts"],
+                choices=["skills", "task_types", "prompts", "traces"],
                 default="skills",
             ),
             text_a=dict(type="str"),

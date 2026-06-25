@@ -359,6 +359,25 @@ def test_search_op_task_types_corpus(
     assert fake_mod.failed is None
 
 
+def test_search_op_traces_corpus(
+    module: ModuleType, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    fake_mod = _FakeAnsibleModule(argument_spec={}, supports_check_mode=True)
+    fake_mod.params["op"] = "search"
+    fake_mod.params["corpus"] = "traces"
+    _SearchClient.last_body = None
+
+    monkeypatch.setattr(module, "AnsibleModule", lambda **_: fake_mod)
+    monkeypatch.setattr(module, "GluddClient", _SearchClient)
+
+    module.main()
+
+    assert _SearchClient.last_path == "/api/embeddings/search"
+    assert _SearchClient.last_body is not None
+    assert _SearchClient.last_body["corpus"] == "traces"
+    assert fake_mod.failed is None
+
+
 def test_search_op_missing_text_fails(
     module: ModuleType, monkeypatch: pytest.MonkeyPatch
 ) -> None:

@@ -900,3 +900,279 @@ def test_search_prompts_malformed_tags_json_does_not_break(
     md = results[0]["metadata"]
     assert md["tags"] == []
     assert md["task_types"] == []
+
+
+# --- POST /api/embeddings/search (corpus=traces) -----------------------------
+#
+# The traces corpus has no stored vectors (zero schema change): the handler
+# reads the in-process RecentTracesBuffer's snapshot() (the SAME buffer
+# /api/facts and /api/traces read), builds a searchable text per trace from
+# work_type + phase labels + span descriptions, embeds each on the fly with the
+# same default HashEmbedder, and cosine-ranks the query against them. These
+# tests stub the buffer on app.state._recent_traces.
+
+
+class _StubSpan:
+    """Minimal stand-in for the dict a span snapshots to (phase + name)."""
+
+    def __init__(self, phase: str, name: str) -> None:
+        self.phase = phase
+        self.name = name
+
+
+class _StubTracesBuffer:
+    """Minimal RecentTracesBuffer: exposes snapshot() returning the recent rows.
+
+    ``traces`` is a list of trace dicts shaped like ExecutionTrace.to_dict()
+    (trace_id/todo_id/work_type/total_cost_usd/span_count/spans[{phase,name}]).
+    """
+
+    def __init__(self, traces: list[dict[str, Any]]) -> None:
+        self._traces = traces
+
+    def snapshot(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
+        return {
+            "count": len(self._traces),
+            "total_recorded": len(self._traces),
+            "recent": list(self._traces),
+            "by_phase": {},
+        }
+
+
+def _trace_row(
+    trace_id: str,
+    todo_id: str,
+    work_type: str,
+    spans: list[tuple[str, str]],
+    *,
+    total_cost_usd: float = 0.0,
+) -> dict[str, Any]:
+    return {
+        "trace_id": trace_id,
+        "todo_id": todo_id,
+        "work_type": work_type,
+        "total_cost_usd": total_cost_usd,
+        "span_count": len(spans),
+        "spans": [{"phase": p, "name": n} for p, n in spans],
+    }
+
+
+def _traces_client(
+    monkeypatch: pytest.MonkeyPatch, *, buffer: Any
+) -> TestClient:
+    """A search client with ``buffer`` published on app.state._recent_traces."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = None
+    app.state._skill_registry = None
+    app.state._recent_traces = buffer
+    embeddings.register(app, {})
+    return TestClient(app)
+
+
+def test_search_traces_returns_ranked_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buffer = _StubTracesBuffer(
+        [
+            _trace_row(
+                "trace-bug-1",
+                "todo-1",
+                "bug_fix",
+                [
+                    ("generate", "diagnose the defect causing wrong output"),
+                    ("review", "verify the request handler 500 is gone"),
+                ],
+                total_cost_usd=0.12,
+            ),
+            _trace_row(
+                "trace-doc-2",
+                "todo-2",
+                "documentation",
+                [("generate", "write the user-facing tutorial and examples")],
+            ),
+            _trace_row(
+                "trace-perf-3",
+                "todo-3",
+                "refactor",
+                [("generate", "profile and optimize the slow hot path")],
+            ),
+        ]
+    )
+    client = _traces_client(monkeypatch, buffer=buffer)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "diagnose and fix the defect causing wrong output 500",
+            "corpus": "traces",
+            "top_k": 2,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "traces"
+    assert body["embedding_method"] == "hash"
+    assert body["query_embedding_dim"] > 0
+    assert body["query_embedding"] is None  # default include_embeddings=False
+    results = body["results"]
+    assert 0 < len(results) <= 2
+    scores = [r["similarity_score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+    assert [r["rank"] for r in results] == list(range(1, len(results) + 1))
+    for r in results:
+        assert 0.0 <= r["similarity_score"] <= 1.0
+        assert r["name"]
+        assert r["source_text"]
+        md = r["metadata"]
+        assert set(md) == {
+            "todo_id",
+            "work_type",
+            "total_cost_usd",
+            "span_count",
+            "by_phase",
+        }
+    # The bug-fix-shaped query should surface the bug-fix trace at the top.
+    assert results[0]["name"] == "trace-bug-1"
+    top_md = results[0]["metadata"]
+    assert top_md["todo_id"] == "todo-1"
+    assert top_md["work_type"] == "bug_fix"
+    assert top_md["span_count"] == 2
+    assert top_md["total_cost_usd"] == 0.12
+    assert sorted(top_md["by_phase"]) == ["generate", "review"]
+
+
+def test_search_traces_include_embeddings_returns_query_vector(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buffer = _StubTracesBuffer(
+        [_trace_row("t1", "todo-1", "code", [("generate", "do a thing")])]
+    )
+    client = _traces_client(monkeypatch, buffer=buffer)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "thing", "corpus": "traces", "include_embeddings": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["query_embedding"], list)
+    assert len(body["query_embedding"]) == body["query_embedding_dim"]
+
+
+def test_search_traces_top_k_caps_results(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    buffer = _StubTracesBuffer(
+        [
+            _trace_row("t1", "a", "code", [("generate", "alpha task one")]),
+            _trace_row("t2", "b", "code", [("generate", "beta task two")]),
+            _trace_row("t3", "c", "code", [("generate", "gamma task three")]),
+        ]
+    )
+    client = _traces_client(monkeypatch, buffer=buffer)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "task", "corpus": "traces", "top_k": 1},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) == 1
+
+
+def test_search_traces_empty_buffer_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An empty trace window yields 200 + empty results, never 500."""
+    client = _traces_client(monkeypatch, buffer=_StubTracesBuffer([]))
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "traces"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "traces"
+    assert body["results"] == []
+    assert body["embedding_method"] == "hash"
+
+
+def test_search_traces_no_buffer_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No traces buffer on app.state degrades to empty results, never a 500."""
+    client = _traces_client(monkeypatch, buffer=None)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "traces"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "traces"
+    assert body["results"] == []
+
+
+def test_search_traces_missing_text_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _traces_client(monkeypatch, buffer=_StubTracesBuffer([]))
+    resp = client.post("/api/embeddings/search", json={"corpus": "traces"})
+    assert resp.status_code == 422
+
+
+def test_search_traces_accepted_by_pydantic(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """corpus=traces passes the pydantic pattern (not a 422 like memory)."""
+    client = _traces_client(monkeypatch, buffer=_StubTracesBuffer([]))
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "x", "corpus": "traces"}
+    )
+    assert resp.status_code == 200
+
+
+def test_search_traces_embed_failure_degrades_to_200(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A broken embedder degrades the traces search to 200, never a 500."""
+
+    class _BoomEmbedder:
+        def embed(self, text: str) -> list[float]:
+            raise RuntimeError("embedder exploded")
+
+    monkeypatch.setattr(
+        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
+    )
+    buffer = _StubTracesBuffer(
+        [_trace_row("t1", "a", "code", [("generate", "do a thing")])]
+    )
+    client = _traces_client(monkeypatch, buffer=buffer)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "traces"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["corpus"] == "traces"
+
+
+def test_search_traces_skips_textless_trace(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """A trace with no work_type and no spans (empty text) is skipped."""
+    buffer = _StubTracesBuffer(
+        [
+            {
+                "trace_id": "empty-1",
+                "todo_id": "x",
+                "work_type": "",
+                "total_cost_usd": 0.0,
+                "span_count": 0,
+                "spans": [],
+            },
+            _trace_row("good-1", "y", "code", [("generate", "real work text")]),
+        ]
+    )
+    client = _traces_client(monkeypatch, buffer=buffer)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "real work", "corpus": "traces"},
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    names = {r["name"] for r in results}
+    assert "empty-1" not in names
+    assert "good-1" in names

@@ -16,14 +16,17 @@ comparable across surfaces.
 
 ``POST /api/embeddings/search`` is the generic RAG-search surface: a role takes
 a string a bot produced and searches a real corpus with it, getting back the
-top-k most-similar items ranked by cosine similarity. It ships three real
+top-k most-similar items ranked by cosine similarity. It ships four real
 corpora — ``skills`` (the live :class:`~general_ludd.skills.registry.SkillRegistry`
 on ``app.state._skill_registry``; each skill's ``description`` is embedded
 on-the-fly, no schema change), ``task_types`` (delegates to the same canonical
-task-type logic as ``/similar``), and ``prompts`` (the persisted
+task-type logic as ``/similar``), ``prompts`` (the persisted
 :class:`~general_ludd.db.models.PromptProfileModel` corpus; each ``prompt_text``
-is embedded on-the-fly, no schema change). Any other ``corpus`` value is
-rejected by pydantic (422). It reuses the SAME default embedder as ``/similar``
+is embedded on-the-fly, no schema change), and ``traces`` (the in-process
+:class:`~general_ludd.observability.trace_store.RecentTracesBuffer` on
+``app.state._recent_traces``; each recent execution trace's work_type + phase
+labels + span descriptions are concatenated and embedded on-the-fly, no schema
+change). Any other ``corpus`` value is rejected by pydantic (422). It reuses the SAME default embedder as ``/similar``
 and ``/compare`` so the scores are comparable. Fully defensive: an empty/absent
 registry or any embed failure yields a 200 with empty ``results`` — never a 500.
 
@@ -181,12 +184,15 @@ class EmbeddingCompareResponse(BaseModel):
 class EmbeddingSearchRequest(BaseModel):
     """Request body for POST /api/embeddings/search.
 
-    ``corpus`` is constrained (pattern) to the REAL v1 corpora: ``skills``
+    ``corpus`` is constrained (pattern) to the REAL corpora: ``skills``
     (the live SkillRegistry, descriptions embedded on the fly), ``task_types``
-    (the canonical task-type vectors, delegating to /similar), and ``prompts``
+    (the canonical task-type vectors, delegating to /similar), ``prompts``
     (the persisted :class:`PromptProfileModel.prompt_text` corpus, embedded on
-    the fly — no schema change). Any other value (traces/metrics/events/system/
-    osquery are later phases) is rejected by pydantic (422).
+    the fly — no schema change), and ``traces`` (the in-process
+    RecentTracesBuffer; each recent execution trace's work_type/phase
+    labels/span descriptions are embedded on the fly — no schema change). Any
+    other value (metrics/events/system/osquery are later phases) is rejected by
+    pydantic (422).
     """
 
     text: str = Field(
@@ -196,9 +202,10 @@ class EmbeddingSearchRequest(BaseModel):
     )
     corpus: str = Field(
         "skills",
-        pattern="^(skills|task_types|prompts)$",
+        pattern="^(skills|task_types|prompts|traces)$",
         description=(
-            "Which real corpus to search: 'skills', 'task_types', or 'prompts'."
+            "Which real corpus to search: 'skills', 'task_types', 'prompts', "
+            "or 'traces'."
         ),
     )
     top_k: int = Field(
@@ -582,6 +589,119 @@ async def _search_prompts(
     )
 
 
+def _trace_text(trace: dict[str, Any]) -> str:
+    """Build the searchable text for one snapshot trace row.
+
+    Concatenates the trace's ``work_type`` with each span's phase label and
+    description (``name``) into a single searchable string. Only genuinely-
+    present fields contribute — nothing is fabricated. An empty/span-less trace
+    yields just its work_type (possibly empty), which the caller skips.
+    """
+    parts: list[str] = []
+    work_type = trace.get("work_type") or ""
+    if work_type:
+        parts.append(str(work_type))
+    spans = trace.get("spans")
+    if isinstance(spans, list):
+        for span in spans:
+            if not isinstance(span, dict):
+                continue
+            phase = span.get("phase") or ""
+            name = span.get("name") or ""
+            if phase:
+                parts.append(str(phase))
+            if name:
+                parts.append(str(name))
+    return " ".join(parts)
+
+
+def _search_traces(
+    app: FastAPI, req: EmbeddingSearchRequest
+) -> EmbeddingSearchResponse:
+    """corpus=traces: embed each recent execution trace on the fly, cosine-rank.
+
+    Mirrors :func:`_search_prompts` / :func:`_search_skills` exactly but over the
+    in-process :class:`~general_ludd.observability.trace_store.RecentTracesBuffer`
+    on ``app.state._recent_traces`` (the SAME buffer GET /api/facts and
+    /api/traces read). No stored vectors (zero schema change): ``snapshot()`` is
+    taken, each trace's searchable text (work_type + phase labels + span
+    descriptions, via :func:`_trace_text`) is embedded with the SAME default
+    embedder as /similar and /compare, and the query is ranked against them. An
+    absent buffer, an empty trace window, or any embed failure degrades to an
+    empty result set (the caller wraps this so the route is a 200, never a 500).
+    """
+    embedder = _select_default_embedder()
+    method = _method_of(embedder)
+
+    query_vec = embedder.embed(req.text)
+    query_dim = len(query_vec)
+
+    buffer = getattr(app.state, "_recent_traces", None)
+    traces: list[dict[str, Any]] = []
+    if buffer is not None and hasattr(buffer, "snapshot"):
+        try:
+            snap = buffer.snapshot()
+            recent = snap.get("recent", []) if isinstance(snap, dict) else []
+            if isinstance(recent, list):
+                traces = [t for t in recent if isinstance(t, dict)]
+        except Exception as exc:  # degrade, never 500
+            logger.debug("traces snapshot failed: %s", exc)
+            traces = []
+
+    scored: list[SearchResultItem] = []
+    for trace in traces:
+        source_text = _trace_text(trace)
+        if not source_text:
+            continue
+        try:
+            trace_vec = embedder.embed(source_text)
+        except Exception as exc:  # skip the bad one, keep ranking the rest
+            logger.debug("trace embed failed: %s", exc)
+            continue
+        if len(trace_vec) != query_dim:
+            continue
+        score = cosine_similarity(query_vec, trace_vec)
+        spans = trace.get("spans")
+        by_phase = sorted(
+            {
+                str(s.get("phase"))
+                for s in spans
+                if isinstance(s, dict) and s.get("phase")
+            }
+        ) if isinstance(spans, list) else []
+        scored.append(
+            SearchResultItem(
+                rank=0,  # assigned after sort
+                name=str(trace.get("trace_id") or ""),
+                source_text=source_text,
+                similarity_score=score,
+                metadata={
+                    "todo_id": trace.get("todo_id") or "",
+                    "work_type": trace.get("work_type") or "",
+                    "total_cost_usd": trace.get("total_cost_usd") or 0.0,
+                    "span_count": trace.get(
+                        "span_count",
+                        len(spans) if isinstance(spans, list) else 0,
+                    ),
+                    "by_phase": by_phase,
+                },
+            )
+        )
+
+    scored.sort(key=lambda r: r.similarity_score, reverse=True)
+    scored = scored[: req.top_k]
+    for i, item in enumerate(scored):
+        item.rank = i + 1
+
+    return EmbeddingSearchResponse(
+        corpus="traces",
+        query_embedding_dim=query_dim,
+        embedding_method=method,
+        query_embedding=query_vec if req.include_embeddings else None,
+        results=scored,
+    )
+
+
 async def _search(
     app: FastAPI, req: EmbeddingSearchRequest
 ) -> EmbeddingSearchResponse:
@@ -598,7 +718,13 @@ async def _search(
         except Exception as exc:  # never 500
             logger.debug("prompts search failed: %s", exc)
             return EmbeddingSearchResponse(corpus="prompts")
-    # corpus == "skills" (pydantic guarantees one of the three).
+    if req.corpus == "traces":
+        try:
+            return _search_traces(app, req)
+        except Exception as exc:  # never 500
+            logger.debug("traces search failed: %s", exc)
+            return EmbeddingSearchResponse(corpus="traces")
+    # corpus == "skills" (pydantic guarantees one of the four).
     try:
         registry = getattr(app.state, "_skill_registry", None)
         return _search_skills(req, registry)
@@ -650,18 +776,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         "/api/embeddings/search",
         response_model=EmbeddingSearchResponse,
         summary=(
-            "Search a real corpus (skills/task_types/prompts) by embedding "
-            "similarity"
+            "Search a real corpus (skills/task_types/prompts/traces) by "
+            "embedding similarity"
         ),
         description=(
             "Take a string a bot produced and search a real corpus with it (RAG "
             "search): returns the top_k most-similar corpus items ranked by "
-            "cosine similarity. v1 corpora: `skills` (the live SkillRegistry — "
+            "cosine similarity. Corpora: `skills` (the live SkillRegistry — "
             "each skill description is embedded on the fly, no schema change), "
             "`task_types` (the canonical task-type vectors, delegating to the "
-            "/similar logic), and `prompts` (the persisted prompt_profiles — "
-            "each prompt_text embedded on the fly, no schema change). Any other "
-            "`corpus` value is rejected (422). Reuses "
+            "/similar logic), `prompts` (the persisted prompt_profiles — "
+            "each prompt_text embedded on the fly, no schema change), and "
+            "`traces` (the in-process recent-execution-traces buffer — each "
+            "trace's work_type/phase/span descriptions embedded on the fly, no "
+            "schema change). Any other `corpus` value is rejected (422). Reuses "
             "the same default embedder as /similar and /compare; "
             "`embedding_method` is \"openai\" or \"hash\". Defensive: an absent/"
             "empty corpus or any embed failure degrades to a 200 with empty "
@@ -673,8 +801,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     ) -> EmbeddingSearchResponse:
         """Search a real corpus for the items most similar to ``text``.
 
-        Read-only. ``corpus`` is ``skills`` (default), ``task_types``, or
-        ``prompts``. Returns
+        Read-only. ``corpus`` is ``skills`` (default), ``task_types``,
+        ``prompts``, or ``traces``. Returns
         the ranked matches (highest cosine similarity first), the query
         embedding dimensionality, the resolved embedding method, and — when
         ``include_embeddings`` is set — the query vector itself. Never 500s.
