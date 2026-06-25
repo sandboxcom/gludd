@@ -23,6 +23,11 @@ def _make_dirs(tmp_path: Path) -> dict[str, str]:
 
 def _stub_runner(dirs: dict[str, str]):
     runner = MagicMock()
+    # The worker's /jobs/execute guards against unknown playbooks via
+    # get_playbook_registry() == set(get_runner().list_playbooks()).  Declare the
+    # synthetic playbook so the allowlist guard permits execution and the
+    # workspace-cleanup path under test actually runs.
+    runner.list_playbooks.return_value = ["test_playbook"]
     runner.prepare_job_dirs.return_value = dirs
     runner.write_vars.return_value = None
     runner.run_playbook.return_value = {
@@ -85,7 +90,12 @@ class TestWorkerWorkspaceCleanup:
                 new_callable=AsyncMock,
                 return_value=None,
             ),
-            TestClient(app) as client,
+            # raise_server_exceptions=False so the endpoint's re-raised runner
+            # error surfaces as a 500 response (the worker has no exception
+            # handler that converts it) rather than propagating out of the test
+            # client.  The cleanup we assert below runs in the endpoint's
+            # ``except`` branch before the re-raise regardless.
+            TestClient(app, raise_server_exceptions=False) as client,
         ):
             resp = client.post(
                 "/jobs/execute",
@@ -130,6 +140,9 @@ class TestArtifactsAndEventsAreInlineAfterCleanup:
         }
 
         runner = MagicMock()
+        # Declare the synthetic playbook so the worker's allowlist guard
+        # (get_playbook_registry()) permits execution to the cleanup path.
+        runner.list_playbooks.return_value = ["test_playbook"]
         runner.prepare_job_dirs.return_value = dirs
         runner.write_vars.return_value = None
         runner.run_playbook.return_value = {
