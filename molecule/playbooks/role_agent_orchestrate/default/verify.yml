@@ -1,49 +1,85 @@
 ---
-- name: Verify - agent_orchestrate branched correctly and wrote each artifact
+# FAITHFUL-GREEN verify for the agent_orchestrate role.
+#
+# Weak (old) green only checked that each result artifact EXISTED with
+# path=='workflow'/'single_shot'/'deferred' — a role that HARDCODED its path
+# would have passed. This verify instead cross-checks, per branch, that the
+# DECISION the role took matches the advice INPUT it consumed AND that exactly
+# the right daemon endpoints fired (and the wrong ones did NOT), using:
+#   * the result artifact         (agent_orchestrate_result.json) — the decision
+#   * the decision sidecar        (agent_orchestrate_decision.json) — the INPUT
+#     (independent gludd_environment advice for the same work_type) + the
+#     per-branch endpoint-hit log snapshotted from the mock daemon.
+#
+# Cross-checks proven here:
+#   workflow   : result.path=='workflow'    AND advice.use_workflow==true
+#                AND POST /admin/models/workflow fired
+#                AND POST /admin/models/call did NOT fire.
+#   single-shot: result.path=='single_shot' AND advice.use_workflow==false
+#                AND POST /admin/models/call fired
+#                AND POST /admin/models/workflow did NOT fire.
+#   deferral   : result.path=='deferred'    AND (run_remaining_usd < floor
+#                OR advice.budget_ok==false)
+#                AND NEITHER model endpoint fired (no spend on defer)
+#                AND the todo was NOT touched.
+- name: Verify - agent_orchestrate decision matches advice input + endpoint hits
   hosts: localhost
   connection: local
   gather_facts: false
   vars:
     mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
     pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}.pid"
-    mock_log: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}.log"
-    wf_artifact: "/tmp/gludd-agent-orchestrate-wf-{{ mock_port }}/agent_orchestrate_result.json"
-    ss_artifact: "/tmp/gludd-agent-orchestrate-ss-{{ mock_port }}/agent_orchestrate_result.json"
-    defer_artifact: "/tmp/gludd-agent-orchestrate-defer-{{ mock_port }}/agent_orchestrate_result.json"
+    wf_dir: "/tmp/gludd-agent-orchestrate-wf-{{ mock_port }}"
+    ss_dir: "/tmp/gludd-agent-orchestrate-ss-{{ mock_port }}"
+    defer_dir: "/tmp/gludd-agent-orchestrate-defer-{{ mock_port }}"
   tasks:
 
-    # ---- BRANCH 1: workflow path artifact ---------------------------------
-    - name: Load workflow-path artifact
-      ansible.builtin.slurp:
-        src: "{{ wf_artifact }}"
-      register: wf_raw
-
-    - name: Parse workflow-path artifact
+    # =====================================================================
+    # BRANCH 1 — workflow path: decision == advice.use_workflow==true
+    # =====================================================================
+    - name: B1 - load workflow result + decision sidecar
       ansible.builtin.set_fact:
-        wf: "{{ wf_raw.content | b64decode | from_json }}"
+        wf: "{{ (lookup('file', wf_dir ~ '/agent_orchestrate_result.json')) | from_json }}"
+        wf_dec: "{{ (lookup('file', wf_dir ~ '/agent_orchestrate_decision.json')) | from_json }}"
 
-    - name: Assert workflow path took the langgraph branch and produced content
+    - name: B1 - assert workflow decision matches advice INPUT and endpoint hits
       ansible.builtin.assert:
         that:
+          # decision artifact
           - wf.todo_id == 'TODO-MOL-WF'
           - wf.status == 'success'
           - wf.path == 'workflow'
           - wf.model_profile is defined
           - wf.content_excerpt | length > 0
-        fail_msg: "workflow-path artifact wrong: {{ wf }}"
-        success_msg: "agent_orchestrate workflow branch ok: path={{ wf.path }} profile={{ wf.model_profile }}"
+          # CROSS-CHECK: the advice the role consumed actually said use_workflow
+          - wf_dec.advice_use_workflow | bool
+          - wf_dec.advice_budget_ok | bool
+          # decision == f(input): chose 'workflow' BECAUSE advice.use_workflow was true
+          - (wf.path == 'workflow') == (wf_dec.advice_use_workflow | bool)
+          # ENDPOINT HITS: the workflow endpoint fired, single-shot did NOT
+          - "'POST /admin/models/workflow' in wf_dec.endpoint_hits"
+          - "'POST /admin/models/call' not in wf_dec.endpoint_hits"
+          # the role gathered env+advice before deciding
+          - "'GET /api/environment' in wf_dec.endpoint_hits"
+          - "'GET /api/environment/advise' in wf_dec.endpoint_hits"
+          # status surfaced back to gludd for this acting branch
+          - "'PATCH /api/todos/TODO-MOL-WF' in wf_dec.endpoint_hits"
+        fail_msg: >-
+          workflow branch did NOT prove decision==advice-input.
+          result={{ wf }} decision={{ wf_dec }}
+        success_msg: >-
+          workflow branch FAITHFUL: path==workflow because advice.use_workflow==true;
+          workflow endpoint fired, single-shot did not.
 
-    # ---- BRANCH 2: single-shot path artifact ------------------------------
-    - name: Load single-shot-path artifact
-      ansible.builtin.slurp:
-        src: "{{ ss_artifact }}"
-      register: ss_raw
-
-    - name: Parse single-shot-path artifact
+    # =====================================================================
+    # BRANCH 2 — single-shot path: decision == advice.use_workflow==false
+    # =====================================================================
+    - name: B2 - load single-shot result + decision sidecar
       ansible.builtin.set_fact:
-        ss: "{{ ss_raw.content | b64decode | from_json }}"
+        ss: "{{ (lookup('file', ss_dir ~ '/agent_orchestrate_result.json')) | from_json }}"
+        ss_dec: "{{ (lookup('file', ss_dir ~ '/agent_orchestrate_decision.json')) | from_json }}"
 
-    - name: Assert single-shot path took the model_call branch and produced content
+    - name: B2 - assert single-shot decision matches advice INPUT and endpoint hits
       ansible.builtin.assert:
         that:
           - ss.todo_id == 'TODO-MOL-SS'
@@ -51,59 +87,63 @@
           - ss.path == 'single_shot'
           - ss.model_profile is defined
           - ss.content_excerpt | length > 0
-        fail_msg: "single-shot-path artifact wrong: {{ ss }}"
-        success_msg: "agent_orchestrate single-shot branch ok: path={{ ss.path }} profile={{ ss.model_profile }}"
+          # CROSS-CHECK: the advice the role consumed actually said NOT use_workflow
+          - not (ss_dec.advice_use_workflow | bool)
+          - ss_dec.advice_budget_ok | bool
+          # decision == f(input): chose 'single_shot' BECAUSE advice.use_workflow was false
+          - (ss.path == 'single_shot') == (not (ss_dec.advice_use_workflow | bool))
+          # ENDPOINT HITS: the single-shot endpoint fired, workflow did NOT
+          - "'POST /admin/models/call' in ss_dec.endpoint_hits"
+          - "'POST /admin/models/workflow' not in ss_dec.endpoint_hits"
+          - "'GET /api/environment' in ss_dec.endpoint_hits"
+          - "'GET /api/environment/advise' in ss_dec.endpoint_hits"
+          - "'PATCH /api/todos/TODO-MOL-SS' in ss_dec.endpoint_hits"
+        fail_msg: >-
+          single-shot branch did NOT prove decision==advice-input.
+          result={{ ss }} decision={{ ss_dec }}
+        success_msg: >-
+          single-shot branch FAITHFUL: path==single_shot because
+          advice.use_workflow==false; model-call endpoint fired, workflow did not.
 
-    # ---- BRANCH 3: deferral path artifact ---------------------------------
-    - name: Load deferral-path artifact
-      ansible.builtin.slurp:
-        src: "{{ defer_artifact }}"
-      register: defer_raw
-
-    - name: Parse deferral-path artifact
+    # =====================================================================
+    # BRANCH 3 — deferral path: budget below floor => no spend
+    # =====================================================================
+    - name: B3 - load deferral result + decision sidecar
       ansible.builtin.set_fact:
-        defer: "{{ defer_raw.content | b64decode | from_json }}"
+        defer: "{{ (lookup('file', defer_dir ~ '/agent_orchestrate_result.json')) | from_json }}"
+        defer_dec: "{{ (lookup('file', defer_dir ~ '/agent_orchestrate_decision.json')) | from_json }}"
 
-    - name: Assert deferral path deferred on the budget floor
+    - name: B3 - assert deferral decision matches budget INPUT and made no spend
       ansible.builtin.assert:
         that:
           - defer.todo_id == 'TODO-MOL-DEFER'
           - defer.status == 'deferred'
           - defer.path == 'deferred'
           - defer.reason == 'budget_floor'
-        fail_msg: "deferral-path artifact wrong: {{ defer }}"
-        success_msg: "agent_orchestrate deferral branch ok: reason={{ defer.reason }}"
-
-    # ---- prove the over-the-wire calls actually happened ------------------
-    - name: Load mock daemon request log
-      ansible.builtin.slurp:
-        src: "{{ mock_log }}"
-      register: log_raw
-
-    - name: Decode mock daemon request log
-      ansible.builtin.set_fact:
-        mock_requests: "{{ log_raw.content | b64decode }}"
-
-    - name: Assert the role gathered env + advice and exercised both action modules
-      ansible.builtin.assert:
-        that:
-          # env + advice gather (gludd_environment with work_type set)
-          - "'GET /api/environment' in mock_requests"
-          - "'GET /api/environment/advise' in mock_requests"
-          # workflow branch hit the workflow endpoint
-          - "'POST /admin/models/workflow' in mock_requests"
-          # single-shot branch hit the model-call endpoint
-          - "'POST /admin/models/call' in mock_requests"
-          # status surfaced back to gludd for the two acting branches
-          - "'PATCH /api/todos/TODO-MOL-WF' in mock_requests"
-          - "'PATCH /api/todos/TODO-MOL-SS' in mock_requests"
-          # deferral branch made NO model call or status update for its todo
-          - "'PATCH /api/todos/TODO-MOL-DEFER' not in mock_requests"
+          # CROSS-CHECK on the budget INPUT that forced the defer:
+          #   run_remaining_usd (5.0) < the configured floor (99.0)  OR  budget_ok==false
+          - (defer_dec.run_remaining_usd | float) < (defer_dec.min_remaining_usd | float)
+            or (not (defer_dec.advice_budget_ok | bool))
+          # the result artifact agrees on the floor and the remaining figure
+          - (defer.remaining_usd | float) < (defer.min_remaining_usd | float)
+          # ENDPOINT HITS: NEITHER model endpoint fired (no spend on defer) ...
+          - "'POST /admin/models/workflow' not in defer_dec.endpoint_hits"
+          - "'POST /admin/models/call' not in defer_dec.endpoint_hits"
+          # ... and the todo status was NOT touched (deferred, not acted on)
+          - "'PATCH /api/todos/TODO-MOL-DEFER' not in defer_dec.endpoint_hits"
+          # the role DID gather env+advice (so the defer was an informed decision,
+          # not a failure to reach the daemon)
+          - "'GET /api/environment' in defer_dec.endpoint_hits"
         fail_msg: >-
-          agent_orchestrate did not exercise the expected over-the-wire calls.
-          Mock request log: {{ mock_requests }}
-        success_msg: "agent_orchestrate over-the-wire branching verified against the mock daemon"
+          deferral branch did NOT prove no-spend-on-defer.
+          result={{ defer }} decision={{ defer_dec }}
+        success_msg: >-
+          deferral branch FAITHFUL: deferred because remaining<floor; NO model
+          endpoint fired and the todo was never touched (no spend on defer).
 
+    # =====================================================================
+    # cleanup
+    # =====================================================================
     - name: Stop mock daemon
       ansible.builtin.shell:
         cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
@@ -115,7 +155,7 @@
         path: "{{ item }}"
         state: absent
       loop:
-        - "/tmp/gludd-agent-orchestrate-wf-{{ mock_port }}"
-        - "/tmp/gludd-agent-orchestrate-ss-{{ mock_port }}"
-        - "/tmp/gludd-agent-orchestrate-defer-{{ mock_port }}"
+        - "{{ wf_dir }}"
+        - "{{ ss_dir }}"
+        - "{{ defer_dir }}"
       failed_when: false

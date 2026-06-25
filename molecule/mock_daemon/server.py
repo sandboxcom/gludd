@@ -35,6 +35,13 @@ shape matches what each module parses:
   GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
   GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
 
+Plus an in-memory request-log introspection seam (NOT a daemon endpoint — a
+test affordance) so verify plays can prove, per role-invocation, which
+endpoints fired and which did NOT:
+
+  GET  /__requests                    -> 200 {"requests":["METHOD PATH",...]}
+  POST /__requests/reset              -> 200 {"reset":true}
+
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
 
@@ -48,8 +55,41 @@ import argparse
 import json
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import parse_qs, urlparse
+
+
+# ---------------------------------------------------------------------------
+# In-memory request log
+# ---------------------------------------------------------------------------
+# Records "METHOD PATH" for every served request so a verify play can prove,
+# per-branch, exactly which endpoints fired (and which did NOT). The default
+# BaseHTTPRequestHandler stderr log conflates every branch into one file (all
+# branches share the same port), which cannot prove "branch X hit endpoint A
+# but NOT endpoint B". This log is resettable (POST /__requests/reset) so the
+# converge play can snapshot the calls of ONE role invocation in isolation.
+# The introspection endpoints (/__requests*) are themselves excluded so reading
+# the log never pollutes it.
+_REQUEST_LOG: list[str] = []
+_REQUEST_LOG_LOCK = threading.Lock()
+
+
+def _record_request(method: str, path: str) -> None:
+    if path.startswith("/__requests"):
+        return
+    with _REQUEST_LOG_LOCK:
+        _REQUEST_LOG.append(f"{method} {path}")
+
+
+def _snapshot_requests() -> list[str]:
+    with _REQUEST_LOG_LOCK:
+        return list(_REQUEST_LOG)
+
+
+def _reset_requests() -> None:
+    with _REQUEST_LOG_LOCK:
+        _REQUEST_LOG.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -571,7 +611,13 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     # ---- GET --------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
-        if path == "/healthz":
+        _record_request("GET", path)
+        if path == "/__requests":
+            # Per-branch request-log introspection: returns every "METHOD PATH"
+            # served since the last reset so verify can assert endpoint hits AND
+            # non-hits in isolation.
+            self._send_json(200, {"requests": _snapshot_requests()})
+        elif path == "/healthz":
             self._send_json(200, {"status": "ok"})
         elif path == "/readyz":
             # Healthy readiness gate for gludd_reload's health_url: 200 + not degraded.
@@ -624,8 +670,14 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     # ---- POST -------------------------------------------------------------
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        _record_request("POST", path)
         payload = self._read_body()
-        if path == "/admin/models/call":
+        if path == "/__requests/reset":
+            # Clear the in-memory request log so the next role invocation's
+            # endpoint hits can be snapshotted in isolation.
+            _reset_requests()
+            self._send_json(200, {"reset": True})
+        elif path == "/admin/models/call":
             self._send_json(200, _model_call_response(payload))
         elif path == "/admin/models/workflow":
             self._send_json(200, _workflow_response(payload))
@@ -652,6 +704,7 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     # ---- PATCH ------------------------------------------------------------
     def do_PATCH(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        _record_request("PATCH", path)
         payload = self._read_body()
         if path.startswith("/api/todos/"):
             todo_id = path.rsplit("/", 1)[-1]
