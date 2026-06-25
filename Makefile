@@ -57,10 +57,17 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         test-worktree-disk-guard \
         git-cherry-pick-commit git-amend-msg \
         test-other-shard \
-        alembic-check liveness-debug gate-lowmem-background
+        alembic-check liveness-debug gate-lowmem-background pygrep
 
 liveness-debug:
 	@$(UV) run python3 scripts/liveness_debug.py
+
+# Pure-python recursive substring search (this sandbox lacks the `grep` binary).
+#   make pygrep Q='pattern' [P='dir-or-file']
+pygrep:
+	@Q='$(Q)' P='$(P)' $(PYTHON) -c "import os; q=os.environ.get('Q',''); root=os.environ.get('P') or '.'; \
+	paths=[root] if os.path.isfile(root) else [os.path.join(d,f) for d,_,fs in os.walk(root) for f in fs if f.endswith(('.py','.yml','.yaml','.md'))]; \
+	[print(f'{p}:{i+1}: {ln.rstrip()}') for p in paths for i,ln in enumerate(open(p,encoding='utf-8',errors='ignore').read().splitlines()) if q and q in ln]"
 
 # List every GLUDD_MOCK_PORT assigned across molecule scenarios (sorted) so new
 # scenarios can pick an unused port without collision.

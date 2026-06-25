@@ -27,6 +27,7 @@ like /api/facts.
 from __future__ import annotations
 
 import contextlib
+import json
 import logging
 import os
 import shutil
@@ -129,6 +130,10 @@ class EnvironmentBrief(BaseModel):
     queues: list[dict[str, Any]] = []
     system: dict[str, Any] = {}
     optimization: dict[str, Any] = {}
+    # Project-topology facet: declared relationships (parent/child/sibling/
+    # external) + interface contracts. inherited_knowledge stays {} until the
+    # router cross-project borrowing phase lands. Fails soft to {}.
+    project: dict[str, Any] = {}
 
 
 class AdviceBrief(BaseModel):
@@ -504,6 +509,111 @@ async def _queues_facet(app: FastAPI) -> list[dict[str, Any]]:
         return []
 
 
+def _resolve_project_id(app: FastAPI, project_id: str | None) -> str | None:
+    """Resolve the project the ``project`` facet scopes to.
+
+    An explicit ``project_id`` query param always wins. When absent, fall back to
+    the daemon's single active project (mirrors the design's "default to the
+    single active project") — but ONLY when there is exactly one, so a multi-
+    project daemon does not silently pick an arbitrary one. Returns ``None`` when
+    no scope can be determined (the facet then renders empty, never errors).
+    """
+    if project_id:
+        return project_id
+    manager = getattr(app.state, "_project_manager", None)
+    if manager is None or not hasattr(manager, "list_active"):
+        return None
+    try:
+        active = manager.list_active()
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("project facet: list_active failed: %s", exc)
+        return None
+    if len(active) == 1:
+        return getattr(active[0], "project_id", None)
+    return None
+
+
+def _parse_interface(edge: Any) -> dict[str, Any]:
+    """Build the per-edge ``interface`` dict from the hint + structured contract.
+
+    Parses ``interface_contract`` (JSON-in-Text) DEFENSIVELY: a malformed or
+    non-object contract degrades to ``{}`` rather than raising. The free-form
+    ``interface_hint`` is always carried (as ``hint``).
+    """
+    interface: dict[str, Any] = {"hint": getattr(edge, "interface_hint", None)}
+    raw = getattr(edge, "interface_contract", None)
+    contract: dict[str, Any] = {}
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+            if isinstance(parsed, dict):
+                contract = parsed
+        except (ValueError, TypeError) as exc:  # pragma: no cover - defensive
+            logger.debug("project facet: bad interface_contract: %s", exc)
+    elif isinstance(raw, dict):
+        contract = raw
+    interface["contract"] = contract
+    return interface
+
+
+async def _project_facet(
+    app: FastAPI, project_id: str | None, rel_repo_factory: Any = None
+) -> dict[str, Any]:
+    """Declared project-topology edges for *project_id* + interface contracts.
+
+    ``relationships`` lists every declared edge (parent/child/sibling/external)
+    via the REAL ``ProjectRelationshipRepository.list_for_project`` (NOT the
+    design's hypothetical ``list_edges``/``graph_from``). ``inherited_knowledge``
+    is intentionally empty — cross-project router borrowing is a later phase.
+
+    Fails soft to ``{}`` whenever the scope can't be resolved, no session factory
+    is wired, or any query raises — the endpoint never 500s on this facet.
+
+    ``rel_repo_factory`` (test seam): when given, called as
+    ``rel_repo_factory(session)`` to build the repository; otherwise the real
+    ``ProjectRelationshipRepository`` is used.
+    """
+    pid = _resolve_project_id(app, project_id)
+    if not pid:
+        return {}
+    factory = getattr(app.state, "_session_factory", None)
+    if factory is None:
+        return {}
+    try:
+        from general_ludd.db.repository import ProjectRelationshipRepository
+
+        async with factory() as session:
+            rel_repo = (
+                rel_repo_factory(session)
+                if rel_repo_factory is not None
+                else ProjectRelationshipRepository(session)
+            )
+            edges = await rel_repo.list_for_project(pid)
+        relationships: list[dict[str, Any]] = []
+        for edge in edges or []:
+            relationships.append(
+                {
+                    "relation_type": getattr(edge, "relation_type", None),
+                    "location_kind": getattr(edge, "location_kind", None),
+                    "location_value": getattr(edge, "location_value", None),
+                    "controlled_by_gludd": bool(
+                        getattr(edge, "controlled_by_gludd", False)
+                    ),
+                    "related_project_id": getattr(edge, "related_project_id", None),
+                    "interface": _parse_interface(edge),
+                }
+            )
+        return {
+            "project_id": pid,
+            "relationships": relationships,
+            # Cross-project knowledge inheritance is a later phase; empty for now.
+            "inherited_knowledge": {},
+        }
+    except Exception as exc:  # pragma: no cover - defensive (never 500 the route)
+        logger.debug("project facet unavailable: %s", exc)
+        return {}
+
+
 def _system_facet() -> dict[str, Any]:
     """Host system facts via stdlib only — never shells out. Every field is
     guarded and falls back to ``None`` on failure.
@@ -556,7 +666,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "default; the handler never returns a 500."
         ),
     )
-    async def api_environment() -> EnvironmentBrief:
+    async def api_environment(
+        # Optional project scope for the project-topology facet. Mirrors
+        # /api/facts' optional project_id query param. When omitted, the facet
+        # falls back to the daemon's single active project (or renders empty).
+        project_id: Annotated[str | None, Query(max_length=64)] = None,
+    ) -> EnvironmentBrief:
         # Each facet is independently guarded; a failure in one yields its safe
         # default rather than failing the whole request.
         try:
@@ -604,6 +719,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # _metrics_collector. Resolve it defensively here (the only non-pure
         # input handed to the otherwise-pure advisor) — a missing collector
         # simply omits the model_flaky hints.
+        try:
+            project = await _project_facet(app, project_id)
+        except Exception as exc:  # pragma: no cover - defensive (_project_facet is guarded)
+            logger.debug("project section failed: %s", exc)
+            project = {}
         metrics_collector = getattr(app.state, "_metrics_collector", None)
         try:
             optimization = build_optimization_hints(
@@ -626,6 +746,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             queues=queues,
             system=system,
             optimization=optimization,
+            project=project,
         )
 
     @app.get(
