@@ -22,8 +22,10 @@ from __future__ import annotations
 
 import enum
 import logging
+import random
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, ClassVar
 
@@ -387,6 +389,7 @@ class TimeoutRetryPolicy:
         failover_after_retries: int = 3,
         overload_max_retries: int = 10,
         overload_max_backoff_seconds: float = 120.0,
+        jitter_fn: Callable[[float, float], float] = random.uniform,
     ) -> None:
         self._max_retries = max_retries
         self._base_backoff = base_backoff_seconds
@@ -394,6 +397,16 @@ class TimeoutRetryPolicy:
         self._failover_after = failover_after_retries
         self._overload_max_retries = overload_max_retries
         self._overload_max_backoff = overload_max_backoff_seconds
+        # RANDOMIZED jitter (anti-thundering-herd). The backoff was previously
+        # `0.5 + attempt*0.1` — a DETERMINISTIC function of `attempt`, so every
+        # client that failed on the same attempt woke at the EXACT same instant
+        # and re-stampeded the recovering provider. We now apply equal-jitter
+        # (`exp/2 + random.uniform(0, exp/2)`) so each retry is spread across the
+        # back half of its exponential window. `jitter_fn` is injectable (defaults
+        # to real `random.uniform`) so tests can stub it deterministically while
+        # production always gets true randomness. The contract: jitter_fn(lo, hi)
+        # returns a value in [lo, hi].
+        self._jitter_fn = jitter_fn
 
     def decide(
         self,
@@ -459,11 +472,18 @@ class TimeoutRetryPolicy:
         if kind == TimeoutKind.RATE_LIMITED and retry_after is not None:
             return max(retry_after, 1.0)
 
-        jitter = 0.5 + (attempt * 0.1)
-        base = self._base_backoff * (2 ** (attempt - 1)) * jitter
+        # Deterministic exponential component (grows 2**(attempt-1)).
+        exp = self._base_backoff * (2 ** (attempt - 1))
 
         if kind == TimeoutKind.CONNECTION_TIMEOUT:
-            base *= 2.0
+            exp *= 2.0
+
+        # Equal-jitter: hold the back half deterministically and randomize the
+        # front half so retries spread across [exp/2, exp] instead of all firing
+        # at one deterministic instant (thundering herd). jitter_fn defaults to
+        # random.uniform; tests inject a stub for reproducibility.
+        half = exp / 2.0
+        base = half + self._jitter_fn(0.0, half)
 
         if kind == TimeoutKind.RATE_LIMITED:
             base = max(base, 1.0)

@@ -640,7 +640,11 @@ class TestTimeoutRetryPolicy:
             TimeoutRetryPolicy,
         )
 
-        policy = TimeoutRetryPolicy(base_backoff_seconds=1.0)
+        # Inject a deterministic jitter_fn (top of the jitter window) so the
+        # monotonic-growth assertion is reproducible; prod uses random.uniform.
+        policy = TimeoutRetryPolicy(
+            base_backoff_seconds=1.0, jitter_fn=lambda _lo, hi: hi,
+        )
         d1 = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=1)
         d2 = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=2)
         d3 = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=3)
@@ -665,7 +669,8 @@ class TestTimeoutRetryPolicy:
             TimeoutRetryPolicy,
         )
 
-        policy = TimeoutRetryPolicy()
+        # Deterministic jitter so the CONNECTION>READ comparison is reproducible.
+        policy = TimeoutRetryPolicy(jitter_fn=lambda _lo, hi: hi)
         ct_decision = policy.decide(TimeoutKind.CONNECTION_TIMEOUT, attempt=1)
         rt_decision = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=1)
         assert ct_decision.wait_seconds > rt_decision.wait_seconds
