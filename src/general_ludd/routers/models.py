@@ -470,6 +470,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             subsys = _get_or_create_subsystems(app)
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
+            # H12 (W3.10): pass metrics_collector from app.state so API-driven
+            # model calls through this fallback gateway are visible to the
+            # cost/metrics subsystem (the daemon-built gateway gets the same
+            # collector). Defensive getattr — falls back to the gateway default
+            # when app.state has no collector (degraded startup), never crashes.
+            metrics_collector = getattr(app.state, "_metrics_collector", None)
             gateway = ModelGateway(
                 # CI-1: use the shared factory for consistency with daemon/worker.
                 # No profiles are in scope at this fallback path, so the registry
@@ -481,6 +487,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
                 health_tracker=app.state._health_tracker,
+                metrics_collector=metrics_collector,
             )
             app.state._model_gateway = gateway
 
@@ -616,6 +623,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             subsys = _get_or_create_subsystems(app)
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
+            # H12 (W3.10): pass metrics_collector from app.state so API-driven
+            # model calls through this fallback gateway are visible to the
+            # cost/metrics subsystem (the daemon-built gateway gets the same
+            # collector). Defensive getattr — falls back to the gateway default
+            # when app.state has no collector (degraded startup), never crashes.
+            metrics_collector = getattr(app.state, "_metrics_collector", None)
             gateway = ModelGateway(
                 # CI-1: use the shared factory for consistency with daemon/worker.
                 # No profiles are in scope at this fallback path, so the registry
@@ -627,6 +640,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
                 health_tracker=app.state._health_tracker,
+                metrics_collector=metrics_collector,
             )
             app.state._model_gateway = gateway
 

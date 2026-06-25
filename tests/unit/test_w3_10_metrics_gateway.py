@@ -136,3 +136,76 @@ class TestModelGatewayUsesMetricsCollector:
                 assert getattr(gw, "_metrics_collector", None) is mc, (
                     "Gateway was constructed without the app.state metrics_collector"
                 )
+
+    def test_models_call_fallback_gateway_has_metrics_collector(self):
+        """H12 (W3.10): the FALLBACK gateway built by POST /admin/models/call
+        (when app.state._model_gateway is None) must carry the app.state
+        metrics_collector so API-driven model calls are recorded for cost/metrics.
+
+        Before the fix this fallback path constructed ModelGateway WITHOUT
+        metrics_collector, making calls through it invisible to accounting.
+        """
+        from general_ludd.daemon import create_daemon_app
+
+        with patch(
+            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+            return_value=MagicMock(),
+        ):
+            app = create_daemon_app(tick_interval=300.0)
+
+        with TestClient(app) as client:
+            mc = getattr(app.state, "_metrics_collector", None)
+            assert mc is not None, "metrics_collector not set by lifespan"
+
+            # Force the None-fallback construction path: clear the lifespan-built
+            # gateway so the /admin/models/call handler builds its own.
+            app.state._model_gateway = None
+
+            # No profiles configured -> the handler returns 503 AFTER building the
+            # fallback gateway, which is exactly the construction we assert on.
+            client.post(
+                "/admin/models/call",
+                json={"prompt": "hello"},
+            )
+
+            gw = getattr(app.state, "_model_gateway", None)
+            assert gw is not None, (
+                "fallback gateway was not built/attached by /admin/models/call"
+            )
+            assert getattr(gw, "_metrics_collector", None) is mc, (
+                "Fallback gateway built by /admin/models/call was constructed "
+                "without the app.state metrics_collector — API model calls would "
+                "be invisible to cost/metrics accounting (W3.10/H12 regression)."
+            )
+
+    def test_models_workflow_fallback_gateway_has_metrics_collector(self):
+        """H12 (W3.10): the FALLBACK gateway built by POST /admin/models/workflow
+        (when app.state._model_gateway is None) must also carry the app.state
+        metrics_collector — mirrors /admin/models/call."""
+        from general_ludd.daemon import create_daemon_app
+
+        with patch(
+            "general_ludd.ansible.runner.AnsibleRunnerAdapter",
+            return_value=MagicMock(),
+        ):
+            app = create_daemon_app(tick_interval=300.0)
+
+        with TestClient(app) as client:
+            mc = getattr(app.state, "_metrics_collector", None)
+            assert mc is not None, "metrics_collector not set by lifespan"
+
+            app.state._model_gateway = None
+
+            client.post(
+                "/admin/models/workflow",
+                json={"messages": [{"role": "user", "content": "hi"}]},
+            )
+
+            gw = getattr(app.state, "_model_gateway", None)
+            assert gw is not None, (
+                "fallback gateway was not built/attached by /admin/models/workflow"
+            )
+            assert getattr(gw, "_metrics_collector", None) is mc, (
+                "Fallback gateway built by /admin/models/workflow was constructed "
+                "without the app.state metrics_collector (W3.10/H12 regression)."
+            )
