@@ -122,7 +122,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # model calls are visible to the cost/metrics subsystem.
             metrics_collector = getattr(app.state, "_metrics_collector", None)
             app.state._model_gateway = ModelGateway(
-                provider_registry=ProviderRegistry(),
+                # CI-1: use the shared factory for consistency with daemon/worker.
+                # No profiles are in scope at this fallback path (profiles are
+                # added afterwards via gateway.add_profile), so the registry is
+                # empty — equivalent to ProviderRegistry() but built via the factory.
+                provider_registry=ProviderRegistry.from_profiles([]),
                 router=ModelRouter(),
                 event_bus=subsys["bus"],
                 hook_system=subsys["hooks"],
@@ -467,7 +471,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
             gateway = ModelGateway(
-                provider_registry=ProviderRegistry(),
+                # CI-1: use the shared factory for consistency with daemon/worker.
+                # No profiles are in scope at this fallback path, so the registry
+                # is empty — equivalent to ProviderRegistry() but via the factory.
+                provider_registry=ProviderRegistry.from_profiles([]),
                 router=ModelRouter(),
                 event_bus=subsys["bus"],
                 hook_system=subsys["hooks"],
@@ -610,7 +617,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
             gateway = ModelGateway(
-                provider_registry=ProviderRegistry(),
+                # CI-1: use the shared factory for consistency with daemon/worker.
+                # No profiles are in scope at this fallback path, so the registry
+                # is empty — equivalent to ProviderRegistry() but via the factory.
+                provider_registry=ProviderRegistry.from_profiles([]),
                 router=ModelRouter(),
                 event_bus=subsys["bus"],
                 hook_system=subsys["hooks"],
