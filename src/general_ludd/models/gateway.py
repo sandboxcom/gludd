@@ -55,6 +55,17 @@ class BudgetExceededError(ValueError):
     """Raised when a call is rejected by the budget gate (D-24 fix)."""
 
 
+class SSRFRejectionError(ValueError):
+    """Raised when an api_base_alias URL is rejected by the SSRF egress guard.
+
+    Subclasses ValueError so existing ``except ValueError`` callers still catch
+    it, but is a distinct type so the fail-open ``except (ValueError,
+    ImportError): return None`` in ``_try_call_model`` can re-raise it (F-E fix)
+    rather than silently falling through to the next fallback profile and
+    masking the egress block.
+    """
+
+
 class ModelProfile(BaseModel):
     model_profile_id: str
     role_names: list[str] = Field(default_factory=list)
@@ -459,7 +470,7 @@ class ModelGateway:
                 from general_ludd.security.auth import is_safe_fetch_url
 
                 if not is_safe_fetch_url(base_url):
-                    raise ValueError(
+                    raise SSRFRejectionError(
                         f"SSRF guard: refusing blocked api_base_alias URL "
                         f"{base_url!r} for profile '{profile_id}'"
                     )
@@ -912,6 +923,13 @@ class ModelGateway:
                 continue
             try:
                 return self._call_fallback(fb_id, messages, **kwargs), None
+            except BudgetExceededError:
+                # F-F: a budget rejection on the fallback path MUST propagate.
+                # Previously the bare ``except Exception`` below swallowed it and
+                # continued to the next fallback, spending past the per-profile
+                # budget ceiling. Re-raise (mirrors _try_call_model /
+                # call_model_with_fallback) so the budget gate is enforced.
+                raise
             except Exception as exc:  # try the next fallback
                 last_exc = exc
                 continue
@@ -981,6 +999,13 @@ class ModelGateway:
             # a non-failure — so a profile whose own run_budget_usd was exceeded
             # simply routed to a fallback with a larger budget cap, bypassing
             # the per-profile ceiling. Re-raise so the caller sees the rejection.
+            raise
+        except SSRFRejectionError:
+            # F-E: an SSRF egress rejection MUST propagate. Previously it was a
+            # bare ValueError caught by the ``except (ValueError, ImportError)``
+            # below and silently returned None, falling open to the next
+            # fallback profile and masking the egress block. Re-raise so the
+            # SSRF guard is enforced rather than bypassed via fallback.
             raise
         except (ValueError, ImportError):
             return None
