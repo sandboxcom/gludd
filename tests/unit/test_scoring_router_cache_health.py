@@ -10,8 +10,7 @@ still healthy; if not, drop the entry and fall through to recompute.
 
 from __future__ import annotations
 
-import asyncio
-from unittest.mock import MagicMock
+from unittest.mock import AsyncMock, MagicMock
 
 from general_ludd.schemas.benchmark import RoutingDecision, TaskType
 from general_ludd.scoring.router import AdaptiveRouter
@@ -43,20 +42,6 @@ def _healthy_tracker(model_id: str, healthy: bool) -> MagicMock:
 def _mock_repo_for(model_id: str = "model-b") -> MagicMock:
     """Return a repo whose get_aggregate_scores yields a single healthy fallback."""
     repo = MagicMock()
-    repo.get_aggregate_scores = MagicMock(
-        return_value=asyncio.coroutine(
-            lambda *a, **kw: [
-                {
-                    "model_profile_id": model_id,
-                    "prompt_profile_id": None,
-                    "composite_score": 0.7,
-                    "avg_cost": 0.005,
-                    "sample_count": 5,
-                    "task_type": TaskType.BUG_FIX.value,
-                }
-            ]
-        )()
-    )
 
     async def _agg(*args, **kwargs):
         return [
@@ -70,7 +55,8 @@ def _mock_repo_for(model_id: str = "model-b") -> MagicMock:
             }
         ]
 
-    repo.get_aggregate_scores = _agg
+    # AsyncMock so .call_count is tracked while awaiting like a coroutine.
+    repo.get_aggregate_scores = AsyncMock(side_effect=_agg)
     return repo
 
 
@@ -82,7 +68,7 @@ def _mock_repo_for(model_id: str = "model-b") -> MagicMock:
 class TestCacheHealthRevalidation:
     """Cache hit must re-check health; stale unhealthy entry must be evicted."""
 
-    def test_cache_hit_healthy_model_returns_cached(self):
+    async def test_cache_hit_healthy_model_returns_cached(self):
         """If the cached model is still healthy, return from cache (no repo call)."""
         tracker = _healthy_tracker("model-a", healthy=True)
         router = AdaptiveRouter(health_tracker=tracker)
@@ -94,14 +80,12 @@ class TestCacheHealthRevalidation:
         router._cache[key] = decision
         router._cache_time = datetime.now()
 
-        result = asyncio.get_event_loop().run_until_complete(
-            router.route(TaskType.BUG_FIX)
-        )
+        result = await router.route(TaskType.BUG_FIX)
 
         assert result is decision
         tracker.is_healthy.assert_called_once_with("model-a", admit_probe=False)
 
-    def test_cache_hit_unhealthy_model_evicts_and_recomputes(self):
+    async def test_cache_hit_unhealthy_model_evicts_and_recomputes(self):
         """Core regression: if cached model's breaker is open, drop entry + recompute."""
         tracker = _healthy_tracker("model-a", healthy=False)
         repo = _mock_repo_for("model-b")
@@ -120,9 +104,7 @@ class TestCacheHealthRevalidation:
             lambda mid, admit_probe=True: mid != "model-a"
         )
 
-        result = asyncio.get_event_loop().run_until_complete(
-            router.route(TaskType.BUG_FIX)
-        )
+        result = await router.route(TaskType.BUG_FIX)
 
         # Must NOT return the stale cached decision for model-a.
         assert result.selected_model_profile_id != "model-a", (
@@ -131,7 +113,7 @@ class TestCacheHealthRevalidation:
         # Cache entry for model-a must have been evicted.
         assert key not in router._cache or router._cache[key].selected_model_profile_id != "model-a"
 
-    def test_cache_hit_no_tracker_returns_cached_without_check(self):
+    async def test_cache_hit_no_tracker_returns_cached_without_check(self):
         """Without a health_tracker, cache hit returns immediately (existing behaviour)."""
         router = AdaptiveRouter(health_tracker=None)
         key = router._cache_key(TaskType.BUG_FIX, None)
@@ -142,13 +124,11 @@ class TestCacheHealthRevalidation:
         router._cache[key] = decision
         router._cache_time = datetime.now()
 
-        result = asyncio.get_event_loop().run_until_complete(
-            router.route(TaskType.BUG_FIX)
-        )
+        result = await router.route(TaskType.BUG_FIX)
 
         assert result is decision
 
-    def test_unhealthy_eviction_allows_subsequent_healthy_hit(self):
+    async def test_unhealthy_eviction_allows_subsequent_healthy_hit(self):
         """After eviction + recompute, a second call with model-b healthy uses the new cache."""
         tracker = MagicMock()
         # First call: model-a unhealthy → evict; model-b healthy for recompute.
@@ -170,9 +150,8 @@ class TestCacheHealthRevalidation:
         router._cache[key] = stale
         router._cache_time = datetime.now()
 
-        loop = asyncio.get_event_loop()
-        first = loop.run_until_complete(router.route(TaskType.BUG_FIX))
-        second = loop.run_until_complete(router.route(TaskType.BUG_FIX))
+        first = await router.route(TaskType.BUG_FIX)
+        second = await router.route(TaskType.BUG_FIX)
 
         assert first.selected_model_profile_id == "model-b"
         assert second.selected_model_profile_id == "model-b"
