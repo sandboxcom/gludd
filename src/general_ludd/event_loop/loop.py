@@ -887,10 +887,27 @@ class EventLoop:
                     len(batch_todos),
                 )
                 tasks = [
-                    self._dispatch_execute_job_isolated(t)
+                    asyncio.ensure_future(self._dispatch_execute_job_isolated(t))
                     for t in batch_todos
                 ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                batch_timeout = min(300.0 * len(batch_todos), 1800.0)
+                try:
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=batch_timeout,
+                    )
+                except TimeoutError:
+                    logger.error(
+                        "Concurrent dispatch batch timed out after %.0fs; "
+                        "cancelling %d pending job(s)",
+                        batch_timeout,
+                        sum(1 for t in tasks if not t.done()),
+                    )
+                    for t in tasks:
+                        if not t.done():
+                            t.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    continue
                 for res in results:
                     if isinstance(res, Exception):
                         logger.error("Concurrent job dispatch raised: %s", res)
