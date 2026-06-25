@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import collections
 import logging
 import os
 import uuid
@@ -51,8 +52,29 @@ def _todo_to_dict(todo: Any) -> dict[str, Any]:
 
 _PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
 
+# Memory-leak guard (follow-up to P3 470253a): the degraded-mode in-memory todo
+# fallback (`_daemon_state["todos"]`) is unbounded — without a session factory
+# every POST /api/todos appends forever, so a long-lived degraded daemon grows
+# this list without limit. Bound it to the most-recent N via a deque(maxlen).
+# All consumers iterate or list()-convert it (never index/slice the raw object
+# or JSON-serialize it directly), so a deque is a drop-in: FIFO eviction silently
+# drops the oldest entries once the cap is hit.
+_MAX_INMEMORY_TODOS = 1000
+
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+    # Replace whatever the daemon factory seeded (a plain list) with a bounded
+    # deque, preserving any pre-existing entries. Idempotent if already a deque
+    # with the right cap.
+    _existing = _daemon_state.get("todos", [])
+    if not (
+        isinstance(_existing, collections.deque)
+        and _existing.maxlen == _MAX_INMEMORY_TODOS
+    ):
+        _daemon_state["todos"] = collections.deque(
+            _existing, maxlen=_MAX_INMEMORY_TODOS
+        )
+
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, Any]:
         result = run_preflight()

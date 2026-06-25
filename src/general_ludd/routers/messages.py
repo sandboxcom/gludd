@@ -14,6 +14,7 @@ in-memory store kept on the daemon_state dict so the API stays usable.
 
 from __future__ import annotations
 
+import collections
 import logging
 from typing import Any
 
@@ -54,8 +55,27 @@ def _msg_to_dict(msg: Any) -> dict[str, Any]:
     }
 
 
+# Memory-leak guard (follow-up to P3 470253a): the degraded-mode in-memory
+# message fallback (`_daemon_state["messages"]`) is unbounded — without a session
+# factory every POST /api/messages appends forever. Bound it to the most-recent N
+# via a deque(maxlen). All consumers iterate the collection (send appends, inbox
+# and ack iterate), never index/slice the raw object or JSON-serialize it
+# directly, so a deque is a drop-in: FIFO eviction drops the oldest messages once
+# the cap is hit.
+_MAX_INMEMORY_MESSAGES = 5000
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
-    _daemon_state.setdefault("messages", [])
+    # Bound the in-memory fallback. Preserve any pre-seeded entries; idempotent if
+    # already a deque with the right cap.
+    _existing = _daemon_state.get("messages")
+    if not (
+        isinstance(_existing, collections.deque)
+        and _existing.maxlen == _MAX_INMEMORY_MESSAGES
+    ):
+        _daemon_state["messages"] = collections.deque(
+            _existing or [], maxlen=_MAX_INMEMORY_MESSAGES
+        )
 
     @app.post("/api/messages", status_code=201)
     async def api_send_message(req: SendMessageRequest) -> dict[str, Any]:
