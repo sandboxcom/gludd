@@ -61,9 +61,8 @@ class TestSSRFRejectionPropagates:
             gw,
             "call_model",
             side_effect=SSRFRejectionError("SSRF guard: refusing blocked URL"),
-        ):
-            with pytest.raises(SSRFRejectionError):
-                gw._try_call_model("primary", [{"role": "user", "content": "hi"}])
+        ), pytest.raises(SSRFRejectionError):
+            gw._try_call_model("primary", [{"role": "user", "content": "hi"}])
 
     def test_try_call_model_still_swallows_plain_value_error(self):
         # The generic ValueError fail-soft path is preserved: a non-SSRF
@@ -86,11 +85,10 @@ class TestWalkFallbacksBudgetPropagates:
             gw,
             "_call_fallback",
             side_effect=BudgetExceededError("over budget"),
-        ):
-            with pytest.raises(BudgetExceededError):
-                gw._walk_fallbacks(
-                    ["fallback"], [{"role": "user", "content": "hi"}]
-                )
+        ), pytest.raises(BudgetExceededError):
+            gw._walk_fallbacks(
+                ["fallback"], [{"role": "user", "content": "hi"}]
+            )
 
     def test_walk_fallbacks_still_swallows_generic_exception(self):
         # Non-budget failures still fall through to the next fallback / return
