@@ -891,8 +891,17 @@ audit-messages:
 audit-schema:
 	@$(PYTHON) scripts/db_schema.py
 
+# Focused parity proof for migration 008 (project_relationships): applies ONLY
+# the 008 upgrade against a create_all'd-minus-008 baseline and diffs the
+# resulting project_relationships table against the ORM model. Bypasses the
+# pre-existing SQLite-ALTER failure in migration 002 (create_foreign_key on
+# SQLite is unsupported without batch_alter_table — unrelated to 008).
+alembic-check-008:
+	@uv run python scripts/verify_migration_008.py
+
 alembic-check:
 	@echo "[alembic-check] verifying migration-ORM parity..."
+	@rm -f tmp_alembic_drift_check.db
 	@DATABASE_URL="sqlite:///tmp_alembic_drift_check.db" uv run alembic upgrade head
 	@DATABASE_URL="sqlite:///tmp_alembic_drift_check.db" uv run alembic revision --autogenerate -m "drift_check" --sql | grep -i "create\|drop\|alter" && echo "DRIFT DETECTED" && exit 1 || echo "No drift detected"
 	@rm -f tmp_alembic_drift_check.db

@@ -7,9 +7,99 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
 
 if TYPE_CHECKING:
-    from general_ludd.db.repository import ProjectRepository
+    from general_ludd.db.repository import (
+        ProjectRelationshipRepository,
+        ProjectRepository,
+    )
 
 logger = logging.getLogger(__name__)
+
+_VALID_RELATION_TYPES = frozenset({"parent", "child", "sibling", "external"})
+_VALID_LOCATION_KINDS = frozenset({"gludd_project_name", "directory", "url"})
+
+
+def _infer_location_kind(location: str) -> str:
+    """Infer the ``location_kind`` DISCRIMINATOR of an explicitly-declared edge.
+
+    Inference is ONLY for the ``kind`` discriminator — never for the existence or
+    target of a relationship (those are always operator-declared). Rules:
+      - contains a URL scheme (``://``) -> ``url``
+      - path-like (contains ``/`` or starts with ``.``) -> ``directory``
+      - otherwise -> ``gludd_project_name``
+    """
+    loc = (location or "").strip()
+    if "://" in loc:
+        return "url"
+    if "/" in loc or loc.startswith("."):
+        return "directory"
+    return "gludd_project_name"
+
+
+def normalize_relationship_config(rel: dict[str, Any]) -> dict[str, Any] | None:
+    """Normalize one declared ``relationships:`` entry into an edge dict.
+
+    Accepts the config shape (``relation``/``location``/``kind``/
+    ``controlled_by_gludd``/``interface_hint``/``interface_contract``) and returns
+    a normalized dict keyed by the ORM column names, or ``None`` when the entry is
+    malformed (missing/invalid ``relation`` or empty ``location``). ``kind`` is
+    inferred from ``location`` only when omitted. The returned dict carries
+    ``related_project_id=None`` (resolution happens at persist time against the
+    project set) so it is directly consumable by ``ProjectRelationshipModel``.
+    """
+    if not isinstance(rel, dict):
+        return None
+    relation = str(rel.get("relation", "")).strip().lower()
+    location = str(rel.get("location", "")).strip()
+    if relation not in _VALID_RELATION_TYPES or not location:
+        logger.warning(
+            "Skipping malformed relationship (relation=%r location=%r)",
+            relation,
+            location,
+        )
+        return None
+    kind = str(rel.get("kind", "")).strip().lower()
+    if kind not in _VALID_LOCATION_KINDS:
+        kind = _infer_location_kind(location)
+    contract = rel.get("interface_contract", {})
+    if isinstance(contract, dict):
+        contract_text = json.dumps(contract)
+    elif isinstance(contract, str) and contract.strip():
+        contract_text = contract
+    else:
+        contract_text = "{}"
+    interface_hint = rel.get("interface_hint")
+    edge: dict[str, Any] = {
+        "relation_type": relation,
+        "location_kind": kind,
+        "location_value": location,
+        "controlled_by_gludd": bool(rel.get("controlled_by_gludd", False)),
+        "interface_hint": str(interface_hint) if interface_hint else None,
+        "interface_contract": contract_text,
+        "related_project_id": None,
+    }
+    # Record whether the operator EXPLICITLY declared control, so persist-time
+    # resolution can default a resolved gludd neighbor to controlled without
+    # overriding an explicit operator choice.
+    if "controlled_by_gludd" in rel:
+        edge["_controlled_explicit"] = True
+    return edge
+
+
+def parse_relationships(pcfg: dict[str, Any]) -> list[dict[str, Any]]:
+    """Parse a project config block's ``relationships:`` list into edge dicts.
+
+    Malformed entries are skipped (with a warning); a missing/non-list
+    ``relationships`` yields an empty list.
+    """
+    raw = pcfg.get("relationships", [])
+    if not isinstance(raw, list):
+        return []
+    edges: list[dict[str, Any]] = []
+    for rel in raw:
+        normalized = normalize_relationship_config(rel)
+        if normalized is not None:
+            edges.append(normalized)
+    return edges
 
 
 @dataclass
@@ -313,7 +403,7 @@ def seed_from_config(config: dict[str, Any]) -> ProjectManager:
         if not isinstance(pcfg, dict):
             continue
         try:
-            mgr.add_project(
+            project = mgr.add_project(
                 name=pcfg.get("name", "unnamed"),
                 weight=float(pcfg.get("weight", 10)),
                 description=pcfg.get("description", ""),
@@ -323,4 +413,62 @@ def seed_from_config(config: dict[str, Any]) -> ProjectManager:
             )
         except ProjectAllocationError:
             logger.warning("Skipping project '%s': allocation would exceed 100%%", pcfg.get("name", "?"))
+            continue
+        # Carry declared topology edges on the in-memory project so they can be
+        # mapped to ProjectRelationshipModel rows at persist time. Declared >
+        # inferred: only the location_kind discriminator may be inferred.
+        edges = parse_relationships(pcfg)
+        if edges:
+            project.config["relationships"] = edges
     return mgr
+
+
+async def persist_relationships_from_config(
+    rel_repo: ProjectRelationshipRepository,
+    project_id: str,
+    edges: list[dict[str, Any]],
+    *,
+    name_to_id: dict[str, str] | None = None,
+    workspace_to_id: dict[str, str] | None = None,
+    repo_url_to_id: dict[str, str] | None = None,
+) -> list[Any]:
+    """Map parsed config relationship edges to ProjectRelationshipModel rows.
+
+    For each normalized edge (from :func:`parse_relationships`), resolves
+    ``related_project_id`` best-effort from the supplied lookups:
+      - ``gludd_project_name`` -> ``name_to_id``
+      - ``directory``          -> ``workspace_to_id``
+      - ``url``                -> ``repo_url_to_id``
+    An unresolved neighbor is kept with ``related_project_id=None`` (declared
+    intent is preserved and re-resolves on the next rebuild). Upsert is idempotent
+    on the unique edge tuple, so re-seeding does not create duplicate rows. A
+    resolved gludd project defaults ``controlled_by_gludd=True`` unless the
+    operator declared it False; an unresolved URL/dir keeps its declared default.
+    Returns the persisted rows.
+    """
+    name_to_id = name_to_id or {}
+    workspace_to_id = workspace_to_id or {}
+    repo_url_to_id = repo_url_to_id or {}
+    rows: list[Any] = []
+    for edge in edges:
+        data = dict(edge)
+        controlled_explicit = bool(data.pop("_controlled_explicit", False))
+        kind = data.get("location_kind")
+        value = data.get("location_value", "")
+        related: str | None = None
+        if kind == "gludd_project_name":
+            related = name_to_id.get(value)
+        elif kind == "directory":
+            related = workspace_to_id.get(value)
+        elif kind == "url":
+            related = repo_url_to_id.get(value)
+        # Never resolve to self.
+        if related == project_id:
+            related = None
+        data["related_project_id"] = related
+        # A resolved gludd project is controllable unless the operator said otherwise.
+        if related is not None and not controlled_explicit:
+            data["controlled_by_gludd"] = True
+        data["project_id"] = project_id
+        rows.append(await rel_repo.add_relationship(data))
+    return rows

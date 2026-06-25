@@ -18,8 +18,10 @@ from general_ludd.db.models import (
     FeatureModel,
     FeatureStatus,
     ProjectModel,
+    ProjectRelationshipModel,
     PromptProfileModel,
     QueueModel,
+    RelationType,
     RoleRunModel,
     SpendRecordModel,
     TaskReturnModel,
@@ -1032,6 +1034,128 @@ class ProjectRepository:
         project = await self.get_by_id(project_id)
         if project is not None:
             await self._session.refresh(project)
+
+
+class ProjectRelationshipRepository:
+    """Persistence for declared project-topology edges (ProjectRelationshipModel).
+
+    Edges are USER-DECLARED (config or API), never inferred. ``add_relationship``
+    is an idempotent upsert keyed on the unique edge tuple
+    ``(project_id, relation_type, location_kind, location_value)``. The
+    "one parent per project" rule is enforced here (``add_relationship`` replaces an
+    existing parent edge) because SQLite cannot express a portable partial unique
+    index; PostgreSQL also carries the ``uq_one_parent`` partial index.
+    """
+
+    # The owning project may declare at most one of these relation types.
+    _SINGLETON_RELATIONS: frozenset[str] = frozenset({RelationType.PARENT.value})
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add_relationship(self, data: dict[str, Any]) -> ProjectRelationshipModel:
+        """Idempotent upsert of one declared edge; enforces the one-parent rule.
+
+        Rejects a self-edge (``related_project_id == project_id``). For a
+        ``relation_type='parent'`` edge that does not match an existing parent
+        row's full unique tuple, any existing parent edge for the project is first
+        removed (replace-on-second-parent), so a project never carries two parents.
+        Re-declaring the SAME edge tuple updates it in place (no duplicate row).
+        """
+        project_id = data["project_id"]
+        relation_type = str(data.get("relation_type", ""))
+        related_project_id = data.get("related_project_id")
+        if related_project_id is not None and related_project_id == project_id:
+            raise ValueError(
+                f"self-edge rejected: related_project_id {related_project_id!r} "
+                f"== project_id"
+            )
+
+        existing = await self._get_edge(
+            project_id,
+            relation_type,
+            str(data.get("location_kind", "")),
+            str(data.get("location_value", "")),
+        )
+
+        # One-parent guard: a NEW parent edge (one whose tuple differs from any
+        # existing parent row) replaces the prior parent. Re-declaring the same
+        # parent tuple just updates that row, so it is not a "second" parent.
+        if relation_type in self._SINGLETON_RELATIONS and existing is None:
+            for prior in await self.list_for_project(project_id, relation_type=relation_type):
+                await self._session.delete(prior)
+            await self._session.flush()
+
+        if existing is not None:
+            for key, value in data.items():
+                if key in ("id", "project_id", "created_at"):
+                    continue
+                setattr(existing, key, value)
+            await self._session.flush()
+            await self._session.refresh(existing)
+            return existing
+
+        row = ProjectRelationshipModel(**data)
+        self._session.add(row)
+        await self._session.flush()
+        await self._session.refresh(row)
+        return row
+
+    async def _get_edge(
+        self,
+        project_id: str,
+        relation_type: str,
+        location_kind: str,
+        location_value: str,
+    ) -> ProjectRelationshipModel | None:
+        stmt = select(ProjectRelationshipModel).where(
+            ProjectRelationshipModel.project_id == project_id,
+            ProjectRelationshipModel.relation_type == relation_type,
+            ProjectRelationshipModel.location_kind == location_kind,
+            ProjectRelationshipModel.location_value == location_value,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_for_project(
+        self, project_id: str, relation_type: str | None = None
+    ) -> list[ProjectRelationshipModel]:
+        stmt = select(ProjectRelationshipModel).where(
+            ProjectRelationshipModel.project_id == project_id
+        )
+        if relation_type is not None:
+            stmt = stmt.where(ProjectRelationshipModel.relation_type == relation_type)
+        stmt = stmt.order_by(ProjectRelationshipModel.id)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_parent(
+        self, project_id: str
+    ) -> ProjectRelationshipModel | None:
+        edges = await self.list_for_project(
+            project_id, relation_type=RelationType.PARENT.value
+        )
+        return edges[0] if edges else None
+
+    async def list_children(
+        self, project_id: str
+    ) -> list[ProjectRelationshipModel]:
+        return await self.list_for_project(
+            project_id, relation_type=RelationType.CHILD.value
+        )
+
+    async def remove(self, rel_id: str) -> bool:
+        """Delete one edge by its primary key. Returns True iff a row was removed."""
+        stmt = select(ProjectRelationshipModel).where(
+            ProjectRelationshipModel.id == rel_id
+        )
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
 
 
 BROADCAST_RECIPIENT = "broadcast"
