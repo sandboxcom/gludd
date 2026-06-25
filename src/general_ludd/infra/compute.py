@@ -65,7 +65,11 @@ class ComputeConfig(BaseModel):
     container_image: str | None = None
     api_key_alias: str | None = None
     deploy_type: str = "vm"
-    allowed_cidr: str = "0.0.0.0/0"
+    # Secure default: the inference endpoint (:8000) is UNAUTHENTICATED, so the
+    # ingress CIDR defaults to loopback-only ("closed — configure me") rather than
+    # the whole internet. Set allowed_cidr="0.0.0.0/0" explicitly for a public
+    # endpoint. Interpolated into AWS/GCP/Azure ingress rules in terraform.py.
+    allowed_cidr: str = "127.0.0.1/32"
     provider_auth_aliases: dict[str, str] | None = None
 
     @field_validator("gpu_count")

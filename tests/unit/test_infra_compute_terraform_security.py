@@ -28,6 +28,10 @@ def _base_config(**overrides: object) -> ComputeConfig:
         "provider": ComputeProvider.AWS,
         "gpu_type": GPUType.T4,
         "model_name": "meta-llama/Llama-2-7b-hf",
+        # Explicit open-ingress: HCL-generation tests assert the rendered ingress
+        # rule, not the secure default (which is now loopback-only). Keep them
+        # testing public-ingress generation by setting allowed_cidr explicitly.
+        "allowed_cidr": "0.0.0.0/0",
     }
     defaults.update(overrides)
     return ComputeConfig(**defaults)  # type: ignore[arg-type]
@@ -184,6 +188,13 @@ def test_allowed_cidr_accepts_valid(good_cidr: str) -> None:
     """Legitimate CIDR notation must not be rejected."""
     cfg = _base_config(allowed_cidr=good_cidr)
     assert cfg.allowed_cidr == good_cidr
+
+
+def test_allowed_cidr_default_is_not_world_open() -> None:
+    """Regression: default ingress CIDR must not be 0.0.0.0/0 (world-open)."""
+    cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4)
+    assert cfg.allowed_cidr == "127.0.0.1/32"
+    assert cfg.allowed_cidr != "0.0.0.0/0"
 
 
 # ---------------------------------------------------------------------------
