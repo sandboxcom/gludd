@@ -1383,7 +1383,7 @@ class EventLoop:
             resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
             model_profile=resolved_model_profile, prompt_profile=resolved_prompt_profile,
             plan_artifact=_safe_str(todo, "plan_artifact"),
-            prompt_text=prompt_text, budget_context=budget_context,
+            prompt_text=prompt_text, skill_body=skill_body, budget_context=budget_context,
             project_id=project_id_val,
             artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],

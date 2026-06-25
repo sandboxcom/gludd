@@ -859,3 +859,64 @@ class TestBackgroundTaskTracking:
         await asyncio.wait_for(loop._drain_background_tasks(cancel=False), timeout=5.0)
         await asyncio.sleep(0)
         assert len(loop._background_tasks) == 0
+
+
+class TestHttpDispatchSkillBody:
+    """W3.1: the HTTP-dispatched JobSpec must carry the resolved skill_body.
+
+    The in-process runner path already threads ``skill_body`` into the job vars
+    (loop.py ~1348). The HTTP-dispatch path (``self._runner is None``, daemon
+    POSTs a JobSpec to the worker) must thread the SAME resolved variable into
+    the JobSpec, or the worker calls the model with ``skill_body=None`` and gets
+    a degraded prompt (missing the skill's system turn).
+    """
+
+    @pytest.mark.asyncio
+    async def test_http_dispatch_jobspec_includes_skill_body(self):
+        from general_ludd.skills.skill import Skill
+
+        skill_reg = MagicMock()
+        skill = Skill(
+            name="tdd",
+            body="Always write tests first",
+            trigger_patterns=["test", "tdd"],
+        )
+        skill_reg.match_trigger.return_value = [skill]
+
+        loop, mocks = _make_loop(skill_registry=skill_reg)
+        # No in-process runner -> the HTTP-dispatch branch builds the JobSpec.
+        assert loop._runner is None
+        todo = Todo(
+            title="Add TDD support for feature X",
+            todo_id="TODO-SKILL-1",
+            status=TodoStatus.ACTIVE,
+            queue="core",
+            work_type="code",
+        )
+        mocks["http_client"].post.return_value = MagicMock(status_code=202)
+        loop._tick_state["claimed_todos"] = [todo]
+        await loop._phase_dispatch_execute_jobs()
+        call_args = mocks["http_client"].post.call_args
+        payload = call_args[1]["json"]
+        assert payload["skill_body"] == "Always write tests first"
+
+    @pytest.mark.asyncio
+    async def test_http_dispatch_jobspec_skill_body_none_without_match(self):
+        skill_reg = MagicMock()
+        skill_reg.match_trigger.return_value = []
+
+        loop, mocks = _make_loop(skill_registry=skill_reg)
+        assert loop._runner is None
+        todo = Todo(
+            title="Refactor database layer",
+            todo_id="TODO-SKILL-2",
+            status=TodoStatus.ACTIVE,
+            queue="core",
+            work_type="code",
+        )
+        mocks["http_client"].post.return_value = MagicMock(status_code=202)
+        loop._tick_state["claimed_todos"] = [todo]
+        await loop._phase_dispatch_execute_jobs()
+        call_args = mocks["http_client"].post.call_args
+        payload = call_args[1]["json"]
+        assert payload["skill_body"] is None
