@@ -1349,16 +1349,18 @@ class RoleRunRepository:
         return row
 
     async def count_by_role(self, project_id: str | None = None) -> dict[str, int]:
-        """Return {role: count} for the given project_id (or all if None)."""
-        stmt = select(RoleRunModel)
+        """Return {role: count} for the given project_id (or all if None).
+
+        Aggregated in SQL via ``GROUP BY role`` rather than loading every
+        row and counting in Python (P8).
+        """
+        from sqlalchemy import func
+
+        stmt = select(RoleRunModel.role, func.count()).group_by(RoleRunModel.role)
         if project_id is not None:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        counts: dict[str, int] = {}
-        for row in rows:
-            counts[row.role] = counts.get(row.role, 0) + 1
-        return counts
+        return {role: count for role, count in result.all()}
 
     async def list_all(self, project_id: str | None = None) -> list[RoleRunModel]:
         stmt = select(RoleRunModel)
