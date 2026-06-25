@@ -13,6 +13,7 @@ from __future__ import annotations
 
 import asyncio
 
+from general_ludd.agents.behavior import BehaviorRenderer, default_subagent_behavior
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
 from general_ludd.agents.registry import AgentRegistry
 from general_ludd.agents.types import AgentConfig, AgentPermission, AgentType
@@ -255,3 +256,90 @@ class TestDispatchOneCancellation:
         assert dispatcher.active_count == 0, (
             f"active_count leaked on failure: {dispatcher.active_count}"
         )
+
+
+class TestPromptTemplateParsedOnce:
+    """P4 perf: the behavior 'prompt template' must be parsed/built once and
+    reused across repeated dispatches of the same agent, not re-built per call.
+
+    The per-dispatch prompt path is
+    ``AgentRegistry.render_behavior_prompt`` -> ``BehaviorRenderer.render_as_prompt``
+    -> ``BehaviorRenderer.render`` (the full multi-section string build). We spy
+    on the actual build step (``_render_uncached``) and assert it fires exactly
+    once across many renders of the same behavior, while the rendered output is
+    byte-for-byte identical to the un-cached build."""
+
+    def test_render_parsed_once_across_repeated_dispatches(self, monkeypatch) -> None:
+        renderer = BehaviorRenderer()
+        behavior = default_subagent_behavior()
+
+        calls = {"n": 0}
+        original = renderer._render_uncached
+
+        def _counting_render(b):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            return original(b)
+
+        monkeypatch.setattr(renderer, "_render_uncached", _counting_render)
+
+        # Simulate many dispatches rendering the same agent's behavior.
+        outputs = [renderer.render(behavior) for _ in range(5)]
+
+        assert calls["n"] == 1, (
+            f"behavior template re-parsed per call: built {calls['n']} times for "
+            "5 renders of the same behavior (expected exactly 1)"
+        )
+        # Every render returns the same, unchanged body.
+        assert len(set(outputs)) == 1, "cached renders diverged"
+
+    def test_render_output_matches_uncached_build(self) -> None:
+        """Caching must not alter output: cached render == direct build."""
+        renderer = BehaviorRenderer()
+        behavior = default_subagent_behavior()
+
+        expected = renderer._render_uncached(behavior)
+        # First call populates cache, second hits it — both must equal expected.
+        assert renderer.render(behavior) == expected
+        assert renderer.render(behavior) == expected
+
+    def test_distinct_behaviors_not_conflated(self) -> None:
+        """Different behaviors must render differently (cache keyed by content,
+        not object identity) so two templates are never conflated."""
+        renderer = BehaviorRenderer()
+        primary = default_subagent_behavior()
+        variant = default_subagent_behavior()
+        variant.tdd_enforced = False  # changes the rendered body
+
+        out_primary = renderer.render(primary)
+        out_variant = renderer.render(variant)
+
+        assert out_primary != out_variant, "distinct behaviors collided in cache"
+        assert "TDD Policy" in out_primary
+        assert "TDD Policy" not in out_variant
+
+    def test_render_as_prompt_uses_cached_body(self, monkeypatch) -> None:
+        """render_as_prompt (the dispatch-path entry) must reuse the cached body:
+        the build step fires once even across differing agent_name/task headers."""
+        renderer = BehaviorRenderer()
+        behavior = default_subagent_behavior()
+
+        calls = {"n": 0}
+        original = renderer._render_uncached
+
+        def _counting_render(b):  # type: ignore[no-untyped-def]
+            calls["n"] += 1
+            return original(b)
+
+        monkeypatch.setattr(renderer, "_render_uncached", _counting_render)
+
+        p1 = renderer.render_as_prompt(behavior, agent_name="worker", task="task-a")
+        p2 = renderer.render_as_prompt(behavior, agent_name="worker", task="task-b")
+
+        assert calls["n"] == 1, (
+            f"render_as_prompt re-built the body per call ({calls['n']}x); "
+            "the invariant behavior body must be parsed once"
+        )
+        # Headers differ (different task) but the cached body tail is identical.
+        body = original(behavior)
+        assert p1.endswith(body) and p2.endswith(body)
+        assert p1 != p2  # headers differ
