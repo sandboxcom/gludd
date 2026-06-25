@@ -599,9 +599,18 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("system section failed: %s", exc)
             system = {}
+        # The advisor's flakiness hints need the live MetricsCollector; it is
+        # published on app.state by _get_or_create_extended_subsystems as
+        # _metrics_collector. Resolve it defensively here (the only non-pure
+        # input handed to the otherwise-pure advisor) — a missing collector
+        # simply omits the model_flaky hints.
+        metrics_collector = getattr(app.state, "_metrics_collector", None)
         try:
             optimization = build_optimization_hints(
-                models=models, routing=routing, budget=budget
+                models=models,
+                routing=routing,
+                budget=budget,
+                metrics_collector=metrics_collector,
             )
         except Exception as exc:  # pragma: no cover - defensive (advisor is pure)
             logger.debug("optimization section failed: %s", exc)

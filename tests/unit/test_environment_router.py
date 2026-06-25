@@ -276,3 +276,92 @@ def test_advise_never_500_on_bare_app() -> None:
     assert "recommendation" in body
     assert "model_profile" in body["recommendation"]
     assert isinstance(body["est_cost_usd"], float)
+
+
+# ---------------------------------------------------------------------------
+# optimization.hints — burn_rate + model_flaky surfaced through the live route
+# ---------------------------------------------------------------------------
+
+
+class _StubBudgetGuard:
+    """RunBudgetGuard duck-type the budget facet reads (spend/elapsed/remaining)."""
+
+    def __init__(self, spent: float, remaining: float, elapsed: float):
+        self._spent = spent
+        self._remaining = remaining
+        self._elapsed = elapsed
+
+    def get_total_spend(self) -> float:
+        return self._spent
+
+    def get_elapsed_seconds(self) -> float:
+        return self._elapsed
+
+    def check_run_budget(self) -> dict[str, Any]:
+        return {"remaining_budget": self._remaining}
+
+
+class _StubMetricsCollector:
+    """MetricsCollector duck-type for the model_flaky route test."""
+
+    def __init__(self, flaky: set[str], failures: dict[str, list[str]]):
+        self._flaky = flaky
+        self._failures = failures
+
+    def is_flaky(self, model_profile_id: str, *a: Any, **k: Any) -> bool:
+        return model_profile_id in self._flaky
+
+    def get_recent_failures(
+        self, model_profile_id: str, *a: Any, **k: Any
+    ) -> list[str]:
+        return list(self._failures.get(model_profile_id, []))
+
+
+def _app_with_signals(
+    *, budget_guard: Any = None, metrics_collector: Any = None
+) -> FastAPI:
+    app = _app_with_psk_gate()
+    app.state._budget_guard = budget_guard
+    app.state._metrics_collector = metrics_collector
+    return app
+
+
+def _optimization(client: TestClient) -> dict[str, Any]:
+    resp = client.get(
+        "/api/environment", headers={"Authorization": f"Bearer {_PSK}"}
+    )
+    assert resp.status_code == 200, resp.text
+    return resp.json()["optimization"]
+
+
+def test_environment_surfaces_burn_rate_hint() -> None:
+    # spent 9.0 / 90s -> 0.1 USD/s; remaining 1.0 -> ~10s left -> warning.
+    guard = _StubBudgetGuard(spent=9.0, remaining=1.0, elapsed=90.0)
+    client = TestClient(_app_with_signals(budget_guard=guard))
+    opt = _optimization(client)
+    burn = [h for h in opt["hints"] if h["signal"] == "burn_rate"]
+    assert len(burn) == 1
+    assert burn[0]["velocity_usd_per_sec"] == pytest.approx(0.1)
+    assert burn[0]["time_remaining_sec"] is not None
+    assert burn[0]["severity"] == "warning"
+
+
+def test_environment_surfaces_model_flaky_hint() -> None:
+    collector = _StubMetricsCollector(
+        flaky={"flagship"},
+        failures={"flagship": ["timeout", "500", "boom", "extra"]},
+    )
+    client = TestClient(_app_with_signals(metrics_collector=collector))
+    opt = _optimization(client)
+    flaky = [h for h in opt["hints"] if h["signal"] == "model_flaky"]
+    assert len(flaky) == 1
+    assert flaky[0]["model"] == "flagship"
+    assert flaky[0]["severity"] == "warning"
+    assert flaky[0]["recent_failures"] == ["timeout", "500", "boom"]
+
+
+def test_environment_no_model_flaky_when_collector_absent() -> None:
+    # The default PSK app sets _metrics_collector = None implicitly (not wired).
+    client = TestClient(_app_with_signals(metrics_collector=None))
+    opt = _optimization(client)
+    assert [h for h in opt["hints"] if h["signal"] == "model_flaky"] == []

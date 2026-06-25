@@ -87,6 +87,154 @@ def test_advisor_is_defensive_on_garbage_input() -> None:
 
 
 # ---------------------------------------------------------------------------
+# burn_rate — budget burn-velocity / time-to-exhaustion hint
+# ---------------------------------------------------------------------------
+
+
+def _burn_hints(out: dict) -> list[dict]:
+    return [h for h in out["hints"] if h["signal"] == "burn_rate"]
+
+
+def test_burn_rate_hint_emitted_when_spend_and_elapsed_positive() -> None:
+    # spent 5.0 over 100s -> velocity 0.05 USD/s; remaining 50 -> ~1000s left.
+    out = build_optimization_hints(
+        budget={
+            "run_spent_usd": 5.0,
+            "run_remaining_usd": 50.0,
+            "elapsed_seconds": 100.0,
+            "run_limit_usd": 55.0,
+        },
+    )
+    burn = _burn_hints(out)
+    assert len(burn) == 1
+    assert burn[0]["velocity_usd_per_sec"] == 0.05
+    assert burn[0]["time_remaining_sec"] == 1000.0
+    # Plenty of headroom -> info severity, not warning.
+    assert burn[0]["severity"] == "info"
+
+
+def test_burn_rate_near_exhaustion_is_warning() -> None:
+    # spent 9.0 over 90s -> velocity 0.1 USD/s; remaining 1.0 -> 10s left < 120.
+    out = build_optimization_hints(
+        budget={
+            "run_spent_usd": 9.0,
+            "run_remaining_usd": 1.0,
+            "elapsed_seconds": 90.0,
+            "run_limit_usd": 10.0,
+        },
+    )
+    burn = _burn_hints(out)
+    assert burn and burn[0]["severity"] == "warning"
+    assert burn[0]["time_remaining_sec"] is not None
+    assert burn[0]["time_remaining_sec"] < 120.0
+
+
+def test_burn_rate_omitted_when_no_elapsed() -> None:
+    out = build_optimization_hints(
+        budget={"run_spent_usd": 5.0, "run_remaining_usd": 50.0},
+    )
+    assert _burn_hints(out) == []
+
+
+def test_burn_rate_omitted_when_zero_spend() -> None:
+    out = build_optimization_hints(
+        budget={
+            "run_spent_usd": 0.0,
+            "run_remaining_usd": 50.0,
+            "elapsed_seconds": 100.0,
+        },
+    )
+    assert _burn_hints(out) == []
+
+
+def test_burn_rate_time_remaining_none_when_remaining_unknown() -> None:
+    # velocity is computable but no run_remaining -> time_remaining is None and
+    # severity falls back to info (never warning on an unknown horizon).
+    out = build_optimization_hints(
+        budget={"run_spent_usd": 5.0, "elapsed_seconds": 100.0},
+    )
+    burn = _burn_hints(out)
+    assert burn and burn[0]["time_remaining_sec"] is None
+    assert burn[0]["severity"] == "info"
+
+
+# ---------------------------------------------------------------------------
+# model_flaky — flakiness hint sourced from a (stubbed) MetricsCollector
+# ---------------------------------------------------------------------------
+
+
+class _StubCollector:
+    """Minimal MetricsCollector duck-type for advisor flakiness tests."""
+
+    def __init__(self, flaky: set[str], failures: dict[str, list[str]] | None = None):
+        self._flaky = flaky
+        self._failures = failures or {}
+
+    def is_flaky(self, model_profile_id: str, *a: object, **k: object) -> bool:
+        return model_profile_id in self._flaky
+
+    def get_recent_failures(
+        self, model_profile_id: str, *a: object, **k: object
+    ) -> list[str]:
+        return list(self._failures.get(model_profile_id, []))
+
+
+def _flaky_hints(out: dict) -> list[dict]:
+    return [h for h in out["hints"] if h["signal"] == "model_flaky"]
+
+
+def test_model_flaky_hint_emitted_when_collector_reports_flaky() -> None:
+    collector = _StubCollector(
+        flaky={"flagship"},
+        failures={"flagship": ["timeout", "500 err", "rate-limit", "extra"]},
+    )
+    out = build_optimization_hints(
+        models=[
+            {"profile_id": "flagship", "enabled": True},
+            {"profile_id": "weak", "enabled": True},
+        ],
+        metrics_collector=collector,
+    )
+    flaky = _flaky_hints(out)
+    assert len(flaky) == 1
+    assert flaky[0]["model"] == "flagship"
+    assert flaky[0]["severity"] == "warning"
+    assert flaky[0]["recommendation"] == "prefer fallback profile"
+    # recent_failures is capped at 3.
+    assert flaky[0]["recent_failures"] == ["timeout", "500 err", "rate-limit"]
+
+
+def test_model_flaky_hint_absent_when_collector_missing() -> None:
+    out = build_optimization_hints(
+        models=[{"profile_id": "flagship", "enabled": True}],
+        metrics_collector=None,
+    )
+    assert _flaky_hints(out) == []
+
+
+def test_model_flaky_skips_disabled_profiles() -> None:
+    collector = _StubCollector(flaky={"flagship"})
+    out = build_optimization_hints(
+        models=[{"profile_id": "flagship", "enabled": False}],
+        metrics_collector=collector,
+    )
+    assert _flaky_hints(out) == []
+
+
+def test_model_flaky_defensive_on_raising_collector() -> None:
+    class _Boom:
+        def is_flaky(self, *a: object, **k: object) -> bool:
+            raise RuntimeError("collector exploded")
+
+    out = build_optimization_hints(
+        models=[{"profile_id": "flagship", "enabled": True}],
+        metrics_collector=_Boom(),
+    )
+    # No hint, no exception.
+    assert _flaky_hints(out) == []
+
+
+# ---------------------------------------------------------------------------
 # build_advice — per-task advice surface (pure logic)
 # ---------------------------------------------------------------------------
 

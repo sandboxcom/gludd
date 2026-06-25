@@ -21,6 +21,11 @@ from typing import Any
 # hint nudging the job to reduce scope / prefer the weak (cheap) profile.
 _BUDGET_WARN_FRACTION = 0.8
 
+# Burn-rate: when the projected time-to-exhaustion drops below this many
+# seconds we escalate the burn_rate hint from "info" to "warning" so a role
+# knows it is about to run out of budget very soon.
+_BURN_RATE_WARN_SECONDS = 120.0
+
 # Work-type taxonomy -> the *kind* of profile the routing should serve it from.
 # "cheap" maps to weak_model_profile; "quality" maps to the default/role profile.
 # Kept deliberately small and stable so playbooks can rely on the keys.
@@ -279,12 +284,20 @@ def build_optimization_hints(
     models: list[dict[str, Any]] | None = None,
     routing: dict[str, Any] | None = None,
     budget: dict[str, Any] | None = None,
+    metrics_collector: Any | None = None,
 ) -> dict[str, Any]:
     """Return ``{"hints": [...], "recommended_profile_for": {...}}``.
 
-    Never raises. ``hints`` is a list of ``{signal, recommendation, severity}``;
-    ``recommended_profile_for`` maps known work-types to a concrete profile_id
-    drawn from the routing config.
+    Never raises. ``hints`` is a list of ``{signal, recommendation, severity}``
+    (some richer signals carry extra keys, e.g. ``burn_rate`` and
+    ``model_flaky``); ``recommended_profile_for`` maps known work-types to a
+    concrete profile_id drawn from the routing config.
+
+    ``metrics_collector`` is the ONLY non-pure input: an optional, duck-typed
+    MetricsCollector (``is_flaky`` / ``get_recent_failures``) the caller may
+    hand in so the advisor can flag flaky models. It is read defensively and
+    never mutated; ``None`` (or any failure reading it) simply omits the
+    flakiness hints. The rest of the function stays pure.
     """
     models = models or []
     routing = routing or {}
@@ -320,6 +333,44 @@ def build_optimization_hints(
                     "severity": severity,
                 }
             )
+
+    # 1b) Burn-rate / time-to-exhaustion: derive the run's spend velocity from
+    #     the budget facet (run_spent_usd over elapsed_seconds) and project how
+    #     long the remaining budget lasts at that rate. Each guard is explicit
+    #     so a missing/zero/garbage facet field simply omits the hint.
+    run_spent = _safe_float(budget.get("run_spent_usd"))
+    elapsed = _safe_float(budget.get("elapsed_seconds"))
+    run_remaining = _safe_float(budget.get("run_remaining_usd"))
+    if (
+        run_spent is not None
+        and run_spent > 0
+        and elapsed is not None
+        and elapsed > 0
+    ):
+        velocity = run_spent / elapsed
+        time_remaining: float | None = None
+        if velocity > 0 and run_remaining is not None and run_remaining >= 0:
+            time_remaining = run_remaining / velocity
+        severity = "info"
+        if time_remaining is not None and time_remaining < _BURN_RATE_WARN_SECONDS:
+            severity = "warning"
+        hints.append(
+            {
+                "signal": "burn_rate",
+                "recommendation": (
+                    "budget burning at "
+                    f"{velocity:.6f} USD/s"
+                    + (
+                        f"; ~{time_remaining:.0f}s of budget remaining"
+                        if time_remaining is not None
+                        else "; time-to-exhaustion unknown"
+                    )
+                ),
+                "velocity_usd_per_sec": velocity,
+                "time_remaining_sec": time_remaining,
+                "severity": severity,
+            }
+        )
 
     # 2) Work-type -> profile recommendations from routing.
     #    Cheap/mechanical work -> weak profile; high-quality work -> default
@@ -364,5 +415,40 @@ def build_optimization_hints(
                     "severity": "info",
                 }
             )
+
+    # 4) Model flakiness: when a metrics collector is reachable, flag any
+    #    enabled profile the collector judges flaky (low success rate over
+    #    enough calls) and surface its most-recent failures so a role can prefer
+    #    a fallback. Fully defensive — no collector, or any error reading it,
+    #    simply yields no flakiness hints (never an exception).
+    if metrics_collector is not None and hasattr(metrics_collector, "is_flaky"):
+        for m in models:
+            if not isinstance(m, dict):
+                continue
+            if not m.get("enabled"):
+                continue
+            profile_id = m.get("profile_id")
+            if not profile_id:
+                continue
+            try:
+                if not metrics_collector.is_flaky(profile_id):
+                    continue
+                recent: list[str] = []
+                getter = getattr(metrics_collector, "get_recent_failures", None)
+                if callable(getter):
+                    fetched = getter(profile_id)
+                    if isinstance(fetched, (list, tuple)):
+                        recent = list(fetched)[:3]
+                hints.append(
+                    {
+                        "signal": "model_flaky",
+                        "model": profile_id,
+                        "recommendation": "prefer fallback profile",
+                        "recent_failures": recent,
+                        "severity": "warning",
+                    }
+                )
+            except Exception:  # pragma: no cover - defensive; never raise
+                continue
 
     return {"hints": hints, "recommended_profile_for": recommended}
