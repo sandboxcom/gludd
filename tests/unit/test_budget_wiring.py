@@ -228,7 +228,14 @@ class TestModelGatewayBudgetTracking:
             model_name="gpt-4",
             cost_per_input_token=0.01,
             cost_per_output_token=0.03,
-            run_budget_usd=100.0,
+            # Server-side budget re-estimation (D-21) prices the call at up to
+            # max_output_tokens (default 8000) * cost_per_output_token (0.03)
+            # = ~240 USD worst case, so run_budget_usd must comfortably exceed
+            # that or the per-profile cap (gateway.py check_budget, api_metered
+            # defaults True) rejects the call before usage metadata can be
+            # recorded. This mirrors the sibling regression test in
+            # test_model_gateway.py (TestModelGatewayUsageTracking).
+            run_budget_usd=10000.0,
         )
 
         gw = ModelGateway(
