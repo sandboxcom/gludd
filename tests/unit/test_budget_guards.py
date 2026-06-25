@@ -65,21 +65,62 @@ def test_check_run_budget_fail_closed_on_nan_total() -> None:
 
 
 def test_check_todo_budget_atomic_no_overshoot() -> None:
-    """Two concurrent check_todo_budget calls must not both succeed.
+    """Concurrent check_todo_budget calls on DISTINCT todos must not overshoot.
 
-    With a per_todo_limit of $1.00 and two threads each requesting $0.60,
-    only one should be allowed. Before the fix (unlocked), both could read
-    the same current=$0.00, both pass the cap check, and both record $0.60
-    — totalling $1.20 against a $1.00 cap (overshoot).
+    With a per_todo_limit of $1.00, two threads racing on two different todo
+    ids ("t1"/"t2") that share an already-spent ledger compete for the same
+    remaining headroom. Before the lock fix, both could read the same stale
+    current, both pass the cap check, and both record — overshooting the cap.
+    The lock serialises the read-modify-write so exactly one wins.
+
+    (Two *concurrent* calls on the SAME todo id are a single logical
+    reservation that replaces, not stacks — covered by the non-mutating /
+    retry-idempotency tests — so this race uses distinct ids to exercise a
+    genuine cap-overshoot scenario rather than the replace path.)
+    """
+    manager = BudgetManager(per_todo_limit_usd=1.0)
+    # Seed each todo's ledger so a further $0.60 would exceed the $1.00 cap,
+    # forcing the two reservations to compete for the headroom under the lock.
+    manager.record_spend("t1", 0.6)
+    manager.record_spend("t2", 0.6)
+    results: list[dict] = []
+    barrier = threading.Barrier(2)
+
+    def worker(todo_id: str) -> None:
+        barrier.wait()  # both threads hit the check at the same instant
+        result = manager.check_todo_budget(todo_id, 0.6)
+        results.append(result)
+
+    threads = [
+        threading.Thread(target=worker, args=(tid,)) for tid in ("t1", "t2")
+    ]
+    for t in threads:
+        t.start()
+    for t in threads:
+        t.join()
+
+    # 0.6 (prior) + 0.6 (new) = 1.2 > 1.0 for each todo -> both denied.
+    allowed_count = sum(1 for r in results if r["allowed"])
+    denied_count = sum(1 for r in results if not r["allowed"])
+    assert allowed_count == 0, f"Expected 0 allowed, got {allowed_count}; results={results}"
+    assert denied_count == 2, f"Expected 2 denied, got {denied_count}; results={results}"
+
+
+def test_check_todo_budget_concurrent_same_todo_replaces_not_stacks() -> None:
+    """Concurrent checks on the SAME todo collapse to one replacing hold.
+
+    A retry that races with itself on the same todo_id must not double-count
+    its own outstanding reservation against the cap: both calls reserve the
+    same $0.60 hold (replace semantics), so both are allowed and the recorded
+    hold stays a single $0.60 — well within the $1.00 cap (no overshoot).
     """
     manager = BudgetManager(per_todo_limit_usd=1.0)
     results: list[dict] = []
     barrier = threading.Barrier(2)
 
     def worker() -> None:
-        barrier.wait()  # both threads hit the check at the same instant
-        result = manager.check_todo_budget("t1", 0.6)
-        results.append(result)
+        barrier.wait()
+        results.append(manager.check_todo_budget("t1", 0.6))
 
     threads = [threading.Thread(target=worker) for _ in range(2)]
     for t in threads:
@@ -87,13 +128,10 @@ def test_check_todo_budget_atomic_no_overshoot() -> None:
     for t in threads:
         t.join()
 
-    allowed_count = sum(1 for r in results if r["allowed"])
-    denied_count = sum(1 for r in results if not r["allowed"])
-    assert allowed_count == 1, f"Expected exactly 1 allowed, got {allowed_count}; results={results}"
-    assert denied_count == 1, f"Expected exactly 1 denied, got {denied_count}; results={results}"
-    # The allowed result must have "charged": True (atomic record)
-    allowed_result = next(r for r in results if r["allowed"])
-    assert allowed_result.get("charged") is True
+    assert all(r["allowed"] for r in results), f"results={results}"
+    # The hold replaced rather than stacked: a single $0.60 reservation.
+    assert manager._todo_spend["t1"] == pytest.approx(0.6)
+    assert manager._todo_reservations["t1"] == pytest.approx(0.6)
 
 
 # ---------------------------------------------------------------------------

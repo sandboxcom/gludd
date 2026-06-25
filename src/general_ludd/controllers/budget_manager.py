@@ -88,22 +88,25 @@ class BudgetManager:
                         "uncomputable (NaN/unknown) estimated cost"
                     ),
                 }
-            if current + estimated_cost > self._per_todo_limit:
+            # Account for a prior reservation that has not yet been reconciled so
+            # a repeated check on the same todo_id (e.g. a retry) does not
+            # double-count its own outstanding hold against the cap. The
+            # reservation replaces (not stacks), mirroring check_daily_budget_reserved.
+            prior_todo_reservation = self._todo_reservations.get(todo_id, 0.0)
+            prospective = current - prior_todo_reservation + estimated_cost
+            if prospective > self._per_todo_limit:
                 return {
                     "allowed": False,
                     "reason": (
                         f"Per-todo budget exceeded: "
-                        f"${current + estimated_cost:.4f} > "
+                        f"${prospective:.4f} > "
                         f"${self._per_todo_limit:.4f}"
                     ),
                 }
             # Atomically reserve the projected cost so no concurrent caller can race
             # past the cap.  The reservation is later reconciled to the actual cost
             # by record_spend(); until then it acts as a hold on the budget.
-            # If a prior reservation exists for this todo (e.g. a retry), replace it
-            # so we don't accumulate stale holds.
-            prior_todo_reservation = self._todo_reservations.get(todo_id, 0.0)
-            self._todo_spend[todo_id] = current - prior_todo_reservation + estimated_cost
+            self._todo_spend[todo_id] = prospective
             self._todo_reservations[todo_id] = estimated_cost
             return {"allowed": True, "reason": "ok", "charged": True}
 
