@@ -47,6 +47,13 @@ class TestWorkTypePlaybookRegistry:
                 f"work_type '{key}' missing from _WORK_TYPE_PLAYBOOK_MAP"
             )
 
+    def test_langgraph_feature_work_types_wired(self):
+        from general_ludd.models.job_invocation import _GENERATION_WORK_TYPES
+        assert _WORK_TYPE_PLAYBOOK_MAP["model_decision"] == "langgraph_decide.yml"
+        assert _WORK_TYPE_PLAYBOOK_MAP["langgraph_generate"] == "langchain_generate.yml"
+        assert "model_decision" not in _GENERATION_WORK_TYPES
+        assert "langgraph_generate" not in _GENERATION_WORK_TYPES
+
     @pytest.mark.parametrize("work_type,playbook_name", list(_WORK_TYPE_PLAYBOOK_MAP.items()))
     def test_playbook_file_exists(self, work_type: str, playbook_name: str):
         """Each mapped playbook file must exist on disk."""

@@ -139,6 +139,7 @@ _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
     "infra": "feature", "prompt": "feature", "analysis": "feature",
     "audit": "feature", "release": "feature", "dependency": "feature",
     "security": "security_fix", "model": "feature", "unknown": "feature",
+    "model_decision": "feature", "langgraph_generate": "feature",
 }
 
 
@@ -157,6 +158,8 @@ _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
     "dependency": "dependency_update.yml", "review": "return_review.yml",
     "docs": "noop.yml", "infra": "noop.yml", "security": "noop.yml",
     "model": "noop.yml", "release": "noop.yml",
+    "model_decision": "langgraph_decide.yml",
+    "langgraph_generate": "langchain_generate.yml",
 }
 
 
