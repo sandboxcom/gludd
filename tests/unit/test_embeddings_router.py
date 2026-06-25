@@ -1176,3 +1176,371 @@ def test_search_traces_skips_textless_trace(
     names = {r["name"] for r in results}
     assert "empty-1" not in names
     assert "good-1" in names
+
+
+# --- POST /api/embeddings/search (corpus=events) -----------------------------
+#
+# The events corpus has no stored vectors (zero schema change): the handler
+# reads the most-recent audit events via a bounded created_at-descending select
+# over AuditEventModel, builds a searchable text per event from
+# event_type + entity_type + a human summary of its ``details`` JSON, embeds
+# each on the fly with the same default HashEmbedder, and cosine-ranks the query
+# against them. These tests seed real audit_events rows into the in-memory async
+# DB via the repository, then assert ranking/metadata/degradation.
+
+
+async def _seed_events(factory: Any, rows: list[dict[str, Any]]) -> None:
+    """Insert the given audit-event dicts via the real repository create()."""
+    from general_ludd.db.repository import (
+        AuditEventRepository,
+        ProjectRepository,
+    )
+
+    async with factory() as session:
+        # audit_events.project_id is a FK to projects; ensure it exists.
+        project_repo = ProjectRepository(session)
+        seen: set[str] = set()
+        repo = AuditEventRepository(session)
+        for row in rows:
+            project_id = row["project_id"]
+            if project_id not in seen:
+                await project_repo.create(
+                    {"project_id": project_id, "name": project_id}
+                )
+                seen.add(project_id)
+            await repo.create(
+                event_type=row["event_type"],
+                entity_type=row["entity_type"],
+                entity_id=row["entity_id"],
+                project_id=project_id,
+                details=row.get("details"),
+            )
+        await session.commit()
+
+
+@pytest_asyncio.fixture
+async def events_factory(session_factory):
+    """``session_factory`` seeded with three distinct audit events."""
+    import json as _json
+
+    await _seed_events(
+        session_factory,
+        [
+            {
+                "event_type": "todo_failed",
+                "entity_type": "todo",
+                "entity_id": "todo-1",
+                "project_id": "proj-a",
+                "details": _json.dumps(
+                    {
+                        "error": "diagnose the defect causing the request "
+                        "handler to return wrong output and 500 errors",
+                        "model": "glm-4.6",
+                    }
+                ),
+            },
+            {
+                "event_type": "docs_written",
+                "entity_type": "todo",
+                "entity_id": "todo-2",
+                "project_id": "proj-a",
+                "details": _json.dumps(
+                    {
+                        "summary": "wrote the user-facing tutorial and examples",
+                    }
+                ),
+            },
+            {
+                "event_type": "perf_tuned",
+                "entity_type": "todo",
+                "entity_id": "todo-3",
+                "project_id": "proj-a",
+                "details": _json.dumps(
+                    {"summary": "profiled and optimized the slow hot path"}
+                ),
+            },
+        ],
+    )
+    return session_factory
+
+
+def _events_client(
+    monkeypatch: pytest.MonkeyPatch, *, seeded_factory: Any
+) -> TestClient:
+    """A search client over the offline HashEmbedder for the events corpus."""
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = seeded_factory
+    app.state._skill_registry = None
+    embeddings.register(app, {})
+    return TestClient(app)
+
+
+def test_search_events_returns_ranked_results(
+    monkeypatch: pytest.MonkeyPatch, events_factory
+) -> None:
+    client = _events_client(monkeypatch, seeded_factory=events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "diagnose and fix the defect causing wrong output and 500s",
+            "corpus": "events",
+            "top_k": 2,
+        },
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "events"
+    assert body["embedding_method"] == "hash"
+    assert body["query_embedding_dim"] > 0
+    assert body["query_embedding"] is None  # default include_embeddings=False
+    results = body["results"]
+    assert 0 < len(results) <= 2
+    # Ranked by similarity descending; ranks are 1-based and contiguous.
+    scores = [r["similarity_score"] for r in results]
+    assert scores == sorted(scores, reverse=True)
+    assert [r["rank"] for r in results] == list(range(1, len(results) + 1))
+    for r in results:
+        assert 0.0 <= r["similarity_score"] <= 1.0
+        assert r["name"]
+        assert r["source_text"]
+        md = r["metadata"]
+        assert set(md) == {
+            "event_type",
+            "entity_type",
+            "entity_id",
+            "actor",
+            "created_at",
+        }
+    # The bug-fix-shaped query should surface the failed-todo event at the top.
+    top = results[0]
+    assert top["name"] == "todo_failed:todo-1"
+    top_md = top["metadata"]
+    assert top_md["event_type"] == "todo_failed"
+    assert top_md["entity_type"] == "todo"
+    assert top_md["entity_id"] == "todo-1"
+    assert top_md["actor"] == "agent"  # AuditEventModel default
+    assert top_md["created_at"]  # ISO timestamp present
+
+
+def test_search_events_include_embeddings_returns_query_vector(
+    monkeypatch: pytest.MonkeyPatch, events_factory
+) -> None:
+    client = _events_client(monkeypatch, seeded_factory=events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "optimize", "corpus": "events", "include_embeddings": True},
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert isinstance(body["query_embedding"], list)
+    assert len(body["query_embedding"]) == body["query_embedding_dim"]
+
+
+def test_search_events_top_k_caps_results(
+    monkeypatch: pytest.MonkeyPatch, events_factory
+) -> None:
+    client = _events_client(monkeypatch, seeded_factory=events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "events", "top_k": 1},
+    )
+    assert resp.status_code == 200
+    assert len(resp.json()["results"]) == 1
+
+
+def test_search_events_empty_store_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch, session_factory
+) -> None:
+    """An empty audit_events table yields 200 + empty results, never 500."""
+    client = _events_client(monkeypatch, seeded_factory=session_factory)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "events"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "events"
+    assert body["results"] == []
+    assert body["embedding_method"] == "hash"
+
+
+def test_search_events_no_session_factory_returns_200_empty(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """No session factory degrades to empty events results, never a 500."""
+    client = _events_client(monkeypatch, seeded_factory=None)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "anything", "corpus": "events"}
+    )
+    assert resp.status_code == 200
+    body = resp.json()
+    assert body["corpus"] == "events"
+    assert body["results"] == []
+
+
+def test_search_events_missing_text_is_422(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    client = _events_client(monkeypatch, seeded_factory=None)
+    resp = client.post("/api/embeddings/search", json={"corpus": "events"})
+    assert resp.status_code == 422
+
+
+def test_search_events_accepted_by_pydantic(
+    monkeypatch: pytest.MonkeyPatch, session_factory
+) -> None:
+    """corpus=events passes the pydantic pattern (not a 422 like memory)."""
+    client = _events_client(monkeypatch, seeded_factory=session_factory)
+    resp = client.post(
+        "/api/embeddings/search", json={"text": "x", "corpus": "events"}
+    )
+    assert resp.status_code == 200
+
+
+def test_search_events_embed_failure_degrades_to_200(
+    monkeypatch: pytest.MonkeyPatch, events_factory
+) -> None:
+    """A broken embedder degrades the events search to 200, never a 500."""
+
+    class _BoomEmbedder:
+        def embed(self, text: str) -> list[float]:
+            raise RuntimeError("embedder exploded")
+
+    monkeypatch.setattr(
+        embeddings, "_select_default_embedder", lambda: _BoomEmbedder()
+    )
+    client = _events_client(monkeypatch, seeded_factory=events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "anything", "corpus": "events"},
+    )
+    assert resp.status_code == 200
+    assert resp.json()["corpus"] == "events"
+
+
+@pytest_asyncio.fixture
+async def malformed_event_factory(session_factory):
+    """``session_factory`` seeded with one event carrying non-JSON details."""
+    await _seed_events(
+        session_factory,
+        [
+            {
+                "event_type": "weird_event",
+                "entity_type": "todo",
+                "entity_id": "todo-x",
+                "project_id": "proj-b",
+                "details": "not-json{ this is broken",
+            }
+        ],
+    )
+    return session_factory
+
+
+def test_search_events_malformed_details_json_does_not_break(
+    monkeypatch: pytest.MonkeyPatch, malformed_event_factory
+) -> None:
+    """A row whose details are not valid JSON still ranks (summary empties out).
+
+    The event_type + entity_type still make a non-empty searchable text, so the
+    row is ranked; the unparseable details simply contribute no terms.
+    """
+    client = _events_client(monkeypatch, seeded_factory=malformed_event_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "weird event todo", "corpus": "events"},
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    assert len(results) == 1
+    item = results[0]
+    assert item["name"] == "weird_event:todo-x"
+    # event_type + entity_type are present in the searchable text; the broken
+    # details JSON degraded to no extra terms (fail-soft).
+    assert "weird_event" in item["source_text"]
+    assert "todo" in item["source_text"]
+    assert "not-json" not in item["source_text"]
+
+
+def test_search_events_skips_eventless_row(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """An event row whose text is empty is skipped (defensive degradation).
+
+    This exercises the _event_text empty-string skip directly with a stub
+    session factory yielding rows with no type fields and empty details.
+    """
+
+    class _StubEventRow:
+        def __init__(
+            self,
+            *,
+            event_type: str,
+            entity_type: str,
+            entity_id: str,
+            details: Any,
+            actor: str = "agent",
+        ) -> None:
+            self.event_type = event_type
+            self.entity_type = entity_type
+            self.entity_id = entity_id
+            self.details = details
+            self.actor = actor
+            self.id = 1
+            self.created_at = None
+
+    class _StubResult:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        def scalars(self) -> Any:
+            rows = self._rows
+
+            class _S:
+                def all(self_inner) -> list[Any]:
+                    return rows
+
+            return _S()
+
+    class _StubSession:
+        def __init__(self, rows: list[Any]) -> None:
+            self._rows = rows
+
+        async def __aenter__(self) -> Any:
+            return self
+
+        async def __aexit__(self, *a: Any) -> None:
+            return None
+
+        async def execute(self, *a: Any, **k: Any) -> Any:
+            return _StubResult(self._rows)
+
+    rows = [
+        _StubEventRow(
+            event_type="", entity_type="", entity_id="", details="{}"
+        ),
+        _StubEventRow(
+            event_type="real_event",
+            entity_type="todo",
+            entity_id="todo-9",
+            details="{}",
+        ),
+    ]
+
+    def _factory() -> Any:
+        return _StubSession(rows)
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    app = FastAPI()
+    app.state._session_factory = _factory
+    app.state._skill_registry = None
+    embeddings.register(app, {})
+    client = TestClient(app)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "real event todo", "corpus": "events"},
+    )
+    assert resp.status_code == 200
+    results = resp.json()["results"]
+    names = {r["name"] for r in results}
+    assert "real_event:todo-9" in names
+    assert "" not in names  # the textless row was skipped

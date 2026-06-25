@@ -188,10 +188,13 @@ class EmbeddingSearchRequest(BaseModel):
     (the live SkillRegistry, descriptions embedded on the fly), ``task_types``
     (the canonical task-type vectors, delegating to /similar), ``prompts``
     (the persisted :class:`PromptProfileModel.prompt_text` corpus, embedded on
-    the fly — no schema change), and ``traces`` (the in-process
+    the fly — no schema change), ``traces`` (the in-process
     RecentTracesBuffer; each recent execution trace's work_type/phase
-    labels/span descriptions are embedded on the fly — no schema change). Any
-    other value (metrics/events/system/osquery are later phases) is rejected by
+    labels/span descriptions are embedded on the fly — no schema change), and
+    ``events`` (the persisted :class:`~general_ludd.db.models.AuditEventModel`
+    corpus; each recent audit event's event_type + entity_type + a human
+    summary of its ``details`` JSON is embedded on the fly — no schema change).
+    Any other value (metrics/system/osquery are later phases) is rejected by
     pydantic (422).
     """
 
@@ -202,10 +205,10 @@ class EmbeddingSearchRequest(BaseModel):
     )
     corpus: str = Field(
         "skills",
-        pattern="^(skills|task_types|prompts|traces)$",
+        pattern="^(skills|task_types|prompts|traces|events)$",
         description=(
             "Which real corpus to search: 'skills', 'task_types', 'prompts', "
-            "or 'traces'."
+            "'traces', or 'events'."
         ),
     )
     top_k: int = Field(
@@ -702,6 +705,170 @@ def _search_traces(
     )
 
 
+def _event_details_summary(raw: Any) -> str:
+    """Build a flat human summary of an audit event's ``details`` JSON column.
+
+    ``AuditEventModel.details`` is a JSON-text column (default ``"{}"``). Decode
+    it defensively to a dict and flatten its top-level scalar entries into a
+    ``key=value`` string (e.g. ``todo_id=42 model=glm-4.6``), so the event's
+    payload contributes searchable terms. Anything that is not a well-formed
+    JSON object — None, malformed text, a non-dict payload — degrades to an
+    empty string rather than raising, so a single bad row can never break a
+    search. Nested/complex values are stringified compactly and bounded.
+    """
+    if not isinstance(raw, str) or not raw:
+        return ""
+    try:
+        parsed = json.loads(raw)
+    except (json.JSONDecodeError, ValueError, TypeError):
+        return ""
+    if not isinstance(parsed, dict):
+        return ""
+    parts: list[str] = []
+    for key, value in parsed.items():
+        if value is None:
+            continue
+        if isinstance(value, (str, int, float, bool)):
+            text = str(value)
+        else:
+            try:
+                text = json.dumps(value, separators=(",", ":"))
+            except (TypeError, ValueError):
+                text = str(value)
+        # Bound any single value so one giant payload can't dominate the text.
+        parts.append(f"{key}={text[:500]}")
+    return " ".join(parts)
+
+
+def _event_text(row: Any) -> str:
+    """Build the searchable text for one audit-event row.
+
+    Concatenates the event's ``event_type`` and ``entity_type`` with a flattened
+    human summary of its ``details`` JSON (via :func:`_event_details_summary`).
+    Only genuinely-present fields contribute — nothing is fabricated. A row with
+    no type fields and empty details yields an empty string, which the caller
+    skips.
+    """
+    parts: list[str] = []
+    event_type = getattr(row, "event_type", "") or ""
+    entity_type = getattr(row, "entity_type", "") or ""
+    if event_type:
+        parts.append(str(event_type))
+    if entity_type:
+        parts.append(str(entity_type))
+    summary = _event_details_summary(getattr(row, "details", None))
+    if summary:
+        parts.append(summary)
+    return " ".join(parts)
+
+
+async def _search_events(
+    app: FastAPI, req: EmbeddingSearchRequest
+) -> EmbeddingSearchResponse:
+    """corpus=events: embed each recent audit event on the fly, cosine-rank.
+
+    Mirrors :func:`_search_prompts` exactly but over the persisted
+    :class:`~general_ludd.db.models.AuditEventModel` corpus. No stored vectors
+    (zero schema change): a session is opened from ``app.state._session_factory``,
+    the most-recent ``_DEFAULT_LIST_LIMIT`` audit events are read via a bounded
+    ``created_at``-descending select (the AuditEventRepository has no
+    project-agnostic recent-list method), each event's searchable text
+    (event_type + entity_type + a human summary of its ``details`` JSON, via
+    :func:`_event_text`) is embedded with the SAME default embedder as /similar
+    and /compare, and the query is ranked against them. An absent factory, an
+    empty event log, or any embed failure degrades to an empty result set (the
+    caller wraps this so the route is a 200, never a 500). The ``details`` JSON
+    is decoded defensively.
+    """
+    from sqlalchemy import select
+
+    from general_ludd.db.models import AuditEventModel
+    from general_ludd.db.repository import _DEFAULT_LIST_LIMIT
+
+    embedder = _select_default_embedder()
+    method = _method_of(embedder)
+
+    query_vec = embedder.embed(req.text)
+    query_dim = len(query_vec)
+
+    factory = _get_session_factory(app)
+    if factory is None:
+        return EmbeddingSearchResponse(
+            corpus="events",
+            query_embedding_dim=query_dim,
+            embedding_method=method,
+            query_embedding=query_vec if req.include_embeddings else None,
+            results=[],
+        )
+
+    rows: list[Any] = []
+    async with factory() as session:
+        try:
+            stmt = (
+                select(AuditEventModel)
+                .order_by(AuditEventModel.created_at.desc())
+                .limit(_DEFAULT_LIST_LIMIT)
+            )
+            result = await session.execute(stmt)
+            rows = list(result.scalars().all())
+        except Exception as exc:  # degrade, never 500
+            logger.debug("audit-event listing failed: %s", exc)
+            rows = []
+
+    scored: list[SearchResultItem] = []
+    for row in rows:
+        source_text = _event_text(row)
+        if not source_text:
+            continue
+        try:
+            event_vec = embedder.embed(source_text)
+        except Exception as exc:  # skip the bad one, keep ranking the rest
+            logger.debug("audit-event embed failed: %s", exc)
+            continue
+        if len(event_vec) != query_dim:
+            continue
+        score = cosine_similarity(query_vec, event_vec)
+        event_type = getattr(row, "event_type", "") or ""
+        entity_id = getattr(row, "entity_id", "") or ""
+        created_at = getattr(row, "created_at", None)
+        created_at_str = ""
+        if created_at is not None:
+            iso = getattr(created_at, "isoformat", None)
+            created_at_str = iso() if callable(iso) else str(created_at)
+        scored.append(
+            SearchResultItem(
+                rank=0,  # assigned after sort
+                name=(
+                    f"{event_type}:{entity_id}"
+                    if event_type and entity_id
+                    else (event_type or str(getattr(row, "id", "")))
+                ),
+                source_text=source_text,
+                similarity_score=score,
+                metadata={
+                    "event_type": event_type,
+                    "entity_type": getattr(row, "entity_type", "") or "",
+                    "entity_id": entity_id,
+                    "actor": getattr(row, "actor", "") or "",
+                    "created_at": created_at_str,
+                },
+            )
+        )
+
+    scored.sort(key=lambda r: r.similarity_score, reverse=True)
+    scored = scored[: req.top_k]
+    for i, item in enumerate(scored):
+        item.rank = i + 1
+
+    return EmbeddingSearchResponse(
+        corpus="events",
+        query_embedding_dim=query_dim,
+        embedding_method=method,
+        query_embedding=query_vec if req.include_embeddings else None,
+        results=scored,
+    )
+
+
 async def _search(
     app: FastAPI, req: EmbeddingSearchRequest
 ) -> EmbeddingSearchResponse:
@@ -724,7 +891,13 @@ async def _search(
         except Exception as exc:  # never 500
             logger.debug("traces search failed: %s", exc)
             return EmbeddingSearchResponse(corpus="traces")
-    # corpus == "skills" (pydantic guarantees one of the four).
+    if req.corpus == "events":
+        try:
+            return await _search_events(app, req)
+        except Exception as exc:  # never 500
+            logger.debug("events search failed: %s", exc)
+            return EmbeddingSearchResponse(corpus="events")
+    # corpus == "skills" (pydantic guarantees one of the five).
     try:
         registry = getattr(app.state, "_skill_registry", None)
         return _search_skills(req, registry)
