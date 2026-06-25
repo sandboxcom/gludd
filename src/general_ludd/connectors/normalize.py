@@ -33,6 +33,7 @@ Hard invariants
 
 from __future__ import annotations
 
+import math
 from typing import Any
 
 __all__ = [
@@ -42,7 +43,19 @@ __all__ = [
     "bundle_credentials",
     "correlate",
     "normalize_join_keys",
+    "sanitize_metric_value",
 ]
+
+
+def sanitize_metric_value(raw: Any) -> float | None:
+    """Coerce to a finite float, else None. NaN/Inf/unparseable/bool -> None (0.0 is a real sample, never forged)."""
+    if raw is None or isinstance(raw, bool):
+        return None
+    try:
+        value = float(raw)
+    except (TypeError, ValueError):
+        return None
+    return value if math.isfinite(value) else None
 
 # --------------------------------------------------------------------------- #
 # Severity canonicalization

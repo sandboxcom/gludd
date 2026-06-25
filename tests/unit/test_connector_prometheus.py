@@ -251,6 +251,28 @@ def test_query_scalar_single_record():
 
 
 # ---------------------------------------------------------------------------
+# query() normalization — NaN/Inf sample value -> None (never forged to 0.0)
+# ---------------------------------------------------------------------------
+
+
+def test_query_vector_nan_value_becomes_none():
+    payload = {
+        "status": "success",
+        "data": {
+            "resultType": "vector",
+            "result": [
+                {"metric": {"__name__": "up"}, "value": [1718000000.0, "NaN"]},
+            ],
+        },
+    }
+    t = RecordingTransport([(200, payload)])
+    src = PrometheusSource({"base_url": GOOD_URL}, http_get=t)
+    records = src.query({"promql": "up"})
+    assert len(records) == 1
+    assert records[0]["value"] is None
+
+
+# ---------------------------------------------------------------------------
 # query() error handling
 # ---------------------------------------------------------------------------
 

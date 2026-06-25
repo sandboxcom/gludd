@@ -34,7 +34,6 @@ Record shape (one dict per sample)::
 from __future__ import annotations
 
 import json as _json
-import math
 import os
 import time
 import urllib.request
@@ -42,6 +41,7 @@ from collections.abc import Callable
 from typing import Any
 from urllib.parse import urlencode, urlsplit
 
+from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport signature: (url, params, headers) -> (status, json)
@@ -162,12 +162,7 @@ class PrometheusSource:
     def _sample_record(
         self, metric: dict[str, Any], ts: Any, raw_value: Any, raw: Any
     ) -> dict[str, Any]:
-        try:
-            value = float(raw_value)
-            if not math.isfinite(value):
-                value = 0.0
-        except (TypeError, ValueError):
-            value = 0.0
+        value = sanitize_metric_value(raw_value)
         try:
             ts_f = float(ts)
         except (TypeError, ValueError):

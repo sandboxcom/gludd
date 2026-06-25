@@ -343,6 +343,25 @@ def test_metrics_empty_series_is_empty_list() -> None:
     assert src.query({"mode": "metrics", "query": "avg:x{*}"}) == []
 
 
+def test_metrics_nan_point_value_becomes_none() -> None:
+    payload = {
+        "status": "ok",
+        "series": [
+            {
+                "metric": "system.cpu.user",
+                "scope": "host:web-01",
+                "tag_set": ["host:web-01"],
+                "pointlist": [[1718000000000.0, float("nan")]],
+            }
+        ],
+    }
+    t = RecordingTransport([(200, payload)])
+    src = DatadogSource({"site": "https://api.datadoghq.com"}, http_request=t)
+    records = src.query({"mode": "metrics", "query": "x"})
+    assert len(records) == 1
+    assert records[0]["value"] is None
+
+
 # -- mode dispatch / errors ------------------------------------------------
 
 
