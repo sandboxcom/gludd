@@ -60,6 +60,49 @@ class TestOpenBaoConfig:
         assert cfg.kv_mount == "custom-kv"
 
 
+class TestOpenBaoConfigSecretLeakPrevention:
+    """Regression tests: external_token must not appear in repr or serialized output."""
+
+    _TOKEN = "s.super-secret-should-not-leak"
+
+    def _make_cfg(self) -> OpenBaoConfig:
+        return OpenBaoConfig(
+            mode="external",
+            external_url="https://bao.example.com:8200",
+            external_token=self._TOKEN,
+        )
+
+    def test_repr_does_not_contain_token(self):
+        cfg = self._make_cfg()
+        assert self._TOKEN not in repr(cfg), (
+            f"external_token leaked into repr: {cfg!r}"
+        )
+
+    def test_model_dump_does_not_contain_token(self):
+        cfg = self._make_cfg()
+        dumped = cfg.model_dump()
+        assert dumped["external_token"] != self._TOKEN, (
+            "external_token leaked into model_dump() output"
+        )
+
+    def test_model_dump_json_does_not_contain_token(self):
+        cfg = self._make_cfg()
+        json_str = cfg.model_dump_json()
+        assert self._TOKEN not in json_str, (
+            f"external_token leaked into model_dump_json() output: {json_str}"
+        )
+
+    def test_direct_attribute_access_still_returns_raw_value(self):
+        """Direct attribute access must still return the real token (for consumers like manager.py)."""
+        cfg = self._make_cfg()
+        assert cfg.external_token == self._TOKEN
+
+    def test_none_token_serializes_to_none(self):
+        cfg = OpenBaoConfig()
+        dumped = cfg.model_dump()
+        assert dumped["external_token"] is None
+
+
 class TestOpenBaoSecretsManager:
     def _make_manager(self, **kwargs: object) -> SecretsManager:
         cfg = OpenBaoConfig(**kwargs)

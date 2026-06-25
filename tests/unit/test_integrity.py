@@ -6,6 +6,8 @@ import hashlib
 import tempfile
 from pathlib import Path
 
+import pytest
+
 
 class TestFileIntegrityScanner:
     def test_scanner_computes_file_hash(self):
@@ -109,8 +111,83 @@ class TestFileIntegrityScanner:
             names = [Path(p).name for p in result["files"]]
             assert "tracked.txt" in names  # watch dir is not under repo/.git
 
+    # --- Regression tests for fix: VC-controlled files must be hashed by default ---
+
+    def test_scanner_includes_vc_controlled_files_by_default(self):
+        """Files inside a git working tree are scanned by default (skip_vc_controlled=False).
+
+        Regression: the old code called _is_vc_controlled() unconditionally and
+        skipped every file under any ancestor .git directory, making the monitor
+        blind to tampering of tracked source files.
+        """
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            # Simulate a git working tree: create a .git dir at the watch root.
+            watch = Path(tmp) / "repo"
+            watch.mkdir()
+            (watch / ".git").mkdir()
+            src_file = watch / "module.py"
+            src_file.write_text("def hello(): pass\n")
+            scanner = FileIntegrityScanner(store_dir=str(tmp))
+            # Default scan — skip_vc_controlled is False, so module.py MUST appear.
+            result = scanner.scan([str(watch)], exclude_patterns=[r"[\\/]\.git[\\/]"])
+            names = [Path(p).name for p in result["files"]]
+            assert "module.py" in names, (
+                "scan() excluded a VC-controlled source file by default; "
+                "skip_vc_controlled must default to False"
+            )
+
+    def test_scanner_detects_tampering_of_vc_controlled_file(self):
+        """Modification of a tracked .py file is detected on the second scan."""
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            store = Path(tmp) / "store"
+            store.mkdir()
+            watch = Path(tmp) / "repo"
+            watch.mkdir()
+            (watch / ".git").mkdir()
+            src_file = watch / "app.py"
+            src_file.write_text("x = 1\n")
+            scanner = FileIntegrityScanner(store_dir=str(store))
+            scanner.scan([str(watch)], exclude_patterns=[r"[\\/]\.git[\\/]"])
+            # Tamper with the file.
+            src_file.write_text("x = 1  # tampered\n")
+            result = scanner.scan([str(watch)], exclude_patterns=[r"[\\/]\.git[\\/]"])
+            modified = [c for c in result["changes"] if c["type"] == "modified"]
+            assert any(Path(c["file"]).name == "app.py" for c in modified), (
+                "Tampering with a VC-controlled source file was not detected"
+            )
+
+    def test_scanner_skip_vc_controlled_opt_in_excludes_files(self):
+        """When skip_vc_controlled=True the old behaviour is restored (opt-in)."""
+        from general_ludd.integrity.scanner import FileIntegrityScanner
+
+        with tempfile.TemporaryDirectory() as tmp:
+            watch = Path(tmp) / "repo"
+            watch.mkdir()
+            (watch / ".git").mkdir()
+            (watch / "module.py").write_text("pass\n")
+            scanner = FileIntegrityScanner(store_dir=str(tmp))
+            result = scanner.scan(
+                [str(watch)],
+                exclude_patterns=[r"[\\/]\.git[\\/]"],
+                skip_vc_controlled=True,
+            )
+            names = [Path(p).name for p in result["files"]]
+            assert "module.py" not in names, (
+                "skip_vc_controlled=True should exclude files under a .git tree"
+            )
+
 
 class TestIntegritySigning:
+    @pytest.fixture(autouse=True)
+    def _set_integrity_key(self, monkeypatch):
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "test-signing-key-fixedvalue")
+        import general_ludd.integrity.scanner as _m
+        monkeypatch.setattr(_m, "_INTEGRITY_KEY", None)
+
     def test_sign_change_with_reason(self):
         import datetime
 
@@ -172,3 +249,148 @@ class TestIntegritySigning:
         assert "path" in result
         assert "signature" in result
         assert result["reason"] == "Approved by admin"
+
+
+class TestIntegrityKeyFailClosed:
+    """Regression: missing GL_INTEGRITY_KEY must fail CLOSED, not mint a random key."""
+
+    def test_missing_key_raises_on_sign_change(self, monkeypatch):
+        """sign_change raises IntegrityKeyError when GL_INTEGRITY_KEY is unset."""
+        import datetime
+
+        monkeypatch.delenv("GL_INTEGRITY_KEY", raising=False)
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import ChangeRecord, IntegrityKeyError, sign_change
+
+        change = ChangeRecord(
+            file_path="/tmp/test.txt",
+            change_type="modified",
+            old_hash="aaa",
+            new_hash="bbb",
+            detected_at=datetime.datetime.now().isoformat(),
+        )
+        with pytest.raises(IntegrityKeyError):
+            sign_change(change, reason="r", signer="s")
+
+    def test_missing_key_raises_on_sign_change_openbao(self, monkeypatch):
+        """sign_change_openbao raises IntegrityKeyError when GL_INTEGRITY_KEY is unset."""
+        monkeypatch.delenv("GL_INTEGRITY_KEY", raising=False)
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import IntegrityKeyError, sign_change_openbao
+
+        with pytest.raises(IntegrityKeyError):
+            sign_change_openbao(path="/tmp/f", signer="s", reason="r")
+
+    def test_missing_key_verify_returns_false(self, monkeypatch):
+        """verify_openbao_signature returns False (not raises) when key is absent."""
+        monkeypatch.delenv("GL_INTEGRITY_KEY", raising=False)
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import verify_openbao_signature
+
+        # Should not raise — callers distinguish tamper from key error via bool.
+        assert verify_openbao_signature({"signature": "any"}) is False
+
+    def test_key_present_does_not_raise(self, monkeypatch):
+        """When GL_INTEGRITY_KEY is set, signing succeeds without error."""
+        import datetime
+
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "stable-test-key-abc123")
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import ChangeRecord, sign_change
+
+        change = ChangeRecord(
+            file_path="/tmp/ok.txt",
+            change_type="new",
+            old_hash=None,
+            new_hash="deadbeef",
+            detected_at=datetime.datetime.now().isoformat(),
+        )
+        result = sign_change(change, reason="ok", signer="admin")
+        assert result["signature"] is not None
+
+
+class TestSignatureIncludesFileHash:
+    """Regression: approval signatures must bind to file hashes.
+
+    Before this fix, sign_change_openbao signed path|signer|reason|timestamp
+    with no hash, so an approval could be replayed against a different version
+    of the file.
+    """
+
+    def test_openbao_signature_includes_hashes(self, monkeypatch):
+        """Signed result carries old_hash and new_hash fields."""
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "test-key-hash-binding")
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import sign_change_openbao
+
+        result = sign_change_openbao(
+            path="/tmp/cfg.yml",
+            signer="admin",
+            reason="test",
+            old_hash="oldhash123",
+            new_hash="newhash456",
+        )
+        assert result.get("old_hash") == "oldhash123"
+        assert result.get("new_hash") == "newhash456"
+        assert result.get("signature") is not None
+
+    def test_openbao_verify_round_trips(self, monkeypatch):
+        """A freshly signed approval verifies correctly."""
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "test-key-verify-rt")
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import sign_change_openbao, verify_openbao_signature
+
+        result = sign_change_openbao(
+            path="/tmp/cfg.yml",
+            signer="admin",
+            reason="round-trip",
+            old_hash="h1",
+            new_hash="h2",
+        )
+        assert verify_openbao_signature(result) is True
+
+    def test_tampered_file_hash_fails_verification(self, monkeypatch):
+        """Changing new_hash after signing makes verify_openbao_signature return False."""
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "test-key-tamper-detect")
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import sign_change_openbao, verify_openbao_signature
+
+        result = sign_change_openbao(
+            path="/tmp/sec.cfg",
+            signer="admin",
+            reason="ok",
+            old_hash="orig_old",
+            new_hash="orig_new",
+        )
+        # Simulate post-approval tampering of the new file hash.
+        tampered = dict(result)
+        tampered["new_hash"] = "attacker_hash"
+        assert verify_openbao_signature(tampered) is False
+
+    def test_different_hashes_produce_different_signatures(self, monkeypatch):
+        """Two approvals for the same path but different hashes yield different sigs."""
+        monkeypatch.setenv("GL_INTEGRITY_KEY", "test-key-diff-sig")
+        import general_ludd.integrity.scanner as _scanner_mod
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+
+        from general_ludd.integrity.scanner import sign_change_openbao
+
+        # Reset cached key so the env var is read fresh each call.
+        r1 = sign_change_openbao("/p", "s", "r", old_hash="a", new_hash="b")
+        monkeypatch.setattr(_scanner_mod, "_INTEGRITY_KEY", None)
+        r2 = sign_change_openbao("/p", "s", "r", old_hash="a", new_hash="CHANGED")
+        assert r1["signature"] != r2["signature"]

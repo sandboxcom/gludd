@@ -150,32 +150,65 @@ def _validate_package_spec(cmd: list[str], launcher: str) -> None:
     Raises MCPTransportError if:
     - The first non-flag argument (the package spec) contains shell metacharacters.
     - There are ONLY flag arguments (no package spec at all — likely injection).
+    - A value passed via --package / -p (flags that supply a package spec to
+      npx/npm/pnpm/yarn/bunx) is not version-pinned or contains metacharacters.
+      These flags bypass the original positional-arg check and represent a
+      supply-chain substitution risk identical to an unpinned positional spec.
     """
+    # Flags that accept a following argument which is itself a package spec.
+    # npx supports both ``--package pkg`` and ``-p pkg``; pnpm/yarn follow the
+    # same convention.  Values supplied this way must pass the same checks as
+    # the positional package spec.
+    _PACKAGE_VALUE_FLAGS = frozenset({"--package", "-p"})
+
     args_after_launcher = cmd[1:]
     found_spec = False
-    for arg in args_after_launcher:
-        if arg.startswith("-"):
-            # It is a flag — skip.
-            continue
-        # This is the first non-flag arg: treat it as the package spec.
-        found_spec = True
+
+    def _check_spec(arg: str) -> None:
+        """Apply metacharacter and version-pin checks to a single spec."""
         if _SHELL_META_RE.search(arg):
             raise MCPTransportError(
                 f"MCP package spec {arg!r} for launcher {launcher!r} contains "
                 "shell metacharacters. This looks like an injection attempt and "
                 "is refused."
             )
-        # Supply-chain pin: a JS npm-family remote fetch MUST resolve to a
-        # concrete version, so a mutable dist-tag / range / bare name cannot be
-        # swapped for a malicious version at fetch time.
         if launcher in _NPM_FAMILY_LAUNCHERS and not _is_version_pinned_spec(arg):
             raise MCPTransportError(
                 f"MCP package spec {arg!r} for launcher {launcher!r} is not "
                 "version-pinned (bare name, dist-tag, or range). Pin it to a "
                 "concrete version (e.g. pkg@1.2.3) — refused for supply-chain safety."
             )
-        # Only the first non-flag arg is the package spec; rest are server args.
-        break
+
+    i = 0
+    while i < len(args_after_launcher):
+        arg = args_after_launcher[i]
+        if arg in _PACKAGE_VALUE_FLAGS:
+            # The next token is the package spec supplied via this flag.
+            if i + 1 >= len(args_after_launcher):
+                raise MCPTransportError(
+                    f"MCP launcher {launcher!r}: flag {arg!r} requires a "
+                    "following package-spec argument but none was found."
+                )
+            spec = args_after_launcher[i + 1]
+            _check_spec(spec)
+            found_spec = True
+            i += 2
+            continue
+        if arg.startswith("--package=") or arg.startswith("-p="):
+            # ``--package=pkg@1.2.3`` inline form.
+            spec = arg.split("=", 1)[1]
+            _check_spec(spec)
+            found_spec = True
+            i += 1
+            continue
+        if not arg.startswith("-"):
+            # First positional non-flag arg is the package spec.
+            _check_spec(arg)
+            found_spec = True
+            # Remaining args are arguments forwarded to the server binary, not
+            # package specs — stop scanning here.
+            break
+        i += 1
 
     if not found_spec:
         # No non-flag arg found — no package spec supplied.
@@ -241,6 +274,11 @@ class MCPStdioClient:
         On timeout the subprocess is force-terminated (it is presumed hung) and
         an MCPTransportError is raised so the caller fails fast instead of
         blocking forever.
+
+        An oversized frame (>64 KB asyncio default) raises ValueError or
+        LimitOverrunError from readline().  Catch those too: force-terminate
+        the subprocess so it doesn't linger, then raise a clean
+        MCPTransportError rather than leaking the raw exception.
         """
         assert self._process is not None
         assert self._process.stdout is not None
@@ -254,6 +292,17 @@ class MCPStdioClient:
             raise MCPTransportError(
                 f"MCP server timed out after {self._config.timeout_seconds}s "
                 f"waiting for response (method read)"
+            ) from exc
+        except (ValueError, asyncio.LimitOverrunError) as exc:
+            # asyncio raises LimitOverrunError (subclass of Exception) or
+            # ValueError when a line exceeds the StreamReader buffer limit
+            # (~64 KB by default).  The subprocess is left running if we do
+            # not kill it, so terminate first, then surface a clean error.
+            await self._force_terminate()
+            raise MCPTransportError(
+                "MCP server sent an oversized JSON-RPC frame (exceeds "
+                "asyncio StreamReader limit).  The subprocess has been "
+                "terminated."
             ) from exc
 
     async def _force_terminate(self) -> None:
@@ -358,7 +407,7 @@ class MCPStdioClient:
             *cmd,
             stdin=asyncio.subprocess.PIPE,
             stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.DEVNULL,  # PIPE would block on >64KB stderr writes
             env=env,
         )
 

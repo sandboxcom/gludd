@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import logging
 from unittest.mock import MagicMock, patch
 
@@ -447,6 +448,134 @@ class TestModelGatewayRedactsCredentials:
             assert "sk-super-secret-key-12345" not in record.message
 
 
+class TestCallModelByRoleStrictMode:
+    """M-3: unknown role must raise ValueError, not silently fall through."""
+
+    def _make_gateway_with_router(self) -> ModelGateway:
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="gpt4_role",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            run_budget_usd=100.0,
+        )
+        router = ModelRouter(
+            role_mapping={"coder": "gpt4_role"},
+            default_profile_id="gpt4_role",
+        )
+        gw = ModelGateway(profiles=[profile], provider_registry=reg)
+        gw._router = router
+        return gw
+
+    def test_unknown_role_raises_value_error(self):
+        """An unrecognised role must raise ValueError (fail-closed)."""
+        gw = self._make_gateway_with_router()
+        with pytest.raises(ValueError, match="Unrecognised role"):
+            gw.call_model_by_role(
+                "nonexistent_role",
+                [{"role": "user", "content": "hi"}],
+            )
+
+    def test_known_role_resolves_without_error(self):
+        """A mapped role must resolve normally (smoke-check that strict only
+        blocks *unknown* roles)."""
+        gw = self._make_gateway_with_router()
+        reg = gw._registry
+
+        FakeChatModel, fake_instance = _make_fake_chat_model()
+        fake_instance.invoke.return_value = MagicMock(
+            content="ok",
+            usage_metadata={"input_tokens": 1, "output_tokens": 1},
+        )
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+        ):
+            resp = gw.call_model_by_role(
+                "coder",
+                [{"role": "user", "content": "hi"}],
+            )
+        assert resp.content == "ok"
+
+
+class TestFallbackRecordSuccessOnce:
+    """Fix B: a successful fallback call must record_success exactly once."""
+
+    def _make_gateway_with_fallback(self) -> tuple[ModelGateway, ProviderRegistry, MagicMock]:
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+
+        primary = ModelProfile(
+            model_profile_id="primary",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            run_budget_usd=100.0,
+            fallback_profiles=["fallback_model"],
+        )
+        fallback = ModelProfile(
+            model_profile_id="fallback_model",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-3.5-turbo",
+            run_budget_usd=100.0,
+        )
+
+        mock_tracker = MagicMock()
+        mock_tracker.is_healthy.return_value = True
+
+        gw = ModelGateway(
+            profiles=[primary, fallback],
+            provider_registry=reg,
+            health_tracker=mock_tracker,
+        )
+        return gw, reg, mock_tracker
+
+    def test_successful_fallback_records_success_exactly_once(self):
+        """record_success must be called exactly once for the fallback profile
+        (via _invoke_and_bill); the old extra call in _call_fallback would make
+        it two."""
+        gw, reg, mock_tracker = self._make_gateway_with_fallback()
+
+        FakeChatModel, fake_instance = _make_fake_chat_model()
+        fake_instance.invoke.return_value = MagicMock(
+            content="fallback reply",
+            usage_metadata={"input_tokens": 5, "output_tokens": 3},
+        )
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+        ):
+            resp = gw._call_fallback(
+                "fallback_model",
+                [{"role": "user", "content": "hi"}],
+            )
+
+        assert resp.content == "fallback reply"
+        # record_success must be called exactly once (from _invoke_and_bill),
+        # NOT twice (the old bug added a second call in _call_fallback itself).
+        success_calls = [
+            c for c in mock_tracker.record_success.call_args_list
+            if c.args and c.args[0] == "fallback_model"
+        ]
+        assert len(success_calls) == 1, (
+            f"record_success('fallback_model') called {len(success_calls)} times, "
+            "expected exactly 1"
+        )
+
+
 class TestModelRouter:
     def test_resolve_role_returns_profile_id(self):
         router = ModelRouter(role_mapping={"coder": "gpt4", "reviewer": "claude3"})
@@ -510,3 +639,355 @@ class TestExampleConfigsAreValidYaml:
             assert "model_profile_id" in data, f"{fname} missing model_profile_id"
             assert "provider" in data, f"{fname} missing provider"
             assert "provider_package" in data, f"{fname} missing provider_package"
+
+
+class TestCheckBudgetServerSideReEstimation:
+    """D-21 regression: call_model must pass messages= to check_budget so the
+    server-side cost re-estimator fires even when estimated_cost=0.0."""
+
+    def _make_gateway(self, run_budget_usd: float = 0.001) -> tuple:
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
+
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="budget_probe",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            api_metered=True,
+            run_budget_usd=run_budget_usd,
+            # High per-token prices so even a short prompt exceeds the tiny budget.
+            cost_per_input_token=1.0,
+            cost_per_output_token=1.0,
+            max_output_tokens=8192,
+        )
+        gw = ModelGateway(profiles=[profile], provider_registry=reg)
+        return gw, reg
+
+    def test_zero_estimated_cost_large_prompt_raises_budget_exceeded(self):
+        """A caller that passes estimated_cost=0.0 with a huge prompt must still
+        be rejected when the server-side re-estimate exceeds run_budget_usd.
+
+        Before the fix (gateway.py:346 missing messages=), check_budget received
+        no messages, fell back to estimated_cost=0.0, and silently let the call
+        through. After the fix the server-side estimate is computed and the gate
+        closes correctly.
+        """
+        from general_ludd.models.gateway import BudgetExceededError
+
+        gw, _reg = self._make_gateway(run_budget_usd=0.001)
+
+        # 4000-char message → ~1000 input tokens x cost_per_input_token=1.0
+        # plus max_output_tokens=8192 x 1.0 = ~9192 USD >> 0.001 USD budget.
+        large_messages = [{"role": "user", "content": "x" * 4000}]
+
+        with pytest.raises(BudgetExceededError):
+            gw.call_model(
+                "budget_probe",
+                large_messages,
+                estimated_cost=0.0,   # caller under-reports: should not matter
+                budget_remaining=float("inf"),
+            )
+
+
+class TestCacheKeyLockEviction:
+    """Bug regression: _cache_key_locks dict must not grow unboundedly.
+
+    Before the fix, every distinct cache key accumulated a Lock entry in
+    _cache_key_locks forever (the lock was created on first miss and never
+    removed). Under any workload that naturally cycles through many keys the
+    dict becomes an unbounded heap leak. The fix introduces ref-counting:
+    the entry is deleted in a finally block when the last waiter for that
+    key releases, keeping dict size bounded to the number of *in-flight*
+    waiters rather than the number of distinct keys ever seen.
+    """
+
+    def _make_gateway_with_cache(self):
+
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+
+        profile = ModelProfile(
+            model_profile_id="p",
+            enabled=True,
+            provider="openai",
+            run_budget_usd=100.0,
+        )
+
+        # Minimal dict-backed cache stub.
+        _store: dict = {}
+
+        class _DictCache:
+            def get(self, key):
+                return _store.get(key)
+
+            def set(self, key, value, ttl=None):
+                _store[key] = value
+
+        return ModelGateway(profiles=[profile], response_cache=_DictCache()), _store
+
+    def test_lock_dict_evicted_after_single_flight(self):
+        """After a single-flight section completes the lock entry is removed."""
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
+
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="evict_test",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            run_budget_usd=100.0,
+        )
+        _store: dict = {}
+
+        class _DictCache:
+            def get(self, key):
+                return _store.get(key)
+
+            def set(self, key, value, ttl=None):
+                _store[key] = value
+
+        gw = ModelGateway(
+            profiles=[profile],
+            provider_registry=reg,
+            response_cache=_DictCache(),
+        )
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.return_value = MagicMock(
+            content="ok",
+            usage_metadata={"input_tokens": 1, "output_tokens": 1},
+        )
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+        ):
+            gw.call_model("evict_test", [{"role": "user", "content": "hi"}])
+
+        # After the call completes the lock dict must be empty — the entry was
+        # evicted in the finally block when the ref-count dropped to zero.
+        assert len(gw._cache_key_locks) == 0, (
+            f"expected 0 lock entries after call, got {len(gw._cache_key_locks)}: "
+            f"{list(gw._cache_key_locks.keys())}"
+        )
+        assert len(gw._cache_key_lock_refs) == 0
+
+    def test_lock_dict_stays_bounded_across_many_keys(self):
+        """Dict size stays at 0 between calls regardless of how many distinct keys
+        were used — not bounded to a small constant but provably zero (no residue)."""
+        from unittest.mock import MagicMock, patch
+
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
+
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+
+        _store: dict = {}
+
+        class _DictCache:
+            def get(self, key):
+                return _store.get(key)
+
+            def set(self, key, value, ttl=None):
+                _store[key] = value
+
+        profiles = []
+        for i in range(20):
+            profiles.append(
+                ModelProfile(
+                    model_profile_id=f"p{i}",
+                    enabled=True,
+                    provider="openai",
+                    provider_package="langchain-openai",
+                    provider_class_hint="ChatOpenAI",
+                    model_name="gpt-4",
+                    run_budget_usd=100.0,
+                )
+            )
+        gw = ModelGateway(
+            profiles=profiles,
+            provider_registry=reg,
+            response_cache=_DictCache(),
+        )
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.return_value = MagicMock(
+            content="ok",
+            usage_metadata={"input_tokens": 1, "output_tokens": 1},
+        )
+        FakeChatModel.return_value = fake_instance
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+        ):
+            # Drive 20 distinct profile/message combinations → 20 distinct cache keys.
+            for i in range(20):
+                gw.call_model(
+                    f"p{i}",
+                    [{"role": "user", "content": f"msg{i}"}],
+                )
+
+        # Every entry must have been evicted — zero residue after all calls.
+        assert len(gw._cache_key_locks) == 0, (
+            f"lock dict leaked {len(gw._cache_key_locks)} entries: "
+            f"{list(gw._cache_key_locks.keys())[:5]}"
+        )
+        assert len(gw._cache_key_lock_refs) == 0
+
+
+class TestRetryBackoffCumulativeCap:
+    """Bug regression: _before_sleep must not sleep more than _MAX_CUMULATIVE_SLEEP_S
+    total wall-clock seconds across all retry attempts.
+
+    Before the fix, each attempt could sleep up to overload_max_backoff_seconds=120s
+    and with up to 10 overload retries the worst-case cumulative sleep was 1200s
+    (~20 min), blocking the calling thread for an absurd amount of time.
+    The fix tracks _cumulative_sleep_s and truncates / skips sleep once the
+    300s cap is reached.
+    """
+
+    def test_cumulative_sleep_is_capped(self):
+        """Total sleep across retries must not exceed _MAX_CUMULATIVE_SLEEP_S."""
+        from unittest.mock import MagicMock, patch
+
+        import httpx
+
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
+
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="retry_cap",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            run_budget_usd=100.0,
+        )
+        gw = ModelGateway(profiles=[profile], provider_registry=reg)
+
+        # Build a 503 that will be retried as PROVIDER_ERROR (overload kind).
+        request = httpx.Request("POST", "https://provider.invalid/v1/chat")
+        response = httpx.Response(503, request=request)
+        exc_503 = httpx.HTTPStatusError("503", request=request, response=response)
+
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        # Always raises a retryable 503.
+        fake_instance.invoke.side_effect = exc_503
+        FakeChatModel.return_value = fake_instance
+
+        slept: list[float] = []
+
+        def _fake_sleep(s: float) -> None:
+            slept.append(s)
+
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+            patch("general_ludd.models.gateway.ModelGateway.call_model_with_retry.__wrapped__", create=True),
+        ):
+            # Patch `time.sleep` inside the method's closure via the module-level
+            # `time` import that the closure captures as `_time`.
+
+            # Patch time.sleep at the source: the closure imports `time as _time`
+            # and calls `_time.sleep`. We patch `time.sleep` globally for this
+            # test's duration.
+            import time as _time_mod
+            with (
+                patch.object(_time_mod, "sleep", side_effect=_fake_sleep),
+                contextlib.suppress(Exception),
+            ):
+                gw.call_model_with_retry(
+                    "retry_cap",
+                    [{"role": "user", "content": "hi"}],
+                    max_retries=3,
+                )
+
+        total_slept = sum(slept)
+        assert total_slept <= 300.0 + 1e-6, (
+            f"cumulative sleep {total_slept:.1f}s exceeded 300s cap "
+            f"(individual sleeps: {slept})"
+        )
+
+    def test_no_sleep_once_cap_reached(self):
+        """Once the cumulative cap is hit subsequent retries sleep 0 seconds."""
+        from unittest.mock import patch
+
+        import httpx
+
+        from general_ludd.models.gateway import ModelGateway, ModelProfile
+        from general_ludd.models.provider_registry import ProviderRegistry
+
+        reg = ProviderRegistry()
+        reg.register_provider("openai", "langchain-openai", "ChatOpenAI")
+        profile = ModelProfile(
+            model_profile_id="retry_cap2",
+            enabled=True,
+            provider="openai",
+            provider_package="langchain-openai",
+            provider_class_hint="ChatOpenAI",
+            model_name="gpt-4",
+            run_budget_usd=100.0,
+        )
+        gw = ModelGateway(profiles=[profile], provider_registry=reg)
+
+        request = httpx.Request("POST", "https://provider.invalid/v1/chat")
+        response = httpx.Response(429, request=request)
+        exc_429 = httpx.HTTPStatusError("429", request=request, response=response)
+
+        from unittest.mock import MagicMock
+        FakeChatModel = MagicMock()
+        fake_instance = MagicMock()
+        fake_instance.invoke.side_effect = exc_429
+        FakeChatModel.return_value = fake_instance
+
+        slept: list[float] = []
+
+        def _fake_sleep(s: float) -> None:
+            slept.append(s)
+
+        import time as _time_mod
+        with (
+            patch.object(reg, "is_installed", return_value=True),
+            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
+            patch.object(_time_mod, "sleep", side_effect=_fake_sleep),contextlib.suppress(Exception)
+        ):
+            gw.call_model_with_retry(
+                "retry_cap2",
+                [{"role": "user", "content": "hi"}],
+                max_retries=3,
+            )
+
+        total_slept = sum(slept)
+        # Hard cap: never exceed 300s regardless of per-attempt amounts.
+        assert total_slept <= 300.0 + 1e-6, (
+            f"total sleep {total_slept:.1f}s exceeded cap; individual: {slept}"
+        )
+        # At least one sleep must have been truncated: if any individual sleep
+        # after the cap was exceeded was nonzero it was supposed to be skipped.
+        # Verify the invariant: once cumulative > 300, all subsequent are 0.
+        running = 0.0
+        for s in slept:
+            if running >= 300.0:
+                assert s == 0.0 or s <= 300.0 - (running - s), (
+                    f"sleep of {s}s issued after cap already at {running:.1f}s"
+                )
+            running += s

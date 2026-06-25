@@ -48,6 +48,34 @@ PROTECTED_PATH_MARKERS: tuple[str, ...] = (
     "fs_write_policy",
     "enforce-",
     "permissions",
+    # CI/build surface — rewriting these could exfiltrate build-runner secrets
+    # or silently disable guardrails. Path comparison is already lowercased in
+    # _first_protected(), so these lowercase markers match case-insensitively.
+    ".github",
+    "/workflows/",
+    "pyproject.toml",
+    "makefile",
+    "alembic",
+    "/migrations/",
+    "setup.cfg",
+    "tox.ini",
+    ".pre-commit",
+    "dockerfile",
+)
+
+# Bare-word markers that must match a whole PATH SEGMENT (or exact basename),
+# not an arbitrary substring.  This prevents ``alembic`` from blocking
+# ``src/alembic_runner.py``, ``makefile`` from blocking
+# ``utils/makefile_parser.py``, and ``dockerfile`` from blocking
+# ``src/dockerfile_parser.py``.
+#
+# A marker listed here is matched when:
+#   • it equals any individual segment of the lowercased, normalised path, OR
+#   • it equals the lowercased basename (covers ``Makefile`` at repo root).
+#
+# All other PROTECTED_PATH_MARKERS continue to be matched as substrings.
+_SEGMENT_EXACT_MARKERS: frozenset[str] = frozenset(
+    {"alembic", "makefile", "dockerfile"}
 )
 
 # Kinds whose change content is validated as YAML and then written in place.
@@ -103,7 +131,21 @@ class ApplyResult:
 
 
 def _first_protected(target_paths: list[str]) -> str | None:
-    """Return the first target path matching the deny-list, else ``None``."""
+    """Return the first target path matching the deny-list, else ``None``.
+
+    Matching is **two-tier** to prevent over-blocking:
+
+    * **Segment-exact markers** (``_SEGMENT_EXACT_MARKERS``): bare words like
+      ``alembic``, ``makefile``, ``dockerfile`` that would falsely match
+      ``alembic_runner.py`` or ``makefile_parser.py`` if treated as substrings.
+      These are matched only when the marker equals an individual path segment or
+      the exact basename (case-insensitive).
+
+    * **Substring markers** (all other ``PROTECTED_PATH_MARKERS``): anchored by
+      leading/trailing ``/`` or a leading ``.`` (e.g. ``/workflows/``,
+      ``.github``, ``pyproject.toml``), so substring matching is safe and
+      intentional for them.
+    """
     for path in target_paths:
         normalised = os.path.normpath(urllib.parse.unquote(path))
         lowered = normalised.lower()
@@ -112,9 +154,26 @@ def _first_protected(target_paths: list[str]) -> str | None:
             resolved_lowered = Path(path).resolve().as_posix().lower()
         except Exception:
             resolved_lowered = lowered
+
+        # Pre-compute segments for segment-exact matching (split on both / and \).
+        lowered_segments = set(lowered.replace("\\", "/").split("/"))
+        resolved_segments = set(resolved_lowered.split("/"))
+        basename_lowered = Path(lowered).name
+
         for marker in PROTECTED_PATH_MARKERS:
-            if marker in lowered or marker in resolved_lowered:
-                return path
+            if marker in _SEGMENT_EXACT_MARKERS:
+                # Match only as a whole path segment or exact basename.
+                if (
+                    marker in lowered_segments
+                    or marker in resolved_segments
+                    or marker == basename_lowered
+                ):
+                    return path
+            else:
+                # Substring match (safe: marker is slash-anchored or has a
+                # leading dot, making false positives structurally impossible).
+                if marker in lowered or marker in resolved_lowered:
+                    return path
     return None
 
 

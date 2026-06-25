@@ -472,6 +472,30 @@ def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
         logger.error("EventLoop task exited unexpectedly without exception")
 
 
+def _check_degraded(app: FastAPI) -> Any:
+    """Return a 503 JSONResponse when the daemon lifespan failed, else None.
+
+    Mutating handlers (dispatch, self-update, spend/configure) must call this
+    at entry and short-circuit when enforcement infrastructure is inert:
+
+        resp = _check_degraded(app)
+        if resp is not None:
+            return resp
+
+    Read-only handlers and probes (/healthz, /readyz) are intentionally exempt
+    — they must keep serving so operators can observe the degraded state.
+    """
+    degraded = getattr(app.state, "_degraded", None)
+    if not degraded:
+        return None
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=503,
+        content={"error": "degraded", "reason": str(degraded)[:200]},
+    )
+
+
 def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
     """Construct a PipelineController bound to real daemon subsystems (#77).
 
@@ -1154,7 +1178,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 profile_id = "default"
                 budget_manager = getattr(app.state, "_budget_manager", None)
                 if budget_manager is not None:
-                    daily = budget_manager.check_daily_budget(_projected_cost_usd)
+                    daily = budget_manager.check_daily_budget_reserved(
+                        task.task_id, _projected_cost_usd
+                    )
                     if not daily.get("allowed", True):
                         logger.warning(
                             "Gateway executor deferred for %s: daily budget exhausted",
@@ -1169,6 +1195,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                             "Gateway executor deferred for %s: per-todo budget exhausted",
                             task.task_id,
                         )
+                        # Release the daily reservation made above so a deferred
+                        # call does not leak held budget.
+                        budget_manager.release_reservation(task.task_id)
                         return "deferred:budget_exhausted"
                 try:
                     result = await asyncio.to_thread(
@@ -1184,6 +1213,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     return result.content
                 except Exception as exc:
                     logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
+                    # The call never produced a cost, so release both reservations
+                    # instead of leaking the held projected budget.
+                    if budget_manager is not None:
+                        budget_manager.release_reservation(task.task_id)
                     return f"Error: {exc}"
 
             dispatcher_executor = make_spend_guarded_executor(
@@ -1525,6 +1558,18 @@ def create_daemon_app(
 
                     app.state._stats_responses += 1
                     return JSONResponse(status_code=401, content={"error": "unauthorized"})
+        # When the daemon failed its lifespan init it runs _degraded: spend /
+        # budget / dispatch enforcement infrastructure is inert. Mutating calls
+        # to the dispatch + self-update + spend-configure surface must fail
+        # closed (503) rather than silently bypass enforcement. Read-only calls
+        # and probes still serve so operators can observe the degraded state.
+        if method.upper() not in _SAFE_METHODS:
+            _DEGRADED_GUARDED_PREFIXES = ("/api/dispatch", "/admin/self-update", "/api/spend")
+            if path.startswith(_DEGRADED_GUARDED_PREFIXES):
+                degraded_resp = _check_degraded(app)
+                if degraded_resp is not None:
+                    app.state._stats_responses += 1
+                    return degraded_resp
         response = await call_next(request)
         app.state._stats_responses += 1
         elapsed = time.monotonic() - start

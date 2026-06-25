@@ -7,7 +7,11 @@ from typing import Any
 from fastapi import FastAPI, HTTPException
 
 from general_ludd.config.binary_paths import BinaryPathResolver
-from general_ludd.integrity.scanner import FileIntegrityScanner, sign_change_openbao
+from general_ludd.integrity.scanner import (
+    FileIntegrityScanner,
+    IntegrityKeyError,
+    sign_change_openbao,
+)
 from general_ludd.security.sanitize import is_path_within
 from general_ludd.validation.gap_analyzer import GapAnalyzer
 from general_ludd.validation.log_auditor import LogAuditor
@@ -89,16 +93,77 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # caller can sign/exfiltrate arbitrary files (e.g. /etc/passwd).
         raw_path = req.get("path", "")
         (path,) = _confine_scan_paths(app, [raw_path]) if raw_path else ("",)
-        result = sign_change_openbao(
-            path=path,
-            signer=req.get("signer", "admin"),
-            reason=req.get("reason", ""),
+
+        # HASH-BIND: look up the pending change for this path and verify that
+        # the caller-supplied hashes match what was scanned.  An approval whose
+        # hashes don't match a real scanned change is rejected so that an
+        # approval cannot be replayed against a tampered version of the file.
+        req_old_hash: str | None = req.get("old_hash")
+        req_new_hash: str | None = req.get("new_hash")
+
+        # Find the pending change record for this path (unapproved).
+        matched_change = next(
+            (
+                c for c in _integrity_changes
+                if c.get("file") == path and not c.get("approved", False)
+            ),
+            None,
         )
+        if matched_change is not None:
+            # If hashes are provided in the request, they must match the scan.
+            # If the caller omits them, pull from the scanned record so the
+            # signature still covers the real hashes.
+            if req_old_hash is not None and req_old_hash != matched_change.get("old_hash"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"old_hash mismatch for {path!r}: "
+                        f"request={req_old_hash!r} scan={matched_change.get('old_hash')!r}"
+                    ),
+                )
+            if req_new_hash is not None and req_new_hash != matched_change.get("new_hash"):
+                raise HTTPException(
+                    status_code=422,
+                    detail=(
+                        f"new_hash mismatch for {path!r}: "
+                        f"request={req_new_hash!r} scan={matched_change.get('new_hash')!r}"
+                    ),
+                )
+            sign_old_hash = matched_change.get("old_hash")
+            sign_new_hash = matched_change.get("new_hash")
+        else:
+            # No pending scanned change found — use caller-supplied hashes (may
+            # be None if caller doesn't know them; the signature will cover
+            # "None" strings, which is intentional and detectable on verify).
+            sign_old_hash = req_old_hash
+            sign_new_hash = req_new_hash
+
+        try:
+            result = sign_change_openbao(
+                path=path,
+                signer=req.get("signer", "admin"),
+                reason=req.get("reason", ""),
+                old_hash=sign_old_hash,
+                new_hash=sign_new_hash,
+            )
+        except IntegrityKeyError as exc:
+            raise HTTPException(
+                status_code=503,
+                detail=f"integrity signing unavailable: {exc}",
+            ) from exc
+
+        # Mark the change as approved in the pending-changes list.
+        if matched_change is not None:
+            matched_change["approved"] = True
+            matched_change["signature"] = result.get("signature")
+
         _integrity_log.append({
             "action": "approved",
             "path": path,
             "reason": req.get("reason"),
             "signer": req.get("signer"),
+            "old_hash": sign_old_hash,
+            "new_hash": sign_new_hash,
             "timestamp": result.get("timestamp"),
             "signature": result.get("signature"),
         })

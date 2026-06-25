@@ -14,7 +14,6 @@ import json
 import logging
 import os
 import re
-import secrets
 import threading
 import time
 from dataclasses import asdict, dataclass
@@ -35,6 +34,20 @@ logger = logging.getLogger(__name__)
 _INTEGRITY_KEY: str | None = None
 
 
+class IntegrityKeyError(RuntimeError):
+    """Raised when GL_INTEGRITY_KEY is absent and signing is attempted.
+
+    Fail-closed: a random ephemeral key silently makes cross-process
+    verification impossible (approve on process A, verify on process B → always
+    fails).  We surface the misconfiguration early rather than letting bad
+    signatures through.
+
+    Resolution: set ``GL_INTEGRITY_KEY`` to a stable secret before starting the
+    daemon.  The signing endpoints (/admin/integrity/approve) return HTTP 503
+    until the key is provisioned.
+    """
+
+
 def _get_integrity_key() -> str:
     global _INTEGRITY_KEY
     if _INTEGRITY_KEY is not None:
@@ -43,13 +56,12 @@ def _get_integrity_key() -> str:
     if key:
         _INTEGRITY_KEY = key
         return key
-    _INTEGRITY_KEY = secrets.token_hex(32)
-    logger.warning(
-        "GL_INTEGRITY_KEY not set — using random per-process key. "
-        "Signatures will not survive restarts. Set GL_INTEGRITY_KEY for "
-        "persistent integrity verification."
+    raise IntegrityKeyError(
+        "GL_INTEGRITY_KEY is not set. "
+        "Set this environment variable to a stable secret before starting the "
+        "integrity service. Refusing to sign with an ephemeral key because "
+        "cross-process verification would always fail (fail-open)."
     )
-    return _INTEGRITY_KEY
 
 
 @dataclass
@@ -103,7 +115,28 @@ class FileIntegrityScanner:
             current = current.parent
         return False
 
-    def scan(self, watch_paths: list[str], exclude_patterns: list[str] | None = None) -> dict[str, Any]:
+    def scan(
+        self,
+        watch_paths: list[str],
+        exclude_patterns: list[str] | None = None,
+        skip_vc_controlled: bool = False,
+    ) -> dict[str, Any]:
+        """Scan *watch_paths* and return a change-detection report.
+
+        Args:
+            watch_paths: Directories to walk and hash.
+            exclude_patterns: Regex strings; any file whose path matches is
+                skipped.  The ``.git/`` / ``.svn/`` metadata directories are
+                always excluded via these patterns — callers should include
+                ``r'[\\/]\\.git[\\/]'`` (or the default patterns) to avoid
+                hashing VCS internals.
+            skip_vc_controlled: When *True*, also skip every file that lives
+                anywhere inside a version-controlled working tree (i.e. any
+                ancestor directory contains a ``.git`` or ``.svn`` entry).
+                **Defaults to False** so that tracked source files are hashed
+                by default — the monitor would otherwise be blind to tampering
+                of all files in a git repository.
+        """
         exclude = [re.compile(p) for p in (exclude_patterns or [])]
         old_hashes = self._load_hashes()
         new_hashes: dict[str, str] = {}
@@ -119,7 +152,7 @@ class FileIntegrityScanner:
                     fp = os.path.join(dirpath, fn)
                     if any(e.search(fp) for e in exclude):
                         continue
-                    if self._is_vc_controlled(fp):
+                    if skip_vc_controlled and self._is_vc_controlled(fp):
                         continue
                     new_hash = self._hash_file(fp)
                     if new_hash:
@@ -265,31 +298,76 @@ def verify_signature(signed: dict[str, Any]) -> bool:
         signed.get("detected_at", ""),
     ]
     payload = "|".join(str(p) for p in parts)
-    key = _get_integrity_key()
+    # Mirror verify_openbao_signature: a missing key means we cannot verify, so
+    # return False (tamper-equivalent) rather than raising. GL_INTEGRITY_KEY must
+    # be provisioned for a meaningful verify.
+    try:
+        key = _get_integrity_key()
+    except IntegrityKeyError:
+        return False
     expected = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     return signed.get("signature") == expected
 
 
 def sign_change_openbao(
-    path: str, signer: str, reason: str, secrets_resolver: Any | None = None
+    path: str,
+    signer: str,
+    reason: str,
+    old_hash: str | None = None,
+    new_hash: str | None = None,
+    secrets_resolver: Any | None = None,
 ) -> dict[str, Any]:
-    payload = f"{path}|{signer}|{reason}|{time.time()}"
+    """Sign an integrity approval; hashes are included in the HMAC payload.
+
+    ``old_hash`` and ``new_hash`` bind the signature to the specific scanned
+    change so that the approval cannot be replayed against a different version
+    of the file.  Both must match the values recorded during the scan; the
+    router is responsible for enforcing that match before calling this function.
+    """
+    ts = time.strftime("%Y-%m-%dT%H:%M:%S")
+    payload = "|".join([path, signer, reason, str(old_hash), str(new_hash), ts])
     key = _get_integrity_key()
     sig = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
     result: dict[str, Any] = {
         "path": path,
         "signer": signer,
         "reason": reason,
-        "timestamp": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "old_hash": old_hash,
+        "new_hash": new_hash,
+        "timestamp": ts,
         "signature": sig,
         "backend": "openbao" if secrets_resolver else "local-hmac",
     }
     if secrets_resolver and hasattr(secrets_resolver, "write_secret"):
         try:
             secrets_resolver.write_secret(
-                f"integrity/{path.replace('/', '_')}", {"signature": sig, "reason": reason}
+                f"integrity/{path.replace('/', '_')}",
+                {"signature": sig, "reason": reason, "old_hash": old_hash, "new_hash": new_hash},
             )
             result["backend"] = "openbao"
         except Exception:
             result["backend"] = "openbao-unavailable-fallback-hmac"
     return result
+
+
+def verify_openbao_signature(signed: dict[str, Any]) -> bool:
+    """Verify a signature produced by :func:`sign_change_openbao`.
+
+    Returns ``False`` (not an exception) on any mismatch so callers can
+    distinguish tamper-detected from signing errors.
+    """
+    parts = [
+        signed.get("path", ""),
+        signed.get("signer", ""),
+        signed.get("reason", ""),
+        str(signed.get("old_hash")),
+        str(signed.get("new_hash")),
+        signed.get("timestamp", ""),
+    ]
+    payload = "|".join(parts)
+    try:
+        key = _get_integrity_key()
+    except IntegrityKeyError:
+        return False
+    expected = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
+    return signed.get("signature") == expected

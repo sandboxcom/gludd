@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, field_serializer, field_validator
 
 
 class OpenBaoConfig(BaseModel):
@@ -10,7 +10,7 @@ class OpenBaoConfig(BaseModel):
     backend: str = Field(default="openbao", pattern="^(openbao|vault)$")
     binary_path: str | None = None
     external_url: str | None = None
-    external_token: str | None = None
+    external_token: str | None = Field(default=None, repr=False)
     # Security: TLS verification for the external OpenBao client. True (default)
     # verifies against the system CA bundle; a str is treated as a path to a CA
     # bundle / cert. Disabling (False) is permitted but discouraged.
@@ -23,6 +23,10 @@ class OpenBaoConfig(BaseModel):
     approle_role_name: str = "agentic-harness"
     weekly_image_update_scan: bool = True
     weekly_image_update_creates_manual_hold: bool = True
+
+    @field_serializer("external_token")
+    def _mask_external_token(self, v: str | None) -> str | None:
+        return None if v is None else "**REDACTED**"
 
     @field_validator("kv_mount", "auth_method", mode="before")
     @classmethod

@@ -220,11 +220,14 @@ class ModelHealthTracker:
         self.__total: dict[str, int] = {}
         self.__last_failure: dict[str, TimeoutEvent] = {}
         self.__history: dict[str, list[TimeoutEvent]] = {}
-        # Single-flight half-open probe bookkeeping: model_ids for which a probe
-        # has been admitted in the current cooldown window. Cleared on
-        # record_success (probe succeeded) or record_event (probe re-armed the
-        # breaker). Guarded by __lock like every other mutable field.
-        self.__probe_in_flight: set[str] = set()
+        # Single-flight half-open probe bookkeeping: maps model_id → monotonic
+        # admission timestamp for probes admitted in the current cooldown window.
+        # Cleared on record_success (probe succeeded) or record_event (probe
+        # re-armed the breaker). Storing the timestamp instead of a bare set
+        # lets is_healthy() auto-expire a leaked slot (caller raised before
+        # record_event/record_success) after one cooldown window, preventing
+        # the breaker from wedging permanently open. Guarded by __lock.
+        self.__probe_in_flight: dict[str, float] = {}
         # RLock (re-entrant) so internal helpers that re-acquire the lock — and
         # get_health(), which calls is_healthy() — do not self-deadlock.
         self.__lock = threading.RLock()
@@ -275,12 +278,12 @@ class ModelHealthTracker:
             # failed probe, clearing the flag re-opens the breaker so a future
             # cooldown can admit a fresh probe (rather than the model being
             # stuck either permanently open or permanently probe-claimed).
-            self.__probe_in_flight.discard(mid)
+            self.__probe_in_flight.pop(mid, None)
 
     def record_success(self, model_id: str) -> None:
         with self.__lock:
             self._consecutive[model_id] = 0
-            self.__probe_in_flight.discard(model_id)
+            self.__probe_in_flight.pop(model_id, None)
 
     def is_healthy(self, model_id: str, *, admit_probe: bool = True) -> bool:
         # The whole body is locked so the check-and-reset is atomic: previously
@@ -320,10 +323,22 @@ class ModelHealthTracker:
                         # A pure status poll: report "would admit a probe" as
                         # healthy without consuming the slot.
                         return True
+                    # Expire leaked probe slots: if the caller raised before
+                    # record_event/record_success the slot was never cleared.
+                    # Any slot older than the cooldown window is stale — drop
+                    # it now so the breaker can admit a fresh probe.
+                    _now = time.monotonic()
+                    stale = [
+                        mid
+                        for mid, ts in self.__probe_in_flight.items()
+                        if _now - ts >= self._cooldown_seconds
+                    ]
+                    for mid in stale:
+                        del self.__probe_in_flight[mid]
                     if model_id in self.__probe_in_flight:
                         # Another caller already holds this window's probe slot.
                         return False
-                    self.__probe_in_flight.add(model_id)
+                    self.__probe_in_flight[model_id] = _now
                     return True
 
             return False

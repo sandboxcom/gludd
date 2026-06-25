@@ -14,6 +14,74 @@ We will respond within 72 hours and aim to release a fix within 14 days.
 Only the latest release is supported for security fixes.
 Prereleases (`v0.1.0-alpha-*`) receive best-effort support.
 
+## Operator Security Requirements
+
+### `GLUDD_PSK` — pre-shared key (required in production)
+
+The daemon uses a PSK for Bearer-token auth on all non-public paths.
+
+- **Unset (default):** daemon starts **fail-closed**. Every request to a
+  non-public path returns `503 {"error":"auth_required"}`. A loud `SECURITY:`
+  warning is emitted at startup.
+- **Set:** callers must send `Authorization: Bearer <GLUDD_PSK>` on every
+  non-public request. Comparison is constant-time (`hmac.compare_digest`).
+- **`GLUDD_ALLOW_NO_AUTH=1`:** disables fail-closed for **development only** —
+  the entire `/admin` surface becomes open to any caller. Never set in
+  production. `GLUDD_REQUIRE_AUTH=1` overrides it (fail-closed always wins).
+
+*Verified: `src/general_ludd/daemon.py` lines 1458–1541.*
+
+### `GL_INTEGRITY_KEY` — integrity signing key (required for integrity features)
+
+Used to HMAC-sign file-change records. If unset, `_get_integrity_key()` raises
+`IntegrityKeyError` (fail-closed — no ephemeral fallback). The
+`/admin/integrity/approve` endpoint returns **503** until the key is
+provisioned. Provision a stable secret before starting the daemon if integrity
+signing is needed.
+
+*Verified: `src/general_ludd/integrity/scanner.py` lines 51–64.*
+
+### `allowed_cidr` — compute inference-port restriction
+
+`ComputeConfig.allowed_cidr` controls which source addresses can reach the
+inference port on provisioned VMs. It is applied as an AWS security-group rule,
+GCP firewall rule, and Azure NSG `source_address_prefix`.
+
+**Default: `"0.0.0.0/0"` (world-open).** Set this to the narrowest CIDR for
+your deployment before provisioning any VM.
+
+*Verified: `src/general_ludd/infra/compute.py` line 68;
+`src/general_ludd/infra/terraform.py` lines 199, 300, 365.*
+
+### Ansible playbook env-scrub
+
+`AnsibleCoreRunner` passes only an explicit allowlist of env vars to playbook
+subprocesses. Secrets — `ZAI_API_KEY`, `GLUDD_PSK`, `AWS_*`, `OPENAI_*`,
+`DATABASE_URL`, and anything else not on the list — are stripped before
+`pb_exec.run()`. `GLUDD_PLAYBOOK_TIMEOUT` (default 300 s) passes through so
+operators can tune timeouts without leaking credentials.
+
+*Verified: `src/general_ludd/ansible/core_runner.py` lines 437–484
+(`_PLAYBOOK_ENV_ALLOWLIST`).*
+
+### `/admin/*` route gating
+
+All `/admin/*` paths are gated by the PSK middleware. Safe read-only methods
+(`GET`/`HEAD`/`OPTIONS`) on a small explicit public set (`/healthz`, `/readyz`,
+`/api/status`, `/docs`, `/openapi.json`, `/redoc`) are exempt; `/admin/*` is
+never on that list. When no PSK is configured the middleware returns 503
+(fail-closed) for any non-public path.
+
+*Verified: `src/general_ludd/daemon.py` lines 1499–1541.*
+
+### Cosign private-key file permissions
+
+`generate_cosign_key()` writes `cosign.key` via `os.open(..., 0o600)` —
+owner-read/write only. No world- or group-readable private key files are
+written to disk.
+
+*Verified: `src/general_ludd/secrets/cosign.py` line 101.*
+
 ## Secrets Management
 
 - All secrets must be stored via OpenBao or environment variables.

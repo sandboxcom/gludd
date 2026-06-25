@@ -130,11 +130,11 @@ class AnsibleRunnerAdapter:
         except ValueError as exc:
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
         _pdd = private_data_dir or self.private_data_dir
-        saved_env: dict[str, str | None] = {}
-        if env:
-            for key, val in env.items():
-                saved_env[key] = os.environ.get(key)
-                os.environ[key] = val
+        # HIGH (global env mutation): do NOT mutate os.environ. Pass caller-
+        # supplied env overrides as extra_env to core_runner, which merges them
+        # into the scrubbed allowlist env immediately before pb_exec.run() and
+        # restores os.environ unconditionally in a finally block. This keeps the
+        # gludd process env pristine across concurrent playbook invocations.
         try:
             # Network-exposed path: ALWAYS bound the run with a FINITE timeout so
             # a runaway/sleeping playbook can never hang the worker. When the
@@ -148,17 +148,12 @@ class AnsibleRunnerAdapter:
                 playbook_path=playbook_path,
                 extravars=extravars or {},
                 timeout=effective_timeout,
+                extra_env=env or None,
             )
             return result.model_dump()
         except Exception as exc:
             logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
-        finally:
-            for key, orig in saved_env.items():
-                if orig is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = orig
 
     def refresh_playbooks(self) -> dict[str, Any]:
         if self._playbooks_dir:

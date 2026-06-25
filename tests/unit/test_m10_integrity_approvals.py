@@ -24,13 +24,22 @@ class TestM10IntegrityKey:
             assert key1 == key2
             assert key1 == "test-key-123"
 
-    def test_key_without_env_generates_random(self):
+    def test_key_without_env_raises_integrity_key_error(self):
+        """Missing GL_INTEGRITY_KEY must raise IntegrityKeyError (fail-closed).
+
+        The old behavior minted a random ephemeral key, making cross-process
+        verification always fail silently.  The new behavior surfaces the
+        misconfiguration immediately so operators can provision the key.
+        """
+        import pytest
+
+        from general_ludd.integrity.scanner import IntegrityKeyError
+
         with patch.dict(os.environ, {}, clear=True):
             import general_ludd.integrity.scanner as mod
             mod._INTEGRITY_KEY = None
-            key = mod._get_integrity_key()
-            assert len(key) == 64
-            assert key != "test-key-123"
+            with pytest.raises(IntegrityKeyError):
+                mod._get_integrity_key()
 
 
 class TestM10IntegritySigning:

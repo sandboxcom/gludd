@@ -116,6 +116,17 @@ def test_yaml_kinds_are_applied(kind: str) -> None:
         "collections/.../module_utils/fs_write_policy.py",
         ".opencode/plugin/enforce-anything.ts",
         "config/permissions.yml",
+        # CI/build surface — must never be rewritten via self-update
+        ".github/workflows/release.yml",
+        ".github/workflows/build.yml",
+        "pyproject.toml",
+        "Makefile",
+        "alembic.ini",
+        "db/migrations/001_init.sql",
+        "Dockerfile",
+        "setup.cfg",
+        "tox.ini",
+        ".pre-commit-config.yaml",
     ],
 )
 def test_protected_path_is_denied_and_not_written(protected: str) -> None:
@@ -164,6 +175,17 @@ def test_protected_markers_constant_is_nonempty_and_covers_required_terms() -> N
         "fs_write_policy",
         "enforce-",
         "permissions",
+        # CI/build surface added to prevent secret exfiltration via workflow rewrites
+        ".github",
+        "/workflows/",
+        "pyproject.toml",
+        "makefile",
+        "alembic",
+        "/migrations/",
+        "setup.cfg",
+        "tox.ini",
+        ".pre-commit",
+        "dockerfile",
     }
     assert required.issubset(set(PROTECTED_PATH_MARKERS))
 
@@ -378,3 +400,139 @@ def test_path_inside_root_still_applied(tmp_path: Path) -> None:
 
     assert result.status == "applied"
     assert writer.writes == [("config/ok.yml", "a: 1\n")]
+
+
+# --- CI/build path protection regression (secret-exfiltration vector) --------
+
+
+@pytest.mark.parametrize(
+    "ci_path",
+    [
+        ".github/workflows/release.yml",
+        ".github/workflows/build.yml",
+        "pyproject.toml",
+        "Makefile",
+        "alembic.ini",
+        "db/migrations/001_init.sql",
+        "Dockerfile",
+    ],
+)
+def test_ci_build_paths_are_denied_regardless_of_capability(
+    tmp_path: Path, ci_path: str
+) -> None:
+    """Regression: CI/build paths must be hard-denied even when capability is granted.
+
+    Rewriting .github/workflows/* would allow exfiltrating build-runner secrets;
+    rewriting pyproject.toml/Makefile/alembic would subvert the build and migration
+    surface. The protected-path check must block these regardless of capability.
+    """
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=[ci_path],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "denied", (
+        f"Expected 'denied' for protected CI/build path {ci_path!r}, "
+        f"got {result.status!r} — evidence: {result.evidence}"
+    )
+    assert writer.writes == [], "SafeWriter must not be called for protected paths"
+    assert "protected path" in result.evidence, (
+        f"Evidence must cite 'protected path'; got: {result.evidence!r}"
+    )
+
+
+# --- segment-exact marker regression: alembic/makefile/dockerfile ------------
+
+
+@pytest.mark.parametrize(
+    "allowed_path",
+    [
+        "src/alembic_runner.py",
+        "utils/makefile_parser.py",
+        "src/dockerfile_parser.py",
+        "lib/alembic_helpers.py",
+        "tools/makefile_utils.py",
+        "build/dockerfile_linter.py",
+    ],
+)
+def test_segment_exact_false_positives_are_allowed(
+    tmp_path: Path, allowed_path: str
+) -> None:
+    """Regression: bare-word markers (alembic/makefile/dockerfile) must NOT
+    block files that merely contain the marker as a substring in their name
+    (e.g. alembic_runner.py, makefile_parser.py, dockerfile_parser.py).
+    """
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=[allowed_path],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "applied", (
+        f"Expected 'applied' for non-protected path {allowed_path!r}, "
+        f"got {result.status!r} — evidence: {result.evidence}"
+    )
+    assert writer.writes == [(allowed_path, "a: 1\n")]
+
+
+@pytest.mark.parametrize(
+    "blocked_path",
+    [
+        # alembic as a directory segment or exact file
+        "alembic/versions/0001_init.py",
+        "alembic/env.py",
+        "alembic.ini",
+        # makefile as exact basename (various cases)
+        "Makefile",
+        "makefile",
+        "MAKEFILE",
+        "build/Makefile",
+        # dockerfile as exact basename (various cases)
+        "Dockerfile",
+        "dockerfile",
+        "DOCKERFILE",
+        "docker/Dockerfile",
+    ],
+)
+def test_segment_exact_true_positives_are_blocked(
+    tmp_path: Path, blocked_path: str
+) -> None:
+    """Regression: alembic dir/ini, Makefile basename, Dockerfile basename must
+    all still be hard-denied by the segment-exact check.
+    """
+    writer = _FakeWriter()
+    applier = UpdateApplier(
+        writer=writer,
+        capability_checker=_FixedChecker({"config_self_modify"}),
+        workspace_root=tmp_path,
+    )
+    plan = _Plan(
+        kind="config",
+        capability_required="config_self_modify",
+        target_paths=[blocked_path],
+    )
+
+    result = applier.apply(plan, "a: 1\n")
+
+    assert result.status == "denied", (
+        f"Expected 'denied' for protected path {blocked_path!r}, "
+        f"got {result.status!r} — evidence: {result.evidence}"
+    )
+    assert writer.writes == []

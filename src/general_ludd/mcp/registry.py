@@ -1,8 +1,15 @@
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from pydantic import BaseModel, Field, field_validator
+
+# Tool names are used as the right-hand component of a "server_id/tool_name"
+# routing key.  A name containing '/' would corrupt the split and allow one
+# server to shadow another server's tools.  Whitespace-only names survive the
+# outer strip but are still semantically empty.  Reject all three up-front.
+_TOOL_NAME_RE = re.compile(r"^[A-Za-z0-9_.:-]+$")
 
 
 class MCPTool(BaseModel):
@@ -17,7 +24,12 @@ class MCPTool(BaseModel):
         if isinstance(v, str):
             v = v.strip()
         if not v:
-            raise ValueError("name must not be empty")
+            raise ValueError("tool name must not be empty")
+        if not _TOOL_NAME_RE.match(v):
+            raise ValueError(
+                f"invalid tool name {v!r}: must match ^[A-Za-z0-9_.:-]+$ "
+                "(slash, whitespace, and other special characters are not allowed)"
+            )
         return v
 
 

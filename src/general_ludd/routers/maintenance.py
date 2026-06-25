@@ -9,9 +9,17 @@ Surfaces three read/check capabilities over the daemon API:
 from __future__ import annotations
 
 import os
+import re
 from typing import Any
 
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
+
+# Regex for safe GitHub owner/repo names (alphanum, hyphens, underscores, dots).
+_SAFE_SLUG = re.compile(r"^[A-Za-z0-9_.\-]{1,100}$")
+# Labels may also contain colons and slashes (e.g. "area/bug") but keep it tight.
+_SAFE_LABEL = re.compile(r"^[A-Za-z0-9_.\-:/]{1,100}$")
+# Maximum number of distinct (owner/repo#label) keys held in memory per daemon.
+_MAX_SEEN_KEYS = 256
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -55,6 +63,24 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         owner = str(payload.get("owner", ""))
         repo = str(payload.get("repo", ""))
         label = str(payload.get("label", "gludd"))
+
+        # Validate input format before touching shared state.
+        if not _SAFE_SLUG.match(owner):
+            raise HTTPException(
+                status_code=422,
+                detail="owner must be 1-100 chars of [A-Za-z0-9_.-]",
+            )
+        if not _SAFE_SLUG.match(repo):
+            raise HTTPException(
+                status_code=422,
+                detail="repo must be 1-100 chars of [A-Za-z0-9_.-]",
+            )
+        if not _SAFE_LABEL.match(label):
+            raise HTTPException(
+                status_code=422,
+                detail="label must be 1-100 chars of [A-Za-z0-9_.:-/]",
+            )
+
         # Dedup must survive across requests: a fresh ingestor is built per
         # request, so its per-instance _seen_ids would always be empty and
         # every poll would re-emit all issues. Persist a per-(owner/repo/label)
@@ -62,7 +88,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         store: dict[str, set[int | str]] = _daemon_state.setdefault(
             "issue_ingestor_seen_ids", {}
         )
-        seen = store.setdefault(f"{owner}/{repo}#{label}", set())
+        key = f"{owner}/{repo}#{label}"
+        if key not in store and len(store) >= _MAX_SEEN_KEYS:
+            raise HTTPException(
+                status_code=429,
+                detail=(
+                    f"Too many distinct owner/repo/label combinations tracked "
+                    f"(limit {_MAX_SEEN_KEYS}). Remove stale entries or reuse existing keys."
+                ),
+            )
+        seen = store.setdefault(key, set())
 
         ingestor = GitHubIssueIngestor(
             owner=owner,

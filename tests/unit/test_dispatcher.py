@@ -1,15 +1,17 @@
 """Unit tests for AgentDispatcher F3 security fixes:
 - disabled agent rejection
-- invoker permission enforcement (raises PermissionError)
+- invoker permission enforcement (returns status='failed' result, does NOT raise)
 - back-compat when invoker=None
 - permitted invoker succeeds
+
+NOTE: the can_invoke denial flows through the same AgentTaskResult contract as the
+not-found/disabled branches (dispatch_one returns a failed result rather than raising)
+so that dispatch_many's gather and every caller receives a result, not an exception.
 """
 
 from __future__ import annotations
 
 import asyncio
-
-import pytest
 
 from general_ludd.agents.dispatcher import AgentDispatcher, AgentTask
 from general_ludd.agents.registry import AgentRegistry
@@ -87,7 +89,8 @@ class TestDispatchDisabledAgent:
 
 class TestDispatchUnpermittedInvoker:
     def test_dispatch_unpermitted_invoker_no_flag(self) -> None:
-        """Invoker with can_dispatch_subagents=False must raise PermissionError."""
+        """Invoker with can_dispatch_subagents=False is denied: status='failed',
+        'permission denied' in output (no exception raised)."""
         registry = _make_registry()
         registry.register(_invoker_config("caller", can_dispatch=False, allowed=[]))
         registry.register(_subagent_config("target"))
@@ -100,11 +103,16 @@ class TestDispatchUnpermittedInvoker:
             prompt="run it",
             invoker_name="caller",
         )
-        with pytest.raises(PermissionError):
-            _run(dispatcher.dispatch_one(task))
+        result = _run(dispatcher.dispatch_one(task))
+
+        assert result.status == "failed", f"Expected failed, got {result.status!r}"
+        assert "permission denied" in result.output.lower(), (
+            f"Expected 'permission denied' in output, got: {result.output!r}"
+        )
 
     def test_dispatch_unpermitted_invoker_wrong_target(self) -> None:
-        """Invoker with can_dispatch=True but target not in allowed_subagents must raise."""
+        """Invoker with can_dispatch=True but target not in allowed_subagents is
+        denied: status='failed', 'permission denied' in output (no raise)."""
         registry = _make_registry()
         registry.register(_invoker_config("caller", can_dispatch=True, allowed=["other_sub"]))
         registry.register(_subagent_config("target"))
@@ -117,11 +125,15 @@ class TestDispatchUnpermittedInvoker:
             prompt="run it",
             invoker_name="caller",
         )
-        with pytest.raises(PermissionError):
-            _run(dispatcher.dispatch_one(task))
+        result = _run(dispatcher.dispatch_one(task))
 
-    def test_permission_error_message_names_invoker_and_target(self) -> None:
-        """PermissionError message must name both the invoker and the target agent."""
+        assert result.status == "failed", f"Expected failed, got {result.status!r}"
+        assert "permission denied" in result.output.lower(), (
+            f"Expected 'permission denied' in output, got: {result.output!r}"
+        )
+
+    def test_permission_denied_message_names_invoker_and_target(self) -> None:
+        """The denial message (in result.output) must name both invoker and target."""
         registry = _make_registry()
         registry.register(_invoker_config("caller", can_dispatch=False, allowed=[]))
         registry.register(_subagent_config("target"))
@@ -134,9 +146,11 @@ class TestDispatchUnpermittedInvoker:
             prompt="run it",
             invoker_name="caller",
         )
-        with pytest.raises(PermissionError, match="caller") as exc_info:
-            _run(dispatcher.dispatch_one(task))
-        assert "target" in str(exc_info.value)
+        result = _run(dispatcher.dispatch_one(task))
+
+        assert result.status == "failed", f"Expected failed, got {result.status!r}"
+        assert "caller" in result.output, f"invoker not named: {result.output!r}"
+        assert "target" in result.output, f"target not named: {result.output!r}"
 
 
 class TestDispatchBackCompatNoInvoker:

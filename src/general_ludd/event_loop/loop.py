@@ -765,12 +765,25 @@ class EventLoop:
                 return
 
         # Apply PID cap.
+        # Bug fix: todos beyond the cap are already CLAIMED (status=ACTIVE in the
+        # DB + lease acquired).  Dropping them from the dispatch list without
+        # releasing the lease left them stuck as ACTIVE until the 15-min reaper
+        # fired.  Transition the excess todos back to QUEUED immediately so they
+        # are retried on the next tick instead of stalling until lease expiry.
         if cap is not None and len(claimed) > cap:
+            excess = list(claimed[cap:])
             logger.info(
-                "PID cap reached: dispatching %d of %d claimed (cap=%d)",
-                cap, len(claimed), cap,
+                "PID cap reached: dispatching %d of %d claimed (cap=%d); "
+                "releasing %d over-cap todos back to QUEUED",
+                cap, len(claimed), cap, len(excess),
             )
             claimed = list(claimed[:cap])
+            if self._todo_repo is not None:
+                for _todo in excess:
+                    with contextlib.suppress(Exception):
+                        await self._todo_repo.transition(
+                            _todo.todo_id, TodoStatus.QUEUED, _todo.version
+                        )
 
         # W(#23): wire Scheduler.plan() to determine concurrency-safe batches.
         # Each batch may run concurrently (asyncio.gather) when a session_factory
@@ -939,16 +952,20 @@ class EventLoop:
         execute path (those todos arm a code hot-rotation + reload, not a
         playbook run).
         """
-        # SpendLimiter pre-call gate: project this dispatch's cost and defer
-        # (skip) the job when it would push the rolling-window spend over the
-        # configured cap. would_exceed() is the non-mutating check — it never
-        # records spend, so the job remains queued and will be retried on a
-        # later tick once the window rolls forward. A None limiter (no cap
-        # configured) leaves dispatch unchanged.
+        # SpendLimiter pre-call gate: atomically check + record the projected
+        # cost via try_charge().  The previous would_exceed()-only check was
+        # non-mutating — it never recorded spend, so the rolling window stayed
+        # at zero and the soft cap could never trip (bug: inert limiter).
+        # try_charge() does the check and the record in one locked step so:
+        #   * Every accepted dispatch is charged against the window immediately.
+        #   * Concurrent dispatches cannot both observe the same headroom and
+        #     both commit (check-and-record is atomic under the limiter's lock).
+        # A None limiter (no cap configured) leaves dispatch unchanged.
         limiter = self._spend_limiter
         if limiter is not None:
             projected = self._estimated_dispatch_cost(1)
-            if limiter.would_exceed(projected):
+            accepted = limiter.try_charge(projected, kind="token")
+            if not accepted:
                 logger.warning(
                     "SpendLimiter: deferring dispatch for todo %s — projected=%.6f "
                     "window_spend=%.6f remaining=%.6f",
@@ -1151,6 +1168,12 @@ class EventLoop:
                         prompt_profile_id=resolved_prompt_profile,
                     )
                     self._active_traces[_trace.trace_id] = _trace
+                    # Prune the trace dict to prevent unbounded growth (MED audit
+                    # finding): once we exceed the cap, evict the oldest entries.
+                    if len(self._active_traces) > self._MAX_ACTIVE_TRACES:
+                        _evict = list(self._active_traces)[: len(self._active_traces) - self._MAX_ACTIVE_TRACES // 2]
+                        for _k in _evict:
+                            self._active_traces.pop(_k, None)
                     _tbt = asyncio.create_task(
                         self._benchmark_recorder.record_from_trace(
                             _trace, success=True,
@@ -1531,6 +1554,14 @@ class EventLoop:
                 continue
             # Transition committed: this decision is now applied exactly once.
             self._applied_decisions.add(decision_id)
+            # Prune ledger to prevent unbounded growth (MED audit finding).
+            if len(self._applied_decisions) > self._MAX_LEDGER_SIZE:
+                # Drop the oldest half; sets are unordered so we keep a recent
+                # arbitrary half — idempotency is best-effort across very long
+                # running sessions, not a hard invariant past the window.
+                surplus = len(self._applied_decisions) - self._MAX_LEDGER_SIZE // 2
+                for _old in list(self._applied_decisions)[:surplus]:
+                    self._applied_decisions.discard(_old)
             reconciled += 1
             if (
                 new_status == TodoStatus.COMPLETE
@@ -1578,6 +1609,11 @@ class EventLoop:
             )
             return True
         self._pushed_work.add(todo.todo_id)
+        # Prune ledger to prevent unbounded growth (MED audit finding).
+        if len(self._pushed_work) > self._MAX_LEDGER_SIZE:
+            surplus = len(self._pushed_work) - self._MAX_LEDGER_SIZE // 2
+            for _old in list(self._pushed_work)[:surplus]:
+                self._pushed_work.discard(_old)
         return False
 
     def _decision_to_status(self, decision: str) -> TodoStatus | None:
@@ -1685,6 +1721,14 @@ class EventLoop:
         except Exception as exc:
             logger.warning("Self-improve phase failed: %s", exc)
             self._tick_metrics["self_improve_gaps"] = 0
+
+    # Maximum entries kept in the per-instance idempotency ledgers.
+    # Beyond this cap, the oldest entries are evicted so the sets never grow
+    # without bound (unbounded-memory defect: audit finding MED).
+    _MAX_LEDGER_SIZE: ClassVar[int] = 10_000
+    # Maximum in-memory ExecutionTrace entries. Each trace is small (~1 KB)
+    # so 1 000 entries is safe even under heavy dispatch rates.
+    _MAX_ACTIVE_TRACES: ClassVar[int] = 1_000
 
     _PRIORITY_MAP: ClassVar[dict[str, int]] = {
         "low": 0, "medium": 5, "high": 10, "critical": 20,

@@ -2,7 +2,10 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import os
+from typing import Any
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -236,3 +239,88 @@ class TestDeploymentManagerParseOutputs:
         output = json.dumps({"instance_ip": {"value": "10.0.0.1"}})
         parsed = mgr._parse_outputs(output)
         assert parsed["instance_ip"] == "10.0.0.1"
+
+
+class TestDeployEnvIsolation:
+    """Regression tests: concurrent deploys must not cross-contaminate os.environ."""
+
+    def test_build_auth_env_does_not_mutate_global_environ(self, tmp_path, monkeypatch):
+        """_build_auth_env must return a copy, never touch os.environ."""
+        monkeypatch.setenv("MY_ALIAS", "secret-value")
+        # Ensure the target var is absent from global env before the call.
+        monkeypatch.delenv("TF_VAR_provider_key", raising=False)
+
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="m",
+            region="us-east-1",
+            provider_auth_aliases={"TF_VAR_provider_key": "MY_ALIAS"},
+        )
+        mgr = DeploymentManager(working_dir=str(tmp_path))
+        result_env = mgr._build_auth_env(config)
+
+        # The returned dict has the cred injected.
+        assert result_env["TF_VAR_provider_key"] == "secret-value"
+        # Global os.environ is untouched.
+        assert "TF_VAR_provider_key" not in os.environ
+
+    @pytest.mark.asyncio
+    async def test_concurrent_deploys_receive_isolated_envs(self, tmp_path):
+        """Two concurrent deploy() calls must pass *different* env dicts to
+        create_subprocess_exec — never the same mutable reference."""
+        import os as _os
+
+        config_a = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="model-a",
+            region="us-east-1",
+            provider_auth_aliases={"TF_VAR_key": "ALIAS_A"},
+        )
+        config_b = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="model-b",
+            region="us-east-1",
+            provider_auth_aliases={"TF_VAR_key": "ALIAS_B"},
+        )
+
+        captured_envs: list[dict[str, str]] = []
+
+        class FakeResolver:
+            def resolve(self, alias: str) -> str | None:
+                return f"cred-for-{alias}"
+
+        mgr = DeploymentManager(
+            working_dir=str(tmp_path),
+            secrets_resolver=FakeResolver(),
+        )
+
+        async def fake_run_terraform(
+            args: list[str],
+            *,
+            cwd: str | None = None,
+            env: dict[str, str] | None = None,
+        ) -> dict[str, Any]:
+            if env is not None:
+                captured_envs.append(dict(env))
+            return {"stdout": '{"instance_ip": {"value": "1.2.3.4"}}', "stderr": "", "returncode": 0}
+
+        with patch.object(mgr, "_run_terraform", side_effect=fake_run_terraform), \
+             patch("general_ludd.infra.deployment.os.makedirs"), \
+             patch("builtins.open", MagicMock()), \
+             patch.object(mgr, "_generator") as mock_gen, \
+             patch.object(mgr, "_save_registry"):
+            mock_gen.generate.return_value = ""
+
+            await asyncio.gather(mgr.deploy(config_a), mgr.deploy(config_b))
+
+        # We captured at least two env dicts (one per deploy, first terraform call).
+        assert len(captured_envs) >= 2
+        # The two envs differ on the injected credential.
+        creds = [e.get("TF_VAR_key") for e in captured_envs]
+        assert "cred-for-ALIAS_A" in creds
+        assert "cred-for-ALIAS_B" in creds
+        # Global os.environ was never written to with the credential key.
+        assert "TF_VAR_key" not in _os.environ

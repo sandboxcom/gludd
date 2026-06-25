@@ -30,6 +30,19 @@ class JobSpec(BaseModel):
     templates_dir: str | None = None
     timeout: float | None = None
 
+    @field_validator("timeout", mode="before")
+    @classmethod
+    def _validate_timeout(cls, v: object) -> object:
+        if v is None:
+            return v
+        try:
+            fv = float(v)  # type: ignore[arg-type]
+        except (TypeError, ValueError):
+            raise ValueError("timeout must be a number or None") from None
+        if fv <= 0:
+            raise ValueError(f"timeout must be positive (got {fv})")
+        return fv
+
     @field_validator("job_id", "playbook", "queue", mode="before")
     @classmethod
     def _strip_and_require(cls, v: str) -> str:

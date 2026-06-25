@@ -227,6 +227,7 @@ class CoreAnsibleRunner:
         connection: str = "local",
         become: bool = False,
         timeout: float | None = None,
+        extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
         if not _HAS_ANSIBLE_CORE:
             raise ImportError("ansible-core is required for playbook execution but is not installed")
@@ -281,6 +282,7 @@ class CoreAnsibleRunner:
                     skip_tags=skip_tags,
                     connection=connection,
                     become=become,
+                    extra_env=extra_env,
                 )
             bound = _env_default_timeout()
         else:
@@ -297,6 +299,7 @@ class CoreAnsibleRunner:
             skip_tags=skip_tags,
             connection=connection,
             become=become,
+            extra_env=extra_env,
         )
 
     @staticmethod
@@ -428,6 +431,58 @@ class CoreAnsibleRunner:
             proc.kill()
             proc.join(5.0)
 
+    # Env vars whose values are NOT secrets and are safe to pass through to the
+    # playbook subprocess.  Anything not on this list (ZAI_API_KEY, GLUDD_PSK,
+    # AWS_*, OPENAI_*, DATABASE_URL, …) is stripped before pb_exec.run().
+    _PLAYBOOK_ENV_ALLOWLIST: frozenset[str] = frozenset({
+        "PATH",
+        "HOME",
+        "USER",
+        "LOGNAME",
+        "SHELL",
+        "LANG",
+        "LC_ALL",
+        "LC_CTYPE",
+        "TMPDIR",
+        "TEMP",
+        "TMP",
+        # Gludd runner configuration (not secrets — callers use these to tune
+        # playbook behaviour at the process level; GLUDD_PSK / ZAI_API_KEY /
+        # AWS_* are intentionally absent and must stay absent).
+        "GLUDD_PLAYBOOK_TIMEOUT",
+        # Ansible configuration (not secrets)
+        "ANSIBLE_CONFIG",
+        "ANSIBLE_ROLES_PATH",
+        "ANSIBLE_COLLECTIONS_PATHS",
+        "ANSIBLE_COLLECTIONS_PATH",
+        "ANSIBLE_LIBRARY",
+        "ANSIBLE_MODULE_UTILS",
+        "ANSIBLE_FILTER_PLUGINS",
+        "ANSIBLE_CALLBACK_PLUGINS",
+        "ANSIBLE_LOOKUP_PLUGINS",
+        "ANSIBLE_STRATEGY_PLUGINS",
+        "ANSIBLE_CACHE_PLUGINS",
+        "ANSIBLE_CONNECTION_PLUGINS",
+        "ANSIBLE_VARS_PLUGINS",
+        "ANSIBLE_HOST_KEY_CHECKING",
+        "ANSIBLE_STDOUT_CALLBACK",
+        "ANSIBLE_RETRY_FILES_ENABLED",
+        "ANSIBLE_FORCE_COLOR",
+        "ANSIBLE_NOCOLOR",
+        "ANSIBLE_VERBOSITY",
+        # Python runtime (needed by ansible-core modules)
+        "PYTHONPATH",
+        "PYTHONDONTWRITEBYTECODE",
+        "VIRTUAL_ENV",
+        # SSH (connection metadata only — no keys)
+        "SSH_AUTH_SOCK",
+        "SSH_AGENT_PID",
+        # Display / terminal (needed by some callbacks)
+        "TERM",
+        "COLUMNS",
+        "LINES",
+    })
+
     def _execute_with_core(
         self,
         playbook_path: str,
@@ -439,6 +494,7 @@ class CoreAnsibleRunner:
         skip_tags: list[str] | None = None,
         connection: str = "local",
         become: bool = False,
+        extra_env: dict[str, str] | None = None,
     ) -> AnsibleResult:
         from ansible import context
         from ansible.executor.playbook_executor import PlaybookExecutor
@@ -518,7 +574,30 @@ class CoreAnsibleRunner:
         )
         pb_exec._tqm._callback_plugins.append(callback)
 
-        pb_exec.run()
+        # HIGH (env leak): build a minimal allowlisted env so playbook tasks
+        # never inherit ZAI_API_KEY / GLUDD_PSK / AWS_* / DATABASE_URL or any
+        # other secret that happens to be set in the parent process.  We swap
+        # os.environ in-place (Ansible reads it at run time via os.environ
+        # directly, not via a captured snapshot), then restore unconditionally
+        # in the finally block.  extra_env holds non-secret caller overrides
+        # (e.g. ansible-specific vars passed from runner.py) and is merged in
+        # AFTER the allowlist so it cannot re-introduce stripped secrets unless
+        # the caller explicitly opts in.
+        scrubbed_env: dict[str, str] = {
+            k: v for k, v in os.environ.items()
+            if k in self._PLAYBOOK_ENV_ALLOWLIST
+        }
+        if extra_env:
+            scrubbed_env.update(extra_env)
+
+        _original_env = os.environ.copy()
+        os.environ.clear()
+        os.environ.update(scrubbed_env)
+        try:
+            pb_exec.run()
+        finally:
+            os.environ.clear()
+            os.environ.update(_original_env)
 
         self._collected_events = list(callback._events)
 

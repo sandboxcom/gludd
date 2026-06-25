@@ -65,8 +65,23 @@ class AdaptiveRouter:
     ) -> RoutingDecision:
         cache_key = self._cache_key(task_type, max_cost_usd)
         if self._cache_valid() and cache_key in self._cache:
-            log.debug("route(): cache hit for key=%s", cache_key)
-            return self._cache[cache_key]
+            cached = self._cache[cache_key]
+            if self._health_tracker is not None:
+                model_id = cached.selected_model_profile_id
+                if not self._health_tracker.is_healthy(model_id, admit_probe=False):
+                    log.debug(
+                        "route(): cache hit for key=%s but model=%s is unhealthy,"
+                        " dropping cache entry and recomputing",
+                        cache_key,
+                        model_id,
+                    )
+                    del self._cache[cache_key]
+                else:
+                    log.debug("route(): cache hit for key=%s", cache_key)
+                    return cached
+            else:
+                log.debug("route(): cache hit for key=%s", cache_key)
+                return cached
 
         best = await self._get_best_from_history(task_type)
         if best is not None:

@@ -515,3 +515,189 @@ class TestOneProjectPerTick:
         assert loop._tick_project_id is None, (
             "_tick_project_id must be reset to None after tick completes (W3.14)"
         )
+
+
+class TestSpendLimiterCharges:
+    """Bug 1: SpendLimiter must record spend (try_charge), not just check (would_exceed)."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_records_charge_in_spend_window(self):
+        """After a successful dispatch, window_spend() must be nonzero."""
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        limiter = SpendLimiter(limit_usd=10.0, window_seconds=60, clock=lambda: 0.0)
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/test-spend"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock(), spend_limiter=limiter)
+
+        todo = Todo(
+            title="charge test",
+            todo_id="TODO-CHARGE-1",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )
+
+        assert limiter.window_spend() == 0.0, "pre-condition: window must be empty"
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value="OUTPUT",
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        assert limiter.window_spend() > 0.0, (
+            "SpendLimiter.window_spend() must be nonzero after a successful dispatch "
+            "(try_charge must record; would_exceed alone does not)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_skipped_when_spend_cap_reached(self):
+        """Dispatch must be skipped when try_charge() refuses (cap already exhausted)."""
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        # Tiny cap: pre-fill so any additional charge exceeds it.
+        limiter = SpendLimiter(limit_usd=0.00001, window_seconds=60, clock=lambda: 0.0)
+        limiter.record(0.00001, kind="token", at=0.0)
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/test-cap"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock(), spend_limiter=limiter)
+
+        todo = Todo(
+            title="over-cap test",
+            todo_id="TODO-OVERCAP-1",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value="OUTPUT",
+        ) as mock_invoke:
+            await loop._dispatch_execute_job(todo)
+
+        assert not mock_invoke.called, (
+            "invoke_model_for_generation must NOT be called when the spend cap is exhausted"
+        )
+
+
+class TestPidCapRelease:
+    """Bug 2: Todos dropped by PID cap must be transitioned back to QUEUED."""
+
+    @pytest.mark.asyncio
+    async def test_pid_cap_releases_excess_todos_to_queued(self):
+        """When the PID cap is 1 and 3 todos are claimed, the 2 excess must be QUEUED."""
+        loop, mocks = _make_loop()
+
+        t1 = Todo(todo_id="T1", title="task1", status=TodoStatus.ACTIVE, version=1)
+        t2 = Todo(todo_id="T2", title="task2", status=TodoStatus.ACTIVE, version=1)
+        t3 = Todo(todo_id="T3", title="task3", status=TodoStatus.ACTIVE, version=1)
+
+        loop._tick_state["claimed_todos"] = [t1, t2, t3]
+        pid_outputs = MagicMock()
+        pid_outputs.desired_total_active_buckets = 1
+        loop._tick_state["pid_outputs"] = pid_outputs
+
+        mocks["todo_repo"].transition = AsyncMock()
+
+        await loop._phase_dispatch_execute_jobs()
+
+        transition_calls = mocks["todo_repo"].transition.call_args_list
+        queued_calls = [
+            c for c in transition_calls
+            if len(c.args) >= 2 and c.args[1] == TodoStatus.QUEUED
+        ]
+        assert len(queued_calls) >= 2, (
+            f"Expected at least 2 QUEUED transitions for excess todos under PID cap=1; "
+            f"got {len(queued_calls)}: {queued_calls}"
+        )
+        released_ids = {c.args[0] for c in queued_calls}
+        assert "T2" in released_ids or "T3" in released_ids, (
+            f"Expected T2/T3 to be released; got {released_ids}"
+        )
+
+
+class TestLedgerBounds:
+    """Bug 3: _applied_decisions and _active_traces must stay bounded."""
+
+    @pytest.mark.asyncio
+    async def test_applied_decisions_pruned_after_cap(self):
+        """Filling _applied_decisions past _MAX_LEDGER_SIZE then reconciling one
+        new decision must leave the set at or below _MAX_LEDGER_SIZE."""
+        loop, mocks = _make_loop()
+
+        # Pre-fill beyond the cap.
+        cap = loop._MAX_LEDGER_SIZE
+        for i in range(cap + 1):
+            loop._applied_decisions.add(f"fake-id:{i}")
+
+        assert len(loop._applied_decisions) > cap, "pre-condition: ledger must be overfull"
+
+        # Build a fresh decision row not already in the set.
+        decision_row = MagicMock()
+        decision_row.id = 99999
+        decision_row.matched_todo_id = "TODO-PRUNE-1"
+        decision_row.decision = "complete"
+        decision_row.return_id = "RET-PRUNE-1"
+
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [decision_row]
+        mocks["session"].execute.return_value = result_mock
+
+        todo_model = MagicMock()
+        todo_model.todo_id = "TODO-PRUNE-1"
+        todo_model.status = TodoStatus.REVIEWING_RETURN.value
+        todo_model.version = 1
+        todo_model.project_id = None
+        mocks["todo_repo"].get_by_id.return_value = todo_model
+        mocks["todo_repo"].transition = AsyncMock(return_value=MagicMock())
+
+        await loop._phase_reconcile_completed_decisions()
+
+        assert len(loop._applied_decisions) <= cap, (
+            f"_applied_decisions must be pruned to <= {cap}; "
+            f"got {len(loop._applied_decisions)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_active_traces_pruned_after_cap(self):
+        """Filling _active_traces past _MAX_ACTIVE_TRACES then dispatching one job
+        must leave the dict at or below _MAX_ACTIVE_TRACES."""
+        from general_ludd.observability.recorder import AutoBenchmarkRecorder
+        from general_ludd.observability.trace_store import RecentTracesBuffer
+
+        buffer = RecentTracesBuffer()
+        recorder = AutoBenchmarkRecorder(benchmark_repo=None, trace_buffer=buffer)
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/test-trace-prune"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock())
+        loop._benchmark_recorder = recorder
+
+        # Pre-fill beyond the cap.
+        trace_cap = loop._MAX_ACTIVE_TRACES
+        for i in range(trace_cap + 5):
+            loop._active_traces[f"fake-trace-{i}"] = MagicMock()
+
+        assert len(loop._active_traces) > trace_cap, "pre-condition: traces must be overfull"
+
+        todo = Todo(
+            title="prune traces test",
+            todo_id="TODO-TRACE-PRUNE-1",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value="GENERATED OUTPUT",
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        assert len(loop._active_traces) <= trace_cap, (
+            f"_active_traces must be pruned to <= {trace_cap}; "
+            f"got {len(loop._active_traces)}"
+        )
