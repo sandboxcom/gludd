@@ -67,9 +67,13 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.3 — 2026-06-19**
+**Status as of v0.1.0-alpha.3 — 2026-06-19; core-engine rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
 
 This table is regenerated/verified on every release cut (enforced by `make release-cut`).
+Between cuts, individual rows may be refreshed in place against new commit evidence; the
+full regeneration occurs on the next release cut. The 2026-06-25 refresh re-scored only the
+Core-Engine-relevant rows (Daemon Spine, Models/Gateway, DB/Migrations) that changed on
+`feature/alpha4-green-the-gate`; other sections still carry their alpha.3 scores.
 
 Honesty note: this project has a documented history of false "done" claims (see `BUGS.md`).
 Every percentage below is backed by a commit SHA, named test, or audit finding. Unbuilt work
@@ -105,9 +109,14 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Project workspaces cloned from repo_url + persisted (H13) | 100% | `tests/unit/test_project_workspace_clone.py` 6 passed; `[a4c04a9]` |
 | Hot-reload honesty — reports only real reloads (H14) | 100% | `tests/unit/test_w3_12_reload.py` — PASS; `[779937c]` |
 | Scheduler drives parallel dispatch (#23/#32) | 75% | `event_loop/loop.py:709,740` wired; no dedicated e2e parallel-dispatch proof; `scheduling/scheduler.py:15-19` has stale TODO comment; `[audit]` |
-| DynamicDispatcher for autonomous tool-call dispatch (#26) | 25% | HTTP path wired (`routers/dispatch.py`); event-loop path NOT wired (`dynamic_dispatcher.py:8-12` TODO(integration) live); `[audit]` |
+| DynamicDispatcher for autonomous tool-call dispatch (#26) | 90% | Both daemon (`event_loop/loop.py:_dispatch_execute_job`) and worker (`worker/app.py:/jobs/execute`) generation paths now dispatch structured `ModelResponse.tool_calls` via a shared converter (`models/job_invocation.py` returns `(content, tool_calls)`; `dispatch/dynamic_dispatcher.py:structured_tool_calls_to_calls` maps OpenAI-nested calls to `ToolCall(kind="mcp", …)`, mirroring ToolCallLoop routing); was 25% (model's structured calls silently discarded as text); `tests/unit/test_generation_tool_dispatch.py` (daemon + worker prod-path dispatch + no-call); `[8fe3dcb]` — −10% pending a live multi-tool e2e proof |
 | PipelineController async lanes (pipeline/) | 75% | `pipeline/controller.py` 223 lines; daemon lazy-imports it (config-gated); `tests/unit/test_pipeline_lanes.py` exists; no e2e proof of `pipeline.enabled=True` path; `[audit]` |
-| SpendLimiter rolling budget cap (#27/#49) | 20% | `daemon.py:729` passes `projected_cost_usd=0.0` — cap literally never fires; TODO in `spend_limiter.py:17-27`; wired-but-inert security control; `[audit]` |
+| SpendLimiter rolling budget cap (#27/#49) | 80% | EventLoop `_dispatch_execute_job` now consults the limiter via the atomic `try_charge(projected, kind="token")` check-and-record BEFORE dispatch: over-budget skips dispatch (`run_playbook` not called), under-budget proceeds; `daemon_wiring.make_spend_guarded_executor` wraps the gateway executor; was 20% inert (`projected_cost_usd=0.0` so the cap never fired); `tests/unit/test_spend_limiter_dispatch_wiring.py` 3 passed; `[6761126]` — caveat: inert-when-unconfigured by design (no limiter wired → dispatch unchanged), so it only enforces once a rolling cap is configured |
+| `GET /api/environment` introspection endpoint + per-work-type advisor | 75% | Consolidated env brief (work/queues/system/optimization/project facets, each independently guarded, never 500s) + advice block consumed by the `gludd_environment` Ansible module; surfaced to roles as facts; `[d37f13b]` (advisor-driven role branching), `[5beeee6]` (project facet added to brief) — NEW 2026-06-25 (did not exist at alpha.3); −25% pending a dedicated route-level test inventory in this chart |
+| `agent_orchestrate` role — advice/budget-driven workflow vs single-shot dispatch | 90% | Role gathers `gludd_environment` advice, defers on budget floor, then branches workflow (`gludd_langgraph_workflow`) vs single-shot (`gludd_model_call`) on `advice.use_workflow`; faithful-green molecule scenario cross-checks decision == advice INPUT AND exact endpoint hits/non-hits per branch (not just artifact existence); `[d37f13b]` + molecule strengthening `[38b0d09]` — NEW 2026-06-25 |
+| Project-hierarchy: relationship model + migration + repository (phase 1) | 100% | `ProjectRelationshipModel` + alembic migration 008 + `ProjectRelationshipRepository` + config relationships parsing (edge graph: parent/child/sibling/external); `make alembic-check-008` ORM-parity proof; `tests/unit/test_project_relationships.py`; `[04ef43f]` — NEW 2026-06-25 |
+| Project-hierarchy: relationships facet in `/api/environment` + role var exposure (phase 2) | 100% | `_project_facet` lists declared edges + interface contracts (defensive JSON parse, fails soft to `{}`), scoped to single active project or explicit `project_id`; `inherited_knowledge` intentionally `{}` until phase 3; `tests/unit/test_environment_project_facet.py` (unit + route-level); `[5beeee6]` — NEW 2026-06-25 |
+| Project-hierarchy: cross-project knowledge borrowing (phase 3) | 70% | Composite-similarity-weighted benchmark borrowing across related projects + `project_id` migration 009; gated behind a config flag defaulting OFF (opt-in, not yet wired into the live router by default); `[78c031b]` — NEW 2026-06-25; −30% because it ships behind a default-OFF flag and the router-default borrowing path is not yet enabled |
 
 ---
 
@@ -120,12 +129,13 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Model failover chain (F6) | 100% | `tests/unit/test_model_gateway_fallback.py` + `test_r2_5a_profiles_failover.py` — PASS |
 | Router gateway gets metrics_collector (H12) | 100% | `tests/unit/test_w3_10_metrics_gateway.py` — PASS; `[779937c]` |
 | Budget guard wired (H11) | 100% | `tests/unit/test_budget_wiring.py` — PASS; budget: config section consumed |
-| Per-todo/daily budget caps (F5) | 100% | `tests/unit/test_budget_caps.py` — PASS |
+| Per-todo/daily budget caps (F5) | 100% | `tests/unit/test_budget_caps.py` — PASS; reservation accounting hardened: `check_todo_budget` now subtracts a prior unreconciled reservation before the cap check so a retry on the same todo is idempotent (not double-counted), `tests/unit/test_budget_guards.py::test_check_todo_budget_concurrent_same_todo_replaces_not_stacks`; `[c5ffec1]` |
 | Secrets auto mode tries OpenBao before env (H17) | 100% | `tests/unit/test_secrets_auto_mode.py` 4 passed; `[1bbe4b8]` |
 | CLI ↔ /admin/code/* endpoint parity (M11/W3.13) | 100% | `tests/unit/test_w3_13_cli_code_parity.py` — PASS; `[779937c]` |
 | Scoring cost-constrained routing (#59/#69) | 20% | `scoring/router.py:38-67` route logic exists; `BenchmarkRepository.get_aggregate_scores` returns NO `avg_cost` column → `scoring/router.py:131` defaults 0.0 → cap is a production no-op; unit tests pass with mocked data only; `[audit]` |
 | Model routing roles + weights (`routing_roles/`) | 25% | `routing_roles/roles.py` + `routing_roles/weights.py` in worktree only (not merged); `model_weights/` package absent entirely; 7/10 weight pairs diverge from recommendation doc; `[docs/audit/model_routing_coherence_check.md]` |
 | BenchmarkResult `task_role` field (P1) | 0% | `schemas/benchmark.py` has no `task_role` field; recommendation doc §3.2 marks this P1; `[docs/audit/model_routing_coherence_check.md]` |
+| BERT/embeddings search verb (similar / compare / search) | 50% (UNVERIFIED) | Embeddings-backed search/compare/similar verb referenced this session but its commit SHA was not pinned against `make git-log` at refresh time — **score and existence UNVERIFIED**; re-adjudicate against a named commit + test before the next release cut; NEW 2026-06-25 |
 | `model_weights/` package (seed_data.json, schema, store, loader) | 0% | Absent from both main tree and worktree; recommendation doc §4.2 labels P0; `[docs/audit/model_routing_coherence_check.md]` |
 
 ---
@@ -229,6 +239,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Alembic stamp_head + SQLite-only enforced | 100% | `tests/unit/test_single_worker_sqlite.py` 7 passed; `[312e403]` |
 | Message queue DB schema (AgentMessageModel) | 100% | `tests/unit/test_agent_message_repo.py` 8 passed; `[bd80f5a]` |
 | Observability trace store (RecentTracesBuffer) | 100% | `tests/unit/test_trace_store.py` 7 passed; `[86389be]` |
+| Repository query perf + relationship pagination (P1/P6–P12) | 100% | `ProjectRelationshipRepository.list_for_project`/`list_children` now take `limit`/`offset` and hard-cap at `_DEFAULT_LIST_LIMIT` (closes the unbounded-relationship DoS, P12 gap); `tests/unit/test_project_relationships.py::TestListForProjectCap` (4 tests: default cap, explicit-limit clamp, relation-type filter under cap, list_children cap); `[db56eee]` — NEW 2026-06-25 |
 | CVE diskcache + pip dependency upgrades | 0% | `TASKS.md:252-253` open; `make pip-audit` ends `|| true`; `[audit]` |
 | avg_cost column in BenchmarkRepository.get_aggregate_scores | 0% | `db/repository.py::get_aggregate_scores` returns no avg_cost; scoring/router.py:131 defaults 0.0; identified as a 2-line fix; `[audit]` |
 
