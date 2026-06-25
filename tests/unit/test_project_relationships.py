@@ -250,6 +250,85 @@ class TestProjectRelationshipRepository:
         assert len(parents) == 1
         assert parents[0].location_value == "platform-two"
 
+    async def test_one_parent_replace_is_atomic_only_one_survives(
+        self, async_session: AsyncSession
+    ):
+        # Two sequential parent adds with DIFFERENT location_value: the second
+        # must atomically replace the first so exactly ONE parent survives, and
+        # the surviving row is the new one (replace semantics preserved).
+        await _make_project(async_session, "proj-a", "a")
+        repo = ProjectRelationshipRepository(async_session)
+        await repo.add_relationship(
+            {
+                "project_id": "proj-a",
+                "relation_type": "parent",
+                "location_kind": "gludd_project_name",
+                "location_value": "platform-alpha",
+            }
+        )
+        await repo.add_relationship(
+            {
+                "project_id": "proj-a",
+                "relation_type": "parent",
+                "location_kind": "gludd_project_name",
+                "location_value": "platform-beta",
+            }
+        )
+        parents = await repo.list_for_project("proj-a", relation_type="parent")
+        assert len(parents) == 1
+        assert parents[0].location_value == "platform-beta"
+
+    async def test_invalid_relation_type_rejected(
+        self, async_session: AsyncSession
+    ):
+        await _make_project(async_session, "proj-a", "a")
+        repo = ProjectRelationshipRepository(async_session)
+        with pytest.raises(ValueError, match="invalid relation_type"):
+            await repo.add_relationship(
+                {
+                    "project_id": "proj-a",
+                    "relation_type": "cousin",  # not a RelationType
+                    "location_kind": "gludd_project_name",
+                    "location_value": "acme",
+                }
+            )
+        # Nothing was persisted.
+        assert await repo.list_for_project("proj-a") == []
+
+    async def test_invalid_location_kind_rejected(
+        self, async_session: AsyncSession
+    ):
+        await _make_project(async_session, "proj-a", "a")
+        repo = ProjectRelationshipRepository(async_session)
+        with pytest.raises(ValueError, match="invalid location_kind"):
+            await repo.add_relationship(
+                {
+                    "project_id": "proj-a",
+                    "relation_type": "child",
+                    "location_kind": "ip_address",  # not a LocationKind
+                    "location_value": "10.0.0.1",
+                }
+            )
+        assert await repo.list_for_project("proj-a") == []
+
+    async def test_valid_enum_values_still_persist(
+        self, async_session: AsyncSession
+    ):
+        # Every valid RelationType x a valid LocationKind persists unchanged.
+        await _make_project(async_session, "proj-a", "a")
+        repo = ProjectRelationshipRepository(async_session)
+        for rel in RelationType:
+            row = await repo.add_relationship(
+                {
+                    "project_id": "proj-a",
+                    "relation_type": rel.value,
+                    "location_kind": LocationKind.GLUDD_PROJECT_NAME.value,
+                    "location_value": f"neighbor-{rel.value}",
+                }
+            )
+            assert row.relation_type == rel.value
+            assert row.location_kind == LocationKind.GLUDD_PROJECT_NAME.value
+
     async def test_self_edge_rejected(self, async_session: AsyncSession):
         await _make_project(async_session, "proj-a", "a")
         repo = ProjectRelationshipRepository(async_session)

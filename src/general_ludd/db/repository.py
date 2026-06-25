@@ -17,6 +17,7 @@ from general_ludd.db.models import (
     BenchmarkResultModel,
     FeatureModel,
     FeatureStatus,
+    LocationKind,
     ProjectModel,
     ProjectRelationshipModel,
     PromptProfileModel,
@@ -1064,6 +1065,28 @@ class ProjectRelationshipRepository:
         """
         project_id = data["project_id"]
         relation_type = str(data.get("relation_type", ""))
+        location_kind = str(data.get("location_kind", ""))
+
+        # Enum validation: the repository is the security boundary for the
+        # direct-call path (config parsing validates upstream, but callers may
+        # invoke add_relationship directly). Reject anything that is not a valid
+        # RelationType / LocationKind StrEnum value BEFORE persisting, so the
+        # column never holds an out-of-domain string.
+        try:
+            RelationType(relation_type)
+        except ValueError as exc:
+            valid = ", ".join(r.value for r in RelationType)
+            raise ValueError(
+                f"invalid relation_type {relation_type!r}; must be one of: {valid}"
+            ) from exc
+        try:
+            LocationKind(location_kind)
+        except ValueError as exc:
+            valid = ", ".join(k.value for k in LocationKind)
+            raise ValueError(
+                f"invalid location_kind {location_kind!r}; must be one of: {valid}"
+            ) from exc
+
         related_project_id = data.get("related_project_id")
         if related_project_id is not None and related_project_id == project_id:
             raise ValueError(
@@ -1074,17 +1097,9 @@ class ProjectRelationshipRepository:
         existing = await self._get_edge(
             project_id,
             relation_type,
-            str(data.get("location_kind", "")),
+            location_kind,
             str(data.get("location_value", "")),
         )
-
-        # One-parent guard: a NEW parent edge (one whose tuple differs from any
-        # existing parent row) replaces the prior parent. Re-declaring the same
-        # parent tuple just updates that row, so it is not a "second" parent.
-        if relation_type in self._SINGLETON_RELATIONS and existing is None:
-            for prior in await self.list_for_project(project_id, relation_type=relation_type):
-                await self._session.delete(prior)
-            await self._session.flush()
 
         if existing is not None:
             for key, value in data.items():
@@ -1094,6 +1109,26 @@ class ProjectRelationshipRepository:
             await self._session.flush()
             await self._session.refresh(existing)
             return existing
+
+        # One-parent guard + insert as ONE atomic transaction unit. A NEW parent
+        # edge (tuple differs from any existing parent row) replaces the prior
+        # parent: we delete the prior parent rows and add the new edge with NO
+        # intermediate flush/commit between them, then a single flush at the end.
+        # Either both the delete and the insert land or neither does (they share
+        # one transaction and roll back together on failure), so the project can
+        # never be left with zero parents mid-operation. Re-declaring the same
+        # parent tuple is handled by the upsert branch above, so it never reaches
+        # here as a "second" parent.
+        #
+        # This ordering covers the local SQLite case (single writer per file).
+        # True multi-connection concurrency safety relies on the PostgreSQL
+        # ``uq_one_parent`` partial unique index already added in migration 008,
+        # which rejects a concurrent second parent at the database level.
+        if relation_type in self._SINGLETON_RELATIONS:
+            for prior in await self.list_for_project(
+                project_id, relation_type=relation_type
+            ):
+                await self._session.delete(prior)
 
         row = ProjectRelationshipModel(**data)
         self._session.add(row)
