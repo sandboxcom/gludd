@@ -1,3 +1,5 @@
+> STATUS: POINT-IN-TIME analysis (dated). Reference/history — re-validate against current code/hooks before acting on its recommendations.
+
 # Agent-Floor Breach Root-Cause Analysis
 **Date:** 2026-06-17
 **Author:** deep-read investigation (no Bash, no subagents)

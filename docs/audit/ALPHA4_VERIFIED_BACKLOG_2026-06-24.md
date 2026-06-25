@@ -1,3 +1,5 @@
+> STATUS (2026-06-25): DATED snapshot vs an older master; 25+ commits have landed since. Re-verify against current branch before any ship decision.
+
 # Alpha.4 Verified Backlog — 2026-06-24
 
 Live verification pass against **current master** (`10ee0d8`). Each prior "OPEN"

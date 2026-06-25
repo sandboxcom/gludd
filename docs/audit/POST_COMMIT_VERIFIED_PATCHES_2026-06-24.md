@@ -1,3 +1,5 @@
+> STATUS (2026-06-25): SUPERSEDED — most patches herein were APPLIED this session (P1 4306bcf, A1 e74249a, A2 18d3abe). See POST_COMMIT_BACKLOG_2026-06-24.md Reconciliation section for current status. Kept as historical reference.
+
 # Post-Commit Verified Patches — 2026-06-24
 
 Paste-ready, caller-compat-verified diffs for the post-alpha.4 backlog
