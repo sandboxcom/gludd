@@ -33,6 +33,12 @@ from general_ludd.db.models import (
 )
 from general_ludd.schemas.todo import TodoStatus
 
+# Hard upper bound applied to unbounded ``list_*`` reads (P12). Callers that
+# pass no ``limit`` receive at most this many rows; an explicit ``limit`` is
+# itself capped at this value so a single query can never load an unbounded
+# result set into memory. ``offset`` enables forward pagination.
+_DEFAULT_LIST_LIMIT = 1000
+
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.BACKLOG: {TodoStatus.QUEUED},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
@@ -916,13 +922,26 @@ class PromptProfileRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[PromptProfileModel]:
-        stmt = select(PromptProfileModel)
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[PromptProfileModel]:
+        stmt = (
+            select(PromptProfileModel)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_source(self, source: str) -> list[PromptProfileModel]:
-        stmt = select(PromptProfileModel).where(PromptProfileModel.source == source)
+    async def list_by_source(
+        self, source: str, limit: int | None = None, offset: int = 0
+    ) -> list[PromptProfileModel]:
+        stmt = (
+            select(PromptProfileModel)
+            .where(PromptProfileModel.source == source)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -984,12 +1003,26 @@ class QueueRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[QueueModel]:
-        result = await self._session.execute(select(QueueModel))
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[QueueModel]:
+        stmt = (
+            select(QueueModel)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_enabled(self) -> list[QueueModel]:
-        stmt = select(QueueModel).where(QueueModel.queue_enabled.is_(True))
+    async def list_enabled(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[QueueModel]:
+        stmt = (
+            select(QueueModel)
+            .where(QueueModel.queue_enabled.is_(True))
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1458,17 +1491,38 @@ class FeatureRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[FeatureModel]:
-        result = await self._session.execute(select(FeatureModel))
-        return list(result.scalars().all())
-
-    async def list_by_status(self, status: FeatureStatus) -> list[FeatureModel]:
-        stmt = select(FeatureModel).where(FeatureModel.status == status.value)
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[FeatureModel]:
+        stmt = (
+            select(FeatureModel)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_category(self, category: str) -> list[FeatureModel]:
-        stmt = select(FeatureModel).where(FeatureModel.category == category)
+    async def list_by_status(
+        self, status: FeatureStatus, limit: int | None = None, offset: int = 0
+    ) -> list[FeatureModel]:
+        stmt = (
+            select(FeatureModel)
+            .where(FeatureModel.status == status.value)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_category(
+        self, category: str, limit: int | None = None, offset: int = 0
+    ) -> list[FeatureModel]:
+        stmt = (
+            select(FeatureModel)
+            .where(FeatureModel.category == category)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1595,9 +1649,17 @@ class RoleRunRepository:
         result = await self._session.execute(stmt)
         return {role: count for role, count in result.all()}
 
-    async def list_all(self, project_id: str | None = None) -> list[RoleRunModel]:
+    async def list_all(
+        self,
+        project_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[RoleRunModel]:
         stmt = select(RoleRunModel)
         if project_id is not None:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

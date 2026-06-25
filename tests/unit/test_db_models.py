@@ -21,9 +21,11 @@ from general_ludd.db.models import (
     AuditEventType,
     Base,
     BucketLeaseModel,
+    FeatureModel,
     ProjectModel,
     PromptProfileModel,
     QueueModel,
+    RoleRunModel,
     TaskDecisionModel,
     TaskReturnModel,
     TodoEventModel,
@@ -32,11 +34,14 @@ from general_ludd.db.models import (
     VariableValueModel,
 )
 from general_ludd.db.repository import (
+    _DEFAULT_LIST_LIMIT,
     AgentMessageRepository,
     ConcurrencyError,
+    FeatureRepository,
     InvalidTransitionError,
     PromptProfileRepository,
     QueueRepository,
+    RoleRunRepository,
     TaskReturnRepository,
     TodoRepository,
 )
@@ -680,3 +685,150 @@ class TestPromptProfileRepositoryListForTaskType:
         repo = PromptProfileRepository(async_session)
         names = {p.name for p in await repo.list_for_task_type("anything")}
         assert "p_bad" in names
+
+
+class TestListPaginationP12:
+    """P12: bounded pagination (limit/offset) on the unbounded list_* reads.
+
+    Every method caps an explicit ``limit`` at ``_DEFAULT_LIST_LIMIT`` and
+    applies that same cap as the default when no ``limit`` is given, so a
+    single query can never load an unbounded result set into memory.
+    ``offset`` paginates forward. Existing callers pass no ``limit`` and thus
+    receive at most the default cap (backward-compatible).
+    """
+
+    async def test_default_caps_at_limit_when_more_rows_exist(
+        self, async_session: AsyncSession
+    ):
+        # Seed more rows than the cap, then assert the default-limit read
+        # returns exactly _DEFAULT_LIST_LIMIT (not all 1200).
+        n = _DEFAULT_LIST_LIMIT + 200
+        async_session.add_all([
+            PromptProfileModel(
+                name=f"pp-{i:05d}", source="seed", prompt_text="x"
+            )
+            for i in range(n)
+        ])
+        await async_session.flush()
+
+        repo = PromptProfileRepository(async_session)
+        rows = await repo.list_all()
+        assert len(rows) == _DEFAULT_LIST_LIMIT
+
+    async def test_explicit_limit_returns_at_most_limit(
+        self, async_session: AsyncSession
+    ):
+        async_session.add_all([
+            PromptProfileModel(
+                name=f"pp-{i:05d}", source="seed", prompt_text="x"
+            )
+            for i in range(50)
+        ])
+        await async_session.flush()
+
+        repo = PromptProfileRepository(async_session)
+        rows = await repo.list_all(limit=10)
+        assert len(rows) == 10
+
+    async def test_explicit_limit_is_capped_at_default(
+        self, async_session: AsyncSession
+    ):
+        # An over-large explicit limit can never exceed the hard cap.
+        n = _DEFAULT_LIST_LIMIT + 100
+        async_session.add_all([
+            PromptProfileModel(
+                name=f"pp-{i:05d}", source="seed", prompt_text="x"
+            )
+            for i in range(n)
+        ])
+        await async_session.flush()
+
+        repo = PromptProfileRepository(async_session)
+        rows = await repo.list_all(limit=_DEFAULT_LIST_LIMIT * 10)
+        assert len(rows) == _DEFAULT_LIST_LIMIT
+
+    async def test_offset_paginates_queue_list_all(
+        self, async_session: AsyncSession
+    ):
+        for i in range(30):
+            async_session.add(QueueModel(
+                queue_name=f"q-{i:03d}",
+                queue_enabled=True,
+                hard_cap=10,
+                soft_cap=5,
+                max_error_rate=0.5,
+            ))
+        await async_session.flush()
+
+        repo = QueueRepository(async_session)
+        page1 = await repo.list_all(limit=10, offset=0)
+        page2 = await repo.list_all(limit=10, offset=10)
+        assert len(page1) == 10
+        assert len(page2) == 10
+        # Pages are disjoint (no overlap between consecutive windows).
+        names1 = {q.queue_name for q in page1}
+        names2 = {q.queue_name for q in page2}
+        assert names1.isdisjoint(names2)
+
+    async def test_queue_list_enabled_limit_preserves_filter(
+        self, async_session: AsyncSession
+    ):
+        for i in range(5):
+            async_session.add(QueueModel(
+                queue_name=f"on-{i}",
+                queue_enabled=True,
+                hard_cap=10, soft_cap=5, max_error_rate=0.5,
+            ))
+            async_session.add(QueueModel(
+                queue_name=f"off-{i}",
+                queue_enabled=False,
+                hard_cap=10, soft_cap=5, max_error_rate=0.5,
+            ))
+        await async_session.flush()
+
+        repo = QueueRepository(async_session)
+        rows = await repo.list_enabled(limit=3)
+        assert len(rows) == 3
+        # The enabled-only WHERE scope survives the limit/offset wrapping.
+        assert all(q.queue_enabled for q in rows)
+
+    async def test_feature_list_by_status_limit_and_scope(
+        self, async_session: AsyncSession
+    ):
+        from general_ludd.db.models import FeatureStatus
+
+        async_session.add_all([
+            FeatureModel(name=f"feat-req-{i}", status=FeatureStatus.REQUESTED)
+            for i in range(6)
+        ])
+        async_session.add_all([
+            FeatureModel(name=f"feat-ver-{i}", status=FeatureStatus.VERIFIED)
+            for i in range(3)
+        ])
+        await async_session.flush()
+
+        repo = FeatureRepository(async_session)
+        rows = await repo.list_by_status(FeatureStatus.REQUESTED, limit=4)
+        assert len(rows) == 4
+        # The status WHERE scope is preserved under the limit.
+        assert all(f.status == FeatureStatus.REQUESTED.value for f in rows)
+
+    async def test_rolerun_list_all_preserves_project_filter_under_limit(
+        self, async_session: AsyncSession
+    ):
+        async_session.add_all([
+            ProjectModel(project_id="proj-x", name="X"),
+            ProjectModel(project_id="proj-y", name="Y"),
+        ])
+        await async_session.flush()
+        async_session.add_all(
+            [RoleRunModel(project_id="proj-x", role="build") for _ in range(8)]
+            + [RoleRunModel(project_id="proj-y", role="plan") for _ in range(8)]
+        )
+        await async_session.flush()
+
+        repo = RoleRunRepository(async_session)
+        rows = await repo.list_all(project_id="proj-x", limit=5)
+        assert len(rows) == 5
+        # The project_id filter is preserved alongside the new limit/offset.
+        assert all(r.project_id == "proj-x" for r in rows)
