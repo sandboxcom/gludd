@@ -1,0 +1,1764 @@
+general_ludd.agent.gludd_abtest:
+  DOCUMENTATION:
+    description:
+    - Runs a baseline (A = current C(src)) and a candidate (B = candidate
+    - worktree) under the SAME workload, each in a FRESH interpreter child
+    - process via C(general_ludd.abtest.run_ab). The candidate is NEVER imported
+    - into this process, so a candidate built to crash the whole app
+    - (C(os._exit), segfault, infinite loop, OOM) CANNOT take down the Ansible
+    - controller or the daemon.
+    - 'Fail-closed: B is promoted ONLY if A passed and B ran ok, did not crash,'
+    - did not time out, and stayed within a duration slack. Any crash/timeout
+    - yields C(promote=false).
+    - Runs in-process (same venv as C(general_ludd)); does NOT call the daemon.
+    module: gludd_abtest
+    options:
+      baseline_root: {}
+      candidate_root: {}
+      expect_attr: {}
+      mem_limit_mb: {}
+      module: {}
+      repo_root: {}
+      timeout: {}
+      verdict_path: {}
+    short_description: Crash-isolated A/B test of a candidate code variant in a fresh
+      subprocess
+  EXAMPLES:
+  - general_ludd.agent.gludd_abtest:
+      candidate_root: /tmp/candidate-worktree
+      module: general_ludd.example.leaf
+      repo_root: /repo
+      verdict_path: /tmp/ab_verdict.json
+    name: A/B test a candidate worktree (crash-isolated)
+    register: ab
+  RETURN:
+    promote:
+      description: Whether the candidate may be promoted.
+      returned: always
+      type: bool
+    verdict:
+      description: The A/B verdict (a, b, promote, reason).
+      returned: always
+      type: dict
+  module: gludd_abtest
+general_ludd.agent.gludd_accounting:
+  DOCUMENTATION:
+    description:
+    - C(state=all) calls C(GET /api/accounting) and returns accounting snapshots for
+      ALL known projects as C(ansible_facts.gludd_accounting).
+    - C(state=project) calls C(GET /api/accounting/{project_id}) and returns the accounting
+      snapshot for a single project.
+    - Both operations are read-only. PSK-authed; check-mode safe.
+    module: gludd_accounting
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      project_id:
+        description: Project ID to fetch when C(state=project).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - all
+        - project
+        default: all
+        description: Operation to perform.
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Fetch per-project accounting snapshots via the daemon
+  EXAMPLES:
+  - general_ludd.agent.gludd_accounting: null
+    name: Load accounting for all projects
+    register: acct_result
+  - general_ludd.agent.gludd_accounting:
+      project_id: my-project
+      state: project
+    name: Load accounting for a specific project
+    register: acct_proj
+  - ansible.builtin.debug:
+      msg: '{{ acct_result.accounting }}'
+    name: Show accounting snapshot
+  RETURN:
+    accounting:
+      description: List of accounting snapshots (state=all) or single snapshot dict
+        (state=project).
+      returned: always
+      type: raw
+    ansible_facts:
+      description: Contains C(gludd_accounting) with the accounting list or snapshot.
+      returned: always
+      type: dict
+    project_id:
+      description: Project ID (state=project only).
+      returned: when state=project
+      type: str
+  module: gludd_accounting
+general_ludd.agent.gludd_agent_run:
+  DOCUMENTATION:
+    description:
+    - 'W6.8 decision: uses the existing C(ToolCallLoop) from'
+    - C(execution.tool_loop) — langgraph/langchain are declared deps with
+    - zero production callers, so option (b) was chosen (keep ToolCallLoop;
+    - note that langgraph removal is deferred to W4.5 deps-audit).
+    - Accepts a prompt and optional tool list, iterates model/tool calls up
+    - to C(max_iterations) times, and returns the final answer and tool call
+    - history.
+    - Check mode skips the model call and returns a placeholder.
+    module: gludd_agent_run
+    options:
+      daemon_url: {}
+      max_iterations: {}
+      model_profile: {}
+      prompt: {}
+      psk: {}
+      system_prompt: {}
+      timeout: {}
+      tools: {}
+    short_description: Run the agent tool-call loop (prompt + tools → answer)
+  EXAMPLES:
+  - general_ludd.agent.gludd_agent_run:
+      max_iterations: 5
+      prompt: '{{ rendered_skill_body }}
+
+        Task: {{ todo_title }}'
+    name: Run agent loop
+    register: agent_result
+  - ansible.builtin.debug:
+      msg: 'Agent answer: {{ agent_result.answer }}'
+    name: Use agent answer
+  RETURN:
+    answer:
+      description: Final text answer from the agent.
+      returned: success
+      type: str
+    iterations:
+      description: Number of loop iterations completed.
+      returned: success
+      type: int
+    tool_calls:
+      description: List of tool calls made during the loop.
+      returned: success
+      type: list
+    usage:
+      description: Aggregate token usage (if available from gateway).
+      returned: success
+      type: dict
+  module: gludd_agent_run
+general_ludd.agent.gludd_db:
+  DOCUMENTATION:
+    description:
+    - Performs todo and resource operations against the daemon's REST API.
+    - Supported ops: C(todo_get), C(todo_create), C(todo_update_status), C(resource_preference).
+    - C(todo_create) issues POST /api/todos on the daemon (never raw SQLite).
+    - NEVER opens the SQLite file directly (single-writer rule).
+    - Check mode skips write operations.
+    module: gludd_db
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      description:
+        default: ''
+        description: Todo description (todo_create).
+        type: str
+      op:
+        choices:
+        - todo_get
+        - todo_create
+        - todo_update_status
+        - resource_preference
+        description: Operation to perform.
+        required: true
+        type: str
+      priority:
+        default: medium
+        description: Todo priority — low, medium, high, critical (todo_create).
+        type: str
+      project_id:
+        description: Optional project identifier (todo_create).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      queue:
+        default: core
+        description: Queue to place the todo in (todo_create).
+        type: str
+      resource_type:
+        description: Resource type (required for resource_preference).
+        type: str
+      role:
+        default: ''
+        description:
+        - Capability role on whose behalf the op runs.
+        - The per-role capability policy (default-DENY) gates which ops are permitted;
+          an unknown role may perform no ops.
+        type: str
+      status:
+        description: New status string (required for todo_update_status).
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      title:
+        description: Todo title (required for todo_create).
+        type: str
+      todo_id:
+        description: Todo identifier (required for todo_get/todo_update_status).
+        type: str
+      work_type:
+        default: code
+        description: Work type for the todo (todo_create).
+        type: str
+    short_description: Todo/resource CRUD via daemon HTTP API (never raw SQLite)
+  EXAMPLES:
+  - general_ludd.agent.gludd_db:
+      op: todo_get
+      todo_id: TODO-abc123
+    name: Fetch a todo
+    register: todo
+  - general_ludd.agent.gludd_db:
+      description: As a developer, I want X.
+      op: todo_create
+      queue: core
+      title: Implement feature X
+      work_type: code
+    name: Create a todo
+    register: created
+  - general_ludd.agent.gludd_db:
+      op: todo_update_status
+      status: done
+      todo_id: TODO-abc123
+    name: Mark todo complete
+  - general_ludd.agent.gludd_db:
+      op: resource_preference
+      resource_type: model
+    name: Read resource preference
+    register: pref
+  RETURN:
+    created:
+      description: Whether a todo was created.
+      returned: when op=todo_create
+      type: bool
+    preference:
+      description: Resource preference value.
+      returned: when op=resource_preference
+      type: str
+    todo:
+      description: Todo record (todo_get, todo_create).
+      returned: when op=todo_get or op=todo_create
+      type: dict
+    updated:
+      description: Whether the status was changed.
+      returned: when op=todo_update_status
+      type: bool
+  module: gludd_db
+general_ludd.agent.gludd_dispatch:
+  DOCUMENTATION:
+    description:
+    - C(state=dispatch) POSTs a tool-call to C(POST /api/dispatch) with a C(kind)/C(name)/C(args)
+      body and returns the dispatch result as C(ansible_facts.gludd_dispatch).
+    - C(state=available) calls C(GET /api/dispatch/available) and returns the list
+      of dispatchable tool handlers.
+    - C(state=recent) calls C(GET /api/dispatch/recent) and returns the most recent
+      dispatch records.
+    - PSK-authed; check-mode safe on C(state=available) and C(state=recent). C(state=dispatch)
+      skips the API call in check mode and returns an empty result.
+    module: gludd_dispatch
+    options:
+      args:
+        description: Tool-call arguments dict (required for state=dispatch).
+        type: dict
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      kind:
+        description: Tool-call kind (required for state=dispatch).
+        type: str
+      name:
+        description: Tool-call name / handler identifier (required for state=dispatch).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - dispatch
+        - available
+        - recent
+        default: available
+        description: Operation to perform.
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Interact with the daemon's dynamic-dispatch API
+  EXAMPLES:
+  - general_ludd.agent.gludd_dispatch:
+      args:
+        command: echo hello
+      kind: tool
+      name: shell
+      state: dispatch
+    name: Dispatch a tool call
+    register: dispatch_result
+  - general_ludd.agent.gludd_dispatch:
+      state: available
+    name: List available dispatch handlers
+    register: available_result
+  - general_ludd.agent.gludd_dispatch:
+      state: recent
+    name: Fetch recent dispatch records
+    register: recent_result
+  RETURN:
+    ansible_facts:
+      description: Contains C(gludd_dispatch) with the dispatch result or records.
+      returned: always
+      type: dict
+    handlers:
+      description: List of available dispatch handler dicts (state=available).
+      returned: when state=available
+      type: list
+    records:
+      description: List of recent dispatch record dicts (state=recent).
+      returned: when state=recent
+      type: list
+    result:
+      description: The dispatch outcome (state=dispatch).
+      returned: when state=dispatch
+      type: dict
+  module: gludd_dispatch
+general_ludd.agent.gludd_embed:
+  DOCUMENTATION:
+    description:
+    - With C(op=similar) (the default) queries the daemon's read-only C(POST /api/embeddings/similar)
+      endpoint and returns the ranked similar canonical task types under C(ansible_facts.gludd_embed)
+      so a playbook (or the model running a job) can borrow a good model/prompt from
+      a semantically-neighboring task type.
+    - With C(op=compare) queries C(POST /api/embeddings/compare) to measure the pairwise
+      similarity of two strings (C(text_a)/C(text_b)) produced by separate bots/agents
+      — so a role can decide how to proceed (near-duplicate strings -> merge/dedupe;
+      divergent -> escalate). Supply C(texts) (2+) instead for the full pairwise similarity
+      matrix. The snapshot is injected under C(ansible_facts.gludd_embed).
+    - With C(op=search) queries C(POST /api/embeddings/search) to take a string a
+      bot produced (C(text)) and search a real corpus with it (RAG search), returning
+      the C(top_k) most-similar items ranked by cosine similarity. C(corpus) selects
+      the corpus — C(skills) (the live skill registry, descriptions matched on the
+      fly), C(task_types) (the canonical task types), C(prompts) (the persisted prompt
+      profiles), or C(traces) (recent execution traces, work_type/phase/span descriptions
+      matched on the fly). The snapshot is injected under C(ansible_facts.gludd_embed).
+    - Read-only and check-mode safe — it performs no writes (C(changed=False)).
+    - Similarity is computed over the same embedding layer the adaptive router uses
+      (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).
+    module: gludd_embed
+    options:
+      corpus:
+        choices:
+        - skills
+        - task_types
+        - prompts
+        - traces
+        default: skills
+        description:
+        - The real corpus to search when C(op=search). C(skills) matches the live
+          skill registry; C(task_types) matches the canonical task types; C(prompts)
+          matches the persisted prompt profiles (each prompt_text embedded on the
+          fly); C(traces) matches recent execution traces (each trace's work_type/phase
+          labels/span descriptions embedded on the fly).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      include_embedding:
+        default: false
+        description: When true, the query embedding vector is returned in the snapshot.
+        type: bool
+      include_embeddings:
+        default: false
+        description:
+        - When true, the computed embedding vectors are returned — the pairwise vectors
+          for C(op=compare), or the query vector for C(op=search).
+        type: bool
+      op:
+        choices:
+        - similar
+        - compare
+        - search
+        default: similar
+        description:
+        - Which embeddings operation to run. C(similar) ranks canonical task types
+          for C(text); C(compare) measures pairwise similarity of C(text_a)/C(text_b)
+          (or a C(texts) batch); C(search) takes C(text) and searches the C(corpus)
+          for the C(top_k) most-similar items.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      text:
+        description:
+        - The work description to match against the canonical task types (C(op=similar))
+          or the query string to search the corpus with (C(op=search)). Required for
+          both.
+        type: str
+      text_a:
+        description: First string to compare. Used (with C(text_b)) when C(op=compare).
+        type: str
+      text_b:
+        description: Second string to compare. Used (with C(text_a)) when C(op=compare).
+        type: str
+      texts:
+        description:
+        - Batch form for C(op=compare) — a list of 2+ strings; returns the pairwise
+          similarity matrix instead of a single score.
+        elements: str
+        type: list
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      top_k:
+        default: 5
+        description:
+        - Number of items to return (1-20) — similar task types for C(op=similar),
+          or corpus matches for C(op=search).
+        type: int
+      work_type:
+        description:
+        - Optional filter — restrict the result to this canonical task-type value
+          (e.g. C(bug_fix), C(feature), C(refactor)).
+        type: str
+    short_description: Embedding similarity over the daemon's bert surface
+  EXAMPLES:
+  - general_ludd.agent.gludd_embed:
+      text: Track down why the request handler intermittently returns 500s
+    name: Find task types similar to this work
+    register: embed
+  - ansible.builtin.debug:
+      msg: Closest type is {{ ansible_facts.gludd_embed.results[0].task_type }} ({{
+        ansible_facts.gludd_embed.results[0].similarity_score }})
+    name: Use the closest task type's routing
+    when: ansible_facts.gludd_embed.results | length > 0
+  - general_ludd.agent.gludd_embed:
+      op: compare
+      text_a: '{{ agent_one_output }}'
+      text_b: '{{ agent_two_output }}'
+    name: Compare two strings from separate agents to decide merge vs escalate
+    register: cmp
+  - ansible.builtin.debug:
+      msg: near-duplicate, dedupe
+    name: Treat near-duplicates as a merge
+    when: ansible_facts.gludd_embed.similarity | default(0) > 0.9
+  - general_ludd.agent.gludd_embed:
+      corpus: skills
+      op: search
+      text: '{{ bot_request }}'
+      top_k: 3
+    name: Search the skills corpus with a string the bot produced
+    register: hit
+  - ansible.builtin.debug:
+      msg: Best skill is {{ ansible_facts.gludd_embed.results[0].name }} ({{ ansible_facts.gludd_embed.results[0].similarity_score
+        }})
+    name: Use the best-matching skill
+    when: ansible_facts.gludd_embed.results | length > 0
+  RETURN: "RETURN:\n  ansible_facts:\n    description: Facts dict containing the C(gludd_embed)\
+    \ snapshot.\n    type: dict\n    returned: always\n    contains:\n      gludd_embed:\n\
+    \        description:\n          - For C(op=similar): the snapshot with C(results)\
+    \ (ranked task types),\n            C(query_embedding_dim), C(embedding_method),\
+    \ and optionally\n            C(query_embedding).\n          - For C(op=compare):\
+    \ the snapshot with C(similarity) (pairwise form) or\n            C(matrix) (batch\
+    \ form), C(embedding_method), C(dim), and optionally\n            C(embeddings).\n\
+    \          - For C(op=search): the snapshot with C(corpus), C(results) (ranked\n\
+    \            items, each with C(rank)/C(name)/C(source_text)/C(similarity_score)/\n\
+    \            C(metadata)), C(query_embedding_dim), C(embedding_method), and\n\
+    \            optionally C(query_embedding).\n        type: dict\n        returned:\
+    \ always"
+  module: gludd_embed
+general_ludd.agent.gludd_environment:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's read-only C(GET /api/environment) endpoint and returns
+      the consolidated environment brief under C(ansible_facts.gludd_environment)
+      so a playbook (or the model running a job) can see the environment it runs inside
+      and how to optimize for the task.
+    - Read-only and check-mode safe — it performs no writes.
+    - Exposes C(models) (roster, NO secrets), C(routing), C(budget), C(compute), C(tools),
+      C(skills), C(queues), C(system), and C(optimization) (advisor hints + per-work-type
+      recommended profiles).
+    - The model roster NEVER contains api keys, tokens, or credential aliases.
+    module: gludd_environment
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      priority:
+        choices:
+        - cost
+        - quality
+        - latency
+        default: quality
+        description:
+        - Optimization priority forwarded to the advise endpoint. Only used when C(work_type)
+          is set.
+        type: str
+      prompt_tokens:
+        description:
+        - Optional prompt size (tokens) forwarded to the advise endpoint so the cost
+          projection and context-fit hint are accurate. Only used when C(work_type)
+          is set.
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      work_type:
+        description:
+        - When set, ALSO query C(GET /api/environment/advise?work_type=...) and merge
+          the per-task recommendation under C(ansible_facts.gludd_environment.advice).
+          Free-form work kind, e.g. C(feature), C(bugfix), C(refactor), C(review),
+          C(docs), C(chat).
+        - When unset (the default) no advise call is made and no C(advice) key is
+          added.
+        type: str
+    short_description: Inject the consolidated environment + optimization brief as
+      ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_environment: null
+    name: Load gludd environment brief
+    register: env
+  - ansible.builtin.debug:
+      msg: Use {{ ansible_facts.gludd_environment.optimization.recommended_profile_for.mechanical
+        }}
+    name: Prefer the recommended profile for mechanical work
+  - ansible.builtin.debug:
+      msg: Budget pressure detected
+    name: Warn when budget pressure is flagged
+    when: ansible_facts.gludd_environment.optimization.hints | selectattr('signal',
+      'equalto', 'budget') | list | length > 0
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_environment:
+          description:
+          - Environment brief with C(models), C(routing), C(budget), C(compute), C(tools),
+            C(skills), C(queues), C(system), and C(optimization).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_environment) snapshot.
+      returned: always
+      type: dict
+  module: gludd_environment
+general_ludd.agent.gludd_facts:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's read-only C(GET /api/facts) aggregation endpoint and returns
+      the structured snapshot under C(ansible_facts.gludd) so a playbook can branch
+      on live data in C(when:) / C(vars:).
+    - Read-only and check-mode safe — it performs no writes.
+    - Exposes C(gludd.work), C(gludd.todos), C(gludd.models), C(gludd.history), and
+      C(gludd.messages).
+    module: gludd_facts
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      project_id:
+        description: Optional project scope for the facts snapshot.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Inject live daemon facts (work/todo/model/history/messages)
+      as ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_facts: null
+    name: Load gludd facts
+    register: facts
+  - general_ludd.agent.gludd_facts: null
+    name: Only proceed when there is backlog
+  - ansible.builtin.debug:
+      msg: Backlog is {{ gludd.todos.backlog_size }}
+    name: Branch on backlog size
+    when: gludd.todos.backlog_size | int > 0
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd:
+          description: The aggregated facts snapshot (work/todos/models/history/messages).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd) snapshot.
+      returned: always
+      type: dict
+  module: gludd_facts
+general_ludd.agent.gludd_features:
+  DOCUMENTATION:
+    description:
+    - C(state=list) calls C(GET /api/features) and returns all features (optionally
+      filtered by status/category) as C(ansible_facts.gludd_features).
+    - C(state=verify) calls C(POST /api/features/verify) to trigger the server-side
+      FeatureVerifier pass and returns the verification summary + per-feature results.
+    - Both operations are read-only from the controller perspective; the daemon may
+      persist verification results internally on a C(state=verify) call.
+    - PSK-authed; check-mode safe on C(state=list). C(state=verify) skips the API
+      call in check mode and returns an empty summary.
+    module: gludd_features
+    options:
+      category:
+        description: Filter by feature category when C(state=list).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      project_id:
+        description: Optional project scope for the verify call.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - list
+        - verify
+        default: list
+        description: Operation to perform.
+        type: str
+      status:
+        choices:
+        - requested
+        - implemented
+        - verified
+        - regressed
+        description: Filter by feature status when C(state=list).
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Fetch and verify the feature database via the daemon
+  EXAMPLES:
+  - general_ludd.agent.gludd_features: null
+    name: Load all features as facts
+    register: feat_result
+  - general_ludd.agent.gludd_features:
+      state: list
+      status: verified
+    name: List only verified features
+    register: verified_feats
+  - general_ludd.agent.gludd_features:
+      state: verify
+    name: Trigger server-side verification pass
+    register: verify_result
+  - ansible.builtin.debug:
+      msg: '{{ verify_result.summary }}'
+    name: Show verification summary
+  RETURN:
+    ansible_facts:
+      description: Contains C(gludd_features) with the feature list (state=list).
+      returned: when state=list
+      type: dict
+    features:
+      description: List of feature dicts (state=list).
+      returned: when state=list
+      type: list
+    results:
+      description: Per-feature verification result list (state=verify).
+      returned: when state=verify
+      type: list
+    summary:
+      description: Verification summary dict (state=verify).
+      returned: when state=verify
+      type: dict
+    total:
+      description: Total number of features returned (state=list).
+      returned: when state=list
+      type: int
+  module: gludd_features
+general_ludd.agent.gludd_git:
+  DOCUMENTATION:
+    description:
+    - Performs git commit or branch operations on a local repository.
+    - Wraps C(general_ludd.git_automation.repo.GitAutomation).
+    - Idempotent for C(branch) (no-op if branch already exists).
+    - C(commit) reports C(changed=true) when a commit is created; C(changed=false)
+      if there is nothing to commit.
+    module: gludd_git
+    options:
+      branch:
+        description: Branch name (required when C(op=branch)).
+        type: str
+      message:
+        description: Commit message (required when C(op=commit)).
+        type: str
+      op:
+        choices:
+        - commit
+        - branch
+        description: Operation to perform.
+        required: true
+        type: str
+      path:
+        description: Path to the git repository or worktree.
+        required: true
+        type: str
+    short_description: Git operations (commit/branch) via git_automation
+  EXAMPLES:
+  - general_ludd.agent.gludd_git:
+      message: 'auto: apply model-suggested fix'
+      op: commit
+      path: /tmp/worktrees/fix-auto-20260612
+    name: Commit changes in worktree
+    register: git_result
+  - general_ludd.agent.gludd_git:
+      branch: fix/auto-20260612
+      op: branch
+      path: /workspace/myrepo
+    name: Create branch
+  RETURN:
+    branch:
+      description: Branch name (op=branch).
+      returned: when op=branch
+      type: str
+    sha:
+      description: Commit SHA (op=commit only).
+      returned: when op=commit and changed=true
+      type: str
+  module: gludd_git
+general_ludd.agent.gludd_introspect:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's read-only C(GET /api/facts) endpoint and returns the C(codebase)
+      self-introspection block under C(ansible_facts.gludd.codebase) so a self-improvement
+      playbook can pick a high-value target (low coverage intersect high churn intersect
+      debt).
+    - Read-only and check-mode safe — performs no writes.
+    - Exposes C(gludd.codebase.churn), C(gludd.codebase.complexity), C(gludd.codebase.coverage),
+      C(gludd.codebase.debt), C(gludd.codebase.dead_code), C(gludd.codebase.missing_tests),
+      C(gludd.codebase.perf_cost), and C(gludd.codebase.recent_failures). Each facet
+      is C(null) when its source is unavailable — nothing is faked.
+    module: gludd_introspect
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Inject codebase self-knowledge facts (churn/complexity/coverage/debt)
+      as ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_introspect: null
+    name: Load codebase introspection facts
+    register: introspect
+  - ansible.builtin.debug:
+      msg: '{{ gludd.codebase.coverage.low_coverage }}'
+    name: Pick a low-coverage target
+    when: gludd.codebase.coverage is not none
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd:
+          description: Dict with a C(codebase) key holding the introspection snapshot.
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd.codebase) snapshot.
+      returned: always
+      type: dict
+  module: gludd_introspect
+general_ludd.agent.gludd_langchain_generate:
+  DOCUMENTATION:
+    description:
+    - Sends a prompt to the daemon's POST /admin/models/call endpoint, which runs
+      the generation through the LangChain-backed model gateway.
+    - When C(response_schema) is supplied the returned text is fence-stripped and
+      parsed as JSON; a parse failure is returned as a clean module failure rather
+      than a traceback.
+    - This module is stdlib-only; it never imports LangChain itself. All LangChain
+      work happens server-side in the daemon.
+    module: gludd_langchain_generate
+    notes:
+    - Check mode skips the actual model call and returns a placeholder.
+    - C(model_profile) and C(route_task_type) are mutually exclusive.
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      max_tokens:
+        default: 2048
+        description: Maximum tokens to generate.
+        type: int
+      model_profile:
+        description: 'Explicit model profile ID to use. Mutually exclusive with C(route_task_type).
+
+          '
+        type: str
+      prompt:
+        description: The prompt text to send to the model.
+        required: true
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      response_schema:
+        default: null
+        description: 'When set, the model output is parsed as JSON (after stripping
+          any Markdown code fences). The dict itself documents the expected shape.
+
+          '
+        type: dict
+      route_task_type:
+        description: 'Task type string for adaptive routing. Mutually exclusive with
+          C(model_profile).
+
+          '
+        type: str
+      system:
+        default: ''
+        description: Optional system instruction prepended to the request.
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+    short_description: Generate text (optionally structured JSON) via the daemon
+  EXAMPLES:
+  - general_ludd.agent.gludd_langchain_generate:
+      model_profile: default
+      prompt: Summarize the CI failure below in one sentence.
+    name: Generate free-form text
+    register: gen_result
+  - general_ludd.agent.gludd_langchain_generate:
+      prompt: Return the package name and version as JSON.
+      response_schema:
+        name: str
+        version: str
+    name: Generate structured JSON
+    register: structured_result
+  RETURN:
+    model_profile_id:
+      description: Profile that was actually used.
+      returned: success
+      type: str
+    structured:
+      description: 'Parsed JSON object when C(response_schema) was provided; otherwise
+        null.
+
+        '
+      returned: success
+      type: dict
+    text:
+      description: Generated text from the model (raw, fences intact).
+      returned: success
+      type: str
+    usage:
+      description: Token usage dict (prompt_tokens, completion_tokens, total_tokens).
+      returned: success
+      type: dict
+  module: gludd_langchain_generate
+general_ludd.agent.gludd_langgraph_decision:
+  DOCUMENTATION:
+    description:
+    - Sends a decision prompt plus a list of allowed option tokens to the
+    - daemon's POST /admin/models/call endpoint and asks the model to reply
+    - 'with JSON of the form {"decision": ..., "rationale": ...}.'
+    - The reply is fence-stripped and JSON-parsed; the chosen decision is
+    - validated against C(options). On any failure (bad JSON, decision not in
+    - the option set) the module falls back to the first option, marks
+    - C(valid)=false, and records a warning rather than crashing.
+    - This module is stdlib-only; it never imports LangGraph/LangChain.
+    module: gludd_langgraph_decision
+    options:
+      daemon_url: {}
+      model_profile: {}
+      options: {}
+      prompt: {}
+      psk: {}
+      route_task_type: {}
+      system: {}
+      timeout: {}
+    short_description: Ask the model to choose one option from a fixed set
+  EXAMPLES:
+  - general_ludd.agent.gludd_langgraph_decision:
+      model_profile: default
+      options:
+      - canary
+      - blue_green
+      - all_at_once
+      prompt: Given the diff is large and risky, pick a rollout strategy.
+    name: Choose a deployment strategy
+    register: decision_result
+  - ansible.builtin.debug:
+      msg: Chose {{ decision_result.decision }} ({{ decision_result.rationale }})
+    name: Use the decision token
+  RETURN:
+    decision:
+      description: The chosen option token (always one of C(options)).
+      returned: success
+      type: str
+    model_profile_id:
+      description: Profile that was actually used.
+      returned: success
+      type: str
+    rationale:
+      description: Short rationale string from the model (may be empty).
+      returned: success
+      type: str
+    raw:
+      description: Raw model text (fences intact) for debugging.
+      returned: success
+      type: str
+    valid:
+      description: 'True if the model returned valid JSON with a decision in C(options);
+        false if the module fell back to the first option.
+
+        '
+      returned: success
+      type: bool
+  module: gludd_langgraph_decision
+general_ludd.agent.gludd_langgraph_workflow:
+  DOCUMENTATION:
+    description:
+    - Sends a message list to the daemon's POST /admin/models/workflow endpoint, which
+      executes a LangGraph generate -> review -> retry loop server-side and returns
+      the best content plus quality metadata.
+    - This module is stdlib-only; it never imports LangGraph itself. All graph execution
+      happens in the daemon.
+    module: gludd_langgraph_workflow
+    notes:
+    - Check mode skips the workflow and returns a placeholder.
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      enable_graph:
+        default: true
+        description: 'When false, the daemon runs a single-shot generation instead
+          of the full graph (useful for debugging or when no review is wanted).
+
+          '
+        type: bool
+      max_retries:
+        default: 2
+        description: Maximum generate/review retries before giving up.
+        type: int
+      model_profile:
+        default: default
+        description: Model profile ID for the workflow.
+        type: str
+      prompt:
+        description: The user prompt to send to the workflow.
+        required: true
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      quality_threshold:
+        default: 0.6
+        description: Minimum quality score (0-1) the output must reach.
+        type: float
+      system:
+        default: ''
+        description: Optional system instruction; prepended as a system message.
+        type: str
+      timeout:
+        default: 300
+        description: Request timeout in seconds.
+        type: int
+      work_type:
+        default: code
+        description: Kind of work the graph is producing (e.g. code, docs, plan).
+        type: str
+    short_description: Run a multi-step LangGraph generate/review workflow
+  EXAMPLES:
+  - general_ludd.agent.gludd_langgraph_workflow:
+      prompt: Implement a function that reverses a linked list.
+      quality_threshold: 0.7
+      work_type: code
+    name: Run a code-generation workflow
+    register: wf_result
+  - general_ludd.agent.gludd_langgraph_workflow:
+      enable_graph: false
+      prompt: Draft a release note for v1.2.0.
+      work_type: docs
+    name: Single-shot generation (no graph)
+    register: wf_oneshot
+  RETURN:
+    content:
+      description: Best content the workflow produced.
+      returned: success
+      type: str
+    model:
+      description: Model/profile that produced the content.
+      returned: success
+      type: str
+    prompt_profile:
+      description: Prompt profile used by the graph.
+      returned: success
+      type: str
+    quality_score:
+      description: Quality score (0-1) of the returned content.
+      returned: success
+      type: float
+    retries:
+      description: Number of retries the graph performed.
+      returned: success
+      type: int
+    warnings:
+      description: Any warnings emitted by the workflow.
+      returned: success
+      type: list
+  module: gludd_langgraph_workflow
+general_ludd.agent.gludd_mcp_tool:
+  DOCUMENTATION:
+    description:
+    - 'Per the W3.9 decision in TASKS.md (MCP honestly fenced): the daemon'
+    - loads C(mcp_servers) config but passes C(mcp_client=None) — no MCP
+    - tools can be called through the daemon today.
+    - This module exists so playbooks can reference C(general_ludd.agent.gludd_mcp_tool)
+    - without import errors; it always returns C(not_implemented=true) and
+    - 'C(failed=false) so callers can C(when: not mcp_result.not_implemented)'
+    - gate around it cleanly.
+    - When MCP wiring (W3.9 option a) is completed, replace the body of this
+    - module and remove this note.
+    module: gludd_mcp_tool
+    options:
+      arguments: {}
+      daemon_url: {}
+      psk: {}
+      server: {}
+      timeout: {}
+      tool: {}
+    short_description: Invoke an MCP tool (honest placeholder — not yet wired)
+  EXAMPLES:
+  - general_ludd.agent.gludd_mcp_tool:
+      arguments:
+        path: /workspace/myfile.py
+      server: filesystem
+      tool: read_file
+    name: Attempt MCP tool call
+    register: mcp_result
+  - ansible.builtin.debug:
+      msg: 'MCP result: {{ mcp_result.result }}'
+    name: Only use result if MCP is wired
+    when: not mcp_result.not_implemented
+  RETURN:
+    not_implemented:
+      description: Always true until W3.9 option (a) is completed.
+      returned: always
+      type: bool
+    reason:
+      description: Explanation of why MCP is not yet available.
+      returned: always
+      type: str
+    result:
+      description: Tool result (empty until wired).
+      returned: always
+      type: dict
+  module: gludd_mcp_tool
+general_ludd.agent.gludd_message:
+  DOCUMENTATION:
+    description:
+    - Talks to the daemon message-queue API so agents/roles can coordinate.
+    - C(state=send) posts a message to a recipient role/agent (or C(broadcast)).
+    - C(state=receive) fetches the inbox for C(recipient); messages are returned both
+      as C(ansible_facts.gludd_inbox) and a C(messages) list. Pass C(ack=true) to
+      mark every received message read in the same task.
+    - C(state=ack) marks a single C(message_id) read.
+    - Check mode skips the write side of C(send)/C(ack); C(receive) is always safe.
+    module: gludd_message
+    options:
+      ack:
+        default: false
+        description: When receiving, also mark each returned message read.
+        type: bool
+      body:
+        default: ''
+        description: Message body (send). May carry sensitive content — not logged.
+        no_log: true
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      message_id:
+        description: Message id to ack (required for ack).
+        type: str
+      priority:
+        choices:
+        - low
+        - normal
+        - high
+        - urgent
+        default: normal
+        description: Message priority (send).
+        type: str
+      project_id:
+        description: Optional project scope.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      recipient:
+        description: Recipient role/agent name, or C(broadcast) (send/receive).
+        type: str
+      sender:
+        description: Sender role/agent name (required for send).
+        type: str
+      state:
+        choices:
+        - send
+        - receive
+        - ack
+        description: Operation to perform.
+        required: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      topic:
+        default: ''
+        description: Message topic (send).
+        type: str
+      ttl_seconds:
+        description: Optional time-to-live in seconds (send); expired messages are
+          purged.
+        type: int
+      unread:
+        default: true
+        description: When receiving, only return unread messages.
+        type: bool
+    short_description: Inter-agent message queue — send, receive, or ack messages
+      via the daemon
+  EXAMPLES:
+  - general_ludd.agent.gludd_message:
+      body: 'PR #42 is ready'
+      recipient: reviewer
+      sender: coder
+      state: send
+      topic: ready-for-review
+    name: Send a message to the reviewer role
+  - general_ludd.agent.gludd_message:
+      recipient: broadcast
+      sender: planner
+      state: send
+      topic: standup
+    name: Broadcast to everyone
+  - general_ludd.agent.gludd_message:
+      ack: true
+      recipient: coder
+      state: receive
+    name: Receive and ack my inbox
+    register: mail
+  - general_ludd.agent.gludd_message:
+      message_id: MSG-ABC123
+      state: ack
+    name: Ack one message
+  RETURN:
+    acked:
+      description: Whether the message was acked (ack, or receive with ack=true).
+      returned: when state=ack or state=receive
+      type: bool
+    ansible_facts:
+      description: Contains C(gludd_inbox) with the received messages (receive).
+      returned: when state=receive
+      type: dict
+    message:
+      description: The created message (send).
+      returned: when state=send
+      type: dict
+    messages:
+      description: List of inbox messages (receive).
+      returned: when state=receive
+      type: list
+  module: gludd_message
+general_ludd.agent.gludd_metrics:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's read-only C(GET /api/metrics) endpoint and returns the
+      metrics snapshot under C(ansible_facts.gludd_metrics) so a playbook can branch
+      on live cost/usage/benchmark data in C(when:) / C(vars:).
+    - Read-only and check-mode safe — it performs no writes.
+    - Exposes agent-level metrics, global per-model usage, per-project cost, and benchmark
+      rankings (when benchmark data is available).
+    - Reuses the daemon's MetricsCollector / BenchmarkRepository — no stat logic is
+      recomputed client-side.
+    module: gludd_metrics
+    options:
+      agent_id:
+        description: Optional agent filter (single agent's summary).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      project_id:
+        description: Optional project filter (per-project agents + cost).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Inject live daemon metrics (agents/usage/cost/benchmarks) as
+      ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_metrics: null
+    name: Load gludd metrics
+    register: metrics
+  - ansible.builtin.debug:
+      msg: 'Running agents: {{ ansible_facts.gludd_metrics.running_agents }}'
+    name: Branch on total agent count
+  - general_ludd.agent.gludd_metrics:
+      project_id: alpha
+    name: Per-project cost only
+    register: alpha_metrics
+  - ansible.builtin.fail:
+      msg: Project cost too high
+    name: Halt when a project blew its cost budget
+    when: (ansible_facts.gludd_metrics.cost_by_project['alpha'] | default(0) | float)
+      > 10.0
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_metrics:
+          description:
+          - Metrics snapshot with C(agents), C(total_agents), C(running_agents), C(global_model_usage),
+            C(cost_by_project), and C(benchmark_rankings).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_metrics) snapshot.
+      returned: always
+      type: dict
+  module: gludd_metrics
+general_ludd.agent.gludd_model_call:
+  DOCUMENTATION:
+    description:
+    - Sends a prompt to the daemon's POST /admin/models/call endpoint.
+    - Supports direct model profile selection or adaptive routing by task type.
+    - Returns the generated text plus usage metadata.
+    module: gludd_model_call
+    notes:
+    - Check mode skips the actual model call and returns a placeholder.
+    - C(model_profile) and C(route_task_type) are mutually exclusive.
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      max_tokens:
+        default: 2048
+        description: Maximum tokens to generate.
+        type: int
+      model_profile:
+        description: 'Explicit model profile ID to use. Mutually exclusive with C(route_task_type).
+
+          '
+        type: str
+      prompt:
+        description: The prompt text to send to the model.
+        required: true
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      route_task_type:
+        description: 'Task type string for adaptive routing (uses /admin/code/suggest-model
+          logic). Mutually exclusive with C(model_profile).
+
+          '
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+    short_description: Run a model generation via the daemon API
+  EXAMPLES:
+  - general_ludd.agent.gludd_model_call:
+      model_profile: default
+      prompt: 'Write a docstring for function foo(x: int) -> str'
+    name: Call model directly
+    register: model_result
+  - general_ludd.agent.gludd_model_call:
+      prompt: Explain the test failure below
+      route_task_type: code_review
+    name: Use adaptive routing
+    register: routed_result
+  RETURN:
+    model_profile_id:
+      description: Profile that was actually used.
+      returned: success
+      type: str
+    text:
+      description: Generated text from the model.
+      returned: success
+      type: str
+    usage:
+      description: Token usage dict (prompt_tokens, completion_tokens, total_tokens).
+      returned: success
+      type: dict
+  module: gludd_model_call
+general_ludd.agent.gludd_ping:
+  DOCUMENTATION:
+    description:
+    - Pings the general_ludd daemon by calling /healthz.
+    - Returns C(pong=true) and C(daemon_reachable) flag.
+    - Safe to use in check mode (read-only).
+    module: gludd_ping
+    notes:
+    - Always reports C(changed=false) — this is a read-only probe.
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 10
+        description: Request timeout in seconds.
+        type: int
+    short_description: Verify daemon reachability
+  EXAMPLES:
+  - general_ludd.agent.gludd_ping:
+      daemon_url: http://localhost:8000
+    name: Ping the daemon
+    register: ping_result
+  - ansible.builtin.assert:
+      that: ping_result.daemon_reachable
+    name: Assert daemon reachable
+  RETURN:
+    daemon_reachable:
+      description: Whether /healthz responded 200.
+      returned: always
+      type: bool
+    daemon_url:
+      description: URL that was probed.
+      returned: always
+      type: str
+    pong:
+      description: Always true when module succeeds.
+      returned: always
+      type: bool
+  module: gludd_ping
+general_ludd.agent.gludd_reload:
+  DOCUMENTATION:
+    description:
+    - 'Wraps C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module):'
+    - snapshots the live module bytes, C(os.replace)s the candidate source over
+    - the live path, C(importlib.reload)s the module, then runs a health gate
+    - (a C(/readyz) poll). If the health gate fails or the reload raises, the
+    - original bytes are restored and the module is reloaded again — the live
+    - module ends up exactly as it started.
+    - 'Fail-closed: a missing/non-importable target, a missing candidate, or a'
+    - failed health gate all yield C(success=false).
+    - Runs in-process (same venv as C(general_ludd)).
+    module: gludd_reload
+    options:
+      candidate_source_path: {}
+      config_dir: {}
+      health_timeout: {}
+      health_url: {}
+      module_name: {}
+      result_path: {}
+    short_description: Hot-rotate a validated leaf code module with health-gated auto-rollback
+  EXAMPLES:
+  - general_ludd.agent.gludd_reload:
+      candidate_source_path: /tmp/candidate/src/general_ludd/example/leaf.py
+      health_url: http://127.0.0.1:8000/readyz
+      module_name: general_ludd.example.leaf
+      result_path: /tmp/promotion_result.json
+    name: Hot-rotate a validated leaf module
+    register: reload_result
+  RETURN:
+    rolled_back:
+      description: Whether the reload was rolled back after a failed health gate.
+      returned: always
+      type: bool
+    success:
+      description: Whether the hot-rotation succeeded and passed the health gate.
+      returned: always
+      type: bool
+  module: gludd_reload
+general_ludd.agent.gludd_schedule:
+  DOCUMENTATION:
+    description:
+    - Posts a list of work-item descriptors to C(POST /api/schedule) and returns the
+      ordered concurrency-safe batches as C(ansible_facts.gludd_schedule).
+    - Each work item specifies its exclusive resource requirements, upstream dependencies,
+      and whether it is greenfield (no shared-resource conflicts).
+    - The daemon scheduler topologically sorts items, then groups them into batches
+      where items within a batch may run concurrently and all dependencies are satisfied
+      by strictly earlier batches.
+    - PSK-authed; check-mode safe (skips the API call and returns empty batches).
+    module: gludd_schedule
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      items:
+        description: 'List of work-item descriptor dicts.  Each dict must contain
+          C(id) (str, required) and may contain C(resources) (list[str], default []),
+          C(depends_on) (list[str], default []), and C(is_greenfield) (bool, default
+          false).
+
+          '
+        elements: dict
+        required: true
+        type: list
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+    short_description: Compute concurrency-safe execution batches via the daemon scheduler
+  EXAMPLES:
+  - general_ludd.agent.gludd_schedule:
+      items:
+      - depends_on: []
+        id: TASK-001
+        is_greenfield: false
+        resources:
+        - db
+      - depends_on:
+        - TASK-001
+        id: TASK-002
+        is_greenfield: false
+        resources:
+        - db
+      - depends_on: []
+        id: TASK-003
+        is_greenfield: true
+        resources: []
+    name: Compute execution plan for work items
+    register: schedule_result
+  - ansible.builtin.debug:
+      msg: 'Batches: {{ schedule_result.batches }}'
+    name: Show the execution batches
+  RETURN:
+    ansible_facts:
+      description: Contains C(gludd_schedule) with the ordered batches.
+      returned: always
+      type: dict
+    batch_count:
+      description: Number of batches in the plan.
+      returned: always
+      type: int
+    batches:
+      description: 'Ordered list of batches.  Each batch is a list of work-item ids
+        that may run concurrently.  Batches are ordered so that all dependencies of
+        items in batch N appear in batches 0..N-1.
+
+        '
+      returned: always
+      type: list
+    item_count:
+      description: Number of work items submitted.
+      returned: always
+      type: int
+  module: gludd_schedule
+general_ludd.agent.gludd_skill:
+  DOCUMENTATION:
+    description:
+    - Looks up a skill by name or trigger pattern and renders its body with Jinja2
+      C(StrictUndefined) — an unknown variable is an error, not silent empty text.
+    - Uses the shared C(render_skill) renderer also wired into C(execution.engine)
+      so playbook and prompt paths render identically.
+    - Frontmatter C(required_vars) list is checked before rendering; missing vars
+      fail the task with the variable name in the error message.
+    module: gludd_skill
+    options:
+      name:
+        description: Skill name (exact match). Mutually exclusive with C(trigger).
+        type: str
+      skills_path:
+        default: ''
+        description: 'Directory to scan for skill markdown files. Defaults to C(.opencode/skills)
+          relative to the playbook directory, then C(~/.config/general_ludd/skills).
+
+          '
+        type: str
+      trigger:
+        description: Trigger text for fuzzy/pattern matching. Mutually exclusive with
+          C(name).
+        type: str
+      variables:
+        default: {}
+        description: Dict of template variables to inject.
+        type: dict
+    short_description: Select and render a skill with Jinja2 variables
+  EXAMPLES:
+  - general_ludd.agent.gludd_skill:
+      name: code-review
+      variables:
+        language: python
+        project_name: myproject
+    name: Render a skill
+    register: skill_result
+  - ansible.builtin.set_fact:
+      system_prompt: '{{ skill_result.rendered_body }}'
+    name: Use rendered body as model prompt prefix
+  RETURN:
+    rendered_body:
+      description: Skill body after Jinja2 rendering.
+      returned: success
+      type: str
+    required_vars:
+      description: Variables declared in skill frontmatter.
+      returned: success
+      type: list
+    skill_name:
+      description: Resolved skill name.
+      returned: success
+      type: str
+  module: gludd_skill
+general_ludd.agent.gludd_spend:
+  DOCUMENTATION:
+    description:
+    - C(state=get) calls C(GET /api/spend) and returns the current spend snapshot
+      as C(ansible_facts.gludd_spend).
+    - C(state=configure) calls C(POST /api/spend/configure) to update the spend-limiter
+      settings (limit_usd and/or window_seconds).
+    - PSK-authed; check-mode safe on C(state=get). C(state=configure) skips the API
+      call in check mode and returns an empty diff.
+    module: gludd_spend
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      limit_usd:
+        description: Spend limit in USD (configure only).
+        type: float
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - get
+        - configure
+        default: get
+        description: Operation to perform.
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      window_seconds:
+        description: Rolling window size in seconds (configure only).
+        type: int
+    short_description: Fetch and configure the daemon spend-limiter
+  EXAMPLES:
+  - general_ludd.agent.gludd_spend: null
+    name: Fetch current spend snapshot as facts
+    register: spend_result
+  - ansible.builtin.debug:
+      msg: 'Remaining: ${{ ansible_facts.gludd_spend.remaining_usd }}'
+    name: Show remaining budget
+  - general_ludd.agent.gludd_spend:
+      limit_usd: 10.0
+      state: configure
+      window_seconds: 86400
+    name: Configure spend limit
+    register: configure_result
+  RETURN:
+    ansible_facts:
+      description: Contains C(gludd_spend) with the spend snapshot (state=get).
+      returned: when state=get
+      type: dict
+    configured:
+      description: Updated configuration dict (state=configure).
+      returned: when state=configure
+      type: dict
+    spend:
+      description: Spend snapshot dict (state=get).
+      returned: when state=get
+      type: dict
+  module: gludd_spend
+general_ludd.agent.gludd_traces:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's read-only C(GET /api/traces) endpoint and returns the recent
+      execution-trace snapshot under C(ansible_facts.gludd_traces) so a playbook can
+      branch on live trace data in C(when:) / C(vars:).
+    - Read-only and check-mode safe — it performs no writes.
+    - Exposes a bounded list of recent traces (trace_id, todo_id, work_type, total_cost_usd,
+      total_tokens, success_rate, span_count, spans), a by-phase aggregate summary,
+      and the OpenTelemetry exporter status (C(available) / C(disabled)).
+    - Traces are sourced ONLY from the daemon's in-process recent-traces buffer (genuinely-captured
+      telemetry); no spans are fabricated. When no OTLP collector is configured the
+      otel exporter status is honestly C(disabled).
+    module: gludd_traces
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      limit:
+        default: 20
+        description: Maximum number of recent traces to return.
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      todo_id:
+        description: Optional filter — only traces for this todo.
+        type: str
+    short_description: Inject recent execution traces (spans/cost/phase) as ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_traces: null
+    name: Load recent traces
+    register: traces
+  - ansible.builtin.debug:
+      msg: Captured {{ ansible_facts.gludd_traces.count }} traces
+    name: Show how many traces were captured
+  - general_ludd.agent.gludd_traces:
+      limit: 5
+      todo_id: TODO-abc123
+    name: Only traces for a specific todo
+    register: todo_traces
+  - ansible.builtin.debug:
+      msg: generate phase cost is high
+    name: Warn when the generate phase is expensive
+    when: "(ansible_facts.gludd_traces.by_phase['generate'].total_cost_usd\n  | default(0)\
+      \ | float) > 1.0"
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_traces:
+          description:
+          - Trace snapshot with C(count), C(total_recorded), C(recent) (bounded list
+            of traces with spans), C(by_phase) aggregate, and C(otel_exporter_status).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_traces) snapshot.
+      returned: always
+      type: dict
+  module: gludd_traces
+general_ludd.agent.gludd_worktree:
+  DOCUMENTATION:
+    description:
+    - Creates or removes a git worktree via git_automation.repo.GitAutomation.
+    - Idempotent — C(changed=false) when the desired state already exists.
+    - In check mode reports what would change without modifying the filesystem.
+    module: gludd_worktree
+    options:
+      branch:
+        description: Branch name for the new worktree.
+        required: true
+        type: str
+      repo_path:
+        description: Path to the git repository root.
+        required: true
+        type: str
+      state:
+        choices:
+        - present
+        - absent
+        default: present
+        description: C(present) to create, C(absent) to remove.
+        type: str
+      worktree_path:
+        description: Filesystem path for the new worktree.
+        required: true
+        type: str
+    short_description: Manage git worktrees (idempotent)
+  EXAMPLES:
+  - general_ludd.agent.gludd_worktree:
+      branch: fix/auto-20260612
+      repo_path: /workspace/myrepo
+      worktree_path: /tmp/worktrees/fix-auto-20260612
+    name: Create a worktree
+    register: wt
+  - general_ludd.agent.gludd_worktree:
+      branch: fix/auto-20260612
+      repo_path: /workspace/myrepo
+      state: absent
+      worktree_path: /tmp/worktrees/fix-auto-20260612
+    name: Remove worktree on cleanup
+  RETURN:
+    branch:
+      description: Branch name.
+      returned: always
+      type: str
+    state:
+      description: Resulting state (present or absent).
+      returned: always
+      type: str
+    worktree_path:
+      description: Path of the worktree.
+      returned: always
+      type: str
+  module: gludd_worktree

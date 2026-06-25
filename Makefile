@@ -6,6 +6,20 @@ TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
+# TEMP discovery helper (osquery build task) — removed before commit.
+.PHONY: discover-osq
+discover-osq:
+	@echo "=== src skills ===" ; ls src/general_ludd/skills 2>/dev/null
+	@echo "=== config skills ===" ; ls config/skills 2>/dev/null
+	@echo "=== molecule dirs ===" ; find collections -type d -name molecule -not -path '*/.claude/*' 2>/dev/null
+	@echo "=== modules dir ===" ; ls collections/ansible_collections/general_ludd/agent/plugins/modules 2>/dev/null
+	@echo "=== binaries router ===" ; grep -rln 'filestore/binaries\|admin/filestore\|BinaryBootstrapper' src/general_ludd/routers src/general_ludd/daemon.py 2>/dev/null
+	@echo "=== bootstrap/filestore tests ===" ; find tests -name '*bootstrap*' -o -name '*filestore*' 2>/dev/null
+	@echo "=== facts router tests ===" ; find tests -name '*facts*' -not -path '*/.claude/*' 2>/dev/null
+	@echo "=== skill .md files (non-worktree) ===" ; find . -name '*.md' -path '*skills*' -not -path '*/.claude/*' -not -path '*/.venv/*' 2>/dev/null
+	@echo "=== skill search dirs in code ===" ; grep -rn 'discover_skills\|skills_dir\|SKILLS_DIR\|skills_path' src/general_ludd --include='*.py' -l 2>/dev/null
+	@echo "=== registry ===" ; grep -rn 'discover_skills' src/general_ludd --include='*.py' 2>/dev/null
+
 PYTHON := python3
 UV := uv
 export VIRTUAL_ENV := $(CURDIR)/.venv
@@ -106,10 +120,35 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         test-worktree-disk-guard \
         git-cherry-pick-commit git-amend-msg \
         test-other-shard \
-        alembic-check liveness-debug gate-lowmem-background pygrep
+        alembic-check liveness-debug gate-lowmem-background pygrep \
+        mcp-gen mcp-docs-check
 
 liveness-debug:
 	@$(UV) run python3 scripts/liveness_debug.py
+
+# ---------------------------------------------------------------------------
+# MCP generator (PHASE 1 of MCP-for-all-Ansible-resources). Light, NOT heavy —
+# pure AST/YAML parse over ~25 module files, no pytest/mypy worker pool, so it
+# is NOT wrapped in $(HEAVY_SEM) and is safe to run inline / early in the gate.
+#   mcp-gen        -> regenerate docs/MCP_TOOLS_MANIFEST.json + MCP_TOOLS_TOPICS.yml
+#   mcp-docs-check -> CI guard: every gludd_* module must carry MCP-usable docs
+# ---------------------------------------------------------------------------
+mcp-gen:
+	@$(UV) run python3 scripts/gen_mcp_tools.py
+
+mcp-docs-check:
+	@$(UV) run python3 scripts/mcp_docs_check.py
+
+# Lint + typecheck ONLY the MCP generator scripts (used during dev of phase 1).
+mcp-lint:
+	@$(UV) run ruff check scripts/gen_mcp_tools.py scripts/mcp_docs_check.py
+	@$(HEAVY_SEM) $(UV) run mypy scripts/gen_mcp_tools.py scripts/mcp_docs_check.py
+
+mcp-doc-debug:
+	@$(UV) run python3 -c "import ast,yaml,sys; p='$(P)'; s=open(p).read(); d=ast.get_docstring(ast.parse(s),clean=False); from scripts.mcp_docs_check import _extract_documentation_block; b=_extract_documentation_block(d); print('---BLOCK---'); print(b[-400:]); print('---PARSE---'); \
+	import yaml as y; \
+	[print('ERR:',e) for e in [None] if False];\
+	exec('try:\n print(y.safe_load(b))\nexcept Exception as ex:\n print(\"YAMLERR:\", ex)')"
 
 # Pure-python recursive substring search (this sandbox lacks the `grep` binary).
 #   make pygrep Q='pattern' [P='dir-or-file']
@@ -361,6 +400,16 @@ gate:
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
 	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
 	@# backgrounded) is visibly advancing through phases — never a silent black box.
+	@# MCP docs-presence guard (light, fast — pure AST/YAML parse, NOT heavy_sem).
+	@# Runs FIRST so a gludd_* module landing without MCP-usable docs fails the
+	@# gate immediately, keeping the generated MCP surface complete (PHASE 1).
+	@echo "[gate $$(date +%H:%M:%S)] phase 0/5 mcp-docs-check ..."
+	@printf "mcp-docs-check " >> .gate-status
+	@if $(MAKE) --no-print-directory mcp-docs-check > /tmp/gludd-gate-mcp.log 2>&1; then \
+		echo "PASS 0" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] mcp-docs-check FAILED:" && cat /tmp/gludd-gate-mcp.log; \
+	fi
 	@echo "[gate $$(date +%H:%M:%S)] phase 1/5 lint ..."
 	@printf "lint " >> .gate-status
 	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
