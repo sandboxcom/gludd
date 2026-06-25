@@ -67,7 +67,7 @@ and Windows (x86_64).
 
 ## Feature & Task Completion Status
 
-**Status as of v0.1.0-alpha.3 — 2026-06-19; core-engine rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
+**Status as of v0.1.0-alpha.3 — 2026-06-19; core-engine + scoring/cost + security-findings rows refreshed 2026-06-25 (branch `feature/alpha4-green-the-gate`)**
 
 This table is regenerated/verified on every release cut (enforced by `make release-cut`).
 Between cuts, individual rows may be refreshed in place against new commit evidence; the
@@ -132,7 +132,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Per-todo/daily budget caps (F5) | 100% | `tests/unit/test_budget_caps.py` — PASS; reservation accounting hardened: `check_todo_budget` now subtracts a prior unreconciled reservation before the cap check so a retry on the same todo is idempotent (not double-counted), `tests/unit/test_budget_guards.py::test_check_todo_budget_concurrent_same_todo_replaces_not_stacks`; `[c5ffec1]` |
 | Secrets auto mode tries OpenBao before env (H17) | 100% | `tests/unit/test_secrets_auto_mode.py` 4 passed; `[1bbe4b8]` |
 | CLI ↔ /admin/code/* endpoint parity (M11/W3.13) | 100% | `tests/unit/test_w3_13_cli_code_parity.py` — PASS; `[779937c]` |
-| Scoring cost-constrained routing (#59/#69) | 20% | `scoring/router.py:38-67` route logic exists; `BenchmarkRepository.get_aggregate_scores` returns NO `avg_cost` column → `scoring/router.py:131` defaults 0.0 → cap is a production no-op; unit tests pass with mocked data only; `[audit]` |
+| Scoring cost-constrained routing (#59/#69) | 80% | FUNCTIONAL: `avg_cost` is now real — `BenchmarkRepository.get_aggregate_scores` emits an averaged `avg_cost` from the real `cost_usd` column and the `AdaptiveRouter` cost cap consumes it, so the cost constraint actually gates (the expensive top-quality candidate is EXCLUDED under a cap in favor of a cheaper one). Was a production no-op (avg_cost absent → defaulted 0.0 → cap never bit). `tests/unit/test_benchmark_repo.py::test_cost_cap_bites_with_real_repo_avg_cost` (real repo → real router, `reason == "cost_constrained"`); `[436af0d]` |
 | Model routing roles + weights (`routing_roles/`) | 25% | `routing_roles/roles.py` + `routing_roles/weights.py` in worktree only (not merged); `model_weights/` package absent entirely; 7/10 weight pairs diverge from recommendation doc; `[docs/audit/model_routing_coherence_check.md]` |
 | BenchmarkResult `task_role` field (P1) | 0% | `schemas/benchmark.py` has no `task_role` field; recommendation doc §3.2 marks this P1; `[docs/audit/model_routing_coherence_check.md]` |
 | BERT/embeddings search verb (similar / compare / search) | 85% | Three embedding surfaces built+tested+registered on the `gludd_embed` module + daemon router (`routers/embeddings.py`): `POST /api/embeddings/similar` (rank canonical task types) `[79a84d1]`; `POST /api/embeddings/compare` (pairwise/batch matrix similarity) `[c4613eb]`; `POST /api/embeddings/search` (RAG search over `skills`/`task_types` corpora) `[ad14a8a]`; router registered in `daemon.py` (PSK-gated) `[f59e621]`; quadratic-DoS bounded (`texts` ≤100, per-string ≤20000 chars) `[4176916]`; covered by `tests/unit/test_embeddings_router.py` + `tests/unit/test_gludd_embed_module.py`; NEW 2026-06-25 — −15% because the live corpora are v1-only (10 canonical task types + on-the-fly skill descriptions); the corpus expansion (memory/todos/code) is not yet built |
@@ -213,7 +213,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Per-project cost/time/LoC accounting (#28) | 20% | `MetricsCollector.get_cost_by_project` + `TodoRepository.status_summary` work; no time, LoC, or per-role stats; 3 of 5 claimed dimensions missing; `[audit]` |
 | Watchdog/stall detection improvements (mt-6-watchdog branch) | 15% | Branch "building" per SESSION.md; no merge; `[SESSION.md:28]` |
 | Gate-safe + predictive floor controller (floor_controller-consolidated branch) | 15% | Branch "building" per SESSION.md; no merge; `[SESSION.md:29]` |
-| self_update wired into daemon | 5% | `self_update/__init__.py` commits 4 symbols; NOT in daemon imports or router block; `[audit]` |
+| self_update wired into daemon | 90% | NOW WIRED on `feature/alpha4-green-the-gate`: `self_update.register(app, daemon_state)` in the daemon router-registration block (`daemon.py:1815`, imported `daemon.py:1778`) + the event loop routes `queue=="self_update"` todos into the code-apply pipeline (`event_loop/loop.py:1145-1147` → `_apply_self_update_code`). Dispatch is PSK + approval-gated. Verified 2026-06-25; wired in branch working tree (SHA below log window) — −10% pending a dedicated route-level e2e proof of the apply pipeline |
 | Persistent agent memory (G1) | 0% | No `memory/` package; design-only; `[audit]` |
 | Offline eval harness (G2) | 0% | No `eval/` package; design-only; `[audit]` |
 | Semantic codebase retrieval (G3) | 0% | No `retrieval/` package; design-only; `[audit]` |
@@ -241,7 +241,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Observability trace store (RecentTracesBuffer) | 100% | `tests/unit/test_trace_store.py` 7 passed; `[86389be]` |
 | Repository query perf + relationship pagination (P1/P6–P12) | 100% | `ProjectRelationshipRepository.list_for_project`/`list_children` now take `limit`/`offset` and hard-cap at `_DEFAULT_LIST_LIMIT` (closes the unbounded-relationship DoS, P12 gap); `tests/unit/test_project_relationships.py::TestListForProjectCap` (4 tests: default cap, explicit-limit clamp, relation-type filter under cap, list_children cap); `[db56eee]` — NEW 2026-06-25 |
 | CVE diskcache + pip dependency upgrades | 0% | `TASKS.md:252-253` open; `make pip-audit` ends `|| true`; `[audit]` |
-| avg_cost column in BenchmarkRepository.get_aggregate_scores | 0% | `db/repository.py::get_aggregate_scores` returns no avg_cost; scoring/router.py:131 defaults 0.0; identified as a 2-line fix; `[audit]` |
+| avg_cost column in BenchmarkRepository.get_aggregate_scores | 100% | DONE: `get_aggregate_scores` now emits an `avg_cost` key averaged from the real `cost_usd` column (no longer absent → no longer defaults 0.0 in the router); `tests/unit/test_benchmark_repo.py::test_get_aggregate_scores_includes_avg_cost`; `[436af0d]` |
 
 ---
 
@@ -285,7 +285,10 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 ### Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)
 
 These are new P1/P2 findings from the deeper-coverage security audit (2026-06-16). All are
-grounded at `file:line`. None are scheduled for the current release.
+grounded at `file:line`. As of 2026-06-25, eight have been closed on
+`feature/alpha4-green-the-gate` (marked FIXED below; can_invoke `[a4a2e1a]` and MCP-collision
+`[45fcfe7]` carry commit SHAs, the rest verified by a read-only branch audit); the remainder
+are not yet scheduled for a release.
 
 | Finding | Severity | % | Evidence / Location |
 |---|---|---|---|
@@ -294,17 +297,17 @@ grounded at `file:line`. None are scheduled for the current release.
 | `resolve()` leaks secret material via `str(exc)` in logs | P1 | 0% | `secrets/manager.py:112-115,248`; `[NEW_FINDINGS]` |
 | `SecretAlias` path/mount injection — arbitrary backend path read | P1 | 0% | `secrets/manager.py:66-91`; `[NEW_FINDINGS]` |
 | Worker workspace leak on failure (no cleanup) | P1 | 0% | `worker/app.py:195-217`; `[NEW_FINDINGS]` |
-| `CosignKey.__repr__` leaks private_key + password to logs | P1 | 0% | `secrets/cosign.py:12-17`; `[NEW_FINDINGS]` |
+| `CosignKey.__repr__` leaks private_key + password to logs | P1 | FIXED | `__repr__` now redacts the private key + password (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25); `secrets/cosign.py` |
 | `call_model_with_fallback` never checks circuit-breaker health | P1 | 0% | `models/gateway.py:663-688`; `[NEW_FINDINGS]` |
-| `AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead | P1 | 0% | `agents/dispatcher.py:66-101`; `[NEW_FINDINGS]` |
+| `AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead | P1 | FIXED | Both daemon dispatch sites now stamp a trusted `invoker_name="build"` so the `can_invoke` gate is ACTIVE (an empty invoker bypassed the matrix): pipeline `daemon_adapters.make_dispatch_fn` + role `daemon_wiring.make_role_handler`; legit dispatch allowed, unauthorized invoker / unregistered target fail-closed. `tests/unit/test_can_invoke_daemon_activation.py`; `[a4a2e1a]` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
 | Alembic migration drift: 9 tables created, ORM defines 16+ | P1 | 0% | `alembic/migrations/001_initial_schema.py`; `[NEW_FINDINGS]` |
-| `_fire_webhook` calls sync `httpx.post` from async path — freezes event loop | P1 | 0% | `events/hooks.py:159`; `[NEW_FINDINGS]` |
-| Webhook full event payload leaks model credentials | P1 | 0% | `events/hooks.py:155`; `[NEW_FINDINGS]` |
-| MCP tool-name collision silently hijacks routing | P1 | 0% | `mcp/registry.py:31`; `[NEW_FINDINGS]` |
-| `connectors/registry.py` arbitrary code execution via `importlib.import_module` | P1 | 0% | `connectors/registry.py:153-163`; `[NEW_FINDINGS]` |
-| PSK fail-open: unset `GLUDD_PSK` + `GLUDD_REQUIRE_AUTH` → no auth on /admin | P1 | 0% | `daemon.py:1030/1039`; `[NEW_FINDINGS]` |
-| `/api/status` returns db_url (with credentials) to unauthenticated callers | P1 | 0% | `routers/todos.py:177-215`; `[NEW_FINDINGS]` |
-| `SpendLimiter.restore()` accepts negative cost → cap evasion | P1 | 0% | `controllers/spend_limiter.py:185-200`; `[NEW_FINDINGS]` |
+| `_fire_webhook` calls sync `httpx.post` from async path — freezes event loop | P1 | FIXED | webhook fire now uses the async httpx client (no sync call on the event loop); `events/hooks.py` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
+| Webhook full event payload leaks model credentials | P1 | FIXED | webhook payload is now filtered/redacted so model credentials are not emitted; `events/hooks.py` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
+| MCP tool-name collision silently hijacks routing | P1 | FIXED | Registry now fail-closes on duplicate registration (`ValueError: collision`); a second server cannot shadow a registered tool and the dispatcher stays pinned to the legitimate server. `tests/unit/test_tool_loop_routing.py::test_refused_collision_leaves_dispatch_pinned_to_legit_server`; `[45fcfe7]` |
+| `connectors/registry.py` arbitrary code execution via `importlib.import_module` | P1 | FIXED | dynamic import is now restricted by a module-name allowlist (no arbitrary `import_module`); `connectors/registry.py` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
+| PSK fail-open: unset `GLUDD_PSK` + `GLUDD_REQUIRE_AUTH` → no auth on /admin | P1 | FIXED | now fail-closed: with auth required and PSK unset the daemon denies rather than serving /admin unauthenticated; `daemon.py` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
+| `/api/status` returns db_url (with credentials) to unauthenticated callers | P1 | FIXED | `/api/status` no longer returns the credentialed `db_url` to unauthenticated callers (redacted/removed); `routers/todos.py` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
+| `SpendLimiter.restore()` accepts negative cost → cap evasion | P1 | FIXED | `restore()` now guards against negative cost (no cap-evasion via a negative restore); `controllers/spend_limiter.py` (closed on `feature/alpha4-green-the-gate`; verified 2026-06-25) |
 | F5b/F6a/F6b security features (batch3-security, 14 tests) | 50% | Branch `85158c2`, gate-clean, not merged; `[SESSION.md]` |
 | D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch) | 10% | Building; not merged; `[SESSION.md]` |
 
