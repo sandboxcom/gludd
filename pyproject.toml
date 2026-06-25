@@ -1,6 +1,6 @@
 [project]
 name = "general-ludd-agent"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.4"
 description = "General Ludd Agent — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -132,6 +132,9 @@ asyncio_default_fixture_loop_scope = "function"
 # (e.g. a TUI input-feed that never reaches quit on headless Linux).
 timeout = 180
 timeout_method = "signal"
+markers = [
+    "xdist_group: serialize tests that share a fixed resource (e.g. port 8000 or the daemon PID file) under pytest-xdist",
+]
 
 [tool.coverage.run]
 source = ["general_ludd"]

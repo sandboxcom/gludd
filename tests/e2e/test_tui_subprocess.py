@@ -12,6 +12,8 @@ import subprocess
 import sys
 import time
 
+import pytest
+
 GLUDD_CMD = [sys.executable, "-m", "general_ludd.cli", "tui"]
 
 # Absolute path to the repo's src/ directory.  When CI runs pytest with
@@ -49,6 +51,7 @@ def _subprocess_env() -> dict[str, str]:
     return env
 
 
+@pytest.mark.xdist_group("port_8000")
 class TestTUIE2E:
     def test_tui_starts_and_exits_cleanly_on_q(self):
         import pty

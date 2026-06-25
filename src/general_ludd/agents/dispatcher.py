@@ -72,8 +72,18 @@ class AgentDispatcher:
                 output=f"Agent '{task.agent_name}' is disabled",
             )
         if task.invoker_name and not self._registry.can_invoke(task.invoker_name, task.agent_name):
-            raise PermissionError(
-                f"'{task.invoker_name}' is not permitted to dispatch '{task.agent_name}'"
+            # Return a failed result (do NOT raise) so the can_invoke denial flows
+            # through the same AgentTaskResult contract as the not-found/disabled
+            # branches above — dispatch_one's caller (and dispatch_many's gather)
+            # expect a result, and the message must reach result.output.
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=(
+                    f"Permission denied: '{task.invoker_name}' is not permitted "
+                    f"to dispatch '{task.agent_name}'"
+                ),
             )
 
         semaphore = self._get_semaphore(task.agent_name)

@@ -397,6 +397,11 @@ jobs:
           cp -v THIRD_PARTY_LICENSES.md release-assets/THIRD_PARTY_LICENSES.md
           echo "--- staged release assets ---"
           ls -la release-assets/
+      - name: Generate SHA256SUMS aggregate
+        run: |
+          cd release-assets
+          sha256sum * > SHA256SUMS
+          cat SHA256SUMS
       - name: Clean stale release
         # If a previous run created a release for this tag but failed mid-upload
         # (the alpha.2 "release already_exists" error from action-gh-release),

@@ -153,6 +153,15 @@ class RemoteSkillFetcher:
             return None
         if resp.status_code != 200:
             return None
+        # Cap response size to prevent memory-exhaustion DoS (M-12).
+        _MAX = 1_000_000  # 1 MB
+        _clen = resp.headers.get("content-length")
+        if _clen and _clen.isdigit() and int(_clen) > _MAX:
+            logger.warning("Skill response too large (%s bytes) from %s", _clen, url)
+            return None
+        if len(resp.content) > _MAX:
+            logger.warning("Skill response body exceeded %d bytes from %s", _MAX, url)
+            return None
         return parse_skill_md(resp.text, source_path=url)
 
     def install(self, url: str, target_dir: str) -> Path | None:

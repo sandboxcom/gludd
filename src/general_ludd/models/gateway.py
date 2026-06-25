@@ -261,17 +261,47 @@ class ModelGateway:
         # identical misses on a per-key lock so only the first does the provider
         # call and the rest re-read the now-populated cache. _cache_key_locks is
         # itself guarded by _cache_key_locks_guard.
+        #
+        # Eviction: each entry is reference-counted via _cache_key_lock_refs.
+        # Threads that need a key increment the ref under the guard before
+        # blocking on the per-key lock; when they release it they decrement and
+        # delete the entry if the count reaches zero.  This keeps the dict
+        # bounded to ≤ (number of in-flight cache-key waiters) entries rather
+        # than growing without bound across the lifetime of the process.
         self._cache_key_locks: dict[str, threading.Lock] = {}
+        self._cache_key_lock_refs: dict[str, int] = {}
         self._cache_key_locks_guard = threading.Lock()
 
     def _cache_key_lock(self, cache_key: str) -> threading.Lock:
-        """Return the process-local single-flight lock for a cache key."""
+        """Return the process-local single-flight lock for a cache key.
+
+        The caller MUST pair every call with a matching ``_cache_key_unref``
+        in a ``finally`` block so the ref-count (and, when it reaches zero,
+        the dict entry) are cleaned up even if the provider call raises.
+        """
         with self._cache_key_locks_guard:
             lock = self._cache_key_locks.get(cache_key)
             if lock is None:
                 lock = threading.Lock()
                 self._cache_key_locks[cache_key] = lock
+            self._cache_key_lock_refs[cache_key] = (
+                self._cache_key_lock_refs.get(cache_key, 0) + 1
+            )
             return lock
+
+    def _cache_key_unref(self, cache_key: str) -> None:
+        """Decrement the ref-count for *cache_key*; evict when it reaches zero.
+
+        Must be called from a ``finally`` block that matches every
+        ``_cache_key_lock`` call so eviction is guaranteed even on exceptions.
+        """
+        with self._cache_key_locks_guard:
+            count = self._cache_key_lock_refs.get(cache_key, 0) - 1
+            if count <= 0:
+                self._cache_key_lock_refs.pop(cache_key, None)
+                self._cache_key_locks.pop(cache_key, None)
+            else:
+                self._cache_key_lock_refs[cache_key] = count
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -343,7 +373,7 @@ class ModelGateway:
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
 
-        if not self.check_budget(profile_id, estimated_cost, budget_remaining):
+        if not self.check_budget(profile_id, estimated_cost, budget_remaining, messages=messages):
             raise BudgetExceededError(
                 f"Call to '{profile_id}' rejected: over budget "
                 f"(estimated={estimated_cost}, remaining={budget_remaining}, "
@@ -366,18 +396,22 @@ class ModelGateway:
         # locking) so only the first miss does the provider call and the rest
         # serve the now-populated entry.
         if cache_key is not None and self._response_cache is not None:
-            with self._cache_key_lock(cache_key):
-                cached = self._response_cache.get(cache_key)
-                if cached is not None:
-                    logger.debug(
-                        "Cache hit (single-flight) profile=%s key=%s",
-                        profile_id,
-                        cache_key[:12],
+            lock = self._cache_key_lock(cache_key)
+            try:
+                with lock:
+                    cached = self._response_cache.get(cache_key)
+                    if cached is not None:
+                        logger.debug(
+                            "Cache hit (single-flight) profile=%s key=%s",
+                            profile_id,
+                            cache_key[:12],
+                        )
+                        return ModelResponse(**cached)
+                    return self._invoke_and_bill(
+                        profile, profile_id, messages, cache_key, **kwargs
                     )
-                    return ModelResponse(**cached)
-                return self._invoke_and_bill(
-                    profile, profile_id, messages, cache_key, **kwargs
-                )
+            finally:
+                self._cache_key_unref(cache_key)
 
         return self._invoke_and_bill(
             profile, profile_id, messages, None, **kwargs
@@ -701,6 +735,17 @@ class ModelGateway:
 
         _attempt_counter: list[int] = [0]
         _last_exc: list[BaseException | None] = [None]
+        # Cumulative-backoff cap: _time.sleep is synchronous and blocks the
+        # calling thread. With overload_max_retries=10 and
+        # overload_max_backoff=120s the worst-case cumulative sleep is 10x120s =
+        # 1200s (~20 minutes) on a single call — effectively a DoS of the thread
+        # pool. We track total wall-clock time spent sleeping and stop sleeping
+        # once the cap is exceeded, letting the retry exhaust naturally (tenacity
+        # continues retrying, but immediately rather than waiting). The cap is
+        # intentionally generous (300s = 5 minutes) so that legitimate overload
+        # back-pressure is still respected for the first few retries.
+        _MAX_CUMULATIVE_SLEEP_S: float = 300.0
+        _cumulative_sleep_s: list[float] = [0.0]
 
         def _is_retryable(exc: BaseException) -> bool:
             """Tenacity retry predicate: True → retry, False → re-raise.
@@ -754,8 +799,6 @@ class ModelGateway:
                 # provider's directed wait. _compute_backoff returns
                 # max(retry_after, 1.0) for RATE_LIMITED when this is set.
                 retry_after = _extract_retry_after_seconds(exc)
-                import sys as _sys
-                print(f"D23DEBUG kind={kind} retry_after={retry_after} attempt={_attempt_counter[0]}", file=_sys.stderr)
                 wait_s = policy._compute_backoff(
                     kind,
                     _attempt_counter[0],
@@ -763,7 +806,17 @@ class ModelGateway:
                     overload=is_overload,
                 )
                 if wait_s > 0:
-                    _time.sleep(wait_s)
+                    remaining_budget = _MAX_CUMULATIVE_SLEEP_S - _cumulative_sleep_s[0]
+                    if remaining_budget <= 0:
+                        # Cumulative cap exhausted: skip sleep, retry immediately.
+                        logger.debug(
+                            "backoff cap reached (%.0fs total); retrying immediately",
+                            _cumulative_sleep_s[0],
+                        )
+                    else:
+                        actual_sleep = min(wait_s, remaining_budget)
+                        _time.sleep(actual_sleep)
+                        _cumulative_sleep_s[0] += actual_sleep
 
         # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) use the higher retry cap
         # so tenacity doesn't stop too early on the primary before policy can
@@ -825,18 +878,17 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse:
-        """Call one fallback profile, recording its success/failure on the
-        health tracker.
+        """Call one fallback profile, delegating success/failure accounting to
+        call_model.
 
         The bare fallback-exhaustion loop used to call call_model(fb_id) with no
         is_healthy gate and never recorded the fallback's success or failure, so
         the breaker never tracked fallback health (Fix 3). call_model already
-        records failures via record_timeout_on_failure on exception; here we add
-        the success path so a healthy fallback resets its consecutive counter.
+        records both failures (via record_timeout_on_failure on exception) AND
+        successes (via _invoke_and_bill → health_tracker.record_success), so no
+        additional record_success call is needed here — that would double-count.
         """
         result = self.call_model(fb_id, messages, **kwargs)
-        if self._health_tracker is not None:
-            self._health_tracker.record_success(fb_id)
         return result
 
     def _walk_fallbacks(
@@ -896,7 +948,7 @@ class ModelGateway:
     ) -> ModelResponse:
         if self._router is None:
             raise ValueError("No router configured")
-        profile_id = self._router.resolve_role(role_name)
+        profile_id = self._router.resolve_role(role_name, strict=True)
         if profile_id is None:
             raise ValueError(f"No profile resolved for role '{role_name}'")
         return self.call_model(profile_id, messages, **kwargs)
