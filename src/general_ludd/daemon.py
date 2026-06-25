@@ -1709,6 +1709,7 @@ def create_daemon_app(
         ansible,
         benchmark,
         compute,
+        environment,
         facts,
         features,
         filestore,
@@ -1740,6 +1741,7 @@ def create_daemon_app(
     messages.register(app, daemon_state)
     accounting.register(app, daemon_state)
     facts.register(app, daemon_state)
+    environment.register(app, daemon_state)
     features.register(app, daemon_state)
     schedule.register(app, daemon_state)
     models.register(app, daemon_state)
