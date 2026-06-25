@@ -56,7 +56,8 @@ _XD = -n $(_XDIST_WORKERS) --dist loadgroup
         test-force-delegate-hook \
         test-worktree-disk-guard \
         git-cherry-pick-commit git-amend-msg \
-        test-other-shard
+        test-other-shard \
+        alembic-check
 
 help:
 	@echo "Usage: make [target]"
@@ -843,6 +844,12 @@ audit-messages:
 
 audit-schema:
 	@$(PYTHON) scripts/db_schema.py
+
+alembic-check:
+	@echo "[alembic-check] verifying migration-ORM parity..."
+	@DATABASE_URL="sqlite:///tmp_alembic_drift_check.db" uv run alembic upgrade head
+	@DATABASE_URL="sqlite:///tmp_alembic_drift_check.db" uv run alembic revision --autogenerate -m "drift_check" --sql | grep -i "create\|drop\|alter" && echo "DRIFT DETECTED" && exit 1 || echo "No drift detected"
+	@rm -f tmp_alembic_drift_check.db
 
 deps-audit:
 	@echo "=== Dependency Audit (deptry) ==="
