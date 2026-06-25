@@ -190,6 +190,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.post("/admin/selftest")
     async def admin_selftest() -> dict[str, Any]:
+        import asyncio
         import subprocess
 
         resolver = BinaryPathResolver()
@@ -217,7 +218,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                     })
                     continue
                 try:
-                    result = subprocess.run(
+                    result = await asyncio.to_thread(
+                        subprocess.run,
                         ["uv", "run", "molecule", "test", "-s", scenario],
                         capture_output=True,
                         text=True,
