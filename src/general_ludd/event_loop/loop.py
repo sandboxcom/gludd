@@ -112,6 +112,12 @@ def _resolve_prompt_text_static(
                 tmpl = env.get_template(prompt_profile)
                 return tmpl.render(**kwargs)
             except Exception:
+                logger.debug(
+                    "Jinja project-template render failed for profile %r; "
+                    "falling through to registry render",
+                    prompt_profile,
+                    exc_info=True,
+                )
                 pass
     if prompt_registry is None:
         return None
@@ -119,6 +125,11 @@ def _resolve_prompt_text_static(
         result: str = prompt_registry.render(prompt_profile, **kwargs)
         return result
     except Exception:
+        logger.warning(
+            "Registry render failed for prompt profile %r; returning no prompt text",
+            prompt_profile,
+            exc_info=True,
+        )
         return None
 
 
@@ -281,6 +292,13 @@ class EventLoop:
                     unread = len(msgs)
                     senders = [m.sender for m in msgs]
             except Exception:
+                logger.warning(
+                    "MQ inbox lookup failed for role %r (project %s): "
+                    "falling back to empty inbox",
+                    role,
+                    project_id,
+                    exc_info=True,
+                )
                 unread = 0
                 senders = []
         from general_ludd.prompts.registry import render_message_queue_section
