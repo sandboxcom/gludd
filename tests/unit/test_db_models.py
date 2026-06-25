@@ -6,20 +6,23 @@ run without a PostgreSQL instance.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import (
+    AgentMessageModel,
     AuditEventModel,
     AuditEventType,
     Base,
     BucketLeaseModel,
+    ProjectModel,
+    PromptProfileModel,
     QueueModel,
     TaskDecisionModel,
     TaskReturnModel,
@@ -29,8 +32,10 @@ from general_ludd.db.models import (
     VariableValueModel,
 )
 from general_ludd.db.repository import (
+    AgentMessageRepository,
     ConcurrencyError,
     InvalidTransitionError,
+    PromptProfileRepository,
     QueueRepository,
     TaskReturnRepository,
     TodoRepository,
@@ -495,3 +500,183 @@ class TestQueueRepository:
         names = [q.queue_name for q in enabled_queues]
         assert "core" in names
         assert "disabled_q" not in names
+
+
+class TestAgentMessageRepositoryPurgeExpired:
+    """P11: set-based DELETE of ttl-expired messages."""
+
+    async def test_purge_expired_bulk_delete_mixed_ttl(
+        self, async_session: AsyncSession
+    ):
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        old = now - timedelta(hours=2)
+        # Two expired (old created_at + short ttl), one not-yet-expired
+        # (old created_at but huge ttl), one with no ttl (never expires).
+        async_session.add_all([
+            AgentMessageModel(
+                sender="a", recipient="r1", created_at=old, ttl_seconds=60
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r2", created_at=old, ttl_seconds=60
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r3", created_at=old, ttl_seconds=86_400
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r4", created_at=old, ttl_seconds=None
+            ),
+        ])
+        await async_session.flush()
+
+        purged = await repo.purge_expired()
+        assert purged == 2
+
+        remaining = (
+            await async_session.execute(select(AgentMessageModel))
+        ).scalars().all()
+        recipients = {m.recipient for m in remaining}
+        # The long-ttl and no-ttl rows survive; the two expired rows are gone.
+        assert recipients == {"r3", "r4"}
+
+    async def test_purge_expired_none_when_no_expiry(
+        self, async_session: AsyncSession
+    ):
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        async_session.add_all([
+            AgentMessageModel(
+                sender="a", recipient="r1", created_at=now, ttl_seconds=None
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r2", created_at=now, ttl_seconds=3600
+            ),
+        ])
+        await async_session.flush()
+        assert await repo.purge_expired() == 0
+
+
+class TestAgentMessageRepositoryUnreadCounts:
+    """P9: GROUP BY per-recipient unread counts with SQL ttl cutoff."""
+
+    async def test_unread_counts_excludes_expired_and_counts_per_recipient(
+        self, async_session: AsyncSession
+    ):
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        old = now - timedelta(hours=2)
+        async_session.add_all([
+            # r1: two live unread
+            AgentMessageModel(sender="s", recipient="r1", created_at=now),
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, ttl_seconds=86_400
+            ),
+            # r1: one expired (must be excluded)
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=old, ttl_seconds=60
+            ),
+            # r2: one live unread
+            AgentMessageModel(sender="s", recipient="r2", created_at=now),
+            # r3: only an expired one -> no bucket at all
+            AgentMessageModel(
+                sender="s", recipient="r3", created_at=old, ttl_seconds=60
+            ),
+            # already-read message must never be counted
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, read_at=now
+            ),
+        ])
+        await async_session.flush()
+
+        counts = await repo.unread_counts()
+        assert counts == {"r1": 2, "r2": 1}
+
+    async def test_unread_counts_respects_project_scope(
+        self, async_session: AsyncSession
+    ):
+        # project_id FK requires real project rows (PRAGMA foreign_keys=ON).
+        async_session.add_all([
+            ProjectModel(project_id="proj-aaa", name="A"),
+            ProjectModel(project_id="proj-bbb", name="B"),
+        ])
+        await async_session.flush()
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        async_session.add_all([
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, project_id="proj-aaa"
+            ),
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, project_id="proj-bbb"
+            ),
+            # NULL project_id is global -> always counted
+            AgentMessageModel(
+                sender="s", recipient="r2", created_at=now, project_id=None
+            ),
+        ])
+        await async_session.flush()
+
+        counts = await repo.unread_counts(project_id="proj-aaa")
+        # The proj-bbb message is excluded; the global (NULL) one is included.
+        assert counts == {"r1": 1, "r2": 1}
+
+
+class TestPromptProfileRepositoryListForTaskType:
+    """P10: SQLite LIKE prefilter + json.loads backstop."""
+
+    @staticmethod
+    async def _add(session: AsyncSession, name: str, task_types: str) -> None:
+        session.add(
+            PromptProfileModel(
+                name=name,
+                source="test",
+                prompt_text="x",
+                task_types=task_types,
+            )
+        )
+
+    async def test_empty_list_matches_all(self, async_session: AsyncSession):
+        await self._add(async_session, "p_empty", "[]")
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("code")}
+        assert "p_empty" in names
+
+    async def test_exact_match(self, async_session: AsyncSession):
+        await self._add(async_session, "p_code", '["code", "docs"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("code")}
+        assert "p_code" in names
+
+    async def test_non_match_excluded(self, async_session: AsyncSession):
+        await self._add(async_session, "p_docs", '["docs"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("code")}
+        assert "p_docs" not in names
+
+    async def test_substring_false_positive_guarded(
+        self, async_session: AsyncSession
+    ):
+        # "foo" must NOT match a profile that only lists "foobar": the LIKE
+        # prefilter may admit it (textual substring), but the json.loads
+        # backstop performs an exact-element match and drops it.
+        await self._add(async_session, "p_foobar", '["foobar"]')
+        await self._add(async_session, "p_foo", '["foo"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("foo")}
+        assert "p_foo" in names
+        assert "p_foobar" not in names
+
+    async def test_malformed_json_backstop_matches_all(
+        self, async_session: AsyncSession
+    ):
+        # Malformed JSON -> json.loads raises -> treated as empty ("match all").
+        # The row must survive the LIKE prefilter to reach the backstop.
+        await self._add(async_session, "p_bad", "{not json")
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("anything")}
+        assert "p_bad" in names

@@ -925,7 +925,33 @@ class PromptProfileRepository:
 
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
         import json as _json
-        stmt = select(PromptProfileModel)
+
+        from sqlalchemy import or_
+
+        # SQLite LIKE prefilter narrows the scan to rows the Python backstop below
+        # could possibly accept, while never dropping one it would (no false
+        # negatives). Accepted shapes:
+        #   - "[]"                       -> empty list, "match all"
+        #   - '...."<task_type>"....'    -> textually contains the quoted token
+        #   - rows whose value is not a well-formed JSON array (does not start
+        #     with '[' or does not end with ']') -> json.loads will raise and the
+        #     backstop treats them as empty ("match all"), so they must survive.
+        # LIKE wildcards in task_type are escaped so e.g. "a%b" matches literally.
+        # The json.loads pass is the correctness backstop against LIKE false
+        # positives (e.g. "foo" appearing inside "foobar").
+        escaped = (
+            task_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        col = PromptProfileModel.task_types
+        stmt = select(PromptProfileModel).where(
+            or_(
+                col.is_(None),
+                col.like("[]"),
+                col.like(f'%"{escaped}"%', escape="\\"),
+                col.notlike("[%"),
+                col.notlike("%]"),
+            )
+        )
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         out: list[PromptProfileModel] = []
@@ -1089,25 +1115,56 @@ class AgentMessageRepository:
         return row
 
     async def purge_expired(self) -> int:
-        """Delete every message whose ttl has elapsed. Returns the count purged."""
-        stmt = select(AgentMessageModel).where(AgentMessageModel.ttl_seconds.isnot(None))
+        """Delete every message whose ttl has elapsed. Returns the count purged.
+
+        Single set-based DELETE pushed into SQL rather than fetch-all + per-row
+        ``session.delete()``: the expiry predicate mirrors :meth:`_is_expired`
+        (``elapsed_seconds > ttl_seconds``) using SQLite ``julianday`` day-diff
+        arithmetic. AgentMessageModel declares no child relationships (its only
+        FK is ``project_id`` ondelete=SET NULL, an outbound reference), so the
+        bulk delete bypasses no ORM cascade.
+        """
+        from sqlalchemy import delete, func
+
+        elapsed_seconds = (
+            func.julianday("now") - func.julianday(AgentMessageModel.created_at)
+        ) * 86400.0
+        stmt = delete(AgentMessageModel).where(
+            AgentMessageModel.ttl_seconds.isnot(None),
+            elapsed_seconds > AgentMessageModel.ttl_seconds,
+        )
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        now = datetime.now(UTC)
-        purged = 0
-        for row in rows:
-            if self._is_expired(row, now):
-                await self._session.delete(row)
-                purged += 1
+        purged = int(result.rowcount or 0)  # type: ignore[attr-defined]  # CursorResult at runtime
         if purged:
             await self._session.flush()
         return purged
 
     async def unread_counts(self, project_id: str | None = None) -> dict[str, int]:
-        """Per-recipient unread counts (excludes expired). Used by /api/facts."""
-        stmt = select(AgentMessageModel).where(AgentMessageModel.read_at.is_(None))
+        """Per-recipient unread counts (excludes expired). Used by /api/facts.
+
+        The TTL cutoff is pushed into the WHERE clause (a row survives when it
+        has no ttl or its elapsed seconds are still within ttl, mirroring
+        :meth:`_is_expired`) and the per-recipient tally is a SQL ``GROUP BY``
+        instead of a full-table load + Python aggregation. ``recipient`` is
+        NOT NULL, so there is no None bucket.
+        """
+        from sqlalchemy import func, or_
+
+        elapsed_seconds = (
+            func.julianday("now") - func.julianday(AgentMessageModel.created_at)
+        ) * 86400.0
+        stmt = (
+            select(AgentMessageModel.recipient, func.count())
+            .where(
+                AgentMessageModel.read_at.is_(None),
+                or_(
+                    AgentMessageModel.ttl_seconds.is_(None),
+                    elapsed_seconds <= AgentMessageModel.ttl_seconds,
+                ),
+            )
+            .group_by(AgentMessageModel.recipient)
+        )
         if project_id is not None:
-            from sqlalchemy import or_
             stmt = stmt.where(
                 or_(
                     AgentMessageModel.project_id == project_id,
@@ -1115,14 +1172,7 @@ class AgentMessageRepository:
                 )
             )
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        now = datetime.now(UTC)
-        counts: dict[str, int] = {}
-        for row in rows:
-            if self._is_expired(row, now):
-                continue
-            counts[row.recipient] = counts.get(row.recipient, 0) + 1
-        return counts
+        return {recipient: count for recipient, count in result.all()}
 
     @staticmethod
     def _is_expired(row: AgentMessageModel, now: datetime) -> bool:
