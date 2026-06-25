@@ -198,6 +198,82 @@ class TestBenchmarkRepository:
         assert float(agg[0]["avg_completion"]) > 0.8
 
     @pytest.mark.asyncio
+    async def test_get_aggregate_scores_includes_avg_cost(self, session):
+        """#59/#69 cost-cap no-op fix: get_aggregate_scores MUST emit an
+        ``avg_cost`` key averaged from the real ``cost_usd`` column, otherwise
+        the AdaptiveRouter cost cap defaults every candidate to 0.0 and the cap
+        becomes a production no-op (never rejects a call for cost)."""
+        repo = BenchmarkRepository(session)
+        # Two successful rows with cost_usd 0.02 and 0.04 → avg 0.03.
+        for cost in (0.02, 0.04):
+            await repo.record_result(data=_make_benchmark_data(
+                model_profile_id="openai",
+                completion_score=0.8,
+                code_quality_score=0.7,
+                instruction_adherence_score=0.75,
+                token_efficiency_score=0.6,
+                cost_usd=cost,
+            ))
+        agg = await repo.get_aggregate_scores(task_type="bug_fix")
+        assert len(agg) == 1
+        # The key must be present (regression guard for the no-op).
+        assert "avg_cost" in agg[0]
+        # And it must reflect the REAL averaged cost, not 0.0.
+        assert float(agg[0]["avg_cost"]) == pytest.approx(0.03)
+
+    @pytest.mark.asyncio
+    async def test_cost_cap_bites_with_real_repo_avg_cost(self, session):
+        """End-to-end #59/#69: with the real BenchmarkRepository feeding real
+        averaged ``avg_cost`` into the AdaptiveRouter, a candidate whose cost
+        exceeds ``max_cost_usd`` is EXCLUDED in favor of a cheaper one.
+
+        Before the fix avg_cost was absent → cost defaulted to 0.0 → every
+        candidate looked free → the cap never bit (the no-op this proves gone).
+        Here the expensive model (cost 0.50, top quality) is over a 0.05 cap and
+        must lose to the cheap model (cost 0.001) under that cap.
+        """
+        from general_ludd.schemas.benchmark import TaskType
+        from general_ludd.scoring.router import AdaptiveRouter
+
+        repo = BenchmarkRepository(session)
+        # Expensive, highest-quality model — over the cap.
+        for _ in range(3):
+            await repo.record_result(data=_make_benchmark_data(
+                model_profile_id="expensive-model",
+                prompt_profile_id="pp-exp",
+                completion_score=1.0,
+                code_quality_score=1.0,
+                instruction_adherence_score=1.0,
+                token_efficiency_score=1.0,
+                cost_usd=0.50,
+            ))
+        # Cheap, lower-quality model — under the cap.
+        for _ in range(3):
+            await repo.record_result(data=_make_benchmark_data(
+                model_profile_id="cheap-model",
+                prompt_profile_id="pp-cheap",
+                completion_score=0.6,
+                code_quality_score=0.6,
+                instruction_adherence_score=0.6,
+                token_efficiency_score=0.6,
+                cost_usd=0.001,
+            ))
+        router = AdaptiveRouter(benchmark_repo=repo, min_samples=3)
+
+        # No cap: the expensive top-quality model wins (sanity baseline).
+        uncapped = await router.route(task_type=TaskType.BUG_FIX)
+        assert uncapped.selected_model_profile_id == "expensive-model"
+
+        router.invalidate_cache()
+        # Cap BETWEEN the two costs: the expensive model is now excluded and the
+        # cheap model is selected. This only works because avg_cost is REAL.
+        capped = await router.route(task_type=TaskType.BUG_FIX, max_cost_usd=0.05)
+        assert capped.selected_model_profile_id == "cheap-model"
+        assert capped.selected_model_profile_id != "expensive-model"
+        assert capped.reason == "cost_constrained"
+        assert capped.estimated_cost_usd <= 0.05
+
+    @pytest.mark.asyncio
     async def test_get_aggregate_scores_failed_excluded(self, session):
         repo = BenchmarkRepository(session)
         await repo.record_result(data=_make_benchmark_data(
