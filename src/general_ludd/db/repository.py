@@ -805,7 +805,20 @@ class BenchmarkRepository:
             return row
         return cast(BenchmarkResultModel, await self._execute_with_session(_do))
 
-    async def get_aggregate_scores(self, task_type: str | None = None) -> list[dict[str, Any]]:
+    async def get_aggregate_scores(
+        self, task_type: str | None = None, project_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Aggregate benchmark scores grouped by prompt/model/task (+ project).
+
+        ``project_id`` is the project-hierarchy phase-3 axis: when None (the
+        default and every legacy caller's behaviour) the scores are GLOBAL —
+        grouped across all projects exactly as before. When a ``project_id`` is
+        passed, results are filtered to that project's history, so the
+        AdaptiveRouter can read its own history and a related project's history
+        separately and borrow across declared edges. ``project_id`` is always a
+        group key and is returned in every row so the router can attribute a
+        borrowed pick to its source project.
+        """
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
             from sqlalchemy import func
             stmt = (
@@ -813,6 +826,7 @@ class BenchmarkRepository:
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
+                    BenchmarkResultModel.project_id,
                     func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
                     func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
@@ -831,10 +845,13 @@ class BenchmarkRepository:
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
+                    BenchmarkResultModel.project_id,
                 )
             )
             if task_type is not None:
                 stmt = stmt.where(BenchmarkResultModel.task_type == task_type)
+            if project_id is not None:
+                stmt = stmt.where(BenchmarkResultModel.project_id == project_id)
             result = await session.execute(stmt)
             rows = result.all()
             return [
@@ -842,6 +859,7 @@ class BenchmarkRepository:
                     "prompt_profile_id": r.prompt_profile_id,
                     "model_profile_id": r.model_profile_id,
                     "task_type": r.task_type,
+                    "project_id": r.project_id,
                     "avg_completion": r.avg_completion,
                     "avg_quality": r.avg_quality,
                     "avg_instruction": r.avg_instruction,

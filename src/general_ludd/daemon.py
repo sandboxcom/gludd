@@ -1389,11 +1389,34 @@ def _get_or_create_extended_subsystems(
                 mid: (info.precision, info.confidence)
                 for mid, info in tracker._data.items()
             }
+        # Project-hierarchy phase 3: derive cross-project borrowing flags from
+        # UserConfig.relationship_routing (default None → borrowing OFF, router
+        # behaves exactly as before). The app-level router is GLOBAL
+        # (project_id=None); per-project borrowing is opt-in via config + a
+        # project-scoped router. relationship_repo stays None here (no global
+        # relationship graph) so even with the flag on the global router never
+        # borrows — borrowing requires a project_id + a relationship_repo.
+        rr_enabled = False
+        rr_edge_decay = 0.5
+        rr_external_penalty = 0.5
+        rr_min_borrow_weight = 0.05
+        startup_cfg = getattr(app.state, "_startup_config", {}) or {}
+        user_cfg = startup_cfg.get("user_config")
+        rr_cfg = getattr(user_cfg, "relationship_routing", None) if user_cfg else None
+        if rr_cfg is not None:
+            rr_enabled = bool(getattr(rr_cfg, "enable_cross_project_borrowing", False))
+            rr_edge_decay = float(getattr(rr_cfg, "edge_decay", 0.5))
+            rr_external_penalty = float(getattr(rr_cfg, "external_penalty", 0.5))
+            rr_min_borrow_weight = float(getattr(rr_cfg, "min_borrow_weight", 0.05))
         adaptive_router = AdaptiveRouter(
             benchmark_repo=benchmark_repo,
             quantization_map=quantization_map,
             health_tracker=getattr(app.state, "_health_tracker", None),
             embedding_store=getattr(app.state, "_embedding_store", None),
+            enable_cross_project_borrowing=rr_enabled,
+            edge_decay=rr_edge_decay,
+            external_penalty=rr_external_penalty,
+            min_borrow_weight=rr_min_borrow_weight,
         )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):

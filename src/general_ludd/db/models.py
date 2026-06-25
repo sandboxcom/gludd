@@ -597,6 +597,17 @@ class BenchmarkResultModel(Base):
         nullable=True,
         index=True,
     )
+    # Project-hierarchy phase 3: benchmark history becomes project-aware so the
+    # AdaptiveRouter can borrow proven picks ACROSS declared project edges with
+    # edge-distance decay. NULL = global/legacy history (today's behaviour). The
+    # SET NULL FK matches the repo-wide project_id convention (a deleted project
+    # degrades its history to global rather than destroying the benchmark rows).
+    project_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     model_profile_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -618,6 +629,9 @@ class BenchmarkResultModel(Base):
     __table_args__ = (
         Index("ix_benchmark_task_model", "task_type", "model_profile_id"),
         Index("ix_benchmark_task_prompt", "task_type", "prompt_profile_id"),
+        # Project-aware aggregation key: get_aggregate_scores(project_id=...)
+        # filters and groups on (project_id, task_type) when borrowing is on.
+        Index("ix_benchmark_project_task", "project_id", "task_type"),
     )
 
 

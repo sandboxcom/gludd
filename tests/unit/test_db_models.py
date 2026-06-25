@@ -36,6 +36,7 @@ from general_ludd.db.models import (
 from general_ludd.db.repository import (
     _DEFAULT_LIST_LIMIT,
     AgentMessageRepository,
+    BenchmarkRepository,
     ConcurrencyError,
     FeatureRepository,
     InvalidTransitionError,
@@ -832,3 +833,104 @@ class TestListPaginationP12:
         assert len(rows) == 5
         # The project_id filter is preserved alongside the new limit/offset.
         assert all(r.project_id == "proj-x" for r in rows)
+
+
+def _benchmark_data(
+    *,
+    model_profile_id: str = "openai",
+    project_id: str | None = None,
+    task_type: str = "bug_fix",
+    completion_score: float = 0.8,
+    code_quality_score: float = 0.7,
+    instruction_adherence_score: float = 0.75,
+    token_efficiency_score: float = 0.6,
+    success: bool = True,
+) -> dict:
+    return {
+        "prompt_profile_id": None,
+        "project_id": project_id,
+        "model_profile_id": model_profile_id,
+        "task_type": task_type,
+        "completion_score": completion_score,
+        "code_quality_score": code_quality_score,
+        "instruction_adherence_score": instruction_adherence_score,
+        "token_efficiency_score": token_efficiency_score,
+        "cost_usd": 0.01,
+        "success": success,
+    }
+
+
+class TestBenchmarkResultProjectId:
+    """Project-hierarchy phase 3: benchmark_results.project_id (migration 009)
+    and the project-aware get_aggregate_scores filter."""
+
+    async def test_project_id_column_round_trips(
+        self, async_session: AsyncSession
+    ):
+        async_session.add(ProjectModel(project_id="proj-p3", name="P3"))
+        await async_session.flush()
+        repo = BenchmarkRepository(async_session)
+        row = await repo.record_result(
+            data=_benchmark_data(project_id="proj-p3")
+        )
+        assert row.project_id == "proj-p3"
+
+    async def test_project_id_defaults_to_null(
+        self, async_session: AsyncSession
+    ):
+        """Legacy callers omit project_id → NULL (global history)."""
+        data = _benchmark_data()
+        # _benchmark_data sets project_id=None explicitly; round-trip it.
+        repo = BenchmarkRepository(async_session)
+        row = await repo.record_result(data=data)
+        assert row.project_id is None
+
+    async def test_project_id_fk_set_null_on_project_delete(
+        self, async_session: AsyncSession
+    ):
+        """Deleting the owning project degrades benchmark history to global
+        (project_id -> NULL) rather than deleting the rows (SET NULL FK)."""
+        proj = ProjectModel(project_id="proj-del", name="DEL")
+        async_session.add(proj)
+        await async_session.flush()
+        repo = BenchmarkRepository(async_session)
+        row = await repo.record_result(
+            data=_benchmark_data(project_id="proj-del")
+        )
+        await async_session.flush()
+        await async_session.delete(proj)
+        await async_session.flush()
+        await async_session.refresh(row)
+        assert row.project_id is None
+
+    async def test_get_aggregate_scores_filters_by_project_id(
+        self, async_session: AsyncSession
+    ):
+        async_session.add_all([
+            ProjectModel(project_id="proj-a", name="A"),
+            ProjectModel(project_id="proj-b", name="B"),
+        ])
+        await async_session.flush()
+        repo = BenchmarkRepository(async_session)
+        for _ in range(3):
+            await repo.record_result(
+                data=_benchmark_data(model_profile_id="model-a", project_id="proj-a")
+            )
+        for _ in range(3):
+            await repo.record_result(
+                data=_benchmark_data(model_profile_id="model-b", project_id="proj-b")
+            )
+        await async_session.flush()
+
+        a_scores = await repo.get_aggregate_scores(
+            task_type="bug_fix", project_id="proj-a"
+        )
+        assert len(a_scores) == 1
+        assert a_scores[0]["model_profile_id"] == "model-a"
+        assert a_scores[0]["project_id"] == "proj-a"
+        assert a_scores[0]["sample_count"] == 3
+
+        # No project_id (legacy/global call) sees both projects' rows.
+        all_scores = await repo.get_aggregate_scores(task_type="bug_fix")
+        models = {s["model_profile_id"] for s in all_scores}
+        assert models == {"model-a", "model-b"}
