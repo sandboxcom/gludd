@@ -18,6 +18,54 @@ TESTS_DIR := tests
 _XDIST_WORKERS := $(shell python3 -c "import os; v=os.environ.get('GLUDD_XDIST'); print(v if v else max(1, (os.cpu_count() or 1) // 4))")
 _XD = -n $(_XDIST_WORKERS) --dist loadgroup
 
+# ---------------------------------------------------------------------------
+# Pytest concurrency cap (flock semaphore). The operator observed 20+ stacked
+# `make test-*` shells overloading the host: every agent that fires a pytest
+# recipe spawns an xdist worker pool, and nothing bounded how many ran at once.
+# PYTEST_MAX_PAR is a HARD cap on how many pytest sessions can run concurrently
+# across ALL agents on this machine (default 2). Each capped recipe routes its
+# pytest command through $(PYTEST_SEM): a small N-slot flock pool under /tmp.
+#
+# Mechanism (N-slot pool, robust in make-recipe shell):
+#   _gludd_pytest_run() tries to grab one of PYTEST_MAX_PAR slot lock files with
+#   a NON-BLOCKING flock (flock -n). The first free slot wins and runs the
+#   command under `flock ... <cmd>`, so the kernel auto-releases the slot the
+#   instant the pytest process exits — even if it is killed (no manual cleanup,
+#   no deadlock from an orphaned holder). If every slot is busy it BLOCKS on
+#   slot 1 with a bounded wait (flock -w 1800) so it queues instead of piling
+#   on, and a waiter can never hang forever (30-min ceiling, then it proceeds).
+#
+#   PYTEST_MAX_PAR=1 make test-unit   -> full serialization (one at a time)
+#   PYTEST_MAX_PAR=2 (default)        -> at most two concurrent pytest sessions
+#   PYTEST_MAX_PAR=8 make test-unit   -> looser cap when the host can take it
+#
+# Capped recipes: test, test-unit, test-specific, test-specific-summary,
+# test-integration, test-e2e, test-guardrails, test-db, test-scripts.
+# (Collection-only / dry recipes like test-count/collect-check are NOT capped —
+# they don't spin worker pools.) `make ps-pytest` / `make kill-stray` are the
+# companion census/cleanup targets and are unaffected.
+# ---------------------------------------------------------------------------
+PYTEST_MAX_PAR ?= 2
+# $(PYTEST_SEM) <pytest command ...> — acquire a slot, then exec the command
+# under flock so the slot frees on process exit. Single-quoted body keeps make
+# from expanding the shell $i; only $(PYTEST_MAX_PAR) is substituted by make.
+# GNU flock is required for the non-blocking slot probe (-n) and bounded wait
+# (-w). Stock macOS ships NO flock binary; a macOS dev may have GNU flock via
+# brew (util-linux). When flock is absent the wrapper DEGRADES to running the
+# command directly (no cap) rather than failing the tests — the cap is a
+# host-protection optimization, never a correctness gate. On Linux/CI (where
+# the 20-stacked-shell overload actually happens) flock is present and the cap
+# is enforced. `flock --version` distinguishes GNU flock from a non-GNU/absent
+# binary (BSD has no flock; GNU prints a version).
+PYTEST_SEM = _gludd_pytest_run() { \
+	if ! command -v flock >/dev/null 2>&1 || ! flock --version >/dev/null 2>&1; then "$$@"; return $$?; fi; \
+	for i in $$(seq 1 $(PYTEST_MAX_PAR)); do \
+		exec 9>"/tmp/gludd-pytest-slot.$$i"; \
+		if flock -n 9; then "$$@"; return $$?; fi; \
+	done; \
+	exec 9>"/tmp/gludd-pytest-slot.1"; flock -w 1800 9; "$$@"; return $$?; \
+	}; _gludd_pytest_run
+
     .PHONY: \
         init sync install-pip lint lint-fix test test-unit test-specific test-count test-integration test-e2e \
         test-guardrails test-scripts test-db test-live-zai test-tui-daemon \
@@ -133,6 +181,9 @@ help:
 	@echo "  test-and-commit       Run tests then commit if green (MSG='msg')"
 	@echo "  test-live-zai         Live GLM model test (requires API key)"
 	@echo "  test-guardrails       Test guardrail infrastructure"
+	@echo "  (pytest recipes are flock-capped at PYTEST_MAX_PAR concurrent sessions,"
+	@echo "   default 2; PYTEST_MAX_PAR=1 make test-unit forces full serialization)"
+	@echo "  ps-pytest             List running pytest/gate sessions"
 	@echo ""
 	@echo "  --- Git ---"
 	@echo "  git-status            Show git status"
@@ -260,23 +311,27 @@ lint-fix:
 typecheck:
 	@$(UV) run mypy src
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2) — see semaphore block above.
 test:
-	@$(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-unit:
 	@if [ -n "$(TESTFILE)" ]; then \
-		$(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
+		$(PYTEST_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -v; \
 	else \
-		$(UV) run python -m pytest tests/unit/ $(_XD) -v; \
+		$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/ $(_XD) -v; \
 	fi
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-specific:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific TESTFILE='tests/unit/test_foo.py::TestClass::test_method'"; exit 1; fi
-	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -v
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-specific-summary:
 	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-specific-summary TESTFILE='tests/unit -k budget'"; exit 1; fi
-	@$(UV) run python -m pytest $(TESTFILE) $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt | tail -8; \
+	@$(PYTEST_SEM) $(UV) run python -m pytest $(TESTFILE) $(_XD) -q 2>&1 | tee /tmp/gludd-test-output.txt | tail -8; \
 	grep -E "^(FAILED|ERROR)" /tmp/gludd-test-output.txt || echo "No FAILED/ERROR lines"
 
 test-count:
@@ -552,23 +607,29 @@ run-watched:
 	done; \
 	wait $$CMDPID; RC=$$?; echo "[watchdog] RESULT=EXIT rc=$$RC elapsed=$$(($$(date +%s)-START))s"; exit $$RC
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-integration:
-	@$(UV) run python -m pytest tests/integration/ $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/integration/ $(_XD) -v
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-e2e:
-	@$(UV) run python -m pytest tests/e2e/ $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/e2e/ $(_XD) -v
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-tui-daemon:
-	@$(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/e2e/test_tui_daemon_start.py -v -s
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-guardrails:
-	@$(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/test_guardrails.py tests/unit/test_user_requested_guardrails.py $(_XD) -v
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-db:
-	@$(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/test_db_models.py $(_XD) -v
 
+# Capped by $(PYTEST_SEM) (PYTEST_MAX_PAR, default 2).
 test-scripts:
-	@$(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript $(_XD) -v
+	@$(PYTEST_SEM) $(UV) run python -m pytest tests/unit/test_guardrails.py::TestSkeletonScript $(_XD) -v
 
 healthcheck:
 	@$(UV) run python -c "from general_ludd.worker.app import create_app; app = create_app(); print('Worker app factory OK')"
@@ -910,6 +971,15 @@ audit-schema:
 # SQLite is unsupported without batch_alter_table — unrelated to 008).
 alembic-check-008:
 	@uv run python scripts/verify_migration_008.py
+
+# Focused parity proof for migration 009 (benchmark_results.project_id): builds
+# the at-008 baseline (benchmark_results WITHOUT project_id), applies ONLY the
+# 009 upgrade, and diffs the resulting table against the BenchmarkResultModel
+# ORM. Bypasses the pre-existing SQLite-ALTER failure in migration 002 (bare
+# create_foreign_key on SQLite is unsupported outside batch_alter_table —
+# unrelated to 009, which itself uses batch mode for its FK).
+alembic-check-009:
+	@uv run python scripts/verify_migration_009.py
 
 alembic-check:
 	@echo "[alembic-check] verifying migration-ORM parity..."
