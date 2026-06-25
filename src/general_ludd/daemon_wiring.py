@@ -122,6 +122,15 @@ def make_role_handler(
     ``prompt`` key in args (defaulting to the role name itself) is forwarded as
     the AgentTask prompt so the downstream executor has context.
 
+    The dispatched task carries ``invoker_name="build"`` so the dispatcher's
+    ``can_invoke`` permission gate is ACTIVE for daemon-driven role dispatch.
+    An empty invoker bypasses the gate entirely (the agent-permission matrix
+    stays inert); ``"build"`` is the registered primary agent that
+    ``default_registry()`` grants ``can_dispatch_subagents=True`` with
+    ``allowed_subagents=["*"]``, so it truthfully covers every registered role
+    target while a model-supplied ``name`` that is NOT a registered agent is
+    fail-closed (the dispatcher's not-found / can_invoke guards both reject it).
+
     Args:
         agent_dispatcher: An AgentDispatcher instance, or None.
 
@@ -141,6 +150,7 @@ def make_role_handler(
             agent_name=name,
             description=args.get("description", f"Role dispatch: {name}"),
             prompt=args.get("prompt", name),
+            invoker_name="build",
         )
         result = await agent_dispatcher.dispatch_one(task)
         return result.output or ""

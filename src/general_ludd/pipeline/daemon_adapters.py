@@ -44,7 +44,8 @@ __all__ = [
 def make_dispatch_fn(
     dispatcher: Any,
     *,
-    agent_name: str = "general-purpose",
+    agent_name: str = "general",
+    invoker_name: str = "build",
     task_builder: Callable[[str], Any] | None = None,
 ) -> Callable[[str], Awaitable[object]]:
     """Build a ``DispatchFn`` that launches a role-agent for a backlog unit id.
@@ -53,6 +54,22 @@ def make_dispatch_fn(
     runs the agent under its own per-role concurrency semaphore). The pipeline
     DispatchLane handles overall ``target``/``floor`` saturation; the
     dispatcher's semaphore is a secondary per-role cap.
+
+    ``agent_name`` defaults to ``"general"`` — the built-in general-purpose
+    subagent registered by ``default_registry()``. It was previously
+    ``"general-purpose"``, which is NOT a registered agent name: every pipeline
+    dispatch would have been rejected by the dispatcher's ``config is None``
+    (not-found) guard. ``"general"`` is the real registered target.
+
+    ``invoker_name`` defaults to ``"build"`` — the primary agent that
+    ``default_registry()`` grants ``can_dispatch_subagents=True`` with
+    ``allowed_subagents=["*"]``. Threading a trusted invoker ACTIVATES the
+    dispatcher's ``can_invoke`` permission gate for pipeline dispatch: an empty
+    invoker bypasses the gate entirely (the matrix stays inert), whereas a
+    registered, dispatch-capable invoker makes the gate enforce. ``"build"``
+    covers every registered target via its ``["*"]`` allow-list, so a
+    legitimate pipeline dispatch is never denied while an unregistered target
+    is still fail-closed.
     """
     from general_ludd.agents.types import AgentTask
 
@@ -62,6 +79,7 @@ def make_dispatch_fn(
             agent_name=agent_name,
             description=f"pipeline unit {unit_id}",
             prompt=f"Work backlog unit {unit_id}",
+            invoker_name=invoker_name,
         )
 
     build = task_builder or _default_builder
