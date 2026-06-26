@@ -103,8 +103,9 @@ class CassandraStatsSource:
             return {"ok": False, "detail": self._driver_error or _DRIVER_UNAVAILABLE}
         try:
             executor("tpstats")
-        except Exception as exc:
-            return {"ok": False, "detail": f"probe failed: {exc}"}
+        except Exception:
+            logger.warning("cassandra_stats probe failed", exc_info=True)
+            return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "ok"}
 
     # -- query -------------------------------------------------------------

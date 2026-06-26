@@ -17,10 +17,13 @@ Design contract:
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 Row = Mapping[str, Any]
 Executor = Callable[[str], Sequence[Row]]
@@ -126,15 +129,18 @@ class MysqlStatsSource:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
-        except RuntimeError as exc:
-            return {"ok": False, "detail": str(exc)}
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"executor init failed: {exc}"}
+        except RuntimeError:
+            logger.warning("mysql_stats executor unavailable", exc_info=True)
+            return {"ok": False, "detail": "executor unavailable"}
+        except Exception:  # health must never raise
+            logger.warning("mysql_stats executor init failed", exc_info=True)
+            return {"ok": False, "detail": "executor init failed"}
 
         try:
             executor("SELECT 1")
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"probe failed: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("mysql_stats probe failed", exc_info=True)
+            return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "mysql reachable"}
 
     # -- normalization ---------------------------------------------------
