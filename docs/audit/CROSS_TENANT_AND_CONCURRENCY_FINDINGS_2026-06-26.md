@@ -112,16 +112,22 @@ filter on — these are missing-filter bugs, not schema gaps.
   `repo.list_for_project(project_id)` — and validate `project_id` is a known project
   (422 if not). Remove the `list_all()` call from this path.
 
-### XT-8 — `routers/embeddings.py:779-883` — corpus=events search queries ALL audit events — CONFIRMED
+### XT-8 — `routers/embeddings.py` corpus=events search queries ALL audit events — CONFIRMED
 
-- **File:line:** `src/general_ludd/routers/embeddings.py:779-883`
+- **File:line (re-pinned 2026-06-26):** handler `api_embeddings_search` at
+  `routers/embeddings.py:986-997`; `EmbeddingSearchRequest` at `:191-228` (no
+  `project_id` field today); `_search_events` query at `:821-825`.
 - **Problem:** `POST /api/embeddings/search` with `corpus=events` runs semantic search
   over the entire audit-event corpus with no tenant filter, leaking other projects'
   audit history through nearest-neighbour results.
-- **Apply-ready fix:** Add a `project_id` filter to the events search path (require it
-  from the request/auth context, validate it, and constrain the candidate event set to
-  that project before scoring). Apply the same scoping to any other corpus that contains
-  per-project data.
+- **Apply-ready fix:** `AuditEventModel.project_id` exists and is indexed
+  (`models.py:374-378`, FK to projects, nullable) — no migration. Add
+  `.where(AuditEventModel.project_id == project_id)` to the `_search_events` query
+  (`:824`), add a validated `project_id` to `EmbeddingSearchRequest`/auth context, and
+  thread it from the handler into `_search_events`. Apply the same scoping to any other
+  corpus that contains per-project data. Effort: low (one-line SQL filter + param thread,
+  NOT a store refactor) but it changes the endpoint signature, so it is NOT a pure
+  one-liner — deferred to a working window, not this throttled one.
 
 ### XT-9 — `routers/messages.py:120-131` — degraded fallback path ignored `project_id` — FIXED
 
