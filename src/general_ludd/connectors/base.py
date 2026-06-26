@@ -278,16 +278,24 @@ class Observability:
                 break
             try:
                 rows = list(source.query(spec))
-            except Exception as exc:
+            except Exception:
                 # Resilience is the whole point: a single source blowing up must
-                # never abort the fan-out — capture it as an error record.
+                # never abort the fan-out — capture it as an error record. The
+                # exception detail is LOGGED, not surfaced: str(exc) can carry
+                # DSNs/hosts/internal paths, and the raw exception object is not
+                # safely JSON-serializable, so neither is embedded in the record.
+                logger.warning(
+                    "connector query failed for source %s",
+                    getattr(source, "name", "<unknown>"),
+                    exc_info=True,
+                )
                 error_rec: dict[str, Any] = dict(
                     normalized_record(
                         source=getattr(source, "name", "<unknown>"),
                         kind=getattr(source, "KIND", "unknown"),
                         level_or_status="error",
-                        message=f"query failed: {exc}",
-                        raw=exc,
+                        message="query failed",
+                        raw=None,
                     )
                 )
                 rows = [error_rec]

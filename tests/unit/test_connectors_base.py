@@ -165,7 +165,11 @@ def test_find_captures_failing_source_as_error_record_without_aborting() -> None
     assert len(errors) == 1
     err = errors[0]
     assert err["source"] == "boom"
-    assert "backend exploded" in err["message"]
+    # Redacted: the raw exception detail must NOT leak to the caller (it is
+    # logged server-side instead), and the raw exception object is not embedded.
+    assert err["message"] == "query failed"
+    assert "backend exploded" not in err["message"]
+    assert err.get("raw") is None
     assert err["kind"] == "logs"
 
 
