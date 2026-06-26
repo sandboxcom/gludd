@@ -313,7 +313,15 @@ class Observability:
         """Stable sort by ts ascending; ``None`` timestamps sort last."""
         return sorted(
             records,
-            key=lambda r: (r.get("ts") is None, r.get("ts") if r.get("ts") is not None else 0.0),
+            key=lambda r: (
+                # A NaN ts passes ``is not None`` but breaks ordering (NaN
+                # compares False to everything), so treat NaN like a missing ts
+                # and sort it last. Short-circuit guards isfinite() against None.
+                r.get("ts") is None or not math.isfinite(r.get("ts")),
+                r.get("ts")
+                if r.get("ts") is not None and math.isfinite(r.get("ts"))
+                else 0.0,
+            ),
         )
 
     # -- correlation ------------------------------------------------------- #
@@ -357,7 +365,12 @@ class Observability:
 
     @staticmethod
     def _associate_by_window(records: list[dict[str, Any]], window_s: float) -> list[dict[str, Any]]:
-        timed = [r for r in records if r.get("ts") is not None]
+        # Drop records with no ts OR a non-finite (NaN/inf) ts: a NaN here would
+        # pass ``is not None`` but corrupt both the sort below and the windowing.
+        timed = [
+            r for r in records
+            if r.get("ts") is not None and math.isfinite(r.get("ts"))
+        ]
         timed.sort(key=operator.itemgetter("ts"))
 
         groups: list[dict[str, Any]] = []
