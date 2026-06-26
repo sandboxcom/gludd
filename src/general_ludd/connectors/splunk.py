@@ -21,11 +21,14 @@ Design constraints (intentional, do not "simplify" away):
 from __future__ import annotations
 
 import datetime as _dt
+import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["HttpResponse", "HttpTransport", "SSRFError", "SplunkSource"]
 
@@ -203,7 +206,10 @@ class SplunkSource:
                 timeout=self._timeout,
             )
         except Exception as exc:  # health must never raise
-            result["error"] = repr(exc)
+            # repr(exc) can embed the base URL / token-env detail; log it for
+            # operators and return a generic message to the caller instead.
+            logger.warning("splunk health check failed", exc_info=True)
+            result["error"] = "splunk health check failed"
             return result
 
         status = getattr(resp, "status_code", None)

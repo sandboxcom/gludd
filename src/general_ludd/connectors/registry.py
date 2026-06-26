@@ -240,7 +240,10 @@ class ConnectorRegistry:
                 if not isinstance(result, dict):
                     result = {"ok": bool(result)}
             except Exception as exc:  # health must never abort the sweep
-                result = {"ok": False, "source": name, "error": str(exc)}
+                # Don't leak str(exc) (can embed a source's DSN/credentials) into
+                # the health manifest; log it for operators, return generic text.
+                logger.warning("health check failed for source %s", name, exc_info=True)
+                result = {"ok": False, "source": name, "error": "health check failed"}
             out[name] = result
         return out
 

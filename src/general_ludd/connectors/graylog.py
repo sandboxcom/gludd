@@ -39,11 +39,14 @@ from __future__ import annotations
 
 import base64
 import ipaddress
+import logging
 import os
 from collections.abc import Mapping
 from datetime import UTC, datetime
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
+
+logger = logging.getLogger(__name__)
 
 # Default request timeout (seconds) — every outbound call is time-bounded so a
 # slow/hung Graylog can never block a caller indefinitely.
@@ -185,7 +188,15 @@ class GraylogSource:
                 timeout=self.timeout,
             )
         except Exception as exc:  # health must never raise
-            return {"ok": False, "name": self.name, "kind": self.kind, "error": repr(exc)}
+            # Do not leak repr(exc) (can embed the base URL / token env / internal
+            # detail) into the health response; log it for operators instead.
+            logger.warning("graylog health check failed", exc_info=True)
+            return {
+                "ok": False,
+                "name": self.name,
+                "kind": self.kind,
+                "error": "graylog health check failed",
+            }
 
         status = int(getattr(resp, "status_code", 0))
         ok = status == 200
