@@ -23,7 +23,7 @@ items are recorded for remediation.
 | XT-9 | `routers/messages.py:101-128` | HIGH | confirmed | `GET /api/messages` degraded fallback path ignores `project_id` |
 | CC-1 | `lease.py:79-86` | HIGH | confirmed | `reclaim_expired_leases` requeues by status only → double-dispatch on mid-dispatch lease expiry |
 | CC-2 | `repository.py:384-387` | MED | FIXED | `claim_runnable` had no `ORDER BY` → starvation (fixed in 63b2437+) |
-| SS-1 | `routers/projects.py:80` | HIGH | confirmed | `admin_add_project` swallows persist+commit → silent data loss, returns 200 |
+| SS-1 | `routers/projects.py:71-93` | HIGH | FIXED | `admin_add_project` swallow → now logs + re-raises → 422 (fixed 4d058a4) |
 | AB-1 | `daemon_wiring.py:241-242` | HIGH | confirmed | sync `open()`+`yaml.safe_dump` in async `_collection_handler` |
 | AB-2 | `routers/skills.py:127-128` | HIGH | confirmed | sync `open()`+`write` in async `admin_skills_fetch_github` |
 | AB-3 | `routers/environment.py:713/644` | HIGH | confirmed | sync `open(/proc/meminfo)` in async `api_environment` |
@@ -163,17 +163,16 @@ filter on — these are missing-filter bugs, not schema gaps.
 
 ## Silent-swallow
 
-### SS-1 — `routers/projects.py:80` — `admin_add_project` swallows persist+commit — CONFIRMED
+### SS-1 — `routers/projects.py:71-93` — `admin_add_project` swallowed persist+commit — FIXED
 
-- **File:line:** `src/general_ludd/routers/projects.py:80`
-- **Problem:** `admin_add_project` swallows exceptions from `persist_project()` and
-  `session.commit()`, so a failed write returns HTTP 200 while the project is not
-  actually persisted — silent data loss with a success response.
-- **Apply-ready fix:** Remove the broad swallow around `persist_project()` /
-  `session.commit()`. Let the failure propagate (or catch, log with context, and return
-  5xx). Only return 200/201 after the commit has succeeded. Add a test asserting that a
-  commit failure yields a non-2xx response and that a 2xx response implies a readable
-  row.
+- **File:line:** `src/general_ludd/routers/projects.py:71-93`
+- **Problem (historical):** `admin_add_project` swallowed exceptions from
+  `persist_project()` and `session.commit()`, so a failed write returned HTTP 200 while
+  the project was not actually persisted — silent data loss with a success response.
+- **Status:** **FIXED** (commit `4d058a4`). The handler now `logger.error(...)`s and
+  `raise`s on persist/commit failure; the outer handler converts it to HTTP 422, so a
+  2xx response now implies a committed row. Re-verified 2026-06-26. No further action;
+  a regression test asserting "commit failure → non-2xx" would still be a worthwhile add.
 
 ### Refuted silent-swallow candidates (NOT bugs)
 
