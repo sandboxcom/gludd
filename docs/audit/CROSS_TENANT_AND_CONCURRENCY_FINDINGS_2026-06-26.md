@@ -32,6 +32,9 @@ items are recorded for remediation.
 | XT-7 | `routers/features.py:108-173` | HIGH | FIXED | `POST /api/features/verify` now scopes by the `project_id` it already accepted (fixed 2caeee5) |
 | XT-8 | `routers/embeddings.py:779-883` | HIGH | FIXED | events corpus `select` filters by `req.project_id`; `EmbeddingSearchRequest.project_id` added (fixed 2caeee5, 3 isolation tests) |
 | XT-9 | `routers/messages.py:120-131` | HIGH | FIXED | `GET /api/messages` degraded fallback now scopes by `project_id` (fixed 6ae7e60, 3 tests) |
+| XT-10 | `routers/environment.py:499` | HIGH | FIXED | `_queues_facet` now forwards `project_id` to `status_summary`/`work_summary` (fixed ac5e16b, 2 tests). NOTE pre-existing latent bug: `work_summary` has no `in_flight` key → `work_in_flight` depth always omitted (separate follow-up) |
+| XT-11 | `routers/messages.py:140` + `repository.py:1397` | HIGH | FIXED | `AgentMessageRepository.ack` + endpoint + degraded fallback now enforce project ownership → cross-tenant ack is 404 (fixed 0dd0fa4, 4 tests) |
+| XT-12 | `daemon.py:747` | MED | STAGED | self-update audit sink hardcodes `project_id="default"` → mis-buckets tenants. Needs 4-type threading (SelfUpdateRequest→ApplyRecord→sink); safe interim = `getattr(record,"project_id",None)`. No project context on the record today |
 | CC-1 | `event_loop/lease.py:13-45` | HIGH | confirmed (needs migration) | `acquire_lease` SELECT is filtered by the caller's own `holder_id`; UNIQUE is `(bucket_key, holder_id)` so two DIFFERENT holders can each INSERT for the same `bucket_key` → double-dispatch. Fix = change constraint to `UNIQUE(bucket_key)` (alembic migration) + SELECT any-holder + treat IntegrityError as lost-race. Verified by adversarial read; staged (migration risk). |
 | CC-2 | `repository.py:384-387` | MED | FIXED | `claim_runnable` had no `ORDER BY` → starvation (fixed in 63b2437+) |
 | SS-1 | `routers/projects.py:71-93` | HIGH | FIXED | `admin_add_project` swallow → now logs + re-raises → 422 (fixed 4d058a4) |
@@ -42,13 +45,13 @@ items are recorded for remediation.
 | AB-4 | `daemon.py:1837-1838` | MED | FIXED | psutil RSS sampling offloaded via to_thread (fixed 1def38a) |
 | AB-5 | `execution/tool_loop.py:176,183` | HIGH | confirmed (verified) | sync `gateway.call_model` in async tool loop; no async variant → to_thread. **Companion REQUIRED**: budget.py `RunBudgetGuard.record_spend` unlocked `+=` race that offload exposes (add threading.Lock). Draft in flight |
 | AB-6 | `event_loop/loop.py:2168` | MED | FIXED | `run_gap_analysis` offloaded via to_thread; thread-safe per 2 audits (fixed 96d704a) |
-| AB-7 | `event_loop/loop.py:2187-2188` | LOW | confirmed | self-improve exception swallow (log WARNING, no exc_info) |
+| AB-7 | `event_loop/loop.py:2187-2188` | LOW | FIXED | self-improve failure log now passes `exc_info=True` (fixed 0dd0fa4) |
 | AB-8 | `execution/engine.py:302` | MED | confirmed (verified) | sync `call_model` in async `execute_async` → to_thread; same budget-lock companion as AB-5. Draft in flight |
 | GA-1 | `git_automation/repo.py` | MED | PARTLY-FIXED | cwd-pinning was **NOT-A-BUG** (cwd pinned on every call needing it; no chdir). REAL gap = `push_to_remote:796` had no network timeout → daemon-hang risk; FIXED 96d704a (timeout + non-interactive env, 2 tests). Optional: add timeout to local-only calls for uniformity (low pri) |
 | GA-2 | `git_automation/repo.py:682` | LOW | REFUTED | commit-msg dash-validation — not a vuln (defensive add only) |
 | GA-3 | `git_automation/repo.py:merge_branch` | HIGH | REFUTED | merge_branch pins `cwd=repo_path` on all 3 subprocess calls; no `os.chdir` anywhere → CWD-safe by construction (verified read) |
-| GW-1 | `models/gateway.py:467-469` | MED | confirmed | `tools` stringified into cache key → cache never hits for tool reqs |
-| GW-2 | `models/gateway.py:687-701` | MED | confirmed | truncated (`finish_reason=length`) responses cached + replayed |
+| GW-1 | `models/response_cache.py:31-38` | MED | REFUTED | key built via `json.dumps(payload, sort_keys=True, default=str)` incl. `tools` in kwargs → already stable (verified read). Not a bug |
+| GW-2 | `models/gateway.py:687-701` | MED | confirmed | truncated (`finish_reason=length`) responses cached + replayed. Fix = add `finish_reason != "length"` to the cache-write guard (read from `raw_response.response_metadata`). Apply-ready |
 | GW-3 | `models/provider_registry` | HIGH | needs-verify | config-driven arbitrary import (verify trust boundary next window) |
 | GW-4 | `models/gateway.py` / `response_cache.py` | LOW | confirmed | cache hit/miss `raw_response` asymmetry + TTL-bypass + dir perms |
 
