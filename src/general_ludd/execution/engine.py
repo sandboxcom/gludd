@@ -221,17 +221,25 @@ class ExecutionEngine:
         if self._metrics_collector is None:
             return
         try:
-            wtype = job.work_type or "code"
+            # GAP-30: the previous call passed model_profile=/work_type=/cost_usd=
+            # and omitted the two REQUIRED positional args (agent_id, model_id),
+            # so every call raised TypeError that the bare except swallowed — no
+            # model call (success OR failure) was ever recorded. Pass the real
+            # signature exactly: record_model_call(agent_id, model_id,
+            # input_tokens, output_tokens, success, error=None). No extra kwargs:
+            # they are forwarded into ModelUsage(**kwargs) / AgentMetrics and an
+            # unknown field there would raise TypeError all over again.
             self._metrics_collector.record_model_call(
-                model_profile=getattr(job, "model_profile", "unknown") or "unknown",
-                work_type=wtype,
-                success=success,
+                agent_id=getattr(job, "agent_id", None) or "engine",
+                model_id=getattr(job, "model_profile", None) or "unknown",
                 input_tokens=tokens,
                 output_tokens=0,
-                cost_usd=0.0,
+                success=success,
             )
         except Exception:
-            pass
+            # Metrics must never break execution, but do NOT swallow silently —
+            # a silent swallow is exactly what hid GAP-30 for so long.
+            logger.debug("metrics record_model_call failed", exc_info=True)
 
     def defer_commit(self, path: str, message: str) -> None:
         """Schedule a git commit as a background asyncio task (non-blocking).
