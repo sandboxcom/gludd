@@ -143,7 +143,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         group = bool(body.get("group", False))
         try:
             signum = reg.resolve_signal(sig)
-            reg.signal(pid, signum, group=group)
+            # signal() reads psutil create_time() for the identity guard and then
+            # os.kill()s — both blocking syscalls; keep them off the event loop
+            # (mirrors process_stats below).
+            await asyncio.to_thread(reg.signal, pid, signum, group=group)
         except ProcessRegistryError as exc:
             # The registry's refusal messages are safe to surface — they carry no
             # secrets, only PID/signal/identity facts the caller already knows.
