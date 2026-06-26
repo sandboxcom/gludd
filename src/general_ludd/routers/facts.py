@@ -291,8 +291,12 @@ async def _accounting_facet(
         from dataclasses import asdict
         return {"projects": [asdict(r) for r in results]}
     except Exception as exc:
-        logger.debug("accounting facet unavailable: %s", exc)
-        return {"projects": [], "error": str(exc)}
+        # Do not leak internal exception detail to the client: log the real
+        # error (with traceback) for operators, return a generic message in the
+        # response body. The "error" key is kept so callers can still detect the
+        # degraded state without parsing HTTP status.
+        logger.warning("accounting facet unavailable: %s", exc, exc_info=True)
+        return {"projects": [], "error": "accounting facet unavailable"}
 def _osquery_facet(app: FastAPI) -> dict[str, Any]:
     """Fast availability + version probe for osquery system-state querying.
 
