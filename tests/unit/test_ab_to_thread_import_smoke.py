@@ -21,6 +21,14 @@ def test_daemon_wiring_imports() -> None:
     assert inspect.ismodule(dw)
 
 
+def test_event_loop_imports() -> None:
+    # AB-6 wrapped harness.run_gap_analysis in asyncio.to_thread inside the async
+    # _phase_self_improve. Importing the event loop module proves the edit parses.
+    import general_ludd.event_loop.loop as loop
+
+    assert inspect.ismodule(loop)
+
+
 def test_daemon_imports() -> None:
     # AB-4 wrapped the psutil RSS sampling in admin_daemon_stats in
     # asyncio.to_thread (local import inside the handler). Importing the daemon

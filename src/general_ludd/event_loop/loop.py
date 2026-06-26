@@ -2165,7 +2165,11 @@ class EventLoop:
             return
         try:
             harness = SelfImprovementHarness(model_gateway=self._model_gateway)
-            findings = harness.run_gap_analysis()
+            # AB-6: run_gap_analysis blocks on an HTTP model call / filesystem
+            # walk; offload it so the self-improve phase does not stall the async
+            # event loop. The harness is freshly constructed per tick and the
+            # gateway is threading.Lock-guarded, so the worker thread is safe.
+            findings = await asyncio.to_thread(harness.run_gap_analysis)
             if not findings:
                 self._tick_metrics["self_improve_gaps"] = 0
                 return

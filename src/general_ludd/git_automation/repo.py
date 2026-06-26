@@ -793,12 +793,27 @@ class GitAutomation:
         args = ["git", "push", remote, "--"]
         if branch:
             args.append(branch)
-        result = subprocess.run(
-            args,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
+        # GA-1 (real gap): push does network I/O. Without a timeout it can hang
+        # the daemon indefinitely on an unresponsive remote — the exact failure
+        # `_run_git` was built to prevent. Mirror its timeout + non-interactive
+        # env (this method takes an explicit repo_path, so it cannot route
+        # through `_run_git`, which is pinned to self.repo_path).
+        try:
+            result = subprocess.run(
+                args,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
+        except subprocess.TimeoutExpired:
+            return PushResult(
+                success=False,
+                remote=remote,
+                branch=branch or "",
+                message=f"push timed out after {_GIT_TIMEOUT_SECONDS}s",
+            )
         return PushResult(
             success=result.returncode == 0,
             remote=remote,
