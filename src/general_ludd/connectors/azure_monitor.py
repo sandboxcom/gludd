@@ -296,5 +296,12 @@ def _default_transport(
     """Default httpx-backed transport (no shell, time-bound). Imported lazily."""
     import httpx
 
-    resp = httpx.request(method, url, headers=dict(headers), json=json_body, timeout=timeout)
+    resp = httpx.request(
+        method,
+        url,
+        headers=dict(headers),
+        json=json_body,
+        timeout=timeout,
+        follow_redirects=False,
+    )
     return resp  # type: ignore[return-value]  # httpx.Response is structurally compatible

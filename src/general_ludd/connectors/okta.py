@@ -81,6 +81,7 @@ def _default_transport(
         headers=headers,
         params=params,
         timeout=timeout,
+        follow_redirects=False,
     )
     return resp
 

@@ -113,7 +113,13 @@ def _default_transport(
     """
     import httpx
 
-    resp = httpx.get(url, headers=dict(headers), params=dict(params or {}), timeout=timeout)
+    resp = httpx.get(
+        url,
+        headers=dict(headers),
+        params=dict(params or {}),
+        timeout=timeout,
+        follow_redirects=False,
+    )
     return resp
 
 

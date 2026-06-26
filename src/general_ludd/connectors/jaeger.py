@@ -57,6 +57,7 @@ class _HttpxTransport:
             params=params,
             timeout=timeout if timeout is not None else _DEFAULT_TIMEOUT,
             headers=headers,
+            follow_redirects=False,
         )
 
 
