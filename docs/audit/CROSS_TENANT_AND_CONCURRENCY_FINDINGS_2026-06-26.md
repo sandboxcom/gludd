@@ -22,7 +22,7 @@ items are recorded for remediation.
 
 | Finding ID | File:line | Severity | Status | One-line |
 |---|---|---|---|---|
-| XT-1 | `routers/facts.py:125` | HIGH | confirmed | `get_aggregate_scores()` not passed `project_id` (model has the column) |
+| XT-1 | `routers/facts.py:125` | HIGH | FIXED | `get_aggregate_scores(project_id=project_id)` now scopes benchmark rankings (fixed 117e8aa) |
 | XT-2 | `routers/facts.py:226` | HIGH | confirmed | `FeatureRepository.list_all()` has no `project_id` filter |
 | XT-3 | `routers/facts.py:427` | HIGH | confirmed | `/api/traces` endpoint exposes no `project_id` param |
 | XT-4 | `routers/facts.py:403` | HIGH | confirmed | `_traces_facet(app)` not passed `project_id` |
