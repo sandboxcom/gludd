@@ -2189,7 +2189,10 @@ class EventLoop:
             self._tick_metrics["self_improve_todos_persisted"] = enqueued
             logger.info("Self-improve cycle: %d gaps found, %d todos persisted", len(findings), enqueued)
         except Exception as exc:
-            logger.warning("Self-improve phase failed: %s", exc)
+            # AB-7: capture the traceback (exc_info) — a bare "%s" hid the real
+            # failure site of the self-improve phase, making regressions here
+            # invisible in the logs.
+            logger.warning("Self-improve phase failed: %s", exc, exc_info=True)
             self._tick_metrics["self_improve_gaps"] = 0
 
     # Maximum entries kept in the per-instance idempotency ledgers.

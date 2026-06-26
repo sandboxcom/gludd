@@ -133,18 +133,26 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"messages": results, "count": len(results), "recipient": recipient}
 
     @app.post("/api/messages/{message_id}/ack")
-    async def api_ack_message(message_id: str) -> dict[str, Any]:
+    async def api_ack_message(
+        message_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
                 repo = AgentMessageRepository(session)
-                row = await repo.ack(message_id)
+                # XT-11: forward project_id so a cross-tenant ack is refused
+                # (returns None -> 404, indistinguishable from not-found).
+                row = await repo.ack(message_id, project_id=project_id)
                 if row is None:
                     raise HTTPException(status_code=404, detail="message not found")
                 await session.commit()
                 return {"acked": True, "id": row.id, "read_at": str(row.read_at)}
         for m in _daemon_state["messages"]:
             if m.get("id") == message_id:
+                # XT-11: the degraded in-memory fallback must also refuse a
+                # cross-tenant ack, matching the DB path.
+                if project_id is not None and m.get("project_id") != project_id:
+                    continue
                 from datetime import UTC, datetime
 
                 m["read_at"] = datetime.now(UTC)

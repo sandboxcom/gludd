@@ -1394,26 +1394,36 @@ class AgentMessageRepository:
         now = datetime.now(UTC)
         return [r for r in rows if not self._is_expired(r, now)]
 
-    async def ack(self, message_id: str) -> AgentMessageModel | None:
-        """Mark a message read. Returns the row, or None if it does not exist."""
+    async def ack(
+        self, message_id: str, project_id: str | None = None
+    ) -> AgentMessageModel | None:
+        """Mark a message read. Returns the row, or None if it does not exist.
+
+        XT-11: when ``project_id`` is supplied, a message belonging to another
+        project is treated as not-found (the ack neither reads nor mutates it),
+        so a caller scoped to project A cannot mark project B's message read by
+        guessing its id. ``project_id=None`` preserves the unscoped/admin path.
+        """
         from sqlalchemy import update as _update
 
         row = await self.get_by_id(message_id)
         if row is None:
+            return None
+        if project_id is not None and row.project_id != project_id:
             return None
         # Guarded conditional UPDATE on read_at IS NULL: the read-then-mutate form
         # let two concurrent acks both see read_at None and both write, clobbering
         # the first ack's timestamp. Guarding on read_at IS NULL means only the
         # first ack writes; a later ack affects zero rows and leaves it untouched.
         now = datetime.now(UTC)
-        guard = (
-            _update(AgentMessageModel)
-            .where(
-                AgentMessageModel.id == message_id,
-                AgentMessageModel.read_at.is_(None),
-            )
-            .values(read_at=now)
+        guard = _update(AgentMessageModel).where(
+            AgentMessageModel.id == message_id,
+            AgentMessageModel.read_at.is_(None),
         )
+        if project_id is not None:
+            # Atomic backstop: the UPDATE itself refuses a cross-project row.
+            guard = guard.where(AgentMessageModel.project_id == project_id)
+        guard = guard.values(read_at=now)
         await self._session.execute(guard)
         await self._session.flush()
         await self._session.refresh(row)
