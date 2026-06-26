@@ -101,7 +101,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "active": project.active,
             }
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("add project failed: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422,
+                detail="invalid project request; check name, weight, and repo URL",
+            ) from exc
 
     @app.delete("/admin/projects/{project_id}")
     async def admin_delete_project(project_id: str) -> dict[str, Any]:
@@ -125,7 +129,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             project = ext["projects"].get_project(project_id)
             return {"project_id": project_id, "weight": project.weight if project else req.weight}
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("set project weight failed: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422, detail="invalid weight for project"
+            ) from exc
 
     @app.post("/admin/projects/rebalance")
     async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, Any]:
@@ -135,7 +142,10 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             ext["projects"].rebalance(req.weights)
             return {"rebalanced": list(req.weights.keys())}
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("rebalance projects failed: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422, detail="invalid weights in rebalance request"
+            ) from exc
 
     @app.get("/admin/projects")
     async def admin_list_projects() -> dict[str, Any]:

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, cast
 
@@ -34,6 +35,8 @@ from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.security.sanitize import is_path_within
+
+logger = logging.getLogger(__name__)
 
 
 def _workspace_root(app: FastAPI) -> str:
@@ -471,8 +474,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             try:
                 _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
+                logger.warning("budget check raised: %s", _exc, exc_info=True)
                 raise HTTPException(
-                    status_code=503, detail=f"budget check raised: {_exc}"
+                    status_code=503, detail="budget check failed"
                 ) from _exc
             if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
                 _reason = (
@@ -563,7 +567,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "usage": dict(response.usage_metadata) if response.usage_metadata else {},
             }
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
+            logger.warning("model call failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=502, detail="model call failed") from exc
 
     @app.post(
         "/admin/models/workflow",
@@ -609,8 +614,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             max_retries = int(body.get("max_retries", 2))
             quality_threshold = float(body.get("quality_threshold", 0.6))
         except (TypeError, ValueError) as exc:
+            logger.warning("invalid numeric parameter in workflow request: %s", exc, exc_info=True)
             raise HTTPException(
-                status_code=422, detail=f"invalid numeric parameter: {exc}"
+                status_code=422, detail="invalid numeric parameter"
             ) from exc
         enable_graph = bool(body.get("enable_graph", True))
 
@@ -635,8 +641,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             try:
                 _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
+                logger.warning("budget check raised: %s", _exc, exc_info=True)
                 raise HTTPException(
-                    status_code=503, detail=f"budget check raised: {_exc}"
+                    status_code=503, detail="budget check failed"
                 ) from _exc
             if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
                 _reason = (
@@ -702,5 +709,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 profile_id=profile_id or "default",
             )
         except Exception as exc:
-            raise HTTPException(status_code=500, detail={"error": str(exc)}) from exc
+            logger.warning("workflow execution failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="workflow execution failed") from exc
         return result
