@@ -39,14 +39,14 @@ items are recorded for remediation.
 | AB-2 | `routers/skills.py:127-128` | HIGH | FIXED | skill-file write wrapped in `asyncio.to_thread` (fixed e748412); note `download_skill` net call still sync (AB follow-up) |
 | AB-3 | `routers/environment.py:713/644` | HIGH | FIXED | `_system_facet()` call offloaded via `asyncio.to_thread` (fixed e748412, 13 router tests green) |
 | TG-1 | `routers/todos.py` (read/update endpoints) | MED | FIXED | shared `_validate_project_id` helper → uniform 422 across get/list-scheduled/pause/resume (fixed e748412, 6 tests) |
-| AB-4 | `daemon.py:1837-1838` | MED | confirmed | sync `psutil` in async `admin_daemon_stats` |
-| AB-5 | `execution/tool_loop.py:176,183` | HIGH | confirmed | sync `gateway.call_model` in async tool loop (hot path) |
-| AB-6 | `event_loop/loop.py:2168` | MED | confirmed | sync `run_gap_analysis` in async `_phase_self_improve` |
+| AB-4 | `daemon.py:1837-1838` | MED | FIXED | psutil RSS sampling offloaded via to_thread (fixed 1def38a) |
+| AB-5 | `execution/tool_loop.py:176,183` | HIGH | confirmed (verified) | sync `gateway.call_model` in async tool loop; no async variant → to_thread. **Companion REQUIRED**: budget.py `RunBudgetGuard.record_spend` unlocked `+=` race that offload exposes (add threading.Lock). Draft in flight |
+| AB-6 | `event_loop/loop.py:2168` | MED | FIXED | `run_gap_analysis` offloaded via to_thread; thread-safe per 2 audits (fixed 96d704a) |
 | AB-7 | `event_loop/loop.py:2187-2188` | LOW | confirmed | self-improve exception swallow (log WARNING, no exc_info) |
-| AB-8 | `execution/engine.py:302` | MED | needs-verify | sync gateway call on event loop (flagged, re-pin next window) |
-| GA-1 | `git_automation/repo.py` (9 methods) | MED | confirmed | 9 git methods bypass `_run_git` (no timeout/lock/non-interactive) |
+| AB-8 | `execution/engine.py:302` | MED | confirmed (verified) | sync `call_model` in async `execute_async` → to_thread; same budget-lock companion as AB-5. Draft in flight |
+| GA-1 | `git_automation/repo.py` | MED | PARTLY-FIXED | cwd-pinning was **NOT-A-BUG** (cwd pinned on every call needing it; no chdir). REAL gap = `push_to_remote:796` had no network timeout → daemon-hang risk; FIXED 96d704a (timeout + non-interactive env, 2 tests). Optional: add timeout to local-only calls for uniformity (low pri) |
 | GA-2 | `git_automation/repo.py:682` | LOW | REFUTED | commit-msg dash-validation — not a vuln (defensive add only) |
-| GA-3 | `git_automation/repo.py:merge_branch` | HIGH | confirmed | CWD confusion → wrong-repo mutation if `repo_path != self.repo_path` |
+| GA-3 | `git_automation/repo.py:merge_branch` | HIGH | REFUTED | merge_branch pins `cwd=repo_path` on all 3 subprocess calls; no `os.chdir` anywhere → CWD-safe by construction (verified read) |
 | GW-1 | `models/gateway.py:467-469` | MED | confirmed | `tools` stringified into cache key → cache never hits for tool reqs |
 | GW-2 | `models/gateway.py:687-701` | MED | confirmed | truncated (`finish_reason=length`) responses cached + replayed |
 | GW-3 | `models/provider_registry` | HIGH | needs-verify | config-driven arbitrary import (verify trust boundary next window) |
