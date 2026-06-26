@@ -70,9 +70,16 @@ class _CannedTransport:
         headers: dict[str, str],
         params: dict[str, Any] | None = None,
         verify: str | bool = True,
+        timeout: float | None = None,
     ) -> _CannedResponse:
         self.calls.append(
-            {"url": url, "headers": headers, "params": params, "verify": verify}
+            {
+                "url": url,
+                "headers": headers,
+                "params": params,
+                "verify": verify,
+                "timeout": timeout,
+            }
         )
         return _CannedResponse(self.status_code, self.payload)
 

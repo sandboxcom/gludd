@@ -54,6 +54,7 @@ class _Transport(Protocol):
         headers: dict[str, str],
         params: dict[str, Any] | None = None,
         verify: str | bool = True,
+        timeout: float | None = None,
     ) -> _Response: ...
 
 
@@ -213,6 +214,7 @@ class K8sEventsSource:
             headers=self._headers(),
             params=params,
             verify=self._ca_cert,
+            timeout=self._timeout_seconds,
         )
         if resp.status_code != 200:
             return []
@@ -232,6 +234,7 @@ class K8sEventsSource:
                 headers=self._headers(),
                 params={"limit": 1},
                 verify=self._ca_cert,
+                timeout=self._timeout_seconds,
             )
             if resp.status_code == 200:
                 return {"ok": True, "detail": "events API reachable"}
