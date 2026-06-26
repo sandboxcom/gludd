@@ -38,6 +38,18 @@ items are recorded for remediation.
 | AB-2 | `routers/skills.py:127-128` | HIGH | confirmed | sync `open()`+`write` in async `admin_skills_fetch_github` |
 | AB-3 | `routers/environment.py:713/644` | HIGH | confirmed | sync `open(/proc/meminfo)` in async `api_environment` |
 | TG-1 | `routers/todos.py` (read/update endpoints) | MED | confirmed | read/update endpoints accept `project_id` but don't validate it → enumeration via 404-vs-422 |
+| AB-4 | `daemon.py:1837-1838` | MED | confirmed | sync `psutil` in async `admin_daemon_stats` |
+| AB-5 | `execution/tool_loop.py:176,183` | HIGH | confirmed | sync `gateway.call_model` in async tool loop (hot path) |
+| AB-6 | `event_loop/loop.py:2168` | MED | confirmed | sync `run_gap_analysis` in async `_phase_self_improve` |
+| AB-7 | `event_loop/loop.py:2187-2188` | LOW | confirmed | self-improve exception swallow (log WARNING, no exc_info) |
+| AB-8 | `execution/engine.py:302` | MED | needs-verify | sync gateway call on event loop (flagged, re-pin next window) |
+| GA-1 | `git_automation/repo.py` (9 methods) | MED | confirmed | 9 git methods bypass `_run_git` (no timeout/lock/non-interactive) |
+| GA-2 | `git_automation/repo.py:682` | LOW | REFUTED | commit-msg dash-validation — not a vuln (defensive add only) |
+| GA-3 | `git_automation/repo.py:merge_branch` | HIGH | confirmed | CWD confusion → wrong-repo mutation if `repo_path != self.repo_path` |
+| GW-1 | `models/gateway.py:467-469` | MED | confirmed | `tools` stringified into cache key → cache never hits for tool reqs |
+| GW-2 | `models/gateway.py:687-701` | MED | confirmed | truncated (`finish_reason=length`) responses cached + replayed |
+| GW-3 | `models/provider_registry` | HIGH | needs-verify | config-driven arbitrary import (verify trust boundary next window) |
+| GW-4 | `models/gateway.py` / `response_cache.py` | LOW | confirmed | cache hit/miss `raw_response` asymmetry + TTL-bypass + dir perms |
 
 REFUTED / already-closed (recorded so they are not re-raised):
 - `models.py:362`, `todos.py:447` — silent-swallow **REFUTED** (pre-initialized safe defaults, not bugs).
