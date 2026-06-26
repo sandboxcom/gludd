@@ -36,7 +36,12 @@ import pytest
 # module hits it in isolation; the full suite happens to import routing_roles
 # earlier. Importing it here first makes THIS module collectable in any order.
 import general_ludd.routing_roles  # noqa: F401  (import-order warm-up, see above)
-from general_ludd.models.gateway import ModelGateway, ModelProfile
+from general_ludd.models.gateway import (
+    ModelGateway,
+    ModelProfile,
+    _coerce_token_count,
+)
+from general_ludd.models.router import ModelRouter
 from general_ludd.models.timeout_detector import ModelHealthTracker
 
 
@@ -63,6 +68,9 @@ class _FakeChatModel:
     # which reassigns a fresh empty list before EVERY test — no test observes
     # another test's residual queue.
     script: ClassVar[list[object]] = []
+    # Total invocations across ALL _FakeChatModel instances in a test. Reset by
+    # the autouse _reset_script fixture so tests can assert exact call counts.
+    call_count: ClassVar[int] = 0
 
     def __init__(self, **init_kwargs: object) -> None:
         # _invoke_and_bill instantiates provider_cls(model=..., api_key=...);
@@ -70,6 +78,7 @@ class _FakeChatModel:
         self._init_kwargs = init_kwargs
 
     def invoke(self, messages: list[dict[str, str]]) -> object:
+        _FakeChatModel.call_count += 1
         if not _FakeChatModel.script:
             raise AssertionError("provider invoked more times than scripted")
         item = _FakeChatModel.script.pop(0)
@@ -99,12 +108,14 @@ def _reset_script() -> None:
     # shared class-level queue cannot carry residual items across tests. This is
     # what isolates the SHARED MUTABLE documented on _FakeChatModel.script.
     _FakeChatModel.script = []
+    _FakeChatModel.call_count = 0
 
 
 def _make_gateway(
     tracker: ModelHealthTracker,
     *,
     fallback_profiles: list[str] | None = None,
+    router: ModelRouter | None = None,
 ) -> ModelGateway:
     profile = ModelProfile(
         model_profile_id="primary",
@@ -119,6 +130,7 @@ def _make_gateway(
         profiles=[profile],
         provider_registry=_FakeRegistry(),
         health_tracker=tracker,
+        router=router,
     )
 
 
@@ -214,3 +226,144 @@ class TestSuccessReset:
         gateway.call_model("primary", [{"role": "user", "content": "hi"}])
         assert tracker._consecutive.get("primary") == 0
         assert tracker.is_healthy("primary", admit_probe=False) is True
+
+
+class TestMidLoopBreakerGuard:
+    def test_breaker_trips_mid_retry_stops_further_attempts(self) -> None:
+        """Mid-loop circuit-open guard halts retries as soon as the breaker trips.
+
+        With failure_threshold=2, two server-error responses trip the breaker.
+        Before the fix, ``_is_retryable`` returned True for the 3rd attempt and
+        kept hammering an already-open circuit. With the fix, after the 2nd failure
+        records the trip, ``_is_retryable`` calls ``tracker.is_healthy(admit_probe=False)``
+        and returns False immediately, so no 3rd invocation is made.
+
+        The script contains exactly 2 errors; if a 3rd invocation fires,
+        ``_FakeChatModel`` raises AssertionError (empty script guard).
+        """
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=60.0)
+        gateway = _make_gateway(tracker)
+
+        _FakeChatModel.script = [_server_error(), _server_error()]
+        with pytest.raises(httpx.HTTPStatusError):
+            gateway.call_model_with_retry(
+                "primary",
+                [{"role": "user", "content": "hi"}],
+                max_retries=10,
+                base_backoff_seconds=0.0,
+            )
+
+        assert _FakeChatModel.call_count == 2
+        assert tracker.is_healthy("primary", admit_probe=False) is False
+
+
+class TestBudgetNaNInf:
+    def test_nan_budget_remaining_fails_closed(self) -> None:
+        """NaN budget_remaining is coerced to 0.0 so the gate rejects the call.
+
+        Python: ``x > NaN`` is always False, so without the guard a NaN
+        budget_remaining silently passes every cost comparison. The fix treats
+        non-finite remaining as 0.0 (fail-closed) before the comparison.
+        """
+        tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
+        gateway = _make_gateway(tracker)
+
+        result = gateway.check_budget(
+            "primary",
+            estimated_cost=0.01,
+            budget_remaining=float("nan"),
+        )
+        assert result is False
+
+    def test_inf_estimated_cost_fails_budget(self) -> None:
+        """Infinite estimated_cost is rejected against any finite budget cap.
+
+        ``float('inf') > budget_remaining`` is always True for a finite positive
+        budget_remaining, so the gate correctly rejects the call.
+        """
+        tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
+        gateway = _make_gateway(tracker)
+
+        result = gateway.check_budget(
+            "primary",
+            estimated_cost=float("inf"),
+            budget_remaining=100.0,
+        )
+        assert result is False
+
+    @pytest.mark.parametrize("bad_cost", [float("nan"), float("inf")])
+    def test_non_finite_estimated_cost_rejected(self, bad_cost: float) -> None:
+        """NaN/Inf estimated_cost is clamped to inf up front and rejected.
+
+        A NaN estimated_cost must REJECT (fail-closed): without the top-of-method
+        clamp, ``NaN > budget_remaining`` is False and the call would slip
+        through. The clamp coerces any non-finite estimated_cost to inf so it can
+        never pass a finite budget cap.
+        """
+        tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
+        gateway = _make_gateway(tracker)
+
+        result = gateway.check_budget(
+            "primary",
+            estimated_cost=bad_cost,
+            budget_remaining=100.0,
+        )
+        assert result is False
+
+
+class TestCoerceTokenCountNaNInf:
+    """`_coerce_token_count` must not crash on non-finite provider usage values.
+
+    ``int(float("nan"))`` raises ValueError and ``int(float("inf"))`` raises
+    OverflowError; either would crash _invoke_and_bill at billing time on a
+    hostile/buggy provider's usage metadata. Non-finite counts coerce to 0.
+    """
+
+    @pytest.mark.parametrize("value", [float("nan"), float("inf"), float("-inf")])
+    def test_non_finite_token_count_coerces_to_zero(self, value: float) -> None:
+        assert _coerce_token_count(value) == 0
+
+
+class TestCircuitGateRolePattern:
+    """call_model_by_role / call_model_by_pattern must honor an open circuit.
+
+    ``call_model`` has no health check, so before the fix a role/pattern caller
+    bypassed an open breaker entirely and hammered the unhealthy provider. The
+    fix gates both methods on ``health_tracker.is_healthy(profile_id)`` and
+    raises a "circuit is open" RuntimeError when the breaker is tripped.
+    """
+
+    def _trip_breaker(
+        self, gateway: ModelGateway, tracker: ModelHealthTracker
+    ) -> None:
+        for _ in range(3):
+            _FakeChatModel.script = [_server_error()]
+            with pytest.raises(httpx.HTTPStatusError):
+                gateway.call_model("primary", [{"role": "user", "content": "hi"}])
+        assert tracker.is_healthy("primary", admit_probe=False) is False
+
+    def test_call_model_by_role_refuses_open_circuit(self) -> None:
+        tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
+        router = ModelRouter(role_mapping={"planner": "primary"})
+        gateway = _make_gateway(tracker, router=router)
+
+        self._trip_breaker(gateway, tracker)
+
+        # Provider script is empty: the gate must raise BEFORE any invocation.
+        with pytest.raises(RuntimeError, match="circuit is open"):
+            gateway.call_model_by_role(
+                "planner", [{"role": "user", "content": "hi"}]
+            )
+
+    def test_call_model_by_pattern_refuses_open_circuit(self) -> None:
+        tracker = ModelHealthTracker(failure_threshold=3, cooldown_seconds=60.0)
+        router = ModelRouter(role_mapping={"planner": "primary"})
+        router.add_pattern_mapping("deep-think", "planner")
+        gateway = _make_gateway(tracker, router=router)
+
+        self._trip_breaker(gateway, tracker)
+
+        with pytest.raises(RuntimeError, match="circuit is open"):
+            gateway.call_model_by_pattern(
+                "deep-think", [{"role": "user", "content": "hi"}]
+            )

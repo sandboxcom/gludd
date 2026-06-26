@@ -42,6 +42,12 @@ def _coerce_token_count(value: Any) -> int:
     if isinstance(value, bool):
         return 0
     if isinstance(value, (int, float)):
+        # NaN/Inf guard: int(float("nan")) raises ValueError and
+        # int(float("inf")) raises OverflowError, which would crash
+        # _invoke_and_bill at billing time on hostile/buggy provider usage
+        # metadata. Treat any non-finite count as 0 (un-billable).
+        if not math.isfinite(value):
+            return 0
         return max(0, int(value))
     return 0
 
@@ -333,6 +339,16 @@ class ModelGateway:
         profile = self._profiles.get(profile_id)
         if profile is None:
             return False
+        # NaN/Inf guard (fail-closed). `x > NaN` is always False in Python, so a
+        # non-finite budget_remaining would silently pass every cost comparison;
+        # treat it as 0.0 (no budget). A non-finite estimated_cost (NaN/Inf) is
+        # treated as float("inf") so it can never slip under any finite cap — a
+        # NaN cost must REJECT, not pass. Both clamped up front so every
+        # comparison below sees finite operands.
+        if not math.isfinite(budget_remaining):
+            budget_remaining = 0.0
+        if not math.isfinite(estimated_cost):
+            estimated_cost = float("inf")
         # D-21: do NOT trust the caller-provided estimated_cost. Re-estimate
         # server-side from the actual messages + the profile's price rates, and
         # use the MAX of (caller claim, server estimate) for the budget decision
@@ -823,6 +839,11 @@ class ModelGateway:
             """
             if not isinstance(exc, _retryable_exc_types):
                 return False
+            # Mid-loop circuit-open guard: if this failure tripped the breaker,
+            # stop retrying the primary so the fallback chain runs instead of
+            # stampeding a now-open circuit.
+            if tracker is not None and not tracker.is_healthy(profile_id, admit_probe=False):
+                return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
             if kind in _NON_RETRYABLE_KINDS:
@@ -1021,6 +1042,14 @@ class ModelGateway:
         profile_id = self._router.resolve_role(role_name, strict=True)
         if profile_id is None:
             raise ValueError(f"No profile resolved for role '{role_name}'")
+        # Circuit-breaker gate: call_model itself has no health check, so role
+        # callers would otherwise bypass an open circuit and hammer an unhealthy
+        # provider. Fail fast instead.
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
+            raise RuntimeError(
+                f"profile '{profile_id}' (role '{role_name}') circuit is open; "
+                "refusing to call unhealthy provider"
+            )
         return self.call_model(profile_id, messages, **kwargs)
 
     def call_model_by_pattern(
@@ -1034,6 +1063,14 @@ class ModelGateway:
         profile_id = self._router.resolve_pattern(pattern)
         if profile_id is None:
             raise ValueError(f"No profile resolved for pattern '{pattern}'")
+        # Circuit-breaker gate: call_model itself has no health check, so pattern
+        # callers would otherwise bypass an open circuit and hammer an unhealthy
+        # provider. Fail fast instead.
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
+            raise RuntimeError(
+                f"profile '{profile_id}' (pattern '{pattern}') circuit is open; "
+                "refusing to call unhealthy provider"
+            )
         return self.call_model(profile_id, messages, **kwargs)
 
     def _try_call_model(
