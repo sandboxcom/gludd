@@ -448,7 +448,7 @@ def test_nonexecutable_explicit_path_fails_with_precise_message(
 
     assert fake_mod.exited is None
     assert fake_mod.failed is not None
-    assert "exists but not executable" in fake_mod.failed["msg"]
+    assert "exists but is not executable" in fake_mod.failed["msg"]
     assert "chmod +x" in fake_mod.failed["msg"]
     assert "/opt/osqueryi" in fake_mod.failed["msg"]
 
