@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import json
 import logging
+import math
 import uuid
 from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Any
@@ -171,6 +172,13 @@ class ProjectManager:
             raise ProjectAllocationError(f"Project '{project_id}' not found")
         if not project.active:
             raise ProjectAllocationError(f"Project '{project_id}' is not active")
+        # Reject NaN/inf up front: `NaN < 0` and `NaN > 100` are both False, so a
+        # non-finite weight would slip past the range check, then poison
+        # select_project's weighted-random math (total becomes NaN, every
+        # `r <= cumulative` is False) and silently hand ALL work to the last
+        # project — starving every other one.
+        if not math.isfinite(new_weight):
+            raise ProjectAllocationError(f"Weight must be a finite number, got {new_weight!r}")
         if new_weight < 0 or new_weight > 100:
             raise ProjectAllocationError(f"Weight must be between 0 and 100, got {new_weight}")
         others_total = sum(p.weight for p in self._projects.values() if p.active and p.project_id != project_id)
@@ -184,6 +192,14 @@ class ProjectManager:
         logger.info("Changed project %s weight from %.1f%% to %.1f%%", project.name, old_weight, new_weight)
 
     def rebalance(self, weights: dict[str, float]) -> None:
+        # Reject NaN/inf before summing: a non-finite weight makes `total` NaN,
+        # `abs(NaN - 100) > 0.01` is False, so it would pass the sum check and
+        # then poison select_project's weighted-random math (see set_weight).
+        for pid, w in weights.items():
+            if not math.isfinite(w):
+                raise ProjectAllocationError(
+                    f"Weight for '{pid}' must be a finite number, got {w!r}"
+                )
         total = sum(weights.values())
         if abs(total - 100.0) > 0.01:
             raise ProjectAllocationError(f"Weights must sum to 100%, got {total:.1f}%")
