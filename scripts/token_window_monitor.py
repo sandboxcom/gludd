@@ -47,11 +47,19 @@ TRANSCRIPT_DIR = Path(
 # Default 5h token allowance, in ACTUAL tokens sent (input + output + cache
 # creation + cache read — cache_read dominates, ~95% of the count, because every
 # turn re-reads the cached context, and all subagent calls count too).
-# Calibrated 2026-06-26 against the operator's observed real rate-limit reading:
-# a measured 5h total of 247.5M corresponded to 91%, so the plan's true 5h limit
-# is ~272M (247.5M / 0.91), not the old 200M placeholder which over-read at 124%.
-# Tune via /tmp/gludd-5h-token-budget or $GLUDD_5H_TOKEN_BUDGET if the plan changes.
-DEFAULT_BUDGET = int(os.environ.get("GLUDD_5H_TOKEN_BUDGET", "272000000"))
+#
+# IMPORTANT (proven 2026-06-26 via `--probe`): the API's real rate-limit headers
+# (anthropic-ratelimit-unified-*) are NOT persisted anywhere in the transcript,
+# so the true 5h-window percentage CANNOT be read directly. This monitor is a
+# token-sum PROXY, and its only free parameter is this budget (the denominator).
+# A frozen constant drifts wrong as the proxy's systematic bias shows, so the
+# budget is meant to be ANCHORED to a real reading via `--calibrate <pct>`
+# (make token-monitor-calibrate PCT=NN), which snapshots the current measured 5h
+# spend and writes budget = spend / (pct/100) into /tmp/gludd-5h-token-budget.
+# From then on the rolling % self-corrects against that live anchor. The default
+# below is only the pre-calibration fallback: set so the operator's observed
+# "278M measured is still under 100%" does not false-trip the >=95% throttle.
+DEFAULT_BUDGET = int(os.environ.get("GLUDD_5H_TOKEN_BUDGET", "316000000"))
 WINDOW = timedelta(hours=5)
 HIGH_WATERMARK = 0.95
 LOW_WATERMARK = 0.90
@@ -274,6 +282,81 @@ def evaluate_once() -> tuple[int, int, int]:
     return spend, b, target
 
 
+_RATELIMIT_HINTS = (
+    "ratelimit",
+    "rate_limit",
+    "unified",
+    "retry_after",
+    "retryafter",
+    "reset_at",
+    "resetsat",
+    "window",
+    "quota",
+    "5h",
+)
+
+
+def _probe() -> int:
+    """Diagnostic: discover whether the transcript records a REAL rate-limit
+    signal (so the monitor can read it directly) and dump the full set of
+    ``message.usage`` keys actually present. No budget math — just ground truth.
+    """
+    usage_keys: set[str] = set()
+    ratelimit_keys: set[str] = set()
+    top_level_keys: set[str] = set()
+    sample_usage: dict | None = None
+    files = 0
+    if not TRANSCRIPT_DIR.exists():
+        _log(f"probe: transcript dir missing: {TRANSCRIPT_DIR}")
+        return 1
+    for jf in sorted(TRANSCRIPT_DIR.glob("*.jsonl")):
+        files += 1
+        try:
+            with jf.open(encoding="utf-8", errors="ignore") as fh:
+                for line in fh:
+                    if '"usage"' not in line and not any(
+                        h in line.lower() for h in _RATELIMIT_HINTS
+                    ):
+                        continue
+                    try:
+                        obj = json.loads(line)
+                    except Exception:
+                        continue
+                    if isinstance(obj, dict):
+                        for k in obj:
+                            kl = k.lower()
+                            if any(h in kl for h in _RATELIMIT_HINTS):
+                                ratelimit_keys.add(f"<top>.{k}")
+                            top_level_keys.add(k)
+                    msg = obj.get("message") if isinstance(obj, dict) else None
+                    if isinstance(msg, dict):
+                        for k in msg:
+                            if any(h in k.lower() for h in _RATELIMIT_HINTS):
+                                ratelimit_keys.add(f"message.{k}")
+                        u = msg.get("usage")
+                        if isinstance(u, dict):
+                            usage_keys.update(u.keys())
+                            if sample_usage is None:
+                                sample_usage = {
+                                    k: type(v).__name__ for k, v in u.items()
+                                }
+        except Exception:
+            continue
+    _log(f"probe: scanned {files} transcript file(s) in {TRANSCRIPT_DIR}")
+    _log(f"probe: message.usage keys seen = {sorted(usage_keys)}")
+    if sample_usage is not None:
+        _log(f"probe: sample usage shape = {sample_usage}")
+    if ratelimit_keys:
+        _log(f"probe: RATE-LIMIT-LIKE keys FOUND = {sorted(ratelimit_keys)}")
+    else:
+        _log(
+            "probe: NO rate-limit / window field anywhere in transcript — "
+            "the API ratelimit headers are NOT persisted, so a direct read is "
+            "impossible; spend must be derived from token usage."
+        )
+    return 0
+
+
 def main(argv: list[str]) -> int:
     interval = int(os.environ.get("GLUDD_TOKEN_MONITOR_INTERVAL", "60"))
     if "--breakdown" in argv:
@@ -288,6 +371,34 @@ def main(argv: list[str]) -> int:
         _log(f"breakdown CACHE(creation+read)     = {cache:,}")
         _log(f"breakdown TOTAL(all four)          = {total:,} = {total / b * 100:.1f}% of {b:,}")
         return 0
+    if "--calibrate" in argv:
+        try:
+            i = argv.index("--calibrate")
+            pct = float(argv[i + 1])
+        except (ValueError, IndexError):
+            _log("calibrate: usage --calibrate <pct>  (e.g. --calibrate 90)")
+            return 1
+        if not (0 < pct <= 100):
+            _log(f"calibrate: pct must be in (0,100], got {pct}")
+            return 1
+        spend = spend_last_5h()
+        if spend <= 0:
+            _log("calibrate: measured 5h spend is 0 — nothing to anchor to")
+            return 1
+        new_budget = int(round(spend / (pct / 100.0)))
+        try:
+            BUDGET_FILE.write_text(str(new_budget))
+        except Exception as exc:
+            _log(f"calibrate: could not write {BUDGET_FILE}: {exc}")
+            return 1
+        _log(
+            f"calibrate: anchored budget to operator's real reading {pct:.1f}% "
+            f"at measured 5h spend {spend:,} -> budget {new_budget:,} "
+            f"(written to {BUDGET_FILE}); future readings self-correct against it"
+        )
+        return 0
+    if "--probe" in argv:
+        return _probe()
     once = "--once" in argv
     try:
         PID_FILE.write_text(str(os.getpid()))

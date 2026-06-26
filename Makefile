@@ -99,7 +99,7 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         verify-remote ci-verdict ci-verdict-fast ci-verdict-loop \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
         _push-green-guard release-branch-new release-promote test-release-branch-guard \
-        token-monitor-bg token-monitor-stop token-monitor-status token-monitor-breakdown test-token-monitor \
+        token-monitor-bg token-monitor-stop token-monitor-status token-monitor-breakdown token-monitor-probe token-monitor-calibrate test-token-monitor \
         gh-run-list gh-run-cancel ci-rerun gh-run-view gh-run-failed-log \
         commit-no-verify \
         git-stash-rebase-pop \
@@ -2145,6 +2145,22 @@ db-sample-part:
 
 db-tables:
 	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
+
+# Diagnostic: dump the message.usage key universe + any rate-limit field in the
+# transcript, to decide whether the monitor can read a REAL rate-limit signal
+# instead of dividing a token sum by a guessed budget.
+token-monitor-probe:
+	@$(PYTHON) scripts/token_window_monitor.py --probe
+
+# Anchor the proxy budget to the operator's REAL rate-limit reading. The API
+# rate-limit headers are not persisted (see --probe), so the monitor's % is only
+# correct once calibrated: this snapshots the current measured 5h spend and
+# writes budget = spend / (PCT/100) to /tmp/gludd-5h-token-budget so all future
+# readings self-correct. Usage: make token-monitor-calibrate PCT=90
+PCT ?=
+token-monitor-calibrate:
+	@if [ -z "$(PCT)" ]; then echo "Usage: make token-monitor-calibrate PCT=<your real rate-limit %, e.g. 90>"; exit 1; fi
+	@$(PYTHON) scripts/token_window_monitor.py --calibrate "$(PCT)"
 
 # Test the no_wait_stop.sh stop hook against 6 known-good/known-bad payloads.
 test-no-wait-hook:
