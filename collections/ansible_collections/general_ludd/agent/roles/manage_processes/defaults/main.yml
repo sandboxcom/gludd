@@ -1,0 +1,30 @@
+---
+# manage_processes role defaults
+# All variables can be overridden in playbook vars or extra-vars.
+
+# Daemon connectivity
+gludd_daemon_url: "http://localhost:8000"
+gludd_psk: ""   # no_log in tasks; prefer GLUDD_PSK env var
+
+# What the role should do this run.
+#   monitor -> enumerate + gather per-process stats and report (read-only)
+#   signal  -> apply the threshold policy and send signals to breaching pids
+#   reap    -> no-op placeholder; enumerate only (the daemon reaps)
+manage_processes_action: "monitor"
+
+# Threshold policy (used only when manage_processes_action == "signal")
+cpu_percent_max: 90.0     # processes above this CPU% are breaching
+memory_rss_mb_max: 2048   # processes with RSS above this many MB are breaching
+
+# Signalling behaviour
+signal_to_send: "SIGTERM"   # first signal sent to a breaching pid
+escalate_to_kill: true      # if still alive after grace, send SIGKILL
+kill_grace_seconds: 10      # seconds to wait before re-checking / escalating
+
+# Targeting
+target_pid: 0   # 0 = all gludd-managed processes; otherwise a single pid
+
+# SAFETY: dry_run is true by default so the role NEVER kills anything unless
+# the operator explicitly sets dry_run: false. With dry_run on, the signal
+# policy only logs the actions it *would* take.
+dry_run: true
