@@ -306,7 +306,12 @@ def verify_signature(signed: dict[str, Any]) -> bool:
     except IntegrityKeyError:
         return False
     expected = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
-    return signed.get("signature") == expected
+    # Constant-time compare: a plain ``==`` on the HMAC hex digest leaks, via
+    # early-exit timing, how many leading characters of a forged signature are
+    # correct — enough to forge byte-by-byte. ``signed.get("signature")`` may be
+    # None/non-str, so coerce to "" (a mismatch) before comparing; both operands
+    # must be the same type for hmac.compare_digest.
+    return hmac.compare_digest(str(signed.get("signature") or ""), expected)
 
 
 def sign_change_openbao(
@@ -370,4 +375,9 @@ def verify_openbao_signature(signed: dict[str, Any]) -> bool:
     except IntegrityKeyError:
         return False
     expected = hmac.new(key.encode(), payload.encode(), hashlib.sha256).hexdigest()
-    return signed.get("signature") == expected
+    # Constant-time compare: a plain ``==`` on the HMAC hex digest leaks, via
+    # early-exit timing, how many leading characters of a forged signature are
+    # correct — enough to forge byte-by-byte. ``signed.get("signature")`` may be
+    # None/non-str, so coerce to "" (a mismatch) before comparing; both operands
+    # must be the same type for hmac.compare_digest.
+    return hmac.compare_digest(str(signed.get("signature") or ""), expected)
