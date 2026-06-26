@@ -373,11 +373,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if factory is not None:
             async with factory() as session:
                 repo = TodoRepository(session)
-                todos = await repo.list_all()
-                for t in todos:
-                    q = t.queue or "unknown"
-                    queue_depths[q] = queue_depths.get(q, 0) + 1
-                    todo_count += 1
+                # P12/Defect-1: use aggregate COUNT queries (status_summary)
+                # instead of list_all() so queue-depth counts are never
+                # silently truncated by the _DEFAULT_LIST_LIMIT cap.
+                summary = await repo.status_summary()
+                todo_count = summary["total"]
+                for q, c in summary["by_queue"].items():
+                    queue_depths[q or "unknown"] = (
+                        queue_depths.get(q or "unknown", 0) + c
+                    )
         else:
             for todo in _daemon_state["todos"]:
                 q = todo.get("queue", "unknown")

@@ -273,8 +273,10 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.status == status.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -301,8 +303,10 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.schedule_paused.is_(schedule_paused))
         if offset:
             stmt = stmt.offset(offset)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -316,8 +320,10 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -336,9 +342,8 @@ class TodoRepository:
 
         Ordered earliest-due-first so the scheduler processes them in
         chronological order.  ``project_id`` scopes to a single tenant when
-        set; omit for cross-tenant scheduling.  ``limit`` caps the batch size
-        (unbounded when None — the caller is responsible for bounding via the
-        ``_DEFAULT_LIST_LIMIT`` ceiling if needed).
+        set; omit for cross-tenant scheduling.  ``limit`` caps the batch size;
+        when None the module-level ``_DEFAULT_LIST_LIMIT`` is applied (P12).
         """
         from sqlalchemy import func
 
@@ -355,8 +360,10 @@ class TodoRepository:
         )
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -456,7 +463,10 @@ class TodoRepository:
             if _pid is not None:
                 stmt = stmt.where(TodoModel.project_id == _pid)
             result = await self._session.execute(stmt)
-            return {key: count for key, count in result.all()}
+            # Coerce a NULL group key (e.g. queue IS NULL) to "unknown" so the
+            # returned dict is always JSON-serializable — /api/facts serializes
+            # this directly and a None key would raise TypeError in json.dumps.
+            return {(key if key is not None else "unknown"): count for key, count in result.all()}
 
         by_status = await _group_counts(TodoModel.status)
         by_queue = await _group_counts(TodoModel.queue)
@@ -766,6 +776,9 @@ class VariableNamespaceRepository:
             .order_by(
                 VariableNamespaceModel.project_id.is_(None).desc()
             )
+            # P12: defensive cap; variable sets are expected to be small but
+            # an unbounded JOIN load is still a risk surface.
+            .limit(_DEFAULT_LIST_LIMIT)
         )
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
@@ -942,6 +955,8 @@ class BenchmarkRepository:
                 select(BenchmarkResultModel)
                 .where(BenchmarkResultModel.model_profile_id == model_profile_id)
                 .order_by(BenchmarkResultModel.created_at.desc())
+                # P12: defensive cap; dead API path but still bounded.
+                .limit(_DEFAULT_LIST_LIMIT)
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -1041,14 +1056,19 @@ class PromptProfileRepository:
             task_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
         )
         col = PromptProfileModel.task_types
-        stmt = select(PromptProfileModel).where(
-            or_(
-                col.is_(None),
-                col.like("[]"),
-                col.like(f'%"{escaped}"%', escape="\\"),
-                col.notlike("[%"),
-                col.notlike("%]"),
+        stmt = (
+            select(PromptProfileModel)
+            .where(
+                or_(
+                    col.is_(None),
+                    col.like("[]"),
+                    col.like(f'%"{escaped}"%', escape="\\"),
+                    col.notlike("[%"),
+                    col.notlike("%]"),
+                )
             )
+            # P12: defensive cap (dead API path).
+            .limit(_DEFAULT_LIST_LIMIT)
         )
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
