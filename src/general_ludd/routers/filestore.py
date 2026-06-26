@@ -87,7 +87,27 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if binary == "openbao":
             success = await boot.download_openbao()
             return {"success": success, "binary": binary, "stored": boot.check_openbao_in_store()}
-        return {"success": False, "error": f"Unknown binary: {binary}"}
+        # Generic path: any other KNOWN_VERSIONS binary (opentofu, osquery,
+        # codebase-memory-mcp, ...) is downloaded/extracted/chmod'd via download().
+        if binary in boot.get_known_versions():
+            if not boot.is_platform_available(binary):
+                return {
+                    "success": False,
+                    "binary": binary,
+                    "error": "No download available for this platform/arch",
+                }
+            success = await boot.download(binary)
+            return {
+                "success": success,
+                "binary": binary,
+                "version": boot.get_known_versions().get(binary),
+                "stored": boot.get_binary_path(binary) is not None,
+            }
+        return {
+            "success": False,
+            "error": f"Unknown binary: {binary}",
+            "known": sorted(boot.get_known_versions()),
+        }
 
     @app.get("/admin/filestore/binaries")
     async def admin_filestore_binaries() -> dict[str, Any]:

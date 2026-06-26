@@ -5,7 +5,7 @@ TDD: Tests for endpoints with zero daemon.py coverage.
 
 from __future__ import annotations
 
-from unittest.mock import patch
+from unittest.mock import AsyncMock, patch
 
 import pytest
 from fastapi.testclient import TestClient
@@ -83,6 +83,55 @@ class TestRealDaemonEndpoints:
         assert resp.status_code == 200
         data = resp.json()
         assert data["success"] is False
+        # Generalized endpoint now reports the known set on an unknown request.
+        assert "codebase-memory-mcp" in data.get("known", [])
+
+    @patch(
+        "general_ludd.filestore.bootstrap.BinaryBootstrapper.download",
+        new_callable=AsyncMock,
+    )
+    def test_filestore_bootstrap_codebase_memory(self, mock_download, client):
+        # Generic KNOWN_VERSIONS dispatch: codebase-memory-mcp installs via download().
+        mock_download.return_value = True
+        with patch(
+            "general_ludd.filestore.bootstrap.BinaryBootstrapper.is_platform_available",
+            return_value=True,
+        ), patch(
+            "general_ludd.filestore.bootstrap.BinaryBootstrapper.get_binary_path",
+            return_value="/store/binaries/codebase-memory-mcp",
+        ):
+            resp = client.post(
+                "/admin/filestore/bootstrap",
+                params={"binary": "codebase-memory-mcp"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["binary"] == "codebase-memory-mcp"
+        assert data["success"] is True
+        assert data["stored"] is True
+        assert data["version"] == "0.8.1"
+        mock_download.assert_awaited_once_with("codebase-memory-mcp")
+
+    def test_filestore_bootstrap_platform_unavailable(self, client):
+        # A known binary with no asset for this platform/arch fails gracefully,
+        # without attempting a download.
+        with patch(
+            "general_ludd.filestore.bootstrap.BinaryBootstrapper.is_platform_available",
+            return_value=False,
+        ), patch(
+            "general_ludd.filestore.bootstrap.BinaryBootstrapper.download",
+            new_callable=AsyncMock,
+        ) as mock_download:
+            resp = client.post(
+                "/admin/filestore/bootstrap",
+                params={"binary": "codebase-memory-mcp"},
+            )
+        assert resp.status_code == 200
+        data = resp.json()
+        assert data["success"] is False
+        assert data["binary"] == "codebase-memory-mcp"
+        assert "platform" in data["error"].lower()
+        mock_download.assert_not_awaited()
 
     def test_filestore_binaries_list(self, client):
         resp = client.get("/admin/filestore/binaries")
