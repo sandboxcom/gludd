@@ -67,6 +67,7 @@ class HotReloader:
         templates_dir: str | None = None,
         playbooks_dir: str | None = None,
         skills_dirs: list[str] | None = None,
+        skill_registry: Any = None,
         model_gateway: Any = None,
         prompt_registry: Any = None,
     ) -> None:
@@ -77,6 +78,7 @@ class HotReloader:
         self._templates_dir = Path(templates_dir) if templates_dir else None
         self._playbooks_dir = Path(playbooks_dir) if playbooks_dir else None
         self._skills_dirs = [Path(d) for d in skills_dirs] if skills_dirs else []
+        self._skill_registry = skill_registry
         self._model_gateway = model_gateway
         self._prompt_registry = prompt_registry
         self._last_state = _ReloadState()
@@ -509,12 +511,21 @@ class HotReloader:
 
     def _reload_skills(self) -> dict[str, Any]:
         result: dict[str, Any] = {"skills": []}
+        active_dirs: list[str] = []
         for skills_dir in self._skills_dirs:
             if skills_dir.exists():
+                active_dirs.append(str(skills_dir))
                 for md_file in sorted(skills_dir.glob("*.md")):
                     name = md_file.stem
                     result["skills"].append(name)
                     self._publish(SkillUpdatedEvent(skill=name))
+        if active_dirs and self._skill_registry is not None:
+            try:
+                self._skill_registry.refresh(search_paths=active_dirs)
+                result["registry_refreshed"] = True
+            except Exception as exc:
+                logger.error("skill_registry.refresh failed: %s", exc)
+                result["registry_error"] = str(exc)
         return result
 
     def _publish(self, event: Any) -> None:

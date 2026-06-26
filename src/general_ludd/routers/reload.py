@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import logging
+from pathlib import Path
 from typing import Any, cast
 
 from fastapi import FastAPI, HTTPException
@@ -7,9 +9,12 @@ from pydantic import BaseModel, field_validator
 
 from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.daemon import _get_or_create_extended_subsystems, _get_or_create_subsystems
+from general_ludd.events.types import ConfigReloadedEvent
 from general_ludd.prompts.registry import PromptRegistry
 from general_ludd.reload.hot_reloader import HotReloader, ReloadScope
 from general_ludd.security import is_safe_fetch_url
+
+logger = logging.getLogger(__name__)
 
 _FORBIDDEN_HEADERS: frozenset[str] = frozenset(
     {"authorization", "host", "content-length", "transfer-encoding", "cookie"}
@@ -67,6 +72,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/reload")
     async def admin_reload(req: ReloadRequest) -> dict[str, Any]:
         subsys = _get_or_create_subsystems(app)
+        _skills_dirs: list[str] = []
+        _config_dir_val = getattr(app.state, "_config_dir", None)
+        if _config_dir_val:
+            _skills_dirs.append(_config_dir_val)
+        _proj_dir = getattr(app.state, "_project_gludd_dir", None)
+        if _proj_dir is not None:
+            _proj_skills = Path(_proj_dir) / "skills"
+            if _proj_skills.is_dir():
+                _skills_dirs.append(str(_proj_skills))
         reloader = HotReloader(
             config_dir=app.state._config_dir or "/tmp/gl-config",
             event_bus=subsys["bus"],
@@ -74,11 +88,57 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             worker_broadcaster=subsys["broadcaster"],
             templates_dir=app.state._templates_dir,
             playbooks_dir=app.state._playbooks_dir,
+            skills_dirs=_skills_dirs if _skills_dirs else None,
+            skill_registry=getattr(app.state, "_skill_registry", None),
             prompt_registry=getattr(app.state, "_prompt_registry", None),
         )
         scope = ReloadScope(req.scope)
         result = reloader.reload(scope)
         return {"success": result.success, "scope": result.scope, "details": result.details, "error": result.error}
+
+    @app.post("/admin/config/reload")
+    async def admin_config_reload() -> dict[str, Any]:
+        from general_ludd.daemon import load_startup_config
+
+        config_dir = getattr(app.state, "_config_dir", None)
+        try:
+            new_startup_config = load_startup_config(config_dir)
+        except Exception as exc:
+            logger.error("load_startup_config failed during config reload: %s", exc)
+            return {"success": False, "error": str(exc)}
+
+        app.state._startup_config = new_startup_config
+
+        # Extract live-reloadable values from the new config
+        new_uc = new_startup_config.get("user_config")
+        live_reloadable: dict[str, Any] = {
+            "rules": new_startup_config.get("rules", []),
+            "model_profiles": new_startup_config.get("model_profiles", []),
+            "queues": getattr(new_uc, "queues", []) if new_uc else [],
+            "budget": getattr(new_uc, "budget", {}) if new_uc else {},
+            "self_improve": getattr(new_uc, "self_improve", {}) if new_uc else {},
+        }
+
+        merged: dict[str, str] = {}
+        event_loop = getattr(app.state, "event_loop", None)
+        if event_loop is not None and hasattr(event_loop, "config"):
+            cfg = event_loop.config  # mutate in-place — preserve object identity
+            for key, new_val in live_reloadable.items():
+                old_val = cfg.get(key)
+                if new_val != old_val:
+                    cfg[key] = new_val
+                    merged[key] = "updated"
+                else:
+                    merged[key] = "unchanged"
+        else:
+            logger.warning("admin_config_reload: no event_loop on app.state; config not merged")
+
+        subsys = _get_or_create_subsystems(app)
+        bus = subsys.get("bus")
+        if bus is not None:
+            bus.publish(ConfigReloadedEvent(scope="config"))
+
+        return {"success": True, "merged": merged}
 
     @app.get("/admin/reload/status")
     async def admin_reload_status() -> dict[str, Any]:
