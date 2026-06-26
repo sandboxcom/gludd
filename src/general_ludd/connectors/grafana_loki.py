@@ -26,11 +26,14 @@ per-request timeout, and a caller-bounded start/end window. No ``shell=True``.
 from __future__ import annotations
 
 import ipaddress
+import logging
 import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
 __all__ = ["GrafanaLokiSource"]
+
+logger = logging.getLogger(__name__)
 
 _BLOCKED_HOSTNAMES = frozenset(
     {
@@ -239,8 +242,10 @@ class GrafanaLokiSource:
                 headers=self._auth_headers(),
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "source": self.name, "error": str(exc)}
+        except Exception:  # health must never raise
+            # Never echo str(exc): it can embed the Loki base URL / auth detail.
+            logger.warning("grafana_loki health check failed", exc_info=True)
+            return {"ok": False, "source": self.name, "error": "health check failed"}
         ok = 200 <= status_code < 300
         result: dict[str, Any] = {"ok": ok, "source": self.name, "status_code": status_code}
         if not ok:

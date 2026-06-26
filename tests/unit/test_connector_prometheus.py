@@ -305,7 +305,9 @@ def test_query_transport_exception_yields_error_record_not_raise():
     records = src.query({"promql": "up"})
     assert len(records) == 1
     assert records[0]["level_or_status"] == "error"
-    assert "connection refused" in records[0]["message"]
+    # Raw exception text must not leak into the error record's message.
+    assert "connection refused" not in records[0]["message"]
+    assert records[0]["message"] == "transport error"
 
 
 # ---------------------------------------------------------------------------
@@ -336,4 +338,6 @@ def test_health_never_raises_on_transport_exception():
     src = PrometheusSource({"base_url": GOOD_URL}, http_get=boom)
     h = src.health()
     assert h["ok"] is False
-    assert "dns/socket failure" in h["error"]
+    # Raw exception text must not leak to the caller; only a generic marker.
+    assert "dns/socket failure" not in h["error"]
+    assert h["error"] == "health check failed"

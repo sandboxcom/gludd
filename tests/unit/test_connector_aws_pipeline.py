@@ -124,7 +124,9 @@ class TestContract:
         )
         health = src.health()  # must not raise
         assert health["ok"] is False
-        assert "boom" in health["detail"]
+        # Raw exception text must not leak; a static marker is returned instead.
+        assert "boom" not in health["detail"]
+        assert health["detail"] == "boto3 unavailable"
 
 
 class TestQueryNormalization:

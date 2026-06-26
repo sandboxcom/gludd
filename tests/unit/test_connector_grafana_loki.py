@@ -189,7 +189,9 @@ def test_health_never_raises(
 
     h = src.health()  # must not raise
     assert h["ok"] is False
-    assert "slow" in str(h.get("error", ""))
+    # Raw exception text must not leak to the caller; only a generic marker.
+    assert "slow" not in str(h.get("error", ""))
+    assert h["error"] == "health check failed"
 
 
 @pytest.mark.parametrize(

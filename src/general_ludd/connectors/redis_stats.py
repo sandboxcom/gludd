@@ -25,10 +25,13 @@ Executor contract:
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # The Redis executor returns either an INFO mapping or a sequence of slowlog
 # entries, so its return type is intentionally broad.
@@ -141,15 +144,17 @@ class RedisStatsSource:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
-        except RuntimeError as exc:
-            return {"ok": False, "detail": str(exc)}
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"executor init failed: {exc}"}
+        except Exception:  # health must never raise (driver/config init errors)
+            # Never echo str(exc): a driver/config error can embed the URL or
+            # credentials. Log the real detail; return a static generic marker.
+            logger.warning("redis_stats executor init failed", exc_info=True)
+            return {"ok": False, "detail": "executor init failed"}
 
         try:
             executor("PING")
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"probe failed: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("redis_stats probe failed", exc_info=True)
+            return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "redis reachable"}
 
     # -- normalization ---------------------------------------------------

@@ -30,10 +30,13 @@ Normalized record schema (every emitted record is a dict with exactly):
 
 from __future__ import annotations
 
+import logging
 from collections.abc import Callable
 from typing import Any, Protocol, TypedDict, runtime_checkable
 
 __all__ = ["AwsPipelineSource", "NormalizedRecord"]
+
+logger = logging.getLogger(__name__)
 
 
 class NormalizedRecord(TypedDict):
@@ -147,11 +150,16 @@ class AwsPipelineSource:
         }
         try:
             self._client("codepipeline")
-        except RuntimeError as exc:
-            base["detail"] = str(exc) or "boto3 unavailable"
+        except RuntimeError:
+            # The default factory's only RuntimeError is the boto3-import
+            # sentinel; never echo str(exc) (a custom factory could embed an
+            # endpoint/credential). Log the real detail, return the sentinel.
+            logger.warning("aws_pipeline client init failed", exc_info=True)
+            base["detail"] = "boto3 unavailable"
             return base
-        except Exception as exc:  # health must never raise
-            base["detail"] = str(exc) or exc.__class__.__name__
+        except Exception:  # health must never raise
+            logger.warning("aws_pipeline client init failed", exc_info=True)
+            base["detail"] = "client init failed"
             return base
         base["ok"] = True
         base["detail"] = "ok"

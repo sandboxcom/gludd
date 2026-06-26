@@ -34,6 +34,7 @@ Record shape (one dict per sample)::
 from __future__ import annotations
 
 import json as _json
+import logging
 import os
 import time
 import urllib.request
@@ -43,6 +44,8 @@ from urllib.parse import urlencode, urlsplit
 
 from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport signature: (url, params, headers) -> (status, json)
 HttpGet = Callable[..., "tuple[int, Any]"]
@@ -209,8 +212,11 @@ class PrometheusSource:
             status, payload = self._http_get(
                 url, params=params, headers=self._headers()
             )
-        except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+        except Exception:  # surfaced as a record, never raised
+            # Never echo str(exc) into the record: it can embed the target URL
+            # or auth detail. Log the real error; keep a stable generic marker.
+            logger.warning("prometheus transport error", exc_info=True)
+            return [self._error_record("transport error", {"url": url})]
 
         return self._normalize(status, payload)
 
@@ -285,8 +291,9 @@ class PrometheusSource:
             status, payload = self._http_get(
                 url, params={"query": "1"}, headers=self._headers()
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "source": self.name, "error": str(exc)}
+        except Exception:  # health must never raise
+            logger.warning("prometheus health check failed", exc_info=True)
+            return {"ok": False, "source": self.name, "error": "health check failed"}
 
         ok = (
             isinstance(payload, dict)

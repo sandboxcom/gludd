@@ -15,10 +15,13 @@ Design contract:
 
 from __future__ import annotations
 
+import logging
 import os
 from collections.abc import Callable, Mapping, Sequence
 from datetime import UTC, datetime
 from typing import Any
+
+logger = logging.getLogger(__name__)
 
 # A query-executor takes a SQL string and returns rows as a sequence of
 # mappings (column-name -> value).
@@ -141,15 +144,17 @@ class PostgresStatsSource:
         """Report connectivity health. Never raises."""
         try:
             executor = self._get_executor()
-        except RuntimeError as exc:
-            return {"ok": False, "detail": str(exc)}
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"executor init failed: {exc}"}
+        except Exception:  # health must never raise (driver/config init errors)
+            # Never echo str(exc): a driver/config error can embed the DSN or
+            # credentials. Log the real detail; return a static generic marker.
+            logger.warning("postgres_stats executor init failed", exc_info=True)
+            return {"ok": False, "detail": "executor init failed"}
 
         try:
             executor("SELECT 1")
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "detail": f"probe failed: {exc}"}
+        except Exception:  # health must never raise
+            logger.warning("postgres_stats probe failed", exc_info=True)
+            return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "postgres reachable"}
 
     # -- normalization ---------------------------------------------------
