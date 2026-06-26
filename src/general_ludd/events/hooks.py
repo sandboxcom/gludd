@@ -105,6 +105,11 @@ class HookSystem:
         # mirror hook activity onto the event bus (a HookTriggeredEvent per
         # event fired), giving subscribers visibility into hook execution.
         self._event_bus = event_bus
+        # SF-fire-webhook-sync: hold a strong reference to each in-flight webhook
+        # Future. run_in_executor's Future is otherwise discarded, so it could be
+        # garbage-collected mid-delivery and its exception swallowed. Tracking +
+        # a done-callback keeps it alive and surfaces failures to operators.
+        self._pending_webhooks: set[asyncio.Future[None]] = set()
 
     def register_callback(
         self, event_name: str, callback: Callable[..., Any], priority: int = 100
@@ -269,10 +274,23 @@ class HookSystem:
             # a thread pool executor so the loop stays free for other coroutines.
             # The entire retry loop lives inside _do_post so retries, timeout
             # bounds, and raise_for_status checks are all preserved.
-            # Note: run_in_executor returns a Future that we intentionally do not
-            # await here — fire() is sync and we cannot await from it.  Errors
-            # from the background thread are logged inside _do_post.
-            loop.run_in_executor(None, _do_post)
+            # fire() is sync and cannot await, so we cannot block on delivery —
+            # but we MUST keep a reference to the Future (else it can be GC'd
+            # mid-flight) and attach a done-callback so a failed delivery is
+            # logged rather than silently swallowed (SF-fire-webhook-sync).
+            future = loop.run_in_executor(None, _do_post)
+            self._pending_webhooks.add(future)
+
+            def _on_webhook_done(task: asyncio.Future[None]) -> None:
+                self._pending_webhooks.discard(task)
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    logger.warning("Webhook delivery task was cancelled")
+                except Exception:
+                    logger.warning("Webhook delivery failed after retries", exc_info=True)
+
+            future.add_done_callback(_on_webhook_done)
         except RuntimeError:
             # No running event loop — safe to call _do_post directly
             # (sync startup path, CLI, or unit tests without an event loop).
