@@ -45,12 +45,15 @@ Design constraints honoured here
 
 from __future__ import annotations
 
+import logging
 import time
 from collections.abc import Callable, Iterable
 from typing import Any, Protocol, runtime_checkable
 
 from general_ludd.connectors.base import normalized_record
 from general_ludd.connectors.normalize import correlate, normalize_join_keys
+
+logger = logging.getLogger(__name__)
 
 __all__ = ["GluddObserve", "SourceProvider"]
 
@@ -293,14 +296,22 @@ class GluddObserve:
     # -- helpers ----------------------------------------------------------- #
     @staticmethod
     def _error_record(source: Any, exc: Exception) -> dict[str, Any]:
+        # Redacted: the exception detail is LOGGED, not surfaced — str(exc) can
+        # carry DSNs/hosts/internal paths, and the raw exception object is not
+        # safely serializable, so neither is embedded in the client-facing record.
+        logger.warning(
+            "observe query failed for source %s",
+            getattr(source, "name", "<unknown>"),
+            exc_info=True,
+        )
         return dict(
             normalized_record(
                 source=str(getattr(source, "name", "<unknown>")),
                 kind=str(getattr(source, "KIND", "unknown")),
                 level_or_status="error",
-                message=f"query failed: {exc}",
+                message="query failed",
                 ts=time.time(),
-                raw=exc,
+                raw=None,
             )
         )
 

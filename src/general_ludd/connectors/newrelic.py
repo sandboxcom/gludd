@@ -83,7 +83,11 @@ def _default_transport(
     """
     import requests  # local import keeps the module import-light & offline
 
-    return requests.post(url, headers=headers, json=json, timeout=timeout)
+    # allow_redirects=False: never follow a 30x off the configured endpoint — a
+    # redirect to an internal/metadata address would be an SSRF pivot.
+    return requests.post(
+        url, headers=headers, json=json, timeout=timeout, allow_redirects=False
+    )
 
 
 # --------------------------------------------------------------------------- #
