@@ -359,7 +359,13 @@ class HotReloader:
         rolled_back honestly instead of claiming a rollback that never landed.
         """
         try:
-            live_path.write_bytes(original_bytes)
+            # Atomic same-dir swap (tmp + os.replace), mirroring the forward
+            # write path. A bare write_bytes here could leave the live module
+            # half-written if the process dies mid-rollback — the worst possible
+            # moment to corrupt a file we are trying to restore.
+            tmp_path = live_path.with_suffix(live_path.suffix + ".rollback.tmp")
+            tmp_path.write_bytes(original_bytes)
+            os.replace(tmp_path, live_path)
             self._invalidate_source_cache(live_path)
             importlib.reload(module)
         except Exception as exc:
