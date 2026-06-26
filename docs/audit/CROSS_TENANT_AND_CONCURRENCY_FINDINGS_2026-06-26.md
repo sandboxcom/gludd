@@ -268,6 +268,36 @@ handlers, stalling all concurrent requests for the duration of the I/O.
   delta). Add tests asserting identical status codes for unknown-project requests across
   create vs. read/update endpoints.
 
+### AB-4 — `daemon.py:1837-1838` — sync `psutil` in async `admin_daemon_stats` — CONFIRMED
+
+- **File:line:** `src/general_ludd/daemon.py:1837-1838` (handler `admin_daemon_stats`,
+  `async def`). `proc = psutil.Process(os.getpid())` + `proc.memory_info()` are sync and
+  block the loop.
+- **Apply-ready fix:** `proc = await asyncio.to_thread(psutil.Process, os.getpid())` then
+  `mem = await asyncio.to_thread(lambda p: p.memory_info().rss, proc)`.
+
+### AB-5 — `execution/tool_loop.py:176,183` — sync `gateway.call_model` in async methods — CONFIRMED
+
+- **File:line:** `tool_loop.py:176` (`_call_model`) and `:183` (`_call_with_tools`); both
+  `async def`, both call the SYNC `self._gateway.call_model(...)` (`gateway.py:430 def
+  call_model`) directly, blocking the loop while the model request is in flight.
+- **Apply-ready fix:** wrap each in `await asyncio.to_thread(self._gateway.call_model, ...)`.
+  Note: this is the hot path for tool work — blocking here stalls the whole daemon per call.
+
+### AB-6 — `event_loop/loop.py:2168` — sync `run_gap_analysis` in async `_phase_self_improve` — CONFIRMED
+
+- **File:line:** `event_loop/loop.py:2168`. `harness.run_gap_analysis()` is sync
+  (`self_improve/harness.py:69`) and internally calls `gw.call_model()` — blocks the loop.
+- **Apply-ready fix:** `findings = await asyncio.to_thread(harness.run_gap_analysis)`.
+
+### AB-7 — `event_loop/loop.py:2187-2188` — self-improve exception swallow — CONFIRMED (low)
+
+- **File:line:** `event_loop/loop.py:2187-2188`. `except Exception as exc:` logs at WARNING
+  and zeroes the metric. Self-improve is non-critical so not failing the tick is arguably
+  intentional, but it should log at ERROR with `exc_info=True` for debuggability.
+- **Apply-ready fix:** `logger.error("Self-improve phase failed: %s", exc, exc_info=True)`
+  (keep the non-fatal behaviour; just make the failure visible). Lowest priority of the set.
+
 ---
 
 ## Git automation (`git_automation/repo.py`) — audited 2026-06-26
