@@ -374,33 +374,60 @@ class CoreAnsibleRunner:
         # process GROUP on timeout to reap any worker children too.
         proc = ctx.Process(target=_target, daemon=False)
         proc.start()
-        proc.join(timeout)
 
-        if proc.is_alive():
-            # Deadline blown — kill the child and (best-effort) its worker tree,
-            # then hard-kill if it ignores SIGTERM.
-            self._terminate_tree(proc)
-            logger.error(
-                "Playbook exceeded wall-clock timeout of %.1fs; killed", timeout
+        # Track this child (and its setsid process group) in the managed-process
+        # registry so the admin API can inspect/signal it. Registration must
+        # never break job execution, so it is fully guarded.
+        try:
+            from general_ludd.process.registry import default_registry
+
+            default_registry().register(
+                proc.pid,
+                command=[
+                    "ansible-playbook-runner",
+                    str(exec_kwargs.get("playbook_path", "")),
+                ],
+                origin="ansible_runner",
             )
-            return AnsibleResult(
-                status="failed",
-                rc=_TIMEOUT_RC,
-                error=f"playbook timed out after {timeout:.1f}s",
-            )
+        except Exception:  # noqa: BLE001 - registry is observability, not critical
+            logger.debug("managed-process registration failed", exc_info=True)
 
         try:
-            kind, payload = queue.get_nowait()
-        except Exception:
-            # Child exited without posting a result (crash/OOM/SIGKILL).
-            return AnsibleResult(
-                status="failed",
-                rc=1,
-                error="playbook child exited without a result",
-            )
-        if kind == "ok":
-            return AnsibleResult(**payload)
-        return AnsibleResult(status="failed", rc=1, error=str(payload))
+            proc.join(timeout)
+
+            if proc.is_alive():
+                # Deadline blown — kill the child and (best-effort) its worker
+                # tree, then hard-kill if it ignores SIGTERM.
+                self._terminate_tree(proc)
+                logger.error(
+                    "Playbook exceeded wall-clock timeout of %.1fs; killed", timeout
+                )
+                return AnsibleResult(
+                    status="failed",
+                    rc=_TIMEOUT_RC,
+                    error=f"playbook timed out after {timeout:.1f}s",
+                )
+
+            try:
+                kind, payload = queue.get_nowait()
+            except Exception:
+                # Child exited without posting a result (crash/OOM/SIGKILL).
+                return AnsibleResult(
+                    status="failed",
+                    rc=1,
+                    error="playbook child exited without a result",
+                )
+            if kind == "ok":
+                return AnsibleResult(**payload)
+            return AnsibleResult(status="failed", rc=1, error=str(payload))
+        finally:
+            # The child has been joined or terminated; drop it from the registry.
+            try:
+                from general_ludd.process.registry import default_registry
+
+                default_registry().deregister(proc.pid)
+            except Exception:  # noqa: BLE001 - deregister is best-effort cleanup
+                logger.debug("managed-process deregister failed", exc_info=True)
 
     @staticmethod
     def _terminate_tree(proc: Any) -> None:

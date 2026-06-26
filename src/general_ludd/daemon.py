@@ -1877,6 +1877,7 @@ def create_daemon_app(
         mcp,
         messages,
         models,
+        processes,
         projects,
         quantization,
         reload,
@@ -1909,6 +1910,7 @@ def create_daemon_app(
     mcp.register(app, daemon_state)
     skills.register(app, daemon_state)
     compute.register(app, daemon_state)
+    processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
     integrity.register(app, daemon_state)
     signing.register(app, daemon_state)
