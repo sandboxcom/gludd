@@ -20,7 +20,7 @@ items are recorded for remediation.
 | XT-6 | `routers/features.py:92-105` | HIGH | confirmed | `GET /api/features/{id}` no project-ownership check |
 | XT-7 | `routers/features.py:108-173` | HIGH | confirmed | `POST /api/features/verify` accepts `project_id` but never uses it |
 | XT-8 | `routers/embeddings.py:779-883` | HIGH | confirmed | `POST /api/embeddings/search` corpus=events queries ALL audit events unfiltered |
-| XT-9 | `routers/messages.py:101-128` | HIGH | confirmed | `GET /api/messages` degraded fallback path ignores `project_id` |
+| XT-9 | `routers/messages.py:120-131` | HIGH | FIXED | `GET /api/messages` degraded fallback now scopes by `project_id` (fixed 6ae7e60, 3 tests) |
 | CC-1 | `lease.py:79-86` | HIGH | confirmed | `reclaim_expired_leases` requeues by status only → double-dispatch on mid-dispatch lease expiry |
 | CC-2 | `repository.py:384-387` | MED | FIXED | `claim_runnable` had no `ORDER BY` → starvation (fixed in 63b2437+) |
 | SS-1 | `routers/projects.py:71-93` | HIGH | FIXED | `admin_add_project` swallow → now logs + re-raises → 422 (fixed 4d058a4) |
@@ -123,14 +123,17 @@ filter on — these are missing-filter bugs, not schema gaps.
   that project before scoring). Apply the same scoping to any other corpus that contains
   per-project data.
 
-### XT-9 — `routers/messages.py:101-128` — degraded fallback path ignores `project_id` — CONFIRMED
+### XT-9 — `routers/messages.py:120-131` — degraded fallback path ignored `project_id` — FIXED
 
-- **File:line:** `src/general_ludd/routers/messages.py:101-128`
-- **Problem:** `GET /api/messages` honours `project_id` on the primary path, but the
-  degraded/fallback branch drops the filter and returns messages across projects.
-- **Apply-ready fix:** Apply the same `project_id` `.where(...)` constraint inside the
-  fallback branch. If the fallback cannot enforce scoping, fail closed (return empty /
-  error) rather than returning unscoped data.
+- **File:line:** `src/general_ludd/routers/messages.py:120-131`
+- **Problem (historical):** `GET /api/messages` honoured `project_id` on the primary path,
+  but the degraded/in-memory fallback branch dropped the filter and returned messages
+  across projects whenever the daemon ran without a DB session factory.
+- **Status:** **FIXED** (commit `6ae7e60`). The fallback loop now applies
+  `if project_id is not None and m.get("project_id") != project_id: continue`, mirroring
+  the primary path's `repo.inbox(project_id=...)`. Covered by 3 regression tests in
+  `tests/unit/test_messages_fallback_project_isolation.py` (`3 passed`). An unscoped query
+  (no `project_id`) still returns all recipient messages — back-compat preserved.
 
 ---
 
