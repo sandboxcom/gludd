@@ -384,6 +384,12 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        # FIFO fairness: claim oldest QUEUED todos first so a backlog of newer
+        # todos can never indefinitely starve an older one. Without an explicit
+        # ORDER BY, row order is database-defined (undefined) and starvation is
+        # possible under load. id is a deterministic tiebreaker for same-instant
+        # created_at (e.g. todos inserted within the same microsecond in tests).
+        stmt = stmt.order_by(TodoModel.created_at, TodoModel.id)
         stmt = stmt.limit(limit)
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
