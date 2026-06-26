@@ -16,6 +16,10 @@ from general_ludd.security.sanitize import is_path_within
 from general_ludd.validation.gap_analyzer import GapAnalyzer
 from general_ludd.validation.log_auditor import LogAuditor
 
+# DoS cap: /admin/log-audit iterates a caller-supplied log_entries list with no
+# size limit. Reject oversized input early with HTTP 413.
+_MAX_LOG_AUDIT_ENTRIES = 10_000
+
 _integrity_changes: list[dict[str, Any]] = []
 _integrity_log: list[dict[str, Any]] = []
 
@@ -282,6 +286,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def admin_log_audit(req: dict[str, Any] | None = None) -> dict[str, Any]:
         req = req or {}
         log_entries = req.get("log_entries", [])
+        if len(log_entries) > _MAX_LOG_AUDIT_ENTRIES:
+            raise HTTPException(
+                status_code=413,
+                detail="log_entries exceeds maximum allowed count",
+            )
         auditor = LogAuditor()
         report = auditor.audit_logs(log_entries)
         return {

@@ -38,6 +38,11 @@ from general_ludd.security.sanitize import is_path_within
 
 logger = logging.getLogger(__name__)
 
+# DoS cap: /admin/models/call accepts a caller-supplied max_tokens int that is
+# threaded into the budget gate. An absurd value (e.g. 10**18) is a resource /
+# cost-estimation DoS; reject anything above this ceiling with HTTP 413.
+_MAX_MODELS_CALL_MAX_TOKENS = 1_000_000
+
 
 def _workspace_root(app: FastAPI) -> str:
     """The directory attacker-supplied code paths are confined to.
@@ -453,6 +458,14 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             requested_max_output_tokens = None
         if requested_max_output_tokens is not None and requested_max_output_tokens <= 0:
             requested_max_output_tokens = None
+        if (
+            requested_max_output_tokens is not None
+            and requested_max_output_tokens > _MAX_MODELS_CALL_MAX_TOKENS
+        ):
+            raise HTTPException(
+                status_code=413,
+                detail="max_tokens exceeds maximum allowed count",
+            )
 
         # B5: budget gate — fail-closed when guard exhausted or degraded startup.
         _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)

@@ -34,6 +34,11 @@ class RebalanceRequest(BaseModel):
     weights: dict[str, float]
 
 
+# DoS caps: admin endpoints accept unbounded client-supplied collections and
+# iterate/store them. Reject oversized input early with HTTP 413.
+_MAX_TUI_LOG_ENTRIES = 1000
+_MAX_REBALANCE_WEIGHTS = 500
+
 _tui_log_entries: list[dict[str, Any]] = []
 
 
@@ -137,6 +142,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/projects/rebalance")
     async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, Any]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
+        if len(req.weights) > _MAX_REBALANCE_WEIGHTS:
+            raise HTTPException(
+                status_code=413,
+                detail="weights exceeds maximum allowed count",
+            )
         ext = _get_or_create_extended_subsystems(app)
         try:
             ext["projects"].rebalance(req.weights)
@@ -222,6 +232,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/tui-log")
     async def admin_tui_log(req: dict[str, Any]) -> dict[str, Any]:
         entries = req.get("entries", [])
+        if len(entries) > _MAX_TUI_LOG_ENTRIES:
+            raise HTTPException(
+                status_code=413,
+                detail="entries exceeds maximum allowed count",
+            )
         _tui_log_entries.extend(entries)
         if len(_tui_log_entries) > 10000:
             del _tui_log_entries[:len(_tui_log_entries) - 10000]
