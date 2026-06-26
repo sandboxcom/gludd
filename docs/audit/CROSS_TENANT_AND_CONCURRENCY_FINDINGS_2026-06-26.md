@@ -13,31 +13,32 @@ items are recorded for remediation.
 > is a **verified pure one-liner**; XT-2/5/6/7 (features) need a repo method + router
 > change; XT-3/XT-4 (traces) are **multi-layer** (no `project_id` on the trace model yet —
 > NOT a one-liner); XT-8 (embeddings) is low-effort but changes the endpoint signature;
-> AB-1/2/3 line numbers confirmed accurate; TG-1 line numbers re-pinned. Next-window apply
-> order by value/effort: **XT-1 (one-liner) → TG-1 (shared validator) → AB-1/2/3 (to_thread
-> wraps) → XT-2/5/6/7 (features repo+router) → XT-8 (embeddings) → CC-1 (lease CAS) →
-> XT-3/4 (traces, largest)**.
+> AB-1/2/3 line numbers confirmed accurate; TG-1 line numbers re-pinned. Apply
+> order by value/effort: **XT-1 (one-liner) ✅117e8aa → TG-1 (shared validator) ✅e748412 →
+> AB-1/2/3 (to_thread wraps) ✅e748412 → XT-2/5/6/7 (features repo+router) [NEXT] → XT-8
+> (embeddings, draft ready: add `project_id` to EmbeddingSearchRequest + `.where` on the
+> events `select`) → CC-1 (lease CAS) → XT-3/4 (traces, largest, needs migration)**.
 
 ## Summary table
 
 | Finding ID | File:line | Severity | Status | One-line |
 |---|---|---|---|---|
 | XT-1 | `routers/facts.py:125` | HIGH | FIXED | `get_aggregate_scores(project_id=project_id)` now scopes benchmark rankings (fixed 117e8aa) |
-| XT-2 | `routers/facts.py:226` | HIGH | confirmed | `FeatureRepository.list_all()` has no `project_id` filter |
-| XT-3 | `routers/facts.py:427` | HIGH | confirmed | `/api/traces` endpoint exposes no `project_id` param |
-| XT-4 | `routers/facts.py:403` | HIGH | confirmed | `_traces_facet(app)` not passed `project_id` |
-| XT-5 | `routers/features.py:59-90` | HIGH | confirmed | `GET /api/features` returns ALL features (no project filter) |
-| XT-6 | `routers/features.py:92-105` | HIGH | confirmed | `GET /api/features/{id}` no project-ownership check |
-| XT-7 | `routers/features.py:108-173` | HIGH | confirmed | `POST /api/features/verify` accepts `project_id` but never uses it |
-| XT-8 | `routers/embeddings.py:779-883` | HIGH | confirmed | `POST /api/embeddings/search` corpus=events queries ALL audit events unfiltered |
+| XT-2 | `routers/facts.py:226` | HIGH | FIXED | `_features_facet` builds scoped `FeatureRepository`; call site already passes `project_id` (fixed 2caeee5) |
+| XT-3 | `routers/facts.py:427` | HIGH | confirmed | `/api/traces` exposes no `project_id` param — traces in-process only; SAFE-NOW router/store filter + `ExecutionTrace.project_id` field (no migration); step-4 call-site threading pending |
+| XT-4 | `routers/facts.py:403` | HIGH | confirmed | `_traces_facet(app)` not passed `project_id` (facts.py:413 call site) — same staged fix as XT-3 |
+| XT-5 | `routers/features.py:59-90` | HIGH | FIXED | `GET /api/features` accepts + scopes `project_id` (fixed 2caeee5) |
+| XT-6 | `routers/features.py:92-105` | HIGH | FIXED | `GET /api/features/{id}` scoped repo → cross-tenant reads as 404 (fixed 2caeee5) |
+| XT-7 | `routers/features.py:108-173` | HIGH | FIXED | `POST /api/features/verify` now scopes by the `project_id` it already accepted (fixed 2caeee5) |
+| XT-8 | `routers/embeddings.py:779-883` | HIGH | FIXED | events corpus `select` filters by `req.project_id`; `EmbeddingSearchRequest.project_id` added (fixed 2caeee5, 3 isolation tests) |
 | XT-9 | `routers/messages.py:120-131` | HIGH | FIXED | `GET /api/messages` degraded fallback now scopes by `project_id` (fixed 6ae7e60, 3 tests) |
-| CC-1 | `lease.py:79-86` | HIGH | confirmed | `reclaim_expired_leases` requeues by status only → double-dispatch on mid-dispatch lease expiry |
+| CC-1 | `event_loop/lease.py:13-45` | HIGH | confirmed (needs migration) | `acquire_lease` SELECT is filtered by the caller's own `holder_id`; UNIQUE is `(bucket_key, holder_id)` so two DIFFERENT holders can each INSERT for the same `bucket_key` → double-dispatch. Fix = change constraint to `UNIQUE(bucket_key)` (alembic migration) + SELECT any-holder + treat IntegrityError as lost-race. Verified by adversarial read; staged (migration risk). |
 | CC-2 | `repository.py:384-387` | MED | FIXED | `claim_runnable` had no `ORDER BY` → starvation (fixed in 63b2437+) |
 | SS-1 | `routers/projects.py:71-93` | HIGH | FIXED | `admin_add_project` swallow → now logs + re-raises → 422 (fixed 4d058a4) |
-| AB-1 | `daemon_wiring.py:241-242` | HIGH | confirmed | sync `open()`+`yaml.safe_dump` in async `_collection_handler` |
-| AB-2 | `routers/skills.py:127-128` | HIGH | confirmed | sync `open()`+`write` in async `admin_skills_fetch_github` |
-| AB-3 | `routers/environment.py:713/644` | HIGH | confirmed | sync `open(/proc/meminfo)` in async `api_environment` |
-| TG-1 | `routers/todos.py` (read/update endpoints) | MED | confirmed | read/update endpoints accept `project_id` but don't validate it → enumeration via 404-vs-422 |
+| AB-1 | `daemon_wiring.py:241-242` | HIGH | FIXED | playbook write wrapped in `asyncio.to_thread` (fixed e748412) |
+| AB-2 | `routers/skills.py:127-128` | HIGH | FIXED | skill-file write wrapped in `asyncio.to_thread` (fixed e748412); note `download_skill` net call still sync (AB follow-up) |
+| AB-3 | `routers/environment.py:713/644` | HIGH | FIXED | `_system_facet()` call offloaded via `asyncio.to_thread` (fixed e748412, 13 router tests green) |
+| TG-1 | `routers/todos.py` (read/update endpoints) | MED | FIXED | shared `_validate_project_id` helper → uniform 422 across get/list-scheduled/pause/resume (fixed e748412, 6 tests) |
 | AB-4 | `daemon.py:1837-1838` | MED | confirmed | sync `psutil` in async `admin_daemon_stats` |
 | AB-5 | `execution/tool_loop.py:176,183` | HIGH | confirmed | sync `gateway.call_model` in async tool loop (hot path) |
 | AB-6 | `event_loop/loop.py:2168` | MED | confirmed | sync `run_gap_analysis` in async `_phase_self_improve` |
