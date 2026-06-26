@@ -99,6 +99,7 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         verify-remote ci-verdict ci-verdict-fast ci-verdict-loop \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
         _push-green-guard release-branch-new release-promote test-release-branch-guard \
+        token-monitor-bg token-monitor-stop token-monitor-status token-monitor-breakdown test-token-monitor \
         gh-run-list gh-run-cancel ci-rerun gh-run-view gh-run-failed-log \
         commit-no-verify \
         git-stash-rebase-pop \
@@ -108,7 +109,8 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         git-cherry-pick-commit git-amend-msg \
         test-other-shard \
         alembic-check liveness-debug gate-lowmem-background pygrep \
-        mcp-gen mcp-docs-check test-no-false-completion
+        mcp-gen mcp-docs-check test-no-false-completion \
+        gen-status-table gen-status-table-full check-status-table
 
 liveness-debug:
 	@$(UV) run python3 scripts/liveness_debug.py
@@ -340,6 +342,12 @@ lint:
 
 lint-fix:
 	@$(UV) run ruff check --fix --unsafe-fixes src tests
+
+# Scoped autofix: ruff --fix on ONLY the file(s) in FILES, so a single new file
+# can be auto-organized without touching other (possibly dirty) tracked files.
+lint-fix-one:
+	@if [ -z "$(FILES)" ]; then echo "Usage: make lint-fix-one FILES='path/to/file.py'"; exit 1; fi
+	@$(UV) run ruff check --fix $(FILES)
 
 # Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3) — mypy on 407 files is a
 # memory hog and shares the `gludd-heavy` pool with pytest. See sem block above.
@@ -2935,6 +2943,30 @@ check-readme-status:
 	@echo "[check-readme-status] checking README status table ..."
 	@$(UV) run python scripts/check_readme_status_current.py $(if $(TAG),$(TAG),)
 
+# ---------------------------------------------------------------------------
+# Status-table code-generation — README Feature & Task Completion Status table
+# is generated from docs/features.yml via FeatureVerifier evidence checks.
+# ---------------------------------------------------------------------------
+
+# Regenerate README.md status table from docs/features.yml.
+# Fast mode: test: refs are checked by FILE EXISTENCE only (no pytest run).
+# On first invocation, STATUS-TABLE markers are auto-inserted around the
+# existing "## Feature & Task Completion Status" section.
+gen-status-table:
+	@echo "[gen-status-table] regenerating README status table (fast mode) ..."
+	@$(UV) run python scripts/gen_status_table.py --write --fast
+
+# Full verification: runs pytest for test: refs (slow; use locally before a release).
+gen-status-table-full:
+	@echo "[gen-status-table-full] regenerating README status table (full pytest mode) ..."
+	@$(UV) run python scripts/gen_status_table.py --write
+
+# Check that the on-disk README status table matches freshly generated output.
+# Exits 1 if stale. Run by CI (gate job) and by release-cut.
+check-status-table:
+	@echo "[check-status-table] verifying README status table is current ..."
+	@$(UV) run python scripts/gen_status_table.py --check --fast
+
 # THE release command.  Enforces README currency before pushing anything.
 # Usage: make release-cut TAG='v0.1.0-alpha.2' MSG='v0.1.0-alpha.2 — first alpha'
 # Steps (in order, abort on first failure):
@@ -2953,18 +2985,25 @@ release-cut:
 		echo "  Do NOT push the tag manually — that bypasses the green-pipeline guardrail."; \
 		exit 1; \
 	}
-	@echo "[release-cut] step 1/4 — check README status table is current for $(TAG) ..."
+	@echo "[release-cut] step 1a/5 — check README status-as-of version matches $(TAG) ..."
 	@$(MAKE) --no-print-directory check-readme-status TAG='$(TAG)' || { \
 		echo ""; \
 		echo "RELEASE ABORTED: README Feature & Task Completion Status table is stale."; \
 		echo "  Update README.md 'Status as of $(TAG)' line and the status table, then retry."; \
 		exit 1; \
 	}
-	@echo "[release-cut] step 2/4 — push master branch to sandboxcom ..."
+	@echo "[release-cut] step 1b/5 — check generated status table matches README ..."
+	@$(MAKE) --no-print-directory check-status-table || { \
+		echo ""; \
+		echo "RELEASE ABORTED: README status table is stale vs docs/features.yml."; \
+		echo "  Run: make gen-status-table  then commit the updated README.md, then retry."; \
+		exit 1; \
+	}
+	@echo "[release-cut] step 3/5 — push master branch to sandboxcom ..."
 	@$(MAKE) --no-print-directory git-push-sandboxcom
-	@echo "[release-cut] step 3/4 — create and push annotated tag $(TAG) ..."
+	@echo "[release-cut] step 4/5 — create and push annotated tag $(TAG) ..."
 	@$(MAKE) --no-print-directory git-tag-push TAG='$(TAG)' MSG='$(MSG)'
-	@echo "[release-cut] step 4/4 — verify published release artifact (polls up to $(VERIFY_POLLS)x every $(VERIFY_INTERVAL)s; CI release job runs async) ..."
+	@echo "[release-cut] step 5/5 — verify published release artifact (polls up to $(VERIFY_POLLS)x every $(VERIFY_INTERVAL)s; CI release job runs async) ..."
 	@poll=0; while [ $$poll -lt $(VERIFY_POLLS) ]; do \
 		poll=$$((poll + 1)); \
 		echo "[release-cut] artifact poll $$poll/$(VERIFY_POLLS) at $$(date +%H:%M:%S) ..."; \
@@ -3338,6 +3377,30 @@ release-promote:
 #        GREEN+same=ALLOWED, PENDING+ahead=ALLOWED, missing-arg=error.
 test-release-branch-guard:
 	@$(PYTHON) scripts/test_release_branch_guard.py
+
+# ── 5-hour token-window monitor ─────────────────────────────────────────────
+# Throttles the subagent floor (/tmp/gludd-floor-override) by rolling 5h token
+# spend: floor->1 at >=95% of budget, floor->7 when spend falls under 90% (window
+# reset). Tune the 5h budget via /tmp/gludd-5h-token-budget or GLUDD_5H_TOKEN_BUDGET.
+# Runs detached so it survives across 5h windows and keeps work going.
+token-monitor-bg:
+	@nohup $(PYTHON) scripts/token_window_monitor.py >> /tmp/gludd-token-monitor.log 2>&1 &
+	@echo "token-monitor started; pid file: /tmp/gludd-token-monitor.pid; log: /tmp/gludd-token-monitor.log"
+
+token-monitor-stop:
+	@if [ -f /tmp/gludd-token-monitor.pid ]; then kill "$$(cat /tmp/gludd-token-monitor.pid)" 2>/dev/null && echo "token-monitor stopped" || echo "token-monitor not running"; else echo "no pid file"; fi
+
+# One-shot: evaluate the 5h window now, print spend/%, and adjust the floor.
+token-monitor-status:
+	@$(PYTHON) scripts/token_window_monitor.py --once
+
+# Diagnostic: per-component 5h token sums (input/output vs cache) so the spend
+# metric can be reconciled with the plan's real rate-limit accounting.
+token-monitor-breakdown:
+	@$(PYTHON) scripts/token_window_monitor.py --breakdown
+
+test-token-monitor:
+	@$(PYTHON) scripts/test_token_window_monitor.py
 
 # Idempotent PR opener: check if a PR for fix/self-update-sec already exists;
 # if none, create one targeting master. Reports URL either way.
