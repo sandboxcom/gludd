@@ -270,6 +270,43 @@ handlers, stalling all concurrent requests for the duration of the I/O.
 
 ---
 
+## Git automation (`git_automation/repo.py`) — audited 2026-06-26
+
+### GA-1 — 9 git methods bypass the `_run_git` central wrapper — CONFIRMED
+
+- **File:line:** `src/general_ludd/git_automation/repo.py` — `_run_git` wrapper at `:225`
+  (enforces `_GIT_TIMEOUT_SECONDS=60` at `:29`, non-interactive env at `:34`, per-repo lock
+  at `:231`). Bypassing methods call `subprocess.run([...])` directly:
+  `init_repo:263`, `create_worktree:488`, `remove_worktree:540`, `list_worktrees:558`,
+  `merge_branch:601,618`, `create_release_tag:766`, `create_checkpoint_tag:779`,
+  `push_to_remote:796`, `create_local_bare_mirror:810`.
+- **Problem:** these 9 skip the timeout, non-interactive env, and per-repo locking the
+  wrapper provides — a hung/interactive git call can block, and concurrent ops race.
+- **Apply-ready fix:** route all 9 through `_run_git` (extend it with the few flags it
+  lacks, e.g. `cwd`/bare-clone handling). ~most of the ~30-line total fix.
+
+### GA-2 — `gated_commit` commit-message dash-validation gap — REFUTED (defensive add only)
+
+- **File:line:** `repo.py` — `commit:303`, `gated_commit:682`.
+- **Finding:** **REFUTED as a vuln** — messages are passed as a separate arg after `-m`, so
+  option-injection is not possible. Optional defense-in-depth: add
+  `_reject_leading_dash(message, kind="commit message")` before `:682` to match the
+  validation used elsewhere (`:298,318,481,595,705,789`). Not required.
+
+### GA-3 — `merge_branch` CWD confusion (wrong-repo corruption risk) — CONFIRMED
+
+- **File:line:** `repo.py:merge_branch` — checkout via `self._run_git(... )` uses
+  `self.repo_path` (`~:708`), but the merge subprocess uses the `repo_path` **parameter**
+  (`:618`), and the gate runs against `self.repo_path` again (`:737`).
+- **Problem:** if a caller passes `repo_path != self.repo_path`, checkout/gate and the merge
+  run in DIFFERENT working directories — merge fails or operates on the wrong repo
+  (spine-critical: silent wrong-repo mutation).
+- **Apply-ready fix:** unify on ONE repo path throughout `merge_branch` (prefer routing all
+  steps through `_run_git` with an explicit per-call `cwd`/`-C`), so checkout, merge, and
+  gate always target the same repo. Add a test passing `repo_path != self.repo_path`.
+
+---
+
 ## Budget audit notes (no action — recorded for completeness)
 
 - **Spend-limiter TOCTOU:** already closed via `RLock` (verified). No fix needed.
