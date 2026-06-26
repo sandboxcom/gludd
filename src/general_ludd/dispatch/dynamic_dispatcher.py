@@ -257,14 +257,14 @@ class DynamicDispatcher:
                 kind,
                 call.name,
             )
+            # Client-facing error is generic — the role/kind detail is already in
+            # the logger.warning above. Echoing role/kind to the caller would let
+            # an attacker enumerate valid role/capability pairs.
             return DispatchResult(
                 ok=False,
                 kind=kind,
                 name=call.name,
-                error=(
-                    f"capability_denied: role {self._role!r} may not dispatch "
-                    f"kind {kind!r}"
-                ),
+                error="capability_denied",
             )
 
         handler = self._handlers.get(kind)
@@ -294,12 +294,15 @@ class DynamicDispatcher:
                 kind,
                 call.name,
                 exc,
+                exc_info=True,
             )
+            # Generic client-facing error — str(exc) can carry internal paths,
+            # DSNs, or stack-derived detail. Full traceback is in the log above.
             return DispatchResult(
                 ok=False,
                 kind=kind,
                 name=call.name,
-                error=str(exc),
+                error="handler_error",
             )
 
     async def dispatch_all(self, calls: list[ToolCall]) -> list[DispatchResult]:
