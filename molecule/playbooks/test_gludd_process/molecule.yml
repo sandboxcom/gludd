@@ -1,0 +1,35 @@
+---
+# Minimal molecule scenario for the gludd_process + gludd_proc_monitor modules.
+#
+# CI NOTE: a real general_ludd daemon is NOT assumed to be present. Prepare
+# stands up a tiny stdlib-only mock daemon that serves the three managed-process
+# endpoints the modules call (GET /admin/processes, GET
+# /admin/processes/{pid}/stats, POST /admin/processes/{pid}/signal) with canned
+# JSON whose shape matches what the modules parse. The REAL modules execute
+# unchanged and hit that mock over HTTP, so the modules' own logic (auth headers,
+# status handling, ansible_facts injection, check-mode signal no-op) is genuinely
+# exercised — only the daemon is mocked.
+#
+# A real long-running `sleep` process is ALSO spawned on the test host and its
+# pid is fed to the mock so the listing/monitor/signal paths reference a pid that
+# actually exists. Replace the mock with a real daemon to smoke-test live
+# managed-process control. This scenario mocks the DAEMON the same way
+# test_gludd_osquery mocks the osquery binary.
+#
+# Distinct GLUDD_MOCK_PORT (8796) — an unused port (8786 is taken by
+# role_audit_dependencies; 8779 by test_gludd_osquery/test_gludd_git) so this
+# scenario never collides with any other molecule scenario's mock daemon.
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8796"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible

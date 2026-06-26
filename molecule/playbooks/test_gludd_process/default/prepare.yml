@@ -1,0 +1,57 @@
+---
+# gludd_process / gludd_proc_monitor talk to the daemon's managed-process API.
+# A real daemon is not assumed in CI, so we start the SHARED stdlib-only mock
+# daemon (molecule/mock_daemon/server.py) which serves GET /admin/processes,
+# GET /admin/processes/<pid>/stats and POST /admin/processes/<pid>/signal with
+# canned JSON the modules parse. Starting molecule/mock_daemon/server.py here is
+# also required by the test_module_scenarios_start_the_mock_daemon coverage gate.
+#
+# We ALSO nohup-spawn a real `sleep 300` on the test host and pass its pid to the
+# mock via --managed-pid, so the /admin/processes listing references a pid that
+# actually exists. The pid is stashed to a file for the converge/verify plays
+# (set_fact does not survive across molecule's separate playbook runs).
+- name: Prepare - spawn a real sleeper + start the shared mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}.pid"
+    sleeper_pidfile: "/tmp/gludd-proc-sleeper-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}.pid"
+
+  tasks:
+    - name: Spawn a real long-running sleeper process and record its pid
+      ansible.builtin.shell:
+        cmd: >-
+          nohup sleep 300 > /dev/null 2>&1 & echo $! > "{{ sleeper_pidfile }}"
+      changed_when: true
+
+    - name: Read the spawned sleeper pid
+      ansible.builtin.slurp:
+        src: "{{ sleeper_pidfile }}"
+      register: sleeper_raw
+
+    - name: Stash the sleeper pid
+      ansible.builtin.set_fact:
+        sleeper_pid: "{{ (sleeper_raw.content | b64decode | trim) | int }}"
+
+    - name: Launch shared mock daemon (background, nohup) with the real pid
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          --managed-pid {{ sleeper_pid }}
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5

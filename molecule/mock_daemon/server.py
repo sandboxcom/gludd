@@ -34,6 +34,9 @@ shape matches what each module parses:
   GET  /api/dispatch/recent           -> 200 {"records":[...]}               (gludd_dispatch recent)
   GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
   GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
+  GET  /admin/processes               -> 200 {"processes":[...],"count":N}    (gludd_process list / gludd_proc_monitor)
+  GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status / gludd_proc_monitor)
+  POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
 
 Plus an in-memory request-log introspection seam (NOT a daemon endpoint — a
 test affordance) so verify plays can prove, per role-invocation, which
@@ -585,6 +588,84 @@ def _todo_record(todo_id: str) -> dict:
     }
 
 
+# ---------------------------------------------------------------------------
+# Managed-process registry (gludd_process / gludd_proc_monitor)
+# ---------------------------------------------------------------------------
+# Shape mirrors the daemon's managed-process API: GET /admin/processes returns a
+# registry of processes the daemon launched; GET /admin/processes/<pid>/stats
+# returns a live psutil snapshot; POST /admin/processes/<pid>/signal delivers a
+# signal. _MANAGED_PID_OVERRIDE, when set via --managed-pid, replaces the first
+# record's pid/pgid with a REAL process spawned by the scenario's prepare.yml so
+# the listing references a pid that actually exists on the test host (the
+# test_gludd_process scenario nohup-spawns a `sleep` and passes its pid).
+_MANAGED_PID_OVERRIDE = 0
+
+MANAGED_PROCESSES = [
+    {
+        "pid": 424242,
+        "command": ["sleep", "300"],
+        "pgid": 424242,
+        "job_id": "job-mock-0001",
+        "project_id": "mock-project-alpha",
+        "origin": "managed",
+        "registered_at": "2026-01-01T00:00:00",
+        "create_time": 1735689600.0,
+        "alive": True,
+    },
+]
+
+
+def _managed_processes() -> list[dict]:
+    procs = [dict(p) for p in MANAGED_PROCESSES]
+    if _MANAGED_PID_OVERRIDE > 0 and procs:
+        procs[0]["pid"] = _MANAGED_PID_OVERRIDE
+        procs[0]["pgid"] = _MANAGED_PID_OVERRIDE
+    return procs
+
+
+def _process_stats(pid: int) -> dict:
+    """psutil-shaped stats snapshot for one managed process (canned)."""
+    return {
+        "pid": pid,
+        "cpu_percent": 0.5,
+        "memory": {"rss": 1048576, "vms": 4194304},
+        "io": {
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "read_count": 0,
+            "write_count": 0,
+        },
+        "num_fds": 5,
+        "num_threads": 1,
+        "num_ctx_switches": {"voluntary": 2, "involuntary": 0},
+        "status": "sleeping",
+        "open_files": [],
+        "locks": [],
+    }
+
+
+def _signal_response(pid: int, payload: dict) -> dict:
+    """Acknowledge a signal delivery (gludd_process action=signal)."""
+    return {
+        "ok": True,
+        "pid": pid,
+        "signal": payload.get("signal", "SIGTERM"),
+        "group": bool(payload.get("group", False)),
+    }
+
+
+def _pid_from_proc_path(path: str) -> int | None:
+    """Extract <pid> from /admin/processes/<pid>/(stats|signal). None if unparseable."""
+    parts = path.strip("/").split("/")
+    # ["admin", "processes", "<pid>", "stats"|"signal"]
+    if len(parts) != 4:
+        return None
+    try:
+        return int(parts[2])
+    except (TypeError, ValueError):
+        return None
+
+
 class MockDaemonHandler(BaseHTTPRequestHandler):
     # Silence default request logging to stderr noise; route to logfile if set.
     def log_message(self, fmt: str, *args: object) -> None:  # noqa: A003
@@ -664,6 +745,15 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             qs = parse_qs(urlparse(self.path).query)
             work_type = (qs.get("work_type", [""]) or [""])[0]
             self._send_json(200, _advice_response(work_type))
+        elif path == "/admin/processes":
+            procs = _managed_processes()
+            self._send_json(200, {"processes": procs, "count": len(procs)})
+        elif path.startswith("/admin/processes/") and path.endswith("/stats"):
+            pid = _pid_from_proc_path(path)
+            if pid is None:
+                self._send_json(404, {"detail": f"bad process path {path}"})
+            else:
+                self._send_json(200, _process_stats(pid))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -698,6 +788,12 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _schedule_response(payload))
         elif path == "/api/dispatch":
             self._send_json(200, _dispatch_response(payload))
+        elif path.startswith("/admin/processes/") and path.endswith("/signal"):
+            pid = _pid_from_proc_path(path)
+            if pid is None:
+                self._send_json(404, {"detail": f"bad process path {path}"})
+            else:
+                self._send_json(200, _signal_response(pid, payload))
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
@@ -718,7 +814,21 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--pidfile", default="")
+    parser.add_argument(
+        "--managed-pid",
+        type=int,
+        default=0,
+        help=(
+            "When > 0, the first /admin/processes record reports this pid/pgid "
+            "instead of the canned placeholder, so the listing references a real "
+            "process spawned by the calling scenario (test_gludd_process)."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.managed_pid and args.managed_pid > 0:
+        global _MANAGED_PID_OVERRIDE
+        _MANAGED_PID_OVERRIDE = args.managed_pid
 
     if args.pidfile:
         with open(args.pidfile, "w", encoding="utf-8") as fh:

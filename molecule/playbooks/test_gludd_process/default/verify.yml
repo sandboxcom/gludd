@@ -1,0 +1,65 @@
+---
+- name: Verify - gludd_process listed + monitored processes and dry-ran a signal
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}.pid"
+    sleeper_pidfile: "/tmp/gludd-proc-sleeper-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}.pid"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-process.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert gludd_process list injected managed processes under facts
+      ansible.builtin.assert:
+        that:
+          - not res.list.failed
+          - not res.list.changed
+          - res.list.ansible_facts.gludd_process.count >= 1
+          - res.list.ansible_facts.gludd_process.processes | length >= 1
+          - "'pid' in res.list.ansible_facts.gludd_process.processes[0]"
+          - "'alive' in res.list.ansible_facts.gludd_process.processes[0]"
+        fail_msg: "gludd_process list did not return managed processes: {{ res.list }}"
+        success_msg: "gludd_process list: managed processes injected as facts"
+
+    - name: Assert gludd_proc_monitor returned per-process stats with cpu+memory keys
+      ansible.builtin.assert:
+        that:
+          - not res.monitor.failed
+          - not res.monitor.changed
+          - res.monitor.ansible_facts.gludd_proc_monitor.count >= 1
+          - res.monitor.ansible_facts.gludd_proc_monitor.processes | length >= 1
+          - "'cpu_percent' in res.monitor.ansible_facts.gludd_proc_monitor.processes[0]"
+          - "'memory' in res.monitor.ansible_facts.gludd_proc_monitor.processes[0]"
+          - "'rss' in res.monitor.ansible_facts.gludd_proc_monitor.processes[0].memory"
+        fail_msg: "gludd_proc_monitor did not return stats with cpu/memory: {{ res.monitor }}"
+        success_msg: "gludd_proc_monitor: per-process stats with cpu_percent + memory returned"
+
+    - name: Assert the check-mode signal reported the change it WOULD make (no kill)
+      ansible.builtin.assert:
+        that:
+          - not res.signal.failed
+          - res.signal.changed
+          - res.signal.signal == "SIGTERM"
+          - "'would send' in res.signal.note"
+        fail_msg: "gludd_process check-mode signal did not report a would-send change: {{ res.signal }}"
+        success_msg: "gludd_process signal (check mode): reported would-send SIGTERM, nothing killed"
+
+    - name: Stop the real sleeper if it is still alive
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ sleeper_pidfile }}) 2>/dev/null || true; rm -f {{ sleeper_pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
