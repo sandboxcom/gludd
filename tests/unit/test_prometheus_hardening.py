@@ -1,7 +1,9 @@
 """Tests for P2 hardening of the Prometheus connector.
 
 Covers:
-  1. NaN / Inf raw values are coerced to 0.0 in _sample_record.
+  1. NaN / Inf raw values are coerced to None in _sample_record (boundary
+     numeric policy: None is the "no valid sample" sentinel — coercing to 0.0
+     would forge a real metric and corrupt downstream sums/averages).
   2. Payloads with >MAX_RESULT_SIZE series are capped at <=MAX_RESULT_SIZE+1 records
      (the +1 is the truncation error record appended on overflow).
 """
@@ -66,28 +68,30 @@ def _single_vector_series(raw_value: str) -> dict[str, Any]:
 
 
 class TestNaNInfGuard:
-    """_sample_record must map non-finite float strings to 0.0."""
+    """_sample_record must map non-finite float strings to None (boundary
+    numeric policy — see normalize.sanitize_metric_value / base.py policy note;
+    function names retain the historical '_yields_zero' suffix)."""
 
     def test_nan_raw_value_yields_zero(self) -> None:
         src = _make_source()
         payload = _vector_payload([_single_vector_series("NaN")])
         records = src._normalize(200, payload)
         assert len(records) == 1
-        assert records[0]["value"] == 0.0
+        assert records[0]["value"] is None
 
     def test_positive_inf_raw_value_yields_zero(self) -> None:
         src = _make_source()
         payload = _vector_payload([_single_vector_series("+Inf")])
         records = src._normalize(200, payload)
         assert len(records) == 1
-        assert records[0]["value"] == 0.0
+        assert records[0]["value"] is None
 
     def test_negative_inf_raw_value_yields_zero(self) -> None:
         src = _make_source()
         payload = _vector_payload([_single_vector_series("-Inf")])
         records = src._normalize(200, payload)
         assert len(records) == 1
-        assert records[0]["value"] == 0.0
+        assert records[0]["value"] is None
 
     def test_finite_value_is_preserved(self) -> None:
         src = _make_source()
@@ -107,9 +111,9 @@ class TestNaNInfGuard:
             ]
         )
         records = src._normalize(200, payload)
-        # Two samples; first should be 0.0, second 1.5
+        # Two samples; first (NaN) drops to None, second 1.5
         assert len(records) == 2
-        assert records[0]["value"] == 0.0
+        assert records[0]["value"] is None
         assert records[1]["value"] == pytest.approx(1.5)
 
 
