@@ -74,21 +74,28 @@ filter on — these are missing-filter bugs, not schema gaps.
 
 ### XT-3 — `routers/facts.py:427` — `/api/traces` exposes no `project_id` param — CONFIRMED
 
-- **File:line:** `src/general_ludd/routers/facts.py:427`
+- **File:line:** `src/general_ludd/routers/facts.py:427-437` (endpoint `api_traces`).
 - **Problem:** The `/api/traces` endpoint takes no `project_id` parameter, so any caller
   receives traces across all projects.
-- **Apply-ready fix:** Add a `project_id` query parameter (required, or resolved from the
-  caller's auth context), validate it against known projects, and pass it through to
-  `_traces_facet` (see XT-4).
+- **⚠ SCOPE CORRECTION (2026-06-26): NOT a simple add-a-where fix.** The trace data model
+  `ExecutionTrace` (`observability/tracer.py:81-143`) has **no `project_id` field at all**,
+  and `RecentTracesBuffer.snapshot()` (`trace_store.py:86-92`) returns every trace with no
+  project filter. So this is MULTI-LAYER: (1) add `project_id` to `ExecutionTrace`; (2)
+  capture/populate it on the recorder path; (3) add a `project_id` filter to
+  `RecentTracesBuffer.recent()/snapshot()`; (4) add a validated `project_id` query param to
+  `api_traces`; (5+6) thread it through `_traces_facet` (XT-4). Deferred to a working
+  window; do NOT attempt as a one-liner — there is no column to filter on yet.
 
 ### XT-4 — `routers/facts.py:403` — `_traces_facet(app)` not passed `project_id` — CONFIRMED
 
-- **File:line:** `src/general_ludd/routers/facts.py:403`
-- **Problem:** `_traces_facet(app)` is invoked with only `app`; it has no tenant scope
-  and therefore queries traces globally. This is the implementation side of XT-3.
-- **Apply-ready fix:** Change the signature to `_traces_facet(app, project_id)` and add
-  `.where(<trace>.project_id == project_id)` to the underlying query. Update the call
-  site (XT-3) to pass the validated `project_id`.
+- **File:line:** `_traces_facet` defined at `facts.py:135-139` (sig: `(app, limit, todo_id)`);
+  invoked at `:403` with no `project_id`.
+- **Problem:** `_traces_facet(app)` has no tenant scope and queries traces globally. This is
+  the facet side of XT-3.
+- **Apply-ready fix:** Implementation side of the XT-3 multi-layer change — add `project_id`
+  to the `_traces_facet` signature and pass it into the (newly project-aware)
+  `RecentTracesBuffer` query; update the call site (`:403`) to pass the validated
+  `project_id`. Cannot land independently of the tracer/store changes in XT-3.
 
 ### XT-5 — `routers/features.py:59-90` — `GET /api/features` returns ALL features — CONFIRMED
 
