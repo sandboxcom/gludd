@@ -134,19 +134,20 @@ def test_h3_spend_limiter_constructed_before_create_task_in_source() -> None:
                 spend_limiter_line = node.lineno
             self.generic_visit(node)
 
-        def visit_Expr(self, node: ast.Expr) -> None:
+        def visit_Call(self, node: ast.Call) -> None:
             nonlocal create_task_line
-            # Match: asyncio.create_task(event_loop.run_forever(...))
-            val = node.value
+            # Match asyncio.create_task(event_loop.run_forever(...)) wherever it
+            # appears — bare statement, assignment value (e.g. stored on
+            # app.state to keep a strong task ref), or awaited expression. The
+            # earlier visit_Expr-only form missed the assigned-task case.
             if (
-                isinstance(val, ast.Call)
-                and isinstance(val.func, ast.Attribute)
-                and val.func.attr == "create_task"
+                isinstance(node.func, ast.Attribute)
+                and node.func.attr == "create_task"
                 and create_task_line is None
-                and val.args
-                and isinstance(val.args[0], ast.Call)
-                and isinstance(val.args[0].func, ast.Attribute)
-                and val.args[0].func.attr == "run_forever"
+                and node.args
+                and isinstance(node.args[0], ast.Call)
+                and isinstance(node.args[0].func, ast.Attribute)
+                and node.args[0].func.attr == "run_forever"
             ):
                 create_task_line = node.lineno
             self.generic_visit(node)
