@@ -22,9 +22,18 @@ OPENTOFU_VERSION = "1.9.0"
 # under osquery/osquery (the project later moved most builds to .pkg/.deb/.rpm,
 # but the .tar.gz assets remain attached to the 5.10.2 release).
 OSQUERY_VERSION = "5.10.2"
+# DeusData codebase-memory-mcp: structural code-intelligence MCP server shipped
+# as a single static binary inside a per-platform .tar.gz GitHub release asset.
+# The release tag carries a leading "v"; the in-archive binary is a bare
+# executable named "codebase-memory-mcp" at the archive root.
+CODEBASE_MEMORY_VERSION = "0.8.1"
 OPENBAO_BASE_URL = f"https://github.com/openbao/openbao/releases/download/v{OPENBAO_VERSION}"
 OPENTOFU_BASE_URL = f"https://github.com/opentofu/opentofu/releases/download/v{OPENTOFU_VERSION}"
 OSQUERY_BASE_URL = f"https://github.com/osquery/osquery/releases/download/{OSQUERY_VERSION}"
+CODEBASE_MEMORY_BASE_URL = (
+    "https://github.com/DeusData/codebase-memory-mcp/releases/download/"
+    f"v{CODEBASE_MEMORY_VERSION}"
+)
 
 
 class BinaryBootstrapper:
@@ -37,6 +46,7 @@ class BinaryBootstrapper:
             "openbao": OPENBAO_VERSION,
             "opentofu": OPENTOFU_VERSION,
             "osquery": OSQUERY_VERSION,
+            "codebase-memory-mcp": CODEBASE_MEMORY_VERSION,
         }
         self._store = store or FileStore()
         self._store.makedirs("binaries")
@@ -130,6 +140,9 @@ class BinaryBootstrapper:
         if name == "osquery":
             return self._osquery_download_url(os_name, info["arch"])
 
+        if name == "codebase-memory-mcp":
+            return self._codebase_memory_download_url(os_name, info["arch"])
+
         ext = ".zip" if os_name in ("darwin", "windows") else ".tar.gz"
         if name == "openbao":
             version = OPENBAO_VERSION
@@ -169,17 +182,41 @@ class BinaryBootstrapper:
         filename = f"osquery-{OSQUERY_VERSION}.{asset_os}_{osq_arch}.tar.gz"
         return f"{OSQUERY_BASE_URL}/{filename}"
 
-    def _extract_osquery_executable(self, data: bytes) -> bytes:
-        """Extract the ``osqueryi`` binary from a ``.tar.gz`` archive.
+    @staticmethod
+    def _codebase_memory_download_url(os_name: str, arch: str) -> str | None:
+        """Build the DeusData codebase-memory-mcp v0.8.1 release-asset URL.
 
-        The osquery release tarball contains ``<prefix>/bin/osqueryi`` (and
-        other files). This method locates the first member whose basename is
-        ``osqueryi``, validates it against path-traversal attacks, and returns
-        its raw bytes.
+        Assets are named ``codebase-memory-mcp-<os>-<arch>[-portable].tar.gz``
+        where ``os`` is ``darwin`` or ``linux`` and ``arch`` is the normalized
+        ``amd64``/``arm64``. Linux ships fully-static ``-portable`` builds
+        (matching upstream ``install.sh``); darwin ships plain tarballs. Windows
+        publishes a ``.zip`` (handled by the npx launch path, not this
+        tar-only bootstrapper) and windows/arm64 is unpublished, so non-tarball
+        and unmapped platform/arch combos return ``None``.
+        """
+        if arch not in ("amd64", "arm64"):
+            return None
+        if os_name == "darwin":
+            asset = f"codebase-memory-mcp-darwin-{arch}.tar.gz"
+        elif os_name == "linux":
+            # Prefer the portable (fully-static) Linux build, as upstream does.
+            asset = f"codebase-memory-mcp-linux-{arch}-portable.tar.gz"
+        else:
+            return None
+        return f"{CODEBASE_MEMORY_BASE_URL}/{asset}"
+
+    def _extract_executable_member(self, data: bytes, basename: str) -> bytes:
+        """Extract the archive member whose basename is *basename* from a
+        ``.tar.gz`` and return its raw bytes.
+
+        Locates the first regular-file member matching *basename*, validating
+        it against path-traversal (rejecting absolute paths and any
+        ``..``-containing component) before reading. Extraction is in-memory via
+        ``extractfile`` — nothing is written to disk during the scan.
 
         If ``data`` is not a valid gzip tarball (e.g. the caller passed a
-        bundled plain executable by mistake), the original bytes are returned
-        unchanged so the caller can still store them.
+        bundled plain executable by mistake) or no matching member exists, the
+        original bytes are returned unchanged so the caller can still store them.
         """
         try:
             with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
@@ -191,7 +228,7 @@ class BinaryBootstrapper:
                     parts = name.replace("\\", "/").split("/")
                     if ".." in parts:
                         continue
-                    if os.path.basename(name) == "osqueryi" and member.isfile():
+                    if os.path.basename(name) == basename and member.isfile():
                         f = tf.extractfile(member)
                         if f is not None:
                             return f.read()
@@ -199,6 +236,15 @@ class BinaryBootstrapper:
             # Not a gzip tarball or extraction failed — treat as plain binary.
             pass
         return data
+
+    def _extract_osquery_executable(self, data: bytes) -> bytes:
+        """Extract the ``osqueryi`` binary from a ``.tar.gz`` archive.
+
+        The osquery release tarball contains ``<prefix>/bin/osqueryi`` (and
+        other files); this returns that member's raw bytes (path-traversal
+        validated, in-memory). See :meth:`_extract_executable_member`.
+        """
+        return self._extract_executable_member(data, "osqueryi")
 
     def _chmod_executable(self, path: str) -> None:
         """Add executable bits (u+x g+x o+x) to the file at *path*."""
@@ -208,13 +254,24 @@ class BinaryBootstrapper:
         except Exception as exc:  # pragma: no cover - filesystem edge-cases
             logger.warning("Failed to chmod %s: %s", path, exc)
 
+    # Binaries shipped inside a .tar.gz release asset: map the stored binary
+    # name to the bare executable's basename inside the archive. For these the
+    # downloaded bytes are an archive, so we extract the executable member,
+    # store it, and set executable bits.
+    _TARBALL_BINARIES = {
+        "osquery": "osqueryi",
+        "codebase-memory-mcp": "codebase-memory-mcp",
+    }
+
     def _store_binary_and_chmod(self, name: str, data: bytes) -> None:
-        """Store *data* under ``binaries/<name>`` and, for osquery, extract the
-        executable from the tarball and set executable bits on the result."""
-        if name == "osquery":
-            data = self._extract_osquery_executable(data)
+        """Store *data* under ``binaries/<name>``. For tarball-packaged binaries
+        (osquery, codebase-memory-mcp), extract the executable from the archive
+        and set executable bits on the stored result."""
+        archived = self._TARBALL_BINARIES.get(name)
+        if archived is not None:
+            data = self._extract_executable_member(data, archived)
         self.store_binary(name, data)
-        if name == "osquery":
+        if archived is not None:
             stored_path = self.get_binary_path(name)
             if stored_path and os.path.isfile(stored_path):
                 self._chmod_executable(stored_path)
