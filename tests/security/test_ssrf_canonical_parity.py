@@ -89,6 +89,10 @@ def test_host_is_blocked_allows_public_host() -> None:
         "127.0.0.1.",  # trailing dot on a blocked IP literal
         "169.254.169.254.",  # cloud metadata IP with trailing dot
         "::1.",  # trailing dot after IPv6 loopback (bracket already stripped)
+        "[::1].",  # bracketed IPv6 loopback + trailing dot (dot must strip first)
+        "[::1]",  # bracketed IPv6 loopback (no dot)
+        "127.0.0.1..",  # DOUBLE trailing dot (rstrip must remove all)
+        "metadata..",
         "localhost\x00",  # NUL after a blocked name
         "localhost\x00.evil.example.com",  # NUL-truncation smuggling a blocked host
         "127.0.0.1\x00.evil.example.com",
