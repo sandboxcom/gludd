@@ -7,6 +7,16 @@ items are recorded for remediation.
 
 > Scope note: line numbers are pinned to the working tree on
 > `feature/alpha4-green-the-gate` as of 2026-06-26. Re-pin at apply time.
+>
+> **Verification sweep complete (2026-06-26):** every finding below was independently
+> re-verified this session. Statuses are current: XT-9 + SS-1 + CC-2 are **FIXED**; XT-1
+> is a **verified pure one-liner**; XT-2/5/6/7 (features) need a repo method + router
+> change; XT-3/XT-4 (traces) are **multi-layer** (no `project_id` on the trace model yet —
+> NOT a one-liner); XT-8 (embeddings) is low-effort but changes the endpoint signature;
+> AB-1/2/3 line numbers confirmed accurate; TG-1 line numbers re-pinned. Next-window apply
+> order by value/effort: **XT-1 (one-liner) → TG-1 (shared validator) → AB-1/2/3 (to_thread
+> wraps) → XT-2/5/6/7 (features repo+router) → XT-8 (embeddings) → CC-1 (lease CAS) →
+> XT-3/4 (traces, largest)**.
 
 ## Summary table
 
@@ -241,19 +251,22 @@ handlers, stalling all concurrent requests for the duration of the I/O.
 
 ### TG-1 — `routers/todos.py` read/update endpoints don't validate `project_id` — CONFIRMED
 
-- **File:line:** `src/general_ludd/routers/todos.py` —
-  `api_get_todo`, `api_list_scheduled_todos`, `api_pause_schedule`, `api_resume_schedule`
+- **File:line (re-pinned 2026-06-26):** `src/general_ludd/routers/todos.py` —
+  `api_get_todo:361`, `api_list_scheduled_todos:284`, `api_pause_schedule:321`,
+  `api_resume_schedule:341`. CREATE-path validation that they DON'T do: `:125-138`
+  (CREATE handlers `api_add_todo:116`, `api_create_scheduled_todo:201`).
 - **Problem:** These read/update endpoints accept a `project_id` but never validate that
-  it refers to a known project. The CREATE endpoints DO validate (returning 422 for an
-  unknown project). The inconsistency means a probe with an unknown `project_id` returns
-  404 from read/update but 422 from create — the differing status codes let an attacker
-  enumerate which project IDs exist (recon vector), and the missing validation is an
-  isolation gap.
-- **Apply-ready fix:** Add the same project-existence validation used by the CREATE path
-  to all four read/update endpoints, returning a consistent 422 for unknown projects (or
-  a uniform 404 across both create and read/update so existence is never disclosed). Add
-  tests asserting identical status codes for unknown-project requests across create vs.
-  read/update endpoints to close the enumeration vector.
+  it refers to a known project. CREATE validates against
+  `app.state._project_manager.list_active()` and returns 422 for an unknown project; the
+  read/update endpoints skip it and return 404 (get/pause/resume) or 200-empty (list). The
+  differing status codes (404/200 vs 422) let an attacker enumerate which project IDs
+  exist, and the missing validation is an isolation gap.
+- **Apply-ready fix:** Extract the CREATE validation block (`:125-138`) into a shared
+  `_validate_project_id(project_id, app)` helper and call it at the start of all four
+  read/update endpoints, returning a consistent **422** for unknown/missing projects (so
+  create and read/update behave identically and existence is never disclosed via a status
+  delta). Add tests asserting identical status codes for unknown-project requests across
+  create vs. read/update endpoints.
 
 ---
 
