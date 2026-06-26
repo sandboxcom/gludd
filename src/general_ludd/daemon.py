@@ -22,6 +22,7 @@ from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
+from general_ludd.config.project_dir import find_project_gludd_dir, merge_config, project_config_path
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard
@@ -89,7 +90,36 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "task_definitions": [],
         "model_profiles": [],
         "rules": [],
+        "project_gludd_dir": find_project_gludd_dir(),
     }
+
+    def _apply_project_overlay() -> None:
+        """Deep-merge .gludd/general-ludd.yml over the user config (project wins).
+
+        Called before every return so the overlay applies even when no user config
+        directory exists — a repo may have ``.gludd/general-ludd.yml`` without any
+        ``~/.config/general-ludd`` present.
+        """
+        proj_cfg = project_config_path(cfg["project_gludd_dir"])
+        if proj_cfg is None:
+            return
+        try:
+            with open(proj_cfg) as _f:
+                proj_data = yaml.safe_load(_f) or {}
+        except Exception as exc:
+            logger.warning("Failed to load project config overlay %s: %s", proj_cfg, exc)
+            return
+        if not proj_data:
+            return
+        uc = cfg["user_config"]
+        user_dict: dict[str, Any] = (
+            uc.model_dump() if hasattr(uc, "model_dump") else dict(vars(uc))
+        )
+        merged = merge_config(user_dict, proj_data)
+        try:
+            cfg["user_config"] = UserConfig(**merged)
+        except Exception as exc:
+            logger.warning("Project config overlay failed validation: %s", exc)
 
     if config_dir is None:
         home = os.environ.get("HOME", os.path.expanduser("~"))
@@ -104,11 +134,13 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
                 break
         else:
             logger.info("No config directory found; daemon running unconfigured")
+            _apply_project_overlay()
             return cfg
 
     cdir = Path(config_dir)
     if not cdir.is_dir():
         logger.info("Config directory %s does not exist; daemon running unconfigured", config_dir)
+        _apply_project_overlay()
         return cfg
 
     mr_path = cdir / "model_routing.yml"
@@ -170,6 +202,10 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     profiles_dir = cdir / "model_profiles"
     if profiles_dir.is_dir():
         cfg["model_profiles"] = load_model_profiles(profiles_dir=str(profiles_dir))
+
+    # Apply project overlay (.gludd/general-ludd.yml) BEFORE extracting rules so
+    # any rules defined in the project overlay are captured in cfg["rules"].
+    _apply_project_overlay()
 
     # Surface the rules engine: copy UserConfig.rules into startup_config so the
     # EventLoop (which reads startup_config["rules"]) receives operator rules.
@@ -786,7 +822,22 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:
                 logger.warning("Alembic stamp failed: %s", exc)
 
-        runner = AnsibleRunnerAdapter()
+        # Phase 2: inject project .gludd/collections on the Ansible search path so
+        # project-local roles/collections shadow (or augment) the global ones.
+        _proj_gludd = startup_config.get("project_gludd_dir")
+        _runner_default_env: dict[str, str] = {}
+        if _proj_gludd is not None:
+            _existing_cp = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
+            _runner_default_env["ANSIBLE_COLLECTIONS_PATH"] = (
+                f"{_proj_gludd}/collections:{_existing_cp}".rstrip(":")
+            )
+            _existing_rp = os.environ.get("ANSIBLE_ROLES_PATH", "")
+            _runner_default_env["ANSIBLE_ROLES_PATH"] = (
+                f"{_proj_gludd}/collections/roles:{_existing_rp}".rstrip(":")
+            )
+        runner = AnsibleRunnerAdapter(
+            default_env=_runner_default_env if _runner_default_env else None,
+        )
         subsys = _get_or_create_subsystems(app)
 
         # CA-T7/CA-T8 fix: create and assign the health tracker BEFORE calling
@@ -865,9 +916,18 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.error("Secret migration failed", exc_info=True)
 
         templates_dir = getattr(app.state, "_templates_dir", None)
+        # Phase 2: prepend project .gludd/templates/ so project-local templates
+        # shadow same-named global ones.  No-op when the dir does not exist.
+        _proj_for_prompts = startup_config.get("project_gludd_dir")
+        _extra_tmpl_dirs: list[str] = []
+        if _proj_for_prompts is not None:
+            _proj_tmpl_dir = Path(_proj_for_prompts) / "templates"
+            if _proj_tmpl_dir.is_dir():
+                _extra_tmpl_dirs = [str(_proj_tmpl_dir)]
         prompt_registry = PromptRegistry(
             template_dir=templates_dir,
             event_bus=subsys["bus"],
+            extra_template_dirs=_extra_tmpl_dirs or None,
         )
         # P2 (perf): refresh() globs the template dir and read_text()s each *.j2
         # file — blocking filesystem IO. Offload it so the daemon-boot coroutine
@@ -1390,6 +1450,13 @@ def _get_or_create_extended_subsystems(
             discovered = discover_skills(config_dir)
             for skill in discovered:
                 registry.register(skill)
+        # Phase 2: register project skills AFTER global ones so same-named project
+        # skills shadow (overwrite) the global entry — last write wins in the dict.
+        _proj_for_skills = getattr(app.state, "_project_gludd_dir", None)
+        if _proj_for_skills is not None:
+            _proj_skills_dir = Path(_proj_for_skills) / "skills"
+            if _proj_skills_dir.is_dir():
+                registry.refresh(search_paths=[str(_proj_skills_dir)])
         app.state._skill_registry = registry
 
     adaptive_router = None
@@ -1500,6 +1567,7 @@ def create_daemon_app(
     app.state._adaptive_router = None
     app.state._self_update_audit_sink = None
     app.state._startup_config = load_startup_config(config_dir)
+    app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
     app.state._stats_start_time = time.monotonic()
     app.state._stats_requests = 0
     app.state._stats_responses = 0

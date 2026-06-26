@@ -23,15 +23,27 @@ class PromptRegistry:
         self,
         template_dir: str | None = None,
         event_bus: Any | None = None,
+        extra_template_dirs: list[str] | None = None,
     ) -> None:
         self._templates: dict[str, str] = {}
         self._in_memory: set[str] = set()
         self._template_dir = template_dir
-        self._loader: BaseLoader = (
-            FileSystemLoader(template_dir) if template_dir else BaseLoader()
-        )
+        self._extra_template_dirs: list[str] = list(extra_template_dirs or [])
+        self._loader: BaseLoader = self._make_loader()
         self._env = Environment(loader=self._loader, autoescape=select_autoescape())
         self._event_bus = event_bus
+
+    def _make_loader(self) -> BaseLoader:
+        """Build a Jinja2 FileSystemLoader with extras-first then default ordering.
+
+        Extra template dirs shadow the default dir — a template name present in
+        an extra dir wins over the same name in ``_template_dir``.  Falls back to
+        a no-op :class:`BaseLoader` when no dirs are configured at all.
+        """
+        dirs: list[str] = list(self._extra_template_dirs)
+        if self._template_dir:
+            dirs.append(self._template_dir)
+        return FileSystemLoader(dirs) if dirs else BaseLoader()
 
     def register(self, name: str, template_text: str) -> None:
         self._templates[name] = template_text
@@ -48,15 +60,24 @@ class PromptRegistry:
         return list(self._templates.keys())
 
     def refresh(self) -> dict[str, Any]:
-        if not self._template_dir:
+        # Build the ordered search list: extra dirs first (they shadow the default),
+        # then the default template dir.  First-name-wins across dirs.
+        all_dirs: list[Path] = [Path(d) for d in self._extra_template_dirs]
+        if self._template_dir:
+            all_dirs.append(Path(self._template_dir))
+        if not all_dirs:
             return {"templates": list(self._templates.keys()), "refreshed": False}
-        templates_path = Path(self._template_dir)
+
         discovered: list[str] = []
-        if templates_path.is_dir():
-            for f in sorted(templates_path.glob("*.j2")):
-                name = f.name
-                self._templates[name] = f.read_text()
-                discovered.append(name)
+        seen_names: set[str] = set()
+        for tdir in all_dirs:
+            if tdir.is_dir():
+                for f in sorted(tdir.glob("*.j2")):
+                    name = f.name
+                    if name not in seen_names:
+                        seen_names.add(name)
+                        self._templates[name] = f.read_text()
+                        discovered.append(name)
         disk_names = set(discovered)
         to_remove = [
             n for n in list(self._templates.keys())
@@ -64,7 +85,7 @@ class PromptRegistry:
         ]
         for name in to_remove:
             del self._templates[name]
-        self._loader = FileSystemLoader(self._template_dir) if self._template_dir else BaseLoader()
+        self._loader = self._make_loader()
         self._env = Environment(loader=self._loader, autoescape=select_autoescape())
         if self._event_bus:
             self._event_bus.publish(TemplateUpdatedEvent(templates=discovered))

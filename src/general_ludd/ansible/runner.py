@@ -58,12 +58,14 @@ class AnsibleRunnerAdapter:
         isolation_config: ProcessIsolationConfig | None = None,
         playbooks_dir: str | None = None,
         event_bus: Any | None = None,
+        default_env: dict[str, str] | None = None,
     ) -> None:
         self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="gl-runner-")
         self.registry = _build_registry(registry)
         self.isolation_config = isolation_config
         self._playbooks_dir = playbooks_dir
         self._event_bus = event_bus
+        self._default_env: dict[str, str] = default_env or {}
         self._core_runner = CoreAnsibleRunner(
             process_isolation=isolation_config,
         )
@@ -144,11 +146,12 @@ class AnsibleRunnerAdapter:
             from general_ludd.ansible.core_runner import _env_default_timeout
 
             effective_timeout = _env_default_timeout() if timeout is None else timeout
+            _merged_env = {**self._default_env, **(env or {})}
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
                 extravars=extravars or {},
                 timeout=effective_timeout,
-                extra_env=env or None,
+                extra_env=_merged_env or None,
             )
             return result.model_dump()
         except Exception as exc:
