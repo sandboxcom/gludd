@@ -1301,7 +1301,9 @@ class EventLoop:
                 _os.makedirs(_os.path.join(job_dir, "env"), exist_ok=True)
                 pdd = str(ws.private_data_dir)
             else:
-                dirs = self._runner.prepare_job_dirs(job_id)
+                # prepare_job_dirs does blocking os.makedirs; offload so it does
+                # not stall the daemon's single asyncio event loop (AB).
+                dirs = await asyncio.to_thread(self._runner.prepare_job_dirs, job_id)
                 pdd = dirs["root"]
             # C1 (W3.x): invoke the model for a generation work type the SAME
             # way the worker HTTP path does, then feed the generated text into
@@ -1538,7 +1540,9 @@ class EventLoop:
                         "Trace-buffer feed failed (non-fatal)",
                         exc_info=True,
                     )
-            self._runner.write_vars(job_id, job_vars={
+            # write_vars does blocking os.makedirs + yaml file write + os.chmod;
+            # offload so it does not stall the daemon's single asyncio loop (AB).
+            await asyncio.to_thread(self._runner.write_vars, job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
                 "work_type": _safe_str(todo, "work_type", "unknown"),

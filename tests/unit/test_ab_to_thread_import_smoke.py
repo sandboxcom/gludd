@@ -53,6 +53,35 @@ def test_environment_router_imports() -> None:
     assert hasattr(env, "register")
 
 
+def test_worker_app_imports_and_to_thread_offloads_present() -> None:
+    # The worker execute_job handler wrapped prepare_job_dirs, write_vars, and
+    # both shutil.rmtree cleanups in asyncio.to_thread. Import proves the edits
+    # parse; the source check pins that the offloads were not silently reverted.
+    import inspect as _inspect
+
+    import general_ludd.worker.app as worker_app
+
+    assert _inspect.ismodule(worker_app)
+    src = _inspect.getsource(worker_app)
+    assert "asyncio.to_thread(runner.prepare_job_dirs" in src
+    assert "asyncio.to_thread(\n                runner.write_vars" in src or (
+        "asyncio.to_thread(runner.write_vars" in src
+    )
+    # Both rmtree cleanups (failure + success paths) must be offloaded.
+    assert src.count("asyncio.to_thread(shutil.rmtree") == 2
+
+
+def test_event_loop_dispatch_offloads_present() -> None:
+    # _dispatch_execute_job wrapped prepare_job_dirs and write_vars in to_thread.
+    import inspect as _inspect
+
+    import general_ludd.event_loop.loop as loop
+
+    src = _inspect.getsource(loop)
+    assert "asyncio.to_thread(self._runner.prepare_job_dirs" in src
+    assert "asyncio.to_thread(self._runner.write_vars" in src
+
+
 def test_register_builds_routes_without_error() -> None:
     from fastapi import FastAPI
 

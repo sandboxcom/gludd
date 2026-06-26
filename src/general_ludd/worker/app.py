@@ -307,7 +307,9 @@ def create_app(
 
         runner = get_runner()
         try:
-            dirs = runner.prepare_job_dirs(job.job_id)
+            # prepare_job_dirs does blocking os.makedirs; offload so it doesn't
+            # stall the worker's asyncio event loop under concurrent jobs (AB).
+            dirs = await asyncio.to_thread(runner.prepare_job_dirs, job.job_id)
         except FileExistsError as exc:
             raise HTTPException(status_code=409, detail="Job already in progress") from exc
         _max_timeout = float(os.environ.get("GLUDD_JOB_TIMEOUT_MAX", "600"))
@@ -318,7 +320,10 @@ def create_app(
             min(job.timeout, _max_timeout) if job.timeout is not None and job.timeout > 0 else _max_timeout
         )
         try:
-            runner.write_vars(
+            # write_vars does blocking os.makedirs + yaml file write + os.chmod;
+            # offload so it doesn't stall the worker's asyncio loop (AB).
+            await asyncio.to_thread(
+                runner.write_vars,
                 job.job_id,
                 job_vars={
                     "job_id": job.job_id,
@@ -355,7 +360,9 @@ def create_app(
                 timeout=_timeout + 30.0,
             )
         except Exception:
-            shutil.rmtree(dirs["root"], ignore_errors=True)
+            # Blocking rmtree — offload to keep the worker's asyncio loop free
+            # (consistent with the prepare_job_dirs/write_vars offloads above).
+            await asyncio.to_thread(shutil.rmtree, dirs["root"], ignore_errors=True)
             raise
         # Build the response dict from runner_result *before* removing the
         # workspace.
@@ -390,7 +397,7 @@ def create_app(
         # accumulation of prompt/model-output data (failure path already does
         # this via the except branch above).  All payload data is inline (see
         # SAFETY NOTE above), so cleanup cannot lose referenced content.
-        shutil.rmtree(dirs["root"], ignore_errors=True)
+        await asyncio.to_thread(shutil.rmtree, dirs["root"], ignore_errors=True)
         return response_payload
 
     @application.post("/jobs/return-review")
