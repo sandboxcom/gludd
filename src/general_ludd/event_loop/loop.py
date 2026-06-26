@@ -2106,7 +2106,7 @@ class EventLoop:
                         )
                 await asyncio.to_thread(repo.push, branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
-                self._maybe_open_pr(todo, worktree, branch_name)
+                await self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:
                 # F3: surface (don't swallow) so the caller can detect the
                 # COMPLETE-but-unpushed split-brain and retry. The caller decides
@@ -2124,12 +2124,16 @@ class EventLoop:
                 if registry is not None and claimed:
                     registry.release(worker_id)
 
-    def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
+    async def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
         """F1: open a PR for completed work when git_automation.open_pr is set.
 
         Disabled by default — only fires when config opts in, so the daemon
         never opens PRs unexpectedly. Uses PRDelivery (push branch + gh pr
         create).
+
+        H2 fix: push_and_create_pr shells out to ``gh pr create`` / ``git push``
+        which can block for 5-30 s.  Run it in a thread so the event loop is
+        never stalled during PR delivery.
         """
         ga_cfg = self.config.get("git_automation", {}) or {}
         if not ga_cfg.get("open_pr", False):
@@ -2141,7 +2145,8 @@ class EventLoop:
             draft=bool(ga_cfg.get("pr_draft", False)),
             labels=list(ga_cfg.get("pr_labels", [])),
         )
-        result = delivery.push_and_create_pr(
+        result = await asyncio.to_thread(
+            delivery.push_and_create_pr,
             repo_path=worktree,
             branch_name=branch_name,
             todo_id=todo.todo_id,

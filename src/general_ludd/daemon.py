@@ -893,7 +893,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # its workspace so dispatched jobs have real code to edit.
         await _restore_persisted_projects(ext.get("projects"), session_factory)
 
-        secrets_resolver = build_secrets_resolver(
+        # H1 fix: build_secrets_resolver() calls hvac client.is_authenticated()
+        # synchronously (a blocking HTTP call).  Offload to a thread so the
+        # event loop is never stalled if OpenBao is slow or unreachable.
+        secrets_resolver = await asyncio.to_thread(
+            build_secrets_resolver,
             openbao_config=startup_config.get("openbao_config"),
             projects_active=bool(ext.get("projects")),
         )
@@ -1067,6 +1071,56 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             skill_registry=ext["skill_registry"],
         )
 
+        # H3 fix: SpendLimiter must be constructed and rehydrated BEFORE
+        # asyncio.create_task(event_loop.run_forever(...)) so the event loop's
+        # first tick cannot bypass the operator spend cap.  PricingCatalog and
+        # SpendLimiter are built here (including the persisted-spend rehydration
+        # await) and then passed into the EventLoop constructor so _spend_limiter
+        # is never None once the loop task is scheduled.
+        # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
+        # Build a rolling-window limiter from budget config when configured.
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+        from general_ludd.pricing_intel import PricingCatalog
+
+        # PricingCatalog is the PRIMARY price source for cost projection;
+        # SpendLimiter.token_cost_usd() falls back to the static
+        # infra/pricing.py table when the catalog has no live price.  Shared
+        # across the limiter and any other subsystem that needs live rates.
+        pricing_catalog = PricingCatalog()
+        # Publish the catalog on app.state so /api/pricing (routers/observe.py)
+        # can serve the SAME instance the SpendLimiter consumes — not a second
+        # copy. Routers read it via ``_get_pricing_catalog(app)``.
+        app.state._pricing_catalog = pricing_catalog
+
+        spend_limiter: SpendLimiter | None = None
+        if uc is not None:
+            spend_window_usd = bc.spend_window_usd
+            spend_window_seconds = bc.spend_window_seconds
+            if spend_window_usd > 0.0:
+                import time as _time
+
+                # Wall-clock (time.time), NOT monotonic: persisted spend
+                # timestamps must survive a process restart so the rolling
+                # window can be rehydrated from the DB (#49 #2).
+                spend_limiter = SpendLimiter(
+                    limit_usd=spend_window_usd,
+                    window_seconds=spend_window_seconds,
+                    clock=_time.time,
+                    catalog=pricing_catalog,
+                )
+                logger.info(
+                    "SpendLimiter configured: limit=%.4f USD / %.0f s window",
+                    spend_window_usd,
+                    spend_window_seconds,
+                )
+                # Rehydrate accumulated spend so a restart can't reset the cap.
+                await _restore_persisted_spend(
+                    spend_limiter,
+                    session_factory,
+                    window_seconds=spend_window_seconds,
+                )
+        app.state._spend_limiter = spend_limiter
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -1103,6 +1157,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
             self_improve_interval=self_improve_interval,
+            # H3: spend_limiter passed via constructor so _spend_limiter is set
+            # before the run_forever task is scheduled — the first tick can never
+            # bypass the operator spend cap.
+            spend_limiter=spend_limiter,
             # #31 (multi-agent safety): share the coordination router's
             # FileClaimRegistry (created in routers/coordination.register and
             # surfaced via /api/coordination + /api/facts) with the event loop's
@@ -1159,55 +1217,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = default_registry()
         dispatcher_executor = None
 
-        # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
-        # Build a rolling-window limiter from budget config when configured.
-        from general_ludd.controllers.spend_limiter import SpendLimiter
+        # SpendLimiter, PricingCatalog, and spend_limiter are built and
+        # rehydrated above, BEFORE the EventLoop constructor (H3 fix).
+        # make_spend_guarded_executor is imported here for the gateway executor
+        # block below.
         from general_ludd.daemon_wiring import make_spend_guarded_executor
-        from general_ludd.pricing_intel import PricingCatalog
-
-        # PricingCatalog is the PRIMARY price source for cost projection;
-        # SpendLimiter.token_cost_usd() falls back to the static
-        # infra/pricing.py table when the catalog has no live price.  Shared
-        # across the limiter and any other subsystem that needs live rates.
-        pricing_catalog = PricingCatalog()
-        # Publish the catalog on app.state so /api/pricing (routers/observe.py)
-        # can serve the SAME instance the SpendLimiter consumes — not a second
-        # copy. Routers read it via ``_get_pricing_catalog(app)``.
-        app.state._pricing_catalog = pricing_catalog
-
-        spend_limiter: SpendLimiter | None = None
-        if uc is not None:
-            spend_window_usd = bc.spend_window_usd
-            spend_window_seconds = bc.spend_window_seconds
-            if spend_window_usd > 0.0:
-                import time as _time
-
-                # Wall-clock (time.time), NOT monotonic: persisted spend
-                # timestamps must survive a process restart so the rolling
-                # window can be rehydrated from the DB (#49 #2).
-                spend_limiter = SpendLimiter(
-                    limit_usd=spend_window_usd,
-                    window_seconds=spend_window_seconds,
-                    clock=_time.time,
-                    catalog=pricing_catalog,
-                )
-                logger.info(
-                    "SpendLimiter configured: limit=%.4f USD / %.0f s window",
-                    spend_window_usd,
-                    spend_window_seconds,
-                )
-                # Rehydrate accumulated spend so a restart can't reset the cap.
-                await _restore_persisted_spend(
-                    spend_limiter,
-                    session_factory,
-                    window_seconds=spend_window_seconds,
-                )
-        app.state._spend_limiter = spend_limiter
-        # Wire the limiter into the EventLoop dispatch path so every
-        # _dispatch_execute_job call consults would_exceed() before running.
-        # Set after construction (the limiter is built below the EventLoop) —
-        # mirrors how _benchmark_recorder is attached above.
-        event_loop._spend_limiter = spend_limiter
 
         # InfraTracker wraps infra_cost_usd() the same way SpendLimiter wraps
         # token_cost_usd(): PricingCatalog is the PRIMARY price source for GPU
