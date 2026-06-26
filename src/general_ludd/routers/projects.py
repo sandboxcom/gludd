@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, cast
 
@@ -12,6 +13,8 @@ from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.skills.catalog import SkillCatalog
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class AddProjectRequest(BaseModel):
@@ -77,8 +80,17 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                             dispatch_mode=req.dispatch_mode,
                         )
                         await session.commit()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # Do NOT swallow: a swallowed persist/commit failure
+                        # returned HTTP 200 while the project was never written
+                        # (lost on restart). Log + re-raise so the outer handler
+                        # surfaces it as a 422 instead of a false success.
+                        logger.error(
+                            "Failed to persist project %s to database: %s",
+                            project.project_id,
+                            exc,
+                        )
+                        raise
             return {
                 "project_id": project.project_id,
                 "name": project.name, "weight": project.weight,
