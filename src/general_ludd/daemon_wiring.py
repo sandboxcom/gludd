@@ -202,6 +202,7 @@ def make_collection_handler(
         return None
 
     async def _collection_handler(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        import asyncio
         import os
         import re
         import uuid
@@ -238,8 +239,14 @@ def make_collection_handler(
         )
         os.makedirs(dispatch_dir, exist_ok=True)
         playbook_path = os.path.join(dispatch_dir, f"{uuid.uuid4().hex}.yml")
-        with open(playbook_path, "w") as f:
-            yaml.safe_dump(playbook, f, default_flow_style=False)
+
+        # AB-1: serialize+write off the event loop so the async daemon handler
+        # does not block on disk I/O under concurrent dispatch.
+        def _write_playbook() -> None:
+            with open(playbook_path, "w") as f:
+                yaml.safe_dump(playbook, f, default_flow_style=False)
+
+        await asyncio.to_thread(_write_playbook)
 
         transient_name = f"_dispatch_{uuid.uuid4().hex}"
         runner_adapter.register_playbook(transient_name, playbook_path)

@@ -51,6 +51,34 @@ def _get_session_factory(app: FastAPI) -> Any:
     return getattr(app.state, "_session_factory", None)
 
 
+def _validate_project_id(app: FastAPI, project_id: str | None) -> None:
+    """Reject unknown/missing project_id in multi-project mode (mirrors CREATE).
+
+    TG-1: read/update endpoints previously returned 404 ("not found") or an empty
+    result for an unknown project_id, while CREATE returns 422. This unifies the
+    contract: when a ProjectManager exists AND has >=1 active project, a null
+    project_id is 422 ("required") and an unknown id is 422 ("unknown"). When no
+    projects are active the field is unconstrained (single-project / no-PM
+    back-compat) and this is a no-op.
+    """
+    pm = getattr(app.state, "_project_manager", None)
+    if pm is None:
+        return
+    active_ids = {p.project_id for p in pm.list_active()}
+    if not active_ids:
+        return
+    if project_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="project_id is required in multi-project mode",
+        )
+    if project_id not in active_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown project_id: {project_id}",
+        )
+
+
 def _todo_to_dict(todo: Any) -> dict[str, Any]:
     return {
         "todo_id": todo.todo_id,
@@ -298,6 +326,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         )
         if project_id is None and _active_ids:
             return []
+        # TG-1: a non-None but UNKNOWN project_id must 422 (not silently scope to
+        # an empty list), matching CREATE and the other read/update endpoints.
+        _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
@@ -320,6 +351,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/api/todos/{todo_id}/schedule/pause")
     async def api_pause_schedule(todo_id: str, project_id: str) -> dict[str, Any]:
         """Pause a SCHEDULED todo's schedule. Skips future fires until resumed."""
+        _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -340,6 +372,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/api/todos/{todo_id}/schedule/resume")
     async def api_resume_schedule(todo_id: str, project_id: str) -> dict[str, Any]:
         """Resume a paused SCHEDULED todo's schedule."""
+        _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="No database available")
@@ -359,6 +392,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/api/todos/{todo_id}")
     async def api_get_todo(todo_id: str, project_id: str) -> dict[str, Any]:
+        _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:

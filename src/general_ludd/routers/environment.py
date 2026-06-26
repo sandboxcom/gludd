@@ -26,6 +26,7 @@ like /api/facts.
 
 from __future__ import annotations
 
+import asyncio
 import contextlib
 import json
 import logging
@@ -710,7 +711,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             logger.debug("queues section failed: %s", exc)
             queues = []
         try:
-            system = _system_facet()
+            # AB-3: _system_facet reads /proc/meminfo synchronously; offload it
+            # so the async environment handler does not block the event loop.
+            system = await asyncio.to_thread(_system_facet)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("system section failed: %s", exc)
             system = {}
