@@ -339,13 +339,16 @@ class ModelGateway:
         profile = self._profiles.get(profile_id)
         if profile is None:
             return False
-        # NaN/Inf guard (fail-closed). `x > NaN` is always False in Python, so a
-        # non-finite budget_remaining would silently pass every cost comparison;
-        # treat it as 0.0 (no budget). A non-finite estimated_cost (NaN/Inf) is
-        # treated as float("inf") so it can never slip under any finite cap — a
-        # NaN cost must REJECT, not pass. Both clamped up front so every
-        # comparison below sees finite operands.
-        if not math.isfinite(budget_remaining):
+        # NaN/Inf guard (fail-closed on poison, but inf budget = unlimited).
+        # `x > NaN` is always False in Python, so a NaN budget_remaining would
+        # silently pass every cost comparison — treat NaN as 0.0 (no budget).
+        # But +inf is the LEGITIMATE default sentinel meaning "no budget limit"
+        # (unlimited): it must be preserved so callers that omit budget_remaining
+        # are not spuriously rejected (no finite cost exceeds inf). Only NaN is
+        # clamped here. A non-finite estimated_cost (NaN OR Inf) is treated as
+        # float("inf") so it can never slip under any finite cap — a NaN/Inf cost
+        # must REJECT, not pass.
+        if math.isnan(budget_remaining):
             budget_remaining = 0.0
         if not math.isfinite(estimated_cost):
             estimated_cost = float("inf")
