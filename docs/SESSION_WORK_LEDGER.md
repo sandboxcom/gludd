@@ -31,7 +31,9 @@ Last updated: 2026-06-26 (verification sweep + concurrency/cross-tenant audit wa
 
 ## A2. 5-hour token-window throttle (operator request #16, prioritized)
 
-✅ DONE+PROVEN+RUNNING. `scripts/token_window_monitor.py` + `scripts/test_token_window_monitor.py` + Makefile targets (`token-monitor-bg`/`-stop`/`-status`/`test-token-monitor`). Sums 5h transcript token spend → writes `/tmp/gludd-floor-override`: floor→1 at ≥95%, floor→7 at <90% (hysteresis). `test-token-monitor` **12/12**; live `--once` read **112.6M = 56.3%**; detached monitor running (60s loop, holding floor 7). Budget tunable via `/tmp/gludd-5h-token-budget` (default 200M — TUNE to plan). Cross-window resume: durable recurring cron (`19,49 * * * *`, 7-day auto-expire) re-invokes work when idle, token-aware. Under review (a-scheduler-rev / monitor-rev).
+✅ DONE+PROVEN+RUNNING. `scripts/token_window_monitor.py` + `scripts/test_token_window_monitor.py` + Makefile targets (`token-monitor-bg`/`-stop`/`-status`/`-breakdown`/`-probe`/`-calibrate`/`test-token-monitor`). Sums 5h transcript token spend → writes `/tmp/gludd-floor-override`: floor→1 at ≥95%, floor→7 at <90% (hysteresis). `test-token-monitor` **12/12**.
+
+**ACCURACY FIX 2026-06-26 (commits 40ea527 + 71d4faa, `9 passed` calibrate tests):** operator reported the % reading was wrong. Root cause PROVEN via new `--probe`: the API rate-limit headers (`anthropic-ratelimit-unified-*`) are NOT persisted anywhere in the transcript, so the monitor can only ever be a token-sum PROXY (cache_read is ~95% of the sum). The frozen budget constant drifted wrong. FIX: `--calibrate <pct>` (`make token-monitor-calibrate PCT=NN`) anchors `budget = measured_spend ÷ (pct/100)` into `/tmp/gludd-5h-token-budget` so the % self-corrects against a real reading; DEFAULT_BUDGET raised 200M→**316M** so it stops false-tripping. Operator re-anchors anytime with `make token-monitor-calibrate PCT=<real %>`. Live reading after calibration: honest ~90% (was over-reading 100%+). Cross-window resume cron unchanged.
 
 ## B. Apply queue + COMMIT-READINESS MATRIX (reviewed 2026-06-26)
 
