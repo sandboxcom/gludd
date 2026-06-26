@@ -188,6 +188,104 @@ class TestHotReloaderSkillsRefresh:
             f"project .gludd/skills not in skills_dirs: {last_dirs}"
         )
 
+    def test_global_config_skills_subdir_used_not_root(self, tmp_path: Path) -> None:
+        """POST /admin/reload uses <config_dir>/skills, NOT <config_dir> root.
+
+        A skill .md placed in config_dir/skills/ must appear in skills_dirs;
+        a .md placed directly in config_dir root must NOT cause config_dir itself
+        to be added (the is_dir guard on the /skills subdir controls inclusion).
+        """
+        from fastapi.testclient import TestClient
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+
+        # File directly in config root — should NOT be scanned by reload
+        _make_skill_md(config_dir / "stray_root_skill.md", "stray_root_skill")
+
+        # File in config/skills/ — SHOULD be scanned by reload
+        config_skills = config_dir / "skills"
+        config_skills.mkdir()
+        _make_skill_md(config_skills / "global_skill.md", "global_skill")
+
+        captured_skills_dirs: list[list[str] | None] = []
+        original_init = None
+
+        def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
+            captured_skills_dirs.append(kwargs.get("skills_dirs"))
+            original_init(self, *args, **kwargs)  # type: ignore[misc]
+
+        from general_ludd import daemon as daemon_mod
+        from general_ludd.reload import hot_reloader as hr_mod
+
+        original_init = hr_mod.HotReloader.__init__
+
+        with patch.object(hr_mod.HotReloader, "__init__", _patched_init):
+            app = daemon_mod.create_daemon_app()
+            app.state._config_dir = str(config_dir)
+            app.state._project_gludd_dir = None
+            app.state.GLUDD_ALLOW_NO_AUTH = True
+            import os
+            os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
+            try:
+                with TestClient(app) as client:
+                    client.post("/admin/reload", json={"scope": "skills"})
+            finally:
+                os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
+
+        assert captured_skills_dirs, "HotReloader.__init__ was never called"
+        last_dirs = captured_skills_dirs[-1] or []
+
+        # config_dir/skills MUST be in skills_dirs
+        assert any(str(config_skills) in d for d in last_dirs), (
+            f"config_dir/skills not in skills_dirs: {last_dirs}"
+        )
+        # config_dir root must NOT be in skills_dirs (stray root .md not scanned)
+        assert not any(d == str(config_dir) for d in last_dirs), (
+            f"config_dir root was incorrectly added to skills_dirs: {last_dirs}"
+        )
+
+    def test_global_config_skills_subdir_absent_adds_nothing(self, tmp_path: Path) -> None:
+        """When config_dir/skills/ does not exist, no global skills entry is added."""
+        from fastapi.testclient import TestClient
+
+        config_dir = tmp_path / "config"
+        config_dir.mkdir()
+        # No config_dir/skills/ subdir — only a stray .md at root
+        _make_skill_md(config_dir / "orphan.md", "orphan")
+
+        captured_skills_dirs: list[list[str] | None] = []
+        original_init = None
+
+        def _patched_init(self: Any, *args: Any, **kwargs: Any) -> None:
+            captured_skills_dirs.append(kwargs.get("skills_dirs"))
+            original_init(self, *args, **kwargs)  # type: ignore[misc]
+
+        from general_ludd import daemon as daemon_mod
+        from general_ludd.reload import hot_reloader as hr_mod
+
+        original_init = hr_mod.HotReloader.__init__
+
+        with patch.object(hr_mod.HotReloader, "__init__", _patched_init):
+            app = daemon_mod.create_daemon_app()
+            app.state._config_dir = str(config_dir)
+            app.state._project_gludd_dir = None
+            app.state.GLUDD_ALLOW_NO_AUTH = True
+            import os
+            os.environ["GLUDD_ALLOW_NO_AUTH"] = "1"
+            try:
+                with TestClient(app) as client:
+                    client.post("/admin/reload", json={"scope": "skills"})
+            finally:
+                os.environ.pop("GLUDD_ALLOW_NO_AUTH", None)
+
+        assert captured_skills_dirs, "HotReloader.__init__ was never called"
+        last_dirs = captured_skills_dirs[-1] or []
+        # Neither config_dir nor config_dir/skills should appear
+        assert not any(str(config_dir) in d for d in last_dirs), (
+            f"config_dir (or subdir) was added despite skills/ not existing: {last_dirs}"
+        )
+
 
 # ---------------------------------------------------------------------------
 # TestAdminConfigReload

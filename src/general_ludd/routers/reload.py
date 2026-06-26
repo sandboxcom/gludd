@@ -75,7 +75,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         _skills_dirs: list[str] = []
         _config_dir_val = getattr(app.state, "_config_dir", None)
         if _config_dir_val:
-            _skills_dirs.append(_config_dir_val)
+            _global_skills = Path(_config_dir_val) / "skills"
+            if _global_skills.is_dir():
+                _skills_dirs.append(str(_global_skills))
         _proj_dir = getattr(app.state, "_project_gludd_dir", None)
         if _proj_dir is not None:
             _proj_skills = Path(_proj_dir) / "skills"
