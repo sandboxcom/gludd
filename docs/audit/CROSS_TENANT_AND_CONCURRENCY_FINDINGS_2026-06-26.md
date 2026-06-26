@@ -345,6 +345,49 @@ handlers, stalling all concurrent requests for the duration of the I/O.
 
 ---
 
+## Gateway / response-cache (`models/gateway.py`, `models/response_cache.py`) — audited 2026-06-26
+
+### GW-1 — cache key includes stringified `tools` → cache never hits for tool requests — CONFIRMED (MED)
+
+- **File:line:** `models/gateway.py:467-469` builds the cache key while `tools` is still in
+  `**kwargs` (it isn't popped until `_invoke_and_bill` at `:533`); `response_cache.py:37`
+  `_make_cache_key` does `json.dumps(..., default=str)`, so non-serializable tool
+  objects/dicts become `repr`/memory-address strings.
+- **Problem:** the same logical tool-bearing request yields a DIFFERENT key every call →
+  cache never hits → silent stampede of provider calls (cost + latency); two different
+  requests could also collide.
+- **Apply-ready fix:** pop/normalize `tools` out before computing the key, or exclude
+  `tools` and key on a stable tool-schema digest instead.
+
+### GW-2 — truncated (`finish_reason=length`) responses cached + replayed — CONFIRMED (MED)
+
+- **File:line:** `models/gateway.py:687-701` calls `cache.set` without inspecting
+  `finish_reason`; a truncated completion is cached and later served as if complete.
+- **Apply-ready fix:** skip caching when the response was truncated (finish_reason length).
+
+### GW-3 — `provider_registry` config-driven arbitrary import — CONFIRMED (HIGH, needs deeper review)
+
+- **Problem:** the provider registry resolves a provider via a config-driven import path,
+  enabling arbitrary-module import if config is attacker-influenced. Flagged HIGH by the
+  gateway audit; **needs a dedicated next-window verification** of the exact import call and
+  the trust boundary of the config source before fixing (allowlist known providers).
+
+### GW-4 — cache hit/miss + TTL minor issues — recorded (LOW)
+
+- Cached hits reconstruct `ModelResponse(**cached)` with `raw_response=None`
+  (`gateway.py:473/491`) — fresh responses carry it, cached ones don't (asymmetry).
+- `set(expire=None|<=0)` bypasses the mandatory TTL; `response_cache_ttl_seconds` is
+  unvalidated. Cache dir is `0o700` but the intermediate dir isn't tightened (plaintext
+  model output on disk for the TTL — may echo prompt secrets).
+
+### AB-8 — `engine.py:302` async-blocking (gateway call on the loop) — flagged, verify next window
+
+- The gateway audit also flagged `execution/engine.py:302` as a sync gateway call on the
+  event loop (sibling to AB-5 `tool_loop.py:176/183`). Verify exact line + wrap in
+  `asyncio.to_thread` next window.
+
+---
+
 ## Budget audit notes (no action — recorded for completeness)
 
 - **Spend-limiter TOCTOU:** already closed via `RLock` (verified). No fix needed.
