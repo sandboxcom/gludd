@@ -1,0 +1,35 @@
+---
+# Exercise the REAL gludd_osquery module against the fake osqueryi:
+#   1. a valid SELECT -> rows injected under ansible_facts.gludd_osquery
+#   2. a DROP query   -> SELECT-only validation rejects it (failed=true)
+- name: Converge - run gludd_osquery against fake binary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}"
+    fake_bin: "/tmp/gludd-fake-osqueryi-{{ mock_port }}"
+
+  tasks:
+    - name: Run a valid SELECT query
+      general_ludd.agent.gludd_osquery:
+        query: "SELECT pid, name FROM processes LIMIT 5"
+        osquery_path: "{{ fake_bin }}"
+      register: select_result
+
+    - name: Attempt a forbidden DROP query (must fail validation)
+      general_ludd.agent.gludd_osquery:
+        query: "DROP TABLE processes"
+        osquery_path: "{{ fake_bin }}"
+      register: drop_result
+      failed_when: false
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'select': select_result, 'drop': drop_result} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-osquery.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        var: select_result.ansible_facts.gludd_osquery

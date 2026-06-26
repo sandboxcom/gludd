@@ -1,0 +1,23 @@
+---
+# Minimal molecule scenario for the gludd_osquery module.
+#
+# CI NOTE: a real osquery binary is NOT assumed to be present. Prepare writes a
+# tiny fake `osqueryi` shell script that emits canned JSON, and converge points
+# the module at it via `osquery_path`. This exercises the module's full path
+# (SELECT-only validation -> arg-list subprocess -> JSON parse -> ansible_facts)
+# WITHOUT downloading or running real osquery. Replace the fake with a real
+# osquery install to smoke-test live system-state queries.
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8779"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible

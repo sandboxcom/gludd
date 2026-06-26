@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import io
 import logging
 import os
 import platform
 import shutil
+import stat
+import tarfile
 from pathlib import Path
 from typing import Any
 
@@ -15,8 +18,13 @@ logger = logging.getLogger(__name__)
 
 OPENBAO_VERSION = "2.2.0"
 OPENTOFU_VERSION = "1.9.0"
+# osquery 5.10.2 is the last release published as a plain GitHub release tarball
+# under osquery/osquery (the project later moved most builds to .pkg/.deb/.rpm,
+# but the .tar.gz assets remain attached to the 5.10.2 release).
+OSQUERY_VERSION = "5.10.2"
 OPENBAO_BASE_URL = f"https://github.com/openbao/openbao/releases/download/v{OPENBAO_VERSION}"
 OPENTOFU_BASE_URL = f"https://github.com/opentofu/opentofu/releases/download/v{OPENTOFU_VERSION}"
+OSQUERY_BASE_URL = f"https://github.com/osquery/osquery/releases/download/{OSQUERY_VERSION}"
 
 
 class BinaryBootstrapper:
@@ -25,7 +33,11 @@ class BinaryBootstrapper:
     KNOWN_VERSIONS: dict[str, str]
 
     def __init__(self, store: Any = None, bundled_binaries_dir: str | None = None) -> None:
-        self.KNOWN_VERSIONS = {"openbao": OPENBAO_VERSION, "opentofu": OPENTOFU_VERSION}
+        self.KNOWN_VERSIONS = {
+            "openbao": OPENBAO_VERSION,
+            "opentofu": OPENTOFU_VERSION,
+            "osquery": OSQUERY_VERSION,
+        }
         self._store = store or FileStore()
         self._store.makedirs("binaries")
         self._bundled_dir = bundled_binaries_dir
@@ -114,6 +126,10 @@ class BinaryBootstrapper:
     def get_download_url(self, name: str) -> str | None:
         info = self.get_platform_info()
         os_name = info["os"]
+
+        if name == "osquery":
+            return self._osquery_download_url(os_name, info["arch"])
+
         ext = ".zip" if os_name in ("darwin", "windows") else ".tar.gz"
         if name == "openbao":
             version = OPENBAO_VERSION
@@ -126,6 +142,83 @@ class BinaryBootstrapper:
         filename = f"{release_name}_{version}_{os_name}_amd64{ext}"
         return f"{base}/{filename}"
 
+    @staticmethod
+    def _osquery_download_url(os_name: str, arch: str) -> str | None:
+        """Build the osquery 5.10.2 GitHub release-asset URL.
+
+        Assets are named ``osquery-<ver>.<os>_<arch>.tar.gz`` where ``os`` is
+        ``linux`` or ``macos`` and ``arch`` is osquery's own naming
+        (``x86_64`` / ``arm64`` — NOT the ``amd64`` the bootstrapper normalizes
+        to). Returns ``None`` for platform/arch combos osquery does not publish
+        a tarball for (e.g. Windows ships an .msi, not a .tar.gz, and linux
+        arm64 has no 5.10.2 tarball).
+        """
+        # Map the normalized arch back to osquery's release-asset naming.
+        osq_arch = {"amd64": "x86_64", "arm64": "arm64"}.get(arch)
+        if osq_arch is None:
+            return None
+        if os_name == "darwin":
+            asset_os = "macos"
+        elif os_name == "linux":
+            asset_os = "linux"
+            # osquery 5.10.2 publishes only an x86_64 linux tarball.
+            if osq_arch != "x86_64":
+                return None
+        else:
+            return None
+        filename = f"osquery-{OSQUERY_VERSION}.{asset_os}_{osq_arch}.tar.gz"
+        return f"{OSQUERY_BASE_URL}/{filename}"
+
+    def _extract_osquery_executable(self, data: bytes) -> bytes:
+        """Extract the ``osqueryi`` binary from a ``.tar.gz`` archive.
+
+        The osquery release tarball contains ``<prefix>/bin/osqueryi`` (and
+        other files). This method locates the first member whose basename is
+        ``osqueryi``, validates it against path-traversal attacks, and returns
+        its raw bytes.
+
+        If ``data`` is not a valid gzip tarball (e.g. the caller passed a
+        bundled plain executable by mistake), the original bytes are returned
+        unchanged so the caller can still store them.
+        """
+        try:
+            with tarfile.open(fileobj=io.BytesIO(data), mode="r:gz") as tf:
+                for member in tf.getmembers():
+                    name = member.name
+                    # Safety: reject absolute paths and any '..'-containing component.
+                    if os.path.isabs(name):
+                        continue
+                    parts = name.replace("\\", "/").split("/")
+                    if ".." in parts:
+                        continue
+                    if os.path.basename(name) == "osqueryi" and member.isfile():
+                        f = tf.extractfile(member)
+                        if f is not None:
+                            return f.read()
+        except Exception:
+            # Not a gzip tarball or extraction failed — treat as plain binary.
+            pass
+        return data
+
+    def _chmod_executable(self, path: str) -> None:
+        """Add executable bits (u+x g+x o+x) to the file at *path*."""
+        try:
+            current = os.stat(path).st_mode
+            os.chmod(path, current | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)
+        except Exception as exc:  # pragma: no cover - filesystem edge-cases
+            logger.warning("Failed to chmod %s: %s", path, exc)
+
+    def _store_binary_and_chmod(self, name: str, data: bytes) -> None:
+        """Store *data* under ``binaries/<name>`` and, for osquery, extract the
+        executable from the tarball and set executable bits on the result."""
+        if name == "osquery":
+            data = self._extract_osquery_executable(data)
+        self.store_binary(name, data)
+        if name == "osquery":
+            stored_path = self.get_binary_path(name)
+            if stored_path and os.path.isfile(stored_path):
+                self._chmod_executable(stored_path)
+
     async def download(self, name: str) -> bool:
         import httpx
 
@@ -133,7 +226,7 @@ class BinaryBootstrapper:
         if bundled:
             try:
                 data = Path(bundled).read_bytes()
-                self.store_binary(name, data)
+                self._store_binary_and_chmod(name, data)
                 logger.info("Used bundled binary %s from %s", name, bundled)
                 return True
             except Exception as exc:
@@ -147,7 +240,7 @@ class BinaryBootstrapper:
             async with httpx.AsyncClient(timeout=300.0, follow_redirects=True) as client:
                 resp = await client.get(url)
                 if resp.status_code == 200:
-                    self.store_binary(name, resp.content)
+                    self._store_binary_and_chmod(name, resp.content)
                     logger.info("Downloaded %s v%s from %s", name, self.KNOWN_VERSIONS.get(name, "?"), url)
                     return True
                 else:

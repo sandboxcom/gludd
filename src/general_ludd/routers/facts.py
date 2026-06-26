@@ -22,8 +22,11 @@ PSK auth is applied by the daemon middleware (path is not public).
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import os
+import shutil
+import subprocess
 from typing import Any
 
 from fastapi import FastAPI
@@ -280,6 +283,61 @@ async def _accounting_facet(
     except Exception as exc:
         logger.debug("accounting facet unavailable: %s", exc)
         return {"projects": [], "error": str(exc)}
+def _osquery_facet(app: FastAPI) -> dict[str, Any]:
+    """Fast availability + version probe for osquery system-state querying.
+
+    This is intentionally a *cheap* probe (``osqueryi --version`` with a short
+    timeout) so it never blocks /api/facts on a real query. It fails soft to
+    ``{"available": false}`` when the binary is absent or the probe errors.
+
+    The osqueryi binary is resolved from the daemon's binary filestore
+    (``binaries/osquery``, downloaded on first use) and then from the system
+    ``PATH``. A heavier query-as-corpus search path is a later phase that
+    consumes this availability signal.
+    """
+    facet: dict[str, Any] = {"available": False, "version": None, "source": None, "path": None}
+
+    binary: str | None = None
+    source: str | None = None
+    try:
+        from general_ludd.filestore.bootstrap import BinaryBootstrapper
+
+        store = getattr(app.state, "_filestore", None)
+        boot = BinaryBootstrapper(store=store) if store is not None else BinaryBootstrapper()
+        path = boot.get_binary_path("osquery")
+        if path and os.path.isfile(path) and os.access(path, os.X_OK):
+            binary = path
+            source = "filestore"
+    except Exception as exc:  # pragma: no cover - defensive
+        logger.debug("osquery filestore probe unavailable: %s", exc)
+
+    if binary is None:
+        on_path = shutil.which("osqueryi")
+        if on_path:
+            binary = on_path
+            source = "path"
+
+    if binary is None:
+        return facet
+
+    facet["path"] = binary
+    facet["source"] = source
+    try:
+        proc = subprocess.run(
+            [binary, "--version"],
+            capture_output=True,
+            text=True,
+            timeout=2,
+            check=False,
+        )
+        if proc.returncode == 0:
+            facet["available"] = True
+            facet["version"] = (proc.stdout or "").strip() or None
+    except Exception as exc:  # fail soft, never block facts
+        logger.debug("osquery version probe failed: %s", exc)
+    return facet
+
+
 def _schedule_facet(app: FastAPI) -> dict[str, Any]:
     """Last computed schedule plan and in-flight batch summary.
 
@@ -350,6 +408,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "accounting": await _accounting_facet(app, project_id=project_id),
             "schedule": _schedule_facet(app),
             "coordination": _coordination_facet(app),
+            "osquery": await asyncio.to_thread(_osquery_facet, app),
             "project_id": project_id,
         }
 
