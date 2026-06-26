@@ -77,6 +77,21 @@ class TestRunnerWriteVars:
             )
             assert os.path.basename(path) == "extravars"
 
+    @pytest.mark.parametrize(
+        "evil_id",
+        ["../../etc", "..", "a/b", "a\\b", "JOB 1", "lower", "with.dot", ""],
+    )
+    def test_write_vars_rejects_unsafe_job_id(self, evil_id):
+        # write_vars is reachable independently of prepare_job_dirs, and job_id
+        # is attacker-controllable (JobSpec.job_id). A non-[A-Z0-9_-] id must be
+        # refused before any path is built — no traversal out of the workspace.
+        with tempfile.TemporaryDirectory() as tmp:
+            adapter = AnsibleRunnerAdapter(private_data_dir=tmp)
+            with pytest.raises(ValueError):
+                adapter.write_vars(evil_id, job_vars={"x": 1})
+            # Nothing was written outside the (empty) workspace.
+            assert os.listdir(tmp) == []
+
 
 class TestRunnerRunPlaybook:
     @patch("general_ludd.ansible.runner.CoreAnsibleRunner")

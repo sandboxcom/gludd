@@ -107,7 +107,15 @@ class AnsibleRunnerAdapter:
         shared_vars: dict[str, Any] | None = None,
         filename: str = "extravars",
     ) -> str:
-        vars_dir = os.path.join(self.private_data_dir, job_id, "env")
+        # job_id is attacker-controllable (JobSpec.job_id from the HTTP body) and
+        # only whitespace-validated upstream. Sanitize here too — write_vars is a
+        # public method reachable independently of prepare_job_dirs — so a crafted
+        # id like "../../etc" cannot escape the per-job workspace. Mirrors
+        # prepare_job_dirs above.
+        safe_id = sanitize_job_id(job_id)
+        if safe_id is None:
+            raise ValueError(f"Invalid job_id: {job_id!r}")
+        vars_dir = os.path.join(self.private_data_dir, safe_id, "env")
         os.makedirs(vars_dir, exist_ok=True)
         payload: dict[str, Any] = {"job_vars": job_vars}
         if shared_vars is not None:

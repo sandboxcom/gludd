@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import hvac
@@ -49,17 +49,20 @@ def _is_genuine_not_found(exc: BaseException) -> bool:
 @dataclass
 class BootstrapResult:
     url: str
-    token: str
+    # repr=False: never let a root/bootstrap token leak into a repr()/log line or
+    # a traceback frame dump. The value is still a normal required attribute.
+    token: str = field(repr=False)
     initialized: bool
     # H-1: the per-boot dev root token minted for the local container, surfaced
     # so connect() can authenticate without the old hardcoded literal "root".
-    container_token: str | None = None
+    container_token: str | None = field(default=None, repr=False)
 
 
 @dataclass
 class AppRoleCreds:
     role_id: str
-    secret_id: str
+    # repr=False: the AppRole secret_id is a credential — keep it out of reprs/logs.
+    secret_id: str = field(repr=False)
 
 
 @dataclass
