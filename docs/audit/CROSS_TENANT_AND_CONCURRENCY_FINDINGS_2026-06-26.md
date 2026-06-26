@@ -77,10 +77,18 @@ filter on — these are missing-filter bugs, not schema gaps.
 - **Problem:** The features facet uses `FeatureRepository.list_all()`, which returns
   every `FeatureModel` regardless of project. `FeatureModel.project_id` exists
   (`models.py:492`).
-- **Apply-ready fix:** Add a `list_for_project(project_id)` method on
-  `FeatureRepository` (`.where(FeatureModel.project_id == project_id)`) and call it here
-  with the request-scoped `project_id`. Do not fall back to `list_all()` on a missing
-  project — return an empty list or 422.
+- **Apply-ready fix (DESIGN REFINED 2026-06-26 — supersedes the "add list_for_project()"
+  note):** `FeatureRepository` (`repository.py:1494-1640`) today has ZERO project
+  plumbing. Mirror `TodoRepository`: add `__init__(session, project_id=None)`, a
+  `scoped(cls, session, project_id)` classmethod, and a `_resolve_pid()` helper; then give
+  EACH read method (`get_by_id:1602`, `list_all:1607`, `list_by_status:1618`,
+  `list_by_category:1630`) a `project_id: str | None = None` param and insert
+  `if _pid is not None: stmt = stmt.where(FeatureModel.project_id == _pid)`. Per-method
+  params (NOT a lone `list_for_project()`) because `list_features` branches across
+  `list_by_status`/`list_by_category`/`list_all` and XT-6 (`get_by_id` IDOR) cannot be
+  served by a list method. `FeatureModel.project_id` is indexed (`models.py:492-497`) — no
+  migration. Do not fall back to global aggregate on a missing project — return empty/422.
+  This same repo change closes XT-2, XT-5, XT-6, and XT-7 together.
 
 ### XT-3 — `routers/facts.py:427` — `/api/traces` exposes no `project_id` param — CONFIRMED
 
