@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import logging
 from typing import Any
 
@@ -28,12 +29,12 @@ async def apply_decision(
     decision: TaskDecision,
     todo_repo: TodoRepository,
     session: AsyncSession,
+    *,
+    repo_root: str | None = None,
 ) -> None:
-    if decision.decision == "complete" and not decision.evidence_refs:
-        raise ValueError(
-            "Cannot mark complete without evidence_refs. "
-            "Provide at least one evidence artifact reference."
-        )
+    if decision.decision == "complete":
+        from general_ludd.review.completion_verifier import verify_completion
+        decision = await asyncio.to_thread(verify_completion, decision, None, repo_root)
 
     if decision.decision == "ignore_duplicate":
         logger.info("Ignoring duplicate return %s", decision.return_id)

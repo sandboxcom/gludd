@@ -21,6 +21,7 @@ concurrency:
 
 permissions:
   contents: write
+  packages: write
 
 jobs:
   version:
@@ -338,6 +339,9 @@ jobs:
     needs: [version, gate, test-shard]
     runs-on: ubuntu-24.04-arm
     timeout-minutes: 30
+    # Non-blocking like the windows job: an aarch64 pyinstaller hiccup must not
+    # sink a Release that already carries the linux/macos artifacts.
+    continue-on-error: true
     if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
     env:
       VERSION: ${{ needs.version.outputs.version }}
@@ -369,8 +373,63 @@ jobs:
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz
             dist/gludd-${{ env.VERSION }}-linux-aarch64.tar.gz.sha256
 
+  # Container image -> GHCR (so the repo's Packages section is populated). Builds
+  # on every triggering event (validating the Dockerfile) but only PUSHES on tag
+  # pushes and master. Gated on the same green gate+tests as the build jobs.
+  container:
+    needs: [version, gate, test-shard]
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Non-blocking for the Release: a transient GHCR/Docker hiccup must not sink an
+    # otherwise-good release (re-run just this job to publish the package). Runs on
+    # PRs too to validate the Dockerfile builds (push stays false on PRs, below).
+    continue-on-error: true
+    if: startsWith(github.ref, 'refs/tags/v') || github.event_name == 'workflow_dispatch' || github.event_name == 'pull_request' || (github.event_name == 'push' && !startsWith(github.ref, 'refs/tags/'))
+    permissions:
+      contents: read
+      packages: write
+    env:
+      VERSION: ${{ needs.version.outputs.version }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - name: Inject version
+        run: |
+          sed -i "s/__version__ = \".*\"/__version__ = \"$VERSION\"/" src/general_ludd/__init__.py
+          sed -i "s/^version = \".*\"/version = \"$VERSION\"/" pyproject.toml
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@8d2750c68a42422c14e847fe6c8ac0403b4cbd6f  # v3.12.0 (node24)
+      - name: Log in to GHCR
+        uses: docker/login-action@c94ce9fb468520275223c153574b00df6fe4bcc9  # v3.7.0 (node24)
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Compute image tags and labels
+        id: meta
+        uses: docker/metadata-action@c299e40c65443455700f0fdfc63efafe5b349051  # v5.10.0 (node24)
+        with:
+          images: ghcr.io/${{ github.repository }}
+          tags: |
+            type=semver,pattern={{version}}
+            type=semver,pattern={{major}}.{{minor}}
+            type=sha
+            type=ref,event=branch
+            type=raw,value=latest,enable=${{ github.ref == format('refs/heads/{0}', github.event.repository.default_branch) || (startsWith(github.ref, 'refs/tags/v') && !contains(github.ref_name, '-')) }}
+      - name: Build and push image
+        uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8  # v6.19.2 (node24)
+        with:
+          context: .
+          file: ./Dockerfile
+          build-args: |
+            VERSION=${{ env.VERSION }}
+          push: ${{ github.event_name != 'pull_request' && (startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/master') }}
+          tags: ${{ steps.meta.outputs.tags }}
+          labels: ${{ steps.meta.outputs.labels }}
+          cache-from: type=gha
+          cache-to: type=gha,mode=max
+
   release:
-    needs: [version, gate, test-shard, linux, macos, windows, termux]
+    needs: [version, gate, test-shard, linux, macos, windows, termux, container]
     runs-on: ubuntu-latest
     timeout-minutes: 20
     if: startsWith(github.ref, 'refs/tags/v')
@@ -417,7 +476,9 @@ jobs:
           tag_name: ${{ github.ref_name }}
           name: ${{ github.ref_name }}
           draft: false
-          prerelease: true
+          # Pre-release tags carry a SemVer hyphen (v0.1.0-alpha.5, v0.1.0-rc.1);
+          # final tags (v1.0.0) have none -> a real (non-pre) GitHub Release.
+          prerelease: ${{ contains(github.ref_name, '-') }}
           files: release-assets/*
           generate_release_notes: true
       - name: Verify release has assets

@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 import subprocess
 import tempfile
 from pathlib import Path
@@ -98,9 +99,17 @@ class TestFullPipelineE2E:
                 content=f"```\nFILE: src/hello.py\n{code}\n```"
             ))
 
+            # Layer-2 evidence gate: a `complete` decision must carry a
+            # machine-verifiable evidence ref or the reconcile phase (correctly)
+            # downgrades it. The ExecutionEngine writes src/hello.py into the
+            # workspace during dispatch, so an `artifact:src/hello.py` ref is
+            # genuinely verifiable once repo_root resolves to the workspace.
             mock_review_gateway = MagicMock()
             mock_review_gateway.call_model = MagicMock(return_value=MagicMock(
-                content='{"decision": "complete", "confidence": 0.95}'
+                content=(
+                    '{"decision": "complete", "confidence": 0.95, '
+                    '"evidence_refs": ["artifact:src/hello.py"]}'
+                )
             ))
             mock_registry = MagicMock()
             mock_registry.render = MagicMock(return_value="Review this")
@@ -114,7 +123,11 @@ class TestFullPipelineE2E:
                 model_gateway=mock_gateway, workspace_path=ws,
             )
 
-            loop = EventLoop(session=factory, daemon_state={})
+            # repo_root resolves to the workspace so the gate can verify the
+            # artifact ref against the file the ExecutionEngine actually wrote.
+            loop = EventLoop(
+                session=factory, daemon_state={}, config={"repo_root": ws}
+            )
 
             async def patched_dispatch(todo_item, **_kwargs):
                 # Accept _variable_repo_override/_task_return_repo_override/_session_override
@@ -178,6 +191,9 @@ class TestFullPipelineE2E:
                     matched_todo_id=decision.matched_todo_id,
                     decision=decision.decision,
                     confidence=decision.confidence,
+                    # Persist the verifiable evidence refs so the reconcile-phase
+                    # gate can re-check them and keep the decision `complete`.
+                    evidence_refs=json.dumps(decision.evidence_refs),
                 )
                 session.add(dm)
                 await session.commit()

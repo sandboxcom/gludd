@@ -207,6 +207,11 @@ class FeatureVerifier:
         return met, f"pytest rc={rc}"
 
     def _check_role(self, name: str) -> tuple[bool, str]:
+        # Reject an empty name BEFORE globbing: on Python 3.12+ ``rglob("roles/")``
+        # matches the container ``roles`` directory itself, so a bare ``role:``
+        # ref would falsely pass. An empty role name is not verifiable evidence.
+        if not name.strip():
+            return False, "empty role name rejected"
         # roles live under collections/.../agent/roles/<name>
         roles_root = self._root / "collections"
         # Walk collections looking for any roles/<name> dir
@@ -216,6 +221,13 @@ class FeatureVerifier:
         return False, f"role dir not found: {name}"
 
     def _check_module(self, name: str) -> tuple[bool, str]:
+        # Reject an empty name BEFORE building candidate paths: ``plugins_dir / ""``
+        # is a no-op join that resolves to the existing modules container dir, so a
+        # bare ``module:`` ref would falsely pass. Also require the resolved
+        # candidate to be a FILE (not a directory) so a name that happens to match a
+        # subdirectory is never accepted as a module.
+        if not name.strip():
+            return False, "empty module name rejected"
         # gludd_* modules live under the agent collection, not a top-level
         # plugins/ dir.  Check the canonical collection path first, then fall
         # back to a top-level plugins/modules/ (some layouts) and finally an
@@ -228,16 +240,21 @@ class FeatureVerifier:
         for plugins_dir in (canonical, self._root / "plugins" / "modules"):
             for ext in ("", ".py"):
                 candidate = plugins_dir / f"{name}{ext}"
-                if candidate.exists():
+                if candidate.is_file():
                     return True, f"module found: {candidate.relative_to(self._root)}"
         # Last resort: any plugins/modules/<name>[.py] anywhere under the repo.
         for ext in ("", ".py"):
             for candidate in self._root.rglob(f"plugins/modules/{name}{ext}"):
-                if candidate.exists():
+                if candidate.is_file():
                     return True, f"module found: {candidate.relative_to(self._root)}"
         return False, f"module not found: plugins/modules/{name}[.py]"
 
     def _check_molecule(self, scenario: str) -> tuple[bool, str]:
+        # Reject an empty scenario BEFORE building the path: ``.../playbooks / ""``
+        # resolves to the existing playbooks container dir, so a bare ``molecule:``
+        # ref would falsely pass. An empty scenario name is not verifiable evidence.
+        if not scenario.strip():
+            return False, "empty molecule scenario rejected"
         scenario_dir = self._root / "molecule" / "playbooks" / scenario
         if scenario_dir.is_dir():
             return True, f"molecule scenario dir found: {scenario_dir.relative_to(self._root)}"

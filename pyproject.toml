@@ -49,6 +49,9 @@ dependencies = [
     "fs>=2.4.0",
     "rich>=13.0.0",
     "diskcache>=5.6.0",
+    # Cron expression parsing and next-run computation for the integrated
+    # todo scheduler (one-shot and recurring SCHEDULED todos).
+    "croniter>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -119,7 +122,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

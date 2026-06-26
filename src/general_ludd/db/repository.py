@@ -40,7 +40,12 @@ from general_ludd.schemas.todo import TodoStatus
 _DEFAULT_LIST_LIMIT = 1000
 
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
-    TodoStatus.BACKLOG: {TodoStatus.QUEUED},
+    TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.SCHEDULED, TodoStatus.CANCELLED},
+    # SCHEDULED: one-shot todos flip to QUEUED when due; cron templates stay
+    # SCHEDULED (the scheduler advances next_run_at instead of transitioning).
+    # MANUAL_HOLD allows an operator to pause a pending schedule without
+    # cancelling it. CANCELLED retires the schedule permanently.
+    TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
     TodoStatus.ACTIVE: {
         TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED,
@@ -95,6 +100,15 @@ ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset({
     "manual_hold_reason",
     "approval_policy",
     "completed_at",
+    # Scheduling fields (integrated cron / one-shot scheduling).
+    "scheduled_at",
+    "cron",
+    "schedule_timezone",
+    "next_run_at",
+    "last_run_at",
+    "run_count",
+    "max_runs",
+    "schedule_paused",
 })
 
 # Maximum UTF-8 byte length for any single string field on a TodoModel create.
@@ -271,6 +285,7 @@ class TodoRepository:
         project_id: str | None = None,
         limit: int | None = None,
         offset: int = 0,
+        schedule_paused: bool | None = None,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
@@ -280,6 +295,10 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.status == status)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        if schedule_paused is not None:
+            # DEFECT 3: filter paused rows in SQL (before LIMIT) so a capped
+            # scheduled-list page can't under-return. Mirrors list_due_scheduled.
+            stmt = stmt.where(TodoModel.schedule_paused.is_(schedule_paused))
         if offset:
             stmt = stmt.offset(offset)
         if limit is not None:
@@ -295,6 +314,45 @@ class TodoRepository:
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        if limit is not None:
+            stmt = stmt.limit(limit)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_due_scheduled(
+        self,
+        now: datetime,
+        project_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[TodoModel]:
+        """Return SCHEDULED todos whose fire time has arrived.
+
+        Matches rows where:
+          - status == 'scheduled'
+          - schedule_paused is False
+          - COALESCE(next_run_at, scheduled_at) <= now
+
+        Ordered earliest-due-first so the scheduler processes them in
+        chronological order.  ``project_id`` scopes to a single tenant when
+        set; omit for cross-tenant scheduling.  ``limit`` caps the batch size
+        (unbounded when None — the caller is responsible for bounding via the
+        ``_DEFAULT_LIST_LIMIT`` ceiling if needed).
+        """
+        from sqlalchemy import func
+
+        _pid = self._resolve_pid(project_id)
+        due_col = func.coalesce(TodoModel.next_run_at, TodoModel.scheduled_at)
+        stmt = (
+            select(TodoModel)
+            .where(
+                TodoModel.status == TodoStatus.SCHEDULED.value,
+                TodoModel.schedule_paused.is_(False),
+                due_col <= now,
+            )
+            .order_by(due_col)
+        )
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
         if limit is not None:

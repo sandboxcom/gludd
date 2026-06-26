@@ -293,17 +293,29 @@ class TestEventLoop:
         ), PHASE_ORDER
 
     @pytest.mark.asyncio
-    async def test_event_loop_reconcile_decision_complete(self):
-        loop, mocks = _make_loop()
+    async def test_event_loop_reconcile_decision_complete(self, tmp_path):
+        import json as _json
+
+        # Create a real artifact file so the evidence gate can verify it.
+        artifact = tmp_path / "proof.txt"
+        artifact.write_text("verified")
+
+        loop, mocks = _make_loop(
+            config={"tick_interval": 1.0, "repo_root": str(tmp_path)}
+        )
         todo_model = MagicMock()
         todo_model.todo_id = "TODO-001"
         todo_model.status = "reviewing_return"
         todo_model.version = 1
+        todo_model.project_id = None
         decision_row = MagicMock()
         decision_row.return_id = "RET-001"
         decision_row.matched_todo_id = "TODO-001"
         decision_row.decision = "complete"
         decision_row.confidence = 0.95
+        decision_row.project_id = None
+        decision_row.evidence_refs = _json.dumps(["artifact:proof.txt"])
+        decision_row.audit_notes = "[]"
         result_mock = MagicMock()
         result_mock.scalars().all.return_value = [decision_row]
         mocks["session"].execute.return_value = result_mock
@@ -345,7 +357,8 @@ class TestEventLoop:
         assert "phases_completed" in result
         assert "tick_duration_ms" in result
         assert isinstance(result["tick_duration_ms"], float)
-        assert result["phases_completed"] == 11
+        # 12 phases: the original 11 + run_scheduler (cron/one-shot promotion).
+        assert result["phases_completed"] == 12
 
     @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):
@@ -689,11 +702,17 @@ class TestLedgerBounds:
         assert len(loop._applied_decisions) > cap, "pre-condition: ledger must be overfull"
 
         # Build a fresh decision row not already in the set.
+        # evidence_refs="[]" (empty JSON list): verify_completion downgrades to
+        # needs_more_work, but the decision is still processed and _ledger_add fires
+        # so the overfull ledger gets pruned — which is what this test verifies.
         decision_row = MagicMock()
         decision_row.id = 99999
         decision_row.matched_todo_id = "TODO-PRUNE-1"
         decision_row.decision = "complete"
         decision_row.return_id = "RET-PRUNE-1"
+        decision_row.project_id = None
+        decision_row.evidence_refs = "[]"
+        decision_row.audit_notes = "[]"
 
         result_mock = MagicMock()
         result_mock.scalars.return_value.all.return_value = [decision_row]
@@ -1015,3 +1034,58 @@ class TestHttpDispatchSkillBody:
         call_args = mocks["http_client"].post.call_args
         payload = call_args[1]["json"]
         assert payload["skill_body"] is None
+
+
+class TestResolveRepoRoot:
+    """Tests for EventLoop._resolve_repo_root — the per-project repo_root resolver
+    that feeds verify_completion so the evidence gate VERIFIES instead of always-blocking."""
+
+    def test_no_workspace_no_config_returns_none(self) -> None:
+        loop = EventLoop(config={})
+        assert loop._resolve_repo_root(None) is None
+        assert loop._resolve_repo_root("proj-x") is None
+
+    def test_config_repo_root_fallback(self, tmp_path) -> None:
+        loop = EventLoop(config={"repo_root": str(tmp_path)})
+        result = loop._resolve_repo_root(None)
+        assert result == str(tmp_path)
+
+    def test_config_repo_root_used_when_no_workspace_match(self, tmp_path) -> None:
+        loop = EventLoop(config={"repo_root": str(tmp_path)})
+        result = loop._resolve_repo_root("proj-unknown")
+        assert result == str(tmp_path)
+
+    def test_workspace_repo_dir_used_when_exists(self, tmp_path) -> None:
+        ws = MagicMock()
+        ws.repo_dir = tmp_path / "repo"
+        (tmp_path / "repo").mkdir()
+
+        loop = EventLoop(
+            config={"repo_root": str(tmp_path / "fallback")},
+            project_workspace={"proj-a": ws},
+        )
+        result = loop._resolve_repo_root("proj-a")
+        assert result == str(tmp_path / "repo")
+
+    def test_workspace_repo_dir_not_dir_falls_back_to_config(self, tmp_path) -> None:
+        ws = MagicMock()
+        ws.repo_dir = tmp_path / "repo_nonexistent"  # does not exist
+
+        loop = EventLoop(
+            config={"repo_root": str(tmp_path)},
+            project_workspace={"proj-a": ws},
+        )
+        result = loop._resolve_repo_root("proj-a")
+        assert result == str(tmp_path)
+
+    def test_wrong_project_id_falls_back_to_config(self, tmp_path) -> None:
+        ws = MagicMock()
+        ws.repo_dir = tmp_path / "repo"
+        (tmp_path / "repo").mkdir()
+
+        loop = EventLoop(
+            config={"repo_root": str(tmp_path / "cfg_root")},
+            project_workspace={"proj-a": ws},
+        )
+        result = loop._resolve_repo_root("proj-b")  # different project
+        assert result == str(tmp_path / "cfg_root")

@@ -40,3 +40,25 @@ Respond with a **single JSON object** matching the `TaskDecision` schema:
   "policy_flags": ["string"]
 }
 ```
+
+## Evidence Reference Grammar (REQUIRED for `complete` decisions)
+
+When `decision` is `"complete"`, `evidence_refs` **MUST** contain at least one
+machine-verifiable reference using one of the prefix forms below. The harness
+runs an automated evidence gate — **any ref that does not match a recognised
+prefix is treated as unverifiable and the decision is downgraded to
+`needs_more_work`**. Use only the forms below; free-text strings are rejected.
+
+| Prefix | What it checks | Example |
+|--------|---------------|---------|
+| `test:<node-id>` | pytest node passes (exit code 0) | `test:tests/unit/test_foo.py::MyClass::test_method` |
+| `file:<path>::<symbol>` | file exists AND symbol appears in source | `file:src/general_ludd/review/reviewer.py::ReturnReviewer` |
+| `commit:<sha>` | git object exists in the repo (4–64 hex chars) | `commit:abc123def456` |
+| `artifact:<rel-path>` | file exists under the repo root | `artifact:docs/audit/REPORT.md` |
+| `role:<name>` | Ansible role directory present | `role:general_ludd.agent` |
+| `module:<name>` | Ansible collection module present | `module:gludd_facts` |
+| `molecule:<scenario>` | Molecule scenario directory present | `molecule:default` |
+
+Include one or more of these in `evidence_refs`. Multiple refs must ALL pass for
+the decision to be accepted as `complete`. Omitting `evidence_refs` or using
+unprefixed strings forces a `needs_more_work` downgrade.

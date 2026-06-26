@@ -47,3 +47,9 @@ The following todos may match this return:
 Based on the information above, produce a single `TaskDecision` JSON object.
 Choose the most appropriate decision type. Be honest about confidence — low
 confidence should trigger validation work.
+
+If you choose `complete`, you **MUST** populate `evidence_refs` using the
+machine-verifiable prefix grammar from the base context above (`test:`,
+`file:<path>::<symbol>`, `commit:`, `artifact:`, `role:`, `module:`,
+`molecule:`). Unprefixed / free-text refs are rejected by the evidence gate and
+force a `needs_more_work` downgrade.

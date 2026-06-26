@@ -6,24 +6,6 @@ TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
 
-# TEMP discovery helper (osquery build task) — removed before commit.
-.PHONY: discover-osq
-discover-osq:
-	@echo "=== src skills ===" ; ls src/general_ludd/skills 2>/dev/null
-	@echo "=== config skills ===" ; ls config/skills 2>/dev/null
-	@echo "=== molecule dirs ===" ; find collections -type d -name molecule -not -path '*/.claude/*' 2>/dev/null
-	@echo "=== modules dir ===" ; ls collections/ansible_collections/general_ludd/agent/plugins/modules 2>/dev/null
-	@echo "=== binaries router ===" ; grep -rln 'filestore/binaries\|admin/filestore\|BinaryBootstrapper' src/general_ludd/routers src/general_ludd/daemon.py 2>/dev/null
-	@echo "=== bootstrap/filestore tests ===" ; find tests -name '*bootstrap*' -o -name '*filestore*' 2>/dev/null
-	@echo "=== facts router tests ===" ; find tests -name '*facts*' -not -path '*/.claude/*' 2>/dev/null
-	@echo "=== skill .md files (non-worktree) ===" ; find . -name '*.md' -path '*skills*' -not -path '*/.claude/*' -not -path '*/.venv/*' 2>/dev/null
-	@echo "=== skill search dirs in code ===" ; grep -rn 'discover_skills\|skills_dir\|SKILLS_DIR\|skills_path' src/general_ludd --include='*.py' -l 2>/dev/null
-	@echo "=== registry ===" ; grep -rn 'discover_skills' src/general_ludd --include='*.py' 2>/dev/null
-	@echo "=== molecule anywhere ===" ; find collections -path '*molecule*' -not -path '*/.claude/*' 2>/dev/null
-	@echo "=== subprocess in modules ===" ; grep -rln 'subprocess\|run_command' collections/ansible_collections/general_ludd/agent/plugins/modules 2>/dev/null
-	@echo "=== filestore root path resolution ===" ; grep -rn 'root_path\|GLUDD_FILESTORE\|filestore_root' src/general_ludd/filestore/store.py 2>/dev/null
-	@echo "=== gludd_skill module ===" ; cat collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_skill.py 2>/dev/null
-
 PYTHON := python3
 UV := uv
 export VIRTUAL_ENV := $(CURDIR)/.venv
@@ -116,6 +98,7 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         ci-poll ci-jobs ci-annotations test-no-wait-hook \
         verify-remote ci-verdict ci-verdict-fast ci-verdict-loop \
         git-push-branch git-push-branch-nv test-model-ratio-hook test-liveness-workflow gh-pr-ensure \
+        _push-green-guard release-branch-new release-promote test-release-branch-guard \
         gh-run-list gh-run-cancel ci-rerun gh-run-view gh-run-failed-log \
         commit-no-verify \
         git-stash-rebase-pop \
@@ -125,7 +108,7 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         git-cherry-pick-commit git-amend-msg \
         test-other-shard \
         alembic-check liveness-debug gate-lowmem-background pygrep \
-        mcp-gen mcp-docs-check
+        mcp-gen mcp-docs-check test-no-false-completion
 
 liveness-debug:
 	@$(UV) run python3 scripts/liveness_debug.py
@@ -142,6 +125,11 @@ mcp-gen:
 
 mcp-docs-check:
 	@$(UV) run python3 scripts/mcp_docs_check.py
+
+# Proof test for the no-false-completion Stop hook: asserts it BLOCKS an
+# unverified "done/fixed/shipped/✅" claim and ALLOWS evidenced/hedged/no-claim turns.
+test-no-false-completion:
+	@$(PYTHON) scripts/test_no_false_completion_hook.py
 
 # Lint + typecheck ONLY the MCP generator scripts (used during dev of phase 1).
 mcp-lint:
@@ -3229,6 +3217,7 @@ ci-verdict-loop:
 
 git-push-branch:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch TARGET=<branch>"; exit 1; }
+	@$(MAKE) --no-print-directory _push-green-guard TARGET="$(TARGET)"
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom"
 	@echo "Run: make verify-remote BRANCH=$(TARGET) SHA=$$(git rev-parse HEAD)"
@@ -3239,9 +3228,116 @@ git-push-branch:
 # Usage: make git-push-branch-nv TARGET=<branch>
 git-push-branch-nv:
 	@[ -n "$(TARGET)" ] || { echo "Usage: make git-push-branch-nv TARGET=<branch>"; exit 1; }
+	@$(MAKE) --no-print-directory _push-green-guard TARGET="$(TARGET)"
 	@GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' git push --no-verify -u sandboxcom "$(TARGET)"
 	@echo "Pushed branch $(TARGET) to sandboxcom (no-verify)"
 	@echo "Run: make verify-remote BRANCH=$(TARGET) SHA=$$(git rev-parse HEAD)"
+
+# ---------------------------------------------------------------------------
+# _push-green-guard: internal guard called by git-push-branch / git-push-branch-nv.
+#
+# Policy: a CI-green release branch is IMMUTABLE — no new commits may land on it.
+# If the remote tip of TARGET is CI-GREEN and HEAD adds commits beyond it, the push
+# is BLOCKED with a clear message directing to `make release-branch-new`.
+#
+# Exit 0 = push allowed (remote not green, branch new, or no new commits).
+# Exit 1 = push BLOCKED (green remote + HEAD adds commits).
+# Exit 2 = inconclusive (gh/git unavailable) — fails OPEN.
+#
+# Override env vars (for testing):
+#   GLUDD_GUARD_REMOTE_SHA_OVERRIDE, GLUDD_GUARD_CI_VERDICT_OVERRIDE,
+#   GLUDD_GUARD_HEAD_SHA_OVERRIDE, GLUDD_GUARD_AHEAD_OVERRIDE
+# ---------------------------------------------------------------------------
+_push-green-guard:
+	@[ -n "$(TARGET)" ] || { echo "Usage: make _push-green-guard TARGET=<branch>"; exit 1; }
+	@$(PYTHON) scripts/check_green_branch_guard.py --branch "$(TARGET)"
+
+# ---------------------------------------------------------------------------
+# release-branch-new: cut a fresh release branch from a verified-green base.
+#
+# Verifies CI is green for BASE (default: master), then creates a new local
+# branch NAME pointing at that base. The branch is NOT pushed — push it with
+# `make git-push-branch TARGET=<NAME>` once commits are ready.
+#
+# Usage: make release-branch-new NAME=release/v0.2.0 [BASE=master]
+# ---------------------------------------------------------------------------
+release-branch-new:
+	@[ -n "$(NAME)" ] || { echo "Usage: make release-branch-new NAME=release/<version> [BASE=master]"; exit 1; }
+	@BASE_REF="$${BASE:-master}"; \
+	echo "[release-branch-new] checking CI status of base $$BASE_REF ..."; \
+	BASE_SHA=$$(git rev-parse "$$BASE_REF" 2>/dev/null) || { echo "ERROR: base ref '$$BASE_REF' not found"; exit 1; }; \
+	$(UV) run python scripts/require_ci_green.py "$$BASE_SHA" || { \
+		echo ""; \
+		echo "ABORT: base $$BASE_REF ($$BASE_SHA) is not CI-GREEN."; \
+		echo "  A release branch must be cut from a green base."; \
+		echo "  Wait for CI to pass on $$BASE_REF, then retry."; \
+		exit 1; \
+	}; \
+	git checkout -b "$(NAME)" "$$BASE_REF" && \
+	echo "[release-branch-new] Branch '$(NAME)' created from $$BASE_REF ($$BASE_SHA)." && \
+	echo "  Next: add commits, push with: make git-push-branch TARGET=$(NAME)"
+
+# ---------------------------------------------------------------------------
+# release-promote: promote a CI-green release branch to master as an RC.
+#
+# Atomically:
+#   1. Verify CI GREEN for the tip of BRANCH (default: current branch).
+#   2. Verify remote tip of BRANCH matches local (confirms the green push landed).
+#   3. Create annotated tag TAG at BRANCH tip and push it to sandboxcom.
+#   4. Fast-forward-only merge BRANCH into master and push master.
+#   5. Verify master remote tip matches the promoted SHA.
+#
+# All steps are fail-closed: any failure aborts before the next destructive action.
+# The tag is pushed BEFORE the master ff-merge so the tagged commit always exists
+# in the remote history even if the master push fails.
+#
+# Usage: make release-promote TAG=v0.2.0 [BRANCH=<current-branch>] [MSG='...']
+# ---------------------------------------------------------------------------
+release-promote:
+	@[ -n "$(TAG)" ] || { echo "Usage: make release-promote TAG=<tag> [BRANCH=<branch>] [MSG='...']"; exit 1; }
+	@PROMO_BRANCH="$${BRANCH:-$$(git rev-parse --abbrev-ref HEAD)}"; \
+	PROMO_SHA=$$(git rev-parse "$$PROMO_BRANCH" 2>/dev/null) || { \
+		echo "ERROR: branch '$$PROMO_BRANCH' not found"; exit 1; \
+	}; \
+	echo "[release-promote] branch=$$PROMO_BRANCH  tip=$$PROMO_SHA  tag=$(TAG)"; \
+	echo "[release-promote] 1/5 — require CI GREEN for $$PROMO_BRANCH tip $$PROMO_SHA ..."; \
+	$(UV) run python scripts/require_ci_green.py "$$PROMO_SHA" || { \
+		echo ""; \
+		echo "ABORT: CI is not GREEN for $$PROMO_BRANCH@$$PROMO_SHA."; \
+		echo "  Fix-forward, push, wait for green CI, then retry release-promote."; \
+		exit 1; \
+	}; \
+	echo "[release-promote] 2/5 — verify remote tip of $$PROMO_BRANCH matches $$PROMO_SHA ..."; \
+	$(MAKE) --no-print-directory verify-remote BRANCH="$$PROMO_BRANCH" SHA="$$PROMO_SHA" || { \
+		echo "ABORT: remote tip of $$PROMO_BRANCH does not match local $$PROMO_SHA."; \
+		echo "  Push first: make git-push-branch TARGET=$$PROMO_BRANCH"; \
+		exit 1; \
+	}; \
+	echo "[release-promote] 3/5 — tag $(TAG) at $$PROMO_SHA and push ..."; \
+	git tag -a "$(TAG)" "$$PROMO_SHA" -m "$(if $(MSG),$(MSG),$(TAG))" || { \
+		echo "ABORT: tag failed (already exists? make git-tag-rm TAG=$(TAG) first)"; exit 1; \
+	}; \
+	GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' \
+		git push sandboxcom "$(TAG)"; \
+	echo "[release-promote] 4/5 — ff-merge $$PROMO_BRANCH into master and push ..."; \
+	git checkout master && git merge --ff-only "$$PROMO_SHA" || { \
+		echo "ABORT: ff-only merge of $$PROMO_SHA into master failed."; \
+		echo "  master has diverged from $$PROMO_BRANCH; resolve, then retry."; \
+		exit 1; \
+	}; \
+	GIT_SSH_COMMAND='ssh -i sandboxcom_github_rsa -o StrictHostKeyChecking=accept-new' \
+		git push -u sandboxcom master; \
+	echo "[release-promote] 5/5 — verify master remote tip matches $$PROMO_SHA ..."; \
+	$(MAKE) --no-print-directory verify-remote BRANCH=master SHA="$$PROMO_SHA"; \
+	echo ""; \
+	echo "[release-promote] COMPLETE: $(TAG) pushed, master ff-advanced to $$PROMO_SHA."
+
+# Test the release-branch push guard (scripts/check_green_branch_guard.py).
+# Uses GLUDD_GUARD_*_OVERRIDE env vars to mock git/gh calls.
+# Cases: GREEN+ahead=BLOCKED, RED+ahead=ALLOWED, new-branch=ALLOWED,
+#        GREEN+same=ALLOWED, PENDING+ahead=ALLOWED, missing-arg=error.
+test-release-branch-guard:
+	@$(PYTHON) scripts/test_release_branch_guard.py
 
 # Idempotent PR opener: check if a PR for fix/self-update-sec already exists;
 # if none, create one targeting master. Reports URL either way.

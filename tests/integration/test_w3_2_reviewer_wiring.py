@@ -68,12 +68,21 @@ async def _seed_return(session, return_id: str, todo_id: str) -> None:
 
 
 class TestReviewerWiring:
-    async def test_success_decision_applied_to_todo(self, session_factory):
+    async def test_success_decision_applied_to_todo(self, session_factory, tmp_path):
         factory = session_factory
         async with factory() as session:
             await _seed_todo_in_review(session, "TODO-REV-OK")
             await _seed_return(session, "RET-OK", "TODO-REV-OK")
             await session.commit()
+
+        # Layer-2 evidence gate: a `complete` decision must carry a verifiable
+        # evidence ref AND the loop must resolve a real repo_root, or the gate
+        # (correctly) downgrades it to needs_more_work. Configure a real
+        # repo_root and a satisfiable `artifact:` ref so this exercises the gate
+        # VERIFYING the decision end-to-end through tick() — not the always-block
+        # fail-safe path.
+        artifact = tmp_path / "diff.patch"
+        artifact.write_text("--- a\n+++ b\n")
 
         reviewer = MagicMock()
         reviewer.review_return.return_value = TaskDecision(
@@ -81,10 +90,14 @@ class TestReviewerWiring:
             matched_todo_id="TODO-REV-OK",
             decision="complete",
             confidence=0.9,
-            evidence_refs=["artifact://diff"],
+            evidence_refs=["artifact:diff.patch"],
         )
 
-        loop = EventLoop(session=factory, reviewer=reviewer)
+        loop = EventLoop(
+            session=factory,
+            reviewer=reviewer,
+            config={"repo_root": str(tmp_path)},
+        )
         await loop.tick()
 
         async with factory() as session:
@@ -93,6 +106,42 @@ class TestReviewerWiring:
             assert todo is not None
             assert todo.status == TodoStatus.COMPLETE.value
         reviewer.review_return.assert_called()
+
+    async def test_complete_without_verifiable_evidence_is_downgraded(
+        self, session_factory, tmp_path
+    ):
+        """The gate must DOWNGRADE a `complete` decision whose evidence ref does
+        not verify (even with a resolved repo_root), proving the gate is not a
+        rubber stamp — the complement of the happy-path test above."""
+        factory = session_factory
+        async with factory() as session:
+            await _seed_todo_in_review(session, "TODO-REV-NOEV")
+            await _seed_return(session, "RET-NOEV", "TODO-REV-NOEV")
+            await session.commit()
+
+        reviewer = MagicMock()
+        reviewer.review_return.return_value = TaskDecision(
+            return_id="RET-NOEV",
+            matched_todo_id="TODO-REV-NOEV",
+            decision="complete",
+            confidence=0.9,
+            # Points at a file that does not exist under repo_root → unverifiable.
+            evidence_refs=["artifact:nonexistent.patch"],
+        )
+
+        loop = EventLoop(
+            session=factory,
+            reviewer=reviewer,
+            config={"repo_root": str(tmp_path)},
+        )
+        await loop.tick()
+
+        async with factory() as session:
+            repo = TodoRepository(session)
+            todo = await repo.get_by_id("TODO-REV-NOEV")
+            assert todo is not None
+            assert todo.status != TodoStatus.COMPLETE.value
+            assert todo.status == TodoStatus.NEEDS_MORE_WORK.value
 
     async def test_review_failure_does_not_silently_complete(self, session_factory):
         factory = session_factory

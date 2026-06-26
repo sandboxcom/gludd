@@ -21,6 +21,34 @@ A task may be called complete ONLY when:
 
 NOTE: `make test-failures` previously masked collection ERRORs by grepping only `^FAILED`. If any gate target output disagrees with `make test`, the FULL `make test` output is the truth, and fixing the gate target is your first task.
 
+## CRITICAL: "Done" Claims Require Observable Verification Evidence
+
+A feature, fix, commit, push, or release is "done" ONLY when the SAME message pastes
+the MEASUREMENT that makes it observable. NEVER write done / landed / shipped /
+deployed / released / resolved / fixed / working / complete / successful / ✅ unless
+it is accompanied by a cited, machine-produced measurement. "I wrote the
+code/workflow" is NOT done — authorship is not verification.
+
+| Scope | Required measurement |
+|---|---|
+| Unit fix / refactor | Named passing test + `make test TESTFILE=...` pass count |
+| Local gate | `make gate` (lint 0, typecheck ≤ baseline, collect 0, tests pass) + `.gate-status` PASS |
+| Committed | Commit hash from `make git-log` + the gate evidence above |
+| Pushed | `make verify-remote BRANCH=<b> SHA=<sha>` → `VERIFIED <branch>@<sha>` |
+| CI-green | `make ci-verdict BRANCH=<b>` → `conclusion: success` + headSha == branch tip |
+| Shipped / released | `make verify-release-artifact TAG=<t>` PASS + `gh release view` showing isDraft:false, assets ≥ 1, download URL(s) |
+
+An unverified "done" is indistinguishable from a false claim — this project's history
+(false alpha.3 ship, 12 confirmed-inert features, the reviewer silently failing, the
+tool-call loop dead in prod, and a release pipeline reported "✅ Landed" while it was
+uncommitted/unpushed/never-run) proves it. A cited-but-STALE measurement (CI headSha
+!= branch tip; `.gate-status` older than the last edit) is ALSO a false claim.
+
+ENFORCED IN CODE: `.claude/hooks/no_false_completion_stop.sh` (Stop hook) blocks a turn
+that ends on a completion claim carrying no evidence token and no honest hedge
+(`GLUDD_FALSE_DONE_ENFORCE=1`; proof: `make test-no-false-completion`). Mirrors
+Mechanical Contract rule 3 and "A Release is an Artifact, Not a Tag".
+
 ## No Unseen Events (observability invariant)
 
 **"If an event happens and no one can see it, it is not an event."** This was a
@@ -378,6 +406,53 @@ impossible to skip.
 - `scripts/check_readme_status_current.py` — enforcing script (exits non-zero + clear message)
 - `make check-readme-status` — callable target
 - `make release-cut` — the only sanctioned release command; gate is step 1/4
+- This AGENTS.md section — proactive instruction
+
+## CRITICAL: Release Branch Lifecycle — Green Branches Are Immutable
+
+**Once a release branch's remote tip is CI-GREEN, no new commits may land on it.**
+Work that cannot be expressed as a tag continues on a NEW branch.
+
+### Rules (each is machine-enforced)
+
+1. **`make release-branch-new NAME=release/<version>`** — the ONLY sanctioned way to
+   start a release branch.  Verifies that the base (default: `master`) is CI-GREEN
+   before branching, so a release can never start from a red commit.
+
+2. **Green = frozen.** Once the remote tip of a release branch has a CI-GREEN verdict,
+   `make git-push-branch` and `make git-push-branch-nv` both REFUSE pushes that add
+   new commits (`scripts/check_green_branch_guard.py` — exit 0 = allowed, exit 1 = blocked,
+   exit 2 = inconclusive/fail-open).  Enforced in the Makefile via `_push-green-guard`.
+
+3. **Fix-forward on the branch, not around it.** If CI goes RED on a release branch
+   (a regression discovered after the first green run), commit the fix directly on
+   THAT branch, push, wait for green CI, then proceed.  Do NOT create a parallel
+   branch to dodge the guard — the guard only fires when the remote tip is GREEN.
+
+4. **`make release-promote TAG=<tag>`** — the ONLY sanctioned way to ship a release
+   branch to master.  Steps (each fail-closed): require CI GREEN for the branch tip →
+   verify remote tip matches local → annotated tag + push tag → ff-only merge into
+   master + push → verify master remote tip matches the promoted SHA.  The tag is
+   pushed BEFORE the master ff-merge so the tagged commit always exists remotely.
+
+5. **`make release-recut TAG=<tag>`** — re-trigger a CI release job on an existing tag
+   (delete + re-push).  Use when the Build-and-Release job itself failed (e.g. an
+   artifact-upload flake) but the commit is known-good.
+
+### Forbidden patterns
+
+| Pattern | Why forbidden |
+|---|---|
+| Push new commits onto a green release branch | Violates immutability; guard blocks it |
+| `git push --force` past the guard | Bypasses `_push-green-guard`; treat as a guardrail violation |
+| Cutting a release branch from a non-green base | `release-branch-new` aborts if base is not CI-GREEN |
+
+### Enforcement
+
+- `scripts/check_green_branch_guard.py` — guard script (exit 0/1/2)
+- `make _push-green-guard TARGET=<branch>` — internal guard invoked by `git-push-branch*`
+- `make release-branch-new` / `make release-promote` — green-gated branch cut + promotion
+- `make test-release-branch-guard` — behavioral test (6 cases)
 - This AGENTS.md section — proactive instruction
 
 ## CRITICAL: Agent At-Rest / Re-Dispatch Policy

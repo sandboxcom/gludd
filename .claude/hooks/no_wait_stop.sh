@@ -127,6 +127,17 @@ patterns = [
     r"\bhave not taken\b", r"\boutward action i have not\b",
     r"\bcaptured (?:for|as)\b.*\bfollow-?up\b", r"\bfor a future pr\b",
     r"\bto get (?:a )?(?:ci|green|verdict|coverage)\b.*\b(?:requires?|need|would|open|push)\b",
+    # Added 2026-06-25 (round 3): FUTURE-TENSE SELF-DEFERRAL. Ending a turn by
+    # PROMISING the next action ("Next I'll X", "I'll X once/after/as the agents
+    # or drafts return/finish", "as the drafts return") hands the work to a future
+    # turn -- that is parking even though no question is asked and no permission is
+    # sought. This is the EXACT phrasing ("Next I'll fix ... as the drafts return")
+    # that slipped every pattern above this session. The next action is already in
+    # context; describing it instead of executing it IS the recurring stop-bug.
+    r"\bnext,?\s+i['’]?ll\b",
+    r"\bi['’]?ll\b[^.?!]{0,60}\b(?:once|after|when|as soon as|as)\b[^.?!]{0,60}\b(?:returns?|returning|finish(?:es|ed)?|complete[sd]?|lands?|come back|are back|are done|is done|ready)\b",
+    r"\bas (?:the |they )?(?:drafts?|agents?|results?|tasks?)\b[^.?!]{0,30}\b(?:returns?|come back|land|finish|are (?:back|done|ready))\b",
+    r"\bonce (?:the |they )?(?:drafts?|agents?|results?|tasks?)\b[^.?!]{0,30}\b(?:returns?|land|come back|finish|are (?:back|done|ready))\b",
 ]
 # Constraint-as-stop self-heal patterns (2026-06-23). Checked separately so the
 # block reason can carry the workaround directive, not just the generic deferral
@@ -176,7 +187,14 @@ fi
 if [ "$verdict_type" = "BLOCK_CONSTRAINT" ]; then
   reason="CONSTRAINT DETECTED: your final message frames a constraint (restart, wait, can't-be-done, limitation, no-way) as a terminal answer. Policy (AGENTS.md 'Constraints Are To Engineer Around'): a constraint is a design prompt, NEVER a dead end. Engineer a workaround NOW or dispatch a research task to find one. Do NOT park this on the user. Do NOT instruct the user to restart / wait / reconfigure. If no workaround is obvious, DISPATCH a research task (worktree agent) -- that is not a stopping point."
 else
-  reason="STOP BLOCKED (no-wait): your final message DEFERS to the user / waits for go-ahead / offers to proceed 'if they want' instead of just doing it. Policy: NEVER wait on the user. Take the default/recommended action NOW, state the assumption in one line, and execute it. The work is reversible (branches/RC, not master) -- proceed. Only a genuinely IRREVERSIBLE+destructive action needs consent, raised via AskUserQuestion, not a prose sign-off."
+  reason="STOP BLOCKED (no-wait): your final message DEFERS to the user / waits for go-ahead / DESCRIBES-the-next-action / promises future work ('Next I'll ...', 'I'll X once the drafts return') instead of EXECUTING it. Policy: NEVER wait on the user and NEVER hand the next step to a future turn. The next action is already in your context -- take it NOW with a tool call, state the assumption in one line. Work on branches/RC is reversible -- proceed. Only a genuinely IRREVERSIBLE+destructive action needs consent, via AskUserQuestion, not a prose sign-off."
+  # SELF-HEAL ESCALATION (2026-06-25): a static scold let the same park recur turn
+  # after turn. Escalate with the consecutive-block count so a repeated park is
+  # treated as the recurring STOP-BUG it is, not a one-off -- and the directive
+  # gets sharper each time instead of identical.
+  if [ "$n" -ge 2 ]; then
+    reason="${reason} ESCALATION: this is park #${n} in a row on this thread. Parking is the recurring stop-bug the operator has repeatedly flagged -- do NOT re-emit another status report or plan. Pick the SINGLE highest-priority pending action from your context and execute it with a tool call in THIS reply. If you genuinely have a finished, evidenced result, state it in one line with the pasted measurement and nothing forward-looking."
+  fi
 fi
 python3 -c 'import json,sys; print(json.dumps({"decision":"block","reason":sys.argv[1]}))' "$reason" 2>/dev/null && exit 0
 exit 0

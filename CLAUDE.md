@@ -40,6 +40,7 @@ File reads/edits use the Read/Edit/Write tools, not shell.
 
 - `make test-failures` historically masked collection ERRORs ("No failures" on a broken suite). Trust full `make test` output until GLM_REMEDIATION_GUIDE.md Phase R1.1 lands.
 - Do NOT trust `SESSION.md` status claims; verify with gates. See `BUGS.md` for the incident history.
+- **Never write done/shipped/fixed/working/landed/✅ without pasting the measurement** (test count, CI run id, commit hash, `gh release view` artifact). Enforced by `.claude/hooks/no_false_completion_stop.sh`; see `AGENTS.md § "'Done' Claims Require Observable Verification Evidence"`.
 - Run `make test-count` before any commit — collection errors mean no commit.
 
 ## Opencode plugins

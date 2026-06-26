@@ -62,6 +62,7 @@ PHASE_ORDER = [
     "dispatch_return_review_jobs",
     "evaluate_pid_controllers",
     "refill_task_buckets",
+    "run_scheduler",
     "claim_runnable_todos",
     "evaluate_rules",
     "dispatch_execute_jobs",
@@ -701,6 +702,36 @@ class EventLoop:
         )
         await self._persist_review_response(tr, resp)
 
+    def _resolve_repo_root(self, project_id: str | None) -> str | None:
+        """Resolve the repository root for a project.
+
+        Lookup priority:
+          1. Per-project workspace repo_dir — when self._project_workspace is a
+             dict of {pid: ProjectWorkspace} and the workspace's repo_dir is a
+             real directory on disk (populated by materialize_project_workspace /
+             git-clone at startup).
+          2. self.config["repo_root"] — operator-configured fallback (also used
+             as the daemon-level default set at startup for single-project use).
+          3. None — completion_verifier will fail-closed (unverifiable ≠ verified).
+
+        Does NOT fall through to os.getcwd() here; that default belongs at the
+        config-injection site (daemon.py) so the intent is explicit and not
+        silently inherited from the process cwd.
+        """
+        from pathlib import Path as _Path
+
+        workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
+        if workspaces is not None and project_id is not None:
+            ws = workspaces.get(project_id)
+            if ws is not None and hasattr(ws, "repo_dir"):
+                try:
+                    rdir = _Path(str(ws.repo_dir))
+                    if rdir.is_dir():
+                        return str(rdir)
+                except Exception:
+                    pass
+        return self.config.get("repo_root") if isinstance(self.config, dict) else None
+
     async def _review_in_process(self, tr: Any) -> None:
         from general_ludd.review.decision_applier import apply_decision
 
@@ -737,7 +768,13 @@ class EventLoop:
         assert self._todo_repo is not None
         assert self._active_session is not None
         try:
-            await apply_decision(decision, self._todo_repo, self._active_session)
+            _review_project_id = getattr(tr, "project_id", None) or None
+            await apply_decision(
+                decision,
+                self._todo_repo,
+                self._active_session,
+                repo_root=self._resolve_repo_root(_review_project_id),
+            )
             await self._active_session.flush()
         except Exception as exc:
             logger.error(
@@ -874,6 +911,24 @@ class EventLoop:
             self._tick_metrics["leases_reclaimed"] = reclaimed
         if self._todo_repo is not None and self._active_session is not None:
             await self._reap_stuck_todos()
+
+    async def _phase_run_scheduler(self) -> None:
+        """Promote due SCHEDULED todos (cron + one-shot) on each tick.
+
+        DEFECT 0 fix: ``TodoScheduler`` was previously defined but never invoked,
+        so SCHEDULED todos were never promoted and the cron feature was dead
+        end-to-end. This phase runs BEFORE ``claim_runnable_todos`` in
+        ``PHASE_ORDER`` so a todo promoted SCHEDULED→QUEUED (one-shot) or a freshly
+        spawned cron child clone is claimable in the same tick. Uses the
+        tick-scoped repo/session; ``tick()`` commits once after ``_run_phases``.
+        """
+        if self._todo_repo is None or self._active_session is None:
+            return
+        from general_ludd.event_loop.scheduler import TodoScheduler
+
+        promoted, spawned = await TodoScheduler(self._todo_repo).tick()
+        self._tick_metrics["scheduled_promoted"] = promoted
+        self._tick_metrics["scheduled_spawned"] = spawned
 
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
@@ -1847,6 +1902,49 @@ class EventLoop:
             new_status = self._decision_to_status(d.decision)
             if new_status is None:
                 continue
+            # Layer 2: gate COMPLETE transitions behind evidence verification.
+            if d.decision == "complete":
+                from general_ludd.review.completion_verifier import verify_completion
+                try:
+                    _ev_refs: list[str] = json.loads(getattr(d, "evidence_refs", None) or "[]")
+                    _audit_notes: list[str] = json.loads(getattr(d, "audit_notes", None) or "[]")
+                    _schema_dec = TaskDecision(
+                        return_id=getattr(d, "return_id", "") or "",
+                        matched_todo_id=d.matched_todo_id,
+                        decision=d.decision,
+                        confidence=float(getattr(d, "confidence", 0.0) or 0.0),
+                        evidence_refs=_ev_refs,
+                        audit_notes=_audit_notes,
+                    )
+                except (ValueError, TypeError) as exc:
+                    # Malformed ORM JSON / schema build for THIS row must never
+                    # abort the whole reconcile phase (the loop processes up to 50
+                    # decisions). Fail-safe: skip this one row — do NOT mark it
+                    # applied, do NOT transition it to COMPLETE on bad evidence; it
+                    # stays REVIEWING_RETURN for a later tick. Mirrors the
+                    # per-iteration resilience used elsewhere in this loop.
+                    logger.warning(
+                        "Reconcile: skipping decision %s for todo %s — could not "
+                        "parse/build evidence for gating: %s",
+                        decision_id, d.matched_todo_id, exc,
+                    )
+                    continue
+                _decision_project_id = getattr(d, "project_id", None) or getattr(todo, "project_id", None) or None
+                _repo_root = self._resolve_repo_root(_decision_project_id)
+                _verified = await asyncio.to_thread(
+                    verify_completion, _schema_dec, None, _repo_root
+                )
+                if _verified.decision != "complete":
+                    logger.warning(
+                        "Reconcile: evidence gate downgraded %s from complete to %s "
+                        "for todo %s",
+                        decision_id,
+                        _verified.decision,
+                        d.matched_todo_id,
+                    )
+                    new_status = self._decision_to_status(_verified.decision)
+                    if new_status is None:
+                        continue
             # F6: version race. We transition with the version we just read; the
             # repository performs a guarded compare-and-set on (version, status).
             # If a CONCURRENT reconcile already moved the row, the CAS affects

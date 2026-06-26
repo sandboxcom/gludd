@@ -4,6 +4,7 @@ import collections
 import logging
 import os
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -27,6 +28,21 @@ class AddTodoRequest(BaseModel):
     project_id: str | None = None
 
 
+class AddScheduledTodoRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+    description: str = Field(default="", max_length=4096)
+    queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
+    priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
+    work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
+    project_id: str | None = None
+    # One-shot: fire once at this UTC datetime.
+    scheduled_at: datetime | None = None
+    # Recurring: 5-field cron expression (e.g. "0 9 * * 1-5").
+    cron: str | None = None
+    schedule_timezone: str = "UTC"
+    max_runs: int | None = None
+
+
 class LogLevelRequest(BaseModel):
     level: str
 
@@ -48,6 +64,22 @@ def _todo_to_dict(todo: Any) -> dict[str, Any]:
         "version": todo.version,
         "created_at": str(todo.created_at) if todo.created_at else None,
     }
+
+
+def _todo_to_dict_scheduled(todo: Any) -> dict[str, Any]:
+    """Serialize a todo including all scheduling fields."""
+    base = _todo_to_dict(todo)
+    base.update({
+        "scheduled_at": str(todo.scheduled_at) if getattr(todo, "scheduled_at", None) else None,
+        "cron": getattr(todo, "cron", None),
+        "schedule_timezone": getattr(todo, "schedule_timezone", "UTC"),
+        "next_run_at": str(todo.next_run_at) if getattr(todo, "next_run_at", None) else None,
+        "last_run_at": str(todo.last_run_at) if getattr(todo, "last_run_at", None) else None,
+        "run_count": getattr(todo, "run_count", 0),
+        "max_runs": getattr(todo, "max_runs", None),
+        "schedule_paused": getattr(todo, "schedule_paused", False),
+    })
+    return base
 
 
 _PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
@@ -147,6 +179,149 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if project_id is not None:
             results = [t for t in results if t.get("project_id") == project_id]
         return results[_offset:_offset + _limit]
+
+    @app.post("/api/todos/scheduled", status_code=201)
+    async def api_create_scheduled_todo(req: AddScheduledTodoRequest) -> dict[str, Any]:
+        """Create a scheduled (one-shot or cron) todo in SCHEDULED status.
+
+        ``scheduled_at`` sets the one-shot fire time; ``cron`` makes it
+        recurring. At least one of the two must be supplied.  ``next_run_at``
+        is computed automatically from ``cron`` when provided.
+        """
+        if req.scheduled_at is None and req.cron is None:
+            raise HTTPException(
+                status_code=422,
+                detail="At least one of scheduled_at or cron must be provided",
+            )
+        if req.cron is not None and len(req.cron.split()) != 5:
+            raise HTTPException(
+                status_code=422,
+                detail="cron must be a 5-field expression (min hour dom month dow)",
+            )
+        if req.project_id is not None:
+            pm = getattr(app.state, "_project_manager", None)
+            if pm is not None:
+                active_ids = {p.project_id for p in pm.list_active()}
+                if active_ids and req.project_id not in active_ids:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Unknown project_id: {req.project_id}",
+                    )
+        # Compute initial next_run_at from the cron expression.
+        initial_next_run_at: datetime | None = None
+        if req.cron is not None:
+            try:
+                from zoneinfo import ZoneInfo
+
+                from croniter import croniter
+
+                _zone = ZoneInfo(req.schedule_timezone)
+                _start = (req.scheduled_at or datetime.now(UTC)).astimezone(_zone)
+                _it = croniter(req.cron, _start)
+                _nxt: datetime = _it.get_next(datetime)
+                if _nxt.tzinfo is None:
+                    _nxt = _nxt.replace(tzinfo=_zone)
+                initial_next_run_at = _nxt.astimezone(UTC)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid cron expression or timezone: {exc}",
+                ) from exc
+
+        factory = _get_session_factory(app)
+        todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
+        todo_data: dict[str, Any] = {
+            "todo_id": todo_id,
+            "title": req.title,
+            "description": req.description,
+            "queue": req.queue,
+            "priority": _PRIORITY_MAP.get(req.priority, 1),
+            "work_type": req.work_type,
+            "status": "scheduled",
+            "project_id": req.project_id,
+            "scheduled_at": req.scheduled_at,
+            "cron": req.cron,
+            "schedule_timezone": req.schedule_timezone,
+            "max_runs": req.max_runs,
+            "schedule_paused": False,
+            "run_count": 0,
+            "next_run_at": initial_next_run_at,
+        }
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                result = await repo.create(todo_data=todo_data)
+                await session.commit()
+                return _todo_to_dict_scheduled(result)
+        raise HTTPException(status_code=503, detail="No database available")
+
+    @app.get("/api/todos/scheduled")
+    async def api_list_scheduled_todos(
+        project_id: str | None = None,
+        include_paused: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List todos in SCHEDULED status (both one-shot and cron templates)."""
+        _limit = max(1, min(limit, 500))
+        _offset = max(0, offset)
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository(session)
+                todos = await repo.list_all(
+                    status="scheduled",
+                    project_id=project_id,
+                    limit=_limit,
+                    offset=_offset,
+                    # DEFECT 3: push paused-filtering into SQL so pagination is
+                    # correct (None = no filter, backwards-compatible default).
+                    schedule_paused=None if include_paused else False,
+                )
+                return [_todo_to_dict_scheduled(t) for t in todos]
+        return []
+
+    @app.post("/api/todos/{todo_id}/schedule/pause")
+    async def api_pause_schedule(todo_id: str) -> dict[str, Any]:
+        """Pause a SCHEDULED todo's schedule. Skips future fires until resumed."""
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(status_code=503, detail="No database available")
+        async with factory() as session:
+            repo = TodoRepository(session)
+            todo = await repo.get_by_id(todo_id)
+            if todo is None:
+                raise HTTPException(status_code=404, detail="Todo not found")
+            if todo.status != "scheduled":
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cannot pause a todo in status {todo.status!r}; must be 'scheduled'",
+                )
+            await repo.update(todo_id, {"schedule_paused": True}, expected_version=todo.version)
+            await session.commit()
+        return {"todo_id": todo_id, "schedule_paused": True, "status": "ok"}
+
+    @app.post("/api/todos/{todo_id}/schedule/resume")
+    async def api_resume_schedule(todo_id: str) -> dict[str, Any]:
+        """Resume a paused SCHEDULED todo's schedule."""
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(status_code=503, detail="No database available")
+        async with factory() as session:
+            repo = TodoRepository(session)
+            todo = await repo.get_by_id(todo_id)
+            if todo is None:
+                raise HTTPException(status_code=404, detail="Todo not found")
+            if todo.status != "scheduled":
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cannot resume a todo in status {todo.status!r}; must be 'scheduled'",
+                )
+            await repo.update(todo_id, {"schedule_paused": False}, expected_version=todo.version)
+            await session.commit()
+        return {"todo_id": todo_id, "schedule_paused": False, "status": "ok"}
 
     @app.get("/api/todos/{todo_id}")
     async def api_get_todo(todo_id: str) -> dict[str, Any]:

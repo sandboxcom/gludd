@@ -6,7 +6,8 @@
     "GLUDD_FORCE_DELEGATE_GRACE": "5",
     "GLUDD_FORCE_DELEGATE_MAXBLOCK": "4",
     "GLUDD_NO_WAIT_ENFORCE": "1",
-    "GLUDD_FLOOR_ENFORCE": "1"
+    "GLUDD_FLOOR_ENFORCE": "1",
+    "GLUDD_FALSE_DONE_ENFORCE": "1"
   },
   "hooks": {
     "SessionStart": [
@@ -151,6 +152,10 @@
           {
             "type": "command",
             "command": "bash /Users/shawnwilson/gludd/.claude/hooks/multitasking_backlog_stop.sh"
+          },
+          {
+            "type": "command",
+            "command": "bash /Users/shawnwilson/gludd/.claude/hooks/no_false_completion_stop.sh"
           }
         ]
       }

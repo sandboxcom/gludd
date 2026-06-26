@@ -779,7 +779,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 from general_ludd.db.migrations import get_alembic_config, stamp_head
                 alembic_cfg = get_alembic_config(str(engine.url))
-                stamp_head(alembic_cfg)
+                # Run the synchronous alembic stamp off the event loop so it
+                # doesn't stall every other coroutine during daemon startup.
+                await asyncio.to_thread(stamp_head, alembic_cfg)
                 logger.info("Alembic stamped head on SQLite database")
             except Exception as exc:
                 logger.warning("Alembic stamp failed: %s", exc)
@@ -1028,6 +1030,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "queues": getattr(uc, "queues", []) if uc else [],
                 "budget": getattr(uc, "budget", {}) if uc else {},
                 "self_improve": getattr(uc, "self_improve", {}) if uc else {},
+                # Daemon-level default repo_root: the process cwd at startup time
+                # is a reasonable single-project fallback so verify_completion can
+                # check commit:/artifact: refs without a resolved per-project
+                # workspace. EventLoop._resolve_repo_root() overrides this with the
+                # per-project workspace.repo_dir when available.
+                "repo_root": os.getcwd(),
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,

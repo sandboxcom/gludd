@@ -202,8 +202,42 @@ class TodoModel(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ── Scheduling / cron-style recurrence ──────────────────────────────────
+    # scheduled_at: one-shot fire time. The scheduler promotes the todo
+    # SCHEDULED→QUEUED when now >= scheduled_at (cron must be None).
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # cron: 5-field cron expression (croniter grammar). When set, this row
+    # is a TEMPLATE that stays SCHEDULED; the scheduler spawns a QUEUED
+    # child clone on each fire and advances next_run_at.
+    cron: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    schedule_timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="UTC"
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schedule_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     __table_args__ = (
         Index("ix_todos_status_queue", "status", "queue"),
+        # Supports TodoRepository.list_due_scheduled (scheduler due-todo query):
+        # the (status, schedule_paused) prefix narrows to pending schedules, then
+        # the datetime columns filter on COALESCE(next_run_at, scheduled_at).
+        # Declared here so the ORM matches migration 010 (alembic-check parity).
+        Index(
+            "ix_todos_scheduled_lookup",
+            "status",
+            "schedule_paused",
+            "next_run_at",
+            "scheduled_at",
+        ),
     )
 
     events: Mapped[list[TodoEventModel]] = relationship(
