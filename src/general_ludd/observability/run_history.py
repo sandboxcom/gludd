@@ -16,15 +16,45 @@ from typing import Any
 logger = logging.getLogger(__name__)
 
 _DEFAULT_MAX_EVENTS_PER_JOB = 10_000
+# Cap the NUMBER of distinct jobs retained. The per-job deque bounds events
+# within one job, but without this the dicts below grow one entry per job_id
+# forever — an unbounded leak in a long-running daemon. Oldest job (by first
+# sighting) is evicted from all three maps together.
+_DEFAULT_MAX_JOBS = 1_000
 
 
 class RunHistoryRecorder:
-    def __init__(self, max_events_per_job: int = _DEFAULT_MAX_EVENTS_PER_JOB) -> None:
+    def __init__(
+        self,
+        max_events_per_job: int = _DEFAULT_MAX_EVENTS_PER_JOB,
+        max_jobs: int = _DEFAULT_MAX_JOBS,
+    ) -> None:
         self.max_events_per_job = max_events_per_job
+        self.max_jobs = max_jobs
         self._timeline: dict[str, collections.deque[dict[str, Any]]] = {}
         self._artifacts: dict[str, dict[str, str]] = {}
         # Optional per-job todo_id override, set when a caller provides todo_id.
         self._job_todo: dict[str, str] = {}
+        # FIFO order of job_ids (first-seen) + a membership set, for bounded
+        # eviction once the tracked-job count exceeds max_jobs.
+        self._job_order: collections.deque[str] = collections.deque()
+        self._known_jobs: set[str] = set()
+
+    def _touch_job(self, job_id: str) -> None:
+        """Register a (possibly new) job_id and evict the oldest jobs once the
+        tracked-job count exceeds ``max_jobs``. FIFO by first sighting — a
+        re-recorded job keeps its original position. Evicting drops the job's
+        timeline, artifacts, and todo override together."""
+        if job_id in self._known_jobs:
+            return
+        self._known_jobs.add(job_id)
+        self._job_order.append(job_id)
+        while len(self._job_order) > self.max_jobs:
+            oldest = self._job_order.popleft()
+            self._known_jobs.discard(oldest)
+            self._timeline.pop(oldest, None)
+            self._artifacts.pop(oldest, None)
+            self._job_todo.pop(oldest, None)
 
     def record_event(
         self,
@@ -33,6 +63,7 @@ class RunHistoryRecorder:
         data: dict[str, Any],
         todo_id: str | None = None,
     ) -> None:
+        self._touch_job(job_id)
         if job_id not in self._timeline:
             self._timeline[job_id] = collections.deque(maxlen=self.max_events_per_job)
         if todo_id is not None:
@@ -48,6 +79,7 @@ class RunHistoryRecorder:
     def record_artifact(
         self, job_id: str, name: str, content: str,
     ) -> None:
+        self._touch_job(job_id)
         if job_id not in self._artifacts:
             self._artifacts[job_id] = {}
         self._artifacts[job_id][name] = content
