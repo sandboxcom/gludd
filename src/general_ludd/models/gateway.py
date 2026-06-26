@@ -684,10 +684,20 @@ class ModelGateway:
         # only content (tool_calls are intentionally NOT persisted), so a cached
         # tool-call turn would replay as an empty-content final answer and the
         # tool loop would silently stop dispatching. Skip caching it entirely.
+        #
+        # GW-2: NEVER cache a TRUNCATED turn. A response cut off at the token
+        # limit (finish_reason == "length") is an incomplete answer; caching it
+        # would replay the truncated text as if it were the full response on
+        # every identical future request. The marker lives in the provider's
+        # LangChain AIMessage metadata, not on ModelResponse, so read it there.
+        finish_reason = (
+            getattr(raw_response, "response_metadata", None) or {}
+        ).get("finish_reason")
         if (
             self._response_cache is not None
             and cache_key is not None
             and not response.tool_calls
+            and finish_reason != "length"
         ):
             self._response_cache.set(
                 cache_key,
