@@ -35,6 +35,24 @@ Last updated: 2026-06-26 (verification sweep + concurrency/cross-tenant audit wa
 
 **ACCURACY FIX 2026-06-26 (commits 40ea527 + 71d4faa, `9 passed` calibrate tests):** operator reported the % reading was wrong. Root cause PROVEN via new `--probe`: the API rate-limit headers (`anthropic-ratelimit-unified-*`) are NOT persisted anywhere in the transcript, so the monitor can only ever be a token-sum PROXY (cache_read is ~95% of the sum). The frozen budget constant drifted wrong. FIX: `--calibrate <pct>` (`make token-monitor-calibrate PCT=NN`) anchors `budget = measured_spend ÷ (pct/100)` into `/tmp/gludd-5h-token-budget` so the % self-corrects against a real reading; DEFAULT_BUDGET raised 200M→**316M** so it stops false-tripping. Operator re-anchors anytime with `make token-monitor-calibrate PCT=<real %>`. Live reading after calibration: honest ~90% (was over-reading 100%+). Cross-window resume cron unchanged.
 
+## A3. Cross-tenant / async-blocking apply wave (2026-06-26, committed)
+
+Backlog source: `docs/audit/CROSS_TENANT_AND_CONCURRENCY_FINDINGS_2026-06-26.md`.
+Applied in value/effort order, each with a passing regression test, committed via
+`commit-ci-gate` (CI is the gate; push HELD). Commits on
+`feature/alpha4-green-the-gate`:
+
+| Commit | Findings | Evidence |
+|--------|----------|----------|
+| `117e8aa` | XT-1 | `facts.py:125` benchmark rankings scoped; facts seam 4 passed |
+| `e748412` | TG-1, AB-1, AB-2, AB-3 | shared `_validate_project_id` (uniform 422) + to_thread offloads in daemon_wiring/skills/environment; **6** + **4** smoke + **13** env-router passed |
+| `2caeee5` | XT-2, XT-5, XT-6, XT-7, XT-8 | `FeatureRepository.scoped()` + 4 query methods; features router list/get/verify; facts `_features_facet`; embeddings events `project_id` filter. Tests: feature-repo scoping **9**, embeddings **70** (incl. 3 new XT-8 isolation), facts seam **4** |
+| `865346b` | (docs) | findings-doc statuses → FIXED + CC-1 confirmed-needs-migration analysis |
+| `1def38a` | AB-4 | `admin_daemon_stats` psutil RSS sampling offloaded via to_thread; daemon import smoke **5 passed** |
+
+**Still OPEN (verification kept stalling under sustained API overload; re-verify when it clears):**
+AB-5 (tool_loop sync `call_model` on async loop — HOT PATH, prefer an async gateway method if one exists), AB-6 (loop.py `run_gap_analysis` to_thread), AB-8 (engine.py gateway call — needs-verify), GA-1/GA-3 (git_automation CWD/routing — re-pin), **CC-1 (lease double-dispatch — CONFIRMED but needs an alembic migration: `bucket_leases` UNIQUE `(bucket_key,holder_id)`→`(bucket_key)` + any-holder SELECT + IntegrityError=lost-race)**, XT-3/XT-4 (traces — in-process only, no DB migration; SAFE-NOW router/store filter + `ExecutionTrace.project_id` field, then step-4 construction call-site threading), GW-1/GW-2 (gateway cache-key stability + truncated-response caching).
+
 ## B. Apply queue + COMMIT-READINESS MATRIX (reviewed 2026-06-26)
 
 Reviewer verdicts on each working-tree stream (gate PID 35078 holds pytest lock → targeted
