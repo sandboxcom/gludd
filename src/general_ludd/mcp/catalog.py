@@ -196,6 +196,9 @@ _FS_VER = "2026.1.26"
 _GITHUB_VER = "2026.1.26"
 _MEMORY_VER = "2026.1.26"
 _ARCHIVED_VER = "0.6.2"
+# Third-party (DeusData) structural code-intelligence server. Pinned like the
+# rest; bump deliberately after re-verifying the release on npm/PyPI.
+_CODEBASE_MEMORY_VER = "0.8.1"
 
 _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
     "filesystem": MCPCatalogEntry(
@@ -283,5 +286,20 @@ _KNOWN_SERVERS: dict[str, MCPCatalogEntry] = {
         source="official",
         command=["npx", "-y", f"@modelcontextprotocol/server-memory@{_MEMORY_VER}"],
         tags=["memory", "knowledge-graph", "official"],
+    ),
+    "codebase-memory": MCPCatalogEntry(
+        server_name="codebase-memory",
+        display_name="Codebase Memory",
+        description=(
+            "Structural code-intelligence server (DeusData codebase-memory-mcp): "
+            "indexes a repository into a persistent SQLite knowledge graph of "
+            "functions, classes, call chains and routes via tree-sitter. Gives "
+            "agents fast 'where is X / what calls Y' codebase memory. No API key "
+            "or embedding model required; storage in CBM_CACHE_DIR (stdio MCP)."
+        ),
+        source="official",
+        command=["npx", "-y", f"codebase-memory-mcp@{_CODEBASE_MEMORY_VER}"],
+        env_aliases_needed=[],
+        tags=["memory", "code-intelligence", "codebase", "tree-sitter"],
     ),
 }
