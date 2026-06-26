@@ -52,10 +52,14 @@ filter on — these are missing-filter bugs, not schema gaps.
   `project_id` argument, so it aggregates `BenchmarkResultModel` rows across all
   tenants. `BenchmarkResultModel` already has a `project_id` column (`models.py:639`),
   so the aggregation should be scoped.
-- **Apply-ready fix:** Thread `project_id` from the request down into the facet and into
-  `get_aggregate_scores(project_id=project_id)`; add `.where(BenchmarkResultModel.project_id == project_id)`
-  to the aggregation query. When `project_id` is `None`/unset, reject or scope to the
-  caller's resolved project rather than returning the global aggregate.
+- **Apply-ready fix (VERIFIED PURE ONE-LINER 2026-06-26):** at `facts.py:125` change
+  `rankings = await repo.get_aggregate_scores()` to
+  `rankings = await repo.get_aggregate_scores(project_id=project_id)`. `project_id` is
+  already in scope in `_metrics_facet` (used by sibling facets) and propagated from the
+  `/api/facts` endpoint (`:402`); `get_aggregate_scores` already accepts `project_id` and
+  the query already filters on it (`repository.py:885-886`, `:930-931`). No signature or
+  query change needed — highest value/effort item in the backlog. Optionally still decide
+  the `project_id is None` policy (global aggregate vs reject) as a follow-up.
 
 ### XT-2 — `routers/facts.py:226` — `FeatureRepository.list_all()` has no project filter — CONFIRMED
 
