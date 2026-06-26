@@ -188,6 +188,17 @@ filter on — these are missing-filter bugs, not schema gaps.
   `version` on success; if zero rows are affected, another writer won the race and the
   reclaim must be skipped. Optionally also gate on holder/lease-expiry timestamp to avoid
   reclaiming a lease that was renewed.
+- **Test anchor (refined 2026-06-26):** add tests to the EXISTING
+  `tests/security/test_eventloop_redteam.py` (reuse its `session_factory` fixture at
+  `:43-54` — `sqlite+aiosqlite:///file:redteam?mode=memory&cache=shared` shares one DB
+  across pooled connections, needed for the interleave). ⚠ the existing
+  `test_expired_lease_does_not_requeue_active_todo` (`:187-225`) passes against the BUGGY
+  code because it only asserts status→QUEUED, NOT the version bump — so the new tests MUST
+  assert `version` incremented (e.g. 2→3) and that a zombie holder holding the old version
+  hits `ConcurrencyError` on `transition(..., expected_version=old)`, plus a CAS-race test
+  (bump version in a 2nd session between reclaim's read and write → guarded UPDATE matches
+  0 rows, row stays ACTIVE). CAS pattern is consistent with `claim_runnable`/`transition`/
+  `_reap_stuck_todos`; no signature change, no migration.
 
 ### CC-2 — `repository.py:384-387` — `claim_runnable` starvation — FIXED
 
