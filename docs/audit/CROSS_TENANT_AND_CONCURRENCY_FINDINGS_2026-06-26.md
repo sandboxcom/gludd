@@ -138,7 +138,8 @@ filter on — these are missing-filter bugs, not schema gaps.
 
 ### CC-1 — `lease.py:79-86` — `reclaim_expired_leases` double-dispatch — CONFIRMED
 
-- **File:line:** `src/general_ludd/.../lease.py:79-86`
+- **File:line:** `src/general_ludd/event_loop/lease.py:79-86` (path re-pinned 2026-06-26;
+  `TodoModel.version` confirmed present at `models.py:198`, no migration needed)
 - **Problem:** `reclaim_expired_leases` transitions `ACTIVE -> QUEUED` guarded by status
   only, with no version or holder check. When a 300s lease expires mid-dispatch, the row
   is requeued while the original holder is still working it, producing double-dispatch of
