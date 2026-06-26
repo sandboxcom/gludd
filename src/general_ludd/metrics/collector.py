@@ -319,12 +319,16 @@ class MetricsCollector:
 
     def get_cost_by_project(self) -> dict[str, float]:
         project_costs: dict[str, float] = {}
+        # Hold the lock across the whole aggregation: agent.total_cost_usd
+        # iterates agent.model_usage, which record_model_call mutates under this
+        # same RLock. Summing outside the lock (snapshot of the dict only) still
+        # races the per-agent model_usage mutation → "dict changed size during
+        # iteration". RLock is re-entrant so nested locked reads are safe.
         with self._lock:
-            agents = list(self._agents.values())
-        for agent in agents:
-            if agent.project:
-                project_costs[agent.project] = (
-                    project_costs.get(agent.project, 0.0)
-                    + agent.total_cost_usd
-                )
+            for agent in self._agents.values():
+                if agent.project:
+                    project_costs[agent.project] = (
+                        project_costs.get(agent.project, 0.0)
+                        + agent.total_cost_usd
+                    )
         return project_costs
