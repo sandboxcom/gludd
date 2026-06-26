@@ -249,6 +249,76 @@ class TestAsyncWebhookNonBlocking:
 
 
 # ---------------------------------------------------------------------------
+# D-07b: Async dispatch + redaction — both concerns verified together
+# ---------------------------------------------------------------------------
+
+class TestAsyncWebhookRedactionCombined:
+    """D-07b — async offload AND credential redaction are both enforced.
+
+    When fire() is called from inside a running event loop the webhook body
+    must reach httpx.post via run_in_executor (not a direct blocking call), AND
+    any sensitive keys must have been stripped by _redact_payload before the
+    body is handed off to the thread.
+    """
+
+    def test_executor_used_and_secret_redacted_in_async_context(self):
+        """run_in_executor is used in async context AND credentials are redacted.
+
+        Strategy:
+        1. Patch asyncio.get_running_loop() to return a capturing stand-in that
+           records the callable passed to run_in_executor without executing it —
+           this proves httpx.post is NOT called directly on the event-loop thread.
+        2. Manually invoke the captured callable (with httpx.post still mocked)
+           to confirm the body seen by httpx.post has sensitive keys stripped.
+        """
+        posted_bodies: list[dict] = []
+
+        def fake_post(url, **kwargs):
+            posted_bodies.append(kwargs.get("json", {}))
+            mock_resp = MagicMock()
+            mock_resp.raise_for_status = lambda: None
+            return mock_resp
+
+        executor_callables: list = []
+
+        class CapturingLoop:
+            """Stand-in loop that records run_in_executor calls without running them."""
+
+            def run_in_executor(self, executor, fn, *args):
+                executor_callables.append(fn)
+                return None  # fire-and-forget contract; caller does not await
+
+        hs = HookSystem()
+        hs.register_webhook("secure_async_evt", "http://example.com", retry_count=1)
+
+        payload = {"api_key": "SEKRIT", "name": "ok", "type": "model_added"}  # pragma: allowlist secret
+
+        with (
+            patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post),
+            patch("asyncio.get_running_loop", return_value=CapturingLoop()),
+        ):
+            hs.fire("secure_async_evt", payload)
+
+        # Phase 1: httpx.post must NOT be called directly on the loop thread
+        assert len(executor_callables) == 1, (
+            "run_in_executor must be called exactly once in async context"
+        )
+        assert len(posted_bodies) == 0, (
+            "httpx.post must not be invoked directly while an event loop is running"
+        )
+
+        # Phase 2: execute the captured callable to verify redaction was applied
+        # before the body was handed to the thread.
+        executor_callables[0]()
+
+        assert len(posted_bodies) == 1, "httpx.post must be called inside _do_post"
+        sent_payload = posted_bodies[0].get("payload", {})
+        assert "api_key" not in sent_payload, "api_key key must be redacted before thread dispatch"
+        assert "SEKRIT" not in str(sent_payload), "secret value must not appear in forwarded body"
+        assert sent_payload.get("name") == "ok", "non-secret key must survive redaction"
+
+
+# ---------------------------------------------------------------------------
 # D-08: ModelAddedEvent-style profile payload strips credentials at registration
 # ---------------------------------------------------------------------------
 

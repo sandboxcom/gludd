@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import uuid
 from collections.abc import Callable
@@ -227,47 +226,57 @@ class HookSystem:
             )
 
     def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
-        # Fix A: strip credential keys before forwarding.
+        # Fix A: strip credential keys before forwarding.  Redaction happens
+        # here (on the calling thread) so that the redacted body is captured by
+        # the _do_post closure — no race on the original payload dict.
         body = {"event": event_name, "payload": _redact_payload(payload)}
         # Fix C: clamp retry_count so misconfigured values can't cause DoS.
         retry_count = min(max(1, config.retry_count), 5)
-        last_exc: Exception | None = None
-        for attempt in range(retry_count):
-            try:
-                # Fix B: if called from inside a running event loop, offload the
-                # blocking network call to a thread-pool executor so the loop
-                # isn't frozen.  Fall back to a direct (blocking) call when there
-                # is no running loop (normal sync context).
+
+        def _do_post() -> None:
+            """Retry loop that issues the blocking httpx.post.
+
+            Keeping the sync httpx.post call here (rather than switching to
+            httpx.AsyncClient) preserves the existing mock surface used by
+            tests that patch ``general_ludd.events.hooks.httpx.post``.
+            """
+            last_exc: Exception | None = None
+            for attempt in range(retry_count):
                 try:
-                    loop = asyncio.get_running_loop()
-                    loop.run_in_executor(
-                        None,
-                        functools.partial(
-                            httpx.post,
-                            config.url,
-                            json=body,
-                            headers=config.headers,
-                            timeout=config.timeout_seconds,
-                            # Never auto-follow redirects: a 30x to an internal
-                            # address would bypass the registration-time SSRF check.
-                            follow_redirects=False,
-                        ),
-                    )
-                    return
-                except RuntimeError:
-                    httpx.post(
+                    response = httpx.post(
                         config.url,
                         json=body,
                         headers=config.headers,
                         timeout=config.timeout_seconds,
+                        # Never auto-follow redirects: a 30x to an internal
+                        # address would bypass the registration-time SSRF check.
                         follow_redirects=False,
                     )
-                return
-            except Exception as exc:
-                last_exc = exc
-                logger.warning("Webhook attempt %d/%d failed: %s", attempt + 1, retry_count, exc)
-        if last_exc is not None:
-            raise last_exc
+                    response.raise_for_status()
+                    return
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning(
+                        "Webhook attempt %d/%d failed: %s", attempt + 1, retry_count, exc
+                    )
+            if last_exc is not None:
+                raise last_exc
+
+        try:
+            loop = asyncio.get_running_loop()
+            # A running event loop means we are on the async path (e.g. a
+            # FastAPI request handler).  Off-load the blocking network call to
+            # a thread pool executor so the loop stays free for other coroutines.
+            # The entire retry loop lives inside _do_post so retries, timeout
+            # bounds, and raise_for_status checks are all preserved.
+            # Note: run_in_executor returns a Future that we intentionally do not
+            # await here — fire() is sync and we cannot await from it.  Errors
+            # from the background thread are logged inside _do_post.
+            loop.run_in_executor(None, _do_post)
+        except RuntimeError:
+            # No running event loop — safe to call _do_post directly
+            # (sync startup path, CLI, or unit tests without an event loop).
+            _do_post()
 
     def list_hooks(self) -> list[HookRegistration]:
         result = []
