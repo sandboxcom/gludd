@@ -1276,6 +1276,85 @@ def _events_client(
     return TestClient(app)
 
 
+@pytest_asyncio.fixture
+async def multi_project_events_factory(session_factory):
+    """``session_factory`` seeded with one event in ``proj-a`` and one in
+    ``proj-b`` — for the XT-8 cross-tenant isolation tests."""
+    import json as _json
+
+    await _seed_events(
+        session_factory,
+        [
+            {
+                "event_type": "todo_failed",
+                "entity_type": "todo",
+                "entity_id": "a-todo-1",
+                "project_id": "proj-a",
+                "details": _json.dumps({"summary": "alpha handler defect 500s"}),
+            },
+            {
+                "event_type": "todo_failed",
+                "entity_type": "todo",
+                "entity_id": "b-todo-1",
+                "project_id": "proj-b",
+                "details": _json.dumps({"summary": "beta handler defect 500s"}),
+            },
+        ],
+    )
+    return session_factory
+
+
+def test_search_events_scopes_to_project_id_xt8(
+    monkeypatch: pytest.MonkeyPatch, multi_project_events_factory
+) -> None:
+    # XT-8: with project_id=proj-a, only proj-a's audit event may be returned.
+    client = _events_client(monkeypatch, seeded_factory=multi_project_events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "handler defect 500s",
+            "corpus": "events",
+            "top_k": 10,
+            "project_id": "proj-a",
+        },
+    )
+    assert resp.status_code == 200
+    ids = {r["metadata"]["entity_id"] for r in resp.json()["results"]}
+    assert ids == {"a-todo-1"}
+
+
+def test_search_events_other_project_does_not_leak_xt8(
+    monkeypatch: pytest.MonkeyPatch, multi_project_events_factory
+) -> None:
+    client = _events_client(monkeypatch, seeded_factory=multi_project_events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={
+            "text": "handler defect 500s",
+            "corpus": "events",
+            "top_k": 10,
+            "project_id": "proj-b",
+        },
+    )
+    assert resp.status_code == 200
+    ids = {r["metadata"]["entity_id"] for r in resp.json()["results"]}
+    assert ids == {"b-todo-1"}
+
+
+def test_search_events_without_project_id_returns_all_xt8(
+    monkeypatch: pytest.MonkeyPatch, multi_project_events_factory
+) -> None:
+    # Back-compat: an unscoped query still searches across all tenants' events.
+    client = _events_client(monkeypatch, seeded_factory=multi_project_events_factory)
+    resp = client.post(
+        "/api/embeddings/search",
+        json={"text": "handler defect 500s", "corpus": "events", "top_k": 10},
+    )
+    assert resp.status_code == 200
+    ids = {r["metadata"]["entity_id"] for r in resp.json()["results"]}
+    assert ids == {"a-todo-1", "b-todo-1"}
+
+
 def test_search_events_returns_ranked_results(
     monkeypatch: pytest.MonkeyPatch, events_factory
 ) -> None:

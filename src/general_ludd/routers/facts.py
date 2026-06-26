@@ -225,7 +225,14 @@ async def _features_facet(app: FastAPI, project_id: str | None = None) -> dict[s
         return facet
     try:
         async with factory() as session:
-            repo = FeatureRepository(session)
+            # XT-2: scope the feature facet to the requested project so the facts
+            # summary cannot count/list another tenant's features. project_id was
+            # accepted but silently dropped before this scoping. None = unscoped.
+            repo = (
+                FeatureRepository.scoped(session, project_id)
+                if project_id is not None
+                else FeatureRepository(session)
+            )
             rows = await repo.list_all()
         by_status: dict[str, list[str]] = {}
         for row in rows:

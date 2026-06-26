@@ -225,6 +225,14 @@ class EmbeddingSearchRequest(BaseModel):
         False,
         description="When true, the query embedding vector is returned.",
     )
+    project_id: str | None = Field(
+        None,
+        description=(
+            "When set, restrict the 'events' corpus to audit events for this "
+            "project only (cross-tenant isolation). None searches all events "
+            "(back-compat); other corpora are unaffected."
+        ),
+    )
 
 
 class SearchResultItem(BaseModel):
@@ -818,11 +826,16 @@ async def _search_events(
     rows: list[Any] = []
     async with factory() as session:
         try:
-            stmt = (
-                select(AuditEventModel)
-                .order_by(AuditEventModel.created_at.desc())
-                .limit(_DEFAULT_LIST_LIMIT)
+            # XT-8: scope the events corpus to the requested project so semantic
+            # search cannot surface another tenant's audit events. project_id
+            # column exists + is indexed (models.py), so the filter is zero-cost;
+            # None leaves the query unscoped (back-compat).
+            stmt = select(AuditEventModel).order_by(
+                AuditEventModel.created_at.desc()
             )
+            if req.project_id is not None:
+                stmt = stmt.where(AuditEventModel.project_id == req.project_id)
+            stmt = stmt.limit(_DEFAULT_LIST_LIMIT)
             result = await session.execute(stmt)
             rows = list(result.scalars().all())
         except Exception as exc:  # degrade, never 500

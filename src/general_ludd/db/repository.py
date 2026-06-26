@@ -1499,8 +1499,27 @@ class FeatureRepository:
     and TodoModel.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, project_id: str | None = None) -> None:
         self._session = session
+        self._project_id = project_id
+
+    @classmethod
+    def scoped(cls, session: AsyncSession, project_id: str) -> FeatureRepository:
+        """Return a repository pre-scoped to *project_id*.
+
+        Read methods that accept ``project_id`` fall back to this scope when the
+        caller passes ``project_id=None``, preventing silent cross-tenant reads
+        (XT-2/5/6/7). Mirrors ``TodoRepository.scoped``.
+        """
+        return cls(session, project_id=project_id)
+
+    def _resolve_pid(self, project_id: str | None) -> str | None:
+        """Return *project_id* if explicitly supplied, else the instance scope.
+
+        ``None`` propagates only when the instance was not scoped (admin path),
+        preserving cross-tenant reads for internal callers like ``set_status``.
+        """
+        return project_id if project_id is not None else self._project_id
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -1599,42 +1618,59 @@ class FeatureRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, feature_id: str) -> FeatureModel | None:
+    async def get_by_id(
+        self, feature_id: str, project_id: str | None = None
+    ) -> FeatureModel | None:
+        _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.id == feature_id)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
     async def list_all(
-        self, limit: int | None = None, offset: int = 0
+        self, limit: int | None = None, offset: int = 0, project_id: str | None = None
     ) -> list[FeatureModel]:
-        stmt = (
-            select(FeatureModel)
-            .offset(offset)
-            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        _pid = self._resolve_pid(project_id)
+        stmt = select(FeatureModel)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_by_status(
-        self, status: FeatureStatus, limit: int | None = None, offset: int = 0
+        self,
+        status: FeatureStatus,
+        limit: int | None = None,
+        offset: int = 0,
+        project_id: str | None = None,
     ) -> list[FeatureModel]:
-        stmt = (
-            select(FeatureModel)
-            .where(FeatureModel.status == status.value)
-            .offset(offset)
-            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        _pid = self._resolve_pid(project_id)
+        stmt = select(FeatureModel).where(FeatureModel.status == status.value)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_by_category(
-        self, category: str, limit: int | None = None, offset: int = 0
+        self,
+        category: str,
+        limit: int | None = None,
+        offset: int = 0,
+        project_id: str | None = None,
     ) -> list[FeatureModel]:
-        stmt = (
-            select(FeatureModel)
-            .where(FeatureModel.category == category)
-            .offset(offset)
-            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        _pid = self._resolve_pid(project_id)
+        stmt = select(FeatureModel).where(FeatureModel.category == category)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
