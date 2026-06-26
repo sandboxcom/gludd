@@ -484,9 +484,15 @@ def _skills_facet(app: FastAPI) -> list[dict[str, Any]]:
         return []
 
 
-async def _queues_facet(app: FastAPI) -> list[dict[str, Any]]:
+async def _queues_facet(
+    app: FastAPI, project_id: str | None = None
+) -> list[dict[str, Any]]:
     """Queue name + depth. Reuses the todos/work backlog summary when reachable;
     fails soft to ``[]``.
+
+    XT-10: scope the backlog/in-flight counts to ``project_id`` when supplied so
+    the environment facet cannot surface another tenant's queue depth. None =
+    unscoped (back-compat).
     """
     factory = getattr(app.state, "_session_factory", None)
     if factory is None:
@@ -495,8 +501,12 @@ async def _queues_facet(app: FastAPI) -> list[dict[str, Any]]:
         from general_ludd.db.repository import TaskReturnRepository, TodoRepository
 
         async with factory() as session:
-            todo_summary = await TodoRepository(session).status_summary()
-            work_summary = await TaskReturnRepository(session).work_summary()
+            todo_summary = await TodoRepository(session).status_summary(
+                project_id=project_id
+            )
+            work_summary = await TaskReturnRepository(session).work_summary(
+                project_id=project_id
+            )
         queues: list[dict[str, Any]] = []
         backlog = todo_summary.get("backlog_size")
         if backlog is not None:
@@ -706,7 +716,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             logger.debug("skills section failed: %s", exc)
             skills = []
         try:
-            queues = await _queues_facet(app)
+            queues = await _queues_facet(app, project_id=project_id)
         except Exception as exc:  # pragma: no cover - defensive
             logger.debug("queues section failed: %s", exc)
             queues = []
