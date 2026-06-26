@@ -93,9 +93,19 @@ def host_is_blocked(host: str) -> bool:
     host = host.strip().lower()
     if not host:
         return True
+    # A NUL byte can truncate the host for a downstream resolver/HTTP client
+    # ("localhost\x00.evil.com" may be read as "localhost"), so a NUL-bearing
+    # host could smuggle a blocked target past the string blocklist. Deny it.
+    if "\x00" in host:
+        return True
     # Strip an IPv6 bracket wrapper, e.g. "[::1]" -> "::1".
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]
+    # Strip a trailing dot (FQDN root): "localhost." / "127.0.0.1." resolve
+    # identically to the undotted form, so without this the name and IP-literal
+    # blocklists below could be bypassed simply by appending a dot.
+    if host.endswith("."):
+        host = host[:-1]
     if host in BLOCKED_HOST_NAMES:
         return True
     if host in BLOCKED_METADATA_IPS:
