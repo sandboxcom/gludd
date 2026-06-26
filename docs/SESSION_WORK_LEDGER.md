@@ -117,6 +117,21 @@ Earlier this session (pre-3e578b5, during the sweep): f5e5a3c (REAL gateway regr
 - **connectors NaN sort residual (MED)**: base.py:361 _associate_by_window + :316 _sort_by_ts can still take NaN ts (boundary coercion bypassed for non-normalized records).
 - **daemon /docs exposed unauth (MED)**: in _PUBLIC_PATHS; filestore bootstrap error leaks binary name (LOW).
 
+### D0e. NEXT-WINDOW APPLY ORDER (consolidated, value÷effort; safest-highest-value first)
+All specs in docs/audit/CROSS_TENANT_AND_CONCURRENCY_FINDINGS_2026-06-26.md. Apply one
+at a time, single pytest each (OOM), commit-ci-gate per unit. **repository.py is touched
+by #5/#6/#7 — sequence those back-to-back; daemon.py only by #9 (batch last).**
+1. messages.py:122-127 degraded fallback project_id filter — extend test_messages_router_bounds.py / integration test_messages_and_facts_api.py. Independent.
+2. embeddings.py:821-825 events-corpus project_id filter + add project_id to EmbeddingSearchRequest (schema ~191). NO existing embeddings test → NEW test. Independent.
+3. metrics/collector.py add RLock + LRU cap on _global_model_usage (both DROP-IN-SAFE; do NOT del in unregister_agent — 3 tests rely on stopped-agents-retained). Extend test_metrics.py.
+4. receiver/router.py _RateLimiter LRU eviction (unbounded dict DoS). Extend/new limiter test.
+5. facts.py:125 get_aggregate_scores(project_id=) + facts.py:226 FeatureRepository.list_all(project_id=) [add optional param+where to repository.py ~1607]. Traces = DOCUMENT-ONLY (ExecutionTrace has no project_id). PREREQ for #6.
+6. features.py 3 handlers (list/get/verify) project_id scoping — needs repository.py scoped methods (follows #5, same file).
+7. lease.py reclaim_expired_leases CAS-on-version (F1/F3) — uses existing TodoModel.version, no migration; NEW test_concurrency_lease_expiry.py. Sequence after #5/#6 (repository.py churn).
+8. todos.py read/update project_id validation (recon vector) — mirror CREATE's 422; NEW tests.
+9. async-blocking to_thread wraps: daemon_wiring.py:241, skills.py:127, environment.py:713, daemon.py:1837 psutil, tool_loop.py:176/183 sync call_model. Lowest risk, batch last (daemon.py).
+ALSO: connectors NaN sort fix already landed (41ee61a); GAP-30 metrics-signature already landed (12641f5/fa52e78); SSRF NUL/dot already landed (eef9ee9). Deferred (need migration+model change): claim_runnable composite index (alembic parity), missing FKs parent_todo_id/matched_todo_id, migration drift (task_returns.updated_at, 9 ondelete gaps).
+
 ### Remaining open backlog (specs in flight / ready to apply)
 - cross-tenant todo scan (HIGH) — spec a4b30bd; needs router scoping + project_id NOT NULL migration (careful: internal dispatcher legitimately scans all projects)
 - actor-spoofing allowlist (LOW — REFUTED as security issue: claim_runnable actor is hardcoded but internal-only, not user-supplied; no fix needed). claim_runnable ORDER BY (MED) — 🔧 APPLIED this session (repository.py:384 `.order_by(created_at, id)`); verified non-breaking (test_event_loop 44 passed); FIFO regression test pending
