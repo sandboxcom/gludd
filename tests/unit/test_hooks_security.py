@@ -308,8 +308,12 @@ class TestAsyncWebhookRedactionCombined:
         )
 
         # Phase 2: execute the captured callable to verify redaction was applied
-        # before the body was handed to the thread.
-        executor_callables[0]()
+        # before the body was handed to the thread. The Phase-1 `with` block has
+        # exited, so re-establish the httpx.post patch — otherwise the captured
+        # _do_post closure would issue a real network call (the CapturingLoop is
+        # not needed here: _do_post calls httpx.post directly, no event loop).
+        with patch("general_ludd.events.hooks.httpx.post", side_effect=fake_post):
+            executor_callables[0]()
 
         assert len(posted_bodies) == 1, "httpx.post must be called inside _do_post"
         sent_payload = posted_bodies[0].get("payload", {})
