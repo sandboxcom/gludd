@@ -117,6 +117,14 @@ class ToolCallLoop:
                         try:
                             tc_args = _json.loads(tc_args)
                         except _json.JSONDecodeError:
+                            # Don't silently swallow malformed model output: an
+                            # operator needs to see that the model emitted invalid
+                            # tool-call JSON (the tool then runs with empty args).
+                            logger.warning(
+                                "Malformed tool-call arguments for %r (job %s); "
+                                "using empty args. Raw: %.200r",
+                                tc_name, job.job_id, tc_args,
+                            )
                             tc_args = {}
                     try:
                         server_id = self._resolve_server_id(tc_name)
