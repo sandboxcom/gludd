@@ -135,6 +135,25 @@ class TestOneShotSchedulerIntegration:
         assert row.status == TodoStatus.SCHEDULED.value
         assert row.version == 1
 
+    async def test_paused_one_shot_stays_scheduled(self, factory) -> None:
+        todo_id = "TODO-SINT0006"
+        due_at = datetime.now(UTC) - timedelta(minutes=5)
+        await _seed_one_shot(factory, todo_id, scheduled_at=due_at, paused=True)
+
+        now = datetime.now(UTC)
+        async with factory() as s:
+            promoted, spawned = await TodoScheduler(repo=TodoRepository(s)).tick(now)
+            await s.commit()
+
+        assert promoted == 0
+        assert spawned == 0
+
+        async with factory() as s:
+            row = await TodoRepository(s).get_by_id(todo_id)
+        assert row is not None
+        assert row.status == TodoStatus.SCHEDULED.value
+        assert row.version == 1  # unchanged
+
 
 class TestCronTemplateSchedulerIntegration:
     async def test_due_cron_spawns_queued_child_and_advances_template(
@@ -199,3 +218,31 @@ class TestCronTemplateSchedulerIntegration:
         assert tmpl is not None
         assert tmpl.status == TodoStatus.SCHEDULED.value
         assert tmpl.run_count == 0
+
+    async def test_max_runs_reached_cancels_template_in_db(self, factory) -> None:
+        tmpl_id = "TODO-SINT0005"
+        past_run = datetime.now(UTC) - timedelta(minutes=5)
+        await _seed_cron_template(
+            factory, tmpl_id, next_run_at=past_run, run_count=3, max_runs=3
+        )
+
+        now = datetime.now(UTC)
+        async with factory() as s:
+            promoted, spawned = await TodoScheduler(repo=TodoRepository(s)).tick(now)
+            await s.commit()
+
+        assert promoted == 0
+        assert spawned == 0
+
+        async with factory() as s:
+            tmpl = await TodoRepository(s).get_by_id(tmpl_id)
+        assert tmpl is not None
+        assert tmpl.status == TodoStatus.CANCELLED.value
+        assert tmpl.version == 2  # transition() bumped it
+
+        async with factory() as s:
+            result = await s.execute(
+                select(TodoModel).where(TodoModel.parent_todo_id == tmpl_id)
+            )
+            children = list(result.scalars().all())
+        assert len(children) == 0

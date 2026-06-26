@@ -13,7 +13,7 @@ Covers:
 from __future__ import annotations
 
 from datetime import UTC, datetime, timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import DEFAULT, AsyncMock, MagicMock
 
 import pytest
 
@@ -302,3 +302,185 @@ class TestNextCronDt:
         """Unknown timezone name raises ValueError."""
         with pytest.raises(ValueError, match="Unknown timezone"):
             _next_cron_dt("* * * * *", datetime.now(UTC), "Fake/Zone")
+
+
+# ---------------------------------------------------------------------------
+# Exception handler tests (P1)
+# ---------------------------------------------------------------------------
+
+
+class TestExceptionHandlers:
+    @pytest.mark.asyncio
+    async def test_one_shot_transition_raises_no_reraise_continues(self) -> None:
+        """First one-shot transition fails; second still promotes — no re-raise."""
+        todo1 = _make_todo(todo_id="TODO-ERR001", cron=None, version=1)
+        todo2 = _make_todo(todo_id="TODO-ERR002", cron=None, version=1)
+        repo = _make_repo(due_todos=[todo1, todo2])
+        repo.transition = AsyncMock(side_effect=[RuntimeError("db fail"), DEFAULT])
+        scheduler = TodoScheduler(repo=repo)
+        promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert promoted == 1
+        assert spawned == 0
+        assert repo.transition.call_count == 2
+        repo.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cron_update_raises_spawn_skipped_continues(self) -> None:
+        """First cron template update fails → spawn skipped; second succeeds → spawned==1."""
+        todo1 = _make_todo(
+            todo_id="TODO-CUPD001",
+            cron="* * * * *",
+            run_count=0,
+            max_runs=None,
+            version=1,
+        )
+        todo2 = _make_todo(
+            todo_id="TODO-CUPD002",
+            cron="* * * * *",
+            run_count=0,
+            max_runs=None,
+            version=1,
+        )
+        repo = _make_repo(due_todos=[todo1, todo2])
+        repo.update = AsyncMock(side_effect=[RuntimeError("advance fail"), DEFAULT])
+        scheduler = TodoScheduler(repo=repo)
+        promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert promoted == 0
+        assert spawned == 1
+        assert repo.update.call_count == 2
+        assert repo.create.call_count == 1
+
+    @pytest.mark.asyncio
+    async def test_max_runs_transition_raises_no_reraise(self) -> None:
+        """max_runs exhausted template transition fails — exception is not re-raised."""
+        todo = _make_todo(
+            todo_id="TODO-MXERR001",
+            cron="0 * * * *",
+            run_count=3,
+            max_runs=3,
+            version=5,
+        )
+        repo = _make_repo(due_todos=[todo])
+        repo.transition = AsyncMock(side_effect=RuntimeError("cancel fail"))
+        scheduler = TodoScheduler(repo=repo)
+        promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert promoted == 0
+        assert spawned == 0
+        repo.transition.assert_called_once()
+        repo.create.assert_not_called()
+        repo.update.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_invalid_cron_skips_update_and_create(self) -> None:
+        """An invalid cron expression causes the scheduler to skip update and create."""
+        todo = _make_todo(
+            cron="NOT_A_CRON_EXPR",
+            run_count=0,
+            max_runs=None,
+        )
+        repo = _make_repo(due_todos=[todo])
+        scheduler = TodoScheduler(repo=repo)
+        promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert promoted == 0
+        assert spawned == 0
+        repo.update.assert_not_called()
+        repo.create.assert_not_called()
+
+
+# ---------------------------------------------------------------------------
+# Semantic edge tests (P2)
+# ---------------------------------------------------------------------------
+
+
+class TestSemanticEdges:
+    @pytest.mark.asyncio
+    async def test_max_runs_zero_cancels_on_first_tick(self) -> None:
+        """max_runs=0 means the template is exhausted from the start → CANCELLED."""
+        todo = _make_todo(
+            todo_id="TODO-ZERO001",
+            cron="* * * * *",
+            run_count=0,
+            max_runs=0,
+            version=2,
+        )
+        repo = _make_repo(due_todos=[todo])
+        scheduler = TodoScheduler(repo=repo)
+        promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert promoted == 0
+        assert spawned == 0
+        repo.transition.assert_called_once_with("TODO-ZERO001", TodoStatus.CANCELLED, 2)
+        repo.update.assert_not_called()
+        repo.create.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_run_count_none_coerced_to_zero_no_cap(self) -> None:
+        """run_count=None is coerced to 0; below max_runs=5 so child is spawned."""
+        todo = _make_todo(
+            cron="* * * * *",
+            run_count=None,
+            max_runs=5,
+        )
+        repo = _make_repo(due_todos=[todo])
+        scheduler = TodoScheduler(repo=repo)
+        _promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert spawned == 1
+        repo.transition.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_schedule_timezone_none_falls_back_to_utc(self) -> None:
+        """schedule_timezone=None falls back to UTC without raising an error."""
+        todo = _make_todo(
+            cron="* * * * *",
+            schedule_timezone=None,
+            run_count=0,
+            max_runs=None,
+        )
+        repo = _make_repo(due_todos=[todo])
+        scheduler = TodoScheduler(repo=repo)
+        now = datetime(2026, 6, 25, 12, 0, 0, tzinfo=UTC)
+        _promoted, spawned = await scheduler.tick(now)
+        assert spawned == 1
+        repo.create.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_multiple_due_todos_counters_accumulate(self) -> None:
+        """Two one-shots + one cron template → promoted==2, spawned==1."""
+        shot1 = _make_todo(todo_id="TODO-MULTI001", cron=None, version=1)
+        shot2 = _make_todo(todo_id="TODO-MULTI002", cron=None, version=1)
+        cron1 = _make_todo(
+            todo_id="TODO-MULTI003",
+            cron="* * * * *",
+            run_count=0,
+            max_runs=None,
+            version=1,
+        )
+        repo = _make_repo(due_todos=[shot1, shot2, cron1])
+        scheduler = TodoScheduler(repo=repo)
+        promoted, spawned = await scheduler.tick(datetime.now(UTC))
+        assert promoted == 2
+        assert spawned == 1
+        assert repo.transition.call_count == 2
+        assert repo.create.call_count == 1
+
+
+# ---------------------------------------------------------------------------
+# Phase-level integration tests (P3)
+# ---------------------------------------------------------------------------
+
+
+class TestPhaseRunScheduler:
+    @pytest.mark.asyncio
+    async def test_phase_run_scheduler_writes_zero_metrics_when_nothing_due(
+        self,
+    ) -> None:
+        """_phase_run_scheduler writes 0/0 to _tick_metrics when no todos are due."""
+        from general_ludd.event_loop.loop import EventLoop
+
+        repo = _make_repo(due_todos=[])
+        loop = EventLoop.__new__(EventLoop)
+        loop._todo_repo = repo
+        loop._active_session = MagicMock()
+        loop._tick_metrics = {}
+        await loop._phase_run_scheduler()
+        assert loop._tick_metrics["scheduled_promoted"] == 0
+        assert loop._tick_metrics["scheduled_spawned"] == 0
