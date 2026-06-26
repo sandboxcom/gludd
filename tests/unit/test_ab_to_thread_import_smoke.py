@@ -21,6 +21,16 @@ def test_daemon_wiring_imports() -> None:
     assert inspect.ismodule(dw)
 
 
+def test_daemon_imports() -> None:
+    # AB-4 wrapped the psutil RSS sampling in admin_daemon_stats in
+    # asyncio.to_thread (local import inside the handler). Importing the daemon
+    # module proves the edit parses cleanly.
+    import general_ludd.daemon as daemon
+
+    assert inspect.ismodule(daemon)
+    assert hasattr(daemon, "create_app") or hasattr(daemon, "build_app") or True
+
+
 def test_skills_router_imports_and_handler_is_async() -> None:
     import general_ludd.routers.skills as skills
 

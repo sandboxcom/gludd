@@ -1829,13 +1829,21 @@ def create_daemon_app(
 
     @app.get("/admin/daemon/stats")
     async def admin_daemon_stats() -> dict[str, Any]:
+        import asyncio
         import os
 
         import psutil
 
         uptime = time.monotonic() - app.state._stats_start_time
-        proc = psutil.Process(os.getpid())
-        mem_mb = proc.memory_info().rss / (1024 * 1024)
+
+        # AB-4: psutil.Process().memory_info() issues blocking OS syscalls; run
+        # it off the event loop so the async stats handler does not stall the
+        # daemon under load.
+        def _sample_rss_mb() -> float:
+            proc = psutil.Process(os.getpid())
+            return proc.memory_info().rss / (1024 * 1024)
+
+        mem_mb = await asyncio.to_thread(_sample_rss_mb)
         return {
             "pid": os.getpid(),
             "requests_total": app.state._stats_requests,
