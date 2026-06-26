@@ -122,7 +122,10 @@ async def _metrics_facet(
     if factory is not None:
         try:
             repo = BenchmarkRepository(session_factory=factory)
-            rankings = await repo.get_aggregate_scores()
+            # Tenant isolation (XT-1): scope benchmark aggregation to the caller's
+            # project so rankings don't aggregate BenchmarkResultModel rows across
+            # tenants. project_id is None for unscoped/global callers.
+            rankings = await repo.get_aggregate_scores(project_id=project_id)
             rankings.sort(
                 key=lambda r: r.get("composite_score") or 0.0, reverse=True
             )
