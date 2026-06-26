@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 from unittest.mock import patch
 
-from general_ludd.mcp.catalog import MCPCatalog, MCPCatalogEntry
+from general_ludd.mcp.catalog import _REGISTRY_RESPONSE_MAX_BYTES, MCPCatalog, MCPCatalogEntry
 
 
 class TestMCPCatalogEntry:
@@ -78,12 +78,13 @@ class TestMCPCatalogSearch:
     @patch("urllib.request.urlopen")
     def test_search_smithery_registry(self, mock_urlopen):
         catalog = MCPCatalog(registries=["smithery.ai"])
+        _payload = json.dumps({
+            "servers": [
+                {"qualifiedName": "test-server", "displayName": "Test", "description": "A test", "useCount": 42},
+            ]
+        }).encode()
         mock_resp = type("Resp", (), {
-            "read": lambda self: json.dumps({
-                "servers": [
-                    {"qualifiedName": "test-server", "displayName": "Test", "description": "A test", "useCount": 42},
-                ]
-            }).encode(),
+            "read": lambda self, n=None: _payload if n is None else _payload[:n],
             "__enter__": lambda self: self,
             "__exit__": lambda self, *a: None,
         })()
@@ -97,12 +98,13 @@ class TestMCPCatalogSearch:
     @patch("urllib.request.urlopen")
     def test_search_mcp_registry(self, mock_urlopen):
         catalog = MCPCatalog(registries=["registry.modelcontextprotocol.io"])
+        _payload = json.dumps({
+            "servers": [
+                {"name": "my-server", "description": "An MCP server"},
+            ]
+        }).encode()
         mock_resp = type("Resp", (), {
-            "read": lambda self: json.dumps({
-                "servers": [
-                    {"name": "my-server", "description": "An MCP server"},
-                ]
-            }).encode(),
+            "read": lambda self, n=None: _payload if n is None else _payload[:n],
             "__enter__": lambda self: self,
             "__exit__": lambda self, *a: None,
         })()
@@ -115,12 +117,13 @@ class TestMCPCatalogSearch:
     @patch("urllib.request.urlopen")
     def test_search_mcp_registry_dict_name(self, mock_urlopen):
         catalog = MCPCatalog(registries=["registry.modelcontextprotocol.io"])
+        _payload = json.dumps({
+            "servers": [
+                {"name": {"name": "nested-name"}, "description": "Nested"},
+            ]
+        }).encode()
         mock_resp = type("Resp", (), {
-            "read": lambda self: json.dumps({
-                "servers": [
-                    {"name": {"name": "nested-name"}, "description": "Nested"},
-                ]
-            }).encode(),
+            "read": lambda self, n=None: _payload if n is None else _payload[:n],
             "__enter__": lambda self: self,
             "__exit__": lambda self, *a: None,
         })()
@@ -166,3 +169,66 @@ class TestMCPCatalogRefresh:
         catalog._cache.append(MCPCatalogEntry(server_name="temp"))
         catalog.refresh()
         assert catalog.get_server("github") is not None
+
+
+class TestMCPCatalogOversizedResponse:
+    """C-1/C-2: oversized registry responses must be rejected gracefully."""
+
+    @patch("urllib.request.urlopen")
+    def test_search_smithery_rejects_oversized_response(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        oversized = b"x" * (_REGISTRY_RESPONSE_MAX_BYTES + 2)
+        mock_resp = type("Resp", (), {
+            "read": lambda self, n=None: oversized if n is None else oversized[:n],
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+        results = catalog.search(query="anything")
+        assert results == []
+
+    @patch("urllib.request.urlopen")
+    def test_search_mcp_registry_rejects_oversized_response(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["registry.modelcontextprotocol.io"])
+        oversized = b"x" * (_REGISTRY_RESPONSE_MAX_BYTES + 2)
+        mock_resp = type("Resp", (), {
+            "read": lambda self, n=None: oversized if n is None else oversized[:n],
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+        results = catalog.search(query="anything")
+        assert results == []
+
+
+class TestMCPCatalogSearchAsync:
+    """C-3: search_async() dispatches blocking I/O to a thread pool."""
+
+    async def test_search_async_empty_registries(self):
+        catalog = MCPCatalog(registries=[])
+        results = await catalog.search_async(query="test")
+        assert results == []
+
+    @patch("urllib.request.urlopen")
+    async def test_search_async_dispatches_via_thread(self, mock_urlopen):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        _payload = json.dumps({
+            "servers": [
+                {"qualifiedName": "async-server", "displayName": "Async", "description": "Async test", "useCount": 1},
+            ]
+        }).encode()
+        mock_resp = type("Resp", (), {
+            "read": lambda self, n=None: _payload if n is None else _payload[:n],
+            "__enter__": lambda self: self,
+            "__exit__": lambda self, *a: None,
+        })()
+        mock_urlopen.return_value = mock_resp
+        results = await catalog.search_async(query="async", limit=10)
+        assert len(results) == 1
+        assert results[0].server_name == "async-server"
+
+    async def test_search_async_registry_error_degrades_gracefully(self):
+        catalog = MCPCatalog(registries=["smithery.ai"])
+        with patch("urllib.request.urlopen", side_effect=Exception("Network error")):
+            results = await catalog.search_async(query="test")
+        assert results == []

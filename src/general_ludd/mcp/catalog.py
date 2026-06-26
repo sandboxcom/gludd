@@ -12,6 +12,8 @@ from pydantic import BaseModel, Field, field_validator
 
 logger = logging.getLogger(__name__)
 
+_REGISTRY_RESPONSE_MAX_BYTES = 2 * 1024 * 1024  # 2 MB hard cap per registry response
+
 
 class MCPCatalogEntry(BaseModel):
     server_name: str
@@ -51,12 +53,34 @@ class MCPCatalog:
         limit: int = 20,
         source: str | None = None,
     ) -> list[MCPCatalogEntry]:
+        """Synchronous registry search. Blocks the event loop — use search_async() from async callers."""
         results: list[MCPCatalogEntry] = []
         for registry in self._registries:
             if source and source not in registry:
                 continue
             try:
                 entries = self._query_registry(registry, query, limit)
+                results.extend(entries)
+            except Exception as exc:
+                logger.debug("Registry %s query failed: %s", registry, exc)
+        return results[:limit]
+
+    async def search_async(
+        self,
+        query: str = "",
+        limit: int = 20,
+        source: str | None = None,
+    ) -> list[MCPCatalogEntry]:
+        """Async search() — dispatches blocking network I/O to a thread pool.
+        Use from any async caller (FastAPI route, event-loop task)."""
+        import asyncio
+
+        results: list[MCPCatalogEntry] = []
+        for registry in self._registries:
+            if source and source not in registry:
+                continue
+            try:
+                entries = await asyncio.to_thread(self._query_registry, registry, query, limit)
                 results.extend(entries)
             except Exception as exc:
                 logger.debug("Registry %s query failed: %s", registry, exc)
@@ -111,7 +135,12 @@ class MCPCatalog:
             url = f"{url}?{urllib.parse.urlencode(params)}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+                raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
+                if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
+                    raise ValueError(
+                        f"Smithery registry response exceeded {_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
+                    )
+                data = json.loads(raw.decode())
             entries: list[MCPCatalogEntry] = []
             for s in data.get("servers", []):
                 entries.append(self._harden_registry_entry(MCPCatalogEntry(
@@ -127,7 +156,12 @@ class MCPCatalog:
             url = f"https://registry.modelcontextprotocol.io/v0.1/servers?limit={min(limit, 100)}"
             req = urllib.request.Request(url, headers={"Accept": "application/json"})
             with urllib.request.urlopen(req, timeout=10) as resp:
-                data = json.loads(resp.read().decode())
+                raw = resp.read(_REGISTRY_RESPONSE_MAX_BYTES + 1)
+                if len(raw) > _REGISTRY_RESPONSE_MAX_BYTES:
+                    raise ValueError(
+                        f"MCP registry response exceeded {_REGISTRY_RESPONSE_MAX_BYTES}-byte cap"
+                    )
+                data = json.loads(raw.decode())
             entries = []
             for s in data.get("servers", []):
                 name_val = s.get("name", "")
