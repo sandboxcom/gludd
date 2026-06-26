@@ -218,9 +218,20 @@ class TestSkillRegistryProjectSkills:
     """Project skills shadow same-named globals and augment the unique set."""
 
     def _make_skill_md(self, path: Path, name: str, description: str) -> None:
-        """Write a minimal skill markdown file."""
+        """Write a minimal skill markdown file with YAML frontmatter.
+
+        The skill parser (skills/loader.py) populates Skill.description ONLY
+        from front-matter (a bare-markdown body leaves description=""), so a
+        realistic fixture must declare name/description in the front-matter —
+        mirroring real skills like config/skills/osquery_system_state.md.
+        """
         path.write_text(
-            f"# {name}\n\n{description}\n\nTriggers: {name.lower()}\n"
+            f"---\n"
+            f"name: {name}\n"
+            f"description: {description}\n"
+            f"trigger_patterns:\n  - {name.lower()}\n"
+            f"---\n\n"
+            f"# {name}\n\n{description}\n"
         )
 
     def test_project_skill_shadows_global_same_name(self, tmp_path: Path) -> None:
