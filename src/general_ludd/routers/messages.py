@@ -124,6 +124,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             if target == recipient or (include_broadcast and target == "broadcast"):
                 if unread and m.get("read_at") is not None:
                     continue
+                # Tenant isolation: mirror the primary path's project scoping
+                # (repo.inbox(project_id=...)). Without this the degraded
+                # in-memory fallback would leak messages across projects.
+                if project_id is not None and m.get("project_id") != project_id:
+                    continue
                 results.append({**m, "created_at": str(m.get("created_at"))})
         return {"messages": results, "count": len(results), "recipient": recipient}
 
