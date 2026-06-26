@@ -390,7 +390,9 @@ class TodoRepository:
         # possible under load. id is a deterministic tiebreaker for same-instant
         # created_at (e.g. todos inserted within the same microsecond in tests).
         stmt = stmt.order_by(TodoModel.created_at, TodoModel.id)
-        stmt = stmt.limit(limit)
+        # P12: cap even an explicit caller limit so a huge value can't load an
+        # unbounded result set (claim semantics are per-batch, so a cap is safe).
+        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT))
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
@@ -658,7 +660,7 @@ class TaskReturnRepository:
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(limit)
+        stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(min(limit, _DEFAULT_LIST_LIMIT))
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
         now = datetime.now(UTC)
@@ -973,7 +975,7 @@ class BenchmarkRepository:
             stmt = (
                 select(BenchmarkResultModel)
                 .order_by(BenchmarkResultModel.created_at.desc())
-                .limit(limit)
+                .limit(min(limit, _DEFAULT_LIST_LIMIT))
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -1145,7 +1147,8 @@ class ProjectRepository:
         return result.scalar_one_or_none()
 
     async def list_active(self) -> list[ProjectModel]:
-        stmt = select(ProjectModel).where(ProjectModel.active.is_(True))
+        # P12: bound the read so a large project table can't load unboundedly.
+        stmt = select(ProjectModel).where(ProjectModel.active.is_(True)).limit(_DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
