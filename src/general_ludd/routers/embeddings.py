@@ -52,6 +52,7 @@ for /api/facts and /api/environment.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from typing import Any
@@ -309,7 +310,7 @@ async def _similar(
                 logger.debug("ensure_embeddings failed: %s", exc)
                 return EmbeddingSimilarResponse(embedding_method=method)
 
-            query_vec = store._embedder.embed(req.text)
+            query_vec = await asyncio.to_thread(store._embedder.embed, req.text)
             query_dim = len(query_vec)
 
             rows_by_type = await store._load_rows_by_type()
@@ -541,7 +542,7 @@ async def _search_prompts(
     embedder = _select_default_embedder()
     method = _method_of(embedder)
 
-    query_vec = embedder.embed(req.text)
+    query_vec = await asyncio.to_thread(embedder.embed, req.text)
     query_dim = len(query_vec)
 
     factory = _get_session_factory(app)
@@ -569,7 +570,7 @@ async def _search_prompts(
         if not prompt_text:
             continue
         try:
-            prompt_vec = embedder.embed(prompt_text)
+            prompt_vec = await asyncio.to_thread(embedder.embed, prompt_text)
         except Exception as exc:  # skip the bad one, keep ranking the rest
             logger.debug("prompt embed failed: %s", exc)
             continue
@@ -810,7 +811,7 @@ async def _search_events(
     embedder = _select_default_embedder()
     method = _method_of(embedder)
 
-    query_vec = embedder.embed(req.text)
+    query_vec = await asyncio.to_thread(embedder.embed, req.text)
     query_dim = len(query_vec)
 
     factory = _get_session_factory(app)
@@ -848,7 +849,7 @@ async def _search_events(
         if not source_text:
             continue
         try:
-            event_vec = embedder.embed(source_text)
+            event_vec = await asyncio.to_thread(embedder.embed, source_text)
         except Exception as exc:  # skip the bad one, keep ranking the rest
             logger.debug("audit-event embed failed: %s", exc)
             continue
