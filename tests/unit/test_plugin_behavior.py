@@ -574,6 +574,39 @@ class TestEnforceDeadlinePlugin:
             "Deadline check must compare elapsed > TASK_TIMEOUT_MS"
         )
 
+    def test_console_warn_throttled_to_once_per_task(self):
+        """A lingering breached task must not re-warn on every subsequent tool
+        call (that floods the user UI). The plugin must guard the console.warn
+        with a once-per-task-id gate so each breach surfaces at most once in
+        the console stream; subsequent breaches for the same id go only to the
+        persistent log. The enforcement (detection + persistent log) is
+        preserved; only the noisy UI channel is throttled.
+        """
+        src = ENFORCE_DEADLINE.read_text()
+        assert re.search(r"warnedIds|warned_ids|alreadyWarned|already_warned", src), (
+            "Plugin must track which task ids have already been warned about "
+            "(Set or object) so console.warn fires at most once per task id"
+        )
+        assert re.search(r"\.has\(.+\)|\.add\(.+\)", src), (
+            "Plugin must use a Set.has() / Set.add() (or equivalent) gate "
+            "around the console.warn so the warning is emitted exactly once"
+        )
+
+    def test_persistent_breach_log_exists(self):
+        """When the console.warn is throttled, the breach must still be
+        recorded to a persistent log file so the orchestrator can poll it via
+        `make task-ttl-check`. The persistent channel is the source of truth;
+        the console warn is the in-band UI signal (now throttled).
+        """
+        src = ENFORCE_DEADLINE.read_text()
+        assert "GLUDD_TASK_DEADLINE_WARNINGS" in src, (
+            "Plugin must reference a GLUDD_TASK_DEADLINE_WARNINGS env var "
+            "pointing at the persistent breach log"
+        )
+        assert re.search(r"appendFileSync|appendFile|writeFileSync", src), (
+            "Plugin must write breaches to the persistent log file via fs"
+        )
+
     def test_cleans_up_on_task_completion(self):
         """tool.execute.after must remove the task id from the state file."""
         src = ENFORCE_DEADLINE.read_text()

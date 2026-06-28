@@ -1298,6 +1298,17 @@ verify-release-artifact:
 task-ttl-check:
 	@python3 scripts/task_ttl_check.py --timeout $$(( $${GLUDD_TASK_TIMEOUT_MS:-300000} / 1000 )) || echo "WARNING: stale tasks detected"
 
+# ---------------------------------------------------------------------------
+# task-ttl-clear: reset the deadline-plugin state file and its persistent
+# warning log. Use after a session crash / agent flood leaves stale `auto-<ts>`
+# entries that re-warn on every tool call. Also exposed for daemon restart.
+# ---------------------------------------------------------------------------
+task-ttl-clear:
+	@state="$${GLUDD_TASK_DEADLINE_STATE:-/tmp/gludd-task-deadlines.json}"; \
+	warn="$${GLUDD_TASK_DEADLINE_WARNINGS:-/tmp/gludd-task-deadlines.warnings.log}"; \
+	printf '{}' > "$$state"; : > "$$warn"; \
+	echo "CLEARED: $$state (+ warning log $$warn)"
+
 ci-faillog:
 	@if [ -z "$(RUN)" ]; then echo "Usage: make ci-faillog RUN=<id>"; exit 1; fi
 	@gh run view "$(RUN)" -R sandboxcom/gludd --log-failed 2>&1 | tail -120 || echo "ci-faillog-failed"

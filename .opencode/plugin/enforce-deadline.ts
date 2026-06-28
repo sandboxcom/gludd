@@ -18,6 +18,15 @@ import * as fs from "node:fs"
 // agent reading its own tool stream) sees it and can dispatch a replacement /
 // re-split the work. Observability beats silent hangs.
 //
+// NOISE CONTROL (2026-06-28): a lingering breached task used to re-warn on
+// EVERY subsequent tool call, flooding the user UI with the same line. Now
+// each task id triggers console.warn AT MOST ONCE per session (in-memory
+// `warnedIds` Set); repeat breaches for the same id are still appended to
+// the persistent warning log (`GLUDD_TASK_DEADLINE_WARNINGS`) so the
+// orchestrator can poll them via `make task-ttl-check`. The enforcement
+// (detection + persistent log + CLI mirror) is unchanged; only the noisy
+// console channel is throttled.
+//
 // STANDALONE CLI MIRROR: scripts/task_ttl_check.py reads the same state file
 // and is exposed as `make task-ttl-check`. The CLI is the gate-friendly face
 // of this plugin (usable from CI / make targets / shell); the plugin is the
@@ -32,7 +41,25 @@ import * as fs from "node:fs"
 // ============================================================================
 const TASK_TIMEOUT_MS = parseInt(process.env.GLUDD_TASK_TIMEOUT_MS || "300000", 10)
 const DEADLINE_STATE = process.env.GLUDD_TASK_DEADLINE_STATE || "/tmp/gludd-task-deadlines.json"
+const WARNINGS_LOG = process.env.GLUDD_TASK_DEADLINE_WARNINGS || "/tmp/gludd-task-deadlines.warnings.log"
 const DEADLINE_ENABLED = (process.env.GLUDD_TASK_DEADLINE_ENABLED || "1") !== "0"
+
+// ============================================================================
+// NOISE-CONTROL STATE
+// ----------------------------------------------------------------------------
+// warnedIds: in-memory Set of task ids that have ALREADY triggered a
+// console.warn this session. Guarding the warn with this Set ensures each
+// breached task surfaces to the UI at most ONCE; subsequent breaches for the
+// same id go only to WARNINGS_LOG (the persistent channel). Cleared in
+// tool.execute.after so a task_id reused in a later dispatch warns again.
+// ============================================================================
+const warnedIds = new Set<string>()
+
+function appendWarning(line: string): void {
+  try {
+    fs.appendFileSync(WARNINGS_LOG, line + "\n")
+  } catch { /* fail open — persistent log is best-effort */ }
+}
 
 // ============================================================================
 // STATE FILE (atomic-ish read/write; fail-open on any IO error)
@@ -98,13 +125,25 @@ export default (async ({ }) => {
           if (elapsed > TASK_TIMEOUT_MS) {
             const mins = (elapsed / 60000).toFixed(1)
             const limitMin = (TASK_TIMEOUT_MS / 60000).toFixed(0)
-            // Advisory — plugins cannot hard-kill tasks. The orchestrator reads
-            // its own console stream and acts (re-dispatch / re-split / abandon).
-            console.warn(
+            const line =
               `TASK DEADLINE EXCEEDED: task ${id} has been running for ${mins}min ` +
               `(limit ${limitMin}min). This task should have completed. The ` +
               `orchestrator should dispatch a replacement.`
-            )
+            // Persistent channel — every breach is logged so the orchestrator
+            // can poll via `make task-ttl-check` (CLI mirror reads the same
+            // state file; this log is the audit trail).
+            appendWarning(`${new Date().toISOString()} ${line}`)
+            // UI channel — throttled to ONCE per task id per session so a
+            // lingering breached task does not flood the user's terminal.
+            // The orchestrator still gets the signal (one warn is enough to
+            // trigger re-dispatch / re-split); the user UI stays readable.
+            if (!warnedIds.has(id)) {
+              warnedIds.add(id)
+              // Advisory — plugins cannot hard-kill tasks. The orchestrator
+              // reads its own console stream and acts (re-dispatch / re-split
+              // / abandon).
+              console.warn(line)
+            }
           }
         }
       } catch { /* fail open — never wedge */ }
@@ -121,6 +160,10 @@ export default (async ({ }) => {
           delete d[id]
           saveDeadlines(d)
         }
+        // Reset the UI-throttle gate so a future dispatch reusing this id
+        // (e.g. resumed task via SendMessage) is allowed to warn again if it
+        // also exceeds the deadline. The persistent WARNINGS_LOG is untouched.
+        warnedIds.delete(id)
       } catch { /* fail open */ }
     },
   }
