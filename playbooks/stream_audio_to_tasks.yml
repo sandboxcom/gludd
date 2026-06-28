@@ -1,0 +1,173 @@
+---
+# =============================================================================
+# stream_audio_to_tasks.yml
+#
+# Operator scenario: turn a live microphone / ALSA capture into structured
+# todo items.  The gludd_stream module tails an audio device, hands each
+# silence-bounded chunk to whisper.cpp for transcription, and dispatches a
+# cloned role that decides whether the transcript is a question/note worth
+# recording as a self_improve todo (via gludd_db.todo_create) or noise to
+# discard.
+#
+# Knob-by-knob:
+#   device          "hw:0,0"      ALSA hardware device identifier (arecord
+#                                 syntax).  Any string the host's audio
+#                                 stack accepts as `-i <device>` works.
+#   device_kind     "audio"       Selects the audio ingestion path inside
+#                                 gludd_stream (PCM framing, sample-rate
+#                                 aware chunking).  One of: audio|video|
+#                                 text|binary.
+#   buffer_size     5242880       5 MiB rolling buffer.  Audio is high
+#                                 throughput; a generous buffer absorbs
+#                                 bursts without dropping frames.  When the
+#                                 buffer fills past this size the oldest
+#                                 bytes are evicted.
+#   dispatch_trigger silence_detection
+#                                 Emit a chunk whenever the input goes
+#                                 quiet for >= min_silence_ms.  This is the
+#                                 natural utterance boundary for speech.
+#     min_silence_ms 1500         1.5 s of quiet separates utterances.
+#                                 Lower = tighter segmentation + more
+#                                 dispatches; higher = longer chunks.
+#   external_processor whisper.cpp
+#                                 Run an out-of-process transcoder on each
+#                                 chunk before cloning the role.  The
+#                                 module writes the chunk to a temp file and
+#                                 appends it to `args` as the last positional
+#                                 argument.
+#     args ["--model", "/models/base.en.bin"]
+#                                 Whisper model path; switch to /models/small
+#                                 for higher accuracy at ~3x latency.
+#     timeout_seconds 120         Kill the transcoder if it stalls.  Whisper
+#                                 base.en on 60 s of audio typically finishes
+#                                 in <10 s on CPU; 120 s is a generous ceil.
+#   dispatch_role_clone           Dispatch the named role as a sub-agent per
+#                                 chunk, injecting the processor's stdout
+#     inject_as stream_chunk_transcript
+#                                 under this variable name.  The cloned
+#                                 role sees `stream_chunk_transcript` as a
+#                                 normal task variable.
+#     role stream_transcript_to_todo
+#                                 Operator-supplied clone target.  Ship in
+#                                 the same collection.  See the inline
+#                                 fallback below for the role's contract.
+#   stop_condition  timeout 600   Run for 10 minutes then drain.  Other
+#                                 options: {type: eof}, {type: external,
+#                                 topic: "..."}, {type: max_dispatches, N}.
+#
+# The clone target (stream_transcript_to_todo) is operator-supplied; its
+# contract is demonstrated inline below so this playbook is also runnable
+# standalone.  When the role is shipped, the inline fallback is a no-op.
+# =============================================================================
+- name: Stream ALSA audio -> transcripts -> gludd todo backlog
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-stream-audio') }}"
+    daemon_url: "{{ daemon_url | default('http://127.0.0.1:8000') }}"
+    psk: "{{ psk | default('') }}"
+    audio_device: "{{ audio_device | default('hw:0,0') }}"
+    whisper_model: "{{ whisper_model | default('/models/base.en.bin') }}"
+
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    # The primary entry point.  gludd_stream runs the capture loop, hands
+    # each chunk to whisper.cpp, and dispatches the cloned role per
+    # transcript.  The result carries dispatch tallies for observability.
+    - name: Capture audio and dispatch transcripts to gludd
+      general_ludd.agent.gludd_stream:
+        device: "{{ audio_device }}"
+        device_kind: audio
+        buffer_size: 5242880
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        dispatch_trigger:
+          type: silence_detection
+          min_silence_ms: 1500
+        external_processor:
+          tool: whisper.cpp
+          args:
+            - "--model"
+            - "{{ whisper_model }}"
+          timeout_seconds: 120
+        dispatch_role_clone:
+          inject_as: stream_chunk_transcript
+          role: stream_transcript_to_todo
+        stop_condition:
+          type: timeout
+          seconds: 600
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_run
+      ignore_errors: true
+
+    - name: Persist stream run summary
+      ansible.builtin.copy:
+        content: "{{ stream_run | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-run-summary.json"
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # Inline demonstration of the stream_transcript_to_todo role contract.
+    # Operators that ship the role can delete this block; the role runs
+    # per-chunk via the dispatcher.  This inline block runs once for the
+    # LAST chunk only — useful for smoke-testing the decision logic.
+    # -------------------------------------------------------------------------
+    - name: Inline — slurp the last chunk artifact
+      ansible.builtin.slurp:
+        src: "{{ stream_run.chunks | default([]) | last | default('') }}"
+      register: last_chunk_raw
+      when:
+        - stream_run is success
+        - (stream_run.chunks | default([])) | length > 0
+
+    - name: Inline — decode last transcript
+      ansible.builtin.set_fact:
+        last_transcript: "{{ (last_chunk_raw.content | default('')) | b64decode | default('') }}"
+      when: last_chunk_raw is not skipped
+
+    - name: Inline — classify transcript (question / note / discard)
+      ansible.builtin.set_fact:
+        transcript_kind: >-
+          {{
+            'note' if (last_transcript | default('') | regex_search('(?i)\\b(note|remember|todo|track)\\b')) else
+            'question' if (last_transcript | default('') | regex_search('(?i)\\?|^(what|why|how|when|who)\\b')) else
+            'discard'
+          }}
+      when: (last_transcript | default('')) | length > 0
+
+    - name: Inline — submit question/note as self_improve todo
+      general_ludd.agent.gludd_db:
+        op: todo_create
+        title: "audio: {{ last_transcript | truncate(80, true, '...') }}"
+        description: "Captured from {{ audio_device }}: {{ last_transcript }}"
+        work_type: self_improve
+        queue: core
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: created_todo
+      when: transcript_kind | default('discard') in ['note', 'question']
+
+    - name: Inline — log discarded transcript
+      ansible.builtin.copy:
+        content: |
+          discarded transcript:
+          {{ last_transcript | default('(empty)') }}
+        dest: "{{ artifact_dir }}/discarded-transcripts.log"
+        mode: "0644"
+      when: transcript_kind | default('discard') == 'discard'
+
+    - name: Report stream outcome
+      ansible.builtin.debug:
+        msg: >-
+          stream_changed={{ stream_run.changed | default(false) }}
+          dispatches={{ stream_run.dispatches | default(0) }}
+          bytes_processed={{ stream_run.bytes_processed | default(0) }}
+          stopped_by={{ stream_run.stopped_by | default('n/a') }}
+          last_kind={{ transcript_kind | default('n/a') }}

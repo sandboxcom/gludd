@@ -1,0 +1,144 @@
+---
+# =============================================================================
+# stream_video_feature_detection.yml
+#
+# Operator scenario: poll a webcam (/dev/video0) every 30 s, hand each frame
+# batch to an agent that reports faces + license plates, and append the
+# analysis to a markdown report.  Capped at 10 dispatches so the play is
+# bounded (useful for shift-change spot-checks).
+#
+# Knob-by-knob:
+#   device          "/dev/video0"  V4L2 character device for the webcam.
+#   device_kind     "video"        Frame-aware ingestion (each read() call
+#                                  yields one frame; the buffer holds N
+#                                  frames-worth of bytes).
+#   buffer_size     67108864       64 MiB.  1080p YUYV ~6 MiB/frame raw, so
+#                                  ~10 frames in flight before eviction.
+#                                  Lower if you only ever want the latest
+#                                  frame; higher for multi-frame correlation.
+#   dispatch_trigger interval 30   Emit a chunk every 30 s wall clock.  An
+#                                  interval trigger on video effectively
+#                                  means "grab the latest N seconds."  Other
+#                                  options: size_threshold (bytes), external
+#                                  (pub/sub topic).
+#     seconds 30                   30 s balances coverage vs agent cost.
+#                                  Tighten to 5-10 s for incident response.
+#   external_processor agent       Invoke the agent CLI tool with a natural-
+#                                  language prompt; the chunk is piped to
+#                                  the agent's stdin.
+#     args.prompt "Identify any faces or license plates and report count"
+#                                  Instruction to the vision-capable agent.
+#                                  The agent writes a JSON-ish summary to
+#                                  stdout that the cloned role consumes.
+#     timeout_seconds 300          Vision inference can take minutes on a
+#                                  large batch; 300 s is a safe ceil.
+#   dispatch_role_clone            Clone the named role per chunk; inject the
+#     inject_as stream_frame_analysis
+#                                  agent's stdout under this name.
+#     role stream_frame_report_writer
+#                                  Operator-supplied; see inline fallback.
+#   stop_condition max_dispatches 10
+#                                  Stop after 10 dispatches (10 * 30 s =
+#                                  ~5 min total).  Use {type: timeout,
+#                                  seconds: N} for wall-clock bounding.
+# =============================================================================
+- name: Stream webcam frames -> agent analysis -> markdown report
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-stream-video') }}"
+    daemon_url: "{{ daemon_url | default('http://127.0.0.1:8000') }}"
+    psk: "{{ psk | default('') }}"
+    video_device: "{{ video_device | default('/dev/video0') }}"
+    analysis_prompt: >-
+      {{ analysis_prompt | default('Identify any faces or license plates and report count') }}
+
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    # Seed the report so the inline fallback can append cleanly.
+    - name: Initialise video-analysis.md report
+      ansible.builtin.copy:
+        content: |
+          # Video Analysis Report
+
+          Source device: {{ video_device }}
+          Generated: {{ ansible_date_time.iso8601 | default('now') }}
+
+          ## Dispatches
+        dest: "{{ artifact_dir }}/video-analysis.md"
+        mode: "0644"
+
+    - name: Capture video frames and dispatch agent analysis
+      general_ludd.agent.gludd_stream:
+        device: "{{ video_device }}"
+        device_kind: video
+        buffer_size: 67108864
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        dispatch_trigger:
+          type: interval
+          seconds: 30
+        external_processor:
+          tool: agent
+          args:
+            prompt: "{{ analysis_prompt }}"
+          timeout_seconds: 300
+        dispatch_role_clone:
+          inject_as: stream_frame_analysis
+          role: stream_frame_report_writer
+        stop_condition:
+          type: max_dispatches
+          count: 10
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_run
+      ignore_errors: true
+
+    - name: Persist stream run summary
+      ansible.builtin.copy:
+        content: "{{ stream_run | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-run-summary.json"
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # Inline demonstration of the stream_frame_report_writer role contract.
+    # Appends the LAST analysis to the markdown report.  Operators that ship
+    # the role can delete this block.
+    # -------------------------------------------------------------------------
+    - name: Inline — slurp the last chunk artifact
+      ansible.builtin.slurp:
+        src: "{{ stream_run.chunks | default([]) | last | default('') }}"
+      register: last_chunk_raw
+      when:
+        - stream_run is success
+        - (stream_run.chunks | default([])) | length > 0
+
+    - name: Inline — decode last frame analysis
+      ansible.builtin.set_fact:
+        last_analysis: "{{ (last_chunk_raw.content | default('')) | b64decode | default('no analysis produced') }}"
+      when: last_chunk_raw is not skipped
+
+    - name: Inline — append analysis to markdown report
+      ansible.builtin.lineinfile:
+        path: "{{ artifact_dir }}/video-analysis.md"
+        create: true
+        mode: "0644"
+        line: |-
+          ### dispatch {{ stream_run.dispatches | default(1) }}
+          {{ last_analysis | default('(no analysis produced)') }}
+        insertafter: EOF
+      when: last_analysis is defined
+
+    - name: Report stream outcome
+      ansible.builtin.debug:
+        msg: >-
+          dispatches={{ stream_run.dispatches | default(0) }}
+          bytes_processed={{ stream_run.bytes_processed | default(0) }}
+          stopped_by={{ stream_run.stopped_by | default('n/a') }}
+          artifact={{ artifact_dir }}/video-analysis.md

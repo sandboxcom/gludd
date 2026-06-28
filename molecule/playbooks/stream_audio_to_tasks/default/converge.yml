@@ -1,0 +1,61 @@
+---
+# Exercise gludd_stream against the mock daemon + fake audio file. The
+# external_processor is omitted (whisper.cpp isn't available in CI); the
+# cloned role isn't required — we only assert that the module's HTTP path
+# to /admin/stream/dispatch fires and returns a task_id.
+- name: Converge - gludd_stream audio against mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8841', true) }}"
+    mock_audio: "/tmp/mock-audio.wav"
+    artifact_dir: "/tmp/gludd-stream-audio-molecule"
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Reset mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Stream audio chunk via gludd_stream (size_threshold trigger)
+      general_ludd.agent.gludd_stream:
+        device: "{{ mock_audio }}"
+        device_kind: audio
+        buffer_size: 5242880
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        dispatch_trigger:
+          type: size_threshold
+          bytes: 1024
+        dispatch_role_clone:
+          inject_as: stream_chunk_transcript
+          role: stream_transcript_to_todo
+        stop_condition:
+          type: eof
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_result
+
+    - name: Persist stream result
+      ansible.builtin.copy:
+        content: "{{ stream_result | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-audio-result.json"
+        mode: "0644"
+
+    - name: Snapshot mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests"
+        method: GET
+        status_code: 200
+      register: requests_snapshot
+
+    - name: Persist request log for verify
+      ansible.builtin.copy:
+        content: "{{ requests_snapshot.json | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-audio-requests.json"
+        mode: "0644"

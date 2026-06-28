@@ -1,0 +1,69 @@
+---
+- name: Verify - gludd_stream video dispatched against mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    artifact_dir: "/tmp/gludd-stream-video-molecule"
+  tasks:
+    - name: Load stream result
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/stream-video-result.json"
+      register: result_raw
+
+    - name: Parse stream result
+      ansible.builtin.set_fact:
+        stream_result: "{{ result_raw.content | b64decode | from_json }}"
+
+    # gludd_stream returns a flat dict: {bytes_processed, chunks, dispatches,
+    # last_task_id, stopped_by, changed, failed}. Assert it ran cleanly.
+    - name: Assert stream result shape
+      ansible.builtin.assert:
+        that:
+          - stream_result.failed is defined
+          - stream_result.stopped_by is defined
+          - not stream_result.failed
+        fail_msg: "gludd_stream video result incomplete: {{ stream_result }}"
+        success_msg: >-
+          gludd_stream video ran: stopped_by={{ stream_result.stopped_by }}
+          dispatches={{ stream_result.dispatches | default(0) }}
+
+    - name: Assert analysis markdown exists
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/video-analysis.md"
+      register: report_stat
+      failed_when: not report_stat.stat.exists
+
+    - name: Assert stream-dispatch endpoint is registered on mock daemon
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/admin/stream/dispatch"
+        method: POST
+        body_format: json
+        body:
+          device: "/tmp/mock-video.mkv"
+          device_kind: video
+          dispatch_role_clone:
+            inject_as: stream_frame_analysis
+            role: stream_frame_report_writer
+        status_code: 200
+      register: dispatch_probe
+
+    - name: Assert dispatch-probe returned task_id + clone_path
+      ansible.builtin.assert:
+        that:
+          - dispatch_probe.json.task_id is defined
+          - dispatch_probe.json.clone_path is defined
+          - dispatch_probe.json.accepted
+        fail_msg: >-
+          /admin/stream/dispatch did not return the canned response:
+          {{ dispatch_probe.json }}
+        success_msg: >-
+          /admin/stream/dispatch registered: task_id={{ dispatch_probe.json.task_id }}
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

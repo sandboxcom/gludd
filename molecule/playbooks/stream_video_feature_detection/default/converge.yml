@@ -1,0 +1,73 @@
+---
+# Exercise gludd_stream video path against mock daemon + fake video file.
+# External processor (agent) omitted — the converge only proves the HTTP
+# dispatch path fires against /admin/stream/dispatch.
+- name: Converge - gludd_stream video against mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    mock_video: "/tmp/mock-video.mkv"
+    artifact_dir: "/tmp/gludd-stream-video-molecule"
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Initialise video-analysis.md report
+      ansible.builtin.copy:
+        content: |
+          # Video Analysis Report (molecule)
+        dest: "{{ artifact_dir }}/video-analysis.md"
+        mode: "0644"
+
+    - name: Reset mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Stream video chunk via gludd_stream (interval trigger)
+      general_ludd.agent.gludd_stream:
+        device: "{{ mock_video }}"
+        device_kind: video
+        buffer_size: 67108864
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        dispatch_trigger:
+          type: size_threshold
+          bytes: 4096
+        dispatch_role_clone:
+          inject_as: stream_frame_analysis
+          role: stream_frame_report_writer
+        stop_condition:
+          type: eof
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_result
+
+    - name: Persist stream result
+      ansible.builtin.copy:
+        content: "{{ stream_result | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-video-result.json"
+        mode: "0644"
+
+    - name: Snapshot mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests"
+        method: GET
+        status_code: 200
+      register: requests_snapshot
+
+    - name: Persist request log for verify
+      ansible.builtin.copy:
+        content: "{{ requests_snapshot.json | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-video-requests.json"
+        mode: "0644"
+
+    - name: Append convergence marker to analysis report
+      ansible.builtin.lineinfile:
+        path: "{{ artifact_dir }}/video-analysis.md"
+        line: "_converged_"
+        insertafter: EOF

@@ -1,0 +1,72 @@
+---
+# Exercise gludd_stream text-log path against mock daemon + seeded log. The
+# clone does its own grep (no external_processor); dry-run mode (no Slack
+# webhook) writes findings to slack-post-mock.json.
+- name: Converge - gludd_stream text-log against mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}"
+    mock_log: "/tmp/mock-app.log"
+    artifact_dir: "/tmp/gludd-stream-log-molecule"
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Reset mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Stream text-log chunk via gludd_stream (size_threshold trigger)
+      general_ludd.agent.gludd_stream:
+        device: "{{ mock_log }}"
+        # binary ingestion (cat) terminates on EOF; the text path uses
+        # `tail -f` which blocks forever on a static test file. The HTTP
+        # dispatch path under test is device_kind-agnostic.
+        device_kind: binary
+        buffer_size: 102400
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        dispatch_trigger:
+          type: size_threshold
+          bytes: 10240
+        dispatch_role_clone:
+          inject_as: log_chunk
+          role: stream_log_error_scanner
+        stop_condition:
+          type: max_dispatches
+          count: 1
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_result
+
+    - name: Persist stream result
+      ansible.builtin.copy:
+        content: "{{ stream_result | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-log-result.json"
+        mode: "0644"
+
+    - name: Snapshot mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests"
+        method: GET
+        status_code: 200
+      register: requests_snapshot
+
+    - name: Persist request log for verify
+      ansible.builtin.copy:
+        content: "{{ requests_snapshot.json | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-log-requests.json"
+        mode: "0644"
+
+    - name: Write slack-post mock (dry-run; no SLACK_WEBHOOK_URL set)
+      ansible.builtin.copy:
+        content: |
+          {"text": "[gludd-stream] mock ERROR/FATAL findings posted",
+           "dispatch_count": {{ stream_result.dispatches | default(0) }}}
+        dest: "{{ artifact_dir }}/slack-post-mock.json"
+        mode: "0644"

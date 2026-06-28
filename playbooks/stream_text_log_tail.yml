@@ -1,0 +1,154 @@
+---
+# =============================================================================
+# stream_text_log_tail.yml
+#
+# Operator scenario: tail a log file in 10 KiB chunks; on each chunk a
+# cloned role greps for ERROR|FATAL and posts any hits to a Slack webhook.
+# Stops when an external stop signal is published on the "stop_log_tail"
+# topic (e.g. an SRE publishes it from incident chat).
+#
+# Knob-by-knob:
+#   device          "/var/log/app.log"
+#                                  A regular text file the module tails via
+#                                  `tail -F` semantics.  Device-kind "text"
+#                                  means lines are emitted as-is (no binary
+#                                  framing).  Truncation + rotation are
+#                                  handled by re-opening the file.
+#   device_kind     "text"         Text-mode ingestion: line-preserving,
+#                                  utf-8 tolerant.  Use "binary" for raw
+#                                  byte streams without line semantics.
+#   buffer_size     102400         100 KiB rolling buffer.  Logs are bursty;
+#                                  100 KiB is plenty to hold a chunk in
+#                                  flight plus the next one.
+#   dispatch_trigger size_threshold
+#                                  Emit a chunk whenever the buffer holds at
+#     bytes 10240                  least this many bytes.  10 KiB chunks keep
+#                                  Slack posts small and frequent; raise to
+#                                  100 KiB for high-volume pipelines.
+#   external_processor (omitted)   No external processor — the cloned role
+#                                  does its own analysis (grep).  Omitting
+#                                  external_processor means the raw chunk
+#                                  bytes are passed straight to the clone
+#                                  under the `inject_as` variable.
+#   dispatch_role_clone            Clone the named role per chunk.
+#     inject_as log_chunk          Raw chunk bytes appear under this name.
+#     role stream_log_error_scanner
+#                                  Operator-supplied; see inline fallback.
+#   stop_condition  external       Stop when the daemon publishes on this
+#     topic "stop_log_tail"        topic.  The SRE workflow publishes a
+#                                  stop after incident closure.  Other
+#                                  options: timeout, eof, max_dispatches.
+# =============================================================================
+- name: Tail app log -> ERROR/FATAL grep -> Slack alert
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-stream-log') }}"
+    daemon_url: "{{ daemon_url | default('http://127.0.0.1:8000') }}"
+    psk: "{{ psk | default('') }}"
+    log_path: "{{ log_path | default('/var/log/app.log') }}"
+    # Slack webhook URL — read from env so the secret never lands in the
+    # playbook or in process argv.  Empty default = dry-run (write findings
+    # to artifact_dir instead of posting).
+    slack_webhook_url: "{{ lookup('env', 'SLACK_WEBHOOK_URL') | default('', true) }}"
+
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Tail log and dispatch chunks to gludd
+      general_ludd.agent.gludd_stream:
+        device: "{{ log_path }}"
+        device_kind: text
+        buffer_size: 102400
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        dispatch_trigger:
+          type: size_threshold
+          bytes: 10240
+        # No external_processor: the clone does its own grep.
+        dispatch_role_clone:
+          inject_as: log_chunk
+          role: stream_log_error_scanner
+        stop_condition:
+          type: external
+          topic: "stop_log_tail"
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_run
+      ignore_errors: true
+
+    - name: Persist stream run summary
+      ansible.builtin.copy:
+        content: "{{ stream_run | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-run-summary.json"
+        mode: "0644"
+
+    # -------------------------------------------------------------------------
+    # Inline demonstration of the stream_log_error_scanner role contract.
+    # Greps the LAST chunk for ERROR|FATAL and posts findings to Slack (or,
+    # in dry-run mode with no SLACK_WEBHOOK_URL, writes them to an artifact).
+    # -------------------------------------------------------------------------
+    - name: Inline — slurp the last chunk artifact
+      ansible.builtin.slurp:
+        src: "{{ stream_run.chunks | default([]) | last | default('') }}"
+      register: last_chunk_raw
+      when:
+        - stream_run is success
+        - (stream_run.chunks | default([])) | length > 0
+
+    - name: Inline — decode last chunk
+      ansible.builtin.set_fact:
+        last_chunk: "{{ (last_chunk_raw.content | default('')) | b64decode | default('') }}"
+      when: last_chunk_raw is not skipped
+
+    - name: Inline — grep ERROR|FATAL lines out of the chunk
+      ansible.builtin.set_fact:
+        error_lines: >-
+          {{
+            (last_chunk | default('')).split('\n')
+            | select('match', '(?i).*(ERROR|FATAL).*')
+            | list
+          }}
+      when: last_chunk is defined
+
+    - name: Inline — post findings to Slack (when webhook configured)
+      ansible.builtin.uri:
+        url: "{{ slack_webhook_url }}"
+        method: POST
+        body_format: json
+        body:
+          text: >-
+            [gludd-stream] {{ error_lines | length }} ERROR/FATAL lines in
+            {{ log_path }} (chunk {{ stream_run.dispatches | default(1) }})
+        status_code: 200
+      when:
+        - error_lines | default([]) | length > 0
+        - slack_webhook_url | length > 0
+      no_log: true
+
+    - name: Inline — dry-run artifact (when no webhook configured)
+      ansible.builtin.copy:
+        content: |
+          ERROR/FATAL findings (dry-run — set SLACK_WEBHOOK_URL to post):
+          {% for line in (error_lines | default([])) -%}
+          - {{ line }}
+          {% endfor -%}
+        dest: "{{ artifact_dir }}/slack-post-mock.json"
+        mode: "0644"
+      when:
+        - error_lines | default([]) | length > 0
+        - slack_webhook_url | length == 0
+
+    - name: Report stream outcome
+      ansible.builtin.debug:
+        msg: >-
+          dispatches={{ stream_run.dispatches | default(0) }}
+          bytes_processed={{ stream_run.bytes_processed | default(0) }}
+          stopped_by={{ stream_run.stopped_by | default('n/a') }}
+          error_lines={{ error_lines | default([]) | length }}
+          slack={{ 'posted' if (slack_webhook_url | length > 0) else 'dry-run' }}

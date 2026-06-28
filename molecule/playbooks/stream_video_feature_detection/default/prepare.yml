@@ -1,0 +1,51 @@
+---
+# Start mock daemon + create a fake /dev/video0 stand-in file so gludd_stream's
+# tail loop has something to read without real video hardware.
+- name: Prepare - mock daemon + fake video device
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8842', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    mock_video: "/tmp/mock-video.mkv"
+  tasks:
+    - name: Kill any stale mock daemon on this port
+      ansible.builtin.shell:
+        cmd: >-
+          pid="{{ pidfile }}" &&
+          if [ -f "$pid" ]; then kill "$(cat $pid)" 2>/dev/null || true; rm -f "$pid"; fi;
+          lsof -ti tcp:{{ mock_port }} 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+      changed_when: false
+      failed_when: false
+
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Create fake video device file (zeros)
+      ansible.builtin.shell:
+        cmd: "dd if=/dev/zero of={{ mock_video }} bs=1024 count=128 2>/dev/null"
+      changed_when: true
+
+    - name: Confirm device file exists
+      ansible.builtin.stat:
+        path: "{{ mock_video }}"
+      register: device_stat
+      failed_when: not device_stat.stat.exists

@@ -1,0 +1,59 @@
+---
+# Start mock daemon + seed /tmp/mock-app.log with ERROR/FATAL lines so the
+# gludd_stream text path has something meaningful to chunk through.
+- name: Prepare - mock daemon + seeded app log
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8843', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    mock_log: "/tmp/mock-app.log"
+  tasks:
+    - name: Kill any stale mock daemon on this port
+      ansible.builtin.shell:
+        cmd: >-
+          pid="{{ pidfile }}" &&
+          if [ -f "$pid" ]; then kill "$(cat $pid)" 2>/dev/null || true; rm -f "$pid"; fi;
+          lsof -ti tcp:{{ mock_port }} 2>/dev/null | xargs -r kill -9 2>/dev/null || true
+      changed_when: false
+      failed_when: false
+
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock daemon /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Seed app log with ERROR/FATAL lines (>= 10 KiB for one chunk)
+      ansible.builtin.copy:
+        # 200 lines * ~60 bytes = ~12 KiB; half are ERROR/FATAL so the verify
+        # assertion can prove the grep happened.
+        content: |
+          {% for i in range(100) -%}
+          2026-06-28T10:{{ '%02d' % (i % 60) }}:00Z INFO  request={{ i }} ok
+          2026-06-28T10:{{ '%02d' % (i % 60) }}:01Z ERROR request={{ i }} failed: connection reset
+          2026-06-28T10:{{ '%02d' % (i % 60) }}:02Z FATAL request={{ i }} panic: nil deref
+          {% endfor -%}
+        dest: "{{ mock_log }}"
+        mode: "0644"
+
+    - name: Confirm log file exists
+      ansible.builtin.stat:
+        path: "{{ mock_log }}"
+      register: log_stat
+      failed_when: not log_stat.stat.exists
