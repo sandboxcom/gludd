@@ -114,3 +114,64 @@ class TestClaimRunnableFifo:
         assert [t.todo_id for t in claimed] == ["t4", "t3", "t2"]
         # And they are all now ACTIVE (genuinely claimed, not just selected).
         assert all(t.status == TodoStatus.ACTIVE.value for t in claimed)
+
+
+class TestClaimRunnablePriority:
+    """F2: ``claim_runnable`` must order by ``priority DESC`` so the PID-cap trim
+    path cannot drop a higher-priority todo in favor of a lower-priority one
+    that happens to have a slightly older ``created_at``.
+    """
+
+    async def test_higher_priority_claimed_first(
+        self, async_session: AsyncSession
+    ) -> None:
+        """Three todos with identical created_at but priorities [0, 5, 2] must
+        claim in priority order: [5, 2, 0]."""
+        for tid, prio in (("t0", 0), ("t1", 5), ("t2", 2)):
+            async_session.add(
+                TodoModel(
+                    todo_id=tid,
+                    title=tid,
+                    status=TodoStatus.QUEUED.value,
+                    queue="core",
+                    work_type="code",
+                    version=1,
+                    priority=prio,
+                    created_at=_BASE,
+                )
+            )
+        await async_session.flush()
+
+        repo = TodoRepository(async_session)
+        claimed = await repo.claim_runnable(limit=10)
+
+        assert [t.todo_id for t in claimed] == ["t1", "t2", "t0"], (
+            f"priority-desc order broken: {[t.todo_id for t in claimed]}"
+        )
+
+    async def test_priority_breaks_tie_then_created_at(
+        self, async_session: AsyncSession
+    ) -> None:
+        """Equal priority falls back to created_at order (FIFO tiebreak)."""
+        # Same priority, REVERSE insertion order vs created_at — claim must
+        # follow created_at (oldest first), NOT insertion order.
+        for i in range(3):
+            async_session.add(
+                TodoModel(
+                    todo_id=f"t{i}",
+                    title=f"t{i}",
+                    status=TodoStatus.QUEUED.value,
+                    queue="core",
+                    work_type="code",
+                    version=1,
+                    priority=3,  # equal priority
+                    created_at=_BASE + timedelta(seconds=(3 - i)),
+                )
+            )
+        await async_session.flush()
+
+        repo = TodoRepository(async_session)
+        claimed = await repo.claim_runnable(limit=10)
+
+        # t2 has the oldest created_at (+1s), then t1 (+2s), then t0 (+3s).
+        assert [t.todo_id for t in claimed] == ["t2", "t1", "t0"]

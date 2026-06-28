@@ -389,7 +389,9 @@ class TodoRepository:
         # ORDER BY, row order is database-defined (undefined) and starvation is
         # possible under load. id is a deterministic tiebreaker for same-instant
         # created_at (e.g. todos inserted within the same microsecond in tests).
-        stmt = stmt.order_by(TodoModel.created_at, TodoModel.id)
+        stmt = stmt.order_by(
+            TodoModel.priority.desc(), TodoModel.created_at, TodoModel.id
+        )
         # P12: cap even an explicit caller limit so a huge value can't load an
         # unbounded result set (claim semantics are per-batch, so a cap is safe).
         stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT))
