@@ -311,6 +311,50 @@ def build_secrets_resolver(
     return base
 
 
+def resolve_secret_manager_for_call(
+    app: FastAPI, authorization: str | None
+) -> Any:
+    """Return a SecretsManager scoped to the request's auth context.
+
+    When ``authorization`` carries an STS Bearer token (``Bearer <sts_token>``)
+    that resolves in the daemon's STSRegistry, a NEW SecretsManager is built
+    sharing the daemon-wide hvac client but scoped to the token's PermissionSpec
+    — narrowest-effective-scope for the duration of this one request.
+
+    When ``authorization`` is absent, malformed, or carries the daemon PSK, the
+    daemon-wide resolver (built with the default ``build`` spec, or None when
+    unconfigured) is returned unchanged so existing callers and tests are
+    unaffected.
+    """
+    resolver = getattr(app.state, "_secrets_resolver", None)
+    if authorization is None or not authorization.startswith("Bearer "):
+        return resolver
+    token = authorization[len("Bearer ") :].strip()
+    registry = getattr(app.state, "_sts_registry", None)
+    if registry is None:
+        return resolver
+    claim = registry.resolve(token)
+    if claim is None:
+        # Unknown / expired / revoked token — return the daemon-wide resolver
+        # rather than a scoped one. The caller's PSK check (which runs first)
+        # gates whether this code path is reached at all.
+        return resolver
+    # The daemon-wide resolver may be a SecretsManager, an EnvSecretsManager,
+    # or a LazyProjectSecrets wrapper. Only SecretsManager carries an hvac
+    # client we can re-scope; EnvSecretsManager has no path-gated backend.
+    base_client = getattr(resolver, "_client", None)
+    base_config = getattr(resolver, "_config", None)
+    if base_client is None or base_config is None:
+        return resolver
+    from general_ludd.secrets.manager import SecretsManager
+
+    return SecretsManager(
+        client=base_client,
+        config=base_config,
+        permission_spec=claim.spec,
+    )
+
+
 async def _restore_persisted_projects(project_manager: Any, session_factory: Any) -> None:
     """W3.11 (H13): rehydrate runtime-added projects from the DB and clone their repos.
 
@@ -2000,6 +2044,9 @@ def create_daemon_app(
     spend.register(app, daemon_state)
     from general_ludd.routers import coordination as _coord_router
     _coord_router.register(app, daemon_state)
+
+    from general_ludd.routers import stream as _stream_router
+    _stream_router.register(app, daemon_state)
 
     from general_ludd.routers.observe import wire_observability
 

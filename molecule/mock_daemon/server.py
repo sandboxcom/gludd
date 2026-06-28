@@ -32,6 +32,7 @@ shape matches what each module parses:
   POST /api/dispatch                  -> 200 {"result":{...}}                (gludd_dispatch dispatch)
   GET  /api/dispatch/available        -> 200 {"handlers":[...]}              (gludd_dispatch available)
   GET  /api/dispatch/recent           -> 200 {"records":[...]}               (gludd_dispatch recent)
+  POST /admin/stream/dispatch         -> 200 {task_id, clone_path, accepted} (gludd_stream chunk dispatch)
   GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
   GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
   GET  /admin/processes               -> 200 {"processes":[...],"count":N}    (gludd_process list / gludd_proc_monitor)
@@ -60,6 +61,7 @@ import os
 import sys
 import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
+from typing import Any
 from urllib.parse import parse_qs, urlparse
 
 
@@ -295,6 +297,23 @@ SPEND_SNAPSHOT = {
     "window_label": "24h",
     "period_start": "2026-06-15T00:00:00Z",
 }
+
+
+# ---------------------------------------------------------------------------
+# OpenBao break-glass snapshot/restore canned responses
+# ---------------------------------------------------------------------------
+# The mock daemon stands in for an OpenBao server during molecule runs of the
+# openbao_break_glass_backup role. The snapshot bytes are a fixed deterministic
+# blob so the molecule verify play can assert that what the role wrote matches
+# what the mock served, and that the GPG-encrypted tarball is well-formed.
+OPENBAO_FAKE_SNAPSHOT = (
+    b"OPENBAO-RAFT-SNAPSHOT-MOCK\n"
+    b"version: 1\n"
+    b"nodes: 1\n"
+    b"index: 42\n"
+    + b"\x00\x01\x02\x03mock-raft-payload" * 8
+)
+OPENBAO_RESTORE_LAST_PAYLOAD: dict[str, Any] = {}
 
 SPEND_CONFIGURE_RESPONSE = {
     "limit_usd": 10.0,
@@ -589,6 +608,45 @@ def _todo_record(todo_id: str) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# gludd_stream dispatch (POST /admin/stream/dispatch)
+# ---------------------------------------------------------------------------
+# Mirrors the daemon-side stream-dispatch contract: the gludd_stream module
+# posts each chunk + role-clone spec to /admin/stream/dispatch; the daemon
+# spins up a sub-agent running the cloned role and returns the new task id +
+# the on-disk path to the cloned role invocation. The mock returns canned
+# values so the gludd_stream module's HTTP path + payload shaping is exercised
+# end-to-end without real hardware or sub-agents.
+
+_STREAM_DISPATCH_COUNTER = 0
+_STREAM_DISPATCH_LOCK = threading.Lock()
+
+
+def _stream_dispatch_response(payload: dict) -> dict:
+    """Canned stream-dispatch response (task_id + clone_path).
+
+    Each call returns a DISTINCT task_id so the dual-dispatch path
+    (input_key mode=both, which POSTs twice per key hit) can be told apart
+    by callers and verify plays.
+    """
+    global _STREAM_DISPATCH_COUNTER
+    role = (payload.get("dispatch_role_clone") or {}).get("role", "unknown")
+    inject_as = (payload.get("dispatch_role_clone") or {}).get("inject_as", "stream_chunk")
+    with _STREAM_DISPATCH_LOCK:
+        _STREAM_DISPATCH_COUNTER += 1
+        seq = _STREAM_DISPATCH_COUNTER
+    extra = payload.get("extra_vars") or {}
+    position = extra.get("stream_chunk_position", "single")
+    return {
+        "task_id": f"stream-task-mock-{seq:04d}",
+        "clone_path": f"/tmp/gludd-stream-clone-{role}-{seq}.json",
+        "accepted": True,
+        "inject_as": inject_as,
+        "stream_chunk_position": position,
+        "stream_chunk_index": extra.get("stream_chunk_index", 0),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Managed-process registry (gludd_process / gludd_proc_monitor)
 # ---------------------------------------------------------------------------
 # Shape mirrors the daemon's managed-process API: GET /admin/processes returns a
@@ -679,6 +737,13 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
         self.end_headers()
         self.wfile.write(raw)
 
+    def _send_octet(self, status: int, body: bytes) -> None:
+        self.send_response(status)
+        self.send_header("Content-Type", "application/octet-stream")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+
     def _read_body(self) -> dict:
         length = int(self.headers.get("Content-Length", 0) or 0)
         if length <= 0:
@@ -754,6 +819,13 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
                 self._send_json(404, {"detail": f"bad process path {path}"})
             else:
                 self._send_json(200, _process_stats(pid))
+        elif path == "/v1/sys/storage/raft/snapshot":
+            # OpenBao break-glass snapshot — serve canned octet-stream bytes.
+            token = self.headers.get("X-Vault-Token", "")
+            if not token:
+                self._send_json(403, {"detail": "missing X-Vault-Token"})
+            else:
+                self._send_octet(200, OPENBAO_FAKE_SNAPSHOT)
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -788,12 +860,31 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _schedule_response(payload))
         elif path == "/api/dispatch":
             self._send_json(200, _dispatch_response(payload))
+        elif path == "/admin/stream/dispatch":
+            self._send_json(200, _stream_dispatch_response(payload))
         elif path.startswith("/admin/processes/") and path.endswith("/signal"):
             pid = _pid_from_proc_path(path)
             if pid is None:
                 self._send_json(404, {"detail": f"bad process path {path}"})
             else:
                 self._send_json(200, _signal_response(pid, payload))
+        elif path == "/v1/sys/storage/raft/restore":
+            # OpenBao break-glass restore — accept the raw bytes, return 204.
+            token = self.headers.get("X-Vault-Token", "")
+            if not token:
+                self._send_json(403, {"detail": "missing X-Vault-Token"})
+                return
+            length = int(self.headers.get("Content-Length", 0) or 0)
+            raw = self.rfile.read(length) if length > 0 else b""
+            global OPENBAO_RESTORE_LAST_PAYLOAD
+            OPENBAO_RESTORE_LAST_PAYLOAD = {
+                "size_bytes": len(raw),
+                "head_hex": raw[:32].hex(),
+            }
+            # OpenBao returns 204 No Content for a successful restore.
+            self.send_response(204)
+            self.send_header("Content-Length", "0")
+            self.end_headers()
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 

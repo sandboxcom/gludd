@@ -17,6 +17,8 @@ class BinaryPaths(BaseModel):
     ansible_playbook: str = "ansible-playbook"
     git: str = "git"
     uv: str = "uv"
+    opa: str = "opa"
+    conftest: str = "conftest"
 
 
 class BinaryPathResolver:

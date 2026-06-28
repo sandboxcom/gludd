@@ -11,3 +11,5 @@ binary_paths:
   ansible_playbook: "ansible-playbook"
   git: "git"
   uv: "uv"
+  opa: "opa"
+  conftest: "conftest"

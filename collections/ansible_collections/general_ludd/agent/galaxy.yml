@@ -17,3 +17,8 @@ tags:
   - llm
   - automation
 dependencies: {}
+# Optional — terraform providers this collection's modules/stacks depend on.
+# The importer refuses the collection if any provider here is not in the
+# operator's trust list (infra/terraform/policies/data.json).
+terraform_provider_trust:
+  - hashicorp/vsphere

@@ -457,6 +457,7 @@ gate: validate-opencode-config
 	@echo "[gate $$(date +%H:%M:%S)] phase 5/5 smoke (real daemon boot) ..."
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
+	@$(MAKE) --no-print-directory .terraform-plan-check
 	@echo "[gate $$(date +%H:%M:%S)] all phases done, finalizing ..."
 	@echo "---" >> .gate-status
 	@# Stamp the epoch at COMPLETION (executed via $$(...), not parse-time $(shell)).
@@ -2153,6 +2154,7 @@ validate: lint ansible-syntax healthcheck
 	if [ $$EXIT -eq 0 ]; then echo "test: PASS"; else echo "test: FAIL (non-zero exit)"; exit 1; fi
 	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "smoke: PASS" || (echo "smoke: FAIL" && exit 1)
 	@$(MAKE) --no-print-directory audit-evidence > /dev/null 2>&1 && echo "audit-evidence: PASS" || (echo "audit-evidence: FAIL" && exit 1)
+	@$(MAKE) --no-print-directory opa-policy-check > /dev/null 2>&1 && echo "opa-policy-check: PASS" || (echo "opa-policy-check: FAIL" && exit 1)
 	@echo "Full validation passed."
 
 # Run `terraform fmt -check` and `terraform validate` across every module and
@@ -2172,6 +2174,89 @@ terraform-validate:
 			&& terraform validate ) || { echo "VALIDATE FAIL: $$d"; EXIT=1; }; \
 	done; \
 	exit $$EXIT
+
+.PHONY: opa-install conftest-install opa-policy-check .terraform-plan-check
+
+# Install the Open Policy Agent binary to bin/opa. Idempotent: no-op if bin/opa
+# already exists and is executable. Optional tool — never required by the gate.
+opa-install:
+	@[ -x bin/opa ] && echo "bin/opa already installed" && exit 0
+	@mkdir -p bin
+	@OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	case "$$OS" in \
+		darwin) OPA_URL=https://openpolicyagent.org/downloads/latest/opa_darwin_amd64;; \
+		linux)  OPA_URL=https://openpolicyagent.org/downloads/latest/opa_linux_amd64;; \
+		*) echo "opa-install: unsupported OS: $$OS"; exit 1;; \
+	esac; \
+	echo "Downloading OPA from $$OPA_URL"; \
+	curl -sL "$$OPA_URL" -o bin/opa && chmod +x bin/opa && echo "Installed bin/opa"
+
+# Install conftest (OPA rego test runner) to bin/conftest. Idempotent. Optional.
+CONFTEST_VERSION ?= v0.50.0
+conftest-install:
+	@[ -x bin/conftest ] && echo "bin/conftest already installed" && exit 0
+	@mkdir -p bin
+	@OS=$$(uname -s | tr '[:upper:]' '[:lower:]'); \
+	ARCH=$$(uname -m); \
+	case "$$ARCH" in \
+		x86_64|amd64) ARCH=amd64;; \
+		arm64|aarch64) ARCH=arm64;; \
+		*) echo "conftest-install: unsupported arch: $$ARCH"; exit 1;; \
+	esac; \
+	case "$$OS" in \
+		darwin) OS_TITLE=Darwin;; \
+		linux)  OS_TITLE=Linux;; \
+		*) echo "conftest-install: unsupported OS: $$OS"; exit 1;; \
+	esac; \
+	VER=$$(echo "$(CONFTEST_VERSION)" | sed 's/^v//'); \
+	TARBALL="conftest_$${VER}_$${OS_TITLE}_$${ARCH}.tar.gz"; \
+	URL="https://github.com/open-policy-agent/conftest/releases/download/$(CONFTEST_VERSION)/$$TARBALL"; \
+	echo "Downloading conftest $$VER from $$URL"; \
+	curl -sL "$$URL" | tar -xz -C bin conftest && chmod +x bin/conftest && echo "Installed bin/conftest"
+
+# OPA/conftest policy gate. OPTIONAL: graceful skip (exit 0) when conftest is not
+# installed. For every stack under infra/terraform/stacks/*/ with a main.tf:
+# init -> plan -> show -json -> conftest test against infra/terraform/policies/.
+# A failed plan (typically missing required vars) is a SKIP for that stack, not a
+# target-wide failure. A conftest policy violation sets EXIT=1 and fails the gate.
+opa-policy-check:
+	@command -v conftest >/dev/null 2>&1 || { echo "conftest not installed, skipping opa-policy-check"; exit 0; }
+	@EXIT=0; \
+	for d in infra/terraform/stacks/*/; do \
+		[ -d "$$d" ] || continue; \
+		[ -f "$$d/main.tf" ] || continue; \
+		stack=$$(basename "$$d"); \
+		if ! command -v terraform >/dev/null 2>&1; then \
+			echo "POLICY-CHECK SKIP $$stack: terraform absent"; \
+			continue; \
+		fi; \
+		echo "--- opa-policy-check $$stack (init)"; \
+		terraform -chdir=$$d init -backend=false -input=false >/dev/null 2>&1 || { \
+			echo "POLICY-CHECK SKIP $$stack: init failed"; continue; \
+		}; \
+		echo "--- opa-policy-check $$stack (plan)"; \
+		if ! terraform -chdir=$$d plan -out=/tmp/gludd-$$stack-tfplan -input=false >/dev/null 2>&1; then \
+			echo "POLICY-CHECK SKIP $$stack: plan failed (likely missing vars)"; \
+			continue; \
+		fi; \
+		terraform -chdir=$$d show -json /tmp/gludd-$$stack-tfplan > /tmp/gludd-$$stack-tfplan.json; \
+		echo "--- opa-policy-check $$stack (conftest)"; \
+		if ! conftest test -p infra/terraform/policies/ /tmp/gludd-$$stack-tfplan.json; then \
+			echo "POLICY-CHECK FAIL: $$stack"; EXIT=1; \
+		fi; \
+	done; \
+	exit $$EXIT
+
+# Gate phase wrapper: calls opa-policy-check, writes PASS/FAIL into .gate-status.
+# Optional — opa-policy-check itself exits 0 when conftest is absent.
+.terraform-plan-check:
+	@echo "[gate $$(date +%H:%M:%S)] phase 6 opa-policy-check (optional) ..."
+	@printf "opa-policy-check " >> .gate-status
+	@if $(MAKE) --no-print-directory opa-policy-check > /tmp/gludd-gate-opa.log 2>&1; then \
+		echo "PASS" >> .gate-status; \
+	else \
+		echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] opa-policy-check FAILED:" && cat /tmp/gludd-gate-opa.log; \
+	fi
 
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."
@@ -3564,3 +3649,41 @@ replace-text:
 	@[ -n "$(FILE)" ] && [ -n "$(OLD_FILE)" ] && [ -n "$(NEW_FILE)" ] || { \
 		echo "Usage: make replace-text FILE=<file> OLD_FILE=<old-text-file> NEW_FILE=<new-text-file>"; exit 1; }
 	@$(PYTHON) scripts/replace_text.py "$(FILE)" "$(OLD_FILE)" "$(NEW_FILE)"
+
+# ---------------------------------------------------------------------------
+# Local model-server stacks (docker / podman). See infra/local-models/README.md.
+# Each target builds the image and starts the container in the background.
+# ---------------------------------------------------------------------------
+
+# vLLM stack. Override MODEL_ID, VLLM_VERSION, TENSOR_PARALLEL_SIZE, MAX_CTX, GPU_COUNT.
+# Usage: make local-model-vllm MODEL_ID=meta-llama/Llama-3.1-8B-Instruct
+local-model-vllm:
+	@cd infra/local-models/vllm && \
+		MODEL_ID="$(MODEL_ID)" VLLM_VERSION="$(VLLM_VERSION)" \
+		CUDA_VERSION="$(CUDA_VERSION)" TORCH_CUDA_ARCH_LIST="$(TORCH_CUDA_ARCH_LIST)" \
+		TENSOR_PARALLEL_SIZE="$(TENSOR_PARALLEL_SIZE)" MAX_CTX="$(MAX_CTX)" \
+		GPU_COUNT="$(GPU_COUNT)" \
+		docker compose build && \
+		docker compose up -d && \
+		echo "vLLM serving on http://localhost:8000/v1"
+
+# llama.cpp stack. Override LLAMACPP_VERSION, MODEL_URL, GPU_LAYERS, CTX_SIZE, GPU_COUNT.
+# Usage: make local-model-llamacpp MODEL_URL=https://example.com/model.gguf
+local-model-llamacpp:
+	@cd infra/local-models/llamacpp && \
+		LLAMACPP_VERSION="$(LLAMACPP_VERSION)" MODEL_URL="$(MODEL_URL)" \
+		GPU_LAYERS="$(GPU_LAYERS)" CTX_SIZE="$(CTX_SIZE)" GPU_COUNT="$(GPU_COUNT)" \
+		docker compose build && \
+		docker compose up -d && \
+		echo "llama.cpp serving on http://localhost:8080"
+
+# ollama stack (dev/CI). Override OLLAMA_MODEL, GPU_COUNT.
+# Usage: make local-model-ollama OLLAMA_MODEL=llama3.2
+local-model-ollama:
+	@cd infra/local-models/ollama && \
+		OLLAMA_MODEL="$(OLLAMA_MODEL)" GPU_COUNT="$(GPU_COUNT)" \
+		docker compose build && \
+		docker compose up -d && \
+		echo "ollama serving on http://localhost:11434"
+
+.PHONY: local-model-vllm local-model-llamacpp local-model-ollama

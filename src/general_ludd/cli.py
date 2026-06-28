@@ -691,6 +691,50 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     connectors_query.add_argument("--daemon-url", default="http://localhost:8000")
     connectors_query.set_defaults(func=_cmd_connectors_query)
 
+    onboard_parser = sub.add_parser(
+        "onboard",
+        help="Interactively set up the IAM role + API token gludd needs to run "
+        "Terraform-managed compute (least privilege).",
+        description=(
+            "Walk through IAM role creation, token acquisition guidance, token "
+            "input, and end-to-end validation for the requested cloud provider.\n\n"
+            "Phases:\n"
+            "  Phase 1: IAM role creation guidance\n"
+            "  Phase 2: token acquisition guidance\n"
+            "  Phase 3: token input (prompt or --token)\n"
+            "  Phase 4: token + role validation\n\n"
+            "Supported providers: aws, gcp, azure"
+        ),
+    )
+    onboard_parser.add_argument(
+        "provider",
+        nargs="?",
+        default=None,
+        help="Cloud provider to onboard (aws, gcp, azure).",
+    )
+    onboard_parser.add_argument(
+        "--dry-run",
+        action="store_true",
+        help="Walk through every phase without invoking any cloud API "
+        "(validation is skipped; canned responses are used).",
+    )
+    onboard_parser.add_argument("--token", default=None, help="API token (non-interactive).")
+    onboard_parser.add_argument("--role-arn", default=None, help="IAM role ARN (non-interactive).")
+    onboard_parser.add_argument("--region", default=None, help="Cloud region (e.g. us-east-1).")
+    onboard_parser.add_argument("--project", default=None, help="GCP project ID.")
+    onboard_parser.add_argument("--subscription", default=None, help="Azure subscription ID.")
+    onboard_parser.add_argument(
+        "--config-dir",
+        default=None,
+        help="Where to write the onboarded-provider.json config (default: ~/.config/gludd).",
+    )
+    onboard_parser.set_defaults(func=_cmd_onboard)
+
+    # `gludd perm` — permission system visibility + editing.
+    from general_ludd.cli_perm import register as _register_perm
+
+    perm_parser = _register_perm(sub)
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -709,9 +753,136 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "quantization": quant_parser,
         "slurm": slurm_parser,
         "connectors": connectors_parser,
+        "perm": perm_parser,
     }
 
     return parser, subcommand_map
+
+
+def _cmd_onboard(args: argparse.Namespace) -> None:
+    import datetime as _dt
+    from pathlib import Path
+
+    from general_ludd.onboard import SUPPORTED_PROVIDERS, get_provider
+
+    supported_str = ", ".join(sorted(SUPPORTED_PROVIDERS))
+
+    provider_name = getattr(args, "provider", None)
+    if not provider_name:
+        print(
+            "Error: onboard requires a provider argument.\n"
+            f"Supported providers: {supported_str}\n"
+            "Example: gludd onboard aws",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    if provider_name not in SUPPORTED_PROVIDERS:
+        print(
+            f"Error: unknown provider '{provider_name}'.\n"
+            f"Supported providers: {supported_str}",
+            file=sys.stderr,
+        )
+        sys.exit(2)
+
+    provider = get_provider(provider_name)
+    dry_run = bool(getattr(args, "dry_run", False))
+    role_arn = getattr(args, "role_arn", None)
+    region = getattr(args, "region", None) or "us-east-1"
+    token = getattr(args, "token", None)
+
+    print(f"Phase 1: IAM role creation guidance ({provider_name})")
+    if role_arn:
+        print(f"  Role ARN supplied via --role-arn: {role_arn} (skipping guide)")
+    elif dry_run:
+        print(
+            f"  [dry-run] Would call {provider_name}.create_role_instructions(). "
+            "Using canned IAM role guidance."
+        )
+        role_arn = f"arn:{provider_name}:iam::000000000000:role/gludd-dry-run"
+    else:
+        try:
+            guide = provider.create_role_instructions()
+        except NotImplementedError as exc:
+            print(f"  Provider not yet implemented: {exc}", file=sys.stderr)
+            sys.exit(3)
+        print(guide)
+        try:
+            role_arn = input("Paste the created role ARN and press Enter: ").strip()
+        except EOFError:
+            role_arn = ""
+        if not role_arn:
+            print("Error: a role ARN is required.", file=sys.stderr)
+            sys.exit(2)
+
+    print(f"Phase 2: token acquisition guidance ({provider_name})")
+    if dry_run:
+        print(
+            f"  [dry-run] Would call {provider_name}.token_acquisition_guide(). "
+            "Using canned token acquisition guidance."
+        )
+    else:
+        try:
+            token_guide = provider.token_acquisition_guide()
+        except NotImplementedError as exc:
+            print(f"  Provider not yet implemented: {exc}", file=sys.stderr)
+            sys.exit(3)
+        print(token_guide)
+
+    print(f"Phase 3: token input ({provider_name})")
+    if token:
+        print("  Token supplied via --token (skipping prompt).")
+    elif dry_run:
+        token = "dry-run-canned-token"
+        print("  --dry-run set: using canned token (no prompt).")
+    else:
+        try:
+            token = input("Paste the API token (input hidden): ").strip()
+        except EOFError:
+            token = ""
+        if not token:
+            print("Error: a token is required.", file=sys.stderr)
+            sys.exit(2)
+
+    print(f"Phase 4: token + role validation ({provider_name})")
+    config_dir_arg = getattr(args, "config_dir", None)
+    config_dir = Path(config_dir_arg) if config_dir_arg else Path.home() / ".config" / "gludd"
+    config_dir.mkdir(parents=True, exist_ok=True)
+    config_path = config_dir / "onboarded-provider.json"
+
+    if dry_run:
+        print("  --dry-run set: skipping live validation (canned success).")
+        ok, details = True, {"role_arn": role_arn, "dry_run": True}
+    else:
+        try:
+            ok, details = provider.validate_token_and_role(token, role_arn, region)
+        except NotImplementedError as exc:
+            print(f"  Provider not yet implemented: {exc}", file=sys.stderr)
+            sys.exit(3)
+
+    if not ok:
+        reason = details.get("reason", "unknown") if isinstance(details, dict) else "unknown"
+        print(
+            f"Validation FAILED: {reason}\n"
+            "Remediation: re-check the token, role ARN, and region; recreate the "
+            "token if it may have expired; verify the IAM trust policy.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    validated_at = _dt.datetime.now(_dt.UTC).isoformat()
+    config_payload = {
+        "provider": provider_name,
+        "role_arn": role_arn,
+        "region": region,
+        "token_validated_at": validated_at,
+    }
+    config_path.write_text(json.dumps(config_payload, indent=2))
+    print(
+        f"\nOnboard complete: provider={provider_name} region={region} "
+        f"role={role_arn}\nConfig written: {config_path}"
+    )
+    sys.exit(0)
 
 
 def main() -> None:

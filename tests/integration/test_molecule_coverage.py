@@ -62,12 +62,20 @@ def _role_scenario(role: str) -> str:
 # test_gludd_langgraph_workflow scenario (POST /admin/models/workflow). The two
 # call-endpoint modules have no separate test_<module> dir yet, so they remain on
 # the shrinking checklist.
+# gludd_stream is exercised end-to-end (HTTP path + payload shaping +
+# /admin/stream/dispatch round-trip) by the three operator-example scenarios
+# under molecule/playbooks/stream_audio_to_tasks, stream_video_feature_detection,
+# and stream_text_log_tail — but those names do NOT satisfy the strict
+# test_gludd_stream naming convention, so the module remains on the checklist
+# until a dedicated test_gludd_stream scenario lands. See Phase Stream in
+# TASKS.md.
 _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_embed",
     "gludd_environment",
     "gludd_langchain_generate",
     "gludd_langgraph_decision",
     "gludd_proc_monitor",
+    "gludd_stream",
 }
 # All other gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
@@ -219,3 +227,63 @@ class TestRoleCoverageChecklist:
         scenarios = _scenario_names()
         covered = {r for r in roles if _role_scenario(r) in scenarios}
         assert len(covered) >= 1, f"expected >= 1 role scenario, have {sorted(covered)}"
+
+
+# ---------------------------------------------------------------------------
+# Operator-example scenarios for the gludd_stream module + /admin/stream/dispatch
+# endpoint. These do NOT satisfy the strict test_gludd_stream naming convention
+# (they're scenario-led examples, not module-coverage scenarios), so they're
+# tracked here independently. Each scenario MUST ship molecule.yml + the
+# default/ trio (prepare/converge/verify) and the mock daemon MUST have been
+# extended with the /admin/stream/dispatch handler.
+# ---------------------------------------------------------------------------
+_STREAM_SCENARIOS: tuple[str, ...] = (
+    "stream_audio_to_tasks",
+    "stream_video_feature_detection",
+    "stream_text_log_tail",
+    "stream_input_key_dispatch",
+    "stream_input_key_both",
+)
+
+
+class TestStreamExampleScenarios:
+    def test_stream_dispatch_handler_in_mock_daemon(self):
+        """Mock daemon MUST implement POST /admin/stream/dispatch."""
+        src = MOCK_DAEMON.read_text()
+        assert "/admin/stream/dispatch" in src, (
+            "mock_daemon/server.py missing POST /admin/stream/dispatch handler"
+        )
+        assert "_stream_dispatch_response" in src, (
+            "mock_daemon/server.py missing _stream_dispatch_response helper"
+        )
+
+    def test_stream_scenarios_present(self):
+        scenarios = _scenario_names()
+        for name in _STREAM_SCENARIOS:
+            assert name in scenarios, f"stream scenario missing: {name}"
+            mol = SCENARIOS_DIR / name / "molecule.yml"
+            conv = SCENARIOS_DIR / name / "default" / "converge.yml"
+            ver = SCENARIOS_DIR / name / "default" / "verify.yml"
+            prep = SCENARIOS_DIR / name / "default" / "prepare.yml"
+            assert mol.is_file(), f"{name}: molecule.yml missing"
+            assert conv.is_file(), f"{name}: default/converge.yml missing"
+            assert ver.is_file(), f"{name}: default/verify.yml missing"
+            assert prep.is_file(), f"{name}: default/prepare.yml missing"
+
+    def test_stream_scenarios_use_mock_daemon(self):
+        """Each stream scenario's prepare.yml MUST launch the mock daemon."""
+        for name in _STREAM_SCENARIOS:
+            prep = SCENARIOS_DIR / name / "default" / "prepare.yml"
+            text = prep.read_text()
+            assert "mock_daemon/server.py" in text, (
+                f"{name}: prepare.yml must launch the mock daemon"
+            )
+
+    def test_stream_scenarios_target_stream_dispatch_endpoint(self):
+        """Each stream scenario's converge.yml MUST invoke gludd_stream."""
+        for name in _STREAM_SCENARIOS:
+            conv = SCENARIOS_DIR / name / "default" / "converge.yml"
+            text = conv.read_text()
+            assert "general_ludd.agent.gludd_stream" in text, (
+                f"{name}: converge.yml must invoke the gludd_stream module"
+            )
