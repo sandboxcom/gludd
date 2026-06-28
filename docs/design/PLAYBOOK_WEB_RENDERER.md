@@ -26,21 +26,19 @@ toolchain.
 
 ### Non-Goals
 
-- A general-purpose BI / chart-studio tool. Renderers produce a fixed set of
-  section types (markdown, table, metric_grid, chart, raw_html); complex
-  bespoke visualizations belong behind `raw_html` or an external tool.
+- General-purpose BI / chart-studio. Path A renderers compose a fixed set of
+  section types; complex bespoke visualizations belong behind `raw_html` or an
+  external tool.
 - User-uploaded (untrusted) playbooks. Renderers run with the daemon's
-  privileges and are **operator-curated only** — checked into the repo or
-  placed in the operator's config dir by an administrator.
-- Client-side SPA framework integration (React/Vue build pipelines). The
-  default surface is server-rendered Jinja2 + HTMX. A client-side layer is a
-  documented future option, not part of Phase 1.
-- Real-time push (WebSocket/SSE) dashboards. Phase 1 is request/response with
-  a TTL cache. Live refresh is achievable client-side via HTMX polling against
-  the same endpoint.
-- Authentication of individual end-users. Renderers reuse the daemon's existing
-  PSK model (operator admin PSK, plus an optional separate read-only PSK in a
-  later phase).
+  privileges — **operator-curated only** (checked into the repo or placed by
+  an administrator). Same trust boundary applies to companion
+  `<name>.schema.json` files (see §8).
+- Client-side SPA framework integration. Default surface is server-rendered
+  Jinja2 + HTMX (Appendix A).
+- Real-time push (WebSocket/SSE). Phase 1 is request/response with a TTL
+  cache; live refresh is achievable via HTMX polling.
+- Authentication of individual end-users. Renderers reuse the daemon's PSK
+  model (admin PSK now; optional read-only `GLUDD_RENDER_PSK` in Phase 4).
 
 ---
 
@@ -174,16 +172,14 @@ machinery. They differ only in how output is validated and rendered.
 
 **Path A — "Canonical-shape".** The playbook emits the closed 5-type section
 set (`markdown` / `metric_grid` / `table` / `chart` / `raw_html`). No schema
-file is needed. Output is validated by the pydantic `RenderDocument` models in
-`renderers/schema.py` and rendered by `templates/render/page.html.j2` plus
-the section partials in `templates/render/sections/`.
+file needed. Validated by the pydantic `RenderDocument` models in
+`renderers/schema.py`; rendered by `page.html.j2` + section partials.
 
-**Path B — "Schema-driven".** The playbook emits **any** JSON shape that
-matches a companion `<stem>.schema.json` placed next to `<stem>.yml`. Output
-is validated by `jsonschema` (Draft 2020-12) via
-`renderers.schema_loader.validate_against_schema` and rendered by
-`templates/render/schema_page.html.j2`, which walks the schema `properties`
-and dispatches to the `_schema_field.html.j2` macro per field.
+**Path B — "Schema-driven".** The playbook emits **any** JSON shape matching
+a companion `<stem>.schema.json` placed next to `<stem>.yml`. Validated by
+`jsonschema` (Draft 2020-12) via `schema_loader.validate_against_schema`;
+rendered by `schema_page.html.j2` walking the schema `properties` and
+dispatching to the `_schema_field.html.j2` macro per field.
 
 | | Path A (canonical) | Path B (schema-driven) |
 |---|---|---|
@@ -194,14 +190,13 @@ and dispatches to the `_schema_field.html.j2` macro per field.
 | Failure status | `500` + error section | `422` + `schema_error.html.j2` |
 
 **When to use which:**
-- **Path A** for quick operator dashboards composing the canned section
-  widgets (metric grid, table, chart). Lowest effort — declare `renderer:
-  true` and emit `sections[]`.
-- **Path B** when the data has a **formal contract** that should be enforced
-  (titles, descriptions, types, enums, required vs optional) and rendering
-  should be **derived from the schema** rather than hand-authored per section.
-  Useful for stable fact surfaces — e.g. `system_facts.schema.json` describing
-  the host fact tree.
+- **Path A** for quick operator dashboards composing the canned widgets
+  (metric grid, table, chart). Lowest effort — declare `renderer: true` and
+  emit `sections[]`.
+- **Path B** when the data has a **formal contract** (titles, descriptions,
+  types, enums, required vs optional) and rendering should be **derived from
+  the schema** rather than hand-authored per section. Useful for stable fact
+  surfaces — e.g. `system_facts.schema.json` describing the host fact tree.
 
 Discovery decides which path applies per renderer (see §3.7). Both coexist in
 the same registry; mixed deployments are the expected norm.
@@ -234,28 +229,24 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
 
     @app.get("/render/{name}", response_class=HTMLResponse)
     async def render_named(name: str) -> HTMLResponse:
-        registry = app.state._renderer_registry
-        cache    = app.state._renderer_cache
-        spec     = registry.get(name)              # miss -> 404
-        if (hit := cache.get(name)) is not None:
+        spec = app.state._renderer_registry.get(name)   # miss -> 404
+        if (hit := app.state._renderer_cache.get(name)) is not None:
             return HTMLResponse(hit)
         try:
-            doc = await run_renderer(app, spec)    # asyncio.to_thread(...)
+            doc = await run_renderer(app, spec)         # asyncio.to_thread(...)
         except RendererTimeout:
             return HTMLResponse(_render_error(...), status_code=504)
         except RendererFailure as exc:
             return HTMLResponse(_render_error(exc), status_code=500)
         html = _render_jinja(doc)
-        cache.set(name, html)
+        app.state._renderer_cache.set(name, html)
         return HTMLResponse(html)
 
-    @app.get("/render/{name}/schema")              # Path B only; 404 for Path A
+    @app.get("/render/{name}/schema")                   # Path B only; 404 for Path A
     async def render_schema(name: str) -> Response:
         spec = app.state._renderer_registry.get(name)
-        if spec.schema_path is None:
-            raise HTTPException(404)
-        return Response(spec.schema_path.read_text(),
-                        media_type="application/schema+json")
+        if spec.schema_path is None: raise HTTPException(404)
+        return Response(spec.schema_path.read_text(), media_type="application/schema+json")
 
     @app.get("/api/renderers", summary="List renderer playbooks (admin)")
     async def list_renderers() -> dict[str, Any]:
@@ -268,21 +259,11 @@ call (~line 1903) and to `routers/__init__.register_all`.
 
 ### 3.6 HTML rendering layer — server-side Jinja2 + HTMX (RECOMMENDED)
 
-**Recommendation: server-rendered Jinja2 + HTMX.** Rationale:
-
-| Approach | Build step | Latency | Complexity | New deps |
-|---|---|---|---|---|
-| **Jinja2 + HTMX (chosen)** | none | one round-trip per render | low | htmx via CDN `<script>` or vendored 14 KB file |
-| Jinja2 only (no JS) | none | one round-trip per render | lowest | none |
-| Vue/React SPA | npm/esbuild | cold-start cost, API round-trip | high | framework + bundler |
-| HTMX-only (no Jinja2) | none | partial swaps | low | htmx |
-
-Jinja2 is already a dependency (`pyproject.toml:38`). HTMX is added as a
-single `<script>` tag served from `templates/render/base.html.j2` — either
-via CDN or vendored under `src/general_ludd/templates/vendor/htmx.min.js`
-(served through FastAPI's `StaticFiles`). The default page loads with HTMX
-present but optional: a `hx-get="/render/<name>?partial=1"` on a `<div>`
-gives auto-refresh every N seconds without a full page reload.
+**Recommendation: server-rendered Jinja2 + HTMX.** Tradeoff matrix and full
+rationale live in Appendix A; summary: zero build step, Jinja2 is already a
+dep, HTMX is a single 14 KB `<script>` (CDN or vendored). The default page
+loads with HTMX optional — `hx-get="/render/<name>?partial=1"` on a `<div>`
+gives auto-refresh every N seconds.
 
 **Tradeoff explicitly accepted:** no rich client-side interactivity (sortable
 tables, drag-and-drop). Renderers needing that should emit `raw_html` with
@@ -440,12 +421,10 @@ The metadata block is added by the runner on top of this payload.
 A renderer playbook is a normal gludd playbook with three additional
 requirements:
 
-1. **Marker.** The first play's `vars:` MUST contain `renderer: true`. This is
-   what the registry keys on during discovery.
+1. **Marker.** The first play's `vars:` MUST contain `renderer: true`.
 2. **Artifact path.** The playbook MUST write its output to
    `{{ artifact_dir }}/render.json`. The runner creates `artifact_dir`
-   (default `/tmp/gludd-render-<name>-<uuid>`) before execution and reads
-   this exact path afterward.
+   (default `/tmp/gludd-render-<name>-<uuid>`) and reads this path afterward.
 3. **Optional knobs (vars).**
    - `renderer_timeout_seconds` (int, default 30) — per-renderer timeout.
    - `renderer_cache_ttl_seconds` (int, default 30) — per-renderer cache TTL.
@@ -580,18 +559,12 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RenderDocument:
 
 ### Unit — `tests/unit/test_render_schema_loader.py` (Path B)
 
-- `test_validate_against_schema_accepts_valid_payload` — flat object matching
-  a fixture schema → returns without raising.
-- `test_validate_against_schema_rejects_missing_required` — missing `required`
-  field → `SchemaValidationError` with correct `ValidationError.path`.
-- `test_validate_against_schema_rejects_wrong_type` — `string` where
-  `integer` declared → raises.
-- `test_validate_against_schema_rejects_bad_enum_value` — value outside
-  `enum` → raises.
-- `test_extract_field_metadata_picks_title_and_description` / `_falls_back_to_humanized_name`
-  / `_resolves_enum` — `FieldMetadata` translation.
-- `test_drafted_schema_load_failure_surfaces_at_startup` — malformed
-  `<name>.schema.json` → `discover()` raises (fail-fast).
+- `test_validate_against_schema_accepts_valid_payload` — flat payload matching fixture schema → no raise.
+- `test_validate_against_schema_rejects_missing_required` — missing `required` → `SchemaValidationError` with correct path.
+- `test_validate_against_schema_rejects_wrong_type` — `string` where `integer` → raises.
+- `test_validate_against_schema_rejects_bad_enum_value` — value outside `enum` → raises.
+- `test_extract_field_metadata_*` — `title`/`description` picked, name humanized as fallback, `enum` populated.
+- `test_drafted_schema_load_failure_surfaces_at_startup` — malformed `<name>.schema.json` → `discover()` raises (fail-fast).
 
 ### Unit — `tests/unit/test_schema_template_render.py` (Path B)
 
@@ -599,19 +572,14 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RenderDocument:
 - `test_render_enum_field_renders_select` → `<select>`.
 - `test_render_number_field_renders_metric` → metric card.
 - `test_render_object_field_recurses` → fieldset that calls back into `_schema_field`.
-- `test_render_array_of_objects_renders_table` → `<table>` with item
-  properties as columns.
-- `test_schema_strings_are_escaped` — schema `title` containing `<script>` →
-  literal text in output (no XSS).
+- `test_render_array_of_objects_renders_table` → `<table>` with item properties as columns.
+- `test_schema_strings_are_escaped` — schema `title` with `<script>` → literal text (no XSS).
 
 ### Unit — `tests/unit/test_system_facts_schema.py` (acceptance fixture)
 
-- `test_system_facts_schema_is_draft_2020_12` —
-  `system_facts.schema.json` parses under `Draft202012Validator`.
-- `test_system_facts_schema_covers_fixture_payload` — the JSON the
-  `system_facts.yml` playbook emits validates against its schema.
-- `test_system_facts_render_returns_200` — `GET /render/system_facts` yields
-  `text/html` and includes the schema `title`.
+- `test_system_facts_schema_is_draft_2020_12` — parses under `Draft202012Validator`.
+- `test_system_facts_schema_covers_fixture_payload` — emitted JSON validates against its schema.
+- `test_system_facts_render_returns_200` — `GET /render/system_facts` yields `text/html` with the schema `title`.
 
 ### Unit — `tests/unit/test_renderer_registry.py`
 
