@@ -161,4 +161,3 @@ def test_build_tfvars_injection_payload_is_inert() -> None:
             break
         assert pos > 0 and body[pos - 1] == "\\", f"unescaped ${{ at {pos}: {body!r}"
         idx = pos + 2
-

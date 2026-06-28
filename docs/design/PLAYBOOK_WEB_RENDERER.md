@@ -432,15 +432,14 @@ requirements:
    - `renderer_allow_raw_html` (bool, default false) — see §8.
 
 The playbook may use any existing role/module — typically
-`general_ludd.agent.gludd_facts` (the same module the `report_*` roles use,
-see `roles/report_status/tasks/main.yml:11`) to pull `/api/facts`, then
-compute derived values with `set_fact` and dump them via
-`ansible.builtin.copy` to `render.json`.
+`general_ludd.agent.gludd_facts` (the same module the `report_*` roles use)
+to pull `/api/facts`, then compute derived values with `set_fact` and dump
+them via `ansible.builtin.copy` to `render.json`.
 
-A complete example is the Phase 1 acceptance fixture
-`playbooks/renderers/system_facts.yml` — a thin wrapper around
-`general_ludd.agent.gludd_facts` that emits a `metric_grid` section from
-`gludd.work.*` and `gludd.history.*`.
+Phase 1 acceptance fixtures: `playbooks/renderers/system_facts.yml` (Path A
+example emitting a `metric_grid` from `gludd.work.*` / `gludd.history.*`)
+and its companion `system_facts.schema.json` (Path B example over the same
+fact tree).
 
 ---
 
@@ -517,24 +516,22 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RenderDocument:
 ```
 
 **Key choices:**
-- **Async via `asyncio.to_thread`** wrapping the existing
-  `AnsibleRunnerAdapter` (already imported in `daemon.py:21`). Does not block
-  the event loop. Multiple renderers can execute concurrently.
+- **Async via `asyncio.to_thread`** wrapping `AnsibleRunnerAdapter` (already
+  imported in `daemon.py:21`). Does not block the event loop; multiple
+  renderers execute concurrently.
 - **Timeout.** `asyncio.wait_for(..., timeout=spec.timeout_seconds)`. Default
   30s, configurable per-renderer via `renderer_timeout_seconds`.
-- **Caching.** In-memory `RendererCache` (TTL dict, default 30s, configurable
-  per-renderer). Cache is keyed by renderer name only (not by query params —
-  Phase 1 renderers are not parameterized). Cache stores the **validated
-  `RenderDocument`**, not the HTML, so the HTML layer can be re-rendered
-  without re-running the playbook. `DELETE /api/renderers/<name>/cache` (PSK-
-  gated) invalidates one entry; `DELETE /api/renderers/cache` clears all.
-- **Error handling.**
-  - Timeout → `504 Gateway Timeout` with an `error` section showing the
-    playbook name + timeout value.
-  - Non-zero exit / missing `render.json` / shape validation failure → `500`
-    with an `error` section that includes the runner's stdout/stderr tail
-    (operator-only — see §8; never exposed to unauthenticated viewers).
-  - Registry miss → `404`.
+- **Caching.** In-memory `RendererCache` (TTL dict, default 30s, per-renderer
+  override). Keyed by renderer name only (Phase 1 renderers are not
+  parameterized). Stores the **validated `RenderDocument`**, not HTML, so the
+  HTML layer can be re-rendered without re-running the playbook.
+  `DELETE /api/renderers/<name>/cache` and `DELETE /api/renderers/cache`
+  (PSK-gated) invalidate.
+- **Error handling.** Timeout → `504` + error section (name + timeout). Non-
+  zero exit / missing `render.json` / shape validation failure → `500` +
+  error section with stdout/stderr tail (operator-only — see §8). Path B
+  schema validation failure → `422` + `schema_error.html.j2`. Registry miss
+  → `404`.
 
 ---
 
@@ -632,33 +629,30 @@ Add `tests/unit/test_render_security.py`:
 
 ### Phase 1 — MVP (canonical + schema-driven)
 
-Canonical-shape rendering (Path A):
+Path A (canonical-shape):
 - `renderers/registry.py` (discovery + `RendererSpec`, incl. `schema_path`)
-- `renderers/schema.py` (pydantic models for the canonical JSON shape)
+- `renderers/schema.py` (pydantic models for canonical JSON shape)
 - `renderers/runner.py` (sync execution via `asyncio.to_thread`)
 - `routers/render.py` (`GET /render/<name>`, `GET /api/renderers`)
-- Jinja2 templates: `base.html.j2`, `page.html.j2`, partials for `markdown`,
-  `metric_grid`, `table`, plus an `error.html.j2`.
-- One shipped Path A renderer: `playbooks/renderers/system_facts.yml`.
+- Templates: `base.html.j2`, `page.html.j2`, section partials (`markdown`,
+  `metric_grid`, `table`), `error.html.j2`.
+- Shipped fixture: `playbooks/renderers/system_facts.yml`.
 
-Schema-driven rendering (Path B) — first-class in Phase 1 because formal-
-contract use cases (dashboards over stable fact trees) are an MVP goal:
+Path B (schema-driven) — first-class in Phase 1 because formal-contract use
+cases (dashboards over stable fact trees) are an MVP goal:
 - `renderers/schema_loader.py` (`validate_against_schema`,
   `extract_field_metadata`, `Draft202012Validator` wiring).
-- Jinja2 templates: `schema_page.html.j2`, `_schema_field.html.j2`,
-  `schema_error.html.j2`.
+- Templates: `schema_page.html.j2`, `_schema_field.html.j2`, `schema_error.html.j2`.
 - New endpoint: `GET /render/<name>/schema` (`application/schema+json`).
-- One shipped Path B fixture: `playbooks/renderers/system_facts.schema.json`.
+- Shipped fixture: `playbooks/renderers/system_facts.schema.json`.
 - Path B unit suites (§9).
 
 Shared:
-- Wire into `daemon.py` (`render.register(app, daemon_state)` near line 1903)
-  and `routers/__init__.register_all`.
-- `pyproject.toml`: confirm `jinja2` (already present); add
-  `jsonschema>=4.21` (Path B validator).
-- Markdown rendering: use the `markdown` library IF already a dep; otherwise
-  Phase 1 renders `markdown` sections as `<pre>` and Phase 2 adds proper
-  CommonMark rendering.
+- Wire into `daemon.py` (`render.register(app, daemon_state)` ~line 1903) and
+  `routers/__init__.register_all`.
+- `pyproject.toml`: confirm `jinja2`; add `jsonschema>=4.21` (Path B).
+- Markdown rendering: use `markdown` lib IF already a dep; otherwise Phase 1
+  renders `markdown` sections as `<pre>` (Phase 2 adds CommonMark).
 
 ### Phase 2 — Richer sections
 - `chart` section type (inline SVG; no JS dep — render server-side from the
