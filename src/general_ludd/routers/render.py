@@ -105,13 +105,20 @@ def render_schema_page(
 
 
 def render_schema_error(
-    *, name: str, errors: list[str], schema_title: str = ""
+    *,
+    name: str,
+    errors: list[Any],
+    schema: dict[str, Any] | None = None,
 ) -> str:
-    """Render the schema-validation error template (exposed for tests)."""
+    """Render the schema-validation error template (exposed for tests).
+
+    The companion ``schema_error.html.j2`` template reads ``schema.title`` and
+    walks ``errors`` (messages or dicts with ``path`` / ``message``).
+    """
     return _env.get_template(_SCHEMA_ERROR_TEMPLATE).render(
         name=name,
         errors=errors,
-        schema_title=schema_title,
+        schema=schema if schema is not None else {},
     )
 
 
@@ -222,22 +229,29 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 ),
             )
         except SchemaValidationError as exc:
-            schema_title = ""
+            loaded_schema: dict[str, Any] | None = None
             try:
                 from general_ludd.renderers.schema_loader import load_schema
 
                 if spec.schema_path is not None:
-                    loaded = load_schema(spec.schema_path)
-                    if loaded is not None:
-                        schema_title = str(loaded.get("title", ""))
+                    loaded_schema = load_schema(spec.schema_path)
             except Exception:  # pragma: no cover - best-effort title
                 pass
+            structured_errors: list[dict[str, str]] = []
+            for msg in exc.errors:
+                # Parallel task's validator emits "<path>: <message>"; split
+                # on the first ": " so the template can show them separately.
+                if ": " in msg:
+                    p, _, m = msg.partition(": ")
+                    structured_errors.append({"path": p, "message": m})
+                else:
+                    structured_errors.append({"path": "(root)", "message": msg})
             return HTMLResponse(
                 status_code=422,
                 content=render_schema_error(
                     name=exc.name,
-                    errors=exc.errors,
-                    schema_title=schema_title,
+                    errors=structured_errors,
+                    schema=loaded_schema,
                 ),
             )
         except RendererFailure as exc:

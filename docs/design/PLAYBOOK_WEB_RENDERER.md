@@ -16,13 +16,13 @@ page at `GET /render/<renderer_name>`.
 
 Let operators extend gludd with self-service web dashboards without writing
 Python. A renderer is just an Ansible playbook that pulls facts/traces/metrics
-(via the existing `gludd_facts` module or direct `ansible.builtin.uri` calls to
-`/api/facts`) and emits a single canonical JSON artifact. The daemon discovers
-that playbook, runs it on demand, and renders the JSON as HTML through a
-server-side Jinja2 template. Users visit `/render/<name>` in a browser and see
-a gludd-rendered view; new dashboards are added by dropping a YAML file in
-`playbooks/renderers/` — no daemon restart, no code change, no JavaScript
-toolchain.
+(via the existing `gludd_facts` module or direct `ansible.builtin.uri` calls
+to `/api/facts`) and emits a JSON artifact. The daemon discovers the
+playbook, runs it on demand, and renders the JSON as HTML through a server-
+side Jinja2 template. Users visit `/render/<name>` in a browser; new
+dashboards are added by dropping a YAML file in `playbooks/renderers/` — no
+daemon restart, no code change, no JS toolchain. Two equally first-class
+shapes are supported (Path A canonical / Path B schema-driven — see §3.3).
 
 ### Non-Goals
 
@@ -64,9 +64,7 @@ The operator authors one file, `playbooks/renderers/gpu_dashboard.yml`:
     psk: "{{ psk | default('') }}"
   tasks:
     - name: Pull live facts
-      general_ludd.agent.gludd_facts:
-        daemon_url: "{{ daemon_url }}"
-        psk: "{{ psk }}"
+      general_ludd.agent.gludd_facts: { daemon_url: "{{ daemon_url }}", psk: "{{ psk }}" }
       register: live_facts
       no_log: "{{ psk | length > 0 }}"
     - name: Build per-model cost table
@@ -74,7 +72,7 @@ The operator authors one file, `playbooks/renderers/gpu_dashboard.yml`:
         _gpu_rows: >-
           {{ live_facts.ansible_facts.gludd.metrics.global_model_usage
              | dict2items(key_name='model', value_name='stats') }}
-    - name: Write renderer JSON artifact
+    - name: Write renderer JSON artifact (Path A — canonical sections[])
       ansible.builtin.copy:
         dest: "{{ artifact_dir }}/render.json"
         mode: "0644"
@@ -90,15 +88,13 @@ The operator authors one file, `playbooks/renderers/gpu_dashboard.yml`:
                             | dict | sum | round(2)} ]},
               { 'type': 'table', 'title': 'Per-model usage',
                 'columns': ['model','total_calls','success_rate','total_cost_usd'],
-                'rows': _gpu_rows }
-            ]
-          } | to_nice_json }}
+                'rows': _gpu_rows } ] } | to_nice_json }}
 ```
 
-The operator restarts (or hot-reloads) the daemon. The renderer is auto-
+The operator restarts (or hot-reloads) the daemon; the renderer is auto-
 discovered. They visit `https://gludd.example/render/gpu_dashboard` and see
-the rendered page. They curl `GET /api/renderers` and see it listed alongside
-the built-in `system_facts` renderer.
+the rendered page. `GET /api/renderers` lists it alongside the built-in
+`system_facts` renderer.
 
 ---
 
@@ -142,15 +138,13 @@ Discovery is **convention-over-config**:
 
 1. Scan two directories for `*.yml`:
    - `<repo>/playbooks/renderers/` (shipped examples, version-controlled)
-   - `<config_dir>/renderers/` (operator override/additions; wins on name clash)
+   - `<config_dir>/renderers/` (operator override/additions; wins on clash)
 2. For each file, parse the YAML and check the top-level play's `vars` for
-   `renderer: true`. Files without this marker are ignored (so other playbooks
-   can coexist in the dir).
+   `renderer: true`. Files without this marker are ignored.
 3. The renderer **name** is the file stem (`gpu_dashboard.yml` → `gpu_dashboard`).
-4. Validate the playbook declares the required artifact path
-   `{{ artifact_dir }}/render.json` (checked by static string presence — we do
-   **not** execute the playbook to register it).
-5. Optionally validate a companion schema file (see §3.3).
+4. Validate the playbook declares `{{ artifact_dir }}/render.json` (checked
+   by static string presence — we do **not** execute the playbook to register).
+5. Detect a sibling `<name>.schema.json` to classify as Path B (see §3.7).
 
 The registry exposes:
 ```python
@@ -162,7 +156,7 @@ class RendererRegistry:
 ```
 
 `RendererSpec` is a dataclass: `name`, `path`, `timeout_seconds`, `schema_path`
-(optional), `description` (parsed from the playbook's `- name:`).
+(optional, populated iff Path B), `description` (from the playbook's `- name:`).
 
 ### 3.3 Schema declaration — two first-class paths
 
@@ -323,9 +317,9 @@ posture as `GET /render/<name>` (Phase 1: public GET; Phase 4:
 
 ## 4. JSON Output Contract
 
-Every renderer playbook MUST write a file at
-`{{ artifact_dir }}/render.json` matching this shape. Validated at execution
-time by `renderers/schema.py` (pydantic).
+Every Path A renderer MUST write `{{ artifact_dir }}/render.json` matching
+the canonical shape below. Validated at execution time by `renderers/schema.py`
+(pydantic). Path B renderers follow §"Path B output contract" below.
 
 ```json
 {
@@ -336,28 +330,18 @@ time by `renderers/schema.py` (pydantic).
       { "label": "Running agents", "value": 7, "unit": "" },
       { "label": "Burn rate",      "value": 0.42, "unit": "USD/min" }
     ]},
-    { "type": "table",
-      "title": "Per-model usage",
+    { "type": "table", "title": "Per-model usage",
       "columns": ["model", "calls", "success_rate", "cost_usd"],
-      "rows": [
-        ["sonnet", 1234, 0.96, 12.30],
-        ["opus",   18,   0.88, 4.10]
-      ]
+      "rows": [ ["sonnet", 1234, 0.96, 12.30], ["opus", 18, 0.88, 4.10] ]
     },
-    { "type": "chart",
-      "title": "Cost over time",
-      "chart_type": "line",
+    { "type": "chart", "title": "Cost over time", "chart_type": "line",
       "data": { "labels": ["00:00","01:00","02:00"],
-                "series": [{"name":"cost","values":[1.1,2.3,3.8}] }
-    },
+                "series": [{"name":"cost","values":[1.1,2.3,3.8]}] } },
     { "type": "raw_html", "html": "<iframe src='...'></iframe>" }
   ],
-  "metadata": {
-    "generated_at": "2026-06-28T14:03:22Z",
-    "playbook": "gpu_dashboard.yml",
-    "execution_ms": 412,
-    "renderer_version": 1
-  }
+  "metadata": { "generated_at": "2026-06-28T14:03:22Z",
+                "playbook": "gpu_dashboard.yml",
+                "execution_ms": 412, "renderer_version": 1 }
 }
 ```
 
@@ -379,10 +363,7 @@ overwrites/merges `generated_at`, `execution_ms`, `renderer_version`, and
 
 Path B renderers do **not** need to match the canonical `sections[]` shape —
 they need to match their companion `<name>.schema.json`. The runner still
-injects the same `metadata` block (so timing/playbook provenance is preserved).
-
-Example — `playbooks/renderers/system_facts.schema.json` declares a flat
-top-level object of host facts:
+injects the same `metadata` block. Example schema (flat object of host facts):
 
 ```json
 {
@@ -393,23 +374,16 @@ top-level object of host facts:
   "properties": {
     "hostname":       { "type": "string", "description": "Kernel hostname" },
     "uptime_seconds": { "type": "integer", "description": "Seconds since boot" },
-    "load": {
-      "type": "array",
-      "description": "1/5/15-minute load averages",
-      "items": { "type": "number" }
-    }
+    "load": { "type": "array", "items": { "type": "number" },
+              "description": "1/5/15-min load averages" }
   }
 }
 ```
 
-The matching `render.json` for a Path B renderer has **no** `sections[]`:
+Matching `render.json` — **no** `sections[]`:
 
 ```json
-{
-  "hostname": "gpu-node-03",
-  "uptime_seconds": 918273,
-  "load": [1.42, 1.08, 0.93]
-}
+{ "hostname": "gpu-node-03", "uptime_seconds": 918273, "load": [1.42, 1.08, 0.93] }
 ```
 
 The metadata block is added by the runner on top of this payload.
@@ -655,47 +629,41 @@ Shared:
   renders `markdown` sections as `<pre>` (Phase 2 adds CommonMark).
 
 ### Phase 2 — Richer sections
-- `chart` section type (inline SVG; no JS dep — render server-side from the
-  `data` block). If a JS chart lib is desired, vendor it (no npm).
+- `chart` section type (inline SVG; no JS dep). Vendor a JS chart lib only if
+  needed (no npm).
 - Proper CommonMark rendering for `markdown` sections (add `markdown` to
-  `pyproject.toml` if not already present — small, pure-Python, acceptable).
-- HTMX auto-refresh: `base.html.j2` includes an optional
-  `hx-get="...?partial=1"` on a `<main>` div for polling. Applies to both
-  Path A and Path B pages.
+  `pyproject.toml` — small, pure-Python).
+- HTMX auto-refresh: `base.html.j2` includes optional `hx-get="...?partial=1"`
+  polling. Applies to both Path A and Path B pages.
 
 ### Phase 3 — Caching
-- `RendererCache` (in-memory TTL dict).
-- Per-renderer TTL via `renderer_cache_ttl_seconds`.
+- `RendererCache` (in-memory TTL dict); per-renderer TTL via
+  `renderer_cache_ttl_seconds`.
 - Invalidation endpoints: `DELETE /api/renderers/<name>/cache`,
   `DELETE /api/renderers/cache` (PSK-gated).
-- Cache metrics exposed via the existing metrics exporter
-  (`gludd_renderer_cache_hits_total`, `gludd_renderer_cache_misses_total`).
+- Cache metrics (`gludd_renderer_cache_hits_total`,
+  `gludd_renderer_cache_misses_total`).
 
 ### Phase 4 — Per-renderer auth
-- Optional separate read-only PSK (`GLUDD_RENDER_PSK`). When set,
-  `/render/*` (including `/render/<name>/schema`) is removed from
-  `_PUBLIC_PATHS` and gated by this PSK instead of the admin PSK.
-- Per-renderer ACL: a `renderer_acl:` list in the playbook's `vars:` naming
-  which PSK "roles" may view it (operator-configured). Default: any valid
-  render PSK.
+- Optional read-only PSK (`GLUDD_RENDER_PSK`). When set, `/render/*`
+  (including `/render/<name>/schema`) is removed from `_PUBLIC_PATHS` and
+  gated by this PSK instead of the admin PSK.
+- Per-renderer ACL via `renderer_acl:` list in `vars:` naming PSK "roles"
+  (operator-configured; default: any valid render PSK).
 - Audit log entry on each render (renderer name, caller, status, ms).
 
 ---
 
 ## Appendix A: Why Jinja2 + HTMX and not React/Vue
 
-- **Zero build step.** The daemon serves templates directly; no npm, no
-  bundler, no transpile cache. This matches the rest of gludd's "operator-
-  runnable from `make init`" posture.
+- **Zero build step** — daemon serves templates directly; no npm/bundler.
 - **Jinja2 is already a dep** (`pyproject.toml:38`).
-- **HTMX is ~14 KB**, served as a single `<script>` tag. It gives partial-
-  page refresh (polling, click-to-refresh) without a SPA.
-- **Renderers are server-curated.** The browser is a thin viewer; complex
-  interactivity belongs in operator-authored playbooks (more `sections`) or
-  behind `raw_html`.
-- **Tradeoff:** no client-side state (sortable tables, drag-and-drop).
-  Accepted — the `table` section type can grow server-side sort query params
-  in a future phase if needed.
+- **HTMX is ~14 KB** (single `<script>` tag) for partial-page refresh without
+  a SPA.
+- **Renderers are server-curated** — browser is a thin viewer; complex
+  interactivity belongs in playbooks or behind `raw_html`.
+- **Tradeoff:** no client-side state (sortable tables, drag-and-drop). The
+  `table` section can grow server-side sort query params later if needed.
 
 ## Appendix B: Relationship to existing `/api/facts`
 
@@ -710,37 +678,23 @@ emits the canonical `render.json` instead of free-form markdown.
 ## Appendix C: File-touch checklist (for the implementation task)
 
 New files:
-- `src/general_ludd/renderers/__init__.py`
-- `src/general_ludd/renderers/registry.py`
-- `src/general_ludd/renderers/schema.py`
-- `src/general_ludd/renderers/schema_loader.py`
-- `src/general_ludd/renderers/runner.py`
-- `src/general_ludd/renderers/cache.py`
+- `src/general_ludd/renderers/__init__.py`, `registry.py`, `schema.py`,
+  `schema_loader.py`, `runner.py`, `cache.py`
 - `src/general_ludd/routers/render.py`
-- `src/general_ludd/templates/render/base.html.j2`
-- `src/general_ludd/templates/render/page.html.j2`
-- `src/general_ludd/templates/render/schema_page.html.j2`
-- `src/general_ludd/templates/render/_schema_field.html.j2`
-- `src/general_ludd/templates/render/schema_error.html.j2`
-- `src/general_ludd/templates/render/sections/markdown.html.j2`
-- `src/general_ludd/templates/render/sections/metric_grid.html.j2`
-- `src/general_ludd/templates/render/sections/table.html.j2`
-- `src/general_ludd/templates/render/sections/chart.html.j2`
-- `src/general_ludd/templates/render/sections/raw_html.html.j2`
-- `src/general_ludd/templates/render/error.html.j2`
+- `src/general_ludd/templates/render/base.html.j2`, `page.html.j2`,
+  `schema_page.html.j2`, `_schema_field.html.j2`, `schema_error.html.j2`,
+  `error.html.j2`, and `sections/{markdown,metric_grid,table,chart,raw_html}.html.j2`
 - `playbooks/renderers/system_facts.yml`
 - `playbooks/renderers/system_facts.schema.json`
-- `tests/unit/test_renderer_registry.py`
-- `tests/unit/test_render_schema_loader.py`
-- `tests/unit/test_schema_template_render.py`
-- `tests/unit/test_system_facts_schema.py`
-- `tests/unit/test_render_security.py`
+- `tests/unit/test_renderer_registry.py`, `test_render_schema_loader.py`,
+  `test_schema_template_render.py`, `test_system_facts_schema.py`,
+  `test_render_security.py`
 - `tests/integration/test_render_api.py`
 
 Modified files:
-- `src/general_ludd/daemon.py` — instantiate `RendererRegistry`,
-  `RendererCache`, call `render.register(app, daemon_state)` near line 1903;
-  add `/render/` prefix handling to `_is_public` for GET-only.
+- `src/general_ludd/daemon.py` — instantiate `RendererRegistry`/`RendererCache`,
+  call `render.register(app, daemon_state)` ~line 1903; add `/render/` prefix
+  handling to `_is_public` for GET-only.
 - `src/general_ludd/routers/__init__.py` — add `render` to `register_all`.
-- `pyproject.toml` — confirm `jinja2` (already present); add
-  `jsonschema>=4.21` (Path B validator). Add `markdown` only in Phase 2.
+- `pyproject.toml` — confirm `jinja2`; add `jsonschema>=4.21` (Path B).
+  Add `markdown` only in Phase 2.
