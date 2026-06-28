@@ -76,14 +76,30 @@ async def reclaim_expired_leases(
         bucket_key = lease.bucket_key
         todo_id = bucket_key.partition(":")[2] if isinstance(bucket_key, str) else ""
         if todo_id:
-            await session.execute(
-                update(TodoModel)
+            # F1 (defense-in-depth): only requeue if NO newer live lease covers
+            # this same bucket. A bucket can carry BOTH an expired lease (from
+            # a crashed tick) and a live lease (from the tick that legitimately
+            # re-claimed the todo after the crash). Requeueing in that window
+            # duplicates the work: the live holder is still dispatching it AND
+            # the next claim_runnable picks up the requeued row.
+            live = await session.scalar(
+                select(BucketLeaseModel)
                 .where(
-                    TodoModel.todo_id == todo_id,
-                    TodoModel.status == TodoStatus.ACTIVE.value,
+                    BucketLeaseModel.bucket_key == bucket_key,
+                    BucketLeaseModel.expires_at >= now,
+                    BucketLeaseModel.id != lease.id,
                 )
-                .values(status=TodoStatus.QUEUED.value, updated_at=now)
+                .limit(1)
             )
+            if live is None:
+                await session.execute(
+                    update(TodoModel)
+                    .where(
+                        TodoModel.todo_id == todo_id,
+                        TodoModel.status == TodoStatus.ACTIVE.value,
+                    )
+                    .values(status=TodoStatus.QUEUED.value, updated_at=now)
+                )
         await session.delete(lease)
     await session.flush()
     return len(expired)

@@ -391,12 +391,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {"todo_id": todo_id, "schedule_paused": False, "status": "ok"}
 
     @app.get("/api/todos/{todo_id}")
-    async def api_get_todo(todo_id: str, project_id: str) -> dict[str, Any]:
+    async def api_get_todo(todo_id: str, project_id: str | None = None) -> dict[str, Any]:
         _validate_project_id(app, project_id)
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
-                repo = TodoRepository.scoped(session, project_id)
+                repo = (
+                    TodoRepository.scoped(session, project_id)
+                    if project_id is not None
+                    else TodoRepository(session)
+                )
                 todo = await repo.get_by_id(todo_id)
                 if todo is not None:
                     return _todo_to_dict(todo)

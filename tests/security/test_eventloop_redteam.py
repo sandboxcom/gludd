@@ -304,7 +304,61 @@ async def test_two_ticks_acquire_duplicate_leases_for_same_bucket(session_factor
 
 
 @pytest.mark.asyncio
-async def test_expired_lease_does_not_requeue_active_todo(session_factory):
+async def test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket(session_factory):
+    """F1 defense-in-depth: a bucket may have BOTH an expired lease (from a dead
+    tick) AND a newer live lease (from the tick that legitimately re-claimed it).
+    ``reclaim_expired_leases`` must delete the expired row but NOT requeue the
+    todo while a live lease still covers that bucket — otherwise the same todo
+    is dispatched twice (once by the live holder, once by the next claim after
+    reclaim requeues it).
+    """
+    async with session_factory() as s:
+        s.add(
+            TodoModel(
+                todo_id="T1",
+                title="redteam",
+                status=TodoStatus.ACTIVE.value,
+                queue="core",
+                version=2,
+            )
+        )
+        # Expired lease from a crashed tick-5.
+        s.add(
+            BucketLeaseModel(
+                bucket_key="core:T1",
+                holder_id="tick-5",
+                expires_at=datetime.now(UTC) - timedelta(seconds=10),
+            )
+        )
+        # Live lease from the current tick-6 that legitimately owns this work.
+        s.add(
+            BucketLeaseModel(
+                bucket_key="core:T1",
+                holder_id="tick-6",
+                expires_at=datetime.now(UTC) + timedelta(minutes=10),
+            )
+        )
+        await s.commit()
+
+    async with session_factory() as s:
+        reclaimed = await reclaim_expired_leases(s)
+        await s.commit()
+    # The expired row IS deleted (return count 1)...
+    assert reclaimed == 1, f"Expected 1 expired lease deleted, got {reclaimed}"
+
+    # ...but the todo STAYS ACTIVE because a newer live lease still covers it.
+    async with session_factory() as s:
+        repo = TodoRepository(s)
+        t1 = await repo.get_by_id("T1")
+        assert t1 is not None
+    assert t1.status == TodoStatus.ACTIVE.value, (
+        "Reclaim requeued T1 even though a live lease covers core:T1 -> "
+        "double-dispatch vector (live holder + next claim after requeue)."
+    )
+
+
+@pytest.mark.asyncio
+async def test_expired_lease_does_requeue_active_todo(session_factory):
     """Trace: tick claims T1 (ACTIVE) + leases core:T1; worker crashes; lease
     expires; reclaim runs. A correct reclaim requeues T1 (now fixed).
     """

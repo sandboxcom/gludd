@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from collections import deque
 from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -629,7 +630,7 @@ class TestDaemonStateIsolation:
         assert state_a is not state_b
         # Mutating one app's state must not appear in the other's.
         state_a["todos"].append({"todo_id": "ONLY-A"})
-        assert state_b["todos"] == []
+        assert state_b["todos"] == deque()
 
     def test_new_app_daemon_state_starts_empty(self):
         # A previously created app must not contaminate a freshly built one.
@@ -638,7 +639,7 @@ class TestDaemonStateIsolation:
         first.state.daemon_state["tick_metrics"]["leaked"] = True
 
         second = create_daemon_app(tick_interval=999.0)
-        assert second.state.daemon_state["todos"] == []
+        assert second.state.daemon_state["todos"] == deque()
         assert second.state.daemon_state["tick_metrics"] == {}
         assert second.state.daemon_state["quality_gate"] == {}
 
