@@ -1,0 +1,14 @@
+{
+  "gludd": {
+    "provider_registry": "registry.terraform.io",
+    "provider_trust_list": [
+      "registry.terraform.io/hashicorp/aws",
+      "registry.terraform.io/hashicorp/google",
+      "registry.terraform.io/hashicorp/azurerm",
+      "registry.terraform.io/hashicorp/vsphere",
+      "registry.terraform.io/hashicorp/random",
+      "registry.terraform.io/hashicorp/null"
+    ],
+    "ports_allowed_public": [80, 443]
+  }
+}
