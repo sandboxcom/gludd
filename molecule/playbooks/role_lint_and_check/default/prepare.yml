@@ -1,0 +1,6 @@
+---
+- name: Prepare - no daemon needed for lint_and_check
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks: []

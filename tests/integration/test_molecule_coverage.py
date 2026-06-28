@@ -93,7 +93,6 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 # the daemon — scenarios are TODO but the roles are wired via FQCN.
 _NOT_YET_COVERED_ROLES: set[str] = {
     "gludd_update",
-    "lint_and_check",
     "manage_processes",
     "observe_deploy_correlator",
     "observe_error_spike_rca",
@@ -101,7 +100,6 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "observe_latency_regression",
     "observe_saturation_capacity",
     "observe_security_signal",
-    "run_tests",
 }
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)

@@ -1,0 +1,16 @@
+---
+- name: Converge - run lint_and_check role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8864', true) }}"
+  tasks:
+    - name: Invoke lint_and_check (trivial echoes — proves command+artifact pipeline)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.lint_and_check
+      vars:
+        project_dir: "/tmp"
+        lint_cmd: "echo lint-ok"
+        typecheck_cmd: "echo typecheck-ok"
+        artifact_dir: "/tmp/gludd-lint-and-check-{{ mock_port }}"

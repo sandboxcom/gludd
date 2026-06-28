@@ -1,0 +1,38 @@
+---
+- name: Verify - run_tests wrote its result artifact
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}"
+    artifact: "/tmp/gludd-run-tests-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}/test_result.json"
+  tasks:
+    - name: Assert artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact fields
+      ansible.builtin.assert:
+        that:
+          - result.test_cmd is defined
+          - result.rc == 0
+          - result.status == 'passed'
+        fail_msg: "run_tests artifact wrong: {{ result }}"
+        success_msg: "run_tests ran end-to-end; status={{ result.status }}"
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-run-tests-{{ mock_port }}"
+        state: absent
+      failed_when: false

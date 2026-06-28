@@ -1,0 +1,16 @@
+---
+- name: Converge - run run_tests role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8863', true) }}"
+  tasks:
+    - name: Invoke run_tests (trivial echo — proves command+artifact pipeline)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.run_tests
+      vars:
+        test_cmd: "echo ok"
+        test_dir: "/tmp"
+        artifact_dir: "/tmp/gludd-run-tests-{{ mock_port }}"
+        allow_failure: false

@@ -1,0 +1,6 @@
+---
+- name: Prepare - no daemon needed for run_tests
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  tasks: []
