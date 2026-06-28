@@ -1,0 +1,33 @@
+services:
+  vllm:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        MODEL_ID: ${MODEL_ID:-meta-llama/Llama-3.1-8B-Instruct}
+        VLLM_VERSION: ${VLLM_VERSION:-v0.6.3}
+        CUDA_VERSION: ${CUDA_VERSION:-12.4.1}
+        TORCH_CUDA_ARCH_LIST: ${TORCH_CUDA_ARCH_LIST:-8.0;8.6;9.0}
+    image: gludd/vllm:${MODEL_ID:-default}
+    ports:
+      - "8000:8000"
+    volumes:
+      - models:/root/.cache/huggingface
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_COUNT:-all}
+              capabilities: [gpu]
+    environment:
+      - MODEL_ID=${MODEL_ID:-meta-llama/Llama-3.1-8B-Instruct}
+      - VLLM_TENSOR_PARALLEL_SIZE=${TENSOR_PARALLEL_SIZE:-1}
+      - VLLM_MAX_MODEL_LEN=${MAX_CTX:-32768}
+    command: >
+      sh -c "vllm serve \"${MODEL_ID}\" --host 0.0.0.0 --port 8000
+      --tensor-parallel-size ${TENSOR_PARALLEL_SIZE:-1}
+      --max-model-len ${MAX_CTX:-32768}"
+
+volumes:
+  models:

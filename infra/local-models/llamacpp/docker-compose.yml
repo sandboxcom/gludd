@@ -1,0 +1,28 @@
+services:
+  llamacpp:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        LLAMACPP_VERSION: ${LLAMACPP_VERSION:-b4000}
+        MODEL_URL: ${MODEL_URL}
+    image: gludd/llamacpp:${LLAMACPP_VERSION:-b4000}
+    ports:
+      - "8080:8080"
+    volumes:
+      - models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: ${GPU_COUNT:-all}
+              capabilities: [gpu]
+    command: >
+      llama-server --host 0.0.0.0 --port 8080
+      --model /models/model.gguf
+      --n-gpu-layers ${GPU_LAYERS:--1}
+      --ctx-size ${CTX_SIZE:-4096}
+
+volumes:
+  models:
