@@ -16,7 +16,6 @@ from unittest.mock import MagicMock, patch
 
 from general_ludd.models.gateway import ModelGateway
 
-
 # ---------------------------------------------------------------------------
 # Helpers (mirrors _make_profile / registry setup from test_response_cache.py)
 # ---------------------------------------------------------------------------

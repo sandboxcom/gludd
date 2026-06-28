@@ -205,7 +205,7 @@ class SplunkSource:
                 params={"output_mode": "json"},
                 timeout=self._timeout,
             )
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             # repr(exc) can embed the base URL / token-env detail; log it for
             # operators and return a generic message to the caller instead.
             logger.warning("splunk health check failed", exc_info=True)

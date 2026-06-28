@@ -64,7 +64,7 @@ class _FakeClient:
         self._responses = responses
         self.calls: list[str] = []
 
-    def __call__(self, *_a: Any, **_k: Any) -> "_FakeClient":
+    def __call__(self, *_a: Any, **_k: Any) -> _FakeClient:
         # Allow being used directly as the GluddClient constructor stand-in.
         return self
 

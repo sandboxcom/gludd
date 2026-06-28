@@ -30,7 +30,7 @@ _MODELS = ("model-a", "model-b", "model-c")
 
 def test_record_model_call_no_lost_increments() -> None:
     mc = MetricsCollector()
-    for mid in _MODELS:
+    for _mid in _MODELS:
         # pre-register the agent that owns these calls
         pass
     mc.register_agent("agent-0", "a0", "proj")
@@ -52,7 +52,7 @@ def test_record_model_call_no_lost_increments() -> None:
                     success=(i % 2 == 0),
                     error=None if (i % 2 == 0) else "boom",
                 )
-        except BaseException as exc:  # noqa: BLE001 - capture for assertion
+        except BaseException as exc:
             errors.append(exc)
 
     threads = [threading.Thread(target=worker, args=(t,)) for t in range(_THREADS)]
@@ -92,7 +92,7 @@ def test_readers_do_not_crash_during_concurrent_writes() -> None:
                     "agent-0", f"m{i}", 1, 1, success=(i % 3 != 0), error="x"
                 )
                 i += 1
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             errors.append(exc)
 
     def reader() -> None:
@@ -105,7 +105,7 @@ def test_readers_do_not_crash_during_concurrent_writes() -> None:
                 mc.is_flaky("m0")
                 mc.get_recent_failures("m0")
                 mc.list_running_agents()
-        except BaseException as exc:  # noqa: BLE001
+        except BaseException as exc:
             errors.append(exc)
 
     writers = [threading.Thread(target=writer) for _ in range(4)]

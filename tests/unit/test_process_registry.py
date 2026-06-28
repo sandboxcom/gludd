@@ -22,7 +22,7 @@ from general_ludd.process.registry import (
 
 
 def _spawn_sleeper(seconds: int = 30) -> subprocess.Popen[bytes]:
-    return subprocess.Popen(  # noqa: S603 - fixed argv, test-controlled
+    return subprocess.Popen(
         [sys.executable, "-c", f"import time; time.sleep({seconds})"],
         start_new_session=True,
     )

@@ -10,7 +10,7 @@ import shutil
 import stat
 import tarfile
 from pathlib import Path
-from typing import Any
+from typing import Any, ClassVar
 
 from general_ludd.filestore.store import FileStore
 
@@ -258,7 +258,7 @@ class BinaryBootstrapper:
     # name to the bare executable's basename inside the archive. For these the
     # downloaded bytes are an archive, so we extract the executable member,
     # store it, and set executable bits.
-    _TARBALL_BINARIES = {
+    _TARBALL_BINARIES: ClassVar[dict[str, str]] = {
         "osquery": "osqueryi",
         "codebase-memory-mcp": "codebase-memory-mcp",
     }

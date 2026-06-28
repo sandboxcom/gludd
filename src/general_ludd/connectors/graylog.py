@@ -193,7 +193,7 @@ class GraylogSource:
                 params=None,
                 timeout=self.timeout,
             )
-        except Exception as exc:  # health must never raise
+        except Exception:  # health must never raise
             # Do not leak repr(exc) (can embed the base URL / token env / internal
             # detail) into the health response; log it for operators instead.
             logger.warning("graylog health check failed", exc_info=True)

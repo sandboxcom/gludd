@@ -381,15 +381,17 @@ class CoreAnsibleRunner:
         try:
             from general_ludd.process.registry import default_registry
 
-            default_registry().register(
-                proc.pid,
-                command=[
-                    "ansible-playbook-runner",
-                    str(exec_kwargs.get("playbook_path", "")),
-                ],
-                origin="ansible_runner",
-            )
-        except Exception:  # noqa: BLE001 - registry is observability, not critical
+            _pid = proc.pid
+            if _pid is not None:
+                default_registry().register(
+                    _pid,
+                    command=[
+                        "ansible-playbook-runner",
+                        str(exec_kwargs.get("playbook_path", "")),
+                    ],
+                    origin="ansible_runner",
+                )
+        except Exception:
             logger.debug("managed-process registration failed", exc_info=True)
 
         try:
@@ -425,8 +427,10 @@ class CoreAnsibleRunner:
             try:
                 from general_ludd.process.registry import default_registry
 
-                default_registry().deregister(proc.pid)
-            except Exception:  # noqa: BLE001 - deregister is best-effort cleanup
+                _pid = proc.pid
+                if _pid is not None:
+                    default_registry().deregister(_pid)
+            except Exception:
                 logger.debug("managed-process deregister failed", exc_info=True)
 
     @staticmethod

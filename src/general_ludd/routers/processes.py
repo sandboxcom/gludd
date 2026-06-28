@@ -59,7 +59,7 @@ def _read_proc_locks(pid: int) -> list[dict[str, Any]]:
                         "end": parts[7],
                     }
                 )
-    except Exception:  # noqa: BLE001 - non-Linux / unreadable: degrade to []
+    except Exception:
         return []
     return locks
 
@@ -77,39 +77,39 @@ def _collect_stats(pid: int) -> dict[str, Any]:
     # A short interval gives a meaningful percentage; harmless inside to_thread.
     try:
         cpu_percent = proc.cpu_percent(interval=0.1)
-    except Exception:  # noqa: BLE001
+    except Exception:
         cpu_percent = 0.0
 
     mem = proc.memory_info()
 
     io: dict[str, int] | None
     try:
-        ioc = proc.io_counters()
+        ioc = proc.io_counters()  # type: ignore[attr-defined]  # psutil Linux-only
         io = {
             "read_bytes": ioc.read_bytes,
             "write_bytes": ioc.write_bytes,
             "read_count": ioc.read_count,
             "write_count": ioc.write_count,
         }
-    except Exception:  # noqa: BLE001 - not available on every platform (e.g. macOS)
+    except Exception:
         io = None
 
     num_fds: int | None
     try:
         num_fds = proc.num_fds()
-    except Exception:  # noqa: BLE001 - not available on Windows
+    except Exception:
         num_fds = None
 
     ctx: dict[str, int] | None
     try:
         cs = proc.num_ctx_switches()
         ctx = {"voluntary": cs.voluntary, "involuntary": cs.involuntary}
-    except Exception:  # noqa: BLE001
+    except Exception:
         ctx = None
 
     try:
         open_files = len(proc.open_files())
-    except Exception:  # noqa: BLE001 - AccessDenied / platform quirks
+    except Exception:
         open_files = 0
 
     return {
@@ -160,7 +160,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             else:
                 status = 400
             raise HTTPException(status_code=status, detail=msg) from exc
-        except Exception as exc:  # noqa: BLE001 - unexpected: never leak internals
+        except Exception as exc:
             logger.warning(
                 "unexpected error signalling pid=%s", pid, exc_info=True
             )
@@ -186,7 +186,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         try:
             # All psutil/proc reads are blocking syscalls; keep them off the loop.
             return await asyncio.to_thread(_collect_stats, pid)
-        except Exception as exc:  # noqa: BLE001 - process may vanish mid-read
+        except Exception as exc:
             logger.warning(
                 "unexpected error collecting stats for pid=%s", pid, exc_info=True
             )

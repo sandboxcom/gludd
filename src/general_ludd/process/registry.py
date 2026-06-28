@@ -37,6 +37,10 @@ from typing import Any
 
 logger = logging.getLogger(__name__)
 
+# Module-scope alias so annotations inside ProcessRegistry (which has a method
+# named `list` that shadows the builtin in class body) resolve the builtin.
+_PidList = list[int]
+
 # The signals an agent may deliver to a managed process. This is an allow-list:
 # anything outside it is rejected before it reaches the kernel. It covers the
 # graceful-shutdown, reload, user-defined "event", and hard-stop families the
@@ -99,10 +103,10 @@ class ManagedProcess:
 def _psutil() -> Any | None:
     """Return the psutil module, or None if it is not importable."""
     try:
-        import psutil  # type: ignore[import]
+        import psutil
 
         return psutil
-    except Exception:  # noqa: BLE001 - psutil genuinely absent; caller degrades
+    except Exception:
         return None
 
 
@@ -113,7 +117,7 @@ def _read_create_time(pid: int) -> float | None:
         return None
     try:
         return float(ps.Process(pid).create_time())
-    except Exception:  # noqa: BLE001 - NoSuchProcess/AccessDenied/ZombieProcess
+    except Exception:
         return None
 
 
@@ -141,10 +145,7 @@ class ProcessRegistry:
         ``create_time`` is captured now so later signals can verify identity. If
         ``pgid`` is not supplied it is best-effort resolved via ``os.getpgid``.
         """
-        if isinstance(command, str):
-            command_list = [command]
-        else:
-            command_list = list(command)
+        command_list = [command] if isinstance(command, str) else list(command)
         if pgid is None:
             try:
                 pgid = os.getpgid(pid)
@@ -291,7 +292,7 @@ class ProcessRegistry:
 
     # -- maintenance ------------------------------------------------------
 
-    def reap(self) -> list[int]:
+    def reap(self) -> _PidList:
         """Drop records whose process has exited or whose PID was reused.
 
         Returns the list of PIDs evicted. Safe to call periodically from the

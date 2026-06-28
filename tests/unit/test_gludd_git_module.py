@@ -173,13 +173,13 @@ def test_commit_nothing_to_commit_is_unchanged(module, monkeypatch):
 # --- branch -----------------------------------------------------------------
 
 def test_branch_create_is_changed(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="branch", branch="feature/x"))
+    fake_mod, _git = _run(module, monkeypatch, _params(op="branch", branch="feature/x"))
     assert fake_mod.exited["changed"] is True
     assert fake_mod.exited["branch"] == "feature/x"
 
 
 def test_branch_already_exists_is_unchanged(module, monkeypatch):
-    fake_mod, git = _run(
+    fake_mod, _git = _run(
         module, monkeypatch, _params(op="branch", branch="feature/x"), branch_exists=True
     )
     assert fake_mod.failed is None
@@ -189,7 +189,7 @@ def test_branch_already_exists_is_unchanged(module, monkeypatch):
 # --- worktree_list (read-only, check-mode safe) -----------------------------
 
 def test_worktree_list_returns_typed_rows(module, monkeypatch):
-    fake_mod, git = _run(module, monkeypatch, _params(op="worktree_list"))
+    fake_mod, _git = _run(module, monkeypatch, _params(op="worktree_list"))
     assert fake_mod.failed is None
     assert fake_mod.exited["changed"] is False
     wts = fake_mod.exited["result"]["worktrees"]
@@ -219,7 +219,7 @@ def test_worktree_create_delegates(module, monkeypatch):
 
 
 def test_worktree_create_security_reject_is_clean_failure(module, monkeypatch):
-    fake_mod, git = _run(
+    fake_mod, _git = _run(
         module,
         monkeypatch,
         _params(op="worktree_create", branch="agent/x", worktree_path="../evil"),
@@ -230,7 +230,7 @@ def test_worktree_create_security_reject_is_clean_failure(module, monkeypatch):
 
 
 def test_worktree_remove_delegates(module, monkeypatch):
-    fake_mod, git = _run(
+    fake_mod, _git = _run(
         module, monkeypatch, _params(op="worktree_remove", worktree_path="/wt/x")
     )
     assert fake_mod.exited["changed"] is True

@@ -340,8 +340,8 @@ def test_signal_409_maps_to_fail(
 # --------------------------------------------------------------------------
 
 def test_allowed_signals_set(module: ModuleType) -> None:
-    assert module.ALLOWED_SIGNALS >= {
+    assert {
         "SIGTERM", "SIGINT", "SIGHUP", "SIGQUIT",
         "SIGUSR1", "SIGUSR2", "SIGKILL", "SIGSTOP", "SIGCONT",
-    }
+    } <= module.ALLOWED_SIGNALS
     assert "SIGEVIL" not in module.ALLOWED_SIGNALS

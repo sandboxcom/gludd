@@ -13,6 +13,7 @@ fixture. Unmanaged-PID requests assert the 404 confinement behavior.
 
 from __future__ import annotations
 
+import contextlib
 import subprocess
 import sys
 from collections.abc import Iterator
@@ -42,10 +43,8 @@ def managed_child() -> Iterator[int]:
     finally:
         reg.deregister(proc.pid)
         proc.kill()
-        try:
+        with contextlib.suppress(Exception):
             proc.wait(timeout=5)
-        except Exception:
-            pass
 
 
 def _unmanaged_pid() -> int:
