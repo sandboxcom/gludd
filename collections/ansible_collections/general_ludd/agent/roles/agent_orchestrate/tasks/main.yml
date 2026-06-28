@@ -1,0 +1,195 @@
+---
+# agent_orchestrate — read env facts + per-work-type advice, branch to the right
+# action module.
+#
+# VERIFIED fact keys (against the committed controllers/environment_advisor.py
+# build_advice() return + routers/environment.py AdviceBrief + the
+# gludd_environment module's advice-merge). These DIFFER from the design doc:
+#   - advice.use_workflow                      -> TOP-LEVEL bool (NOT nested under
+#                                                 .recommendation.use_workflow)
+#   - advice.recommendation.model_profile      -> the chosen profile id
+#   - advice.est_cost_usd                      -> TOP-LEVEL float
+#   - advice.resource_hints.budget_ok          -> defer signal (there is NO
+#                                                 resource_hints.defer key)
+#   - gludd_environment.budget.run_remaining_usd -> remaining run budget (USD)
+# The advice block lands under ansible_facts.gludd_environment.advice ONLY when
+# the gludd_environment module is called WITH work_type set.
+
+- name: Create artifact directory
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+# (1) Gather the dynamic environment brief WITH advice for this work_type.
+- name: Gather gludd environment + advice
+  general_ludd.agent.gludd_environment:
+    work_type: "{{ work_type }}"
+    prompt_tokens: "{{ (prompt_tokens | int) if (prompt_tokens | string | length > 0) else omit }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  no_log: "{{ psk | length > 0 }}"
+  # -> sets ansible_facts.gludd_environment (incl. .advice when work_type set)
+
+- name: Resolve advice + budget into decision vars
+  ansible.builtin.set_fact:
+    _adv: "{{ ansible_facts.gludd_environment.advice | default({}, true) }}"
+    _remaining: "{{ ansible_facts.gludd_environment.budget.run_remaining_usd | default(none, true) }}"
+    _rec_profile: >-
+      {{ ansible_facts.gludd_environment.advice.recommendation.model_profile
+         | default('default', true) | default('default', true) }}
+    _use_wf: >-
+      {{ ansible_facts.gludd_environment.advice.use_workflow
+         | default(false, true) | bool }}
+    _budget_ok: >-
+      {{ ansible_facts.gludd_environment.advice.resource_hints.budget_ok
+         | default(true, true) | bool }}
+    _est_cost: "{{ ansible_facts.gludd_environment.advice.est_cost_usd | default(none, true) }}"
+
+- name: Compute budget-floor gate
+  ansible.builtin.set_fact:
+    # Below the floor only when we actually have a remaining figure AND it is
+    # under the configured floor. Unknown remaining -> do NOT block on the floor.
+    _below_floor: >-
+      {{ (_remaining is not none)
+         and ((_remaining | float) < (min_remaining_usd | float)) }}
+
+# (2) GUARD — defer when the run budget is below the floor OR the advisor's
+#     budget_ok flag is false. Writes a deferred artifact and ends the play.
+- name: Defer when budget exhausted or advisor reports budget not ok
+  when: _below_floor or (not _budget_ok)
+  block:
+    - name: Write deferred artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {'todo_id': todo_id, 'status': 'deferred', 'work_type': work_type,
+              'path': 'deferred',
+              'reason': ('budget_floor' if _below_floor else 'advisor_budget_not_ok'),
+              'remaining_usd': _remaining,
+              'min_remaining_usd': (min_remaining_usd | float),
+              'est_cost_usd': _est_cost,
+              'budget_ok': _budget_ok}
+             | to_nice_json }}
+        dest: "{{ artifact_dir }}/agent_orchestrate_result.json"
+        mode: "0644"
+
+    - name: Emit deferral notice
+      ansible.builtin.debug:
+        msg: >-
+          agent_orchestrate DEFERRED ({{ 'budget_floor' if _below_floor else 'advisor_budget_not_ok' }}):
+          remaining={{ _remaining }} floor={{ min_remaining_usd }} budget_ok={{ _budget_ok }}
+
+    - name: End play (deferred)
+      ansible.builtin.meta: end_play
+
+# (3) Optional read: fetch the todo for context (capability-gated, fail-soft).
+- name: Read todo context
+  general_ludd.agent.gludd_db:
+    op: todo_get
+    todo_id: "{{ todo_id }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+    role: "{{ capability_role }}"
+  register: _todo
+  failed_when: false
+  no_log: "{{ psk | length > 0 }}"
+  when: (enable_db_read | bool) and (todo_id | length > 0)
+
+# ---- main action block ----
+- name: Orchestrated action
+  block:
+
+    # (4) BRANCH 1 — advisor says use the full multi-step LangGraph workflow.
+    - name: Run LangGraph workflow (advice.use_workflow true)
+      general_ludd.agent.gludd_langgraph_workflow:
+        prompt: "{{ prompt_text }}"
+        system: "{{ skill_body }}"
+        work_type: "{{ work_type }}"
+        model_profile: "{{ _rec_profile }}"
+        max_retries: "{{ max_retries }}"
+        quality_threshold: "{{ quality_threshold }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: _wf
+      no_log: "{{ psk | length > 0 }}"
+      when: _use_wf
+
+    # (4) BRANCH 2 — single-shot routed call (cheap/mechanical/docs work).
+    #     Use the advisor's concrete profile when it gave one; otherwise fall
+    #     back to adaptive routing by work_type.
+    - name: Single-shot routed model call (no workflow)
+      general_ludd.agent.gludd_model_call:
+        prompt: "{{ prompt_text }}"
+        model_profile: "{{ _rec_profile if (_rec_profile != 'default') else omit }}"
+        route_task_type: "{{ work_type if (_rec_profile == 'default') else omit }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: _single
+      no_log: "{{ psk | length > 0 }}"
+      when: not _use_wf
+
+    - name: Select effective output
+      ansible.builtin.set_fact:
+        _content: "{{ (_wf.content if _use_wf else _single.text) | default('', true) }}"
+        _used_profile: >-
+          {{ (_wf.model if _use_wf else _single.model_profile_id)
+             | default(_rec_profile, true) }}
+
+    # (5) Assemble the result.
+    - name: Assemble result
+      ansible.builtin.set_fact:
+        agent_orchestrate_result:
+          todo_id: "{{ todo_id }}"
+          work_type: "{{ work_type }}"
+          path: "{{ 'workflow' if _use_wf else 'single_shot' }}"
+          model_profile: "{{ _used_profile }}"
+          quality_score: "{{ _wf.quality_score | default(none) }}"
+          est_cost_usd: "{{ _est_cost }}"
+          content_excerpt: "{{ _content[:500] }}"
+
+    # (6) Surface status back to gludd (capability-gated, fail-soft).
+    - name: Surface status back to gludd
+      general_ludd.agent.gludd_db:
+        op: todo_update_status
+        todo_id: "{{ todo_id }}"
+        status: "{{ 'done' if (_content | length > 0) else 'blocked' }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+        role: "{{ capability_role }}"
+      register: _db
+      failed_when: false
+      no_log: "{{ psk | length > 0 }}"
+      when: todo_id | length > 0
+
+    - name: Write success artifact
+      ansible.builtin.copy:
+        content: "{{ agent_orchestrate_result | combine({'status': 'success'}) | to_nice_json }}"
+        dest: "{{ artifact_dir }}/agent_orchestrate_result.json"
+        mode: "0644"
+
+    - name: Emit orchestration completion
+      ansible.builtin.debug:
+        msg: >-
+          agent_orchestrate: path={{ agent_orchestrate_result.path }}
+          profile={{ agent_orchestrate_result.model_profile }}
+          quality={{ agent_orchestrate_result.quality_score }}
+          todo={{ todo_id | default('(adhoc)') }}
+
+  rescue:
+
+    - name: Write failure artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {'todo_id': todo_id, 'status': 'failed', 'work_type': work_type,
+              'path': ('workflow' if _use_wf else 'single_shot'),
+              'error': (ansible_failed_result.msg | default('agent_orchestrate failed'))}
+             | to_nice_json }}
+        dest: "{{ artifact_dir }}/agent_orchestrate_result.json"
+        mode: "0644"
+      failed_when: false
+
+    - name: Fail the play after rescue cleanup
+      ansible.builtin.fail:
+        msg: >-
+          agent_orchestrate failed for todo {{ todo_id | default('(adhoc)') }} —
+          see failure artifact in {{ artifact_dir }}

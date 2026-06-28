@@ -32,6 +32,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from general_ludd.connectors.normalize import sanitize_metric_value
+
 _VALID_TYPES = {"c", "g", "ms", "h", "s"}
 
 
@@ -113,10 +115,9 @@ class StatsdParseSource:
         else:
             if value_str[:1] in ("+", "-"):
                 labels["delta"] = value_str[0]
-            try:
-                value = float(value_str)
-            except ValueError as exc:
-                raise StatsdParseError(f"bad numeric value {value_str!r}: {raw!r}") from exc
+            value = sanitize_metric_value(value_str)
+            if value is None:
+                raise StatsdParseError(f"bad numeric value {value_str!r}: {raw!r}")
 
         return {
             "ts": None,

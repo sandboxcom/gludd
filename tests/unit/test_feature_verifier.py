@@ -267,6 +267,57 @@ class TestFeatureVerifierPresenceChecks:
         assert result["status"] == "requested"
 
 
+class TestEmptyNamePresenceChecks:
+    """Empty-name presence refs must be REJECTED, not match a container dir.
+
+    ``Path(root) / "" == Path(root)`` (pathlib drops an empty component), so a
+    bare ``role:`` / ``module:`` / ``molecule:`` ref would otherwise resolve to
+    the existing container directory and falsely verify with no real proof. These
+    guard against that false-positive hole (live on Python 3.12+ for role:).
+    """
+
+    def test_empty_role_rejected(self, tmp_path: Path) -> None:
+        v = _make_verifier(tmp_path)
+        met, detail = v._check_role("")
+        assert met is False, detail
+        assert "empty role" in detail
+
+    def test_empty_module_rejected(self, tmp_path: Path) -> None:
+        v = _make_verifier(tmp_path)
+        met, detail = v._check_module("")
+        assert met is False, detail
+        assert "empty module" in detail
+
+    def test_empty_molecule_rejected(self, tmp_path: Path) -> None:
+        v = _make_verifier(tmp_path)
+        met, detail = v._check_molecule("")
+        assert met is False, detail
+        assert "empty molecule" in detail
+
+    def test_module_dir_not_accepted_as_file(self, tmp_path: Path) -> None:
+        """A name matching a DIRECTORY (not a module file) must not verify."""
+        # _make_verifier scaffolds plugins/modules; create the subdir AFTER so its
+        # own mkdir(parents=True) does not collide. A name resolving to a
+        # subdirectory must be rejected now that _check_module requires is_file().
+        v = _make_verifier(tmp_path)
+        (tmp_path / "plugins" / "modules" / "subpkg").mkdir()
+        met, _detail = v._check_module("subpkg")
+        assert met is False
+
+    def test_empty_role_ref_keeps_feature_requested(self, tmp_path: Path) -> None:
+        """End-to-end through verify_feature: a bare ``role:`` ref must NOT verify."""
+        v = _make_verifier(tmp_path)
+        feature = {
+            "id": "FEAT-eeee0000",
+            "name": "empty_role_ref",
+            "status": "requested",
+            "evidence": ["role:"],
+        }
+        result = v.verify_feature(feature)
+        assert result["status"] == "requested", result
+        assert result["evidence_results"]["all_met"] is False
+
+
 class TestVerifyAll:
     """verify_all processes a list of features and returns a summary."""
 

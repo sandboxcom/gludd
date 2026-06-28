@@ -29,11 +29,13 @@ record so a self-improvement loop can never mutate the system invisibly.
 
 from __future__ import annotations
 
+import os
 import time
 from collections.abc import Callable
 from dataclasses import dataclass, field
 from typing import Any
 
+from general_ludd.security.auth import verify_psk
 from general_ludd.security.capability_lattice import (
     CapabilityError,
     ProtectedPathError,
@@ -158,6 +160,7 @@ def apply_plan(
     validate: ValidateFn | None = None,
     audit_sink: AuditSink | None = None,
     auto_apply_config: bool = True,
+    approval_secret: str | None = None,
 ) -> ApplyResult:
     """Run the apply ladder for ``plan`` and emit an audit record.
 
@@ -168,10 +171,15 @@ def apply_plan(
        — or a collections/ self-modify the role may not perform — the request
        is REFUSED. A hard-deny path (``.claude``/``.opencode``/settings) is
        refused even with an approval token; any other protected path is refused
-       UNLESS an explicit ``approval_token`` is present on the request.
+       UNLESS a VALID ``approval_token`` is presented (one matching
+       ``approval_secret`` under constant-time comparison — see SU-A).
     2. **Unknown / unroutable.** An UNKNOWN subsystem or change-kind, or a tier
        with no concrete target files where files are required, is deferred for
        approval (never auto-applied).
+    2b. **requires_approval.** If the plan's ``requires_approval`` flag is set
+       (e.g. a SECURITY-subsystem config edit) and no VALID approval token was
+       presented, the request is deferred for approval before any auto-apply
+       rung — fail-closed.
     3. **Tier ladder.**
          * CONFIG  -> auto-apply (when ``auto_apply_config`` and not protected),
            after validation if a validator is supplied.
@@ -183,7 +191,17 @@ def apply_plan(
     ``collections_self_modify`` cannot drive a collections write through here.
     """
     role = role or request.requested_by
-    has_approval = bool(request.approval_token)
+    # SU-A: an approval token is honoured ONLY when it matches a configured
+    # secret under constant-time comparison. The previous ``bool(token)`` check
+    # let ANY non-empty string approve a protected/code-tier change. Fail-closed:
+    # ``verify_psk`` returns False when EITHER the presented token OR the expected
+    # secret is empty, so an unset secret (the default) makes approval impossible.
+    expected_secret = (
+        approval_secret
+        if approval_secret is not None
+        else os.environ.get("GLUDD_SELF_UPDATE_APPROVAL_SECRET", "")
+    )
+    has_approval = verify_psk(request.approval_token or "", expected_secret)
 
     def _emit(record: AuditRecord) -> ApplyResult:
         if audit_sink is not None:
@@ -240,6 +258,23 @@ def apply_plan(
                 plan.apply_tier,
                 "deferred: unroutable request (unknown subsystem/change-kind) "
                 "— requires operator approval + manual targeting",
+            )
+        )
+
+    # --- 2b. requires_approval gate (SU-B) ---------------------------------
+    # The classifier sets ``requires_approval`` on any plan a human must sign
+    # off before it can land — e.g. a SECURITY-subsystem CONFIG VALUE_EDIT.
+    # apply_plan previously never consulted this flag, so such a plan would fall
+    # through to the CONFIG/SCAFFOLD auto-apply branch and land WITHOUT approval.
+    # Fail-closed: if the plan requires approval and no VALID approval token was
+    # presented, defer for approval before reaching any auto-apply rung.
+    if plan.requires_approval and not has_approval:
+        return _emit(
+            _record(
+                ApplyOutcome.AWAITING_APPROVAL,
+                plan.apply_tier,
+                "deferred: requires_approval and no valid approval token "
+                "(fail-closed)",
             )
         )
 

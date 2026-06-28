@@ -11,6 +11,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 class TodoStatus(enum.StrEnum):
     BACKLOG = "backlog"
+    SCHEDULED = "scheduled"
     QUEUED = "queued"
     ACTIVE = "active"
     AWAITING_RESULT = "awaiting_result"
@@ -58,7 +59,12 @@ class ResourceProfile(enum.StrEnum):
 
 
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
-    TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
+    TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.SCHEDULED, TodoStatus.CANCELLED},
+    # SCHEDULED is the holding state for time-based / cron todos. A one-shot
+    # scheduled todo flips to QUEUED when due; a recurring (cron) template stays
+    # SCHEDULED and spawns QUEUED child clones on each fire (the scheduler does
+    # not transition the template — it advances next_run_at).
+    TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.BLOCKED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.ACTIVE: {
         TodoStatus.AWAITING_RESULT,
@@ -131,6 +137,19 @@ class Todo(BaseModel):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     completed_at: datetime | None = None
+    # ── Scheduling / cron-style recurrence (integrated into the todo) ──
+    # scheduled_at: one-shot fire time — when now >= scheduled_at the scheduler
+    #   transitions the todo SCHEDULED -> QUEUED (runs once).
+    # cron: a 5-field cron expression for recurrence — the todo stays SCHEDULED
+    #   as a template and a QUEUED child clone is spawned on each fire.
+    scheduled_at: datetime | None = None
+    cron: str | None = None
+    schedule_timezone: str = "UTC"
+    next_run_at: datetime | None = None
+    last_run_at: datetime | None = None
+    run_count: int = 0
+    max_runs: int | None = None
+    schedule_paused: bool = False
 
     @field_validator("title", "queue", mode="before")
     @classmethod
@@ -160,6 +179,36 @@ class Todo(BaseModel):
     def _version_minimum(cls, v: int) -> int:
         if v < 1:
             raise ValueError("version must be at least 1")
+        return v
+
+    @field_validator("run_count")
+    @classmethod
+    def _run_count_non_negative(cls, v: int) -> int:
+        if v < 0:
+            raise ValueError("run_count must be non-negative")
+        return v
+
+    @field_validator("max_runs")
+    @classmethod
+    def _max_runs_positive(cls, v: int | None) -> int | None:
+        if v is not None and v < 1:
+            raise ValueError("max_runs must be at least 1 when set")
+        return v
+
+    @field_validator("cron")
+    @classmethod
+    def _cron_well_formed(cls, v: str | None) -> str | None:
+        if v is None:
+            return v
+        v = v.strip()
+        if not v:
+            return None
+        # A standard cron expression has 5 whitespace-separated fields. Full
+        # semantic validation (and next-run computation) is done by the
+        # scheduler via croniter; here we reject obviously-malformed input
+        # without importing croniter at the schema layer.
+        if len(v.split()) != 5:
+            raise ValueError("cron must be a 5-field expression (min hour dom month dow)")
         return v
 
     @model_validator(mode="after")

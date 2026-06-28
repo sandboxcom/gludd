@@ -89,6 +89,7 @@ def _default_http_request(
         headers=dict(headers),
         content=body,
         timeout=_DEFAULT_TIMEOUT_SECONDS,
+        follow_redirects=False,
     )
     try:
         payload = resp.json()

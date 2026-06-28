@@ -1,0 +1,58 @@
+---
+# Exercise the REAL gludd_process + gludd_proc_monitor modules against the mock:
+#   1. gludd_process action=list        -> registry of managed processes (facts)
+#   2. gludd_proc_monitor pid=0         -> per-process stats for every managed pid
+#   3. gludd_process action=signal      -> in CHECK MODE so nothing is killed; the
+#      module reports the change it WOULD make (changed=true, note "would send ...")
+- name: Converge - run gludd_process + gludd_proc_monitor against the mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}"
+    daemon_url: "http://127.0.0.1:{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}"
+    sleeper_pidfile: "/tmp/gludd-proc-sleeper-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8796', true) }}.pid"
+
+  tasks:
+    - name: Load the real sleeper pid stashed by prepare
+      ansible.builtin.slurp:
+        src: "{{ sleeper_pidfile }}"
+      register: sleeper_raw
+
+    - name: Set the sleeper pid
+      ansible.builtin.set_fact:
+        sleeper_pid: "{{ (sleeper_raw.content | b64decode | trim) | int }}"
+
+    - name: List all daemon-managed processes
+      general_ludd.agent.gludd_process:
+        action: list
+        daemon_url: "{{ daemon_url }}"
+      register: list_result
+
+    - name: Monitor every managed process (pid=0 enumerates all)
+      general_ludd.agent.gludd_proc_monitor:
+        pid: 0
+        daemon_url: "{{ daemon_url }}"
+      register: monitor_result
+
+    - name: Signal the sleeper in CHECK MODE (no signal is actually delivered)
+      general_ludd.agent.gludd_process:
+        action: signal
+        pid: "{{ sleeper_pid | int }}"
+        signal: SIGTERM
+        daemon_url: "{{ daemon_url }}"
+      check_mode: true
+      register: signal_result
+
+    - name: Persist results for verify
+      ansible.builtin.copy:
+        content: "{{ {'list': list_result, 'monitor': monitor_result, 'signal': signal_result} | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-process.json"
+        mode: "0644"
+
+    - name: Show results
+      ansible.builtin.debug:
+        msg:
+          - "list: {{ list_result.ansible_facts.gludd_process }}"
+          - "monitor: {{ monitor_result.ansible_facts.gludd_proc_monitor }}"
+          - "signal(check): {{ signal_result }}"

@@ -28,7 +28,10 @@ class TestCLIParsing:
         with patch("sys.argv", ["gludd", "daemon"]), patch("general_ludd.cli._cmd_daemon") as mock_cmd:
             main()
             args = mock_cmd.call_args[0][0]
-            assert args.host == "0.0.0.0"
+            # Secure-by-default: the daemon binds to loopback (127.0.0.1), not the
+            # wildcard 0.0.0.0 (host-bind hardening, commit 2066541). External
+            # binds remain available via an explicit --host 0.0.0.0 opt-in.
+            assert args.host == "127.0.0.1"
             assert args.port == 8000
             assert args.log_level == "info"
             assert args.tick_interval == 1.0

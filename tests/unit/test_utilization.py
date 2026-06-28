@@ -356,3 +356,71 @@ class TestTaskRoutingDataclass:
         assert tr.model == "llama3"
         assert tr.cache_hit is True
         assert tr.reason == "cache_hit"
+
+
+class TestTaskHistoryBounds:
+    """Bounded-growth guard for ``_task_history`` (memory-leak follow-up to P3).
+
+    Mirrors the P3 TestLedgerBounds style: drive more route_task calls than the
+    cap WITHOUT a matching release (the leak scenario — a missed release_task),
+    then assert the history caps at ``_MAX_TASK_HISTORY`` and the most-recent
+    routings survive while the oldest are FIFO-evicted.
+    """
+
+    def test_task_history_caps_at_max_when_releases_missed(self):
+        from general_ludd.infra.utilization import _MAX_TASK_HISTORY
+
+        tracker = UtilizationTracker()
+        # One endpoint with effectively unlimited slots so every route succeeds
+        # and current_load never blocks routing — isolates the history growth.
+        over = _MAX_TASK_HISTORY + 250
+        tracker.register_endpoint("e1", "http://e1", max_concurrent=over + 10)
+
+        for i in range(over):
+            r = tracker.route_task(f"task-{i}")
+            assert r is not None  # never release -> the leak scenario
+
+        # Capped, not unbounded.
+        assert len(tracker._task_history) == _MAX_TASK_HISTORY
+
+        # FIFO eviction: the oldest tasks are gone, the most-recent survive.
+        assert "task-0" not in tracker._task_history
+        assert f"task-{over - 1}" in tracker._task_history
+        # The boundary: the first surviving id is exactly (over - _MAX_TASK_HISTORY).
+        first_surviving = over - _MAX_TASK_HISTORY
+        assert f"task-{first_surviving - 1}" not in tracker._task_history
+        assert f"task-{first_surviving}" in tracker._task_history
+
+    def test_route_release_keeps_history_dict_semantics(self):
+        """A properly released task is removed; route/release still balance to 0."""
+        tracker = UtilizationTracker()
+        tracker.register_endpoint("e1", "http://e1", max_concurrent=8)
+        r = tracker.route_task("t1")
+        assert r is not None
+        assert "t1" in tracker._task_history
+        tracker.release_task("t1")
+        assert "t1" not in tracker._task_history
+        ep = tracker.get_endpoint("e1")
+        assert ep is not None
+        assert ep.current_load == 0
+
+    def test_rerouting_same_task_id_refreshes_recency(self):
+        """Re-routing an existing id moves it to the most-recent end (not evicted)."""
+        from general_ludd.infra.utilization import _MAX_TASK_HISTORY
+
+        tracker = UtilizationTracker()
+        over = _MAX_TASK_HISTORY + 50
+        # route_task increments current_load on EVERY call (including re-routing
+        # the same id) and never releases here, so the endpoint must have enough
+        # slots to satisfy every route call: over (task-i) + over (sticky) + 1.
+        tracker.register_endpoint("e1", "http://e1", max_concurrent=3 * over + 100)
+
+        tracker.route_task("sticky")  # inserted first (oldest)
+        for i in range(over):
+            assert tracker.route_task(f"task-{i}") is not None
+            assert tracker.route_task("sticky") is not None  # keep refreshing recency
+
+        # Despite being the very first inserted, "sticky" survives because it was
+        # continuously moved to the recent end.
+        assert "sticky" in tracker._task_history
+        assert len(tracker._task_history) == _MAX_TASK_HISTORY

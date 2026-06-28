@@ -41,7 +41,7 @@ DESCRIPTION
 
 COMMANDS
     daemon              Start the daemon (server + event loop)
-      --host HOST         Bind address (default: 0.0.0.0)
+      --host HOST         Bind address (default: 127.0.0.1)
       --port PORT         Port (default: 8000)
       --log-level LEVEL   debug|info|warning|error (default: info)
       --tick-interval N   Event loop tick interval in seconds (default: 1.0)
@@ -247,7 +247,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     sub = parser.add_subparsers(dest="command")
 
     daemon_parser = sub.add_parser("daemon", help="Start the daemon (server + event loop)")
-    daemon_parser.add_argument("--host", default="0.0.0.0")
+    daemon_parser.add_argument("--host", default="127.0.0.1")
     daemon_parser.add_argument("--port", type=int, default=8000)
     daemon_parser.add_argument("--log-level", default="info", choices=["debug", "info", "warning", "error"])
     daemon_parser.add_argument("--tick-interval", type=float, default=1.0)
@@ -2592,7 +2592,7 @@ def _clamp_workers_for_sqlite(workers: int | None) -> int:
 
 
 def _build_daemon_start_cmd(
-    host: str = "0.0.0.0",
+    host: str = "127.0.0.1",
     port: int = 8000,
     workers: int | None = None,
 ) -> list[str]:

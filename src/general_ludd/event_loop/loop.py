@@ -7,6 +7,7 @@ import contextlib
 import json
 import logging
 import time
+from collections import OrderedDict
 from collections.abc import Callable
 from datetime import UTC, datetime, timedelta
 from typing import Any, ClassVar
@@ -42,12 +43,26 @@ from general_ludd.schemas.todo import Todo, TodoStatus
 from general_ludd.self_improve.harness import SelfImprovementHarness
 
 logger = logging.getLogger(__name__)
+
+
+class _FileClaimConflict(Exception):
+    """Raised when a todo's git-delivery would clobber a file held by another
+    live worker (#31 multi-agent safety).
+
+    Treated by the completed-work push path exactly like any other delivery
+    failure: the work id is left OUT of the pushed ledger so the commit is
+    retried on a later tick (after the conflicting worker releases its claim),
+    rather than two todos committing the same file simultaneously.
+    """
+
+
 PHASE_ORDER = [
     "load_config_snapshot",
     "claim_unreviewed_task_returns",
     "dispatch_return_review_jobs",
     "evaluate_pid_controllers",
     "refill_task_buckets",
+    "run_scheduler",
     "claim_runnable_todos",
     "evaluate_rules",
     "dispatch_execute_jobs",
@@ -55,6 +70,19 @@ PHASE_ORDER = [
     "self_improve",
     "emit_tick_metrics",
 ]
+
+
+# Two-phase generation (keystone): Phase 1 (``invoke_model_for_generation``) is
+# tool-free BY DESIGN (CA-T9) — it asks the model for text and never binds tools.
+# Phase 2 runs the fully-built ``ToolCallLoop`` for work types whose execution
+# genuinely needs autonomous tool use (the model decides which MCP tools to call,
+# the loop executes them, feeds results back, and iterates). This frozenset is the
+# (tunable) gate for which work types get Phase 2; it is deliberately conservative
+# — only investigative/refinement work types that benefit from tool access — so
+# pure code/bugfix/docs generation stays Phase-1-only and CA-T9 still holds for
+# them. Phase 2 additionally requires both an MCP client and a model gateway to be
+# wired; absent either, the tick falls through to Phase-1-only output.
+_TOOL_USE_WORK_TYPES: frozenset[str] = frozenset({"analysis", "audit"})
 
 
 def _safe_str(obj: Any, attr: str, default: str | None = None) -> str | None:
@@ -112,13 +140,23 @@ def _resolve_prompt_text_static(
                 tmpl = env.get_template(prompt_profile)
                 return tmpl.render(**kwargs)
             except Exception:
-                pass
+                logger.debug(
+                    "Jinja project-template render failed for profile %r; "
+                    "falling through to registry render",
+                    prompt_profile,
+                    exc_info=True,
+                )
     if prompt_registry is None:
         return None
     try:
         result: str = prompt_registry.render(prompt_profile, **kwargs)
         return result
     except Exception:
+        logger.warning(
+            "Registry render failed for prompt profile %r; returning no prompt text",
+            prompt_profile,
+            exc_info=True,
+        )
         return None
 
 
@@ -128,6 +166,7 @@ _WORK_TYPE_TASK_TYPE_MAP: dict[str, str] = {
     "infra": "feature", "prompt": "feature", "analysis": "feature",
     "audit": "feature", "release": "feature", "dependency": "feature",
     "security": "security_fix", "model": "feature", "unknown": "feature",
+    "model_decision": "feature", "langgraph_generate": "feature",
 }
 
 
@@ -146,6 +185,8 @@ _WORK_TYPE_PLAYBOOK_MAP: dict[str, str] = {
     "dependency": "dependency_update.yml", "review": "return_review.yml",
     "docs": "noop.yml", "infra": "noop.yml", "security": "noop.yml",
     "model": "noop.yml", "release": "noop.yml",
+    "model_decision": "langgraph_decide.yml",
+    "langgraph_generate": "langchain_generate.yml",
 }
 
 
@@ -194,6 +235,7 @@ class EventLoop:
         dispatcher: Any | None = None,
         loc_ledger: Any | None = None,
         spend_limiter: Any | None = None,
+        file_claim_registry: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -227,7 +269,16 @@ class EventLoop:
         self._tick_state: dict[str, Any] = {}
         self._active_traces: dict[str, Any] = {}
         self._benchmark_recorder: Any = None
+        # A3: fire-and-forget background tasks (benchmark / trace writes).
+        # A strong reference is held here so a still-running task is never
+        # garbage-collected mid-flight. Mutations use the idiomatic
+        # add + add_done_callback(discard) pattern (both ops individually atomic
+        # under the GIL); the only COMPOUND access — the shutdown drain, which
+        # snapshots → cancels → awaits — is serialised by _bg_tasks_lock so a
+        # concurrent discard during the drain can never raise "set changed size
+        # during iteration".
         self._background_tasks: set[asyncio.Task[Any]] = set()
+        self._bg_tasks_lock = asyncio.Lock()
         self._observability_enabled: bool = bool(adaptive_router)
         self._tick_metrics: dict[str, Any] = {}
         # Reconcile idempotency ledgers (defects F1/F2):
@@ -237,8 +288,19 @@ class EventLoop:
         #   _pushed_work        — todo (work) ids whose completed work has already
         #     been pushed; guarantees the push fires exactly once and is never
         #     duplicated across ticks (F2: completed-work push lost/double).
-        self._applied_decisions: set[str] = set()
-        self._pushed_work: set[str] = set()
+        #
+        # P3 (unbounded ledger growth): these are bounded LRU sets. Each is an
+        # insertion-ordered ``OrderedDict`` used as an ordered set (value is an
+        # ignored ``None``); when it exceeds ``_MAX_LEDGER_SIZE`` the OLDEST key is
+        # evicted in O(1) via ``popitem(last=False)``. Insertion-order eviction is
+        # deliberate: a naive ``set`` drop picks an ARBITRARY (unordered) victim and
+        # could evict a still-recent key, re-opening the F1/F2 re-apply / re-push
+        # window. FIFO-by-insertion evicts the genuinely-oldest id first, which is
+        # the one least likely to still be in flight — preserving idempotency across
+        # the bounded window without the O(n) ``list(set)`` materialisation the old
+        # set-prune incurred at capacity.
+        self._applied_decisions: OrderedDict[str, None] = OrderedDict()
+        self._pushed_work: OrderedDict[str, None] = OrderedDict()
         self._config_snapshot: dict[str, Any] = {}
         # M14 (W3.14): single project selected per tick, shared across all phases.
         # Reset to None at the end of every tick (see tick() finally block).
@@ -256,6 +318,48 @@ class EventLoop:
         # lines-of-code delta here after every successful commit so the
         # accounting router can report cumulative loc_changed per project.
         self._loc_ledger = loc_ledger
+        # #31 (multi-agent safety): the shared FileClaimRegistry (also stored on
+        # app.state._file_claims and surfaced via /api/coordination + /api/facts).
+        # The git-delivery path (_try_commit_completed_work) claims a todo's
+        # affected files here BEFORE committing and releases them after, so two
+        # concurrent todos can never write+commit the same file in the same tick.
+        self._file_claims = file_claim_registry
+
+    def _track_background_task(self, task: asyncio.Task[Any]) -> None:
+        """Register a fire-and-forget task so its reference is held until done.
+
+        A3: keeps a strong reference in ``self._background_tasks`` (so the task
+        is never GC'd while running) and arms a done-callback that discards it on
+        completion (so the set drains to empty and never leaks). ``set.add`` and
+        ``set.discard`` are each atomic under the GIL, and ``add_done_callback``
+        fires immediately if the task is already complete — so this is safe to
+        call from any coroutine without a lock. The lock guards only the COMPOUND
+        shutdown drain in :meth:`_drain_background_tasks`.
+        """
+        self._background_tasks.add(task)
+        task.add_done_callback(self._background_tasks.discard)
+
+    async def _drain_background_tasks(self, *, cancel: bool = True) -> None:
+        """Cancel + await all tracked background tasks (used on shutdown).
+
+        A3: iterates a SNAPSHOT (``list(self._background_tasks)``) taken under
+        ``_bg_tasks_lock`` so a concurrent done-callback ``discard`` cannot mutate
+        the set while we read it — the read-modify-await sequence here is the only
+        compound access to the set and is the one that genuinely needs the lock.
+        Cancellation is best-effort: each task's done-callback removes it from the
+        live set as it settles, so after the gather the set drains to empty.
+        """
+        async with self._bg_tasks_lock:
+            pending = list(self._background_tasks)
+        if not pending:
+            return
+        if cancel:
+            for task in pending:
+                if not task.done():
+                    task.cancel()
+        # gather a snapshot (never the live set) with return_exceptions so a
+        # cancelled/failed background task can't propagate into shutdown.
+        await asyncio.gather(*pending, return_exceptions=True)
 
     async def _append_message_queue_section(
         self, prompt_text: str | None, todo: Any, project_id: str | None
@@ -281,6 +385,13 @@ class EventLoop:
                     unread = len(msgs)
                     senders = [m.sender for m in msgs]
             except Exception:
+                logger.warning(
+                    "MQ inbox lookup failed for role %r (project %s): "
+                    "falling back to empty inbox",
+                    role,
+                    project_id,
+                    exc_info=True,
+                )
                 unread = 0
                 senders = []
         from general_ludd.prompts.registry import render_message_queue_section
@@ -420,7 +531,18 @@ class EventLoop:
                     try:
                         await session.commit()
                     except Exception as exc:
-                        logger.warning("Failed to commit tick session: %s", exc)
+                        # Data-loss event: the whole tick's writes are dropped. Log
+                        # loudly + roll back so the failed txn doesn't leak through
+                        # context-exit. Do NOT re-raise: run_forever re-raises and
+                        # would kill the daemon loop. Orphaned ACTIVE todos are
+                        # reclaimed by reclaim_expired_leases / _reap_stuck_todos.
+                        logger.error(
+                            "Failed to commit tick session (writes lost): %s",
+                            exc,
+                            exc_info=True,
+                        )
+                        with contextlib.suppress(Exception):
+                            await session.rollback()
                     self._active_session = None
                     self._todo_repo = None
                     self._task_return_repo = None
@@ -469,6 +591,18 @@ class EventLoop:
 
     def stop(self) -> None:
         self._running = False
+
+    async def shutdown(self) -> None:
+        """Stop ticking and drain all in-flight background tasks.
+
+        A3: cancels + awaits the fire-and-forget benchmark/trace tasks so the
+        process does not exit with running tasks (which would emit
+        "Task was destroyed but it is pending" warnings and could lose telemetry
+        writes mid-flush). Safe to call concurrently with task creation — the
+        drain reads a snapshot under ``_bg_tasks_lock``.
+        """
+        self._running = False
+        await self._drain_background_tasks()
 
     def get_available_tools(self) -> list[str]:
         if self._mcp_tool_registry is None:
@@ -568,6 +702,36 @@ class EventLoop:
         )
         await self._persist_review_response(tr, resp)
 
+    def _resolve_repo_root(self, project_id: str | None) -> str | None:
+        """Resolve the repository root for a project.
+
+        Lookup priority:
+          1. Per-project workspace repo_dir — when self._project_workspace is a
+             dict of {pid: ProjectWorkspace} and the workspace's repo_dir is a
+             real directory on disk (populated by materialize_project_workspace /
+             git-clone at startup).
+          2. self.config["repo_root"] — operator-configured fallback (also used
+             as the daemon-level default set at startup for single-project use).
+          3. None — completion_verifier will fail-closed (unverifiable ≠ verified).
+
+        Does NOT fall through to os.getcwd() here; that default belongs at the
+        config-injection site (daemon.py) so the intent is explicit and not
+        silently inherited from the process cwd.
+        """
+        from pathlib import Path as _Path
+
+        workspaces = self._project_workspace if isinstance(self._project_workspace, dict) else None
+        if workspaces is not None and project_id is not None:
+            ws = workspaces.get(project_id)
+            if ws is not None and hasattr(ws, "repo_dir"):
+                try:
+                    rdir = _Path(str(ws.repo_dir))
+                    if rdir.is_dir():
+                        return str(rdir)
+                except Exception:
+                    pass
+        return self.config.get("repo_root") if isinstance(self.config, dict) else None
+
     async def _review_in_process(self, tr: Any) -> None:
         from general_ludd.review.decision_applier import apply_decision
 
@@ -604,7 +768,13 @@ class EventLoop:
         assert self._todo_repo is not None
         assert self._active_session is not None
         try:
-            await apply_decision(decision, self._todo_repo, self._active_session)
+            _review_project_id = getattr(tr, "project_id", None) or None
+            await apply_decision(
+                decision,
+                self._todo_repo,
+                self._active_session,
+                repo_root=self._resolve_repo_root(_review_project_id),
+            )
             await self._active_session.flush()
         except Exception as exc:
             logger.error(
@@ -615,7 +785,7 @@ class EventLoop:
             )
             return
         if self._audit_repo is not None:
-            with contextlib.suppress(Exception):
+            try:
                 await self._audit_repo.create(
                     event_type="return_reviewed",
                     entity_type="task_return",
@@ -628,6 +798,15 @@ class EventLoop:
                             "matched_todo_id": decision.matched_todo_id,
                         }
                     ),
+                )
+            except Exception:
+                # Audit trail is best-effort; a write failure must not abort the
+                # review (the decision is already applied). Log so a broken audit
+                # sink is visible.
+                logger.warning(
+                    "Audit write failed for return_reviewed event %s",
+                    return_id,
+                    exc_info=True,
                 )
         logger.info(
             "In-process review for return %s -> %s", return_id, decision.decision
@@ -684,8 +863,16 @@ class EventLoop:
             queues = [Queue(**q) if isinstance(q, dict) else q for q in queues_data]
             active_jobs = 0
             if self._todo_repo is not None and self._active_session is not None:
-                with contextlib.suppress(Exception):
+                try:
                     active_jobs = await self._todo_repo.count_active()
+                except Exception:
+                    # Best-effort load signal: a count failure falls back to 0
+                    # (treated as idle). Log at debug so a broken query is visible
+                    # without changing the fall-through behaviour.
+                    logger.debug(
+                        "count_active failed; using active_jobs=0",
+                        exc_info=True,
+                    )
             snapshot = LoadSnapshot(
                 loadavg_1m=load_1, loadavg_5m=load_5, loadavg_10m=load_10,
                 logical_cpu_count=cpu_count, cpu_percent=cpu_pct,
@@ -725,6 +912,24 @@ class EventLoop:
         if self._todo_repo is not None and self._active_session is not None:
             await self._reap_stuck_todos()
 
+    async def _phase_run_scheduler(self) -> None:
+        """Promote due SCHEDULED todos (cron + one-shot) on each tick.
+
+        DEFECT 0 fix: ``TodoScheduler`` was previously defined but never invoked,
+        so SCHEDULED todos were never promoted and the cron feature was dead
+        end-to-end. This phase runs BEFORE ``claim_runnable_todos`` in
+        ``PHASE_ORDER`` so a todo promoted SCHEDULED→QUEUED (one-shot) or a freshly
+        spawned cron child clone is claimable in the same tick. Uses the
+        tick-scoped repo/session; ``tick()`` commits once after ``_run_phases``.
+        """
+        if self._todo_repo is None or self._active_session is None:
+            return
+        from general_ludd.event_loop.scheduler import TodoScheduler
+
+        promoted, spawned = await TodoScheduler(self._todo_repo).tick()
+        self._tick_metrics["scheduled_promoted"] = promoted
+        self._tick_metrics["scheduled_spawned"] = spawned
+
     async def _phase_claim_runnable_todos(self) -> None:
         if self._todo_repo is None:
             return
@@ -741,12 +946,25 @@ class EventLoop:
             holder = f"tick-{self._total_ticks}"
             for todo in claimed:
                 bucket_key = _safe_str(todo, "queue", "core") or "core"
-                with contextlib.suppress(Exception):
+                todo_id = _safe_str(todo, "todo_id", "") or ""
+                try:
                     await acquire_lease(
                         self._active_session,
-                        bucket_key=f"{bucket_key}:{_safe_str(todo, 'todo_id', '')}",
+                        bucket_key=f"{bucket_key}:{todo_id}",
                         holder_id=holder,
                         project_id=project_id,
+                    )
+                except Exception as exc:
+                    # A CLAIMED todo with no lease row can only be recovered by the
+                    # slow _reap_stuck_todos fallback, so the failure must be
+                    # visible. Keep swallowing (per-todo best-effort) so one bad
+                    # lease write does not abort claiming the rest of the batch.
+                    logger.warning(
+                        "Lease acquisition failed for todo %s (bucket=%s): %s",
+                        todo_id,
+                        bucket_key,
+                        exc,
+                        exc_info=True,
                     )
 
     async def _phase_dispatch_execute_jobs(self) -> None:
@@ -765,12 +983,25 @@ class EventLoop:
                 return
 
         # Apply PID cap.
+        # Bug fix: todos beyond the cap are already CLAIMED (status=ACTIVE in the
+        # DB + lease acquired).  Dropping them from the dispatch list without
+        # releasing the lease left them stuck as ACTIVE until the 15-min reaper
+        # fired.  Transition the excess todos back to QUEUED immediately so they
+        # are retried on the next tick instead of stalling until lease expiry.
         if cap is not None and len(claimed) > cap:
+            excess = list(claimed[cap:])
             logger.info(
-                "PID cap reached: dispatching %d of %d claimed (cap=%d)",
-                cap, len(claimed), cap,
+                "PID cap reached: dispatching %d of %d claimed (cap=%d); "
+                "releasing %d over-cap todos back to QUEUED",
+                cap, len(claimed), cap, len(excess),
             )
             claimed = list(claimed[:cap])
+            if self._todo_repo is not None:
+                for _todo in excess:
+                    with contextlib.suppress(Exception):
+                        await self._todo_repo.transition(
+                            _todo.todo_id, TodoStatus.QUEUED, _todo.version
+                        )
 
         # W(#23): wire Scheduler.plan() to determine concurrency-safe batches.
         # Each batch may run concurrently (asyncio.gather) when a session_factory
@@ -853,10 +1084,27 @@ class EventLoop:
                     len(batch_todos),
                 )
                 tasks = [
-                    self._dispatch_execute_job_isolated(t)
+                    asyncio.ensure_future(self._dispatch_execute_job_isolated(t))
                     for t in batch_todos
                 ]
-                results = await asyncio.gather(*tasks, return_exceptions=True)
+                batch_timeout = min(300.0 * len(batch_todos), 1800.0)
+                try:
+                    results = await asyncio.wait_for(
+                        asyncio.gather(*tasks, return_exceptions=True),
+                        timeout=batch_timeout,
+                    )
+                except TimeoutError:
+                    logger.error(
+                        "Concurrent dispatch batch timed out after %.0fs; "
+                        "cancelling %d pending job(s)",
+                        batch_timeout,
+                        sum(1 for t in tasks if not t.done()),
+                    )
+                    for t in tasks:
+                        if not t.done():
+                            t.cancel()
+                    await asyncio.gather(*tasks, return_exceptions=True)
+                    continue
                 for res in results:
                     if isinstance(res, Exception):
                         logger.error("Concurrent job dispatch raised: %s", res)
@@ -939,16 +1187,20 @@ class EventLoop:
         execute path (those todos arm a code hot-rotation + reload, not a
         playbook run).
         """
-        # SpendLimiter pre-call gate: project this dispatch's cost and defer
-        # (skip) the job when it would push the rolling-window spend over the
-        # configured cap. would_exceed() is the non-mutating check — it never
-        # records spend, so the job remains queued and will be retried on a
-        # later tick once the window rolls forward. A None limiter (no cap
-        # configured) leaves dispatch unchanged.
+        # SpendLimiter pre-call gate: atomically check + record the projected
+        # cost via try_charge().  The previous would_exceed()-only check was
+        # non-mutating — it never recorded spend, so the rolling window stayed
+        # at zero and the soft cap could never trip (bug: inert limiter).
+        # try_charge() does the check and the record in one locked step so:
+        #   * Every accepted dispatch is charged against the window immediately.
+        #   * Concurrent dispatches cannot both observe the same headroom and
+        #     both commit (check-and-record is atomic under the limiter's lock).
+        # A None limiter (no cap configured) leaves dispatch unchanged.
         limiter = self._spend_limiter
         if limiter is not None:
             projected = self._estimated_dispatch_cost(1)
-            if limiter.would_exceed(projected):
+            accepted = limiter.try_charge(projected, kind="token")
+            if not accepted:
                 logger.warning(
                     "SpendLimiter: deferring dispatch for todo %s — projected=%.6f "
                     "window_spend=%.6f remaining=%.6f",
@@ -1049,7 +1301,9 @@ class EventLoop:
                 _os.makedirs(_os.path.join(job_dir, "env"), exist_ok=True)
                 pdd = str(ws.private_data_dir)
             else:
-                dirs = self._runner.prepare_job_dirs(job_id)
+                # prepare_job_dirs does blocking os.makedirs; offload so it does
+                # not stall the daemon's single asyncio event loop (AB).
+                dirs = await asyncio.to_thread(self._runner.prepare_job_dirs, job_id)
                 pdd = dirs["root"]
             # C1 (W3.x): invoke the model for a generation work type the SAME
             # way the worker HTTP path does, then feed the generated text into
@@ -1057,7 +1311,7 @@ class EventLoop:
             if self._model_gateway is not None and is_generation_work_type(
                 _safe_str(todo, "work_type", "code") or "code"
             ):
-                model_response = await asyncio.to_thread(
+                model_response, model_tool_calls = await asyncio.to_thread(
                     invoke_model_for_generation,
                     self._model_gateway,
                     job_id=job_id,
@@ -1069,10 +1323,17 @@ class EventLoop:
                 )
             else:
                 model_response = None
+                model_tool_calls = None
             if model_response is not None:
-                from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+                from general_ludd.dispatch.dynamic_dispatcher import (
+                    structured_tool_calls_to_calls,
+                )
                 from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
-                calls = parse_tool_calls(model_response)
+                # Dispatch the model's STRUCTURED tool_calls directly. The legacy
+                # path re-parsed the TEXT (parse_tool_calls(model_response)) which
+                # cannot recover the structured calls, so model-driven tool actions
+                # were silently discarded on this path.
+                calls = structured_tool_calls_to_calls(model_tool_calls)
                 if len(calls) > MAX_CALLS_PER_REQUEST:
                     logger.error(
                         "EventLoop: model returned %d tool calls which exceeds cap %d — "
@@ -1103,13 +1364,116 @@ class EventLoop:
                         if eff_variable_repo is not None:
                             for r in results:
                                 if r.ok:
-                                    import contextlib as _cl
-                                    with _cl.suppress(Exception):
+                                    try:
                                         await eff_variable_repo.set_var(
                                             namespace="tool_results",
                                             key=f"tool_result:{r.name}",
                                             value=str(r.output),
                                         )
+                                    except Exception:
+                                        # Best-effort persistence of a tool result;
+                                        # the dispatch already succeeded. Keep
+                                        # swallowing per-result so one bad write
+                                        # does not abort the rest, but log it.
+                                        logger.debug(
+                                            "Failed to persist tool_result for %s "
+                                            "(job %s)",
+                                            r.name,
+                                            job_id,
+                                            exc_info=True,
+                                        )
+            # Phase 2 (keystone): autonomous tool use via the ToolCallLoop.
+            #
+            # Phase 1 above is tool-free by design (CA-T9): it produces text and,
+            # if the model emitted STRUCTURED tool_calls, those are dispatched
+            # once. Phase 2 is the genuine agentic loop — for tool-requiring work
+            # types it binds the live MCP tools (list_tools -> tools=), lets the
+            # model choose+call them, executes via the MCP client, feeds results
+            # back, and iterates until the model stops requesting tools. This is
+            # what makes autonomous tool action FUNCTIONAL (not merely
+            # dispatch-wired) end to end.
+            #
+            # Gated so it NEVER runs for pure-generation work types (code/bugfix/
+            # docs stay Phase-1-only, preserving CA-T9 for them), and only when an
+            # MCP client AND a model gateway are wired. Wrapped so any failure
+            # logs + falls through without breaking the tick.
+            if (
+                work_type in _TOOL_USE_WORK_TYPES
+                and self._mcp_client is not None
+                and self._model_gateway is not None
+            ):
+                try:
+                    from general_ludd.execution.tool_loop import ToolCallLoop
+
+                    tool_loop = ToolCallLoop(
+                        model_gateway=self._model_gateway,
+                        mcp_client=self._mcp_client,
+                        mcp_registry=self._mcp_tool_registry,
+                    )
+                    # Use the Phase-1 generated text as additional context so the
+                    # tool-driven phase REFINES the analysis rather than starting
+                    # blind; fall back to the raw prompt when Phase 1 produced
+                    # nothing.
+                    phase2_user = prompt_text or ""
+                    if model_response:
+                        phase2_user = (
+                            f"{phase2_user}\n\n"
+                            f"Initial analysis (refine using the available tools):\n"
+                            f"{model_response}"
+                        ).strip()
+                    phase2_job = JobSpec(
+                        job_id=job_id,
+                        todo_id=_safe_str(todo, "todo_id", "") or "",
+                        playbook=playbook,
+                        queue=_safe_str(todo, "queue", "core") or "core",
+                        work_type=work_type,
+                        resource_profile=_safe_str(todo, "resource_profile", "low_resource")
+                        or "low_resource",
+                        model_profile=resolved_model_profile,
+                        prompt_profile=resolved_prompt_profile,
+                        prompt_text=phase2_user,
+                        skill_body=skill_body,
+                        project_id=project_id_val,
+                    )
+                    tool_result = await tool_loop.run_with_tools(
+                        phase2_job,
+                        skill_body or "",
+                        phase2_user,
+                    )
+                    logger.info(
+                        "EventLoop: Phase-2 ToolCallLoop completed for %s job %s "
+                        "(work_type=%s)",
+                        _safe_str(todo, "todo_id", "?"),
+                        job_id,
+                        work_type,
+                    )
+                    # Persist the tool-loop output alongside the Phase-1 dispatch
+                    # results so the autonomous tool action is recorded on the job
+                    # trace (mirrors how dispatch_all results are persisted above).
+                    if eff_variable_repo is not None and tool_result:
+                        try:
+                            await eff_variable_repo.set_var(
+                                namespace="tool_results",
+                                key=f"tool_loop_result:{job_id}",
+                                value=str(tool_result),
+                            )
+                        except Exception:
+                            logger.debug(
+                                "Failed to persist Phase-2 tool_loop_result (job %s)",
+                                job_id,
+                                exc_info=True,
+                            )
+                except Exception:
+                    # Phase 2 is additive: a tool-loop failure must NOT break the
+                    # tick. Log loudly and fall through to the playbook run with
+                    # the Phase-1 output intact.
+                    logger.warning(
+                        "EventLoop: Phase-2 ToolCallLoop failed for job %s "
+                        "(work_type=%s) — falling through to Phase-1 output",
+                        job_id,
+                        work_type,
+                        exc_info=True,
+                    )
             if model_response is not None and self._benchmark_recorder is not None:
                 try:
                     from general_ludd.event_loop.benchmark import record_job_benchmark
@@ -1123,10 +1487,15 @@ class EventLoop:
                             input_tokens=len(prompt_text or "") // 4,
                         )
                     )
-                    self._background_tasks.add(_bt)
-                    _bt.add_done_callback(self._background_tasks.discard)
+                    self._track_background_task(_bt)
                 except Exception:
-                    pass
+                    # Best-effort fire-and-forget benchmark write: a scheduling
+                    # failure must never abort dispatch. Keep swallowing but make
+                    # a persistently-dead recorder visible at debug.
+                    logger.debug(
+                        "Benchmark recorder scheduling failed (non-fatal)",
+                        exc_info=True,
+                    )
                 # Trace-buffer feed (additive): the DB benchmark write above is
                 # preserved, but the trace→recorder→RecentTracesBuffer chain was
                 # never exercised, so /api/traces always reported count 0. Build a
@@ -1151,16 +1520,29 @@ class EventLoop:
                         prompt_profile_id=resolved_prompt_profile,
                     )
                     self._active_traces[_trace.trace_id] = _trace
+                    # Prune the trace dict to prevent unbounded growth (MED audit
+                    # finding): once we exceed the cap, evict the oldest entries.
+                    if len(self._active_traces) > self._MAX_ACTIVE_TRACES:
+                        _evict = list(self._active_traces)[: len(self._active_traces) - self._MAX_ACTIVE_TRACES // 2]
+                        for _k in _evict:
+                            self._active_traces.pop(_k, None)
                     _tbt = asyncio.create_task(
                         self._benchmark_recorder.record_from_trace(
                             _trace, success=True,
                         )
                     )
-                    self._background_tasks.add(_tbt)
-                    _tbt.add_done_callback(self._background_tasks.discard)
+                    self._track_background_task(_tbt)
                 except Exception:
-                    pass
-            self._runner.write_vars(job_id, job_vars={
+                    # Best-effort trace-buffer feed (telemetry only): a failure
+                    # here must never abort dispatch. Keep swallowing but log at
+                    # debug so a broken trace pipeline is observable.
+                    logger.debug(
+                        "Trace-buffer feed failed (non-fatal)",
+                        exc_info=True,
+                    )
+            # write_vars does blocking os.makedirs + yaml file write + os.chmod;
+            # offload so it does not stall the daemon's single asyncio loop (AB).
+            await asyncio.to_thread(self._runner.write_vars, job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
                 "work_type": _safe_str(todo, "work_type", "unknown"),
@@ -1204,7 +1586,7 @@ class EventLoop:
             resource_profile=_safe_str(todo, "resource_profile", "low_resource") or "low_resource",
             model_profile=resolved_model_profile, prompt_profile=resolved_prompt_profile,
             plan_artifact=_safe_str(todo, "plan_artifact"),
-            prompt_text=prompt_text, budget_context=budget_context,
+            prompt_text=prompt_text, skill_body=skill_body, budget_context=budget_context,
             project_id=project_id_val,
             artifact_dir=str(ws.artifacts_dir) if ws and hasattr(ws, "artifacts_dir") else None,
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
@@ -1371,13 +1753,23 @@ class EventLoop:
         )
 
         if self._daemon_state is not None and isinstance(self._daemon_state, dict):
-            self._daemon_state.setdefault("self_update_applies", []).append({
+            # P3 (unbounded ledger growth): this audit list grows by one entry per
+            # successful self_update reload and was NEVER pruned — over a long-lived
+            # daemon it accumulates without bound. Bound it to the last
+            # ``_MAX_SELF_UPDATE_APPLIES`` entries. It stays a plain ``list`` (NOT a
+            # deque) so it remains JSON-serialisable and index-/slice-able for the
+            # daemon consumers that surface it via app.state; we trim from the FRONT
+            # so the most recent applies (the ones an operator cares about) survive.
+            applies = self._daemon_state.setdefault("self_update_applies", [])
+            applies.append({
                 "todo_id": todo_id,
                 "module": module_name,
                 "candidate": candidate_path,
                 "verdict": reload_status,
                 "ok": reload_ok,
             })
+            if len(applies) > self._MAX_SELF_UPDATE_APPLIES:
+                del applies[: len(applies) - self._MAX_SELF_UPDATE_APPLIES]
 
     async def _transition_self_update_todo(
         self,
@@ -1514,6 +1906,49 @@ class EventLoop:
             new_status = self._decision_to_status(d.decision)
             if new_status is None:
                 continue
+            # Layer 2: gate COMPLETE transitions behind evidence verification.
+            if d.decision == "complete":
+                from general_ludd.review.completion_verifier import verify_completion
+                try:
+                    _ev_refs: list[str] = json.loads(getattr(d, "evidence_refs", None) or "[]")
+                    _audit_notes: list[str] = json.loads(getattr(d, "audit_notes", None) or "[]")
+                    _schema_dec = TaskDecision(
+                        return_id=getattr(d, "return_id", "") or "",
+                        matched_todo_id=d.matched_todo_id,
+                        decision=d.decision,
+                        confidence=float(getattr(d, "confidence", 0.0) or 0.0),
+                        evidence_refs=_ev_refs,
+                        audit_notes=_audit_notes,
+                    )
+                except (ValueError, TypeError) as exc:
+                    # Malformed ORM JSON / schema build for THIS row must never
+                    # abort the whole reconcile phase (the loop processes up to 50
+                    # decisions). Fail-safe: skip this one row — do NOT mark it
+                    # applied, do NOT transition it to COMPLETE on bad evidence; it
+                    # stays REVIEWING_RETURN for a later tick. Mirrors the
+                    # per-iteration resilience used elsewhere in this loop.
+                    logger.warning(
+                        "Reconcile: skipping decision %s for todo %s — could not "
+                        "parse/build evidence for gating: %s",
+                        decision_id, d.matched_todo_id, exc,
+                    )
+                    continue
+                _decision_project_id = getattr(d, "project_id", None) or getattr(todo, "project_id", None) or None
+                _repo_root = self._resolve_repo_root(_decision_project_id)
+                _verified = await asyncio.to_thread(
+                    verify_completion, _schema_dec, None, _repo_root
+                )
+                if _verified.decision != "complete":
+                    logger.warning(
+                        "Reconcile: evidence gate downgraded %s from complete to %s "
+                        "for todo %s",
+                        decision_id,
+                        _verified.decision,
+                        d.matched_todo_id,
+                    )
+                    new_status = self._decision_to_status(_verified.decision)
+                    if new_status is None:
+                        continue
             # F6: version race. We transition with the version we just read; the
             # repository performs a guarded compare-and-set on (version, status).
             # If a CONCURRENT reconcile already moved the row, the CAS affects
@@ -1530,7 +1965,8 @@ class EventLoop:
                 )
                 continue
             # Transition committed: this decision is now applied exactly once.
-            self._applied_decisions.add(decision_id)
+            # P3: bounded LRU insert — evicts the oldest id (FIFO) past the cap.
+            self._ledger_add(self._applied_decisions, decision_id)
             reconciled += 1
             if (
                 new_status == TodoStatus.COMPLETE
@@ -1539,7 +1975,7 @@ class EventLoop:
             ):
                 push_failures += 1
             if self._audit_repo is not None:
-                with contextlib.suppress(Exception):
+                try:
                     from general_ludd.db.models import AuditEventType
                     await self._audit_repo.record_typed(
                         AuditEventType.TODO_STATUS_CHANGED,
@@ -1549,6 +1985,15 @@ class EventLoop:
                             "old": todo.status, "new": new_status.value,
                             "decision": d.decision,
                         },
+                    )
+                except Exception:
+                    # Audit trail is best-effort; the transition is already
+                    # applied. Log so a broken audit sink is visible without
+                    # aborting reconcile.
+                    logger.warning(
+                        "Audit write failed for todo status change %s",
+                        todo.todo_id,
+                        exc_info=True,
                     )
         self._tick_metrics["decisions_applied"] = reconciled
         self._tick_metrics["push_failures"] = push_failures
@@ -1577,7 +2022,8 @@ class EventLoop:
                 todo.todo_id, exc,
             )
             return True
-        self._pushed_work.add(todo.todo_id)
+        # P3: bounded LRU insert — evicts the oldest id (FIFO) past the cap.
+        self._ledger_add(self._pushed_work, todo.todo_id)
         return False
 
     def _decision_to_status(self, decision: str) -> TodoStatus | None:
@@ -1590,13 +2036,57 @@ class EventLoop:
         return mapping.get(decision)
 
     async def _try_commit_completed_work(self, todo: Any) -> None:
-        """H6: commit/branch/push completed work via git automation."""
+        """H6: commit/branch/push completed work via git automation.
+
+        #31 (multi-agent safety): this is the git-DELIVERY path — the ONLY point
+        where a todo's affected files are actually known. They cannot be reserved
+        at dispatch/claim time: the model has not run, no worktree changes exist,
+        so claiming an empty set then would be a no-op. Here the worktree has been
+        written, so ``repo.changed_files()`` yields the real affected paths. We
+        therefore claim those files in the shared FileClaimRegistry BEFORE the
+        commit, refuse to proceed if another live worker already holds an
+        overlapping file (deferring this commit to a later tick rather than
+        clobbering), and release the claim once delivery finishes (success OR
+        failure). A None registry leaves behaviour unchanged.
+        """
         branch_name = getattr(todo, "branch_name", None) or f"gludd-{todo.todo_id.lower()}"
         worktree = getattr(todo, "worktree", None)
         if worktree:
+            from general_ludd.git_automation.repo import GitAutomation
+            repo = GitAutomation(worktree)
+            registry = self._file_claims
+            worker_id = _safe_str(todo, "todo_id", "") or str(id(todo))
+            claimed = False
             try:
-                from general_ludd.git_automation.repo import GitAutomation
-                repo = GitAutomation(worktree)
+                # #31: discover the worktree's affected files (uncommitted changes)
+                # and atomically reserve them before touching git. If another live
+                # worker already holds one of these files, DEFER — release our
+                # just-made claim and raise so the F3 retry path re-attempts this
+                # commit on a later tick (after the other worker releases), instead
+                # of two todos committing the same file simultaneously.
+                if registry is not None:
+                    affected = await asyncio.to_thread(repo.changed_files)
+                    if affected:
+                        registry.claim(worker_id, affected)
+                        claimed = True
+                        conflicts = registry.overlaps(worker_id)
+                        if conflicts:
+                            registry.release(worker_id)
+                            claimed = False
+                            blocking = sorted(
+                                {w for ws in conflicts.values() for w in ws}
+                            )
+                            logger.info(
+                                "#31: deferring commit for todo %s — files %s "
+                                "overlap active worker(s) %s; will retry next tick",
+                                worker_id,
+                                sorted(conflicts),
+                                blocking,
+                            )
+                            raise _FileClaimConflict(
+                                f"file-claim conflict for {worker_id}: "
+                                f"{sorted(conflicts)} held by {blocking}"
+                            )
                 # M (LIVE stall fix): commit/push shell out to blocking git.
                 # Even with a per-subprocess timeout, a 60s blocking call inside
                 # the async tick would freeze every other coroutine. Offload to a
@@ -1620,21 +2110,34 @@ class EventLoop:
                         )
                 await asyncio.to_thread(repo.push, branch=branch_name)
                 logger.info("H6: committed + pushed %s to %s", todo.todo_id, branch_name)
-                self._maybe_open_pr(todo, worktree, branch_name)
+                await self._maybe_open_pr(todo, worktree, branch_name)
             except Exception as exc:
                 # F3: surface (don't swallow) so the caller can detect the
                 # COMPLETE-but-unpushed split-brain and retry. The caller decides
                 # whether to mark the work pushed — a raised failure leaves it
-                # unmarked so the push is retried, never silently lost.
-                logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
+                # unmarked so the push is retried, never silently lost. A
+                # _FileClaimConflict is the same shape of "retry next tick" signal.
+                if not isinstance(exc, _FileClaimConflict):
+                    logger.warning("H6: git automation failed for %s: %s", todo.todo_id, exc)
                 raise
+            finally:
+                # #31: release the claim once delivery settles (committed+pushed
+                # OR failed) so the next tick's worker can take overlapping files.
+                # release() is a no-op when we never claimed (registry None /
+                # no affected files / conflict already released above).
+                if registry is not None and claimed:
+                    registry.release(worker_id)
 
-    def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
+    async def _maybe_open_pr(self, todo: Any, worktree: str, branch_name: str) -> None:
         """F1: open a PR for completed work when git_automation.open_pr is set.
 
         Disabled by default — only fires when config opts in, so the daemon
         never opens PRs unexpectedly. Uses PRDelivery (push branch + gh pr
         create).
+
+        H2 fix: push_and_create_pr shells out to ``gh pr create`` / ``git push``
+        which can block for 5-30 s.  Run it in a thread so the event loop is
+        never stalled during PR delivery.
         """
         ga_cfg = self.config.get("git_automation", {}) or {}
         if not ga_cfg.get("open_pr", False):
@@ -1646,7 +2149,8 @@ class EventLoop:
             draft=bool(ga_cfg.get("pr_draft", False)),
             labels=list(ga_cfg.get("pr_labels", [])),
         )
-        result = delivery.push_and_create_pr(
+        result = await asyncio.to_thread(
+            delivery.push_and_create_pr,
             repo_path=worktree,
             branch_name=branch_name,
             todo_id=todo.todo_id,
@@ -1665,7 +2169,11 @@ class EventLoop:
             return
         try:
             harness = SelfImprovementHarness(model_gateway=self._model_gateway)
-            findings = harness.run_gap_analysis()
+            # AB-6: run_gap_analysis blocks on an HTTP model call / filesystem
+            # walk; offload it so the self-improve phase does not stall the async
+            # event loop. The harness is freshly constructed per tick and the
+            # gateway is threading.Lock-guarded, so the worker thread is safe.
+            findings = await asyncio.to_thread(harness.run_gap_analysis)
             if not findings:
                 self._tick_metrics["self_improve_gaps"] = 0
                 return
@@ -1673,7 +2181,9 @@ class EventLoop:
             # H2 (W3.7): persist through TodoRepository so the generated work
             # survives the tick (the in-memory harness.enqueue_todos discarded
             # them). Fall back to nothing if no repo/session is available.
-            enqueued = await self._persist_self_improve_todos(todos)
+            enqueued = await self._persist_self_improve_todos(
+                todos, project_id=self._tick_project_id
+            )
             if self._daemon_state is not None:
                 self._daemon_state["self_improve_last_analysis"] = {
                     "findings": findings, "findings_count": len(findings),
@@ -1683,14 +2193,59 @@ class EventLoop:
             self._tick_metrics["self_improve_todos_persisted"] = enqueued
             logger.info("Self-improve cycle: %d gaps found, %d todos persisted", len(findings), enqueued)
         except Exception as exc:
-            logger.warning("Self-improve phase failed: %s", exc)
+            # AB-7: capture the traceback (exc_info) — a bare "%s" hid the real
+            # failure site of the self-improve phase, making regressions here
+            # invisible in the logs.
+            logger.warning("Self-improve phase failed: %s", exc, exc_info=True)
             self._tick_metrics["self_improve_gaps"] = 0
+
+    # Maximum entries kept in the per-instance idempotency ledgers.
+    # Beyond this cap, the oldest entry is evicted (FIFO) so the ledgers never
+    # grow without bound (P3: unbounded-memory defect, audit finding MED).
+    _MAX_LEDGER_SIZE: ClassVar[int] = 10_000
+
+    def _ledger_add(self, ledger: OrderedDict[str, None], key: str) -> None:
+        """Insert ``key`` into a bounded LRU ledger, evicting the oldest past cap.
+
+        P3 (unbounded ledger growth): ``ledger`` is an insertion-ordered
+        ``OrderedDict`` used as an ordered set. A re-inserted key is moved to the
+        most-recently-used end (``move_to_end``) so an id that is still being
+        touched is never the eviction victim; a genuinely new key is appended and,
+        if the ledger now exceeds ``_MAX_LEDGER_SIZE``, the OLDEST key is dropped in
+        O(1) via ``popitem(last=False)``.
+
+        This replaces the previous ``set`` + ``list(set)[:surplus]`` prune, which
+        (a) materialised the whole ledger into a list at capacity (O(n) spike) and
+        (b) evicted an ARBITRARY victim because a ``set`` has no order — which could
+        forget a still-relevant recent id and re-open the F1/F2 re-apply / re-push
+        window. FIFO-by-insertion keeps the most recent ``_MAX_LEDGER_SIZE`` ids,
+        which is exactly the set most likely to still be in flight.
+        """
+        if key in ledger:
+            ledger.move_to_end(key)
+            return
+        ledger[key] = None
+        # Evict oldest-first until at-or-below the cap. A ``while`` (not a single
+        # ``if``) is deliberate: it also re-bounds a ledger that was somehow seeded
+        # over the cap, so the invariant ``len(ledger) <= _MAX_LEDGER_SIZE`` holds
+        # after every insert regardless of prior state.
+        while len(ledger) > self._MAX_LEDGER_SIZE:
+            ledger.popitem(last=False)
+    # Maximum in-memory ExecutionTrace entries. Each trace is small (~1 KB)
+    # so 1 000 entries is safe even under heavy dispatch rates.
+    _MAX_ACTIVE_TRACES: ClassVar[int] = 1_000
+    # P3: cap the daemon-state self_update audit list (one entry per successful
+    # self_update reload). 500 recent applies is ample for operator inspection
+    # while the list stays small and JSON-serialisable on app.state.
+    _MAX_SELF_UPDATE_APPLIES: ClassVar[int] = 500
 
     _PRIORITY_MAP: ClassVar[dict[str, int]] = {
         "low": 0, "medium": 5, "high": 10, "critical": 20,
     }
 
-    async def _persist_self_improve_todos(self, todos: list[dict[str, Any]]) -> int:
+    async def _persist_self_improve_todos(
+        self, todos: list[dict[str, Any]], project_id: str | None = None
+    ) -> int:
         if self._todo_repo is None or self._active_session is None:
             return 0
         # Admission gate (W3.7): cap how many self-improve todos may be open at
@@ -1711,7 +2266,11 @@ class EventLoop:
             TodoStatus.FAILED.value,
             TodoStatus.CANCELLED.value,
         }
-        existing = await self._todo_repo.list_by_work_type("self_improve")
+        # W3.7/H2: scope the open-todo count per project so one tenant's
+        # self-improve todos cannot consume another tenant's max_open cap.
+        existing = await self._todo_repo.list_by_work_type(
+            "self_improve", project_id=project_id
+        )
         open_count = sum(
             1 for t in existing if _safe_str(t, "status") not in terminal
         )
@@ -1732,6 +2291,9 @@ class EventLoop:
                 "work_type": "self_improve",
                 "priority": priority,
                 "created_by": "self_improve_harness",
+                # W3.7/H2: stamp the tick's tenant scope so persisted
+                # self-improve todos are not orphaned with project_id=NULL.
+                "project_id": project_id,
             }
             try:
                 await self._todo_repo.create(payload)
@@ -1740,8 +2302,17 @@ class EventLoop:
             except Exception as exc:
                 logger.warning("Failed to persist self-improve todo: %s", exc)
         if persisted:
-            with contextlib.suppress(Exception):
+            try:
                 await self._active_session.flush()
+            except Exception:
+                # Best-effort flush of newly-persisted self-improve todos; the
+                # tick-level commit will retry the flush. Log so a persistent
+                # flush failure is visible.
+                logger.warning(
+                    "Flush of %d self-improve todo(s) failed",
+                    persisted,
+                    exc_info=True,
+                )
         return persisted
 
     async def _phase_emit_tick_metrics(self) -> None:

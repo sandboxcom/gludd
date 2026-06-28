@@ -134,8 +134,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         try:
             instance = await mgr.deploy(config)
         except Exception as exc:
-            logger.exception("Deploy failed")
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.warning("compute deploy failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="compute deploy failed") from exc
 
         app.state._compute_deployments[instance.instance_id] = instance
         return {
@@ -161,8 +161,8 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         try:
             await mgr.destroy(instance_id)
         except Exception as exc:
-            logger.exception("Destroy failed")
-            raise HTTPException(status_code=500, detail=str(exc)) from exc
+            logger.warning("compute destroy failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="compute destroy failed") from exc
         app.state._compute_deployments.pop(instance_id, None)
         return {"destroyed": instance_id}
 

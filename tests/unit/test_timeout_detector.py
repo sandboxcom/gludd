@@ -640,7 +640,11 @@ class TestTimeoutRetryPolicy:
             TimeoutRetryPolicy,
         )
 
-        policy = TimeoutRetryPolicy(base_backoff_seconds=1.0)
+        # Inject a deterministic jitter_fn (top of the jitter window) so the
+        # monotonic-growth assertion is reproducible; prod uses random.uniform.
+        policy = TimeoutRetryPolicy(
+            base_backoff_seconds=1.0, jitter_fn=lambda _lo, hi: hi,
+        )
         d1 = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=1)
         d2 = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=2)
         d3 = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=3)
@@ -665,7 +669,8 @@ class TestTimeoutRetryPolicy:
             TimeoutRetryPolicy,
         )
 
-        policy = TimeoutRetryPolicy()
+        # Deterministic jitter so the CONNECTION>READ comparison is reproducible.
+        policy = TimeoutRetryPolicy(jitter_fn=lambda _lo, hi: hi)
         ct_decision = policy.decide(TimeoutKind.CONNECTION_TIMEOUT, attempt=1)
         rt_decision = policy.decide(TimeoutKind.READ_TIMEOUT, attempt=1)
         assert ct_decision.wait_seconds > rt_decision.wait_seconds
@@ -907,6 +912,150 @@ class TestGatewayTimeoutIntegration:
                 "primary", [{"role": "user", "content": "hi"}],
             )
             assert result.model_name == "gpt-3.5-turbo"
+
+
+class TestProbeSlotAutoExpiry:
+    """is_healthy must not wedge permanently when a probe slot leaks.
+
+    Regression for the bug where __probe_in_flight was a bare set[str]:
+    if a probe was admitted (is_healthy returned True) but the caller raised
+    before record_event/record_success, the slot was never cleared and
+    is_healthy returned False forever for that model (breaker wedged open).
+    Fix: store admission timestamp in a dict[str, float] and auto-expire
+    slots older than one cooldown window inside is_healthy.
+    """
+
+    def test_leaked_probe_unblocks_after_cooldown(self) -> None:
+        """Admit a probe, never record, advance past cooldown → new probe admitted."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        cooldown = 30.0
+        tracker = ModelHealthTracker(
+            failure_threshold=2,
+            cooldown_seconds=cooldown,
+        )
+        model_id = "m1"
+
+        # Trip the breaker.
+        for _ in range(tracker._failure_threshold):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id=model_id,
+                    kind=TimeoutKind.PROVIDER_ERROR,
+                    timestamp=time.monotonic(),
+                    duration_s=1.0,
+                )
+            )
+
+        # Simulate the cooldown elapsing so a probe is possible.
+        # We patch time.monotonic so last_failure.timestamp appears old.
+        failure_ts = tracker._last_failure[model_id].timestamp
+        advanced = failure_ts + cooldown + 1.0  # well past cooldown
+
+        with patch("general_ludd.models.timeout_detector.time") as mock_time:
+            mock_time.monotonic.return_value = advanced
+
+            # First call: probe is admitted (slot written).
+            first = tracker.is_healthy(model_id, admit_probe=True)
+            assert first is True, "probe should be admitted after cooldown"
+
+            # Second call WITHOUT any record_event/record_success → slot still set.
+            # This is the leaked-slot scenario.
+            second = tracker.is_healthy(model_id, admit_probe=True)
+            assert second is False, "probe slot already claimed — second caller must be blocked"
+
+            # Now advance time by another full cooldown so the slot is expired.
+            mock_time.monotonic.return_value = advanced + cooldown + 1.0
+
+            # Third call: expired slot must be swept → new probe admitted.
+            third = tracker.is_healthy(model_id, admit_probe=True)
+            assert third is True, (
+                "breaker must unblock after cooldown even without record_event — "
+                "leaked probe slot should auto-expire"
+            )
+
+    def test_normal_clear_via_record_success_still_works(self) -> None:
+        """record_success() must still clear the in-flight slot (no regression)."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=30.0)
+        model_id = "m2"
+
+        for _ in range(tracker._failure_threshold):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id=model_id,
+                    kind=TimeoutKind.PROVIDER_ERROR,
+                    timestamp=time.monotonic(),
+                    duration_s=1.0,
+                )
+            )
+
+        failure_ts = tracker._last_failure[model_id].timestamp
+        advanced = failure_ts + 31.0
+
+        with patch("general_ludd.models.timeout_detector.time") as mock_time:
+            mock_time.monotonic.return_value = advanced
+
+            assert tracker.is_healthy(model_id, admit_probe=True) is True
+
+            # Simulate probe succeeded.
+            tracker.record_success(model_id)
+
+            # After record_success the consecutive counter is 0 → model is healthy
+            # and a subsequent is_healthy call returns True (healthy path, not probe).
+            assert tracker.is_healthy(model_id, admit_probe=True) is True
+
+    def test_normal_clear_via_record_event_still_works(self) -> None:
+        """record_event() after a failed probe must re-arm the breaker (no regression)."""
+        from general_ludd.models.timeout_detector import (
+            ModelHealthTracker,
+            TimeoutEvent,
+            TimeoutKind,
+        )
+
+        tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=30.0)
+        model_id = "m3"
+
+        for _ in range(tracker._failure_threshold):
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id=model_id,
+                    kind=TimeoutKind.PROVIDER_ERROR,
+                    timestamp=time.monotonic(),
+                    duration_s=1.0,
+                )
+            )
+
+        failure_ts = tracker._last_failure[model_id].timestamp
+        advanced = failure_ts + 31.0
+
+        with patch("general_ludd.models.timeout_detector.time") as mock_time:
+            mock_time.monotonic.return_value = advanced
+
+            # Probe admitted.
+            assert tracker.is_healthy(model_id, admit_probe=True) is True
+
+            # Probe itself fails → record_event must clear the slot AND re-arm breaker.
+            tracker.record_event(
+                TimeoutEvent(
+                    model_id=model_id,
+                    kind=TimeoutKind.PROVIDER_ERROR,
+                    timestamp=advanced,
+                    duration_s=0.5,
+                )
+            )
+
+            # Breaker re-armed: is_healthy must return False (cooldown not elapsed yet).
+            assert tracker.is_healthy(model_id, admit_probe=True) is False
 
 
 def test_non_retryable_kinds_constant_single_source() -> None:

@@ -7,6 +7,63 @@ from general_ludd.execution.engine import ExecutionEngine
 from general_ludd.schemas.job import JobSpec
 
 
+class TestRecordMetricsGap30:
+    """GAP-30 regression: ``_record_metrics`` must invoke ``record_model_call``
+    with its real signature ``(agent_id, model_id, input_tokens, output_tokens,
+    success)``.
+
+    Before the fix the engine passed ``model_profile=``/``work_type=``/
+    ``cost_usd=`` and OMITTED the two required positional args (agent_id,
+    model_id), so every call raised ``TypeError`` that the bare ``except`` ate —
+    no model call (success OR failure) was ever recorded. The existing engine
+    tests missed this because they construct the engine with no metrics
+    collector, so ``_record_metrics`` returns early.
+    """
+
+    def _engine_with_collector(self, collector):
+        engine = ExecutionEngine(
+            model_gateway=MagicMock(),
+            workspace_path=tempfile.mkdtemp(),
+        )
+        # Set directly so the test does not depend on the constructor kwarg name.
+        engine._metrics_collector = collector
+        return engine
+
+    def _job(self):
+        return JobSpec(
+            job_id="JOB-M1",
+            todo_id="TODO-M1",
+            playbook="code",
+            queue="core",
+            work_type="code",
+            prompt_text="x",
+        )
+
+    def test_record_metrics_records_success_and_failure(self):
+        from general_ludd.metrics.collector import MetricsCollector
+
+        collector = MetricsCollector()
+        engine = self._engine_with_collector(collector)
+        job = self._job()
+
+        # One success, one failure. Pre-fix BOTH raised TypeError (swallowed) so
+        # the collector stayed empty.
+        engine._record_metrics(job, success=True, tokens=120)
+        engine._record_metrics(job, success=False)
+
+        usage = collector.get_global_model_usage()
+        assert usage, (
+            "record_model_call never executed — _record_metrics still calls it "
+            "with the wrong signature (GAP-30 regression)"
+        )
+        # model_profile is unset on this JobSpec → engine falls back to "unknown".
+        model_id = next(iter(usage))
+        # 1 success + 1 failure recorded → success_rate is exactly 0.5.
+        assert usage[model_id].success_rate == 0.5
+        # The failing call must have landed in the per-model failure ring.
+        assert len(collector.get_recent_failures(model_id)) == 1
+
+
 class TestExecutionEngine:
     def _make_engine(self, mock_gateway=None, workspace=None):
         return ExecutionEngine(

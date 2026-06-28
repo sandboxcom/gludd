@@ -102,9 +102,15 @@ def test_kind_name_and_construction():
     assert isinstance(src.name, str) and src.name
 
 
-def test_requires_injected_transport():
-    with pytest.raises(ValueError):
-        RabbitMqSource({"base_url": GOOD_URL})
+def test_constructs_with_default_transport():
+    # No transport injected: the connector falls back to a real stdlib transport
+    # so the registry's single-arg ``factory(config)`` build succeeds (the source
+    # is NOT silently dropped from ``list_sources()``). No network at construction.
+    from general_ludd.connectors.rabbitmq import _default_http_get
+
+    src = RabbitMqSource({"base_url": GOOD_URL})
+    assert src._http_get is _default_http_get
+    assert src.name
 
 
 def test_default_management_port_appended():

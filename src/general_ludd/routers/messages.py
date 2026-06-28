@@ -14,6 +14,7 @@ in-memory store kept on the daemon_state dict so the API stays usable.
 
 from __future__ import annotations
 
+import collections
 import logging
 from typing import Any
 
@@ -54,8 +55,27 @@ def _msg_to_dict(msg: Any) -> dict[str, Any]:
     }
 
 
+# Memory-leak guard (follow-up to P3 470253a): the degraded-mode in-memory
+# message fallback (`_daemon_state["messages"]`) is unbounded — without a session
+# factory every POST /api/messages appends forever. Bound it to the most-recent N
+# via a deque(maxlen). All consumers iterate the collection (send appends, inbox
+# and ack iterate), never index/slice the raw object or JSON-serialize it
+# directly, so a deque is a drop-in: FIFO eviction drops the oldest messages once
+# the cap is hit.
+_MAX_INMEMORY_MESSAGES = 5000
+
+
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
-    _daemon_state.setdefault("messages", [])
+    # Bound the in-memory fallback. Preserve any pre-seeded entries; idempotent if
+    # already a deque with the right cap.
+    _existing = _daemon_state.get("messages")
+    if not (
+        isinstance(_existing, collections.deque)
+        and _existing.maxlen == _MAX_INMEMORY_MESSAGES
+    ):
+        _daemon_state["messages"] = collections.deque(
+            _existing or [], maxlen=_MAX_INMEMORY_MESSAGES
+        )
 
     @app.post("/api/messages", status_code=201)
     async def api_send_message(req: SendMessageRequest) -> dict[str, Any]:
@@ -104,22 +124,35 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             if target == recipient or (include_broadcast and target == "broadcast"):
                 if unread and m.get("read_at") is not None:
                     continue
+                # Tenant isolation: mirror the primary path's project scoping
+                # (repo.inbox(project_id=...)). Without this the degraded
+                # in-memory fallback would leak messages across projects.
+                if project_id is not None and m.get("project_id") != project_id:
+                    continue
                 results.append({**m, "created_at": str(m.get("created_at"))})
         return {"messages": results, "count": len(results), "recipient": recipient}
 
     @app.post("/api/messages/{message_id}/ack")
-    async def api_ack_message(message_id: str) -> dict[str, Any]:
+    async def api_ack_message(
+        message_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
                 repo = AgentMessageRepository(session)
-                row = await repo.ack(message_id)
+                # XT-11: forward project_id so a cross-tenant ack is refused
+                # (returns None -> 404, indistinguishable from not-found).
+                row = await repo.ack(message_id, project_id=project_id)
                 if row is None:
                     raise HTTPException(status_code=404, detail="message not found")
                 await session.commit()
                 return {"acked": True, "id": row.id, "read_at": str(row.read_at)}
         for m in _daemon_state["messages"]:
             if m.get("id") == message_id:
+                # XT-11: the degraded in-memory fallback must also refuse a
+                # cross-tenant ack, matching the DB path.
+                if project_id is not None and m.get("project_id") != project_id:
+                    continue
                 from datetime import UTC, datetime
 
                 m["read_at"] = datetime.now(UTC)

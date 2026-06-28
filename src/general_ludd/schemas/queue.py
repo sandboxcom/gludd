@@ -83,7 +83,12 @@ INITIAL_QUEUES: list[Queue] = [
     Queue(
         queue_name="model",
         resource_profile="ai_heavy",
-        allowed_playbooks=["noop.yml", "return_review.yml"],
+        allowed_playbooks=[
+            "noop.yml",
+            "return_review.yml",
+            "langgraph_decide.yml",
+            "langchain_generate.yml",
+        ],
     ),
     Queue(
         queue_name="qa",

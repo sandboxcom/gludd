@@ -166,7 +166,7 @@ class TestCAT12CostTracking:
 
         gw, budget, metrics = self._build_gateway()
 
-        content = invoke_model_for_generation(
+        content, _tool_calls = invoke_model_for_generation(
             gw,
             job_id="EXEC-T12",
             work_type="code",
@@ -515,6 +515,238 @@ class TestCAT9AgentToolAdapterWiring:
                         "belongs in the ToolCallLoop path."
                     )
 
+    def test_tool_worktype_invokes_toolcallloop_phase2(self, monkeypatch: Any) -> None:
+        """KEYSTONE PROOF: a tool-requiring work type routes Phase 2 through
+        ``ToolCallLoop`` so autonomous tool action actually FIRES.
+
+        Phase 1 (the generation helper) stays tool-free (CA-T9, asserted by the
+        sibling tests).  Phase 2 is the genuine agentic loop: for ``analysis`` /
+        ``audit`` work types the event loop must instantiate ``ToolCallLoop`` with
+        the wired ``model_gateway`` + ``mcp_client``, await its tool-binding run,
+        and the loop must reach the MCP client to LIST + CALL a tool.
+
+        We drive the REAL ``EventLoop._dispatch_execute_job`` with a stub runner
+        (so the in-process generation branch is taken), a sentinel gateway, and a
+        fake MCP client.  We patch the symbol ``ToolCallLoop`` resolves to in the
+        event-loop module so we can prove (a) it was constructed with the wired
+        gateway + mcp client and (b) its tool-binding run was awaited.  A REAL
+        ``ToolCallLoop`` is then driven against the fake MCP client to prove an
+        actual tool LIST + CALL happens (the action fires, it is not inert).
+        """
+        from general_ludd.event_loop import loop as loop_mod
+        from general_ludd.execution import tool_loop as tool_loop_mod
+
+        # Patch the Phase-1 helper so we don't need a real gateway/provider for
+        # the generation call; Phase 1 returns plain text and NO tool_calls.
+        def _fake_invoke(
+            gateway: Any, **kwargs: Any
+        ) -> tuple[str, list[dict[str, Any]] | None]:
+            return "phase-1 analysis text", None
+
+        monkeypatch.setattr(loop_mod, "invoke_model_for_generation", _fake_invoke)
+
+        # --- Fake MCP layer the REAL ToolCallLoop will drive. ---------------- #
+        class _FakeTool:
+            name = "list_files"
+            description = "list files in a dir"
+            input_schema: ClassVar[dict[str, Any]] = {"type": "object", "properties": {}}
+            server_id = "fs"
+
+        class _FakeRegistry:
+            def get_tool(self, name: str) -> Any:
+                return _FakeTool() if name == "list_files" else None
+
+            def tool_names(self) -> list[str]:
+                return ["list_files"]
+
+        tool_calls_made: list[tuple[str, str]] = []
+
+        class _FakeMCPClient:
+            async def list_tools(self) -> list[Any]:
+                return [_FakeTool()]
+
+            async def call_tool(self, server_id: str, name: str, args: Any) -> str:
+                tool_calls_made.append((server_id, name))
+                return "tool output: a.py, b.py"
+
+        # A gateway whose first tool-bound response REQUESTS a tool call, then a
+        # second response returns final content (so the loop executes one tool).
+        class _ToolDrivingGateway:
+            def __init__(self) -> None:
+                self._n = 0
+
+            def call_model(self, profile_id: str, **kwargs: Any) -> Any:
+                self._n += 1
+
+                class _Resp:
+                    pass
+
+                resp = _Resp()
+                if self._n == 1:
+                    resp.content = ""
+                    resp.tool_calls = [
+                        {
+                            "id": "tc-1",
+                            "function": {"name": "list_files", "arguments": "{}"},
+                        }
+                    ]
+                else:
+                    resp.content = "final tool-refined analysis"
+                    resp.tool_calls = None
+                return resp
+
+        gateway = _ToolDrivingGateway()
+        mcp_client = _FakeMCPClient()
+        registry = _FakeRegistry()
+
+        # Capture construction + run of ToolCallLoop, then delegate to the REAL
+        # implementation so an actual tool list/call happens.
+        captured: dict[str, Any] = {}
+        real_cls = tool_loop_mod.ToolCallLoop
+
+        class _SpyToolCallLoop(real_cls):  # type: ignore[valid-type, misc]
+            def __init__(self, **kwargs: Any) -> None:
+                captured["init_kwargs"] = kwargs
+                super().__init__(**kwargs)
+
+            async def run_with_tools(self, job: Any, system_prompt: str, user_prompt: str) -> str:
+                captured["run_called"] = True
+                captured["run_system"] = system_prompt
+                captured["run_user"] = user_prompt
+                return await super().run_with_tools(job, system_prompt, user_prompt)
+
+        monkeypatch.setattr(loop_mod, "ToolCallLoop", _SpyToolCallLoop, raising=False)
+        # The event loop imports ToolCallLoop locally inside the Phase-2 block via
+        # ``from general_ludd.execution.tool_loop import ToolCallLoop`` — patch the
+        # source symbol too so the local import resolves to the spy.
+        monkeypatch.setattr(tool_loop_mod, "ToolCallLoop", _SpyToolCallLoop)
+
+        class _StubRunner:
+            def prepare_job_dirs(self, job_id: str) -> dict[str, str]:
+                import tempfile
+
+                return {"root": tempfile.mkdtemp()}
+
+            def write_vars(self, *a: Any, **k: Any) -> None:
+                pass
+
+            def run_playbook(self, **k: Any) -> dict[str, Any]:
+                return {"rc": 0}
+
+        el = loop_mod.EventLoop(
+            model_gateway=gateway,
+            mcp_client=mcp_client,
+            mcp_tool_registry=registry,
+        )
+        el._runner = _StubRunner()
+
+        class _Todo:
+            todo_id = "T-phase2"
+            work_type = "analysis"  # tool-requiring -> Phase 2 must run
+            queue = "core"
+            project_id = None
+            title = "audit the auth module"
+            description = "find issues"
+            priority = "medium"
+
+        asyncio.run(el._dispatch_execute_job(_Todo()))
+
+        # Phase 2 must have constructed a ToolCallLoop with the wired deps.
+        assert captured.get("init_kwargs"), (
+            "INERT: Phase 2 never instantiated ToolCallLoop for an 'analysis' "
+            "work type — autonomous tool action is not wired into the event loop."
+        )
+        init_kwargs = captured["init_kwargs"]
+        assert init_kwargs.get("model_gateway") is gateway
+        assert init_kwargs.get("mcp_client") is mcp_client
+        assert init_kwargs.get("mcp_registry") is registry
+
+        # Its tool-binding run must have been awaited.
+        assert captured.get("run_called"), (
+            "INERT: ToolCallLoop.run_with_tools was never awaited — the tool loop "
+            "was constructed but never driven."
+        )
+        # The Phase-1 output must be threaded into the Phase-2 context (refinement).
+        assert "phase-1 analysis text" in captured.get("run_user", ""), (
+            "Phase 2 must feed the Phase-1 generated content into the tool loop "
+            "as refinement context."
+        )
+
+        # PROOF the action FIRES: the real loop reached the MCP client and called
+        # an actual tool. This is the difference between dispatch-wired and
+        # functional.
+        assert tool_calls_made == [("fs", "list_files")], (
+            "INERT: no MCP tool was actually called — Phase 2 bound tools but the "
+            f"tool action never fired. calls={tool_calls_made!r}"
+        )
+
+    def test_code_worktype_does_not_invoke_phase2(self, monkeypatch: Any) -> None:
+        """Guard: a pure-generation work type (``code``) must NOT run Phase 2 even
+        when the MCP client + gateway are wired — CA-T9 stays whole for it.
+        """
+        from general_ludd.event_loop import loop as loop_mod
+        from general_ludd.execution import tool_loop as tool_loop_mod
+
+        def _fake_invoke(
+            gateway: Any, **kwargs: Any
+        ) -> tuple[str, list[dict[str, Any]] | None]:
+            return "phase-1 code", None
+
+        monkeypatch.setattr(loop_mod, "invoke_model_for_generation", _fake_invoke)
+
+        instantiated: list[Any] = []
+        real_cls = tool_loop_mod.ToolCallLoop
+
+        class _SpyToolCallLoop(real_cls):  # type: ignore[valid-type, misc]
+            def __init__(self, **kwargs: Any) -> None:
+                instantiated.append(kwargs)
+                super().__init__(**kwargs)
+
+        monkeypatch.setattr(tool_loop_mod, "ToolCallLoop", _SpyToolCallLoop)
+
+        class _StubRunner:
+            def prepare_job_dirs(self, job_id: str) -> dict[str, str]:
+                import tempfile
+
+                return {"root": tempfile.mkdtemp()}
+
+            def write_vars(self, *a: Any, **k: Any) -> None:
+                pass
+
+            def run_playbook(self, **k: Any) -> dict[str, Any]:
+                return {"rc": 0}
+
+        class _FakeMCPClient:
+            async def list_tools(self) -> list[Any]:  # pragma: no cover - must not run
+                raise AssertionError("Phase 2 must not run for work_type=code")
+
+        class _FakeRegistry:
+            def tool_names(self) -> list[str]:
+                return []
+
+        el = loop_mod.EventLoop(
+            model_gateway=object(),
+            mcp_client=_FakeMCPClient(),
+            mcp_tool_registry=_FakeRegistry(),
+        )
+        el._runner = _StubRunner()
+
+        class _Todo:
+            todo_id = "T-code"
+            work_type = "code"
+            queue = "core"
+            project_id = None
+            title = "write a function"
+            description = "impl"
+            priority = "medium"
+
+        asyncio.run(el._dispatch_execute_job(_Todo()))
+
+        assert not instantiated, (
+            "CA-T9 VIOLATION: Phase 2 (ToolCallLoop) ran for a pure-generation "
+            "work type 'code' — tool-use must stay gated to tool work types."
+        )
+
 
 # --------------------------------------------------------------------------- #
 # CA-T16 — ContextCompactor / TokenWindowManager used on the real path
@@ -552,7 +784,7 @@ class TestCAT16ContextCompactorUsed:
                 profiles=[_make_profile()],
                 provider_registry=_FakeProviderRegistry(),
             )
-            content = invoke_model_for_generation(
+            content, _tool_calls = invoke_model_for_generation(
                 gw,
                 job_id="EXEC-T16",
                 work_type="code",
@@ -629,10 +861,12 @@ class TestDispatchPathReachesGeneration:
 
         captured: dict[str, Any] = {}
 
-        def _fake_invoke(gateway: Any, **kwargs: Any) -> str:
+        def _fake_invoke(
+            gateway: Any, **kwargs: Any
+        ) -> tuple[str, list[dict[str, Any]] | None]:
             captured["gateway"] = gateway
             captured["kwargs"] = kwargs
-            return "MODEL OUT"
+            return "MODEL OUT", None
 
         # Patch the symbol as imported into the event_loop module namespace.
         monkeypatch.setattr(loop_mod, "invoke_model_for_generation", _fake_invoke)

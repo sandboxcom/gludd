@@ -29,6 +29,7 @@ from __future__ import annotations
 
 import json
 import os
+import re
 import urllib.error
 import urllib.parse
 import urllib.request
@@ -58,6 +59,57 @@ def error_result(msg: str, **extra: Any) -> dict[str, Any]:
     result = {"failed": True, "changed": False, "msg": msg}
     result.update(extra)
     return result
+
+
+# ---------------------------------------------------------------------------
+# Structured-output parsing helpers (model output often wraps JSON in fences)
+# ---------------------------------------------------------------------------
+
+# Matches a fenced block:  ```json\n ... \n```  or  ``` \n ... \n```
+_FENCE_RE = re.compile(
+    r"^\s*```[ \t]*[A-Za-z0-9_+-]*[ \t]*\r?\n(?P<body>.*?)\r?\n?```[ \t]*\s*$",
+    re.DOTALL,
+)
+
+
+def strip_code_fences(text: str) -> str:
+    """Remove a leading/trailing Markdown code fence from ``text``.
+
+    Handles fences with a language hint (```` ```json ````) or bare (```` ``` ````).
+    If no surrounding fence is present the text is returned unchanged (stripped).
+    Never raises.
+    """
+    if not isinstance(text, str):
+        return text
+    match = _FENCE_RE.match(text)
+    if match is not None:
+        return match.group("body").strip()
+    return text.strip()
+
+
+def parse_structured(
+    text: str,
+    schema: dict[str, Any] | None = None,
+) -> tuple[Any | None, str | None]:
+    """Fence-strip ``text`` then ``json.loads`` it.
+
+    Returns ``(obj, None)`` on success or ``(None, reason)`` on failure.
+    ``schema`` is accepted for forward compatibility (callers may validate
+    against it) but is not enforced here.  Never raises.
+    """
+    if text is None:
+        return None, "empty model output (None)"
+    try:
+        cleaned = strip_code_fences(text)
+    except Exception as exc:  # noqa: BLE001
+        return None, f"fence-strip failed: {exc}"
+    if not cleaned:
+        return None, "empty model output after fence strip"
+    try:
+        obj = json.loads(cleaned)
+    except (json.JSONDecodeError, ValueError, TypeError) as exc:
+        return None, f"not valid JSON: {exc}"
+    return obj, None
 
 
 # ---------------------------------------------------------------------------

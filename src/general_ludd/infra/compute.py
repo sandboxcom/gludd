@@ -3,9 +3,19 @@
 from __future__ import annotations
 
 import enum
+import re
 from datetime import UTC, datetime
 
 from pydantic import BaseModel, Field, field_validator
+
+# Allowed charset for model_name and container_image.
+# Covers registry paths (ghcr.io/org/repo:tag), HuggingFace slugs (org/model),
+# digest refs (ghcr.io/org/repo@sha256:abc…), and local image refs.
+# Rejects shell/HCL metacharacters.
+_SAFE_IMAGE_RE = re.compile(r"^[A-Za-z0-9._/@:-]+$")
+
+# AWS/GCP/Azure region identifiers only ever contain letters, digits, and hyphens.
+_SAFE_REGION_RE = re.compile(r"^[A-Za-z0-9-]+$")
 
 
 class ComputeProvider(enum.StrEnum):
@@ -55,6 +65,11 @@ class ComputeConfig(BaseModel):
     container_image: str | None = None
     api_key_alias: str | None = None
     deploy_type: str = "vm"
+    # Secure default: the inference endpoint (:8000) is UNAUTHENTICATED, so the
+    # ingress CIDR defaults to loopback-only ("closed — configure me") rather than
+    # the whole internet. Set allowed_cidr="0.0.0.0/0" explicitly for a public
+    # endpoint. Interpolated into AWS/GCP/Azure ingress rules in terraform.py.
+    allowed_cidr: str = "127.0.0.1/32"
     provider_auth_aliases: dict[str, str] | None = None
 
     @field_validator("gpu_count")
@@ -83,6 +98,55 @@ class ComputeConfig(BaseModel):
     def _disk_min(cls, v: int) -> int:
         if v < 1:
             raise ValueError("disk_size_gb must be at least 1")
+        return v
+
+    @field_validator("model_name", "container_image")
+    @classmethod
+    def _safe_image_chars(cls, v: str | None) -> str | None:
+        r"""Reject shell/HCL metacharacters in model_name and container_image.
+
+        These values are interpolated into cloud-init scripts (run as root) and
+        HCL template strings.  An attacker who controls either field can achieve
+        host RCE.  The allowlist ``^[A-Za-z0-9._/@:-]+$`` covers every legitimate
+        registry reference (including digest refs like ``ghcr.io/org/repo@sha256:…``)
+        and HuggingFace slug while blocking all shell/HCL metacharacters
+        (spaces, quotes, ``$``, ``\``, ``{``, ``}``, ``|``, etc.).
+        """
+        if v is None or v == "":
+            return v
+        if not _SAFE_IMAGE_RE.match(v):
+            raise ValueError(
+                f"Invalid characters in field value {v!r}: only "
+                r"[A-Za-z0-9._/:-] are allowed (no shell/HCL metacharacters)"
+            )
+        return v
+
+    @field_validator("region")
+    @classmethod
+    def _safe_region_chars(cls, v: str | None) -> str | None:
+        """Reject non-identifier characters in region.
+
+        Region is interpolated into HCL ``provider`` blocks.  Legitimate AWS,
+        GCP, and Azure region names only contain letters, digits, and hyphens.
+        """
+        if v is None:
+            return v
+        if not _SAFE_REGION_RE.match(v):
+            raise ValueError(
+                f"Invalid characters in region {v!r}: only "
+                "[A-Za-z0-9-] are allowed"
+            )
+        return v
+
+    @field_validator("allowed_cidr")
+    @classmethod
+    def _safe_cidr(cls, v: str) -> str:
+        """Validate CIDR notation. Accepts IPv4/IPv6 CIDRs (no shell metacharacters)."""
+        if not re.match(r"^[0-9a-fA-F.:,/]+$", v):
+            raise ValueError(
+                f"Invalid characters in allowed_cidr {v!r}: only "
+                "[0-9a-fA-F.:,/] are allowed"
+            )
         return v
 
 

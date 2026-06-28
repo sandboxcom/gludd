@@ -33,14 +33,19 @@ Record shape (one dict per sample)::
 
 from __future__ import annotations
 
-import math
+import json as _json
+import logging
 import os
 import time
+import urllib.request
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
+from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
+
+logger = logging.getLogger(__name__)
 
 # Injectable transport signature: (url, params, headers) -> (status, json)
 HttpGet = Callable[..., "tuple[int, Any]"]
@@ -61,6 +66,31 @@ _BLOCKED_HOSTNAMES = frozenset(
 )
 
 _DEFAULT_TIMEOUT = 10.0
+
+
+def _default_http_get(
+    url: str,
+    params: dict[str, Any] | None = None,
+    headers: dict[str, str] | None = None,
+) -> tuple[int, Any]:
+    """Real, time-bound stdlib transport used when none is injected.
+
+    Matches the connector's ``(url, params, headers) -> (status, json)``
+    contract. Only ``http``/``https`` are allowed and the request is bounded by
+    an explicit timeout. The mocked tests never reach this path.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
+    if params:
+        sep = "&" if parsed.query else "?"
+        url = f"{url}{sep}{urlencode(params, doseq=True)}"
+    req = urllib.request.Request(url, headers=headers or {}, method="GET")
+    with urllib.request.urlopen(req, timeout=_DEFAULT_TIMEOUT) as resp:
+        status = int(resp.getcode() or 0)
+        body = resp.read()
+    parsed_body: Any = _json.loads(body) if body else {}
+    return status, parsed_body
 
 
 def _validate_base_url(base_url: str) -> str:
@@ -100,13 +130,10 @@ class PrometheusSource:
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        if http_get is None:
-            raise ValueError("http_get transport must be injected")
-
         base_url = config.get("base_url", "")
         self._base_url = _validate_base_url(base_url)
         self._token_env = config.get("token_env")
-        self._http_get = http_get
+        self._http_get = http_get or _default_http_get
         self._timeout = float(timeout)
         self.kind = KIND
         # A stable, human-readable name derived from the validated host.
@@ -138,12 +165,7 @@ class PrometheusSource:
     def _sample_record(
         self, metric: dict[str, Any], ts: Any, raw_value: Any, raw: Any
     ) -> dict[str, Any]:
-        try:
-            value = float(raw_value)
-            if not math.isfinite(value):
-                value = 0.0
-        except (TypeError, ValueError):
-            value = 0.0
+        value = sanitize_metric_value(raw_value)
         try:
             ts_f = float(ts)
         except (TypeError, ValueError):
@@ -190,8 +212,11 @@ class PrometheusSource:
             status, payload = self._http_get(
                 url, params=params, headers=self._headers()
             )
-        except Exception as exc:  # surfaced as a record, never raised
-            return [self._error_record(f"transport error: {exc}", {"url": url})]
+        except Exception:  # surfaced as a record, never raised
+            # Never echo str(exc) into the record: it can embed the target URL
+            # or auth detail. Log the real error; keep a stable generic marker.
+            logger.warning("prometheus transport error", exc_info=True)
+            return [self._error_record("transport error", {"url": url})]
 
         return self._normalize(status, payload)
 
@@ -266,8 +291,9 @@ class PrometheusSource:
             status, payload = self._http_get(
                 url, params={"query": "1"}, headers=self._headers()
             )
-        except Exception as exc:  # health must never raise
-            return {"ok": False, "source": self.name, "error": str(exc)}
+        except Exception:  # health must never raise
+            logger.warning("prometheus health check failed", exc_info=True)
+            return {"ok": False, "source": self.name, "error": "health check failed"}
 
         ok = (
             isinstance(payload, dict)

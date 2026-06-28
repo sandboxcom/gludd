@@ -92,7 +92,10 @@ class FileStore:
 
     def write_text(self, path: str, content: str) -> None:
         self._fs.makedirs(dirname(path), recreate=True)
-        self._confine(self._fs, dirname(path) or "/")
+        # Confine the FULL path, not just its dirname: a symlink planted at the
+        # file target itself would otherwise be followed and let the write escape
+        # the store root (the read path already confines the full path).
+        self._confine(self._fs, path)
         self._fs.writetext(path, content)
 
     def read_text(self, path: str) -> str:
@@ -105,7 +108,9 @@ class FileStore:
 
     def write_bytes(self, path: str, data: bytes) -> None:
         self._fs.makedirs(dirname(path), recreate=True)
-        self._confine(self._fs, dirname(path) or "/")
+        # Confine the FULL path (see write_text): a symlink at the file target
+        # must not let the write escape the store root.
+        self._confine(self._fs, path)
         self._fs.writebytes(path, data)
 
     def exists(self, path: str) -> bool:
@@ -173,6 +178,9 @@ class FileStore:
             target = self._fs
         else:
             raise FileNotFoundError(f"Path not found: {path}")
+        # Confine before deleting: a symlink in the store must not let a remove
+        # escape and delete a file outside the store root.
+        self._confine(target, path)
         if target.isdir(path):
             target.removetree(path)
         else:

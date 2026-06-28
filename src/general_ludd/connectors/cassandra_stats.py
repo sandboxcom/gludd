@@ -30,6 +30,8 @@ import time
 from collections.abc import Callable, Mapping, Sequence
 from typing import Any
 
+from general_ludd.connectors.normalize import sanitize_metric_value
+
 logger = logging.getLogger(__name__)
 
 Executor = Callable[[str], "Sequence[Mapping[str, Any]]"]
@@ -101,8 +103,9 @@ class CassandraStatsSource:
             return {"ok": False, "detail": self._driver_error or _DRIVER_UNAVAILABLE}
         try:
             executor("tpstats")
-        except Exception as exc:
-            return {"ok": False, "detail": f"probe failed: {exc}"}
+        except Exception:
+            logger.warning("cassandra_stats probe failed", exc_info=True)
+            return {"ok": False, "detail": "probe failed"}
         return {"ok": True, "detail": "ok"}
 
     # -- query -------------------------------------------------------------
@@ -171,18 +174,10 @@ class CassandraStatsSource:
 
 
 def _num(value: Any) -> float | int | None:
-    if isinstance(value, bool):
-        return None
-    if isinstance(value, (int, float)):
-        return value
-    if isinstance(value, str):
-        try:
-            if "." in value or "e" in value.lower():
-                return float(value)
-            return int(value)
-        except ValueError:
-            return None
-    return None
+    # Unified NaN policy: every numeric metric value (executor-injected rows
+    # included) is routed through sanitize_metric_value, so NaN/Inf/bool/
+    # unparseable all collapse to None. 0.0 stays a real sample.
+    return sanitize_metric_value(value)
 
 
 def _parse_prometheus(text: str, command: str) -> list[Mapping[str, Any]]:
@@ -231,10 +226,7 @@ def _split_sample(line: str) -> tuple[str | None, dict[str, str], float | None]:
             return None, {}, None
         name, value_part, labels = parts[0], parts[1], {}
     value_part = value_part.strip().split()[0] if value_part.strip() else ""
-    try:
-        value = float(value_part)
-    except ValueError:
-        return name.strip() or None, labels, None
+    value = sanitize_metric_value(value_part)
     return name.strip() or None, labels, value
 
 

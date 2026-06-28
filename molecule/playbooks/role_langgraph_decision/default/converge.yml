@@ -1,0 +1,23 @@
+---
+# Exercise the REAL langgraph_decision role: it runs a langgraph workflow over a
+# prompt (POST /admin/models/workflow), judges the result (POST /admin/models/call),
+# surfaces the decision back to gludd (PATCH /api/todos/<id> via gludd_db) and
+# writes a langgraph_decision_result.json artifact.
+- name: Converge - run langgraph_decision role
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}"
+  tasks:
+    - name: Invoke langgraph_decision
+      ansible.builtin.include_role:
+        name: general_ludd.agent.langgraph_decision
+      vars:
+        prompt_text: "Review this candidate solution and decide whether to proceed."
+        model_profile: "default"
+        work_type: "analysis"
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        psk: ""
+        todo_id: "TODO-MOL-1"
+        artifact_dir: "/tmp/gludd-langgraph-decision-{{ mock_port }}"

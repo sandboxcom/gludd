@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import os
+import stat
 import tempfile
 from unittest.mock import MagicMock, patch
 
@@ -36,6 +38,12 @@ def _make_profile(profile_id="test-p", model_name="test"):
     profile.api_base_alias = None
     profile.cost_per_input_token = 0.000001
     profile.cost_per_output_token = 0.000002
+    # D-21: estimate_cost() reads these numeric token-budget fields when it
+    # re-estimates cost server-side (gateway.check_budget). A bare MagicMock
+    # would return MagicMocks here and break the numeric min()/comparison, so
+    # mirror the real ModelProfile defaults (max_output_tokens=8000).
+    profile.max_output_tokens = 8000
+    profile.max_input_tokens = 8000
     return profile
 
 
@@ -47,6 +55,22 @@ class TestModelResponseCache:
             cache = ModelResponseCache(cache_dir=tmpdir)
             result = cache.get("nonexistent-key")
             assert result is None
+
+    def test_cache_dir_is_owner_only(self):
+        # Compensating control for diskcache CVE-2025-69872 (pickle deserialization
+        # → RCE for anyone with WRITE access to the cache dir): the cache directory
+        # must be created owner-only (0o700) so no other local user can plant a
+        # malicious pickle. See SECURITY.md "Known dependency advisories".
+        from general_ludd.models.response_cache import ModelResponseCache
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            cache_path = os.path.join(tmpdir, "response-cache")
+            ModelResponseCache(cache_dir=cache_path)
+            mode = stat.S_IMODE(os.stat(cache_path).st_mode)
+            # No group/other permission bits set.
+            assert mode & (stat.S_IRWXG | stat.S_IRWXO) == 0
+            # Owner retains full access.
+            assert mode & stat.S_IRWXU == stat.S_IRWXU
 
     def test_cache_set_and_get(self):
         from general_ludd.models.response_cache import ModelResponseCache

@@ -1,0 +1,38 @@
+---
+# mcp_sync.yml (dependency_update / install path)
+#
+# PHASE-2 of the "MCP for all Ansible resources" directive: when this role
+# installs new Galaxy collections/roles (or otherwise mutates the dependency
+# surface), the generated MCP tool defs + topics must be regenerated so the
+# newly-installed resources are exposed to the model.
+#
+# This runs the repo-root generator (scripts/gen_mcp_tools.py, the same code
+# behind `make mcp-gen`) which rewrites docs/MCP_TOOLS_MANIFEST.json and
+# docs/MCP_TOOLS_TOPICS.yml from the current gludd_* module set.
+#
+# Idempotent: regeneration is deterministic — re-running with no new modules
+# leaves the artifacts byte-identical (changed_when reflects a real delta only).
+# Non-fatal: a generation error is WARNED, never failed (failed_when: false) —
+# an MCP-surface refresh must not break a dependency install.
+
+- name: Regenerate MCP tool defs + topics for newly-installed resources
+  ansible.builtin.command:
+    cmd: "{{ mcp_gen_python | default('python3') }} scripts/gen_mcp_tools.py"
+    chdir: "{{ mcp_repo_root | default(repo_path | default('.', true), true) }}"
+  register: _mcp_gen
+  changed_when: "'Wrote' in (_mcp_gen.stdout | default(''))"
+  failed_when: false
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
+
+- name: Warn if MCP regeneration failed (non-fatal)
+  ansible.builtin.debug:
+    msg: >-
+      MCP tool/topic regeneration FAILED (rc={{ _mcp_gen.rc | default('n/a') }})
+      — newly-installed resources may not be exposed to the model until
+      `make mcp-gen` is run. stderr: {{ (_mcp_gen.stderr | default(''))[:400] }}
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
+    - (_mcp_gen.rc | default(0)) != 0

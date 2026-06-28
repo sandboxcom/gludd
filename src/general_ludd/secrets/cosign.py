@@ -4,8 +4,11 @@ from __future__ import annotations
 
 import datetime
 import os
+import re
 from dataclasses import dataclass, field
 from typing import Any
+
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass
@@ -18,6 +21,14 @@ class CosignKey:
 
 
 def _scoped_path(project_id: str, key_name: str) -> str:
+    if not _SEGMENT_RE.match(project_id):
+        raise ValueError(
+            f"invalid project_id {project_id!r}: must match ^[A-Za-z0-9_-]+$"
+        )
+    if not _SEGMENT_RE.match(key_name):
+        raise ValueError(
+            f"invalid key_name {key_name!r}: must match ^[A-Za-z0-9_-]+$"
+        )
     return f"projects/{project_id}/cosign/{key_name}"
 
 
@@ -85,9 +96,13 @@ def generate_cosign_key(
     ).decode()
 
     if output_dir:
-        os.makedirs(output_dir, exist_ok=True)
-        with open(os.path.join(output_dir, "cosign.key"), "w") as f:
-            f.write(private_pem)
+        os.makedirs(output_dir, mode=0o700, exist_ok=True)
+        key_path = os.path.join(output_dir, "cosign.key")
+        fd = os.open(key_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
+        try:
+            os.write(fd, private_pem.encode())
+        finally:
+            os.close(fd)
         with open(os.path.join(output_dir, "cosign.pub"), "w") as f:
             f.write(public_pem)
 

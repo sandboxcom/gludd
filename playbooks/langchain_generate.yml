@@ -1,0 +1,96 @@
+---
+- name: Langchain generation playbook
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    # Inputs — every gludd-supplied var is default()-guarded. prompt_text falls
+    # back to model_response (the extravar gludd always exposes for generation
+    # work_types); only model_response itself is referenced bare.
+    job_id: "{{ job_id | default('LANGCHAIN-GEN-00000000') }}"
+    todo_id: "{{ todo_id | default('none') }}"
+    prompt_text: "{{ prompt_text | default(model_response | default('', true)) }}"
+    skill_body: "{{ skill_body | default('') }}"
+    work_type: "{{ work_type | default('analysis') }}"
+    model_profile: "{{ model_profile | default('default') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+    # Capability identity for the per-role default-DENY db policy: the optional
+    # write-back records the result via todo_update_status; "agent_task" grants
+    # exactly {todo_get, todo_update_status}.
+    capability_role: "{{ capability_role | default('agent_task') }}"
+    artifact_dir: "{{ artifact_dir | default('/tmp/harness-langchain') }}"
+
+  tasks:
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Validate a prompt is available
+      ansible.builtin.assert:
+        that:
+          - prompt_text | length > 0
+        fail_msg: >-
+          langchain_generate requires a non-empty prompt: set `prompt_text`
+          (or ensure `model_response` is exposed).
+        success_msg: "Prompt resolved ({{ prompt_text | length }} chars)"
+
+    - name: Generation lifecycle
+      block:
+
+        - name: Generate text via langchain
+          general_ludd.agent.gludd_langchain_generate:
+            prompt: "{{ prompt_text }}"
+            system: "{{ skill_body }}"
+            model_profile: "{{ model_profile }}"
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+          register: _lc_gen
+          no_log: "{{ psk | length > 0 }}"
+
+        - name: Record the generation result back to gludd
+          general_ludd.agent.gludd_db:
+            op: todo_update_status
+            todo_id: "{{ todo_id }}"
+            status: "done"
+            daemon_url: "{{ daemon_url }}"
+            psk: "{{ psk }}"
+            role: "{{ capability_role }}"
+          register: _lc_db
+          failed_when: false
+          no_log: "{{ psk | length > 0 }}"
+          when: todo_id | length > 0 and todo_id != 'none'
+
+        - name: Write generation artifact
+          ansible.builtin.copy:
+            content: >-
+              {{ {'job_id': job_id, 'todo_id': todo_id, 'playbook':
+              'langchain_generate.yml', 'status': 'success', 'model_profile':
+              (_lc_gen.model_profile_id | default(model_profile)), 'usage':
+              (_lc_gen.usage | default({})), 'text_excerpt':
+              (_lc_gen.text | default(''))[:500]} | to_nice_json }}
+            dest: "{{ artifact_dir }}/langchain_generate_result.json"
+            mode: "0644"
+
+        - name: Emit generation completion
+          ansible.builtin.debug:
+            msg: "langchain_generate complete for job {{ job_id }} (todo {{ todo_id }})"
+
+      rescue:
+
+        - name: Write failure artifact
+          ansible.builtin.copy:
+            content: >-
+              {{ {'job_id': job_id, 'todo_id': todo_id, 'playbook':
+              'langchain_generate.yml', 'status': 'failed', 'error':
+              (ansible_failed_result.msg | default('langchain_generate failed'))}
+              | to_nice_json }}
+            dest: "{{ artifact_dir }}/langchain_generate_result.json"
+            mode: "0644"
+          failed_when: false
+
+        - name: Fail the play after rescue cleanup
+          ansible.builtin.fail:
+            msg: "langchain_generate failed for job {{ job_id }} — see failure artifact in {{ artifact_dir }}"

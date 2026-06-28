@@ -7,7 +7,7 @@ import logging
 import os
 import re
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import hvac
@@ -20,7 +20,7 @@ logger = logging.getLogger(__name__)
 _PERMITTED_MOUNTS: frozenset[str] = frozenset(
     os.environ.get("GLUDD_PERMITTED_MOUNTS", "secret,kv").split(",")
 )
-_PATH_RE = re.compile(r"^[A-Za-z0-9_][A-Za-z0-9_/-]*$")
+_PATH_RE = re.compile(r"^[A-Za-z0-9_.:-][A-Za-z0-9_/.:-]*$")
 
 
 class SecretsUnavailableError(RuntimeError):
@@ -49,17 +49,20 @@ def _is_genuine_not_found(exc: BaseException) -> bool:
 @dataclass
 class BootstrapResult:
     url: str
-    token: str
+    # repr=False: never let a root/bootstrap token leak into a repr()/log line or
+    # a traceback frame dump. The value is still a normal required attribute.
+    token: str = field(repr=False)
     initialized: bool
     # H-1: the per-boot dev root token minted for the local container, surfaced
     # so connect() can authenticate without the old hardcoded literal "root".
-    container_token: str | None = None
+    container_token: str | None = field(default=None, repr=False)
 
 
 @dataclass
 class AppRoleCreds:
     role_id: str
-    secret_id: str
+    # repr=False: the AppRole secret_id is a credential — keep it out of reprs/logs.
+    secret_id: str = field(repr=False)
 
 
 @dataclass
@@ -98,7 +101,7 @@ class SecretsManager:
         if not _PATH_RE.match(alias.path) or ".." in alias.path.split("/"):
             raise ValueError(
                 f"invalid secret path {alias.path!r}: must match "
-                r"^[A-Za-z0-9_][A-Za-z0-9_/-]*$ with no '..' segment"
+                r"^[A-Za-z0-9_.:-][A-Za-z0-9_/.:-]*$ with no '..' segment"
             )
         if alias.mount not in _PERMITTED_MOUNTS:
             raise ValueError(
@@ -252,7 +255,30 @@ class SecretsManager:
                 f"secrets backend not connected for {context_label} (call connect() first)"
             )
 
+    @staticmethod
+    def _validate_secret_path(path: str) -> None:
+        """Reject paths that contain traversal segments or fail the path regex.
+
+        Raises ValueError for any path that:
+        - contains a ``..`` segment (cross-project traversal attack vector), or
+        - does not match ``_PATH_RE`` (allows only safe alphanumeric/underscore/
+          hyphen/slash characters, no dots).
+
+        Called before every write/read/delete so callers such as cosign.py and
+        gitsign.py cannot bypass the check even if they skip their own guard.
+        """
+        if ".." in path.split("/"):
+            raise ValueError(
+                f"invalid secret path {path!r}: '..' segments are not permitted"
+            )
+        if not _PATH_RE.match(path):
+            raise ValueError(
+                f"invalid secret path {path!r}: must match "
+                r"^[A-Za-z0-9_.:-][A-Za-z0-9_/.:-]*$ with no '..' segment"
+            )
+
     def write_secret(self, path: str, value: dict[str, Any]) -> None:
+        self._validate_secret_path(path)
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         self._client.secrets.kv.v2.create_or_update_secret(
@@ -262,6 +288,7 @@ class SecretsManager:
         )
 
     def read_secret(self, path: str) -> dict[str, Any] | None:
+        self._validate_secret_path(path)
         self._require_connected_for_read(context_label=f"reading {path!r}")
         try:
             result = self._client.secrets.kv.v2.read_secret_version(
@@ -279,6 +306,7 @@ class SecretsManager:
         return None
 
     def delete_secret(self, path: str) -> None:
+        self._validate_secret_path(path)
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         self._client.secrets.kv.v2.delete_metadata_and_all_versions(

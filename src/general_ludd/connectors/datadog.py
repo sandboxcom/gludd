@@ -37,12 +37,15 @@ Record shape (one dict per event or metric point)::
 
 from __future__ import annotations
 
+import json as _json
 import os
 import time
+import urllib.request
 from collections.abc import Callable
 from typing import Any
-from urllib.parse import urlsplit
+from urllib.parse import urlencode, urlsplit
 
+from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 # Injectable transport signature:
@@ -53,6 +56,39 @@ KIND = "logs"
 
 _DEFAULT_SITE = "https://api.datadoghq.com"
 _DEFAULT_TIMEOUT = 10.0
+
+
+def _default_http_request(
+    method: str,
+    url: str,
+    *,
+    params: dict[str, Any] | None = None,
+    json: Any = None,
+    headers: dict[str, str] | None = None,
+    timeout: float = _DEFAULT_TIMEOUT,
+) -> tuple[int, Any]:
+    """Real, time-bound stdlib transport used when none is injected.
+
+    Matches the connector's
+    ``(method, url, *, params, json, headers, timeout) -> (status, json)``
+    contract. Only ``http``/``https`` are allowed and the request is bounded by
+    an explicit timeout. The mocked tests never reach this path.
+    """
+    parsed = urlsplit(url)
+    if parsed.scheme not in ("http", "https"):
+        raise ValueError(f"unsupported url scheme: {parsed.scheme!r}")
+    if params:
+        sep = "&" if parsed.query else "?"
+        url = f"{url}{sep}{urlencode(params, doseq=True)}"
+    data = _json.dumps(json).encode("utf-8") if json is not None else None
+    req = urllib.request.Request(
+        url, data=data, headers=headers or {}, method=method.upper()
+    )
+    with urllib.request.urlopen(req, timeout=timeout) as resp:
+        status = int(resp.getcode() or 0)
+        body = resp.read()
+    parsed_body: Any = _json.loads(body) if body else {}
+    return status, parsed_body
 
 
 def _validate_site(site: str) -> str:
@@ -85,13 +121,10 @@ class DatadogSource:
         *,
         timeout: float = _DEFAULT_TIMEOUT,
     ) -> None:
-        if http_request is None:
-            raise ValueError("http_request transport must be injected")
-
         self._site = _validate_site(config.get("site") or _DEFAULT_SITE)
         self._api_key_env = config.get("api_key_env")
         self._app_key_env = config.get("app_key_env")
-        self._http_request = http_request
+        self._http_request = http_request or _default_http_request
         self._timeout = float(timeout)
         self.kind = KIND
         host = urlsplit(self._site).netloc
@@ -280,12 +313,7 @@ class DatadogSource:
 
     @staticmethod
     def _to_float(value: Any) -> float | None:
-        if value is None:
-            return None
-        try:
-            return float(value)
-        except (TypeError, ValueError):
-            return None
+        return sanitize_metric_value(value)
 
     # -- health -----------------------------------------------------------
 

@@ -205,12 +205,15 @@ class TestDynamicDispatcherHandlerError:
     @pytest.mark.asyncio
     async def test_handler_exception_gives_error_result(self):
         def _bad_handler(name: str, args: dict) -> str:
-            raise RuntimeError("boom")
+            raise RuntimeError("boom-internal-detail")
 
         d = DynamicDispatcher(role_handler=_bad_handler, role=UNRESTRICTED_ROLE)
         result = await d.dispatch(ToolCall(kind="role", name="bad", args={}))
         assert result.ok is False
-        assert "boom" in (result.error or "")
+        # The raw exception detail must NOT leak to the caller — it is logged
+        # server-side (exc_info=True). The client gets a generic marker.
+        assert result.error == "handler_error"
+        assert "boom-internal-detail" not in (result.error or "")
 
     @pytest.mark.asyncio
     async def test_handler_exception_does_not_raise(self):

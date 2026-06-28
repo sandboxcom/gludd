@@ -17,6 +17,8 @@ import os
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors.normalize import sanitize_metric_value
+
 
 @runtime_checkable
 class HttpResponse(Protocol):
@@ -142,7 +144,7 @@ class GraphiteSource:
             target = series.get("target")
             for point in series.get("datapoints", []):
                 # Graphite datapoint is [value, epoch_seconds]; value may be null.
-                value = point[0] if len(point) > 0 else None
+                value = sanitize_metric_value(point[0]) if len(point) > 0 else None
                 ts = point[1] if len(point) > 1 else None
                 records.append(
                     {

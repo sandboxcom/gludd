@@ -81,33 +81,23 @@ class TestCallModelByRole:
         router = ModelRouter(role_mapping={"coder": "gpt4"})
         gw, _ = self._make_gateway(router=router)
 
-        with pytest.raises(ValueError, match="No profile resolved"):
+        with pytest.raises(ValueError, match="Unrecognised role"):
             gw.call_model_by_role("unknown_role", [{"role": "user", "content": "hi"}])
 
-    def test_call_model_by_role_uses_default_when_no_mapping(self):
+    def test_call_model_by_role_fails_closed_even_with_default(self):
+        # D-19 / M-3: strict role resolution REJECTS an unknown role even when a
+        # default_profile_id is configured -- the by-role path must never silently
+        # grant default-model access to an unrecognised role (fail-closed).
         router = ModelRouter(
             role_mapping={},
             default_profile_id="reviewer_profile",
         )
-        gw, reg = self._make_gateway(router=router)
+        gw, _ = self._make_gateway(router=router)
 
-        FakeChatModel = MagicMock()
-        fake_instance = MagicMock()
-        fake_instance.invoke.return_value = MagicMock(
-            content="default response",
-            usage_metadata={"input_tokens": 5, "output_tokens": 3},
-        )
-        FakeChatModel.return_value = fake_instance
-
-        with (
-            patch.object(reg, "is_installed", return_value=True),
-            patch.object(reg, "get_provider_class", return_value=FakeChatModel),
-        ):
-            resp = gw.call_model_by_role(
+        with pytest.raises(ValueError, match="Unrecognised role"):
+            gw.call_model_by_role(
                 "anything", [{"role": "user", "content": "hi"}]
             )
-
-        assert resp.content == "default response"
 
 
 class TestCallModelByPattern:

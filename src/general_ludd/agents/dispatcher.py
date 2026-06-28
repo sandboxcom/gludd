@@ -13,6 +13,9 @@ from general_ludd.agents.types import AgentTask
 
 logger = logging.getLogger(__name__)
 
+# Default wall-clock budget for a whole dispatch_many batch.
+DEFAULT_DISPATCH_TIMEOUT = 1800.0  # 30 minutes
+
 
 @dataclass
 class AgentTaskResult:
@@ -72,8 +75,18 @@ class AgentDispatcher:
                 output=f"Agent '{task.agent_name}' is disabled",
             )
         if task.invoker_name and not self._registry.can_invoke(task.invoker_name, task.agent_name):
-            raise PermissionError(
-                f"'{task.invoker_name}' is not permitted to dispatch '{task.agent_name}'"
+            # Return a failed result (do NOT raise) so the can_invoke denial flows
+            # through the same AgentTaskResult contract as the not-found/disabled
+            # branches above — dispatch_one's caller (and dispatch_many's gather)
+            # expect a result, and the message must reach result.output.
+            return AgentTaskResult(
+                task_id=task.task_id,
+                agent_name=task.agent_name,
+                status="failed",
+                output=(
+                    f"Permission denied: '{task.invoker_name}' is not permitted "
+                    f"to dispatch '{task.agent_name}'"
+                ),
             )
 
         semaphore = self._get_semaphore(task.agent_name)
@@ -92,6 +105,15 @@ class AgentDispatcher:
                     output=output,
                     duration_seconds=duration,
                 )
+            except asyncio.CancelledError:
+                # Re-raise cancellation so it propagates instead of being
+                # swallowed by the broad `except Exception` below. In Python
+                # 3.11+ asyncio.CancelledError is a BaseException, but it is
+                # still caught by `except Exception` in some interpreters /
+                # code paths (and historically was an Exception subclass);
+                # an explicit re-raise keeps graceful shutdown / dispatch_many
+                # timeout cancellation distinguishable from genuine failures.
+                raise
             except Exception as exc:
                 duration = time.monotonic() - start
                 logger.exception("Task %s failed", task.task_id)
@@ -106,7 +128,60 @@ class AgentDispatcher:
                 async with self._lock:
                     self._active_count -= 1
 
-    async def dispatch_many(self, tasks: list[AgentTask]) -> list[AgentTaskResult]:
-        coros = [self.dispatch_one(t) for t in tasks]
-        results = await asyncio.gather(*coros)
-        return list(results)
+    async def dispatch_many(
+        self,
+        tasks: list[AgentTask],
+        timeout: float = DEFAULT_DISPATCH_TIMEOUT,
+    ) -> list[AgentTaskResult]:
+        if not tasks:
+            return []
+        futures = [asyncio.ensure_future(self.dispatch_one(t)) for t in tasks]
+        try:
+            results = await asyncio.wait_for(
+                asyncio.gather(*futures, return_exceptions=True),
+                timeout=timeout,
+            )
+        except TimeoutError:
+            logger.error(
+                "dispatch_many timed out after %.0fs; cancelling %d pending task(s)",
+                timeout,
+                sum(1 for f in futures if not f.done()),
+            )
+            for f in futures:
+                if not f.done():
+                    f.cancel()
+            await asyncio.gather(*futures, return_exceptions=True)
+            return [
+                self._result_from_future(task, fut)
+                for task, fut in zip(tasks, futures, strict=True)
+            ]
+        out: list[AgentTaskResult] = []
+        for task, res in zip(tasks, results, strict=True):
+            if isinstance(res, AgentTaskResult):
+                out.append(res)
+            else:
+                logger.error("Task %s raised in dispatch_many: %s", task.task_id, res)
+                out.append(
+                    AgentTaskResult(
+                        task_id=task.task_id,
+                        agent_name=task.agent_name,
+                        status="failed",
+                        output=str(res),
+                    )
+                )
+        return out
+
+    @staticmethod
+    def _result_from_future(
+        task: AgentTask, fut: asyncio.Future[AgentTaskResult]
+    ) -> AgentTaskResult:
+        if fut.done() and not fut.cancelled():
+            exc = fut.exception()
+            if exc is None:
+                return fut.result()
+        return AgentTaskResult(
+            task_id=task.task_id,
+            agent_name=task.agent_name,
+            status="failed",
+            output="dispatch timed out",
+        )

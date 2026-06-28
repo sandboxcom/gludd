@@ -1,0 +1,71 @@
+---
+# mcp_sync.yml (implement_change / authoring path)
+#
+# PHASE-2 of the "MCP for all Ansible resources" directive: when this role
+# AUTHORS new Ansible content (a new gludd_* module / role / collection), that
+# resource must (a) carry an MCP-usable DOCUMENTATION block and (b) be reflected
+# in the generated MCP tool defs + topics.
+#
+# Two steps, run AFTER the model has generated/applied the change:
+#
+#   1. DOCUMENTATION presence — run scripts/mcp_docs_check.py. If a freshly
+#      authored module lacks a DOCUMENTATION block we DO NOT silently ship it:
+#      `--generate-stub` injects a minimal DOCUMENTATION stub into the offender
+#      (opt-in via mcp_authoring_stub, default true) so the MCP surface is never
+#      left with an undocumented resource. With stub-generation disabled the
+#      check is reported as a hard problem (the model is expected to have written
+#      the DOCUMENTATION itself).
+#
+#   2. Regenerate the MCP tool defs + topics (scripts/gen_mcp_tools.py — same as
+#      `make mcp-gen`) so the newly authored resource's tool+topic exist.
+#
+# Both run in the WORKTREE (where the change was applied) so the generated
+# artifacts are committed alongside the authored code. Non-fatal/warn on a
+# generation error; the docs-check stub injection is best-effort idempotent
+# (only injects when a docstring is genuinely absent).
+
+- name: Ensure newly-authored modules carry a DOCUMENTATION block (stub if missing)
+  ansible.builtin.command:
+    cmd: >-
+      {{ mcp_gen_python | default('python3') }} scripts/mcp_docs_check.py
+      {{ '--generate-stub' if (mcp_authoring_stub | default(true) | bool) else '' }}
+    chdir: "{{ mcp_repo_root | default(_ic_path | default(repo_path, true), true) }}"
+  register: _mcp_docs
+  changed_when: "'injected stub' in (_mcp_docs.stdout | default(''))"
+  failed_when: false
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
+
+- name: Warn if an authored resource is undocumented and stubbing is disabled
+  ansible.builtin.debug:
+    msg: >-
+      MCP docs-check found undocumented authored resource(s) (rc={{ _mcp_docs.rc | default('n/a') }}).
+      Enable mcp_authoring_stub or have the change include a DOCUMENTATION block.
+      detail: {{ (_mcp_docs.stderr | default(_mcp_docs.stdout | default('')))[:400] }}
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
+    - (_mcp_docs.rc | default(0)) != 0
+
+- name: Regenerate MCP tool defs + topics for the newly-authored resource
+  ansible.builtin.command:
+    cmd: "{{ mcp_gen_python | default('python3') }} scripts/gen_mcp_tools.py"
+    chdir: "{{ mcp_repo_root | default(_ic_path | default(repo_path, true), true) }}"
+  register: _mcp_gen
+  changed_when: "'Wrote' in (_mcp_gen.stdout | default(''))"
+  failed_when: false
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
+
+- name: Warn if MCP regeneration failed (non-fatal)
+  ansible.builtin.debug:
+    msg: >-
+      MCP tool/topic regeneration FAILED (rc={{ _mcp_gen.rc | default('n/a') }})
+      — the authored resource may not be exposed to the model until
+      `make mcp-gen` is run. stderr: {{ (_mcp_gen.stderr | default(''))[:400] }}
+  when:
+    - mcp_sync_enabled | default(true) | bool
+    - not ansible_check_mode
+    - (_mcp_gen.rc | default(0)) != 0

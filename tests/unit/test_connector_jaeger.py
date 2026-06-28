@@ -152,6 +152,44 @@ def test_query_value_is_duration() -> None:
     assert root["value"] == 4500
 
 
+def test_nan_inf_duration_sanitized_to_none() -> None:
+    # A span whose duration is NaN/Inf must normalize to value is None
+    # (unified sanitize_metric_value policy) and must not raise.
+    payload = {
+        "data": [
+            {
+                "traceID": "t1",
+                "spans": [
+                    {
+                        "traceID": "t1",
+                        "spanID": "s-nan",
+                        "operationName": "op",
+                        "startTime": 1_700_000_000_000_000,
+                        "duration": float("nan"),
+                        "processID": "p1",
+                        "tags": [],
+                    },
+                    {
+                        "traceID": "t1",
+                        "spanID": "s-inf",
+                        "operationName": "op",
+                        "startTime": 1_700_000_000_000_000,
+                        "duration": float("inf"),
+                        "processID": "p1",
+                        "tags": [],
+                    },
+                ],
+                "processes": {"p1": {"serviceName": "svc"}},
+            }
+        ]
+    }
+    t = FakeTransport({"/api/traces": FakeResponse(200, payload)})
+    src = make_source(t)
+    records = src.query({"service": "svc"})
+    assert len(records) == 2
+    assert all(r["value"] is None for r in records)
+
+
 def test_query_labels_include_correlation_fields() -> None:
     t = FakeTransport({"/api/traces": FakeResponse(200, TRACE_PAYLOAD)})
     src = make_source(t)

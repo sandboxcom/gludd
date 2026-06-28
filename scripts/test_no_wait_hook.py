@@ -266,6 +266,38 @@ with tempfile.TemporaryDirectory(prefix="hook_test_") as d:
     out22 = r22.stdout.decode()
     cases.append((22, "BLOCK", "BLOCK" if ('"decision"' in out22 and '"block"' in out22) else "NOBLOCK"))
 
+    # ── ROUND-3: FUTURE-TENSE SELF-DEFERRAL (2026-06-25 incident) ──────────────
+    # The exact phrasing that slipped EVERY pattern this session: ending a turn by
+    # promising future action instead of executing it. No question, no permission
+    # seek -- still parking. These prove the round-3 patterns catch it.
+
+    # Case 60: the verbatim phrasing that slipped this session -> BLOCK
+    p60 = os.path.join(d, "t60.jsonl")
+    make_jsonl(p60, "Next I'll fix those 4 release issues and land Layer 2 + the branch guard as the drafts return.")
+    cases.append((60, "BLOCK", run_hook(json.dumps({"transcript_path": p60}))))
+
+    # Case 61: "I'll apply it once the agents finish." -> BLOCK
+    p61 = os.path.join(d, "t61.jsonl")
+    make_jsonl(p61, "I'll apply the patch once the audit agents finish.")
+    cases.append((61, "BLOCK", run_hook(json.dumps({"transcript_path": p61}))))
+
+    # Case 62: "I'll wire X as the drafts return." -> BLOCK
+    p62 = os.path.join(d, "t62.jsonl")
+    make_jsonl(p62, "I'll wire the completion gate as the drafts return.")
+    cases.append((62, "BLOCK", run_hook(json.dumps({"transcript_path": p62}))))
+
+    # Case 63: "Next, I'll ..." comma variant -> BLOCK
+    p63 = os.path.join(d, "t63.jsonl")
+    make_jsonl(p63, "Next, I'll harvest the completed agent and integrate it.")
+    cases.append((63, "BLOCK", run_hook(json.dumps({"transcript_path": p63}))))
+
+    # Case 64 (over-match guard): an evidenced completion that MENTIONS agents/drafts
+    # but is genuinely finished -> NOBLOCK. Proves round-3 patterns don't trip a
+    # real done-with-measurement report.
+    p64 = os.path.join(d, "t64.jsonl")
+    make_jsonl(p64, "Applied the guard and ran make test-release-guard: 13 passed, 0 failed.")
+    cases.append((64, "NOBLOCK", run_hook(json.dumps({"transcript_path": p64}))))
+
 fail = 0
 for num, exp, got in cases:
     result = "PASS" if got == exp else "FAIL"

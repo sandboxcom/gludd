@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+import math
+import threading
 import time
 
 
@@ -15,9 +17,21 @@ class RunBudgetGuard:
         self._per_call_budget_usd = per_call_budget_usd
         self._total_spend: float = 0.0
         self._start_monotonic: float = time.monotonic()
+        # Guards the _total_spend read-modify-write. The gateway records spend
+        # from worker threads (model calls run off the event loop via
+        # asyncio.to_thread), so an unlocked `+=` can lose concurrent updates and
+        # silently undercount cost — defeating the run-budget cap. Mirrors the
+        # self._spend_lock pattern in controllers/budget_manager.py.
+        self._spend_lock = threading.Lock()
 
     def record_spend(self, amount_usd: float) -> None:
-        self._total_spend += amount_usd
+        if not math.isfinite(amount_usd) or amount_usd < 0:
+            raise ValueError(
+                f"RunBudgetGuard.record_spend(): amount_usd must be a finite "
+                f"non-negative value, got {amount_usd!r}."
+            )
+        with self._spend_lock:
+            self._total_spend += amount_usd
 
     def get_total_spend(self) -> float:
         return self._total_spend
@@ -27,6 +41,15 @@ class RunBudgetGuard:
 
     def check_run_budget(self) -> dict[str, bool | str | float]:
         total = self._total_spend
+        # Fail CLOSED: a non-finite total (e.g. from a poisoned accumulation)
+        # cannot be compared meaningfully against the cap. Treat as over-limit.
+        if not math.isfinite(total):
+            return {
+                "allowed": False,
+                "reason": f"run budget check failed closed: non-finite total spend ({total!r})",
+                "total_spend": total,
+                "remaining_budget": 0.0,
+            }
         remaining = max(0.0, self._run_budget_usd - total)
         if total > self._run_budget_usd:
             return {

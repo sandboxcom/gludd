@@ -58,12 +58,14 @@ class AnsibleRunnerAdapter:
         isolation_config: ProcessIsolationConfig | None = None,
         playbooks_dir: str | None = None,
         event_bus: Any | None = None,
+        default_env: dict[str, str] | None = None,
     ) -> None:
         self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="gl-runner-")
         self.registry = _build_registry(registry)
         self.isolation_config = isolation_config
         self._playbooks_dir = playbooks_dir
         self._event_bus = event_bus
+        self._default_env: dict[str, str] = default_env or {}
         self._core_runner = CoreAnsibleRunner(
             process_isolation=isolation_config,
         )
@@ -105,7 +107,15 @@ class AnsibleRunnerAdapter:
         shared_vars: dict[str, Any] | None = None,
         filename: str = "extravars",
     ) -> str:
-        vars_dir = os.path.join(self.private_data_dir, job_id, "env")
+        # job_id is attacker-controllable (JobSpec.job_id from the HTTP body) and
+        # only whitespace-validated upstream. Sanitize here too — write_vars is a
+        # public method reachable independently of prepare_job_dirs — so a crafted
+        # id like "../../etc" cannot escape the per-job workspace. Mirrors
+        # prepare_job_dirs above.
+        safe_id = sanitize_job_id(job_id)
+        if safe_id is None:
+            raise ValueError(f"Invalid job_id: {job_id!r}")
+        vars_dir = os.path.join(self.private_data_dir, safe_id, "env")
         os.makedirs(vars_dir, exist_ok=True)
         payload: dict[str, Any] = {"job_vars": job_vars}
         if shared_vars is not None:
@@ -130,11 +140,11 @@ class AnsibleRunnerAdapter:
         except ValueError as exc:
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
         _pdd = private_data_dir or self.private_data_dir
-        saved_env: dict[str, str | None] = {}
-        if env:
-            for key, val in env.items():
-                saved_env[key] = os.environ.get(key)
-                os.environ[key] = val
+        # HIGH (global env mutation): do NOT mutate os.environ. Pass caller-
+        # supplied env overrides as extra_env to core_runner, which merges them
+        # into the scrubbed allowlist env immediately before pb_exec.run() and
+        # restores os.environ unconditionally in a finally block. This keeps the
+        # gludd process env pristine across concurrent playbook invocations.
         try:
             # Network-exposed path: ALWAYS bound the run with a FINITE timeout so
             # a runaway/sleeping playbook can never hang the worker. When the
@@ -144,21 +154,17 @@ class AnsibleRunnerAdapter:
             from general_ludd.ansible.core_runner import _env_default_timeout
 
             effective_timeout = _env_default_timeout() if timeout is None else timeout
+            _merged_env = {**self._default_env, **(env or {})}
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
                 extravars=extravars or {},
                 timeout=effective_timeout,
+                extra_env=_merged_env or None,
             )
             return result.model_dump()
         except Exception as exc:
             logger.error("Ansible core runner failed: %s", exc)
             return {"status": "failed", "rc": 1, "error": str(exc), "events": []}
-        finally:
-            for key, orig in saved_env.items():
-                if orig is None:
-                    os.environ.pop(key, None)
-                else:
-                    os.environ[key] = orig
 
     def refresh_playbooks(self) -> dict[str, Any]:
         if self._playbooks_dir:

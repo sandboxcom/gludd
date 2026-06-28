@@ -223,3 +223,73 @@ class TestCheckAllLimits:
         )
         result = guard.check_all_limits()
         assert result["allowed"] is True
+
+
+class TestCompositeFailClosed:
+    """check_all_limits must surface a fail-closed non-finite budget result."""
+
+    def test_all_limits_fail_closed_on_non_finite_total(self) -> None:
+        guard = RunBudgetGuard(
+            run_budget_usd=100.0,
+            run_timeout_seconds=1e9,
+            per_call_budget_usd=10.0,
+        )
+        # Simulate a poisoned accumulation (the pre-fix path record_spend now blocks).
+        guard._total_spend = float("nan")
+        result = guard.check_all_limits(estimated_cost=1.0)
+        assert result["allowed"] is False
+        # check_all_limits returns the failing sub-check's dict verbatim:
+        # the run-budget fail-closed branch, which carries non-finite reason + keys.
+        assert "non-finite" in result["reason"]
+        assert "remaining_budget" in result
+        assert result["remaining_budget"] == pytest.approx(0.0)
+
+
+class TestWallClockDeterministicDeny:
+    """Deterministic wall-clock denial without mocking time (negative timeout)."""
+
+    def test_negative_timeout_denies(self) -> None:
+        # Any elapsed >= 0 exceeds a negative timeout, so this is deterministic.
+        guard = RunBudgetGuard(run_timeout_seconds=-1.0)
+        result = guard.check_wall_clock()
+        assert result["allowed"] is False
+        assert "timeout" in result["reason"].lower()
+        assert result["elapsed_seconds"] >= 0.0
+
+
+class TestConcurrentRecordSpend:
+    """record_spend must not lose updates under concurrent threads.
+
+    The gateway records spend from worker threads (model calls run off the event
+    loop via asyncio.to_thread). An unlocked ``self._total_spend += amount`` is a
+    read-modify-write that can lose increments when two threads interleave,
+    silently undercounting cost and letting the run blow past its budget cap.
+    The threading.Lock added to record_spend makes the accumulation exact.
+    """
+
+    def test_no_lost_updates_under_thread_contention(self) -> None:
+        import threading
+
+        guard = RunBudgetGuard(run_budget_usd=float("inf"))
+        n_threads = 16
+        per_thread = 500
+        amount = 0.01
+
+        start = threading.Barrier(n_threads)
+
+        def _hammer() -> None:
+            # Release all threads at once to maximize interleaving on the RMW.
+            start.wait()
+            for _ in range(per_thread):
+                guard.record_spend(amount)
+
+        threads = [threading.Thread(target=_hammer) for _ in range(n_threads)]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join()
+
+        expected = n_threads * per_thread * amount
+        # Exact accumulation: without the lock, contention drops increments and
+        # the total comes in LOW. With the lock it matches to floating-point tol.
+        assert guard.get_total_spend() == pytest.approx(expected)

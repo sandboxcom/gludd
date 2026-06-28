@@ -153,9 +153,16 @@ def test_site_defaults_to_public_datadog() -> None:
     assert t.calls[0]["url"].startswith("https://api.datadoghq.com")
 
 
-def test_transport_must_be_injected() -> None:
-    with pytest.raises(ValueError):
-        DatadogSource({"site": "https://api.datadoghq.com"})
+def test_constructs_with_default_transport() -> None:
+    # No transport injected: the connector falls back to a real stdlib transport
+    # (so the registry's single-arg ``factory(config)`` build succeeds and the
+    # source is NOT silently dropped from ``list_sources()``). No network is
+    # touched at construction time.
+    from general_ludd.connectors.datadog import _default_http_request
+
+    src = DatadogSource({"site": "https://api.datadoghq.com"})
+    assert src._http_request is _default_http_request
+    assert src.name
 
 
 def test_no_hardcoded_secrets_in_source() -> None:
@@ -334,6 +341,25 @@ def test_metrics_empty_series_is_empty_list() -> None:
     t = RecordingTransport([(200, {"status": "ok", "series": []})])
     src = DatadogSource({"site": "https://api.datadoghq.com"}, http_request=t)
     assert src.query({"mode": "metrics", "query": "avg:x{*}"}) == []
+
+
+def test_metrics_nan_point_value_becomes_none() -> None:
+    payload = {
+        "status": "ok",
+        "series": [
+            {
+                "metric": "system.cpu.user",
+                "scope": "host:web-01",
+                "tag_set": ["host:web-01"],
+                "pointlist": [[1718000000000.0, float("nan")]],
+            }
+        ],
+    }
+    t = RecordingTransport([(200, payload)])
+    src = DatadogSource({"site": "https://api.datadoghq.com"}, http_request=t)
+    records = src.query({"mode": "metrics", "query": "x"})
+    assert len(records) == 1
+    assert records[0]["value"] is None
 
 
 # -- mode dispatch / errors ------------------------------------------------

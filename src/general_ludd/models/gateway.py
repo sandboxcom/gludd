@@ -42,6 +42,12 @@ def _coerce_token_count(value: Any) -> int:
     if isinstance(value, bool):
         return 0
     if isinstance(value, (int, float)):
+        # NaN/Inf guard: int(float("nan")) raises ValueError and
+        # int(float("inf")) raises OverflowError, which would crash
+        # _invoke_and_bill at billing time on hostile/buggy provider usage
+        # metadata. Treat any non-finite count as 0 (un-billable).
+        if not math.isfinite(value):
+            return 0
         return max(0, int(value))
     return 0
 
@@ -53,6 +59,17 @@ class _SecretsResolver(Protocol):
 
 class BudgetExceededError(ValueError):
     """Raised when a call is rejected by the budget gate (D-24 fix)."""
+
+
+class SSRFRejectionError(ValueError):
+    """Raised when an api_base_alias URL is rejected by the SSRF egress guard.
+
+    Subclasses ValueError so existing ``except ValueError`` callers still catch
+    it, but is a distinct type so the fail-open ``except (ValueError,
+    ImportError): return None`` in ``_try_call_model`` can re-raise it (F-E fix)
+    rather than silently falling through to the next fallback profile and
+    masking the egress block.
+    """
 
 
 class ModelProfile(BaseModel):
@@ -261,17 +278,47 @@ class ModelGateway:
         # identical misses on a per-key lock so only the first does the provider
         # call and the rest re-read the now-populated cache. _cache_key_locks is
         # itself guarded by _cache_key_locks_guard.
+        #
+        # Eviction: each entry is reference-counted via _cache_key_lock_refs.
+        # Threads that need a key increment the ref under the guard before
+        # blocking on the per-key lock; when they release it they decrement and
+        # delete the entry if the count reaches zero.  This keeps the dict
+        # bounded to ≤ (number of in-flight cache-key waiters) entries rather
+        # than growing without bound across the lifetime of the process.
         self._cache_key_locks: dict[str, threading.Lock] = {}
+        self._cache_key_lock_refs: dict[str, int] = {}
         self._cache_key_locks_guard = threading.Lock()
 
     def _cache_key_lock(self, cache_key: str) -> threading.Lock:
-        """Return the process-local single-flight lock for a cache key."""
+        """Return the process-local single-flight lock for a cache key.
+
+        The caller MUST pair every call with a matching ``_cache_key_unref``
+        in a ``finally`` block so the ref-count (and, when it reaches zero,
+        the dict entry) are cleaned up even if the provider call raises.
+        """
         with self._cache_key_locks_guard:
             lock = self._cache_key_locks.get(cache_key)
             if lock is None:
                 lock = threading.Lock()
                 self._cache_key_locks[cache_key] = lock
+            self._cache_key_lock_refs[cache_key] = (
+                self._cache_key_lock_refs.get(cache_key, 0) + 1
+            )
             return lock
+
+    def _cache_key_unref(self, cache_key: str) -> None:
+        """Decrement the ref-count for *cache_key*; evict when it reaches zero.
+
+        Must be called from a ``finally`` block that matches every
+        ``_cache_key_lock`` call so eviction is guaranteed even on exceptions.
+        """
+        with self._cache_key_locks_guard:
+            count = self._cache_key_lock_refs.get(cache_key, 0) - 1
+            if count <= 0:
+                self._cache_key_lock_refs.pop(cache_key, None)
+                self._cache_key_locks.pop(cache_key, None)
+            else:
+                self._cache_key_lock_refs[cache_key] = count
 
     def get_profile(self, profile_id: str) -> ModelProfile | None:
         return self._profiles.get(profile_id)
@@ -287,17 +334,41 @@ class ModelGateway:
         budget_remaining: float,
         *,
         messages: list[dict[str, str]] | None = None,
+        requested_max_output_tokens: int | None = None,
     ) -> bool:
         profile = self._profiles.get(profile_id)
         if profile is None:
             return False
+        # NaN/Inf guard (fail-closed on poison, but inf budget = unlimited).
+        # `x > NaN` is always False in Python, so a NaN budget_remaining would
+        # silently pass every cost comparison — treat NaN as 0.0 (no budget).
+        # But +inf is the LEGITIMATE default sentinel meaning "no budget limit"
+        # (unlimited): it must be preserved so callers that omit budget_remaining
+        # are not spuriously rejected (no finite cost exceeds inf). Only NaN is
+        # clamped here. A non-finite estimated_cost (NaN OR Inf) is treated as
+        # float("inf") so it can never slip under any finite cap — a NaN/Inf cost
+        # must REJECT, not pass.
+        if math.isnan(budget_remaining):
+            budget_remaining = 0.0
+        if not math.isfinite(estimated_cost):
+            estimated_cost = float("inf")
         # D-21: do NOT trust the caller-provided estimated_cost. Re-estimate
         # server-side from the actual messages + the profile's price rates, and
         # use the MAX of (caller claim, server estimate) for the budget decision
         # so a buggy / malicious caller cannot under-report cost to slip past
         # the gate. If no messages are supplied, fall back to the caller value
         # (preserves backward compatibility for callers that pre-computed cost).
-        server_cost = self.estimate_cost(profile, messages) if messages is not None else None
+        #
+        # requested_max_output_tokens (D-21 over-conservatism fix) is threaded
+        # into estimate_cost so a call that caps its output tokens is estimated
+        # at its real (smaller) cost instead of the worst-case max_output_tokens.
+        # estimate_cost min()s it against profile.max_output_tokens, so the
+        # estimate stays upper-bounded and the under-report protection holds.
+        server_cost = (
+            self.estimate_cost(profile, messages, requested_max_output_tokens)
+            if messages is not None
+            else None
+        )
         effective_cost = max(estimated_cost, server_cost) if server_cost is not None else estimated_cost
         if effective_cost > budget_remaining:
             return False
@@ -305,14 +376,35 @@ class ModelGateway:
 
     @staticmethod
     def estimate_cost(
-        profile: ModelProfile, messages: list[dict[str, str]] | None
+        profile: ModelProfile,
+        messages: list[dict[str, str]] | None,
+        requested_max_output_tokens: int | None = None,
     ) -> float:
         """Server-side cost re-estimation independent of the caller.
 
         Approximates input tokens from the message content (~4 chars/token, a
-        standard rough heuristic) and assumes the model may emit up to its
-        ``max_output_tokens``. Multiplies both legs by the profile's price rates.
-        Returns 0.0 when messages is empty/None.
+        standard rough heuristic). Multiplies both legs by the profile's price
+        rates. Returns 0.0 when messages is empty/None.
+
+        Output leg (D-21 over-conservatism fix): by default the estimate assumes
+        the model may emit up to its ``max_output_tokens`` (worst case). This is
+        deliberately pessimistic so a caller cannot under-report cost to slip
+        past the budget gate. But it ALSO meant every metered call on a
+        low-``run_budget_usd`` deployment was rejected at the per-profile cap
+        (line ~345) against a worst-case figure of e.g. 8000 tokens, even when
+        the real call requested only a handful of output tokens — a silent
+        self-DoS on legitimate work.
+
+        When ``requested_max_output_tokens`` is provided, the output leg uses
+        ``min(requested_max_output_tokens, profile.max_output_tokens)`` so a call
+        that genuinely caps its output gets a realistic (smaller) estimate. The
+        ``min`` keeps the estimate UPPER-BOUNDED by the profile's capacity:
+        security is preserved because a caller can never request MORE output than
+        the profile permits, so it can never use this path to under-estimate
+        below what the model could actually emit under the profile's own cap.
+        Omitting the argument (or passing a non-positive value) preserves the
+        EXACT prior behavior (worst-case ``profile.max_output_tokens``), so the
+        existing D-21 rejection tests still hold.
         """
         if not messages:
             return 0.0
@@ -321,7 +413,12 @@ class ModelGateway:
             content = str(m.get("content", "") or "") if isinstance(m, dict) else str(getattr(m, "content", "") or "")
             input_chars += len(content)
         approx_input_tokens = input_chars // 4
-        approx_output_tokens = profile.max_output_tokens
+        if requested_max_output_tokens is not None and requested_max_output_tokens > 0:
+            approx_output_tokens = min(
+                requested_max_output_tokens, profile.max_output_tokens
+            )
+        else:
+            approx_output_tokens = profile.max_output_tokens
         return (
             approx_input_tokens * profile.cost_per_input_token
             + approx_output_tokens * profile.cost_per_output_token
@@ -337,13 +434,28 @@ class ModelGateway:
         *,
         estimated_cost: float = 0.0,
         budget_remaining: float = float("inf"),
+        requested_max_output_tokens: int | None = None,
         **kwargs: Any,
     ) -> ModelResponse:
         profile = self._profiles.get(profile_id)
         if profile is None:
             raise ValueError(f"Profile '{profile_id}' not found")
 
-        if not self.check_budget(profile_id, estimated_cost, budget_remaining):
+        # requested_max_output_tokens (D-21 over-conservatism fix): when a caller
+        # knows it will cap the model's output (e.g. the /admin/models/call
+        # `max_tokens` field), thread it into the budget gate so the call is
+        # estimated at its real cost instead of the worst-case max_output_tokens.
+        # It is NOT forwarded to the provider via **kwargs (the gateway controls
+        # per-call token limits through profile config today); it only sharpens
+        # the budget estimate. estimate_cost min()s it against the profile cap so
+        # the under-report protection is preserved.
+        if not self.check_budget(
+            profile_id,
+            estimated_cost,
+            budget_remaining,
+            messages=messages,
+            requested_max_output_tokens=requested_max_output_tokens,
+        ):
             raise BudgetExceededError(
                 f"Call to '{profile_id}' rejected: over budget "
                 f"(estimated={estimated_cost}, remaining={budget_remaining}, "
@@ -366,18 +478,22 @@ class ModelGateway:
         # locking) so only the first miss does the provider call and the rest
         # serve the now-populated entry.
         if cache_key is not None and self._response_cache is not None:
-            with self._cache_key_lock(cache_key):
-                cached = self._response_cache.get(cache_key)
-                if cached is not None:
-                    logger.debug(
-                        "Cache hit (single-flight) profile=%s key=%s",
-                        profile_id,
-                        cache_key[:12],
+            lock = self._cache_key_lock(cache_key)
+            try:
+                with lock:
+                    cached = self._response_cache.get(cache_key)
+                    if cached is not None:
+                        logger.debug(
+                            "Cache hit (single-flight) profile=%s key=%s",
+                            profile_id,
+                            cache_key[:12],
+                        )
+                        return ModelResponse(**cached)
+                    return self._invoke_and_bill(
+                        profile, profile_id, messages, cache_key, **kwargs
                     )
-                    return ModelResponse(**cached)
-                return self._invoke_and_bill(
-                    profile, profile_id, messages, cache_key, **kwargs
-                )
+            finally:
+                self._cache_key_unref(cache_key)
 
         return self._invoke_and_bill(
             profile, profile_id, messages, None, **kwargs
@@ -425,7 +541,7 @@ class ModelGateway:
                 from general_ludd.security.auth import is_safe_fetch_url
 
                 if not is_safe_fetch_url(base_url):
-                    raise ValueError(
+                    raise SSRFRejectionError(
                         f"SSRF guard: refusing blocked api_base_alias URL "
                         f"{base_url!r} for profile '{profile_id}'"
                     )
@@ -568,10 +684,20 @@ class ModelGateway:
         # only content (tool_calls are intentionally NOT persisted), so a cached
         # tool-call turn would replay as an empty-content final answer and the
         # tool loop would silently stop dispatching. Skip caching it entirely.
+        #
+        # GW-2: NEVER cache a TRUNCATED turn. A response cut off at the token
+        # limit (finish_reason == "length") is an incomplete answer; caching it
+        # would replay the truncated text as if it were the full response on
+        # every identical future request. The marker lives in the provider's
+        # LangChain AIMessage metadata, not on ModelResponse, so read it there.
+        finish_reason = (
+            getattr(raw_response, "response_metadata", None) or {}
+        ).get("finish_reason")
         if (
             self._response_cache is not None
             and cache_key is not None
             and not response.tool_calls
+            and finish_reason != "length"
         ):
             self._response_cache.set(
                 cache_key,
@@ -701,6 +827,17 @@ class ModelGateway:
 
         _attempt_counter: list[int] = [0]
         _last_exc: list[BaseException | None] = [None]
+        # Cumulative-backoff cap: _time.sleep is synchronous and blocks the
+        # calling thread. With overload_max_retries=10 and
+        # overload_max_backoff=120s the worst-case cumulative sleep is 10x120s =
+        # 1200s (~20 minutes) on a single call — effectively a DoS of the thread
+        # pool. We track total wall-clock time spent sleeping and stop sleeping
+        # once the cap is exceeded, letting the retry exhaust naturally (tenacity
+        # continues retrying, but immediately rather than waiting). The cap is
+        # intentionally generous (300s = 5 minutes) so that legitimate overload
+        # back-pressure is still respected for the first few retries.
+        _MAX_CUMULATIVE_SLEEP_S: float = 300.0
+        _cumulative_sleep_s: list[float] = [0.0]
 
         def _is_retryable(exc: BaseException) -> bool:
             """Tenacity retry predicate: True → retry, False → re-raise.
@@ -714,6 +851,11 @@ class ModelGateway:
             to recover.
             """
             if not isinstance(exc, _retryable_exc_types):
+                return False
+            # Mid-loop circuit-open guard: if this failure tripped the breaker,
+            # stop retrying the primary so the fallback chain runs instead of
+            # stampeding a now-open circuit.
+            if tracker is not None and not tracker.is_healthy(profile_id, admit_probe=False):
                 return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
@@ -754,8 +896,6 @@ class ModelGateway:
                 # provider's directed wait. _compute_backoff returns
                 # max(retry_after, 1.0) for RATE_LIMITED when this is set.
                 retry_after = _extract_retry_after_seconds(exc)
-                import sys as _sys
-                print(f"D23DEBUG kind={kind} retry_after={retry_after} attempt={_attempt_counter[0]}", file=_sys.stderr)
                 wait_s = policy._compute_backoff(
                     kind,
                     _attempt_counter[0],
@@ -763,7 +903,17 @@ class ModelGateway:
                     overload=is_overload,
                 )
                 if wait_s > 0:
-                    _time.sleep(wait_s)
+                    remaining_budget = _MAX_CUMULATIVE_SLEEP_S - _cumulative_sleep_s[0]
+                    if remaining_budget <= 0:
+                        # Cumulative cap exhausted: skip sleep, retry immediately.
+                        logger.debug(
+                            "backoff cap reached (%.0fs total); retrying immediately",
+                            _cumulative_sleep_s[0],
+                        )
+                    else:
+                        actual_sleep = min(wait_s, remaining_budget)
+                        _time.sleep(actual_sleep)
+                        _cumulative_sleep_s[0] += actual_sleep
 
         # Overload kinds (PROVIDER_ERROR, RATE_LIMITED) use the higher retry cap
         # so tenacity doesn't stop too early on the primary before policy can
@@ -825,18 +975,17 @@ class ModelGateway:
         messages: list[dict[str, str]],
         **kwargs: Any,
     ) -> ModelResponse:
-        """Call one fallback profile, recording its success/failure on the
-        health tracker.
+        """Call one fallback profile, delegating success/failure accounting to
+        call_model.
 
         The bare fallback-exhaustion loop used to call call_model(fb_id) with no
         is_healthy gate and never recorded the fallback's success or failure, so
         the breaker never tracked fallback health (Fix 3). call_model already
-        records failures via record_timeout_on_failure on exception; here we add
-        the success path so a healthy fallback resets its consecutive counter.
+        records both failures (via record_timeout_on_failure on exception) AND
+        successes (via _invoke_and_bill → health_tracker.record_success), so no
+        additional record_success call is needed here — that would double-count.
         """
         result = self.call_model(fb_id, messages, **kwargs)
-        if self._health_tracker is not None:
-            self._health_tracker.record_success(fb_id)
         return result
 
     def _walk_fallbacks(
@@ -860,6 +1009,13 @@ class ModelGateway:
                 continue
             try:
                 return self._call_fallback(fb_id, messages, **kwargs), None
+            except BudgetExceededError:
+                # F-F: a budget rejection on the fallback path MUST propagate.
+                # Previously the bare ``except Exception`` below swallowed it and
+                # continued to the next fallback, spending past the per-profile
+                # budget ceiling. Re-raise (mirrors _try_call_model /
+                # call_model_with_fallback) so the budget gate is enforced.
+                raise
             except Exception as exc:  # try the next fallback
                 last_exc = exc
                 continue
@@ -896,9 +1052,17 @@ class ModelGateway:
     ) -> ModelResponse:
         if self._router is None:
             raise ValueError("No router configured")
-        profile_id = self._router.resolve_role(role_name)
+        profile_id = self._router.resolve_role(role_name, strict=True)
         if profile_id is None:
             raise ValueError(f"No profile resolved for role '{role_name}'")
+        # Circuit-breaker gate: call_model itself has no health check, so role
+        # callers would otherwise bypass an open circuit and hammer an unhealthy
+        # provider. Fail fast instead.
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
+            raise RuntimeError(
+                f"profile '{profile_id}' (role '{role_name}') circuit is open; "
+                "refusing to call unhealthy provider"
+            )
         return self.call_model(profile_id, messages, **kwargs)
 
     def call_model_by_pattern(
@@ -912,6 +1076,14 @@ class ModelGateway:
         profile_id = self._router.resolve_pattern(pattern)
         if profile_id is None:
             raise ValueError(f"No profile resolved for pattern '{pattern}'")
+        # Circuit-breaker gate: call_model itself has no health check, so pattern
+        # callers would otherwise bypass an open circuit and hammer an unhealthy
+        # provider. Fail fast instead.
+        if self._health_tracker is not None and not self._health_tracker.is_healthy(profile_id):
+            raise RuntimeError(
+                f"profile '{profile_id}' (pattern '{pattern}') circuit is open; "
+                "refusing to call unhealthy provider"
+            )
         return self.call_model(profile_id, messages, **kwargs)
 
     def _try_call_model(
@@ -929,6 +1101,13 @@ class ModelGateway:
             # a non-failure — so a profile whose own run_budget_usd was exceeded
             # simply routed to a fallback with a larger budget cap, bypassing
             # the per-profile ceiling. Re-raise so the caller sees the rejection.
+            raise
+        except SSRFRejectionError:
+            # F-E: an SSRF egress rejection MUST propagate. Previously it was a
+            # bare ValueError caught by the ``except (ValueError, ImportError)``
+            # below and silently returned None, falling open to the next
+            # fallback profile and masking the egress block. Re-raise so the
+            # SSRF guard is enforced rather than bypassed via fallback.
             raise
         except (ValueError, ImportError):
             return None

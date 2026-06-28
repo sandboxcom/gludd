@@ -34,6 +34,29 @@ class PipelineConfigBlock(BaseModel):
     heartbeat_interval_s: float = 5.0
 
 
+class RelationshipRoutingConfig(BaseModel):
+    """Tunables for project-hierarchy phase-3 cross-project knowledge borrowing.
+
+    When ``enable_cross_project_borrowing`` is False (the DEFAULT), the
+    AdaptiveRouter behaves EXACTLY as it did before phase 3: it reads only its
+    own (or global) benchmark history and never borrows across project edges.
+    Borrowing is strictly opt-in.
+
+    The decay knobs shape the project-relationship weight applied to a borrowed
+    candidate's quality:
+    ``base[relation] * edge_decay**(distance-1) * control_factor``, where
+    ``control_factor`` is 1.0 for a gludd-controlled neighbor and
+    ``external_penalty`` otherwise. Candidates whose final multiplier drops
+    below ``min_borrow_weight`` are dropped to avoid noise from very distant or
+    uncontrolled edges.
+    """
+
+    enable_cross_project_borrowing: bool = False
+    edge_decay: float = 0.5
+    external_penalty: float = 0.5
+    min_borrow_weight: float = 0.05
+
+
 class _YamlSettingsSource(PydanticBaseSettingsSource):
     """Custom settings source that reads from a YAML file.
 
@@ -101,6 +124,10 @@ class UserConfig(BaseSettings):
     self_update: dict[str, Any] = {"auto_apply_config": True}
     rules: list[Any] = []
     pipeline: PipelineConfigBlock = PipelineConfigBlock()
+    # Project-hierarchy phase 3: cross-project knowledge borrowing. Optional and
+    # default None → borrowing OFF, router unchanged. Set a block (or
+    # GLUDD_RELATIONSHIP_ROUTING JSON) to enable + tune it.
+    relationship_routing: RelationshipRoutingConfig | None = None
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:

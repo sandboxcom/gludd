@@ -5,6 +5,7 @@ TDD: These tests define the expected behavior before implementation.
 
 from __future__ import annotations
 
+import json
 import os
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -471,10 +472,13 @@ class TestEnvVarAuthFallback:
             "AWS_SECRET_ACCESS_KEY": "secret123",
         }
         with patch.dict(os.environ, env, clear=False):
-            original = mgr._inject_auth_env(config)
-            assert os.environ.get("AWS_ACCESS_KEY_ID") == "AKIA_TEST"
-            assert os.environ.get("AWS_SECRET_ACCESS_KEY") == "secret123"
-            mgr._restore_auth_env(original)
+            # New API: _build_auth_env returns an os.environ copy with the auth
+            # vars merged in; the global os.environ is NEVER mutated.
+            built = mgr._build_auth_env(config)
+            assert built["AWS_ACCESS_KEY_ID"] == "AKIA_TEST"
+            assert built["AWS_SECRET_ACCESS_KEY"] == "secret123"
+            # The returned mapping is a copy of os.environ, not os.environ itself.
+            assert built is not os.environ
 
     def test_deployment_manager_inject_from_env_when_alias_matches_env_var(self):
         mgr = DeploymentManager(secrets_resolver=None)
@@ -491,6 +495,38 @@ class TestEnvVarAuthFallback:
             "ARM_CLIENT_ID": "test-client-id",
             "ARM_CLIENT_SECRET": "test-secret",
         }):
-            original = mgr._inject_auth_env(config)
-            assert os.environ["ARM_CLIENT_ID"] == "test-client-id"
-            mgr._restore_auth_env(original)
+            built = mgr._build_auth_env(config)
+            assert built["ARM_CLIENT_ID"] == "test-client-id"
+            assert built["ARM_CLIENT_SECRET"] == "test-secret"
+
+    def test_build_auth_env_passed_to_run_terraform_as_env_kwarg(self):
+        """The built env overlay is handed to _run_terraform via env=, and the
+        global os.environ is never mutated by deploy()."""
+        import asyncio
+
+        mgr = DeploymentManager(secrets_resolver=None)
+        config = ComputeConfig(
+            provider=ComputeProvider.AWS,
+            gpu_type=GPUType.T4,
+            model_name="test",
+            provider_auth_aliases={
+                "AWS_ACCESS_KEY_ID": "AWS_ACCESS_KEY_ID",
+            },
+        )
+        captured_envs: list[dict | None] = []
+
+        async def fake_run(args, *, cwd=None, env=None):
+            captured_envs.append(env)
+            return {"stdout": json.dumps({"instance_ip": {"value": "7.7.7.7"}})}
+
+        with patch.dict(os.environ, {"AWS_ACCESS_KEY_ID": "AKIA_OVERLAY"}, clear=False):
+            with patch.object(mgr, "_run_terraform", side_effect=fake_run):
+                asyncio.run(mgr.deploy(config))
+            # Every terraform invocation received the overlay env via env=.
+            assert captured_envs, "expected _run_terraform to be called with env="
+            for env in captured_envs:
+                assert env is not None
+                assert env["AWS_ACCESS_KEY_ID"] == "AKIA_OVERLAY"
+            # The overlay did not leak into the real process environment beyond
+            # what patch.dict set (no extra mutation by deploy()).
+            assert os.environ["AWS_ACCESS_KEY_ID"] == "AKIA_OVERLAY"

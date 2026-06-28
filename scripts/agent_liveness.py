@@ -73,10 +73,21 @@ import sys
 import time
 
 # Single fixed window constant — every call reads this identically, eliminating
-# inter-call variance caused by the old probe-sleep approach. Default 25 s: a
-# live agent streams output every few seconds so 25 s catches it; a completed
-# agent whose terminal marker is unparseable decays out quickly.
-LIVENESS_WINDOW_SEC = float(os.environ.get("GLUDD_LIVENESS_WINDOW_SEC", "25.0"))
+# inter-call variance caused by the old probe-sleep approach.
+#
+# WINDOW WIDENED 25s -> 300s (rev 2026-06-24): the 25 s window UNDER-counted live
+# agents. A background subagent sitting in a single long LLM call (30-120+ s, no
+# tool calls) writes NOTHING to its transcript for the duration, so its mtime aged
+# out of the 25 s window and it was counted as DEAD while genuinely running — the
+# floor/baseline read "0-2 live" while 5-10 agents were actually working, which is
+# why floor enforcement looked perpetually unmet and had to be disabled. The PRIMARY
+# liveness signal is terminal-detection (_is_terminal: last line == a "result"
+# marker), which excludes COMPLETED agents accurately regardless of mtime. The window
+# is therefore only a stale/orphaned-transcript backstop (an agent that died without
+# writing a parseable result), for which 300 s is ample. Net: completed agents are
+# still excluded immediately (terminal marker), live-but-quiet agents are no longer
+# under-counted.
+LIVENESS_WINDOW_SEC = float(os.environ.get("GLUDD_LIVENESS_WINDOW_SEC", "300.0"))
 
 
 def _tasks_dir() -> str | None:
@@ -97,17 +108,46 @@ def _tasks_dir() -> str | None:
     return next((s + "tasks" for s in sessions if os.path.isdir(s + "tasks")), None)
 
 
+def _is_agent_transcript(path: str) -> bool:
+    """True iff ``path`` is an AGENT JSONL transcript (not a plain-text bash
+    background-command ``.output``).
+
+    Bug fixed (2026-06-24): the tasks dir holds BOTH agent transcripts and the
+    ``.output`` of every ``run_in_background`` bash command (gate/test/build).
+    Those plain-text bash outputs were being counted as live "agents", inflating
+    the floor count. An agent transcript is JSONL whose first non-empty line is a
+    JSON object carrying agent fields; a bash output is plain text -> excluded.
+    """
+    try:
+        with open(path, "rb") as fh:
+            head = fh.read(8192)
+        for line in head.split(b"\n"):
+            s = line.strip()
+            if not s:
+                continue
+            obj = json.loads(s.decode("utf-8", errors="replace"))
+            return isinstance(obj, dict) and bool(
+                {"type", "agentId", "message", "parentUuid"} & set(obj.keys())
+            )
+        return False
+    except Exception:
+        return False
+
+
 def _is_terminal(path: str) -> bool:
-    """Return True if the transcript at ``path`` ends with a completion marker.
+    """Return True if the transcript's last message means the agent FINISHED.
 
-    Reads the last ~512 bytes of the file to find the last non-empty line, then
-    tries to parse it as JSON. Returns True (completed) if:
-      - ``type == "result"``  (direct result object), OR
-      - ``subtype == "result"``  (system envelope around a result)
+    Format (verified 2026-06-24): the harness ``.output`` / ``agent-*.jsonl`` has
+    NO top-level ``type=="result"`` marker — a transcript ends with the agent's
+    final ``type=="assistant"`` message. So the OLD check (type/subtype=="result")
+    NEVER matched and terminal-detection was dead, leaving completed agents to
+    decay only via the mtime window (the 300s "ghost" over-count).
 
-    Returns False on any exception (fail-open: assume still running if we cannot
-    determine the terminal state). An empty file also returns False (agent just
-    started, no content yet).
+    New rule: TERMINAL iff the last non-empty line is an ``assistant`` message
+    whose content carries NO ``tool_use`` block — i.e. a final text answer with no
+    pending tool call. A last line that is assistant-with-tool_use, a user/tool
+    result, an unparseable line, or an empty file is treated as NON-terminal
+    (assume still running -> never under-count a genuinely live agent).
     """
     try:
         with open(path, "rb") as fh:
@@ -115,23 +155,30 @@ def _is_terminal(path: str) -> bool:
             size = fh.tell()
             if size == 0:
                 return False
-            read_bytes = min(512, size)
+            read_bytes = min(16384, size)
             fh.seek(-read_bytes, 2)
             tail = fh.read(read_bytes)
-        lines = tail.split(b"\n")
-        # Walk backwards to find last non-empty line.
-        for line in reversed(lines):
+        for line in reversed(tail.split(b"\n")):
             stripped = line.strip()
             if not stripped:
                 continue
             obj = json.loads(stripped.decode("utf-8", errors="replace"))
             if not isinstance(obj, dict):
                 return False
-            if obj.get("type") == "result":
+            # Legacy direct-result markers (harmless if a future format uses them).
+            if obj.get("type") == "result" or obj.get("subtype") == "result":
                 return True
-            if obj.get("subtype") == "result":
-                return True
-            return False
+            if obj.get("type") != "assistant":
+                # last event is a user/tool-result or other -> still working.
+                return False
+            content = (obj.get("message") or {}).get("content")
+            if isinstance(content, list):
+                # Pending tool call -> the agent is mid-turn, still running.
+                for part in content:
+                    if isinstance(part, dict) and part.get("type") == "tool_use":
+                        return False
+                return True  # assistant text answer, no tool_use -> done
+            return True  # string content (pure text answer) -> done
         return False
     except Exception:
         return False
@@ -239,6 +286,10 @@ def live_count(
             mtime = os.path.getmtime(f)
         except OSError:
             # File vanished (agent dir cleaned up): skip it.
+            continue
+        # Exclude plain-text bash background-command .output files (gate/test/build
+        # share this dir) — only genuine agent transcripts count toward the floor.
+        if not _is_agent_transcript(f):
             continue
         total += 1
         if mtime >= cutoff and not _is_terminal(f):

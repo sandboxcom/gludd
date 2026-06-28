@@ -157,6 +157,24 @@ def test_bool_is_not_treated_as_numeric_value(monkeypatch: pytest.MonkeyPatch) -
     assert records[0]["labels"] == {"ok": True}
 
 
+def test_nan_inf_aggregate_sanitized_to_none(monkeypatch: pytest.MonkeyPatch) -> None:
+    # A numeric aggregate that is NaN/Inf must normalize to value is None
+    # (unified sanitize_metric_value policy) and must not raise.
+    monkeypatch.setenv("TEST_NR_KEY", "secret-key")
+    for bad in (float("nan"), float("inf"), float("-inf")):
+        results = [{"timestamp": 1718000000000, "average.duration": bad, "host": "web-1"}]
+        transport = RecordingTransport(FakeResponse(_nerdgraph_payload(results)))
+        src = _make_source(transport)
+        records = src.query({"nrql": "SELECT average(duration) FROM Transaction"})
+        assert records[0]["value"] is None
+    # A finite 0.0 aggregate is a real sample, never forged to None.
+    results = [{"timestamp": 1718000000000, "average.duration": 0.0}]
+    transport = RecordingTransport(FakeResponse(_nerdgraph_payload(results)))
+    src = _make_source(transport)
+    records = src.query({"nrql": "SELECT average(duration) FROM Transaction"})
+    assert records[0]["value"] == 0.0
+
+
 def test_empty_results_returns_empty_list(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("TEST_NR_KEY", "secret-key")
     transport = RecordingTransport(FakeResponse(_nerdgraph_payload([])))

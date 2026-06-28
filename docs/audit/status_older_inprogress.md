@@ -1,3 +1,5 @@
+> STATUS: POINT-IN-TIME analysis (dated). Reference/history — re-validate against current code/hooks before acting on its recommendations.
+
 # Status Audit — Older In-Progress Tasks (#21, #23, #26-28, #31-32)
 
 > Read-only verification pass, 2026-06-16. Method: code + test reading only

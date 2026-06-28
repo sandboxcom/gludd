@@ -1,0 +1,31 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8861"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  # langgraph_decision runs a model-backed decision over HTTP (always changed) and
+  # surfaces the decision back via gludd_db — intentionally non-idempotent; skip
+  # the idempotence check.
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

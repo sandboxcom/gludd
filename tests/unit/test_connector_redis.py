@@ -154,7 +154,10 @@ class TestHealth:
         src = RedisStatsSource(executor=_boom)
         h = src.health()
         assert h["ok"] is False
-        assert "NOAUTH" in h["detail"]
+        # Raw exception text (which can embed creds/host) must not leak to
+        # callers; only the static generic marker is surfaced.
+        assert "NOAUTH" not in h["detail"]
+        assert h["detail"] == "probe failed"
 
 
 class TestNoHardcodedCredentials:

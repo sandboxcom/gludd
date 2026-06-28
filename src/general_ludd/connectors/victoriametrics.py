@@ -82,6 +82,7 @@ def _default_transport(
         params=params,
         json=json,
         timeout=timeout,
+        follow_redirects=False,
     )
     return resp
 

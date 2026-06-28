@@ -94,7 +94,7 @@ class TestPromptTextGuard:
             prompt_text=None,
             skill_body=None,
         )
-        assert result is None
+        assert result == (None, None)
         gw.call_model.assert_not_called()
 
     def test_empty_string_prompt_returns_none(self) -> None:
@@ -107,7 +107,7 @@ class TestPromptTextGuard:
             prompt_text="",
             skill_body=None,
         )
-        assert result is None
+        assert result == (None, None)
         gw.call_model.assert_not_called()
 
 
@@ -131,7 +131,7 @@ class TestBudgetDenied:
             skill_body=None,
             budget_guard=guard,
         )
-        assert result is None
+        assert result == (None, None)
         gw.call_model.assert_not_called()
 
     def test_none_budget_guard_allows_call(self) -> None:
@@ -149,7 +149,7 @@ class TestBudgetDenied:
                 skill_body=None,
                 budget_guard=None,
             )
-        assert result == "generated"
+        assert result[0] == "generated"
         gw.call_model.assert_called_once()
 
 
@@ -214,7 +214,7 @@ class TestCallModelShape:
 
     def test_returns_response_content(self) -> None:
         result, _gw = self._invoke(prompt_text="question")
-        assert result == "answer"
+        assert result[0] == "answer"
 
 
 # ---------------------------------------------------------------------------
@@ -238,7 +238,7 @@ class TestModelCallErrorSwallowing:
                 prompt_text="do it",
                 skill_body=None,
             )
-        assert result is None
+        assert result == (None, None)
 
     def test_value_error_from_call_model_swallowed(self) -> None:
         gw = MagicMock()
@@ -255,7 +255,7 @@ class TestModelCallErrorSwallowing:
                 prompt_text="task",
                 skill_body=None,
             )
-        assert result is None
+        assert result == (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -352,7 +352,7 @@ class TestBenchmarkRecorderRecord:
                 skill_body=None,
                 benchmark_recorder=recorder,
             )
-        assert result == "ok"
+        assert result[0] == "ok"
 
 
 # ---------------------------------------------------------------------------

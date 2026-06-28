@@ -1,10 +1,9 @@
 """Security tests for /api/status: credential redaction and filestore availability.
 
 Covers:
-1. db_url field must have password masked as *** (not leaked).
-2. db_engine field must also have password masked (uses render_as_string).
-3. filestore_available must be False for a configured-but-nonexistent path.
-4. filestore_available must be True for a real existing directory.
+1. db_url and db_engine must NOT appear in the /api/status response at all (SEC-8).
+2. filestore_available must be False for a configured-but-nonexistent path.
+3. filestore_available must be True for a real existing directory.
 - P1: config_dir / filestore_root keys absent from public /api/status
 - P2: GET /api/todos respects ?limit= query param
 """
@@ -13,38 +12,10 @@ from __future__ import annotations
 import os
 from unittest.mock import MagicMock, patch
 
-import pytest
 from fastapi import FastAPI
 from fastapi.testclient import TestClient
 
 from general_ludd.routers.todos import register
-
-_PASSWORD = "s3cr3tP@ssword"  # pragma: allowlist secret
-
-
-def _make_app_with_engine(password: str) -> tuple[FastAPI, TestClient]:
-    """Return an app + client whose _db_engine has a URL with the given password."""
-    app = FastAPI()
-    state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
-    register(app, state)
-
-    # Build a mock engine whose .url behaves like a SQLAlchemy URL.
-    mock_url = MagicMock()
-    # render_as_string(hide_password=True) should mask the password with ***
-    mock_url.render_as_string.return_value = (
-        "postgresql+psycopg2://user:***@localhost/mydb"
-    )
-    # str(url) would reveal the password (simulate SQLAlchemy behaviour)
-    mock_url.__str__ = MagicMock(
-        return_value=f"postgresql+psycopg2://user:{password}@localhost/mydb"
-    )
-
-    mock_engine = MagicMock()
-    mock_engine.url = mock_url
-
-    app.state._db_engine = mock_engine
-    client = TestClient(app)
-    return app, client
 
 
 def _make_app(state: dict | None = None) -> tuple:
@@ -55,61 +26,42 @@ def _make_app(state: dict | None = None) -> tuple:
 
 
 class TestDbCredentialRedaction:
-    def test_db_url_exact_masked_form(self):
-        """db_url field must render with *** in place of the password."""
-        _app, client = _make_app_with_engine(_PASSWORD)
+    """SEC-8: db_url and db_engine must be absent from /api/status (not just masked)."""
 
+    def test_db_url_absent_from_status(self):
+        """db_url must not appear in /api/status — field removed entirely (SEC-8)."""
+        app = FastAPI()
+        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+        register(app, state)
+        mock_engine = MagicMock()
+        mock_engine.url.render_as_string.return_value = "postgresql+psycopg2://user:***@localhost/mydb"
+        app.state._db_engine = mock_engine
         with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
+            client = TestClient(app)
             resp = client.get("/api/status")
-
         assert resp.status_code == 200
-        data = resp.json()
+        assert "db_url" not in resp.json(), "SEC-8: db_url must be absent from public /api/status"
 
-        db_url = data["db_url"]
-        # The exact masked form must contain *** where the password was
-        assert "***" in db_url, f"Expected *** in db_url but got: {db_url!r}"
-        # The raw password must NOT appear anywhere in db_url
-        assert _PASSWORD not in db_url, (
-            f"Password leaked in db_url: {db_url!r}"
-        )
-
-    def test_db_engine_password_not_present(self):
-        """db_engine field must use render_as_string(hide_password=True), not str(engine)."""
-        _app, client = _make_app_with_engine(_PASSWORD)
-
+    def test_db_engine_absent_from_status(self):
+        """db_engine must not appear in /api/status — field removed entirely (SEC-8)."""
+        app = FastAPI()
+        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
+        register(app, state)
+        mock_engine = MagicMock()
+        mock_engine.url.render_as_string.return_value = "postgresql+psycopg2://user:***@localhost/mydb"
+        app.state._db_engine = mock_engine
         with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
+            client = TestClient(app)
             resp = client.get("/api/status")
-
         assert resp.status_code == 200
-        data = resp.json()
-
-        db_engine = data["db_engine"]
-        assert _PASSWORD not in db_engine, (
-            f"Password leaked in db_engine field: {db_engine!r}"
-        )
-        # Confirm the field has the masked form (*** present)
-        assert "***" in db_engine, (
-            f"Expected *** mask in db_engine but got: {db_engine!r}"
-        )
-
-    def test_db_engine_calls_render_as_string_with_hide_password(self):
-        """Verify render_as_string is called with hide_password=True (not str())."""
-        _app, client = _make_app_with_engine(_PASSWORD)
-
-        with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
-            resp = client.get("/api/status")
-
-        assert resp.status_code == 200
-        # Retrieve the mock engine from app.state to inspect calls
-        mock_engine = _app.state._db_engine
-        # Both db_engine and db_url call render_as_string(hide_password=True)
-        mock_engine.url.render_as_string.assert_called_with(hide_password=True)
-        assert mock_engine.url.render_as_string.call_count >= 1
+        assert "db_engine" not in resp.json(), "SEC-8: db_engine must be absent from public /api/status"
 
 
 class TestApiStatusDbFieldsNoEngine:
-    def test_db_engine_is_none_string_when_no_engine(self):
-        """db_engine must be 'None' (str) when no engine is attached."""
+    """SEC-8: db_url and db_engine must be absent regardless of engine presence."""
+
+    def test_db_fields_absent_when_no_engine(self):
+        """With no DB engine set, db_url and db_engine must not appear in response."""
         app = FastAPI()
         state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
         register(app, state)
@@ -118,33 +70,8 @@ class TestApiStatusDbFieldsNoEngine:
             resp = client.get("/api/status")
         assert resp.status_code == 200
         data = resp.json()
-        assert data["db_engine"] == "None", f"Expected 'None', got {data['db_engine']!r}"
-
-    def test_db_url_is_sqlite_when_no_engine(self):
-        """db_url must be 'sqlite' when no engine is attached."""
-        app = FastAPI()
-        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
-        register(app, state)
-        client = TestClient(app)
-        with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
-            resp = client.get("/api/status")
-        assert resp.status_code == 200
-        data = resp.json()
-        assert data["db_url"] == "sqlite", f"Expected 'sqlite', got {data['db_url']!r}"
-
-    def test_db_engine_and_db_url_differ_when_no_engine(self):
-        """The two keys must have DIFFERENT values when no engine — collapsed bug returns same."""
-        app = FastAPI()
-        state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
-        register(app, state)
-        client = TestClient(app)
-        with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
-            resp = client.get("/api/status")
-        data = resp.json()
-        assert data["db_engine"] != data["db_url"], (
-            f"db_engine and db_url must differ when no engine, "
-            f"but both are {data['db_engine']!r}"
-        )
+        assert "db_engine" not in data, "SEC-8: db_engine must be absent even without engine"
+        assert "db_url" not in data, "SEC-8: db_url must be absent even without engine"
 
 
 class TestFilestoreAvailability:
@@ -210,46 +137,32 @@ class TestFilestoreAvailability:
 
 
 class TestStatusDbUrlRedaction:
-    """P1: /api/status must never expose raw database passwords."""
+    """SEC-8: /api/status must not expose any database connection info."""
 
-    def test_postgres_password_not_in_db_url(self):
-        """A postgres engine URL with a password must be rendered password-hidden."""
-        pytest.importorskip("psycopg2")
-        from sqlalchemy import create_engine
-
+    def test_db_url_absent_no_engine(self):
+        """When no DB engine is set, db_url must be absent (not 'sqlite')."""
         app = FastAPI()
         state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
         register(app, state)
-
-        # Build a real SQLAlchemy URL object that carries a password.
-        engine = create_engine("postgresql+psycopg2://admin:s3cr3tpassword@localhost/mydb")
-        app.state._db_engine = engine
-
         with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
             client = TestClient(app)
             resp = client.get("/api/status")
-
         assert resp.status_code == 200
-        data = resp.json()
-        db_url = data["db_url"]
-        # Password must not appear in clear text
-        assert "s3cr3tpassword" not in db_url
-        # SQLAlchemy render_as_string(hide_password=True) replaces password with ***
-        assert "***" in db_url or db_url.endswith("@localhost/mydb")
+        assert "db_url" not in resp.json(), "SEC-8: db_url must be absent from /api/status"
 
-    def test_sqlite_default_when_no_engine(self):
-        """When no DB engine is set the db_url field falls back to 'sqlite'."""
+    def test_db_url_absent_with_postgres_engine(self):
+        """Even with a real postgres engine, db_url must be absent from the response."""
         app = FastAPI()
         state: dict = {"todos": [], "tick_metrics": {}, "quality_gate": {}}
         register(app, state)
-
+        mock_engine = MagicMock()
+        mock_engine.url.render_as_string.return_value = "postgresql+psycopg2://admin:***@localhost/mydb"
+        app.state._db_engine = mock_engine
         with patch("general_ludd.routers.todos.FileStore", side_effect=OSError("no fs")):
             client = TestClient(app)
             resp = client.get("/api/status")
-
         assert resp.status_code == 200
-        data = resp.json()
-        assert data["db_url"] == "sqlite"
+        assert "db_url" not in resp.json(), "SEC-8: db_url must be absent even with engine set"
 
 
 class TestStatusPathsAbsent:

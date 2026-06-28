@@ -251,6 +251,43 @@ class TestGetDownloadUrl:
         assert "tofu" in url
         assert ".zip" in url
 
+    @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="x86_64")
+    @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Linux")
+    def test_osquery_linux_x86_64(self, mock_sys, mock_mach, bootstrapper):
+        url = bootstrapper.get_download_url("osquery")
+        assert url is not None
+        assert "osquery/osquery/releases/download/5.10.2" in url
+        assert url.endswith("osquery-5.10.2.linux_x86_64.tar.gz")
+
+    @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="arm64")
+    @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Darwin")
+    def test_osquery_macos_arm64(self, mock_sys, mock_mach, bootstrapper):
+        url = bootstrapper.get_download_url("osquery")
+        assert url is not None
+        assert url.endswith("osquery-5.10.2.macos_arm64.tar.gz")
+
+    @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="x86_64")
+    @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Darwin")
+    def test_osquery_macos_x86_64(self, mock_sys, mock_mach, bootstrapper):
+        url = bootstrapper.get_download_url("osquery")
+        assert url is not None
+        assert url.endswith("osquery-5.10.2.macos_x86_64.tar.gz")
+
+    @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="aarch64")
+    @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Linux")
+    def test_osquery_linux_arm64_unavailable(self, mock_sys, mock_mach, bootstrapper):
+        # osquery 5.10.2 publishes no linux arm64 tarball -> None.
+        assert bootstrapper.get_download_url("osquery") is None
+
+    @patch("general_ludd.filestore.bootstrap.platform.machine", return_value="amd64")
+    @patch("general_ludd.filestore.bootstrap.platform.system", return_value="Windows")
+    def test_osquery_windows_unavailable(self, mock_sys, mock_mach, bootstrapper):
+        # osquery ships an .msi on Windows, not a .tar.gz -> None.
+        assert bootstrapper.get_download_url("osquery") is None
+
+    def test_osquery_in_known_versions(self, bootstrapper):
+        assert bootstrapper.KNOWN_VERSIONS["osquery"] == "5.10.2"
+
 
 class TestDownload:
     @pytest.mark.asyncio
@@ -358,3 +395,107 @@ class TestDownloadAll:
             assert "openbao" in results
             assert "opentofu" in results
             assert all(results.values())
+
+
+def _make_osquery_tarball(member_name: str = "osquery-5.10.2.linux_x86_64/bin/osqueryi") -> bytes:
+    """Build a minimal in-memory .tar.gz containing a single osqueryi member."""
+    import io as _io
+    import tarfile as _tf
+
+    content = b"\x7fELF fake osqueryi binary"
+    buf = _io.BytesIO()
+    with _tf.open(fileobj=buf, mode="w:gz") as archive:
+        info = _tf.TarInfo(name=member_name)
+        info.size = len(content)
+        archive.addfile(info, _io.BytesIO(content))
+    return buf.getvalue()
+
+
+class TestOsqueryExtraction:
+    """Unit tests for _extract_osquery_executable."""
+
+    def test_extracts_osqueryi_from_tarball(self, bootstrapper):
+        tar_data = _make_osquery_tarball("osquery-5.10.2.linux_x86_64/bin/osqueryi")
+        result = bootstrapper._extract_osquery_executable(tar_data)
+        assert result == b"\x7fELF fake osqueryi binary"
+
+    def test_extracts_osqueryi_top_level(self, bootstrapper):
+        tar_data = _make_osquery_tarball("osqueryi")
+        result = bootstrapper._extract_osquery_executable(tar_data)
+        assert result == b"\x7fELF fake osqueryi binary"
+
+    def test_rejects_absolute_path_member(self, bootstrapper):
+        """A member with an absolute path must not be extracted."""
+        import io as _io
+        import tarfile as _tf
+
+        content = b"evil"
+        buf = _io.BytesIO()
+        with _tf.open(fileobj=buf, mode="w:gz") as archive:
+            info = _tf.TarInfo(name="/etc/osqueryi")
+            info.size = len(content)
+            archive.addfile(info, _io.BytesIO(content))
+        tar_data = buf.getvalue()
+        result = bootstrapper._extract_osquery_executable(tar_data)
+        # No safe member found -- original bytes returned unchanged.
+        assert result == tar_data
+
+    def test_rejects_dotdot_path_member(self, bootstrapper):
+        """A member containing '..' must not be extracted."""
+        import io as _io
+        import tarfile as _tf
+
+        content = b"evil"
+        buf = _io.BytesIO()
+        with _tf.open(fileobj=buf, mode="w:gz") as archive:
+            info = _tf.TarInfo(name="../escape/osqueryi")
+            info.size = len(content)
+            archive.addfile(info, _io.BytesIO(content))
+        tar_data = buf.getvalue()
+        result = bootstrapper._extract_osquery_executable(tar_data)
+        assert result == tar_data
+
+    def test_plain_binary_returned_unchanged(self, bootstrapper):
+        """Non-tarball bytes (e.g. a bundled plain executable) pass through."""
+        plain = b"\x7fELF not a tar"
+        assert bootstrapper._extract_osquery_executable(plain) == plain
+
+
+@pytest.mark.asyncio
+async def test_osquery_binary_is_executable_after_download(tmp_path):
+    """After download(), the stored osquery binary must satisfy os.access(path, os.X_OK).
+
+    Uses a real FileStore backed by tmp_path so that write_bytes actually
+    writes to disk and os.chmod is exercisable.
+    """
+    import os as _os
+
+    from general_ludd.filestore.bootstrap import BinaryBootstrapper
+    from general_ludd.filestore.store import FileStore
+
+    store = FileStore(root_path=str(tmp_path))
+    boot = BinaryBootstrapper(store=store)
+
+    tar_bytes = _make_osquery_tarball("osquery-5.10.2.linux_x86_64/bin/osqueryi")
+
+    mock_resp = MagicMock()
+    mock_resp.status_code = 200
+    mock_resp.content = tar_bytes
+    mock_client = AsyncMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
+    mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+    mock_client.__aexit__ = AsyncMock(return_value=False)
+
+    with patch.object(boot, "get_bundled_binary_path", return_value=None), \
+         patch.object(boot, "get_download_url", return_value="https://example.com/osquery.tar.gz"), \
+         patch("httpx.AsyncClient", return_value=mock_client):
+        result = await boot.download("osquery")
+
+    assert result is True, "download() must return True on HTTP 200"
+    stored_path = boot.get_binary_path("osquery")
+    assert stored_path is not None, "get_binary_path('osquery') must not be None after download"
+    assert _os.path.isfile(stored_path), f"Expected a file at {stored_path!r}"
+    assert _os.access(stored_path, _os.X_OK), (
+        f"osquery binary at {stored_path!r} is NOT executable after download — "
+        "chmod step missing"
+    )

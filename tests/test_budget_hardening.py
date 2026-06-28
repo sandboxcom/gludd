@@ -231,7 +231,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_exhausted_guard(),
         )
-        assert result is None
+        assert result == (None, None)
 
     def test_no_guard_proceeds(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -242,7 +242,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=None,
         )
-        assert result == "generated text"
+        assert result[0] == "generated text"
 
     def test_headroom_guard_proceeds(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -253,7 +253,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_headroom_guard(),
         )
-        assert result == "generated text"
+        assert result[0] == "generated text"
 
     def test_missing_allowed_key_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -263,7 +263,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_missing_allowed_guard(),
         )
-        assert result is None
+        assert result == (None, None)
 
     def test_nondict_returns_none(self):
         from general_ludd.models.job_invocation import invoke_model_for_generation
@@ -273,7 +273,7 @@ class TestInvokeModelForGenerationBudgetGate:
             model_profile="default", prompt_text="do stuff",
             skill_body=None, budget_guard=_nondict_guard(),
         )
-        assert result is None
+        assert result == (None, None)
 
 
 # ---------------------------------------------------------------------------
@@ -372,6 +372,122 @@ class TestB5ModelCallBudgetGate:
         client = self._client_with_profiles(_missing_allowed_guard())
         resp = client.post("/admin/models/call", json={"prompt": "hello"})
         assert resp.status_code == 429
+
+
+# ---------------------------------------------------------------------------
+# /admin/models/call: system prompt + extra-field tolerance
+# (the gludd_langchain_generate / gludd_langgraph_decision Ansible modules POST
+# `system`, `response_format`, and `options` to this endpoint — assert the
+# system prompt reaches the gateway and the extras never 422.)
+# ---------------------------------------------------------------------------
+
+class TestModelCallSystemPrompt:
+    """The handler must forward an optional `system` field as a system message
+    and tolerate the extra body keys the Ansible modules send."""
+
+    def _client(self):
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from general_ludd.models.gateway import ModelGateway
+        from general_ludd.routers.models import register
+
+        app = FastAPI()
+        gw = MagicMock(spec=ModelGateway)
+        profile = MagicMock()
+        profile.model_profile_id = "default"
+        gw.list_profiles.return_value = [profile]
+        gw.call_model.return_value = MagicMock(content="ok", usage_metadata=None)
+        app.state._model_gateway = gw
+        app.state._budget_guard = None  # no budget configured -> proceed
+        app.state._health_tracker = None
+        app.state._project_manager = None
+        app.state._metrics_collector = None
+        app.state._session_factory = None
+        app.state._model_registry = MagicMock()
+        app.state._model_registry.search.return_value = []
+        app.state._model_registry.list_downloaded.return_value = []
+        register(app, {})
+        return TestClient(app, raise_server_exceptions=False), gw
+
+    @staticmethod
+    def _messages_arg(gw):
+        """Extract the `messages` list passed positionally to call_model."""
+        gw.call_model.assert_called_once()
+        args, kwargs = gw.call_model.call_args
+        # call_model(used_profile_id, messages)
+        if len(args) >= 2:
+            return args[1]
+        return kwargs.get("messages")
+
+    def test_system_field_becomes_system_message(self):
+        client, gw = self._client()
+        resp = client.post(
+            "/admin/models/call",
+            json={"prompt": "hi there", "system": "You are terse."},
+        )
+        assert resp.status_code == 200
+        messages = self._messages_arg(gw)
+        assert messages[0]["role"] == "system"
+        assert messages[0]["content"] == "You are terse."
+        assert messages[1]["role"] == "user"
+        assert messages[1]["content"] == "hi there"
+
+    def test_no_system_field_is_single_user_message(self):
+        """Backward compat: absent/empty system -> just the user message."""
+        client, gw = self._client()
+        resp = client.post("/admin/models/call", json={"prompt": "hi"})
+        assert resp.status_code == 200
+        messages = self._messages_arg(gw)
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+        assert messages[0]["content"] == "hi"
+
+    def test_empty_system_field_is_single_user_message(self):
+        client, gw = self._client()
+        resp = client.post("/admin/models/call", json={"prompt": "hi", "system": ""})
+        assert resp.status_code == 200
+        messages = self._messages_arg(gw)
+        assert len(messages) == 1
+        assert messages[0]["role"] == "user"
+
+    def test_extra_fields_do_not_422(self):
+        """The langgraph_decision module posts response_format/options/max_tokens
+        on top of system — none of these unknown keys may trigger a 422."""
+        client, gw = self._client()
+        resp = client.post(
+            "/admin/models/call",
+            json={
+                "prompt": "pick one",
+                "system": "decide",
+                "response_format": "json",
+                "options": ["a", "b", "c"],
+                "max_tokens": 256,
+            },
+        )
+        assert resp.status_code == 200
+        messages = self._messages_arg(gw)
+        assert messages[0]["role"] == "system"
+        # response_format=json appends a best-effort JSON nudge to the system msg
+        assert "JSON" in messages[0]["content"]
+        assert "decide" in messages[0]["content"]
+
+    def test_response_schema_nudge_without_system(self):
+        """response_schema with no explicit system still produces a system
+        message carrying the JSON nudge + the schema."""
+        client, gw = self._client()
+        resp = client.post(
+            "/admin/models/call",
+            json={
+                "prompt": "give me the package",
+                "response_schema": {"name": "str", "version": "str"},
+            },
+        )
+        assert resp.status_code == 200
+        messages = self._messages_arg(gw)
+        assert messages[0]["role"] == "system"
+        assert "JSON" in messages[0]["content"]
+        assert "version" in messages[0]["content"]
 
 
 # ---------------------------------------------------------------------------
@@ -568,7 +684,7 @@ class TestBudgetPreCheckRealInstances:
             skill_body=None,
             budget_guard=limiter,
         )
-        assert result == "generated"
+        assert result[0] == "generated"
 
     def test_invoke_real_spend_limiter_over_limit_returns_none(self):
         """invoke_model_for_generation returns None when real SpendLimiter is exhausted."""
@@ -589,5 +705,5 @@ class TestBudgetPreCheckRealInstances:
             skill_body=None,
             budget_guard=limiter,
         )
-        assert result is None
+        assert result == (None, None)
         gw.call_model.assert_not_called()

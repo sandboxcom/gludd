@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import os
 from typing import Any
 
@@ -124,6 +125,12 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             raise HTTPException(status_code=422, detail=f"Unsafe skill name: {skill.name!r}")
         skill_file = os.path.join(target, f"{stem}.md")
         content = build_skill_frontmatter(skill)
-        with open(skill_file, "w") as f:
-            f.write(content)
+
+        # AB-2: write the skill file off the event loop so the async handler
+        # does not block on disk I/O.
+        def _write_skill() -> None:
+            with open(skill_file, "w") as f:
+                f.write(content)
+
+        await asyncio.to_thread(_write_skill)
         return {"installed": skill_file, "name": skill.name, "source": f"github:{repo}"}

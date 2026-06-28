@@ -2,6 +2,76 @@
 
 All notable changes to this project are documented here. Format follows [Keep a Changelog](https://keepachangelog.com/); this project adheres to semantic versioning.
 
+## [0.1.0-alpha.5]
+
+Security hardening wave plus the langchain/langgraph dispatch feature.
+
+### Added
+
+- LangChain/LangGraph dispatch: new Ansible modules `gludd_langchain_generate`,
+  `gludd_langgraph_workflow`, and `gludd_langgraph_decision`, plus a
+  `langgraph_decision` role with accompanying playbooks.
+- Daemon `POST /admin/models/workflow` endpoint for running multi-step model
+  workflows.
+- `ProviderRegistry.from_profiles`: builds the provider registry from configured
+  model profiles so live model calls resolve a real provider.
+- Molecule scenarios covering the new langchain/langgraph modules and role.
+
+### Security
+
+- ~27-fix hardening wave across MCP, secrets, budget, integrity, infra, and
+  workers:
+  - MCP: transport, registry, and client tightening.
+  - Secrets: path-traversal jail and value redaction.
+  - Budget: reserve→reconcile flow so spend is settled against actuals.
+  - Integrity: fail-closed verification with hash-binding.
+  - Terraform / compute: CIDR validation and RCE guards.
+  - Ansible: environment scrubbing of sensitive variables.
+  - Worker: timeout enforcement on long-running tasks.
+  - Signing: invalid-signature requests return 400, not 500.
+  - Self-update: strict path segment-match on update targets.
+- Follow-on backlog fixes:
+  - Gateway: SSRF rejection now fails closed (no fail-open), and a
+    budget-exceeded error in the walk fallback propagates instead of being
+    swallowed.
+  - Self-update: approval HMAC verification plus `requires_approval` enforcement.
+  - Connectors: 8 connectors now default to a secure transport.
+  - Applier: closed a TOCTOU window.
+  - HuggingFace: pinned model `revision` to prevent fetch drift.
+  - Slurm: added an output-path guard.
+  - Loop: added logging to previously silent `except: pass` sites (prompt resolve
+    and message-queue inbox lookup).
+  - CI-1: wired `ProviderRegistry.from_profiles` into the daemon and worker
+    gateway so live model calls work (fixes "no provider registry configured").
+
+## [0.1.0-alpha.4] — 2026-06-24
+
+Green-the-gate / stability hardening wave. First release actually cut as a tag
+(alpha.3 was version-bumped in code but never tagged).
+
+### Fixed
+
+- Alembic migrations were unrunnable: `alembic.ini` was missing the
+  `[loggers]/[handlers]/[formatters]` sections, so `alembic upgrade head` died on
+  bootstrap with `KeyError: 'formatters'`. Added the standard logging sections.
+- SEC-8: `/api/status` no longer discloses `db_url`/`db_engine` (host/port/dialect)
+  to unauthenticated callers.
+- Role routing fails closed: `call_model_by_role` now rejects an unrecognised role
+  (`strict=True`) instead of silently falling back to the default model profile.
+- Gateway circuit breaker: removed a double `record_success` on the fallback
+  success path (success was counted twice).
+- Skill fetcher: added a 1 MB response-size cap to prevent memory-exhaustion.
+- Agent dispatcher: a permission-denied dispatch now returns a failed
+  `AgentTaskResult` with a clear "Permission denied" message instead of raising.
+- TUI e2e tests: serialized the port-8000 / daemon-pid tests under an
+  `xdist_group` so they no longer flake under parallel (xdist) gate runs.
+- Removed a leftover `D23DEBUG` stderr print from the gateway retry path.
+
+### Security
+
+- CI release job now emits an aggregate `SHA256SUMS` file covering all release
+  artifacts for integrity verification.
+
 ## [0.1.0-alpha.3] — 2026-06-19
 
 Autonomy, pricing, and guardrail wave.

@@ -108,6 +108,40 @@ def test_timeline_is_bounded_by_a_ring_buffer() -> None:
     assert len(rec.get_timeline("flood")) == 50
 
 
+def test_job_count_is_bounded_evicting_oldest() -> None:
+    # The per-job deque caps events WITHIN a job; this caps the NUMBER of jobs.
+    # Flooding distinct job_ids must not grow the maps without bound — the oldest
+    # job (by first sighting) is evicted from timeline + artifacts + todo together.
+    rec = RunHistoryRecorder(max_jobs=10)
+    for i in range(1000):
+        jid = f"JOB-{i}"
+        rec.record_event(jid, "evt", {"i": i}, todo_id=f"TODO-{i}")
+        rec.record_artifact(jid, "log", f"content-{i}")
+
+    # Only the last 10 jobs are retained across all three maps.
+    assert len(rec._timeline) == 10
+    assert len(rec._artifacts) == 10
+    assert len(rec._job_todo) == 10
+    assert len(rec._job_order) == 10
+    assert len(rec._known_jobs) == 10
+    # The oldest job is gone; the newest survives.
+    assert rec.get_timeline("JOB-0") == []
+    assert rec.get_artifacts("JOB-0") == {}
+    assert rec.get_timeline("JOB-999") != []
+    assert rec.get_artifacts("JOB-999") == {"log": "content-999"}
+
+
+def test_reseen_job_keeps_fifo_position_no_duplicate_growth() -> None:
+    # Re-recording an existing job must not append a duplicate order entry or
+    # inflate the tracked-job count.
+    rec = RunHistoryRecorder(max_jobs=5)
+    for _ in range(100):
+        rec.record_event("STABLE", "evt", {})
+    assert len(rec._job_order) == 1
+    assert len(rec._known_jobs) == 1
+    assert list(rec._job_order) == ["STABLE"]
+
+
 # --------------------------------------------------------------------------
 # Timestamps / ordering — NOT RECORDED (gap report)
 # --------------------------------------------------------------------------

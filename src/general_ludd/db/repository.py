@@ -17,9 +17,12 @@ from general_ludd.db.models import (
     BenchmarkResultModel,
     FeatureModel,
     FeatureStatus,
+    LocationKind,
     ProjectModel,
+    ProjectRelationshipModel,
     PromptProfileModel,
     QueueModel,
+    RelationType,
     RoleRunModel,
     SpendRecordModel,
     TaskReturnModel,
@@ -30,8 +33,19 @@ from general_ludd.db.models import (
 )
 from general_ludd.schemas.todo import TodoStatus
 
+# Hard upper bound applied to unbounded ``list_*`` reads (P12). Callers that
+# pass no ``limit`` receive at most this many rows; an explicit ``limit`` is
+# itself capped at this value so a single query can never load an unbounded
+# result set into memory. ``offset`` enables forward pagination.
+_DEFAULT_LIST_LIMIT = 1000
+
 VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
-    TodoStatus.BACKLOG: {TodoStatus.QUEUED},
+    TodoStatus.BACKLOG: {TodoStatus.QUEUED, TodoStatus.SCHEDULED, TodoStatus.CANCELLED},
+    # SCHEDULED: one-shot todos flip to QUEUED when due; cron templates stay
+    # SCHEDULED (the scheduler advances next_run_at instead of transitioning).
+    # MANUAL_HOLD allows an operator to pause a pending schedule without
+    # cancelling it. CANCELLED retires the schedule permanently.
+    TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
     TodoStatus.ACTIVE: {
         TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED,
@@ -86,6 +100,15 @@ ALLOWED_TODO_CREATE_FIELDS: frozenset[str] = frozenset({
     "manual_hold_reason",
     "approval_policy",
     "completed_at",
+    # Scheduling fields (integrated cron / one-shot scheduling).
+    "scheduled_at",
+    "cron",
+    "schedule_timezone",
+    "next_run_at",
+    "last_run_at",
+    "run_count",
+    "max_runs",
+    "schedule_paused",
 })
 
 # Maximum UTF-8 byte length for any single string field on a TodoModel create.
@@ -250,8 +273,10 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.status == status.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -262,6 +287,7 @@ class TodoRepository:
         project_id: str | None = None,
         limit: int | None = None,
         offset: int = 0,
+        schedule_paused: bool | None = None,
     ) -> list[TodoModel]:
         _pid = self._resolve_pid(project_id)
         stmt = select(TodoModel)
@@ -271,10 +297,16 @@ class TodoRepository:
             stmt = stmt.where(TodoModel.status == status)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
+        if schedule_paused is not None:
+            # DEFECT 3: filter paused rows in SQL (before LIMIT) so a capped
+            # scheduled-list page can't under-return. Mirrors list_due_scheduled.
+            stmt = stmt.where(TodoModel.schedule_paused.is_(schedule_paused))
         if offset:
             stmt = stmt.offset(offset)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -288,8 +320,50 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.work_type == work_type)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
-        if limit is not None:
-            stmt = stmt.limit(limit)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_due_scheduled(
+        self,
+        now: datetime,
+        project_id: str | None = None,
+        limit: int | None = None,
+    ) -> list[TodoModel]:
+        """Return SCHEDULED todos whose fire time has arrived.
+
+        Matches rows where:
+          - status == 'scheduled'
+          - schedule_paused is False
+          - COALESCE(next_run_at, scheduled_at) <= now
+
+        Ordered earliest-due-first so the scheduler processes them in
+        chronological order.  ``project_id`` scopes to a single tenant when
+        set; omit for cross-tenant scheduling.  ``limit`` caps the batch size;
+        when None the module-level ``_DEFAULT_LIST_LIMIT`` is applied (P12).
+        """
+        from sqlalchemy import func
+
+        _pid = self._resolve_pid(project_id)
+        due_col = func.coalesce(TodoModel.next_run_at, TodoModel.scheduled_at)
+        stmt = (
+            select(TodoModel)
+            .where(
+                TodoModel.status == TodoStatus.SCHEDULED.value,
+                TodoModel.schedule_paused.is_(False),
+                due_col <= now,
+            )
+            .order_by(due_col)
+        )
+        if _pid is not None:
+            stmt = stmt.where(TodoModel.project_id == _pid)
+        # P12: always cap — explicit limit is clamped at _DEFAULT_LIST_LIMIT.
+        stmt = stmt.limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -310,7 +384,15 @@ class TodoRepository:
         stmt = select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
         if _pid is not None:
             stmt = stmt.where(TodoModel.project_id == _pid)
-        stmt = stmt.limit(limit)
+        # FIFO fairness: claim oldest QUEUED todos first so a backlog of newer
+        # todos can never indefinitely starve an older one. Without an explicit
+        # ORDER BY, row order is database-defined (undefined) and starvation is
+        # possible under load. id is a deterministic tiebreaker for same-instant
+        # created_at (e.g. todos inserted within the same microsecond in tests).
+        stmt = stmt.order_by(TodoModel.created_at, TodoModel.id)
+        # P12: cap even an explicit caller limit so a huge value can't load an
+        # unbounded result set (claim semantics are per-batch, so a cap is safe).
+        stmt = stmt.limit(min(limit, _DEFAULT_LIST_LIMIT))
         with contextlib.suppress(Exception):
             stmt = stmt.with_for_update(skip_locked=True)
         result = await self._session.execute(stmt)
@@ -382,25 +464,29 @@ class TodoRepository:
         """Aggregate todo facts: counts by status / queue / work_type, oldest age,
         backlog size. Reused by the /api/facts aggregation endpoint."""
         _pid = self._resolve_pid(project_id)
-        stmt = select(TodoModel)
+        from sqlalchemy import func
+
+        async def _group_counts(column: Any) -> dict[str, int]:
+            stmt = select(column, func.count()).group_by(column)
+            if _pid is not None:
+                stmt = stmt.where(TodoModel.project_id == _pid)
+            result = await self._session.execute(stmt)
+            # Coerce a NULL group key (e.g. queue IS NULL) to "unknown" so the
+            # returned dict is always JSON-serializable — /api/facts serializes
+            # this directly and a None key would raise TypeError in json.dumps.
+            return {(key if key is not None else "unknown"): count for key, count in result.all()}
+
+        by_status = await _group_counts(TodoModel.status)
+        by_queue = await _group_counts(TodoModel.queue)
+        by_work_type = await _group_counts(TodoModel.work_type)
+
+        oldest_stmt = select(func.min(TodoModel.created_at))
         if _pid is not None:
-            stmt = stmt.where(TodoModel.project_id == _pid)
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        by_status: dict[str, int] = {}
-        by_queue: dict[str, int] = {}
-        by_work_type: dict[str, int] = {}
-        oldest_created: datetime | None = None
-        for r in rows:
-            by_status[r.status] = by_status.get(r.status, 0) + 1
-            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
-            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
-            created = r.created_at
-            if created is not None:
-                if created.tzinfo is None:
-                    created = created.replace(tzinfo=UTC)
-                if oldest_created is None or created < oldest_created:
-                    oldest_created = created
+            oldest_stmt = oldest_stmt.where(TodoModel.project_id == _pid)
+        oldest_created = (await self._session.execute(oldest_stmt)).scalar()
+        if oldest_created is not None and oldest_created.tzinfo is None:
+            oldest_created = oldest_created.replace(tzinfo=UTC)
+
         oldest_age_seconds: float | None = None
         if oldest_created is not None:
             oldest_age_seconds = (datetime.now(UTC) - oldest_created).total_seconds()
@@ -408,7 +494,7 @@ class TodoRepository:
             TodoStatus.QUEUED.value, 0
         )
         return {
-            "total": len(rows),
+            "total": sum(by_status.values()),
             "by_status": by_status,
             "by_queue": by_queue,
             "by_work_type": by_work_type,
@@ -485,21 +571,26 @@ class TaskReturnRepository:
         """In-flight/claimed task-return counts by status / queue / work_type.
 
         Task returns represent dispatched work; this is the "work" facet of
-        /api/facts. Reused, not duplicated, by the facts endpoint."""
-        stmt = select(TaskReturnModel)
-        if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        by_status: dict[str, int] = {}
-        by_queue: dict[str, int] = {}
-        by_work_type: dict[str, int] = {}
-        for r in rows:
-            by_status[r.status] = by_status.get(r.status, 0) + 1
-            by_queue[r.queue] = by_queue.get(r.queue, 0) + 1
-            by_work_type[r.work_type] = by_work_type.get(r.work_type, 0) + 1
+        /api/facts. Reused, not duplicated, by the facts endpoint.
+
+        Aggregated in SQL via ``GROUP BY`` per facet (P6) rather than loading
+        every row and counting in Python — mirrors ``TodoRepository.status_summary``.
+        ``status``/``queue``/``work_type`` are all NOT NULL on TaskReturnModel, so
+        no None bucket can occur (no NULL-key handling needed)."""
+        from sqlalchemy import func
+
+        async def _group_counts(column: Any) -> dict[str, int]:
+            stmt = select(column, func.count()).group_by(column)
+            if project_id is not None:
+                stmt = stmt.where(TaskReturnModel.project_id == project_id)
+            result = await self._session.execute(stmt)
+            return {key: count for key, count in result.all()}
+
+        by_status = await _group_counts(TaskReturnModel.status)
+        by_queue = await _group_counts(TaskReturnModel.queue)
+        by_work_type = await _group_counts(TaskReturnModel.work_type)
         return {
-            "total": len(rows),
+            "total": sum(by_status.values()),
             "by_status": by_status,
             "by_queue": by_queue,
             "by_work_type": by_work_type,
@@ -508,16 +599,35 @@ class TaskReturnRepository:
     async def history_summary(
         self, project_id: str | None = None, recent_limit: int = 10
     ) -> dict[str, Any]:
-        """Recent returns + success/failure rates (exit_code 0 == success)."""
-        stmt = select(TaskReturnModel)
+        """Recent returns + success/failure rates (exit_code 0 == success).
+
+        Split into (a) an aggregate count query (total + successes via
+        ``func.count``/``func.sum(case(...))``) and (b) a separate ordered+LIMITed
+        query for the recent slice (P7), rather than loading every row just to
+        count and head-slice. ``exit_code`` is NOT NULL, so a return is a success
+        iff ``exit_code == 0`` exactly as the old Python loop computed."""
+        from sqlalchemy import case, func
+
+        agg_stmt = select(
+            func.count(),
+            func.sum(case((TaskReturnModel.exit_code == 0, 1), else_=0)),
+        )
         if project_id is not None:
-            stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        stmt = stmt.order_by(TaskReturnModel.created_at.desc())
-        result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        total = len(rows)
-        successes = sum(1 for r in rows if r.exit_code == 0)
+            agg_stmt = agg_stmt.where(TaskReturnModel.project_id == project_id)
+        total, successes_raw = (await self._session.execute(agg_stmt)).one()
+        total = total or 0
+        # func.sum over zero rows is SQL NULL -> coerce to 0 (matches the old
+        # ``sum(1 for ...)`` which is 0 on an empty result set).
+        successes = successes_raw or 0
         failures = total - successes
+
+        recent_stmt = select(TaskReturnModel)
+        if project_id is not None:
+            recent_stmt = recent_stmt.where(TaskReturnModel.project_id == project_id)
+        recent_stmt = recent_stmt.order_by(
+            TaskReturnModel.created_at.desc()
+        ).limit(recent_limit)
+        recent_rows = list((await self._session.execute(recent_stmt)).scalars().all())
         recent = [
             {
                 "return_id": r.return_id,
@@ -526,7 +636,7 @@ class TaskReturnRepository:
                 "exit_code": r.exit_code,
                 "created_at": str(r.created_at) if r.created_at else None,
             }
-            for r in rows[:recent_limit]
+            for r in recent_rows
         ]
         return {
             "total_returns": total,
@@ -550,7 +660,7 @@ class TaskReturnRepository:
         stmt = select(TaskReturnModel).where(TaskReturnModel.status == "created")
         if project_id is not None:
             stmt = stmt.where(TaskReturnModel.project_id == project_id)
-        stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(limit)
+        stmt = stmt.order_by(TaskReturnModel.created_at.asc()).limit(min(limit, _DEFAULT_LIST_LIMIT))
         result = await self._session.execute(stmt)
         candidates = list(result.scalars().all())
         now = datetime.now(UTC)
@@ -674,6 +784,9 @@ class VariableNamespaceRepository:
             .order_by(
                 VariableNamespaceModel.project_id.is_(None).desc()
             )
+            # P12: defensive cap; variable sets are expected to be small but
+            # an unbounded JOIN load is still a risk surface.
+            .limit(_DEFAULT_LIST_LIMIT)
         )
         result = await self._session.execute(stmt)
         rows = result.scalars().all()
@@ -771,7 +884,20 @@ class BenchmarkRepository:
             return row
         return cast(BenchmarkResultModel, await self._execute_with_session(_do))
 
-    async def get_aggregate_scores(self, task_type: str | None = None) -> list[dict[str, Any]]:
+    async def get_aggregate_scores(
+        self, task_type: str | None = None, project_id: str | None = None
+    ) -> list[dict[str, Any]]:
+        """Aggregate benchmark scores grouped by prompt/model/task (+ project).
+
+        ``project_id`` is the project-hierarchy phase-3 axis: when None (the
+        default and every legacy caller's behaviour) the scores are GLOBAL —
+        grouped across all projects exactly as before. When a ``project_id`` is
+        passed, results are filtered to that project's history, so the
+        AdaptiveRouter can read its own history and a related project's history
+        separately and borrow across declared edges. ``project_id`` is always a
+        group key and is returned in every row so the router can attribute a
+        borrowed pick to its source project.
+        """
         async def _do(session: AsyncSession) -> list[dict[str, Any]]:
             from sqlalchemy import func
             stmt = (
@@ -779,6 +905,7 @@ class BenchmarkRepository:
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
+                    BenchmarkResultModel.project_id,
                     func.avg(BenchmarkResultModel.completion_score).label("avg_completion"),
                     func.avg(BenchmarkResultModel.code_quality_score).label("avg_quality"),
                     func.avg(BenchmarkResultModel.instruction_adherence_score).label("avg_instruction"),
@@ -797,10 +924,13 @@ class BenchmarkRepository:
                     BenchmarkResultModel.prompt_profile_id,
                     BenchmarkResultModel.model_profile_id,
                     BenchmarkResultModel.task_type,
+                    BenchmarkResultModel.project_id,
                 )
             )
             if task_type is not None:
                 stmt = stmt.where(BenchmarkResultModel.task_type == task_type)
+            if project_id is not None:
+                stmt = stmt.where(BenchmarkResultModel.project_id == project_id)
             result = await session.execute(stmt)
             rows = result.all()
             return [
@@ -808,6 +938,7 @@ class BenchmarkRepository:
                     "prompt_profile_id": r.prompt_profile_id,
                     "model_profile_id": r.model_profile_id,
                     "task_type": r.task_type,
+                    "project_id": r.project_id,
                     "avg_completion": r.avg_completion,
                     "avg_quality": r.avg_quality,
                     "avg_instruction": r.avg_instruction,
@@ -832,6 +963,8 @@ class BenchmarkRepository:
                 select(BenchmarkResultModel)
                 .where(BenchmarkResultModel.model_profile_id == model_profile_id)
                 .order_by(BenchmarkResultModel.created_at.desc())
+                # P12: defensive cap; dead API path but still bounded.
+                .limit(_DEFAULT_LIST_LIMIT)
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -842,7 +975,7 @@ class BenchmarkRepository:
             stmt = (
                 select(BenchmarkResultModel)
                 .order_by(BenchmarkResultModel.created_at.desc())
-                .limit(limit)
+                .limit(min(limit, _DEFAULT_LIST_LIMIT))
             )
             result = await session.execute(stmt)
             return list(result.scalars().all())
@@ -888,19 +1021,63 @@ class PromptProfileRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[PromptProfileModel]:
-        stmt = select(PromptProfileModel)
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[PromptProfileModel]:
+        stmt = (
+            select(PromptProfileModel)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_source(self, source: str) -> list[PromptProfileModel]:
-        stmt = select(PromptProfileModel).where(PromptProfileModel.source == source)
+    async def list_by_source(
+        self, source: str, limit: int | None = None, offset: int = 0
+    ) -> list[PromptProfileModel]:
+        stmt = (
+            select(PromptProfileModel)
+            .where(PromptProfileModel.source == source)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
     async def list_for_task_type(self, task_type: str) -> list[PromptProfileModel]:
         import json as _json
-        stmt = select(PromptProfileModel)
+
+        from sqlalchemy import or_
+
+        # SQLite LIKE prefilter narrows the scan to rows the Python backstop below
+        # could possibly accept, while never dropping one it would (no false
+        # negatives). Accepted shapes:
+        #   - "[]"                       -> empty list, "match all"
+        #   - '...."<task_type>"....'    -> textually contains the quoted token
+        #   - rows whose value is not a well-formed JSON array (does not start
+        #     with '[' or does not end with ']') -> json.loads will raise and the
+        #     backstop treats them as empty ("match all"), so they must survive.
+        # LIKE wildcards in task_type are escaped so e.g. "a%b" matches literally.
+        # The json.loads pass is the correctness backstop against LIKE false
+        # positives (e.g. "foo" appearing inside "foobar").
+        escaped = (
+            task_type.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        col = PromptProfileModel.task_types
+        stmt = (
+            select(PromptProfileModel)
+            .where(
+                or_(
+                    col.is_(None),
+                    col.like("[]"),
+                    col.like(f'%"{escaped}"%', escape="\\"),
+                    col.notlike("[%"),
+                    col.notlike("%]"),
+                )
+            )
+            # P12: defensive cap (dead API path).
+            .limit(_DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         rows = list(result.scalars().all())
         out: list[PromptProfileModel] = []
@@ -930,12 +1107,26 @@ class QueueRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[QueueModel]:
-        result = await self._session.execute(select(QueueModel))
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[QueueModel]:
+        stmt = (
+            select(QueueModel)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_enabled(self) -> list[QueueModel]:
-        stmt = select(QueueModel).where(QueueModel.queue_enabled.is_(True))
+    async def list_enabled(
+        self, limit: int | None = None, offset: int = 0
+    ) -> list[QueueModel]:
+        stmt = (
+            select(QueueModel)
+            .where(QueueModel.queue_enabled.is_(True))
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -956,7 +1147,8 @@ class ProjectRepository:
         return result.scalar_one_or_none()
 
     async def list_active(self) -> list[ProjectModel]:
-        stmt = select(ProjectModel).where(ProjectModel.active.is_(True))
+        # P12: bound the read so a large project table can't load unboundedly.
+        stmt = select(ProjectModel).where(ProjectModel.active.is_(True)).limit(_DEFAULT_LIST_LIMIT)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -981,6 +1173,173 @@ class ProjectRepository:
         project = await self.get_by_id(project_id)
         if project is not None:
             await self._session.refresh(project)
+
+
+class ProjectRelationshipRepository:
+    """Persistence for declared project-topology edges (ProjectRelationshipModel).
+
+    Edges are USER-DECLARED (config or API), never inferred. ``add_relationship``
+    is an idempotent upsert keyed on the unique edge tuple
+    ``(project_id, relation_type, location_kind, location_value)``. The
+    "one parent per project" rule is enforced here (``add_relationship`` replaces an
+    existing parent edge) because SQLite cannot express a portable partial unique
+    index; PostgreSQL also carries the ``uq_one_parent`` partial index.
+    """
+
+    # The owning project may declare at most one of these relation types.
+    _SINGLETON_RELATIONS: frozenset[str] = frozenset({RelationType.PARENT.value})
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def add_relationship(self, data: dict[str, Any]) -> ProjectRelationshipModel:
+        """Idempotent upsert of one declared edge; enforces the one-parent rule.
+
+        Rejects a self-edge (``related_project_id == project_id``). For a
+        ``relation_type='parent'`` edge that does not match an existing parent
+        row's full unique tuple, any existing parent edge for the project is first
+        removed (replace-on-second-parent), so a project never carries two parents.
+        Re-declaring the SAME edge tuple updates it in place (no duplicate row).
+        """
+        project_id = data["project_id"]
+        relation_type = str(data.get("relation_type", ""))
+        location_kind = str(data.get("location_kind", ""))
+
+        # Enum validation: the repository is the security boundary for the
+        # direct-call path (config parsing validates upstream, but callers may
+        # invoke add_relationship directly). Reject anything that is not a valid
+        # RelationType / LocationKind StrEnum value BEFORE persisting, so the
+        # column never holds an out-of-domain string.
+        try:
+            RelationType(relation_type)
+        except ValueError as exc:
+            valid = ", ".join(r.value for r in RelationType)
+            raise ValueError(
+                f"invalid relation_type {relation_type!r}; must be one of: {valid}"
+            ) from exc
+        try:
+            LocationKind(location_kind)
+        except ValueError as exc:
+            valid = ", ".join(k.value for k in LocationKind)
+            raise ValueError(
+                f"invalid location_kind {location_kind!r}; must be one of: {valid}"
+            ) from exc
+
+        related_project_id = data.get("related_project_id")
+        if related_project_id is not None and related_project_id == project_id:
+            raise ValueError(
+                f"self-edge rejected: related_project_id {related_project_id!r} "
+                f"== project_id"
+            )
+
+        existing = await self._get_edge(
+            project_id,
+            relation_type,
+            location_kind,
+            str(data.get("location_value", "")),
+        )
+
+        if existing is not None:
+            for key, value in data.items():
+                if key in ("id", "project_id", "created_at"):
+                    continue
+                setattr(existing, key, value)
+            await self._session.flush()
+            await self._session.refresh(existing)
+            return existing
+
+        # One-parent guard + insert as ONE atomic transaction unit. A NEW parent
+        # edge (tuple differs from any existing parent row) replaces the prior
+        # parent: we delete the prior parent rows and add the new edge with NO
+        # intermediate flush/commit between them, then a single flush at the end.
+        # Either both the delete and the insert land or neither does (they share
+        # one transaction and roll back together on failure), so the project can
+        # never be left with zero parents mid-operation. Re-declaring the same
+        # parent tuple is handled by the upsert branch above, so it never reaches
+        # here as a "second" parent.
+        #
+        # This ordering covers the local SQLite case (single writer per file).
+        # True multi-connection concurrency safety relies on the PostgreSQL
+        # ``uq_one_parent`` partial unique index already added in migration 008,
+        # which rejects a concurrent second parent at the database level.
+        if relation_type in self._SINGLETON_RELATIONS:
+            for prior in await self.list_for_project(
+                project_id, relation_type=relation_type
+            ):
+                await self._session.delete(prior)
+
+        row = ProjectRelationshipModel(**data)
+        self._session.add(row)
+        await self._session.flush()
+        await self._session.refresh(row)
+        return row
+
+    async def _get_edge(
+        self,
+        project_id: str,
+        relation_type: str,
+        location_kind: str,
+        location_value: str,
+    ) -> ProjectRelationshipModel | None:
+        stmt = select(ProjectRelationshipModel).where(
+            ProjectRelationshipModel.project_id == project_id,
+            ProjectRelationshipModel.relation_type == relation_type,
+            ProjectRelationshipModel.location_kind == location_kind,
+            ProjectRelationshipModel.location_value == location_value,
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_for_project(
+        self,
+        project_id: str,
+        relation_type: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[ProjectRelationshipModel]:
+        stmt = select(ProjectRelationshipModel).where(
+            ProjectRelationshipModel.project_id == project_id
+        )
+        if relation_type is not None:
+            stmt = stmt.where(ProjectRelationshipModel.relation_type == relation_type)
+        stmt = (
+            stmt.order_by(ProjectRelationshipModel.id)
+            .offset(offset)
+            .limit(min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_parent(
+        self, project_id: str
+    ) -> ProjectRelationshipModel | None:
+        edges = await self.list_for_project(
+            project_id, relation_type=RelationType.PARENT.value
+        )
+        return edges[0] if edges else None
+
+    async def list_children(
+        self, project_id: str, limit: int | None = None, offset: int = 0
+    ) -> list[ProjectRelationshipModel]:
+        return await self.list_for_project(
+            project_id,
+            relation_type=RelationType.CHILD.value,
+            limit=limit,
+            offset=offset,
+        )
+
+    async def remove(self, rel_id: str) -> bool:
+        """Delete one edge by its primary key. Returns True iff a row was removed."""
+        stmt = select(ProjectRelationshipModel).where(
+            ProjectRelationshipModel.id == rel_id
+        )
+        result = await self._session.execute(stmt)
+        row = result.scalar_one_or_none()
+        if row is None:
+            return False
+        await self._session.delete(row)
+        await self._session.flush()
+        return True
 
 
 BROADCAST_RECIPIENT = "broadcast"
@@ -1038,51 +1397,92 @@ class AgentMessageRepository:
         now = datetime.now(UTC)
         return [r for r in rows if not self._is_expired(r, now)]
 
-    async def ack(self, message_id: str) -> AgentMessageModel | None:
-        """Mark a message read. Returns the row, or None if it does not exist."""
+    async def ack(
+        self, message_id: str, project_id: str | None = None
+    ) -> AgentMessageModel | None:
+        """Mark a message read. Returns the row, or None if it does not exist.
+
+        XT-11: when ``project_id`` is supplied, a message belonging to another
+        project is treated as not-found (the ack neither reads nor mutates it),
+        so a caller scoped to project A cannot mark project B's message read by
+        guessing its id. ``project_id=None`` preserves the unscoped/admin path.
+        """
         from sqlalchemy import update as _update
 
         row = await self.get_by_id(message_id)
         if row is None:
+            return None
+        if project_id is not None and row.project_id != project_id:
             return None
         # Guarded conditional UPDATE on read_at IS NULL: the read-then-mutate form
         # let two concurrent acks both see read_at None and both write, clobbering
         # the first ack's timestamp. Guarding on read_at IS NULL means only the
         # first ack writes; a later ack affects zero rows and leaves it untouched.
         now = datetime.now(UTC)
-        guard = (
-            _update(AgentMessageModel)
-            .where(
-                AgentMessageModel.id == message_id,
-                AgentMessageModel.read_at.is_(None),
-            )
-            .values(read_at=now)
+        guard = _update(AgentMessageModel).where(
+            AgentMessageModel.id == message_id,
+            AgentMessageModel.read_at.is_(None),
         )
+        if project_id is not None:
+            # Atomic backstop: the UPDATE itself refuses a cross-project row.
+            guard = guard.where(AgentMessageModel.project_id == project_id)
+        guard = guard.values(read_at=now)
         await self._session.execute(guard)
         await self._session.flush()
         await self._session.refresh(row)
         return row
 
     async def purge_expired(self) -> int:
-        """Delete every message whose ttl has elapsed. Returns the count purged."""
-        stmt = select(AgentMessageModel).where(AgentMessageModel.ttl_seconds.isnot(None))
+        """Delete every message whose ttl has elapsed. Returns the count purged.
+
+        Single set-based DELETE pushed into SQL rather than fetch-all + per-row
+        ``session.delete()``: the expiry predicate mirrors :meth:`_is_expired`
+        (``elapsed_seconds > ttl_seconds``) using SQLite ``julianday`` day-diff
+        arithmetic. AgentMessageModel declares no child relationships (its only
+        FK is ``project_id`` ondelete=SET NULL, an outbound reference), so the
+        bulk delete bypasses no ORM cascade.
+        """
+        from sqlalchemy import delete, func
+
+        elapsed_seconds = (
+            func.julianday("now") - func.julianday(AgentMessageModel.created_at)
+        ) * 86400.0
+        stmt = delete(AgentMessageModel).where(
+            AgentMessageModel.ttl_seconds.isnot(None),
+            elapsed_seconds > AgentMessageModel.ttl_seconds,
+        )
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        now = datetime.now(UTC)
-        purged = 0
-        for row in rows:
-            if self._is_expired(row, now):
-                await self._session.delete(row)
-                purged += 1
+        purged = int(result.rowcount or 0)  # type: ignore[attr-defined]  # CursorResult at runtime
         if purged:
             await self._session.flush()
         return purged
 
     async def unread_counts(self, project_id: str | None = None) -> dict[str, int]:
-        """Per-recipient unread counts (excludes expired). Used by /api/facts."""
-        stmt = select(AgentMessageModel).where(AgentMessageModel.read_at.is_(None))
+        """Per-recipient unread counts (excludes expired). Used by /api/facts.
+
+        The TTL cutoff is pushed into the WHERE clause (a row survives when it
+        has no ttl or its elapsed seconds are still within ttl, mirroring
+        :meth:`_is_expired`) and the per-recipient tally is a SQL ``GROUP BY``
+        instead of a full-table load + Python aggregation. ``recipient`` is
+        NOT NULL, so there is no None bucket.
+        """
+        from sqlalchemy import func, or_
+
+        elapsed_seconds = (
+            func.julianday("now") - func.julianday(AgentMessageModel.created_at)
+        ) * 86400.0
+        stmt = (
+            select(AgentMessageModel.recipient, func.count())
+            .where(
+                AgentMessageModel.read_at.is_(None),
+                or_(
+                    AgentMessageModel.ttl_seconds.is_(None),
+                    elapsed_seconds <= AgentMessageModel.ttl_seconds,
+                ),
+            )
+            .group_by(AgentMessageModel.recipient)
+        )
         if project_id is not None:
-            from sqlalchemy import or_
             stmt = stmt.where(
                 or_(
                     AgentMessageModel.project_id == project_id,
@@ -1090,14 +1490,7 @@ class AgentMessageRepository:
                 )
             )
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        now = datetime.now(UTC)
-        counts: dict[str, int] = {}
-        for row in rows:
-            if self._is_expired(row, now):
-                continue
-            counts[row.recipient] = counts.get(row.recipient, 0) + 1
-        return counts
+        return {recipient: count for recipient, count in result.all()}
 
     @staticmethod
     def _is_expired(row: AgentMessageModel, now: datetime) -> bool:
@@ -1119,8 +1512,27 @@ class FeatureRepository:
     and TodoModel.
     """
 
-    def __init__(self, session: AsyncSession) -> None:
+    def __init__(self, session: AsyncSession, project_id: str | None = None) -> None:
         self._session = session
+        self._project_id = project_id
+
+    @classmethod
+    def scoped(cls, session: AsyncSession, project_id: str) -> FeatureRepository:
+        """Return a repository pre-scoped to *project_id*.
+
+        Read methods that accept ``project_id`` fall back to this scope when the
+        caller passes ``project_id=None``, preventing silent cross-tenant reads
+        (XT-2/5/6/7). Mirrors ``TodoRepository.scoped``.
+        """
+        return cls(session, project_id=project_id)
+
+    def _resolve_pid(self, project_id: str | None) -> str | None:
+        """Return *project_id* if explicitly supplied, else the instance scope.
+
+        ``None`` propagates only when the instance was not scoped (admin path),
+        preserving cross-tenant reads for internal callers like ``set_status``.
+        """
+        return project_id if project_id is not None else self._project_id
 
     # ------------------------------------------------------------------
     # Internal helpers
@@ -1219,22 +1631,60 @@ class FeatureRepository:
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def get_by_id(self, feature_id: str) -> FeatureModel | None:
+    async def get_by_id(
+        self, feature_id: str, project_id: str | None = None
+    ) -> FeatureModel | None:
+        _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.id == feature_id)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
         result = await self._session.execute(stmt)
         return result.scalar_one_or_none()
 
-    async def list_all(self) -> list[FeatureModel]:
-        result = await self._session.execute(select(FeatureModel))
-        return list(result.scalars().all())
-
-    async def list_by_status(self, status: FeatureStatus) -> list[FeatureModel]:
-        stmt = select(FeatureModel).where(FeatureModel.status == status.value)
+    async def list_all(
+        self, limit: int | None = None, offset: int = 0, project_id: str | None = None
+    ) -> list[FeatureModel]:
+        _pid = self._resolve_pid(project_id)
+        stmt = select(FeatureModel)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
-    async def list_by_category(self, category: str) -> list[FeatureModel]:
+    async def list_by_status(
+        self,
+        status: FeatureStatus,
+        limit: int | None = None,
+        offset: int = 0,
+        project_id: str | None = None,
+    ) -> list[FeatureModel]:
+        _pid = self._resolve_pid(project_id)
+        stmt = select(FeatureModel).where(FeatureModel.status == status.value)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_by_category(
+        self,
+        category: str,
+        limit: int | None = None,
+        offset: int = 0,
+        project_id: str | None = None,
+    ) -> list[FeatureModel]:
+        _pid = self._resolve_pid(project_id)
         stmt = select(FeatureModel).where(FeatureModel.category == category)
+        if _pid is not None:
+            stmt = stmt.where(FeatureModel.project_id == _pid)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
 
@@ -1348,20 +1798,30 @@ class RoleRunRepository:
         return row
 
     async def count_by_role(self, project_id: str | None = None) -> dict[str, int]:
-        """Return {role: count} for the given project_id (or all if None)."""
-        stmt = select(RoleRunModel)
+        """Return {role: count} for the given project_id (or all if None).
+
+        Aggregated in SQL via ``GROUP BY role`` rather than loading every
+        row and counting in Python (P8).
+        """
+        from sqlalchemy import func
+
+        stmt = select(RoleRunModel.role, func.count()).group_by(RoleRunModel.role)
         if project_id is not None:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
         result = await self._session.execute(stmt)
-        rows = list(result.scalars().all())
-        counts: dict[str, int] = {}
-        for row in rows:
-            counts[row.role] = counts.get(row.role, 0) + 1
-        return counts
+        return {role: count for role, count in result.all()}
 
-    async def list_all(self, project_id: str | None = None) -> list[RoleRunModel]:
+    async def list_all(
+        self,
+        project_id: str | None = None,
+        limit: int | None = None,
+        offset: int = 0,
+    ) -> list[RoleRunModel]:
         stmt = select(RoleRunModel)
         if project_id is not None:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
+        stmt = stmt.offset(offset).limit(
+            min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

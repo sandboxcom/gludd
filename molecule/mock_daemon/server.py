@@ -17,7 +17,8 @@ shape matches what each module parses:
   GET  /api/messages                  -> 200 {"messages":[...]}             (gludd_message receive)
   POST /api/messages                  -> 201 created message                (gludd_message send)
   POST /api/messages/<id>/ack         -> 200 {"acked":true}                 (gludd_message ack)
-  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call / gludd_agent_run HTTP)
+  POST /admin/models/call             -> 200 {"text":..,"usage":..}         (gludd_model_call / gludd_agent_run / gludd_langchain_generate / gludd_langgraph_decision)
+  POST /admin/models/workflow         -> 200 {"content":..,"quality_score":..} (gludd_langgraph_workflow)
   GET  /api/todos/<id>                 -> 200 todo record                    (gludd_db todo_get)
   PATCH /api/todos/<id>               -> 200 {"status":..}                  (gludd_db todo_update_status)
   GET  /api/resource-preferences      -> 200 {"preference":..}              (gludd_db resource_preference)
@@ -31,6 +32,18 @@ shape matches what each module parses:
   POST /api/dispatch                  -> 200 {"result":{...}}                (gludd_dispatch dispatch)
   GET  /api/dispatch/available        -> 200 {"handlers":[...]}              (gludd_dispatch available)
   GET  /api/dispatch/recent           -> 200 {"records":[...]}               (gludd_dispatch recent)
+  GET  /api/environment               -> 200 consolidated env brief          (gludd_environment snapshot)
+  GET  /api/environment/advise        -> 200 per-work-type advice block      (gludd_environment advice merge)
+  GET  /admin/processes               -> 200 {"processes":[...],"count":N}    (gludd_process list / gludd_proc_monitor)
+  GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status / gludd_proc_monitor)
+  POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
+
+Plus an in-memory request-log introspection seam (NOT a daemon endpoint — a
+test affordance) so verify plays can prove, per role-invocation, which
+endpoints fired and which did NOT:
+
+  GET  /__requests                    -> 200 {"requests":["METHOD PATH",...]}
+  POST /__requests/reset              -> 200 {"reset":true}
 
 Usage:
     python3 server.py --port 8765 --pidfile /tmp/x.pid --logfile /tmp/x.log
@@ -45,8 +58,41 @@ import argparse
 import json
 import os
 import sys
+import threading
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
-from urllib.parse import urlparse
+from urllib.parse import parse_qs, urlparse
+
+
+# ---------------------------------------------------------------------------
+# In-memory request log
+# ---------------------------------------------------------------------------
+# Records "METHOD PATH" for every served request so a verify play can prove,
+# per-branch, exactly which endpoints fired (and which did NOT). The default
+# BaseHTTPRequestHandler stderr log conflates every branch into one file (all
+# branches share the same port), which cannot prove "branch X hit endpoint A
+# but NOT endpoint B". This log is resettable (POST /__requests/reset) so the
+# converge play can snapshot the calls of ONE role invocation in isolation.
+# The introspection endpoints (/__requests*) are themselves excluded so reading
+# the log never pollutes it.
+_REQUEST_LOG: list[str] = []
+_REQUEST_LOG_LOCK = threading.Lock()
+
+
+def _record_request(method: str, path: str) -> None:
+    if path.startswith("/__requests"):
+        return
+    with _REQUEST_LOG_LOCK:
+        _REQUEST_LOG.append(f"{method} {path}")
+
+
+def _snapshot_requests() -> list[str]:
+    with _REQUEST_LOG_LOCK:
+        return list(_REQUEST_LOG)
+
+
+def _reset_requests() -> None:
+    with _REQUEST_LOG_LOCK:
+        _REQUEST_LOG.clear()
 
 
 # ---------------------------------------------------------------------------
@@ -298,6 +344,92 @@ VERIFY_SUMMARY = {
 }
 
 
+# Consolidated environment brief shaped like routers/environment.py
+# EnvironmentBrief. budget.run_remaining_usd is the field the agent_orchestrate
+# role's budget-floor guard reads; keep it comfortably above the default floor so
+# the role proceeds to act (the deferral path is exercised by overriding
+# min_remaining_usd / work_type in the scenario).
+ENVIRONMENT_SNAPSHOT = {
+    "models": [
+        {
+            "profile_id": "mock-profile",
+            "provider": "mock",
+            "model": "glm-4.6",
+            "enabled": True,
+            "quality_class": "high",
+            "context_window": 128000,
+            "max_output_tokens": 4096,
+            "api_metered": True,
+        },
+    ],
+    "routing": {
+        "default_profile": "mock-profile",
+        "weak_model_profile": "mock-weak",
+        "roles": {},
+    },
+    "budget": {
+        "run_remaining_usd": 5.0,
+        "run_limit_usd": 10.0,
+        "run_spent_usd": 5.0,
+        "elapsed_seconds": 42.0,
+        "window": None,
+    },
+    "compute": {"providers": [], "gpu_types": [], "configured": None},
+    "tools": [],
+    "skills": [],
+    "queues": [{"name": "todos", "depth": 3}],
+    "system": {"cpu_count": 4, "python_version": "3.12.0"},
+    "optimization": {"hints": [], "recommended_profile_for": {}},
+}
+
+# Work types the REAL advisor (controllers/environment_advisor.py
+# _WORKFLOW_WORK_TYPES) routes through the multi-step LangGraph workflow. The
+# mock mirrors that set so the role's advice.use_workflow branch is genuinely
+# exercised for both true (feature/bugfix/refactor/review) and false (docs/chat/
+# classify and anything else).
+_WORKFLOW_WORK_TYPES = ("feature", "bugfix", "refactor", "review")
+
+
+def _advice_response(work_type: str) -> dict:
+    """Per-work-type advice block, shaped like routers/environment.py AdviceBrief.
+
+    use_workflow follows the real advisor's workflow set so the agent_orchestrate
+    role branches to the workflow module for feature/bugfix/refactor/review and
+    to the single-shot router for everything else.
+    """
+    wt = (work_type or "").strip().lower()
+    use_workflow = wt in _WORKFLOW_WORK_TYPES
+    return {
+        "task_type": work_type,
+        "recommendation": {
+            "model_profile": "mock-profile",
+            "reason": "mock_recommendation",
+            "composite_score": 0.81,
+            "fallback": False,
+            "sample_count": 5,
+            "latency_class": "standard",
+            "quality_class": "high",
+        },
+        "route": {
+            "selected_model_profile_id": "mock-profile",
+            "selected_prompt_profile_id": "default",
+        },
+        "est_cost_usd": 0.0021,
+        "use_workflow": use_workflow,
+        "workflow_reason": (
+            f"work_type '{wt}' benefits from gated multi-step workflow"
+            if use_workflow
+            else f"work_type '{wt}' is single-shot"
+        ),
+        "resource_hints": {
+            "prefer_local": False,
+            "budget_ok": True,
+            "budget_warning": False,
+            "context_fits": True,
+        },
+    }
+
+
 def _schedule_response(payload: dict) -> dict:
     """Return a concurrency-safe batched plan for the submitted work items.
 
@@ -403,10 +535,34 @@ def _dispatch_response(payload: dict) -> dict:
 
 
 def _model_call_response(payload: dict) -> dict:
+    # The langgraph/langchain decision module sends response_format="json" (and an
+    # options list) and parses resp["text"] as JSON {"decision":..,"rationale":..}.
+    # For those requests return a JSON-string text the decision module can parse
+    # into a valid decision; for plain model_call/langchain_generate requests keep
+    # the human-readable "[mock-daemon] ..." text (gludd_model_call asserts on it).
+    if payload.get("response_format") == "json" or payload.get("options"):
+        text = json.dumps({"decision": "proceed", "rationale": "looks correct"})
+    else:
+        text = "[mock-daemon] applied the requested change."
     return {
-        "text": "[mock-daemon] applied the requested change.",
+        "text": text,
         "model_profile_id": payload.get("model_profile") or "mock-profile",
         "usage": {"prompt_tokens": 10, "completion_tokens": 5, "total_tokens": 15},
+    }
+
+
+def _workflow_response(payload: dict) -> dict:
+    # Mirrors POST /admin/models/workflow: the daemon runs a generate->review->retry
+    # LangGraph loop server-side and returns the best content + quality metadata.
+    # gludd_langgraph_workflow parses content/model/prompt_profile/quality_score/
+    # retries/warnings out of this body.
+    return {
+        "content": "def solution(): return 42",
+        "model": "glm-4.6",
+        "prompt": "coder",
+        "quality_score": 0.82,
+        "retries": 1,
+        "warnings": [],
     }
 
 
@@ -430,6 +586,84 @@ def _todo_record(todo_id: str) -> dict:
         "queue": "core",
         "work_type": "code",
     }
+
+
+# ---------------------------------------------------------------------------
+# Managed-process registry (gludd_process / gludd_proc_monitor)
+# ---------------------------------------------------------------------------
+# Shape mirrors the daemon's managed-process API: GET /admin/processes returns a
+# registry of processes the daemon launched; GET /admin/processes/<pid>/stats
+# returns a live psutil snapshot; POST /admin/processes/<pid>/signal delivers a
+# signal. _MANAGED_PID_OVERRIDE, when set via --managed-pid, replaces the first
+# record's pid/pgid with a REAL process spawned by the scenario's prepare.yml so
+# the listing references a pid that actually exists on the test host (the
+# test_gludd_process scenario nohup-spawns a `sleep` and passes its pid).
+_MANAGED_PID_OVERRIDE = 0
+
+MANAGED_PROCESSES = [
+    {
+        "pid": 424242,
+        "command": ["sleep", "300"],
+        "pgid": 424242,
+        "job_id": "job-mock-0001",
+        "project_id": "mock-project-alpha",
+        "origin": "managed",
+        "registered_at": "2026-01-01T00:00:00",
+        "create_time": 1735689600.0,
+        "alive": True,
+    },
+]
+
+
+def _managed_processes() -> list[dict]:
+    procs = [dict(p) for p in MANAGED_PROCESSES]
+    if _MANAGED_PID_OVERRIDE > 0 and procs:
+        procs[0]["pid"] = _MANAGED_PID_OVERRIDE
+        procs[0]["pgid"] = _MANAGED_PID_OVERRIDE
+    return procs
+
+
+def _process_stats(pid: int) -> dict:
+    """psutil-shaped stats snapshot for one managed process (canned)."""
+    return {
+        "pid": pid,
+        "cpu_percent": 0.5,
+        "memory": {"rss": 1048576, "vms": 4194304},
+        "io": {
+            "read_bytes": 0,
+            "write_bytes": 0,
+            "read_count": 0,
+            "write_count": 0,
+        },
+        "num_fds": 5,
+        "num_threads": 1,
+        "num_ctx_switches": {"voluntary": 2, "involuntary": 0},
+        "status": "sleeping",
+        "open_files": [],
+        "locks": [],
+    }
+
+
+def _signal_response(pid: int, payload: dict) -> dict:
+    """Acknowledge a signal delivery (gludd_process action=signal)."""
+    return {
+        "ok": True,
+        "pid": pid,
+        "signal": payload.get("signal", "SIGTERM"),
+        "group": bool(payload.get("group", False)),
+    }
+
+
+def _pid_from_proc_path(path: str) -> int | None:
+    """Extract <pid> from /admin/processes/<pid>/(stats|signal). None if unparseable."""
+    parts = path.strip("/").split("/")
+    # ["admin", "processes", "<pid>", "stats"|"signal"]
+    if len(parts) != 4:
+        return None
+    try:
+        return int(parts[2])
+    except (TypeError, ValueError):
+        return None
 
 
 class MockDaemonHandler(BaseHTTPRequestHandler):
@@ -458,7 +692,13 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
     # ---- GET --------------------------------------------------------------
     def do_GET(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
-        if path == "/healthz":
+        _record_request("GET", path)
+        if path == "/__requests":
+            # Per-branch request-log introspection: returns every "METHOD PATH"
+            # served since the last reset so verify can assert endpoint hits AND
+            # non-hits in isolation.
+            self._send_json(200, {"requests": _snapshot_requests()})
+        elif path == "/healthz":
             self._send_json(200, {"status": "ok"})
         elif path == "/readyz":
             # Healthy readiness gate for gludd_reload's health_url: 200 + not degraded.
@@ -499,15 +739,38 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, {"handlers": list(DISPATCH_HANDLERS)})
         elif path == "/api/dispatch/recent":
             self._send_json(200, {"records": list(DISPATCH_RECENT)})
+        elif path == "/api/environment":
+            self._send_json(200, dict(ENVIRONMENT_SNAPSHOT))
+        elif path == "/api/environment/advise":
+            qs = parse_qs(urlparse(self.path).query)
+            work_type = (qs.get("work_type", [""]) or [""])[0]
+            self._send_json(200, _advice_response(work_type))
+        elif path == "/admin/processes":
+            procs = _managed_processes()
+            self._send_json(200, {"processes": procs, "count": len(procs)})
+        elif path.startswith("/admin/processes/") and path.endswith("/stats"):
+            pid = _pid_from_proc_path(path)
+            if pid is None:
+                self._send_json(404, {"detail": f"bad process path {path}"})
+            else:
+                self._send_json(200, _process_stats(pid))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
     # ---- POST -------------------------------------------------------------
     def do_POST(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        _record_request("POST", path)
         payload = self._read_body()
-        if path == "/admin/models/call":
+        if path == "/__requests/reset":
+            # Clear the in-memory request log so the next role invocation's
+            # endpoint hits can be snapshotted in isolation.
+            _reset_requests()
+            self._send_json(200, {"reset": True})
+        elif path == "/admin/models/call":
             self._send_json(200, _model_call_response(payload))
+        elif path == "/admin/models/workflow":
+            self._send_json(200, _workflow_response(payload))
         elif path == "/api/messages":
             self._send_json(201, _message_created(payload))
         elif path.startswith("/api/messages/") and path.endswith("/ack"):
@@ -525,12 +788,19 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _schedule_response(payload))
         elif path == "/api/dispatch":
             self._send_json(200, _dispatch_response(payload))
+        elif path.startswith("/admin/processes/") and path.endswith("/signal"):
+            pid = _pid_from_proc_path(path)
+            if pid is None:
+                self._send_json(404, {"detail": f"bad process path {path}"})
+            else:
+                self._send_json(200, _signal_response(pid, payload))
         else:
             self._send_json(404, {"detail": f"no mock route for POST {path}"})
 
     # ---- PATCH ------------------------------------------------------------
     def do_PATCH(self) -> None:  # noqa: N802
         path = urlparse(self.path).path
+        _record_request("PATCH", path)
         payload = self._read_body()
         if path.startswith("/api/todos/"):
             todo_id = path.rsplit("/", 1)[-1]
@@ -544,7 +814,21 @@ def main() -> int:
     parser.add_argument("--port", type=int, default=8765)
     parser.add_argument("--host", default="127.0.0.1")
     parser.add_argument("--pidfile", default="")
+    parser.add_argument(
+        "--managed-pid",
+        type=int,
+        default=0,
+        help=(
+            "When > 0, the first /admin/processes record reports this pid/pgid "
+            "instead of the canned placeholder, so the listing references a real "
+            "process spawned by the calling scenario (test_gludd_process)."
+        ),
+    )
     args = parser.parse_args()
+
+    if args.managed_pid and args.managed_pid > 0:
+        global _MANAGED_PID_OVERRIDE
+        _MANAGED_PID_OVERRIDE = args.managed_pid
 
     if args.pidfile:
         with open(args.pidfile, "w", encoding="utf-8") as fh:

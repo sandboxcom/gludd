@@ -14,6 +14,7 @@ correct behaviour:
       compare-and-set must skip rather than overwrite the newer state.
 """
 
+import json
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -46,7 +47,7 @@ def _make_loop(**overrides):
     }
 
 
-def _decision(decision_id, todo_id, kind):
+def _decision(decision_id, todo_id, kind, evidence_refs=None, audit_notes=None):
     d = MagicMock()
     d.id = decision_id
     d.return_id = f"RET-{decision_id}"
@@ -54,6 +55,14 @@ def _decision(decision_id, todo_id, kind):
     d.decision = kind
     d.confidence = 0.95
     d.project_id = None
+    # The reconcile phase's Layer-2 gate parses these as JSON for `complete`
+    # decisions (json.loads); a bare MagicMock would raise TypeError and the row
+    # would be skipped. Always stamp real JSON strings so the gate runs. A
+    # `complete` decision needs a VERIFIABLE ref (+ a resolved repo_root in the
+    # loop config) or it is correctly downgraded — callers that want the COMPLETE
+    # transition to fire pass a satisfiable evidence_refs.
+    d.evidence_refs = json.dumps(evidence_refs if evidence_refs is not None else [])
+    d.audit_notes = json.dumps(audit_notes if audit_notes is not None else [])
     return d
 
 
@@ -100,10 +109,13 @@ async def test_f1_decision_reapply_is_idempotent():
 
 
 @pytest.mark.asyncio
-async def test_f2_completed_work_pushed_exactly_once():
+async def test_f2_completed_work_pushed_exactly_once(tmp_path):
     """F2: completed work is pushed exactly once across repeated ticks."""
-    loop, mocks = _make_loop()
-    d = _decision("D2", "TODO-002", "complete")
+    # The Layer-2 gate must let the `complete` decision through so the push path
+    # is reached: supply a resolved repo_root + a real, verifiable artifact ref.
+    (tmp_path / "proof.txt").write_text("ok")
+    loop, mocks = _make_loop(config={"tick_interval": 1.0, "repo_root": str(tmp_path)})
+    d = _decision("D2", "TODO-002", "complete", evidence_refs=["artifact:proof.txt"])
     _stub_decisions(mocks["session"], [d])
     mocks["todo_repo"].get_by_id = AsyncMock(
         return_value=_reviewing_todo("TODO-002", worktree="/tmp/wt", title="t")
@@ -124,14 +136,15 @@ async def test_f2_completed_work_pushed_exactly_once():
 
 
 @pytest.mark.asyncio
-async def test_f3_push_failure_is_surfaced_not_swallowed():
+async def test_f3_push_failure_is_surfaced_not_swallowed(tmp_path):
     """F3: a commit/push failure must NOT silently leave COMPLETE-but-unpushed.
 
     The failure is surfaced (push_failures metric > 0) and the work is left
     UNMARKED so a later tick retries it — no silent split-brain.
     """
-    loop, mocks = _make_loop()
-    d = _decision("D3", "TODO-003", "complete")
+    (tmp_path / "proof.txt").write_text("ok")
+    loop, mocks = _make_loop(config={"tick_interval": 1.0, "repo_root": str(tmp_path)})
+    d = _decision("D3", "TODO-003", "complete", evidence_refs=["artifact:proof.txt"])
     _stub_decisions(mocks["session"], [d])
     mocks["todo_repo"].get_by_id = AsyncMock(
         return_value=_reviewing_todo("TODO-003", worktree="/tmp/wt", title="t")
@@ -161,15 +174,20 @@ async def test_f3_push_failure_is_surfaced_not_swallowed():
 
 
 @pytest.mark.asyncio
-async def test_f6_stale_reconcile_loses_version_race():
+async def test_f6_stale_reconcile_loses_version_race(tmp_path):
     """F6: a reconcile that loses the compare-and-set must skip, not overwrite.
 
     The repository's guarded transition raises ConcurrencyError when a
     concurrent writer already moved the row. A stale reconcile must treat that
     as a lost race: skip silently, do NOT mark the decision applied, do NOT push.
     """
-    loop, mocks = _make_loop()
-    d = _decision("D6", "TODO-006", "complete")
+    # Verifiable evidence + resolved repo_root so the gate keeps the decision
+    # `complete` and the code actually REACHES transition() (which then raises the
+    # ConcurrencyError under test) — otherwise the row is skipped at the gate and
+    # the race path is never exercised (a false pass).
+    (tmp_path / "proof.txt").write_text("ok")
+    loop, mocks = _make_loop(config={"tick_interval": 1.0, "repo_root": str(tmp_path)})
+    d = _decision("D6", "TODO-006", "complete", evidence_refs=["artifact:proof.txt"])
     _stub_decisions(mocks["session"], [d])
     mocks["todo_repo"].get_by_id = AsyncMock(
         return_value=_reviewing_todo("TODO-006", version=1, worktree="/tmp/wt", title="t")

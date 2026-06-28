@@ -209,6 +209,96 @@ class TestModelRegistryUnit:
                 assert call_kwargs["author"] == "meta"
 
 
+class TestModelRegistryRevision:
+    """B615 supply-chain fix: download() forwards a pinned revision and warns when unpinned."""
+
+    def test_download_filename_forwards_revision(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            with patch("huggingface_hub.hf_hub_download") as mock_dl:
+                model_path = os.path.join(tmpdir, "model.gguf")
+                Path(model_path).write_text("fake")
+                mock_dl.return_value = model_path
+                result = reg.download("test/model", filename="model.gguf", revision="abc123")
+            assert mock_dl.call_args.kwargs["revision"] == "abc123"
+            assert result.revision == "abc123"
+
+    def test_download_snapshot_forwards_revision(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            with patch("huggingface_hub.snapshot_download") as mock_dl:
+                snap_dir = os.path.join(tmpdir, "snap")
+                os.makedirs(snap_dir)
+                mock_dl.return_value = snap_dir
+                result = reg.download("test/model", revision="v1.0")
+            assert mock_dl.call_args.kwargs["revision"] == "v1.0"
+            assert result.revision == "v1.0"
+
+    def test_download_unpinned_warns(self, caplog):
+        import logging
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            with patch("huggingface_hub.snapshot_download") as mock_dl:
+                snap_dir = os.path.join(tmpdir, "snap")
+                os.makedirs(snap_dir)
+                mock_dl.return_value = snap_dir
+                with caplog.at_level(logging.WARNING, logger="general_ludd.models.model_registry"):
+                    result = reg.download("test/model")
+            assert mock_dl.call_args.kwargs["revision"] is None
+            assert result.revision is None
+            assert any("without a pinned revision" in r.message for r in caplog.records)
+
+    def test_download_pinned_does_not_warn(self, caplog):
+        import logging
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            with patch("huggingface_hub.snapshot_download") as mock_dl:
+                snap_dir = os.path.join(tmpdir, "snap")
+                os.makedirs(snap_dir)
+                mock_dl.return_value = snap_dir
+                with caplog.at_level(logging.WARNING, logger="general_ludd.models.model_registry"):
+                    reg.download("test/model", revision="deadbeef")
+            assert not any("without a pinned revision" in r.message for r in caplog.records)
+
+    def test_revision_persisted_and_reloaded(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg1 = ModelRegistry(cache_dir=tmpdir)
+            with patch("huggingface_hub.snapshot_download") as mock_dl:
+                snap_dir = os.path.join(tmpdir, "snap")
+                os.makedirs(snap_dir)
+                mock_dl.return_value = snap_dir
+                reg1.download("persist/model", revision="rev42")
+            reg2 = ModelRegistry(cache_dir=tmpdir)
+            dm = reg2.get_downloaded("persist/model")
+            assert dm is not None
+            assert dm.revision == "rev42"
+
+    def test_load_index_tolerates_missing_revision(self):
+        import json as _json
+
+        with tempfile.TemporaryDirectory() as tmpdir:
+            reg = ModelRegistry(cache_dir=tmpdir)
+            # Legacy index without a `revision` key (and an unknown future key).
+            legacy = [
+                {
+                    "model_id": "legacy/model",
+                    "local_path": "/tmp/legacy",
+                    "filename": None,
+                    "engine": "vllm",
+                    "size_bytes": 0,
+                    "downloaded_at": 0.0,
+                    "future_field": "ignored",
+                }
+            ]
+            reg._index_path().write_text(_json.dumps(legacy))
+            reg.refresh()
+            dm = reg.get_downloaded("legacy/model")
+            assert dm is not None
+            assert dm.revision is None
+
+
 class TestModelRegistryRefresh:
     def test_refresh_reloads_index(self):
         with tempfile.TemporaryDirectory() as tmpdir:

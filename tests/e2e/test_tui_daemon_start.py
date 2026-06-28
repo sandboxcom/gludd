@@ -96,6 +96,7 @@ def _collect_pty_output(master_fd: int, timeout: float = 1.0) -> bytes:
     return output
 
 
+@pytest.mark.xdist_group("port_8000")
 @pytest.mark.skipif(
     os.environ.get("CI") is not None,
     reason="PTY/gunicorn env-dependent under xdist",

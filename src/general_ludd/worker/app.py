@@ -65,11 +65,24 @@ def build_gateway_from_config() -> ModelGateway | None:
                 profiles.append(ModelProfile(**data))
         if not profiles:
             return None
+        from general_ludd.models.provider_registry import ProviderRegistry
         from general_ludd.secrets.env import EnvSecretsManager
 
-        return ModelGateway(profiles=profiles, secrets_manager=EnvSecretsManager())
-    except Exception as exc:  # pragma: no cover - defensive config path
-        logger.warning("Worker gateway construction failed: %s", exc)
+        # CI-1 fix: register providers so the worker's gateway can make live calls
+        # (provider_registry omitted → None → "No provider registry configured").
+        return ModelGateway(
+            profiles=profiles,
+            provider_registry=ProviderRegistry.from_profiles(profiles),
+            secrets_manager=EnvSecretsManager(),
+        )
+    except Exception:  # pragma: no cover - defensive config path
+        # E2: best-effort config fallback — the worker degrades to no model
+        # calls rather than failing. Surface the full traceback (exc_info) so the
+        # failure is OBSERVABLE instead of silently swallowed.
+        logger.warning(
+            "Worker gateway construction failed; falling back to no model calls",
+            exc_info=True,
+        )
         return None
 
 
@@ -84,8 +97,13 @@ _UNSET: Any = object()
 
 def _invoke_gateway_for_job(
     gateway: ModelGateway, job: JobSpec
-) -> str | None:
-    """Call the model for a generation job. Returns the generated text or None."""
+) -> tuple[str | None, list[dict[str, Any]] | None]:
+    """Call the model for a generation job.
+
+    Returns a ``(content, tool_calls)`` tuple: the generated text and the
+    model's STRUCTURED tool/function calls (OpenAI-nested shape), or ``None``
+    for each when absent.
+    """
     return invoke_model_for_generation(
         gateway,
         job_id=job.job_id,
@@ -121,8 +139,14 @@ def build_dispatcher_from_config() -> Any:
             role="event_loop",
             skill_handler=make_skill_handler(registry),
         )
-    except Exception as exc:  # pragma: no cover - defensive config path
-        logger.warning("Worker dispatcher construction failed: %s", exc)
+    except Exception:  # pragma: no cover - defensive config path
+        # E2: best-effort config fallback — the worker keeps its detect-only
+        # path rather than failing. Surface the full traceback (exc_info) so the
+        # failure is OBSERVABLE instead of silently swallowed.
+        logger.warning(
+            "Worker dispatcher construction failed; falling back to detect-only",
+            exc_info=True,
+        )
         return None
 
 
@@ -227,22 +251,27 @@ def create_app(
         # C1 (W3.1): for generation work types, invoke the model gateway and
         # feed its output into the playbook extravars and the job result.
         model_response: str | None = None
+        model_tool_calls: list[dict[str, Any]] | None = None
         gw = application.state.gateway
         if gw is not None and is_generation_work_type(job.work_type):
-            model_response = _invoke_gateway_for_job(gw, job)
+            model_response, model_tool_calls = _invoke_gateway_for_job(gw, job)
 
-        # Parse tool calls from the model response. When a DynamicDispatcher is
+        # Dispatch the model's STRUCTURED tool_calls. When a DynamicDispatcher is
         # wired (mirrors the daemon's EventLoop pattern), EXECUTE the calls via
         # ``dispatch_all`` and surface the results. When no dispatcher is
         # available, fall back to the conservative detect-only path so the gap
-        # is still observable in logs and the response dict.
+        # is still observable in logs and the response dict. The legacy path
+        # re-parsed the model TEXT (parse_tool_calls), which cannot recover the
+        # structured calls, so model-driven tool actions were silently discarded.
         tool_calls_detected: list[dict[str, object]] = []
         tool_dispatch_results: list[dict[str, object]] = []
         if model_response is not None:
-            from general_ludd.dispatch.dynamic_dispatcher import parse_tool_calls
+            from general_ludd.dispatch.dynamic_dispatcher import (
+                structured_tool_calls_to_calls,
+            )
             from general_ludd.routers.dispatch import MAX_CALLS_PER_REQUEST
 
-            calls = parse_tool_calls(model_response)
+            calls = structured_tool_calls_to_calls(model_tool_calls)
             if len(calls) > MAX_CALLS_PER_REQUEST:
                 logger.warning(
                     "Worker /jobs/execute: model returned %d tool call(s) which exceeds "
@@ -278,15 +307,23 @@ def create_app(
 
         runner = get_runner()
         try:
-            dirs = runner.prepare_job_dirs(job.job_id)
+            # prepare_job_dirs does blocking os.makedirs; offload so it doesn't
+            # stall the worker's asyncio event loop under concurrent jobs (AB).
+            dirs = await asyncio.to_thread(runner.prepare_job_dirs, job.job_id)
         except FileExistsError as exc:
             raise HTTPException(status_code=409, detail="Job already in progress") from exc
         _max_timeout = float(os.environ.get("GLUDD_JOB_TIMEOUT_MAX", "600"))
-        _timeout: float | None = (
-            min(job.timeout, _max_timeout) if job.timeout is not None else _max_timeout
+        # Always a concrete float (the min, or the ceiling) — never None — so the
+        # inner run_playbook gets a finite bound it can actually enforce, and the
+        # outer backstop below can add a grace margin without Optional arithmetic.
+        _timeout: float = (
+            min(job.timeout, _max_timeout) if job.timeout is not None and job.timeout > 0 else _max_timeout
         )
         try:
-            runner.write_vars(
+            # write_vars does blocking os.makedirs + yaml file write + os.chmod;
+            # offload so it doesn't stall the worker's asyncio loop (AB).
+            await asyncio.to_thread(
+                runner.write_vars,
                 job.job_id,
                 job_vars={
                     "job_id": job.job_id,
@@ -308,13 +345,41 @@ def create_app(
                     playbook_name=job.playbook,
                     private_data_dir=dirs["root"],
                     extravars={"model_response": model_response} if model_response is not None else None,
+                    # Enforce the resolved bound at the INNER (forked, killable)
+                    # layer. Without this, run_playbook fell back to its own
+                    # GLUDD_PLAYBOOK_TIMEOUT default (300s), silently capping a
+                    # job's requested timeout (up to 600s) at 300s.
+                    timeout=_timeout,
                 ),
-                timeout=_timeout,
+                # Outer backstop runs LONGER than the inner timeout so the inner
+                # enforcement fires first and returns a result dict (no exception)
+                # — closing the rmtree-during-live-run race where the outer
+                # wait_for cancelled while run_playbook was still writing into
+                # dirs["root"]. The outer only trips if the worker thread itself
+                # wedges past the inner bound.
+                timeout=_timeout + 30.0,
             )
         except Exception:
-            shutil.rmtree(dirs["root"], ignore_errors=True)
+            # Blocking rmtree — offload to keep the worker's asyncio loop free
+            # (consistent with the prepare_job_dirs/write_vars offloads above).
+            await asyncio.to_thread(shutil.rmtree, dirs["root"], ignore_errors=True)
             raise
-        return {
+        # Build the response dict from runner_result *before* removing the
+        # workspace.
+        #
+        # SAFETY NOTE — rmtree is safe here: AnsibleResult (core_runner.py)
+        # has no "artifacts" field.  runner_result.get("artifacts", []) always
+        # returns [] (the default), and runner_result["events"] is a
+        # list[dict[str,Any]] of inline task-event dicts collected by
+        # _EventCollectorCallback — they contain host/task/result strings, NOT
+        # file paths under dirs["root"].  The on-disk artifacts/ sub-dir exists
+        # but nothing populates it into runner_result, so deleting the workspace
+        # after capturing the payload is safe and cannot lose any referenced
+        # file.  If a future playbook runner ever puts real file-paths into
+        # runner_result["artifacts"], that runner MUST copy those files out to
+        # the filestore BEFORE returning its result dict so this cleanup remains
+        # safe.
+        response_payload = {
             "status": "created",
             "return_id": f"RET-{job.job_id}",
             "todo_id": job.todo_id,
@@ -328,6 +393,12 @@ def create_app(
             "artifacts": runner_result.get("artifacts", []),
             "events": runner_result.get("events", []),
         }
+        # Successful jobs must clean up their workspace to prevent disk
+        # accumulation of prompt/model-output data (failure path already does
+        # this via the except branch above).  All payload data is inline (see
+        # SAFETY NOTE above), so cleanup cannot lose referenced content.
+        await asyncio.to_thread(shutil.rmtree, dirs["root"], ignore_errors=True)
+        return response_payload
 
     @application.post("/jobs/return-review")
     async def return_review_job(job: JobSpec) -> dict[str, Any]:

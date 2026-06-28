@@ -60,14 +60,21 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     async def list_features(
         status: str | None = None,
         category: str | None = None,
+        project_id: str | None = None,
     ) -> dict[str, Any]:
-        """List features, optionally filtered by status and/or category."""
+        """List features, optionally filtered by status, category and/or project."""
         factory = _get_session_factory(app)
         if factory is None:
             return {"features": [], "total": 0, "filtered": True}
 
         async with factory() as session:
-            repo = FeatureRepository(session)
+            # XT-5: scope to the requested project so the listing cannot return
+            # another tenant's features. None = unscoped (back-compat).
+            repo = (
+                FeatureRepository.scoped(session, project_id)
+                if project_id is not None
+                else FeatureRepository(session)
+            )
             if status is not None:
                 try:
                     status_enum = FeatureStatus(status)
@@ -86,18 +93,28 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         return {
             "features": features,
             "total": len(features),
-            "filtered": status is not None or category is not None,
+            "filtered": status is not None
+            or category is not None
+            or project_id is not None,
         }
 
     @app.get("/api/features/{feature_id}")
-    async def get_feature(feature_id: str) -> dict[str, Any]:
-        """Get a single feature by its FEAT-... id."""
+    async def get_feature(
+        feature_id: str, project_id: str | None = None
+    ) -> dict[str, Any]:
+        """Get a single feature by its FEAT-... id (optionally project-scoped)."""
         factory = _get_session_factory(app)
         if factory is None:
             raise HTTPException(status_code=503, detail="Database unavailable")
 
         async with factory() as session:
-            repo = FeatureRepository(session)
+            # XT-6: a scoped repo filters get_by_id by project_id, so a feature
+            # owned by another project reads as 404 rather than leaking.
+            repo = (
+                FeatureRepository.scoped(session, project_id)
+                if project_id is not None
+                else FeatureRepository(session)
+            )
             feat = await repo.get_by_id(feature_id)
 
         if feat is None:
@@ -123,7 +140,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         verifier = FeatureVerifier(repo_root=repo_root)
 
         async with factory() as session:
-            repo = FeatureRepository(session)
+            # XT-7: verify only the requested project's features. project_id was
+            # already accepted but silently ignored before this scoping.
+            repo = (
+                FeatureRepository.scoped(session, project_id)
+                if project_id is not None
+                else FeatureRepository(session)
+            )
             rows = await repo.list_all()
 
             if not rows:

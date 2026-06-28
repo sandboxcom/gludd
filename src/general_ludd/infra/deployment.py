@@ -78,51 +78,49 @@ class DeploymentManager:
     def list_deployments(self) -> list[DeploymentRecord]:
         return list(self._registry.values())
 
-    def _inject_auth_env(self, config: ComputeConfig) -> dict[str, str | None]:
-        original: dict[str, str | None] = {}
+    def _build_auth_env(self, config: ComputeConfig) -> dict[str, str]:
+        """Return a *copy* of os.environ with provider creds overlaid.
+
+        Never mutates the global os.environ — each deploy/destroy call gets its
+        own isolated mapping, preventing credential cross-contamination when
+        multiple deployments run concurrently.
+        """
+        env = os.environ.copy()
         if not config.provider_auth_aliases:
-            return original
+            return env
         for env_var, alias in config.provider_auth_aliases.items():
-            original[env_var] = os.environ.get(env_var)
             if self._secrets_resolver:
                 value = self._secrets_resolver.resolve(alias)
                 if value is not None:
-                    os.environ[env_var] = value
+                    env[env_var] = value
                     continue
             if alias in os.environ:
-                os.environ[env_var] = os.environ[alias]
+                env[env_var] = os.environ[alias]
             else:
                 raise RuntimeError(
                     f"Could not resolve auth alias {alias} for env var {env_var}. "
                     "Set the credential in OpenBao or as an environment variable."
                 )
-        return original
-
-    def _restore_auth_env(self, original: dict[str, str | None]) -> None:
-        for env_var, original_value in original.items():
-            if original_value is None:
-                os.environ.pop(env_var, None)
-            else:
-                os.environ[env_var] = original_value
+        return env
 
     async def deploy(self, config: ComputeConfig) -> ComputeInstance:
         self._last_config = config
-        original_env = self._inject_auth_env(config)
+        # Build a per-call env snapshot; global os.environ is never mutated.
+        auth_env = self._build_auth_env(config)
         # Each deployment gets its OWN terraform working dir so its state is
         # isolated; destroy later runs in exactly this dir (deploy-before-destroy).
         deploy_dir = os.path.join(self._working_dir, f"d-{uuid.uuid4().hex[:12]}")
         os.makedirs(deploy_dir, exist_ok=True)
-        self._active_working_dir = deploy_dir
         try:
             hcl = self._generator.generate(config)
             main_tf_path = os.path.join(deploy_dir, "main.tf")
             with open(main_tf_path, "w") as f:
                 f.write(hcl)
 
-            await self._run_terraform(["init", "-input=false"])
-            await self._run_terraform(["apply", "-auto-approve", "-input=false"])
+            await self._run_terraform(["init", "-input=false"], cwd=deploy_dir, env=auth_env)
+            await self._run_terraform(["apply", "-auto-approve", "-input=false"], cwd=deploy_dir, env=auth_env)
 
-            output_result = await self._run_terraform(["output", "-json"])
+            output_result = await self._run_terraform(["output", "-json"], cwd=deploy_dir, env=auth_env)
             parsed = self._parse_outputs(output_result.get("stdout", ""))
 
             instance_id = parsed.get("instance_ip", parsed.get("pod_id", "unknown"))
@@ -148,8 +146,7 @@ class DeploymentManager:
                 endpoint_url=parsed.get("endpoint_url"),
             )
         finally:
-            self._restore_auth_env(original_env)
-            self._active_working_dir = self._working_dir
+            pass  # no env cleanup needed — we never touched os.environ
 
     async def destroy(self, instance_id: str) -> None:
         # W2.3 (C5): refuse to destroy an instance we have no record of. Running
@@ -161,26 +158,36 @@ class DeploymentManager:
                 f"Refusing to destroy unknown instance_id {instance_id!r}: "
                 "no deployment record (deploy-before-destroy)."
             )
-        original_env: dict[str, str | None] = {}
+        # Build a per-call env snapshot; global os.environ is never mutated.
+        auth_env: dict[str, str] | None = None
         if self._last_config is not None:
-            original_env = self._inject_auth_env(self._last_config)
-        self._active_working_dir = record.working_dir
+            auth_env = self._build_auth_env(self._last_config)
         try:
-            await self._run_terraform(["destroy", "-auto-approve", "-input=false"])
+            await self._run_terraform(
+                ["destroy", "-auto-approve", "-input=false"],
+                cwd=record.working_dir,
+                env=auth_env,
+            )
             self._registry.pop(instance_id, None)
             self._save_registry()
         finally:
-            self._restore_auth_env(original_env)
-            self._active_working_dir = self._working_dir
+            pass  # no env cleanup needed — we never touched os.environ
 
-    async def _run_terraform(self, args: list[str]) -> dict[str, Any]:
+    async def _run_terraform(
+        self,
+        args: list[str],
+        *,
+        cwd: str | None = None,
+        env: dict[str, str] | None = None,
+    ) -> dict[str, Any]:
         binary = self._binary_resolver.get_infra_binary()
         proc = await asyncio.create_subprocess_exec(
             binary,
             *args,
             stdout=asyncio.subprocess.PIPE,
             stderr=asyncio.subprocess.PIPE,
-            cwd=self._active_working_dir,
+            cwd=cwd if cwd is not None else self._active_working_dir,
+            env=env,
         )
         stdout, stderr = await proc.communicate()
         if proc.returncode != 0:

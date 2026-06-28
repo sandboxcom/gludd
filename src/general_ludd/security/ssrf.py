@@ -93,6 +93,21 @@ def host_is_blocked(host: str) -> bool:
     host = host.strip().lower()
     if not host:
         return True
+    # A NUL byte can truncate the host for a downstream resolver/HTTP client
+    # ("localhost\x00.evil.com" may be read as "localhost"), so a NUL-bearing
+    # host could smuggle a blocked target past the string blocklist. Deny it.
+    if "\x00" in host:
+        return True
+    # Strip trailing FQDN dot(s) FIRST, before the IPv6 bracket unwrap. Order
+    # matters: a bracketed host with a trailing dot ("[::1].") does NOT end in
+    # "]", so the bracket check would be skipped and the dot-strip would leave
+    # "[::1" — an unparseable host that slips past the IP blocklist. rstrip(".")
+    # also removes MULTIPLE dots ("127.0.0.1.." -> "127.0.0.1") which a single
+    # slice would miss. "localhost." / "127.0.0.1." resolve identically to the
+    # undotted form, so without this the name/IP blocklists could be dot-bypassed.
+    host = host.rstrip(".")
+    if not host:
+        return True
     # Strip an IPv6 bracket wrapper, e.g. "[::1]" -> "::1".
     if host.startswith("[") and host.endswith("]"):
         host = host[1:-1]

@@ -93,8 +93,9 @@ class MongoDbStatsSource:
             return {"ok": False, "detail": self._driver_error or _DRIVER_UNAVAILABLE}
         try:
             executor("serverStatus")
-        except Exception as exc:
-            return {"ok": False, "detail": f"serverStatus failed: {exc}"}
+        except Exception:
+            logger.warning("mongodb_stats serverStatus probe failed", exc_info=True)
+            return {"ok": False, "detail": "serverStatus failed"}
         return {"ok": True, "detail": "ok"}
 
     # -- query -------------------------------------------------------------

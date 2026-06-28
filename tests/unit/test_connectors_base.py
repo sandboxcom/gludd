@@ -165,7 +165,11 @@ def test_find_captures_failing_source_as_error_record_without_aborting() -> None
     assert len(errors) == 1
     err = errors[0]
     assert err["source"] == "boom"
-    assert "backend exploded" in err["message"]
+    # Redacted: the raw exception detail must NOT leak to the caller (it is
+    # logged server-side instead), and the raw exception object is not embedded.
+    assert err["message"] == "query failed"
+    assert "backend exploded" not in err["message"]
+    assert err.get("raw") is None
     assert err["kind"] == "logs"
 
 
@@ -297,3 +301,104 @@ def test_is_safe_endpoint_does_no_dns() -> None:
 def test_base_module_exports_helper() -> None:
     # is_safe_endpoint is importable from the base module for connectors to reuse.
     assert callable(base.is_safe_endpoint)
+
+
+# --------------------------------------------------------------------------- #
+# Boundary numeric policy — NaN / Inf coercion at normalized_record()
+# --------------------------------------------------------------------------- #
+def test_normalized_record_coerces_nan_value_to_none() -> None:
+    rec = normalized_record(source="s", kind="metrics", value=float("nan"))
+    # NaN would poison aggregation/sorting; policy coerces it to the None sentinel.
+    assert rec["value"] is None
+
+
+def test_normalized_record_coerces_inf_value_to_none() -> None:
+    pos = normalized_record(source="s", kind="metrics", value=float("inf"))
+    neg = normalized_record(source="s", kind="metrics", value=float("-inf"))
+    assert pos["value"] is None
+    assert neg["value"] is None
+
+
+def test_normalized_record_finite_value_unchanged() -> None:
+    rec = normalized_record(source="s", kind="metrics", value=42.5)
+    assert rec["value"] == 42.5
+    zero = normalized_record(source="s", kind="metrics", value=0.0)
+    assert zero["value"] == 0.0
+    # Explicit None stays None (no payload).
+    none = normalized_record(source="s", kind="metrics", value=None)
+    assert none["value"] is None
+
+
+def test_normalized_record_coerces_nan_and_inf_ts_to_none() -> None:
+    # A non-finite ts would corrupt the ts-sort (NaN compares False) — coerce it
+    # to None so the record sorts last like any other untimed record.
+    assert normalized_record(source="s", kind="logs", ts=float("nan"))["ts"] is None
+    assert normalized_record(source="s", kind="logs", ts=float("inf"))["ts"] is None
+    assert normalized_record(source="s", kind="logs", ts=-12.5)["ts"] == -12.5
+
+
+def test_normalized_record_logs_warning_on_non_finite(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    # Coercion must never be silent (observability invariant).
+    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+        normalized_record(source="s", kind="metrics", value=float("nan"))
+    assert any("non-finite" in r.message for r in caplog.records)
+
+
+def test_finite_or_none_direct() -> None:
+    assert base._finite_or_none(None) is None
+    assert base._finite_or_none(3.0) == 3.0
+    assert base._finite_or_none(float("nan")) is None
+    assert base._finite_or_none(float("inf")) is None
+    assert base._finite_or_none(float("-inf")) is None
+
+
+# --------------------------------------------------------------------------- #
+# find() result-set cap — bounded fan-out
+# --------------------------------------------------------------------------- #
+def test_find_caps_unbounded_result_set_and_warns(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    cap = Observability.MAX_FIND_RESULTS
+    huge = [_rec(ts=float(i), source="flood", message=str(i)) for i in range(cap + 50)]
+    reg = SourceRegistry()
+    reg.register(_FakeSource("flood", "logs", huge))
+    obs = Observability(reg)
+
+    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+        results = obs.find({"q": "x"})
+
+    # Capped at the limit, not the full flood.
+    assert len(results) == cap
+    # Truncation is logged, never silent.
+    assert any("truncated" in r.message for r in caplog.records)
+
+
+def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> None:
+    cap = Observability.MAX_FIND_RESULTS
+    half = cap // 2 + 100  # each source overshoots half the cap
+    reg = SourceRegistry()
+    reg.register(_FakeSource("a", "logs", [_rec(source="a") for _ in range(half)]))
+    reg.register(_FakeSource("b", "logs", [_rec(source="b") for _ in range(half)]))
+    obs = Observability(reg)
+
+    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+        results = obs.find({"q": "x"})
+
+    assert len(results) == cap
+    assert any("truncated" in r.message for r in caplog.records)
+
+
+def test_find_under_cap_returns_all_without_warning(
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    reg = SourceRegistry()
+    reg.register(_FakeSource("s", "logs", [_rec(ts=float(i), source="s") for i in range(5)]))
+    obs = Observability(reg)
+
+    with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
+        results = obs.find({"q": "x"})
+
+    assert len(results) == 5
+    assert not any("truncated" in r.message for r in caplog.records)

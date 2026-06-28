@@ -47,6 +47,13 @@ class TestWorkTypePlaybookRegistry:
                 f"work_type '{key}' missing from _WORK_TYPE_PLAYBOOK_MAP"
             )
 
+    def test_langgraph_feature_work_types_wired(self):
+        from general_ludd.models.job_invocation import _GENERATION_WORK_TYPES
+        assert _WORK_TYPE_PLAYBOOK_MAP["model_decision"] == "langgraph_decide.yml"
+        assert _WORK_TYPE_PLAYBOOK_MAP["langgraph_generate"] == "langchain_generate.yml"
+        assert "model_decision" not in _GENERATION_WORK_TYPES
+        assert "langgraph_generate" not in _GENERATION_WORK_TYPES
+
     @pytest.mark.parametrize("work_type,playbook_name", list(_WORK_TYPE_PLAYBOOK_MAP.items()))
     def test_playbook_file_exists(self, work_type: str, playbook_name: str):
         """Each mapped playbook file must exist on disk."""
@@ -140,6 +147,9 @@ class TestCollectionStructure:
         "gludd_message",
         "gludd_metrics",
         "gludd_traces",
+        "gludd_langchain_generate",
+        "gludd_langgraph_workflow",
+        "gludd_langgraph_decision",
     ])
     def test_module_file_exists(self, module_name: str):
         module_path = self.COLLECTION_DIR / "plugins" / "modules" / f"{module_name}.py"
@@ -170,7 +180,9 @@ class TestModuleSecurityProperties:
             pytest.skip(f"{name}.py missing")
         return path.read_text()
 
-    @pytest.mark.parametrize("module_name", ["gludd_db", "gludd_model_call", "gludd_agent_run"])
+    @pytest.mark.parametrize("module_name", ["gludd_db", "gludd_model_call", "gludd_agent_run",
+                                              "gludd_langchain_generate", "gludd_langgraph_workflow",
+                                              "gludd_langgraph_decision"])
     def test_psk_is_no_log(self, module_name: str):
         """Modules with PSK param must mark it no_log=True."""
         content = self._read_module(module_name)
@@ -180,7 +192,9 @@ class TestModuleSecurityProperties:
 
     @pytest.mark.parametrize("module_name", ["gludd_ping", "gludd_model_call", "gludd_worktree",
                                               "gludd_git", "gludd_db", "gludd_skill",
-                                              "gludd_mcp_tool", "gludd_agent_run"])
+                                              "gludd_mcp_tool", "gludd_agent_run",
+                                              "gludd_langchain_generate", "gludd_langgraph_workflow",
+                                              "gludd_langgraph_decision"])
     def test_module_has_documentation_block(self, module_name: str):
         """Every module must have a DOCUMENTATION string."""
         content = self._read_module(module_name)
@@ -190,7 +204,9 @@ class TestModuleSecurityProperties:
 
     @pytest.mark.parametrize("module_name", ["gludd_ping", "gludd_model_call", "gludd_worktree",
                                               "gludd_git", "gludd_db", "gludd_skill",
-                                              "gludd_mcp_tool", "gludd_agent_run"])
+                                              "gludd_mcp_tool", "gludd_agent_run",
+                                              "gludd_langchain_generate", "gludd_langgraph_workflow",
+                                              "gludd_langgraph_decision"])
     def test_module_has_examples_block(self, module_name: str):
         """Every module must have an EXAMPLES string."""
         content = self._read_module(module_name)
@@ -200,7 +216,9 @@ class TestModuleSecurityProperties:
 
     @pytest.mark.parametrize("module_name", ["gludd_ping", "gludd_model_call", "gludd_worktree",
                                               "gludd_git", "gludd_db", "gludd_skill",
-                                              "gludd_mcp_tool", "gludd_agent_run"])
+                                              "gludd_mcp_tool", "gludd_agent_run",
+                                              "gludd_langchain_generate", "gludd_langgraph_workflow",
+                                              "gludd_langgraph_decision"])
     def test_module_has_return_block(self, module_name: str):
         """Every module must have a RETURN string."""
         content = self._read_module(module_name)
@@ -210,7 +228,9 @@ class TestModuleSecurityProperties:
 
     @pytest.mark.parametrize("module_name", ["gludd_ping", "gludd_model_call", "gludd_worktree",
                                               "gludd_git", "gludd_db", "gludd_skill",
-                                              "gludd_mcp_tool", "gludd_agent_run"])
+                                              "gludd_mcp_tool", "gludd_agent_run",
+                                              "gludd_langchain_generate", "gludd_langgraph_workflow",
+                                              "gludd_langgraph_decision"])
     def test_module_supports_check_mode(self, module_name: str):
         """Every module must declare supports_check_mode."""
         content = self._read_module(module_name)

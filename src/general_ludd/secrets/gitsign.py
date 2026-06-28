@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 from typing import Any
+
+_SEGMENT_RE = re.compile(r"^[A-Za-z0-9_-]+$")
 
 
 @dataclass
@@ -16,6 +19,10 @@ class GitsignConfig:
 
 
 def _scoped_path(project_id: str) -> str:
+    if not _SEGMENT_RE.match(project_id):
+        raise ValueError(
+            f"invalid project_id {project_id!r}: must match ^[A-Za-z0-9_-]+$"
+        )
     return f"projects/{project_id}/gitsign/config"
 
 

@@ -21,6 +21,7 @@ from general_ludd.connectors.normalize import (
     bundle_credentials,
     correlate,
     normalize_join_keys,
+    sanitize_metric_value,
 )
 
 
@@ -465,3 +466,29 @@ class TestMalformedSafety:
         configs = [{"source": "loki", "token_env": "T"}, None, 7, "x"]
         bundle = bundle_credentials(configs)  # type: ignore[list-item]
         assert bundle == {"grafana": ["T"]}
+
+
+# --------------------------------------------------------------------------- #
+# sanitize_metric_value: finite-float coercion, NaN/Inf/bool -> None
+# --------------------------------------------------------------------------- #
+class TestSanitizeMetricValue:
+    @pytest.mark.parametrize(
+        ("raw", "expected"),
+        [
+            (0, 0.0),
+            (0.0, 0.0),
+            (42, 42.0),
+            (-3.5, -3.5),
+            ("12.5", 12.5),
+            (float("nan"), None),
+            (float("inf"), None),
+            (float("-inf"), None),
+            (None, None),
+            (True, None),
+            (False, None),
+            ("not-a-number", None),
+            (object(), None),
+        ],
+    )
+    def test_sanitize_metric_value(self, raw: object, expected: float | None) -> None:
+        assert sanitize_metric_value(raw) == expected

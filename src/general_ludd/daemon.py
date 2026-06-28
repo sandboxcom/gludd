@@ -22,6 +22,7 @@ from general_ludd.ansible.runner import AnsibleRunnerAdapter
 from general_ludd.config.binary_paths import BinaryPaths
 from general_ludd.config.loader import load_user_config
 from general_ludd.config.model_routing import ModelRoutingConfig, load_model_routing
+from general_ludd.config.project_dir import find_project_gludd_dir, merge_config, project_config_path
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard
@@ -89,7 +90,36 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "task_definitions": [],
         "model_profiles": [],
         "rules": [],
+        "project_gludd_dir": find_project_gludd_dir(),
     }
+
+    def _apply_project_overlay() -> None:
+        """Deep-merge .gludd/general-ludd.yml over the user config (project wins).
+
+        Called before every return so the overlay applies even when no user config
+        directory exists — a repo may have ``.gludd/general-ludd.yml`` without any
+        ``~/.config/general-ludd`` present.
+        """
+        proj_cfg = project_config_path(cfg["project_gludd_dir"])
+        if proj_cfg is None:
+            return
+        try:
+            with open(proj_cfg) as _f:
+                proj_data = yaml.safe_load(_f) or {}
+        except Exception as exc:
+            logger.warning("Failed to load project config overlay %s: %s", proj_cfg, exc)
+            return
+        if not proj_data:
+            return
+        uc = cfg["user_config"]
+        user_dict: dict[str, Any] = (
+            uc.model_dump() if hasattr(uc, "model_dump") else dict(vars(uc))
+        )
+        merged = merge_config(user_dict, proj_data)
+        try:
+            cfg["user_config"] = UserConfig(**merged)
+        except Exception as exc:
+            logger.warning("Project config overlay failed validation: %s", exc)
 
     if config_dir is None:
         home = os.environ.get("HOME", os.path.expanduser("~"))
@@ -104,11 +134,13 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
                 break
         else:
             logger.info("No config directory found; daemon running unconfigured")
+            _apply_project_overlay()
             return cfg
 
     cdir = Path(config_dir)
     if not cdir.is_dir():
         logger.info("Config directory %s does not exist; daemon running unconfigured", config_dir)
+        _apply_project_overlay()
         return cfg
 
     mr_path = cdir / "model_routing.yml"
@@ -170,6 +202,10 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
     profiles_dir = cdir / "model_profiles"
     if profiles_dir.is_dir():
         cfg["model_profiles"] = load_model_profiles(profiles_dir=str(profiles_dir))
+
+    # Apply project overlay (.gludd/general-ludd.yml) BEFORE extracting rules so
+    # any rules defined in the project overlay are captured in cfg["rules"].
+    _apply_project_overlay()
 
     # Surface the rules engine: copy UserConfig.rules into startup_config so the
     # EventLoop (which reads startup_config["rules"]) receives operator rules.
@@ -472,6 +508,30 @@ def _on_event_loop_done(task: asyncio.Task[Any]) -> None:
         logger.error("EventLoop task exited unexpectedly without exception")
 
 
+def _check_degraded(app: FastAPI) -> Any:
+    """Return a 503 JSONResponse when the daemon lifespan failed, else None.
+
+    Mutating handlers (dispatch, self-update, spend/configure) must call this
+    at entry and short-circuit when enforcement infrastructure is inert:
+
+        resp = _check_degraded(app)
+        if resp is not None:
+            return resp
+
+    Read-only handlers and probes (/healthz, /readyz) are intentionally exempt
+    — they must keep serving so operators can observe the degraded state.
+    """
+    degraded = getattr(app.state, "_degraded", None)
+    if not degraded:
+        return None
+    from fastapi.responses import JSONResponse
+
+    return JSONResponse(
+        status_code=503,
+        content={"error": "degraded", "reason": str(degraded)[:200]},
+    )
+
+
 def _build_pipeline_controller(pipeline_cfg: Any, dispatcher: Any) -> Any:
     """Construct a PipelineController bound to real daemon subsystems (#77).
 
@@ -755,12 +815,29 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             try:
                 from general_ludd.db.migrations import get_alembic_config, stamp_head
                 alembic_cfg = get_alembic_config(str(engine.url))
-                stamp_head(alembic_cfg)
+                # Run the synchronous alembic stamp off the event loop so it
+                # doesn't stall every other coroutine during daemon startup.
+                await asyncio.to_thread(stamp_head, alembic_cfg)
                 logger.info("Alembic stamped head on SQLite database")
             except Exception as exc:
                 logger.warning("Alembic stamp failed: %s", exc)
 
-        runner = AnsibleRunnerAdapter()
+        # Phase 2: inject project .gludd/collections on the Ansible search path so
+        # project-local roles/collections shadow (or augment) the global ones.
+        _proj_gludd = startup_config.get("project_gludd_dir")
+        _runner_default_env: dict[str, str] = {}
+        if _proj_gludd is not None:
+            _existing_cp = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
+            _runner_default_env["ANSIBLE_COLLECTIONS_PATH"] = (
+                f"{_proj_gludd}/collections:{_existing_cp}".rstrip(":")
+            )
+            _existing_rp = os.environ.get("ANSIBLE_ROLES_PATH", "")
+            _runner_default_env["ANSIBLE_ROLES_PATH"] = (
+                f"{_proj_gludd}/collections/roles:{_existing_rp}".rstrip(":")
+            )
+        runner = AnsibleRunnerAdapter(
+            default_env=_runner_default_env if _runner_default_env else None,
+        )
         subsys = _get_or_create_subsystems(app)
 
         # CA-T7/CA-T8 fix: create and assign the health tracker BEFORE calling
@@ -816,7 +893,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         # its workspace so dispatched jobs have real code to edit.
         await _restore_persisted_projects(ext.get("projects"), session_factory)
 
-        secrets_resolver = build_secrets_resolver(
+        # H1 fix: build_secrets_resolver() calls hvac client.is_authenticated()
+        # synchronously (a blocking HTTP call).  Offload to a thread so the
+        # event loop is never stalled if OpenBao is slow or unreachable.
+        secrets_resolver = await asyncio.to_thread(
+            build_secrets_resolver,
             openbao_config=startup_config.get("openbao_config"),
             projects_active=bool(ext.get("projects")),
         )
@@ -839,11 +920,25 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 logger.error("Secret migration failed", exc_info=True)
 
         templates_dir = getattr(app.state, "_templates_dir", None)
+        # Phase 2: prepend project .gludd/templates/ so project-local templates
+        # shadow same-named global ones.  No-op when the dir does not exist.
+        _proj_for_prompts = startup_config.get("project_gludd_dir")
+        _extra_tmpl_dirs: list[str] = []
+        if _proj_for_prompts is not None:
+            _proj_tmpl_dir = Path(_proj_for_prompts) / "templates"
+            if _proj_tmpl_dir.is_dir():
+                _extra_tmpl_dirs = [str(_proj_tmpl_dir)]
         prompt_registry = PromptRegistry(
             template_dir=templates_dir,
             event_bus=subsys["bus"],
+            extra_template_dirs=_extra_tmpl_dirs or None,
         )
-        prompt_registry.refresh()
+        # P2 (perf): refresh() globs the template dir and read_text()s each *.j2
+        # file — blocking filesystem IO. Offload it so the daemon-boot coroutine
+        # does not stall the event loop while templates load. Return value is
+        # unused; error handling is unchanged (an unreadable dir still raises and
+        # is caught by the outer startup try/except → degraded mode).
+        await asyncio.to_thread(prompt_registry.refresh)
         app.state._prompt_registry = prompt_registry
 
         # Build budget guard from config
@@ -866,13 +961,20 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
 
         model_gateway = None
         if model_profiles:
+            from general_ludd.models.provider_registry import ProviderRegistry
+
+            _resolved_profiles = [
+                p if isinstance(p, ModelProfile) else ModelProfile(**p)
+                for p in model_profiles
+                if isinstance(p, (ModelProfile, dict))
+            ]
             model_gateway = ModelGateway(
-                profiles=[
-                    p if isinstance(p, ModelProfile) else ModelProfile(**p)
-                    for p in model_profiles
-                    if isinstance(p, (ModelProfile, dict))
-                ],
-                provider_registry=None,
+                profiles=_resolved_profiles,
+                # CI-1 fix: register each profile's provider so live calls have a
+                # usable provider class. With provider_registry=None the gateway's
+                # _registry was None and every live call raised "No provider registry
+                # configured" — the daemon could not make a single live model call.
+                provider_registry=ProviderRegistry.from_profiles(_resolved_profiles),
                 secrets_manager=secrets_resolver,
                 metrics_collector=ext.get("metrics_collector"),
                 health_tracker=health_tracker,
@@ -969,6 +1071,56 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             skill_registry=ext["skill_registry"],
         )
 
+        # H3 fix: SpendLimiter must be constructed and rehydrated BEFORE
+        # asyncio.create_task(event_loop.run_forever(...)) so the event loop's
+        # first tick cannot bypass the operator spend cap.  PricingCatalog and
+        # SpendLimiter are built here (including the persisted-spend rehydration
+        # await) and then passed into the EventLoop constructor so _spend_limiter
+        # is never None once the loop task is scheduled.
+        # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
+        # Build a rolling-window limiter from budget config when configured.
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+        from general_ludd.pricing_intel import PricingCatalog
+
+        # PricingCatalog is the PRIMARY price source for cost projection;
+        # SpendLimiter.token_cost_usd() falls back to the static
+        # infra/pricing.py table when the catalog has no live price.  Shared
+        # across the limiter and any other subsystem that needs live rates.
+        pricing_catalog = PricingCatalog()
+        # Publish the catalog on app.state so /api/pricing (routers/observe.py)
+        # can serve the SAME instance the SpendLimiter consumes — not a second
+        # copy. Routers read it via ``_get_pricing_catalog(app)``.
+        app.state._pricing_catalog = pricing_catalog
+
+        spend_limiter: SpendLimiter | None = None
+        if uc is not None:
+            spend_window_usd = bc.spend_window_usd
+            spend_window_seconds = bc.spend_window_seconds
+            if spend_window_usd > 0.0:
+                import time as _time
+
+                # Wall-clock (time.time), NOT monotonic: persisted spend
+                # timestamps must survive a process restart so the rolling
+                # window can be rehydrated from the DB (#49 #2).
+                spend_limiter = SpendLimiter(
+                    limit_usd=spend_window_usd,
+                    window_seconds=spend_window_seconds,
+                    clock=_time.time,
+                    catalog=pricing_catalog,
+                )
+                logger.info(
+                    "SpendLimiter configured: limit=%.4f USD / %.0f s window",
+                    spend_window_usd,
+                    spend_window_seconds,
+                )
+                # Rehydrate accumulated spend so a restart can't reset the cap.
+                await _restore_persisted_spend(
+                    spend_limiter,
+                    session_factory,
+                    window_seconds=spend_window_seconds,
+                )
+        app.state._spend_limiter = spend_limiter
+
         event_loop = EventLoop(
             worker_base_url="http://localhost:8000",
             runner=runner,
@@ -992,6 +1144,12 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 "queues": getattr(uc, "queues", []) if uc else [],
                 "budget": getattr(uc, "budget", {}) if uc else {},
                 "self_improve": getattr(uc, "self_improve", {}) if uc else {},
+                # Daemon-level default repo_root: the process cwd at startup time
+                # is a reasonable single-project fallback so verify_completion can
+                # check commit:/artifact: refs without a resolved per-project
+                # workspace. EventLoop._resolve_repo_root() overrides this with the
+                # per-project workspace.repo_dir when available.
+                "repo_root": os.getcwd(),
             },
             adaptive_router=ext["adaptive_router"],
             daemon_state=daemon_state,
@@ -999,6 +1157,15 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             project_secrets_manager=secrets_resolver,
             reviewer=return_reviewer,
             self_improve_interval=self_improve_interval,
+            # H3: spend_limiter passed via constructor so _spend_limiter is set
+            # before the run_forever task is scheduled — the first tick can never
+            # bypass the operator spend cap.
+            spend_limiter=spend_limiter,
+            # #31 (multi-agent safety): share the coordination router's
+            # FileClaimRegistry (created in routers/coordination.register and
+            # surfaced via /api/coordination + /api/facts) with the event loop's
+            # git-delivery path so concurrent todos cannot clobber the same file.
+            file_claim_registry=getattr(app.state, "_file_claims", None),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1050,55 +1217,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         registry = default_registry()
         dispatcher_executor = None
 
-        # W: event-loop-wiring (#27) — SpendLimiter pre-call budget gate.
-        # Build a rolling-window limiter from budget config when configured.
-        from general_ludd.controllers.spend_limiter import SpendLimiter
+        # SpendLimiter, PricingCatalog, and spend_limiter are built and
+        # rehydrated above, BEFORE the EventLoop constructor (H3 fix).
+        # make_spend_guarded_executor is imported here for the gateway executor
+        # block below.
         from general_ludd.daemon_wiring import make_spend_guarded_executor
-        from general_ludd.pricing_intel import PricingCatalog
-
-        # PricingCatalog is the PRIMARY price source for cost projection;
-        # SpendLimiter.token_cost_usd() falls back to the static
-        # infra/pricing.py table when the catalog has no live price.  Shared
-        # across the limiter and any other subsystem that needs live rates.
-        pricing_catalog = PricingCatalog()
-        # Publish the catalog on app.state so /api/pricing (routers/observe.py)
-        # can serve the SAME instance the SpendLimiter consumes — not a second
-        # copy. Routers read it via ``_get_pricing_catalog(app)``.
-        app.state._pricing_catalog = pricing_catalog
-
-        spend_limiter: SpendLimiter | None = None
-        if uc is not None:
-            spend_window_usd = bc.spend_window_usd
-            spend_window_seconds = bc.spend_window_seconds
-            if spend_window_usd > 0.0:
-                import time as _time
-
-                # Wall-clock (time.time), NOT monotonic: persisted spend
-                # timestamps must survive a process restart so the rolling
-                # window can be rehydrated from the DB (#49 #2).
-                spend_limiter = SpendLimiter(
-                    limit_usd=spend_window_usd,
-                    window_seconds=spend_window_seconds,
-                    clock=_time.time,
-                    catalog=pricing_catalog,
-                )
-                logger.info(
-                    "SpendLimiter configured: limit=%.4f USD / %.0f s window",
-                    spend_window_usd,
-                    spend_window_seconds,
-                )
-                # Rehydrate accumulated spend so a restart can't reset the cap.
-                await _restore_persisted_spend(
-                    spend_limiter,
-                    session_factory,
-                    window_seconds=spend_window_seconds,
-                )
-        app.state._spend_limiter = spend_limiter
-        # Wire the limiter into the EventLoop dispatch path so every
-        # _dispatch_execute_job call consults would_exceed() before running.
-        # Set after construction (the limiter is built below the EventLoop) —
-        # mirrors how _benchmark_recorder is attached above.
-        event_loop._spend_limiter = spend_limiter
 
         # InfraTracker wraps infra_cost_usd() the same way SpendLimiter wraps
         # token_cost_usd(): PricingCatalog is the PRIMARY price source for GPU
@@ -1154,7 +1277,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 profile_id = "default"
                 budget_manager = getattr(app.state, "_budget_manager", None)
                 if budget_manager is not None:
-                    daily = budget_manager.check_daily_budget(_projected_cost_usd)
+                    daily = budget_manager.check_daily_budget_reserved(
+                        task.task_id, _projected_cost_usd
+                    )
                     if not daily.get("allowed", True):
                         logger.warning(
                             "Gateway executor deferred for %s: daily budget exhausted",
@@ -1169,6 +1294,9 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                             "Gateway executor deferred for %s: per-todo budget exhausted",
                             task.task_id,
                         )
+                        # Release the daily reservation made above so a deferred
+                        # call does not leak held budget.
+                        budget_manager.release_reservation(task.task_id)
                         return "deferred:budget_exhausted"
                 try:
                     result = await asyncio.to_thread(
@@ -1184,6 +1312,10 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                     return result.content
                 except Exception as exc:
                     logger.warning("Gateway executor failed for %s: %s", task.task_id, exc)
+                    # The call never produced a cost, so release both reservations
+                    # instead of leaking the held projected budget.
+                    if budget_manager is not None:
+                        budget_manager.release_reservation(task.task_id)
                     return f"Error: {exc}"
 
             dispatcher_executor = make_spend_guarded_executor(
@@ -1217,7 +1349,11 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.info("Daemon started: db=%s event_loop=running", engine.url)
 
         bootloader = BinaryBootstrapper(store=_FS())
-        synced = bootloader.sync_bundled_to_filestore()
+        # P2 (perf): sync_bundled_to_filestore() read_bytes() each bundled binary
+        # (multi-MB) and write_bytes() it into the filestore — blocking IO that
+        # would stall the loop on boot. Offload to a thread; the returned list of
+        # synced names and the method's own internal try/except are unchanged.
+        synced = await asyncio.to_thread(bootloader.sync_bundled_to_filestore)
         if synced:
             logger.info("Synced bundled binaries to filestore: %s", ", ".join(synced))
 
@@ -1328,6 +1464,13 @@ def _get_or_create_extended_subsystems(
             discovered = discover_skills(config_dir)
             for skill in discovered:
                 registry.register(skill)
+        # Phase 2: register project skills AFTER global ones so same-named project
+        # skills shadow (overwrite) the global entry — last write wins in the dict.
+        _proj_for_skills = getattr(app.state, "_project_gludd_dir", None)
+        if _proj_for_skills is not None:
+            _proj_skills_dir = Path(_proj_for_skills) / "skills"
+            if _proj_skills_dir.is_dir():
+                registry.refresh(search_paths=[str(_proj_skills_dir)])
         app.state._skill_registry = registry
 
     adaptive_router = None
@@ -1340,11 +1483,34 @@ def _get_or_create_extended_subsystems(
                 mid: (info.precision, info.confidence)
                 for mid, info in tracker._data.items()
             }
+        # Project-hierarchy phase 3: derive cross-project borrowing flags from
+        # UserConfig.relationship_routing (default None → borrowing OFF, router
+        # behaves exactly as before). The app-level router is GLOBAL
+        # (project_id=None); per-project borrowing is opt-in via config + a
+        # project-scoped router. relationship_repo stays None here (no global
+        # relationship graph) so even with the flag on the global router never
+        # borrows — borrowing requires a project_id + a relationship_repo.
+        rr_enabled = False
+        rr_edge_decay = 0.5
+        rr_external_penalty = 0.5
+        rr_min_borrow_weight = 0.05
+        startup_cfg = getattr(app.state, "_startup_config", {}) or {}
+        user_cfg = startup_cfg.get("user_config")
+        rr_cfg = getattr(user_cfg, "relationship_routing", None) if user_cfg else None
+        if rr_cfg is not None:
+            rr_enabled = bool(getattr(rr_cfg, "enable_cross_project_borrowing", False))
+            rr_edge_decay = float(getattr(rr_cfg, "edge_decay", 0.5))
+            rr_external_penalty = float(getattr(rr_cfg, "external_penalty", 0.5))
+            rr_min_borrow_weight = float(getattr(rr_cfg, "min_borrow_weight", 0.05))
         adaptive_router = AdaptiveRouter(
             benchmark_repo=benchmark_repo,
             quantization_map=quantization_map,
             health_tracker=getattr(app.state, "_health_tracker", None),
             embedding_store=getattr(app.state, "_embedding_store", None),
+            enable_cross_project_borrowing=rr_enabled,
+            edge_decay=rr_edge_decay,
+            external_penalty=rr_external_penalty,
+            min_borrow_weight=rr_min_borrow_weight,
         )
         app.state._adaptive_router = adaptive_router
     elif session_factory is not None and hasattr(app.state, "_adaptive_router"):
@@ -1415,6 +1581,7 @@ def create_daemon_app(
     app.state._adaptive_router = None
     app.state._self_update_audit_sink = None
     app.state._startup_config = load_startup_config(config_dir)
+    app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
     app.state._stats_start_time = time.monotonic()
     app.state._stats_requests = 0
     app.state._stats_responses = 0
@@ -1525,6 +1692,18 @@ def create_daemon_app(
 
                     app.state._stats_responses += 1
                     return JSONResponse(status_code=401, content={"error": "unauthorized"})
+        # When the daemon failed its lifespan init it runs _degraded: spend /
+        # budget / dispatch enforcement infrastructure is inert. Mutating calls
+        # to the dispatch + self-update + spend-configure surface must fail
+        # closed (503) rather than silently bypass enforcement. Read-only calls
+        # and probes still serve so operators can observe the degraded state.
+        if method.upper() not in _SAFE_METHODS:
+            _DEGRADED_GUARDED_PREFIXES = ("/api/dispatch", "/admin/self-update", "/api/spend")
+            if path.startswith(_DEGRADED_GUARDED_PREFIXES):
+                degraded_resp = _check_degraded(app)
+                if degraded_resp is not None:
+                    app.state._stats_responses += 1
+                    return degraded_resp
         response = await call_next(request)
         app.state._stats_responses += 1
         elapsed = time.monotonic() - start
@@ -1537,7 +1716,14 @@ def create_daemon_app(
         logging.getLogger("httpx").setLevel(logging.DEBUG)
         logging.getLogger("httpcore").setLevel(logging.DEBUG)
 
-    @app.get("/healthz")
+    @app.get(
+        "/healthz",
+        summary="Liveness probe — daemon process is alive",
+        description=(
+            "Returns 200 with security-posture + budget flags when alive; "
+            "503 on degraded startup. Public, no auth."
+        ),
+    )
     async def healthz() -> dict[str, Any]:
         degraded = getattr(app.state, "_degraded", None)
         # A-3: advertise the no-auth security posture so operators (and the
@@ -1563,6 +1749,15 @@ def create_daemon_app(
         # headroom. Only the coarse boolean `budget_exhausted` is public; the
         # full numbers live behind the auth'd surface (/api/spend, dashboard).
         budget_exhausted = bool(budget_status.get("paused", False))
+        # N1/C6: a dead/cancelled event-loop task after a successful startup must
+        # NOT serve green — the daemon is alive but no longer processing work.
+        # Mirror /readyz's check so /healthz also reports degraded in that case
+        # (the `_degraded` flag alone only catches STARTUP failures).
+        el_task = getattr(app.state, "_event_loop_task", None)
+        if el_task is not None and el_task.done():
+            degraded = degraded or (
+                "event_loop_cancelled" if el_task.cancelled() else "event_loop_done"
+            )
         if degraded:
             return {
                 "status": "degraded",
@@ -1582,7 +1777,14 @@ def create_daemon_app(
             "budget_exhausted": budget_exhausted,
         }
 
-    @app.get("/readyz")
+    @app.get(
+        "/readyz",
+        summary="Readiness probe — daemon can accept work",
+        description=(
+            "200 when ready (not degraded, event loop alive); 503 otherwise. "
+            "Public, no auth."
+        ),
+    )
     async def readyz() -> Any:
         """Readiness probe (N1/C6, W3.4): 503 when degraded or event-loop done/cancelled.
 
@@ -1636,13 +1838,21 @@ def create_daemon_app(
 
     @app.get("/admin/daemon/stats")
     async def admin_daemon_stats() -> dict[str, Any]:
+        import asyncio
         import os
 
         import psutil
 
         uptime = time.monotonic() - app.state._stats_start_time
-        proc = psutil.Process(os.getpid())
-        mem_mb = proc.memory_info().rss / (1024 * 1024)
+
+        # AB-4: psutil.Process().memory_info() issues blocking OS syscalls; run
+        # it off the event loop so the async stats handler does not stall the
+        # daemon under load.
+        def _sample_rss_mb() -> float:
+            proc = psutil.Process(os.getpid())
+            return proc.memory_info().rss / (1024 * 1024)
+
+        mem_mb = await asyncio.to_thread(_sample_rss_mb)
         return {
             "pid": os.getpid(),
             "requests_total": app.state._stats_requests,
@@ -1657,6 +1867,8 @@ def create_daemon_app(
         ansible,
         benchmark,
         compute,
+        embeddings,
+        environment,
         facts,
         features,
         filestore,
@@ -1665,6 +1877,7 @@ def create_daemon_app(
         mcp,
         messages,
         models,
+        processes,
         projects,
         quantization,
         reload,
@@ -1688,6 +1901,8 @@ def create_daemon_app(
     messages.register(app, daemon_state)
     accounting.register(app, daemon_state)
     facts.register(app, daemon_state)
+    environment.register(app, daemon_state)
+    embeddings.register(app, daemon_state)
     features.register(app, daemon_state)
     schedule.register(app, daemon_state)
     models.register(app, daemon_state)
@@ -1695,6 +1910,7 @@ def create_daemon_app(
     mcp.register(app, daemon_state)
     skills.register(app, daemon_state)
     compute.register(app, daemon_state)
+    processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
     integrity.register(app, daemon_state)
     signing.register(app, daemon_state)

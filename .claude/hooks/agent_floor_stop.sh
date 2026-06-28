@@ -22,6 +22,13 @@
 FLOOR="${CLAUDE_AGENT_FLOOR:-6}"
 TARGET="${CLAUDE_AGENT_TARGET:-10}"
 CEILING="${CLAUDE_AGENT_CEILING:-12}"
+# LIVE FLOOR OVERRIDE: CLAUDE_AGENT_FLOOR is fixed at session start, so this file
+# lets the operator retune the floor mid-session without a restart. A valid integer
+# wins over the env var.
+if [ -r /tmp/gludd-floor-override ]; then
+  _fov="$(cat /tmp/gludd-floor-override 2>/dev/null)"
+  case "$_fov" in ''|*[!0-9]*) : ;; *) FLOOR="$_fov" ;; esac
+fi
 # REFILL: refill just into the band (hysteresis), NOT up to TARGET.
 # Clamp so that REFILL and the display band never invert when FLOOR is env-overridden
 # above CEILING (e.g. CLAUDE_AGENT_FLOOR=999 for testing). The enforcement is correct

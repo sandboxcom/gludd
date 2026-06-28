@@ -2,9 +2,24 @@
 
 from __future__ import annotations
 
+import shlex
 import textwrap
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, InferenceEngine
+
+# ---------------------------------------------------------------------------
+# Security note — HCL string interpolation
+# ---------------------------------------------------------------------------
+# Values interpolated into the HCL templates below (model_name, container_image,
+# region, engine.value, gpu_type.value) all originate from ComputeConfig fields
+# that are validated by field_validators in compute.py *before* reaching this
+# module.  The validators enforce strict allowlists:
+#   model_name / container_image  →  ^[A-Za-z0-9._/@:-]+$
+#   region                        →  ^[A-Za-z0-9-]+$
+#   engine / gpu_type             →  StrEnum (fixed closed set)
+# This provides defense-in-depth against HCL injection across the 19+ interpolation
+# sites below.  A tfvars-based approach would eliminate the residual entirely and
+# should be considered if the template surface grows further.
 
 _AWS_GPU_TO_INSTANCE: dict[str, str] = {
     "t4": "g4dn.xlarge",
@@ -49,16 +64,26 @@ def _container_image(config: ComputeConfig) -> str:
 
 
 def _engine_serve_cmd(config: ComputeConfig) -> str:
+    """Return a shell-safe docker command string for the cloud-init script.
+
+    Each user-supplied argument (model_name, container_image) is individually
+    shlex.quote'd so that no value can break out of its argument position and
+    inject shell commands.  This is the primary mitigation for the cloud-init
+    RCE vector; the field_validators in compute.py are defense-in-depth.
+    """
     image = _container_image(config)
+    base_argv = [
+        "docker", "run",
+        "--gpus", "all",
+        "-p", "8000:8000",
+        shlex.quote(image),
+    ]
     if config.engine == InferenceEngine.LLAMACPP:
-        return (
-            f"docker run --gpus all -p 8000:8000 {image} "
-            f"-m {config.model_name} --host 0.0.0.0 --port 8000"
-        )
-    return (
-        f"docker run --gpus all -p 8000:8000 {image} "
-        f"--model {config.model_name} --host 0.0.0.0 --port 8000"
-    )
+        argv = [*base_argv, "-m", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]
+    else:
+        argv = [*base_argv, "--model", shlex.quote(config.model_name), "--host", "0.0.0.0", "--port", "8000"]
+    # Join with spaces; fixed tokens are already safe, user-supplied tokens are quoted.
+    return " ".join(argv)
 
 
 def _user_data_script(config: ComputeConfig) -> str:
@@ -171,7 +196,7 @@ class TerraformGenerator:
                 from_port   = 8000
                 to_port     = 8000
                 protocol    = "tcp"
-                cidr_blocks = ["0.0.0.0/0"]
+                cidr_blocks = ["{config.allowed_cidr}"]
               }}
 
               egress {{
@@ -272,7 +297,7 @@ class TerraformGenerator:
                 ports    = ["8000"]
               }}
 
-              source_ranges = ["0.0.0.0/0"]
+              source_ranges = ["{config.allowed_cidr}"]
               target_tags   = ["gpu-instance"]
             }}
 
@@ -337,7 +362,7 @@ class TerraformGenerator:
                 protocol                   = "Tcp"
                 source_port_range          = "*"
                 destination_port_range     = "8000"
-                source_address_prefix      = "*"
+                source_address_prefix      = "{config.allowed_cidr}"
                 destination_address_prefix = "*"
               }}
             }}

@@ -76,6 +76,38 @@ def test_host_is_blocked_allows_public_host() -> None:
 
 
 # --------------------------------------------------------------------------- #
+# Hardening: trailing-dot (FQDN root) and NUL-byte host bypasses are denied.
+# Without the fix, "localhost." slips past the name blocklist (it != "localhost")
+# and "127.0.0.1." fails ip_address() parsing, while "localhost\x00.evil.com"
+# may be truncated to "localhost" by a downstream resolver/client.
+# --------------------------------------------------------------------------- #
+@pytest.mark.parametrize(
+    "host",
+    [
+        "localhost.",  # trailing dot on a blocked name
+        "metadata.",
+        "127.0.0.1.",  # trailing dot on a blocked IP literal
+        "169.254.169.254.",  # cloud metadata IP with trailing dot
+        "::1.",  # trailing dot after IPv6 loopback (bracket already stripped)
+        "[::1].",  # bracketed IPv6 loopback + trailing dot (dot must strip first)
+        "[::1]",  # bracketed IPv6 loopback (no dot)
+        "127.0.0.1..",  # DOUBLE trailing dot (rstrip must remove all)
+        "metadata..",
+        "localhost\x00",  # NUL after a blocked name
+        "localhost\x00.evil.example.com",  # NUL-truncation smuggling a blocked host
+        "127.0.0.1\x00.evil.example.com",
+    ],
+)
+def test_host_is_blocked_denies_trailing_dot_and_nul_bypasses(host: str) -> None:
+    assert host_is_blocked(host) is True
+
+
+def test_host_is_blocked_allows_public_host_with_trailing_dot() -> None:
+    # A trailing FQDN dot on a legitimately-public host must NOT be over-blocked.
+    assert host_is_blocked("api.public.example.com.") is False
+
+
+# --------------------------------------------------------------------------- #
 # All THREE public entrypoints deny the SAME canonical hostile set.
 # --------------------------------------------------------------------------- #
 @pytest.mark.parametrize("host", CANONICAL_HOSTILE_HOSTS)

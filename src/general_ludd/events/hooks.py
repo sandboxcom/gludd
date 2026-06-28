@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 import asyncio
-import functools
 import logging
 import uuid
 from collections.abc import Callable
@@ -106,6 +105,11 @@ class HookSystem:
         # mirror hook activity onto the event bus (a HookTriggeredEvent per
         # event fired), giving subscribers visibility into hook execution.
         self._event_bus = event_bus
+        # SF-fire-webhook-sync: hold a strong reference to each in-flight webhook
+        # Future. run_in_executor's Future is otherwise discarded, so it could be
+        # garbage-collected mid-delivery and its exception swallowed. Tracking +
+        # a done-callback keeps it alive and surfaces failures to operators.
+        self._pending_webhooks: set[asyncio.Future[None]] = set()
 
     def register_callback(
         self, event_name: str, callback: Callable[..., Any], priority: int = 100
@@ -227,47 +231,70 @@ class HookSystem:
             )
 
     def _fire_webhook(self, config: WebhookConfig, event_name: str, payload: dict[str, Any]) -> None:
-        # Fix A: strip credential keys before forwarding.
+        # Fix A: strip credential keys before forwarding.  Redaction happens
+        # here (on the calling thread) so that the redacted body is captured by
+        # the _do_post closure — no race on the original payload dict.
         body = {"event": event_name, "payload": _redact_payload(payload)}
         # Fix C: clamp retry_count so misconfigured values can't cause DoS.
         retry_count = min(max(1, config.retry_count), 5)
-        last_exc: Exception | None = None
-        for attempt in range(retry_count):
-            try:
-                # Fix B: if called from inside a running event loop, offload the
-                # blocking network call to a thread-pool executor so the loop
-                # isn't frozen.  Fall back to a direct (blocking) call when there
-                # is no running loop (normal sync context).
+
+        def _do_post() -> None:
+            """Retry loop that issues the blocking httpx.post.
+
+            Keeping the sync httpx.post call here (rather than switching to
+            httpx.AsyncClient) preserves the existing mock surface used by
+            tests that patch ``general_ludd.events.hooks.httpx.post``.
+            """
+            last_exc: Exception | None = None
+            for attempt in range(retry_count):
                 try:
-                    loop = asyncio.get_running_loop()
-                    loop.run_in_executor(
-                        None,
-                        functools.partial(
-                            httpx.post,
-                            config.url,
-                            json=body,
-                            headers=config.headers,
-                            timeout=config.timeout_seconds,
-                            # Never auto-follow redirects: a 30x to an internal
-                            # address would bypass the registration-time SSRF check.
-                            follow_redirects=False,
-                        ),
-                    )
-                    return
-                except RuntimeError:
-                    httpx.post(
+                    response = httpx.post(
                         config.url,
                         json=body,
                         headers=config.headers,
                         timeout=config.timeout_seconds,
+                        # Never auto-follow redirects: a 30x to an internal
+                        # address would bypass the registration-time SSRF check.
                         follow_redirects=False,
                     )
-                return
-            except Exception as exc:
-                last_exc = exc
-                logger.warning("Webhook attempt %d/%d failed: %s", attempt + 1, retry_count, exc)
-        if last_exc is not None:
-            raise last_exc
+                    response.raise_for_status()
+                    return
+                except Exception as exc:
+                    last_exc = exc
+                    logger.warning(
+                        "Webhook attempt %d/%d failed: %s", attempt + 1, retry_count, exc
+                    )
+            if last_exc is not None:
+                raise last_exc
+
+        try:
+            loop = asyncio.get_running_loop()
+            # A running event loop means we are on the async path (e.g. a
+            # FastAPI request handler).  Off-load the blocking network call to
+            # a thread pool executor so the loop stays free for other coroutines.
+            # The entire retry loop lives inside _do_post so retries, timeout
+            # bounds, and raise_for_status checks are all preserved.
+            # fire() is sync and cannot await, so we cannot block on delivery —
+            # but we MUST keep a reference to the Future (else it can be GC'd
+            # mid-flight) and attach a done-callback so a failed delivery is
+            # logged rather than silently swallowed (SF-fire-webhook-sync).
+            future = loop.run_in_executor(None, _do_post)
+            self._pending_webhooks.add(future)
+
+            def _on_webhook_done(task: asyncio.Future[None]) -> None:
+                self._pending_webhooks.discard(task)
+                try:
+                    task.result()
+                except asyncio.CancelledError:
+                    logger.warning("Webhook delivery task was cancelled")
+                except Exception:
+                    logger.warning("Webhook delivery failed after retries", exc_info=True)
+
+            future.add_done_callback(_on_webhook_done)
+        except RuntimeError:
+            # No running event loop — safe to call _do_post directly
+            # (sync startup path, CLI, or unit tests without an event loop).
+            _do_post()
 
     def list_hooks(self) -> list[HookRegistration]:
         result = []

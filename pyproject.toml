@@ -1,6 +1,6 @@
 [project]
 name = "general-ludd-agent"
-version = "0.1.0-alpha.3"
+version = "0.1.0-alpha.5"
 description = "General Ludd Agent — the black swan agentic coding system with Ansible runners and multi-model AI agents"
 readme = "README.md"
 requires-python = ">=3.11"
@@ -10,12 +10,23 @@ authors = [{name = "General Ludd Team"}]
 
 dependencies = [
     "fastapi>=0.115.0",
+    # Dep2 (CVE-2026-54283, HIGH): fastapi only floors starlette at 1.2.0 (verified
+    # in uv.lock), which is BELOW the patched 1.3.1 — fastapi's transitive pin does
+    # NOT cover the CVE, so pin starlette explicitly.
+    "starlette>=1.3.1",
     "uvicorn-worker>=0.3.0",
     "gunicorn>=23.0.0",
     "httpx>=0.28.0",
     "pydantic>=2.10.0",
-    "pydantic-settings>=2.0.0",
+    "pydantic-settings>=2.14.2",
     "sqlalchemy>=2.0.0",
+    # Dep3 (CVE lower-bound, 2026-06-24): pin cryptography away from known-vulnerable
+    # releases. Pulled in transitively (hvac/requests/TLS); pin explicitly so the
+    # floor is enforced regardless of which transitive dep selects it.
+    "cryptography>=48.0.1",
+    # Dep5 (CVE lower-bound, 2026-06-24): msgpack floor. Transitive (e.g. via cache
+    # / langgraph stack); pinned explicitly to enforce the patched floor.
+    "msgpack>=1.2.1",
     "alembic>=1.14.0",
     "psycopg[binary]>=3.2.0",
     "aiosqlite>=0.20.0",
@@ -38,6 +49,9 @@ dependencies = [
     "fs>=2.4.0",
     "rich>=13.0.0",
     "diskcache>=5.6.0",
+    # Cron expression parsing and next-run computation for the integrated
+    # todo scheduler (one-shot and recurring SCHEDULED todos).
+    "croniter>=2.0.0",
 ]
 
 [project.optional-dependencies]
@@ -108,7 +122,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]
@@ -132,6 +146,9 @@ asyncio_default_fixture_loop_scope = "function"
 # (e.g. a TUI input-feed that never reaches quit on headless Linux).
 timeout = 180
 timeout_method = "signal"
+markers = [
+    "xdist_group: serialize tests that share a fixed resource (e.g. port 8000 or the daemon PID file) under pytest-xdist",
+]
 
 [tool.coverage.run]
 source = ["general_ludd"]

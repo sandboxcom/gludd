@@ -1,0 +1,73 @@
+---
+- name: Verify - langgraph_decision wrote its artifact and surfaced the decision to gludd
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}.pid"
+    artifact: "/tmp/gludd-langgraph-decision-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}/langgraph_decision_result.json"
+    mock_log: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8861', true) }}.log"
+    allowed_decisions:
+      - "proceed"
+      - "revise"
+      - "reject"
+  tasks:
+    - name: Assert decision artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact }}"
+      register: art
+      failed_when: not art.stat.exists
+
+    - name: Load decision artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact }}"
+      register: art_raw
+
+    - name: Parse decision artifact
+      ansible.builtin.set_fact:
+        result: "{{ art_raw.content | b64decode | from_json }}"
+
+    - name: Assert artifact carries a valid decision (one of the allowed options)
+      ansible.builtin.assert:
+        that:
+          - result.todo_id == 'TODO-MOL-1'
+          - result.status == 'success'
+          - result.decision is defined
+          - result.decision in allowed_decisions
+          - result.quality_score is defined
+        fail_msg: "langgraph_decision artifact wrong: {{ result }}"
+        success_msg: "langgraph_decision: decision={{ result.decision }} (in allowed options) quality={{ result.quality_score }}"
+
+    # The role surfaces the decision back to gludd via gludd_db todo_update_status,
+    # which issues PATCH /api/todos/TODO-MOL-1 against the daemon. The mock daemon
+    # logs every request, so the log proves the result-return call was attempted.
+    - name: Load mock daemon request log
+      ansible.builtin.slurp:
+        src: "{{ mock_log }}"
+      register: log_raw
+
+    - name: Decode mock daemon request log
+      ansible.builtin.set_fact:
+        mock_requests: "{{ log_raw.content | b64decode }}"
+
+    - name: Assert the role attempted the gludd_db result-return call (PATCH /api/todos/<id>)
+      ansible.builtin.assert:
+        that:
+          - "'PATCH /api/todos/TODO-MOL-1' in mock_requests"
+        fail_msg: >-
+          langgraph_decision did not surface the decision back to gludd: no
+          PATCH /api/todos/TODO-MOL-1 in the mock daemon request log.
+        success_msg: "langgraph_decision surfaced the decision via gludd_db PATCH /api/todos/TODO-MOL-1"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove decision artifact dir
+      ansible.builtin.file:
+        path: "/tmp/gludd-langgraph-decision-{{ mock_port }}"
+        state: absent
+      failed_when: false

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+from typing import ClassVar
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -124,8 +125,8 @@ class TestDaemonApp:
             assert isinstance(data["config_file_count"], int)
             assert "filestore_available" in data
             assert "filestore_binaries" in data
-            assert "db_engine" in data
-            assert "db_url" in data
+            assert "db_engine" not in data
+            assert "db_url" not in data
 
     @pytest.mark.asyncio
     async def test_deployments_endpoint(self, transport):
@@ -640,3 +641,258 @@ class TestDaemonStateIsolation:
         assert second.state.daemon_state["todos"] == []
         assert second.state.daemon_state["tick_metrics"] == {}
         assert second.state.daemon_state["quality_gate"] == {}
+
+
+class TestApiStatusNoDbLeak:
+    """SEC-8 regression: /api/status must not expose db_url or db_engine to
+    unauthenticated callers.  The endpoint is public and formerly disclosed the
+    DB host/port/dialect in plaintext."""
+
+    @pytest.fixture
+    def transport(self):
+        app = create_daemon_app(tick_interval=999.0)
+        return ASGITransport(app=app)
+
+    @pytest.mark.asyncio
+    async def test_api_status_does_not_leak_db_url(self, transport):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "db_url" not in data, (
+            "SEC-8: db_url must not be exposed in /api/status response"
+        )
+        assert "db_engine" not in data, (
+            "SEC-8: db_engine must not be exposed in /api/status response"
+        )
+
+    @pytest.mark.asyncio
+    async def test_api_status_retains_required_fields(self, transport):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/status")
+        assert resp.status_code == 200
+        data = resp.json()
+        assert "version" in data, "/api/status must still return version"
+        assert "todos_total" in data, "/api/status must still return todos_total"
+
+
+class TestDegradedGuard:
+    """Bug #1: mutating handlers must return 503 when app.state._degraded is set.
+
+    When the daemon lifespan fails the process keeps serving but enforcement
+    infrastructure (dispatcher, self-update ladder, spend limiter) is silently
+    inert.  Calling _check_degraded() at the top of each mutating handler
+    prevents silent pass-through of requests that can have no real effect.
+    """
+
+    def test_check_degraded_returns_none_when_healthy(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _check_degraded
+
+        app = FastAPI()
+        # No _degraded set — healthy case
+        assert _check_degraded(app) is None
+
+    def test_check_degraded_returns_json_response_when_set(self):
+        from fastapi import FastAPI
+        from fastapi.responses import JSONResponse
+
+        from general_ludd.daemon import _check_degraded
+
+        app = FastAPI()
+        app.state._degraded = "startup failed: DB unreachable"
+        resp = _check_degraded(app)
+        assert resp is not None
+        assert isinstance(resp, JSONResponse)
+        assert resp.status_code == 503
+
+    def test_check_degraded_truncates_long_reason(self):
+        from fastapi import FastAPI
+
+        from general_ludd.daemon import _check_degraded
+
+        app = FastAPI()
+        app.state._degraded = "x" * 500
+        resp = _check_degraded(app)
+        import json
+        body = json.loads(resp.body)
+        assert len(body["reason"]) <= 200
+
+    @pytest.mark.asyncio
+    async def test_dispatch_returns_503_when_degraded(self):
+        """POST /api/dispatch must return 503 when _degraded is set."""
+        import os
+        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+            app = create_daemon_app(tick_interval=999.0)
+        app.state._degraded = "lifespan boom"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/dispatch",
+                json={"kind": "role", "name": "planner", "args": {}},
+            )
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body.get("error") == "degraded"
+
+    @pytest.mark.asyncio
+    async def test_self_update_plan_returns_503_when_degraded(self):
+        """POST /admin/self-update/plan must return 503 when _degraded is set."""
+        import os
+        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+            app = create_daemon_app(tick_interval=999.0)
+        app.state._degraded = "lifespan boom"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/admin/self-update/plan",
+                json={"raw_text": "add logging", "requested_by": "test"},
+            )
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body.get("error") == "degraded"
+
+    @pytest.mark.asyncio
+    async def test_self_update_enqueue_returns_503_when_degraded(self):
+        """POST /admin/self-update/enqueue must return 503 when _degraded is set."""
+        import os
+        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+            app = create_daemon_app(tick_interval=999.0)
+        app.state._degraded = "lifespan boom"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/admin/self-update/enqueue",
+                json={"raw_text": "add logging", "requested_by": "test"},
+            )
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body.get("error") == "degraded"
+
+    @pytest.mark.asyncio
+    async def test_spend_configure_returns_503_when_degraded(self):
+        """POST /api/spend/configure must return 503 when _degraded is set."""
+        import os
+        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+            app = create_daemon_app(tick_interval=999.0)
+        app.state._degraded = "lifespan boom"
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/spend/configure",
+                json={"limit_usd": 5.0, "window_seconds": 3600.0},
+            )
+        assert resp.status_code == 503
+        body = resp.json()
+        assert body.get("error") == "degraded"
+
+    @pytest.mark.asyncio
+    async def test_healthy_dispatch_not_blocked(self):
+        """Sanity: when _degraded is absent, dispatch proceeds to real handling."""
+        import os
+        with patch.dict(os.environ, {"GLUDD_ALLOW_NO_AUTH": "1"}):
+            app = create_daemon_app(tick_interval=999.0)
+        # No _degraded — the dispatcher should handle the request (likely error,
+        # but NOT a 503 degraded response).
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                "/api/dispatch",
+                json={"kind": "role", "name": "planner", "args": {}},
+            )
+        # Should not be blocked as degraded; any non-503-degraded response is fine.
+        body = resp.json()
+        assert body.get("error") != "degraded", (
+            "Healthy daemon must not return degraded error from /api/dispatch"
+        )
+
+
+class TestIngestAuthGuard:
+    """Bug #2: structural guard — every /v1/* and /ingest/* route must enforce
+    ingest-token auth and must NOT serve unauthenticated requests.
+
+    The PSK middleware explicitly skips these prefixes (_RECEIVER_PREFIXES) so
+    the receiver router's own auth runs instead.  This test locks down that
+    invariant: if a future route is added under /v1/ or /ingest/ and forgets its
+    own auth, the test catches it before it ships as a wide-open relay.
+
+    Covered routes (POST):
+      /v1/logs, /v1/metrics, /v1/traces
+      /ingest/webhook, /ingest/gelf, /ingest/fluent, /ingest/beats
+    """
+
+    _INGEST_ROUTES: ClassVar[list[str]] = [
+        "/v1/logs",
+        "/v1/metrics",
+        "/v1/traces",
+        "/ingest/webhook",
+        "/ingest/gelf",
+        "/ingest/fluent",
+        "/ingest/beats",
+    ]
+
+    @pytest.fixture
+    def _app_no_ingest_token(self, monkeypatch):
+        """Daemon app with no GLUDD_INGEST_TOKEN configured (fail-closed mode)."""
+        monkeypatch.delenv("GLUDD_INGEST_TOKEN", raising=False)
+        monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+        return create_daemon_app(tick_interval=999.0)
+
+    @pytest.fixture
+    def _app_with_ingest_token(self, monkeypatch):
+        """Daemon app with a known GLUDD_INGEST_TOKEN configured."""
+        monkeypatch.setenv("GLUDD_INGEST_TOKEN", "test-ingest-secret")
+        monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
+        return create_daemon_app(tick_interval=999.0)
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", _INGEST_ROUTES)
+    async def test_ingest_route_fail_closed_without_token(
+        self, path, _app_no_ingest_token, monkeypatch
+    ):
+        """Without GLUDD_INGEST_TOKEN the receiver must fail-closed (503), never
+        expose an open relay.  A 200/404/422 here would mean auth was skipped."""
+        # Ensure the env var is absent for the request evaluation too
+        monkeypatch.delenv("GLUDD_INGEST_TOKEN", raising=False)
+        transport = ASGITransport(app=_app_no_ingest_token)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                path,
+                content=b'{"msg": "hello"}',
+                headers={"Content-Type": "application/json"},
+            )
+        assert resp.status_code == 503, (
+            f"GUARD: {path} must return 503 (ingest_disabled) when "
+            f"GLUDD_INGEST_TOKEN is not configured — got {resp.status_code}. "
+            "A new route under /v1/ or /ingest/ that skips ingest auth will "
+            "show up here as a non-503 response."
+        )
+        body = resp.json()
+        assert body.get("error") == "ingest_disabled", (
+            f"GUARD: {path} fail-closed response must carry error=ingest_disabled, "
+            f"got: {body}"
+        )
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("path", _INGEST_ROUTES)
+    async def test_ingest_route_rejects_bad_token(
+        self, path, _app_with_ingest_token, monkeypatch
+    ):
+        """A wrong ingest token must return 401 Unauthorized, never 200/404."""
+        monkeypatch.setenv("GLUDD_INGEST_TOKEN", "test-ingest-secret")
+        transport = ASGITransport(app=_app_with_ingest_token)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post(
+                path,
+                content=b'{"msg": "hello"}',
+                headers={
+                    "Content-Type": "application/json",
+                    "Authorization": "Bearer wrong-token",
+                },
+            )
+        assert resp.status_code == 401, (
+            f"GUARD: {path} must return 401 on a bad ingest token — "
+            f"got {resp.status_code}. A route that skips auth will return "
+            "something other than 401 here."
+        )

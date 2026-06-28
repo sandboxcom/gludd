@@ -48,6 +48,34 @@ PROTECTED_PATH_MARKERS: tuple[str, ...] = (
     "fs_write_policy",
     "enforce-",
     "permissions",
+    # CI/build surface — rewriting these could exfiltrate build-runner secrets
+    # or silently disable guardrails. Path comparison is already lowercased in
+    # _first_protected(), so these lowercase markers match case-insensitively.
+    ".github",
+    "/workflows/",
+    "pyproject.toml",
+    "makefile",
+    "alembic",
+    "/migrations/",
+    "setup.cfg",
+    "tox.ini",
+    ".pre-commit",
+    "dockerfile",
+)
+
+# Bare-word markers that must match a whole PATH SEGMENT (or exact basename),
+# not an arbitrary substring.  This prevents ``alembic`` from blocking
+# ``src/alembic_runner.py``, ``makefile`` from blocking
+# ``utils/makefile_parser.py``, and ``dockerfile`` from blocking
+# ``src/dockerfile_parser.py``.
+#
+# A marker listed here is matched when:
+#   • it equals any individual segment of the lowercased, normalised path, OR
+#   • it equals the lowercased basename (covers ``Makefile`` at repo root).
+#
+# All other PROTECTED_PATH_MARKERS continue to be matched as substrings.
+_SEGMENT_EXACT_MARKERS: frozenset[str] = frozenset(
+    {"alembic", "makefile", "dockerfile"}
 )
 
 # Kinds whose change content is validated as YAML and then written in place.
@@ -103,23 +131,77 @@ class ApplyResult:
 
 
 def _first_protected(target_paths: list[str]) -> str | None:
-    """Return the first target path matching the deny-list, else ``None``."""
+    """Return the first target path matching the deny-list, else ``None``.
+
+    Matching is **two-tier** to prevent over-blocking:
+
+    * **Segment-exact markers** (``_SEGMENT_EXACT_MARKERS``): bare words like
+      ``alembic``, ``makefile``, ``dockerfile`` that would falsely match
+      ``alembic_runner.py`` or ``makefile_parser.py`` if treated as substrings.
+      These are matched only when the marker equals an individual path segment or
+      the exact basename (case-insensitive).
+
+    * **Substring markers** (all other ``PROTECTED_PATH_MARKERS``): anchored by
+      leading/trailing ``/`` or a leading ``.`` (e.g. ``/workflows/``,
+      ``.github``, ``pyproject.toml``), so substring matching is safe and
+      intentional for them.
+    """
     for path in target_paths:
         normalised = os.path.normpath(urllib.parse.unquote(path))
         lowered = normalised.lower()
         # Also resolve symlinks / .. traversal so `./secrets/../allowed` is caught.
+        # FAIL CLOSED (applier-D): if ``.resolve()`` raises we must NOT silently
+        # fall back to the lexical path — a path that would only hit a protected
+        # marker via a symlink would otherwise slip through. Treat any resolve
+        # failure as protected and return the path immediately.
         try:
             resolved_lowered = Path(path).resolve().as_posix().lower()
         except Exception:
-            resolved_lowered = lowered
+            return path
+
+        # Pre-compute segments for segment-exact matching (split on both / and \).
+        lowered_segments = set(lowered.replace("\\", "/").split("/"))
+        resolved_segments = set(resolved_lowered.split("/"))
+        basename_lowered = Path(lowered).name
+        # Basename STEM (extension dropped) so a bare-word marker like ``alembic``
+        # also blocks ``alembic.ini``/``alembic.cfg`` — the config file IS the
+        # protected surface — while staying safe against ``alembic_runner.py``
+        # (stem ``alembic_runner`` != ``alembic``).
+        basename_stem_lowered = Path(basename_lowered).stem
+
         for marker in PROTECTED_PATH_MARKERS:
-            if marker in lowered or marker in resolved_lowered:
-                return path
+            if marker in _SEGMENT_EXACT_MARKERS:
+                # Match only as a whole path segment, exact basename, or the
+                # basename stem (so ``<marker>.<ext>`` config files are caught).
+                if (
+                    marker in lowered_segments
+                    or marker in resolved_segments
+                    or marker in (basename_lowered, basename_stem_lowered)
+                ):
+                    return path
+            else:
+                # Substring match (safe: marker is slash-anchored or has a
+                # leading dot, making false positives structurally impossible).
+                if marker in lowered or marker in resolved_lowered:
+                    return path
     return None
 
 
-def _first_escape(target_paths: list[str], workspace_root: Path) -> str | None:
-    """Return the first target path resolving outside ``workspace_root``, else ``None``.
+def _resolve_confined(
+    target_paths: list[str], workspace_root: Path
+) -> tuple[str | None, list[Path]]:
+    """Resolve every target path and confine it to ``workspace_root``.
+
+    Returns ``(escapee, resolved_paths)`` where:
+
+    * ``escapee`` is the first raw target path resolving outside the root, or
+      ``None`` if every path is confined.
+    * ``resolved_paths`` holds the **resolved** :class:`Path` objects for the
+      paths checked so far (complete only when ``escapee`` is ``None``).
+
+    Returning the resolved paths is what closes the TOCTOU window (applier-C):
+    the caller writes these resolved paths rather than the raw strings, so a
+    symlink swapped after the check cannot redirect the write outside the root.
 
     Every path is anchored to ``workspace_root`` and resolved with symlinks
     followed, so ``../`` traversal, percent-encoded escapes, and absolute paths
@@ -127,6 +209,7 @@ def _first_escape(target_paths: list[str], workspace_root: Path) -> str | None:
     is ``workspace_root`` itself or lives beneath it.
     """
     root = workspace_root.resolve()
+    resolved_paths: list[Path] = []
     for path in target_paths:
         decoded = urllib.parse.unquote(path)
         # Joining against ``root`` anchors relative paths; for an absolute
@@ -136,8 +219,9 @@ def _first_escape(target_paths: list[str], workspace_root: Path) -> str | None:
         try:
             resolved.relative_to(root)
         except ValueError:
-            return path
-    return None
+            return path, resolved_paths
+        resolved_paths.append(resolved)
+    return None, resolved_paths
 
 
 class UpdateApplier:
@@ -182,7 +266,9 @@ class UpdateApplier:
         #    absolute paths outside the root are denied regardless of capability
         #    or kind. This runs before the protected-path check and before any
         #    write so an escaping path can never reach the SafeWriter.
-        escapee = _first_escape(target_paths, self._workspace_root)
+        escapee, resolved_paths = _resolve_confined(
+            target_paths, self._workspace_root
+        )
         if escapee is not None:
             return ApplyResult(
                 status="denied",
@@ -221,8 +307,12 @@ class UpdateApplier:
                 )
 
             try:
-                for path in target_paths:
-                    self._writer.write(path, change_content)
+                # TOCTOU fix (applier-C): write the RESOLVED paths computed by
+                # the confinement gate, NOT the raw target strings. A symlink
+                # swapped between the check and this write cannot redirect the
+                # write outside the confined, already-resolved location.
+                for resolved in resolved_paths:
+                    self._writer.write(str(resolved), change_content)
             except Exception as exc:  # write failure fails closed
                 return ApplyResult(
                     status="denied",

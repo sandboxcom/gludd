@@ -137,7 +137,11 @@ class TestQuerySources:
         errors = [r for r in out if r["level_or_status"] == "error"]
         assert len(errors) == 1
         assert errors[0]["source"] == "broken"
-        assert "backend down" in errors[0]["message"]
+        # Redacted: the raw exception detail must NOT leak to callers (logged
+        # server-side instead); the client-facing message is generic.
+        assert errors[0]["message"] == "query failed"
+        assert "backend down" not in errors[0]["message"]
+        assert errors[0].get("raw") is None
         # The facade also exposes collected errors separately.
         assert obs.errors and obs.errors[0]["source"] == "broken"
 

@@ -30,6 +30,7 @@ from collections.abc import Callable
 from typing import Any, Protocol, runtime_checkable
 from urllib.parse import urlsplit
 
+from general_ludd.connectors.normalize import sanitize_metric_value
 from general_ludd.security.ssrf import is_url_blocked
 
 __all__ = ["NewRelicSource"]
@@ -82,7 +83,11 @@ def _default_transport(
     """
     import requests  # local import keeps the module import-light & offline
 
-    return requests.post(url, headers=headers, json=json, timeout=timeout)
+    # allow_redirects=False: never follow a 30x off the configured endpoint — a
+    # redirect to an internal/metadata address would be an SSRF pivot.
+    return requests.post(
+        url, headers=headers, json=json, timeout=timeout, allow_redirects=False
+    )
 
 
 # --------------------------------------------------------------------------- #
@@ -230,7 +235,7 @@ class NewRelicSource:
     def _normalize_row(self, row: dict[str, Any]) -> dict[str, Any]:
         ts = _coerce_ts(row)
         ts_keys = frozenset(k for k in _TIMESTAMP_KEYS if k in row)
-        value = _first_numeric_aggregate(row, skip=ts_keys)
+        value = sanitize_metric_value(_first_numeric_aggregate(row, skip=ts_keys))
 
         labels: dict[str, Any] = {
             k: v

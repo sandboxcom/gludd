@@ -166,3 +166,244 @@ def test_monday_default_transport_uses_no_redirect_opener() -> None:
         f"got: {handler_classes_seen}"
     )
     assert status == 200
+
+
+# ---------------------------------------------------------------------------
+# Additional connectors — SSRF redirect guard (follow_redirects=False)
+#
+# Each connector ships a default httpx-backed transport used only when no
+# transport is injected. A 3xx redirect must never be silently followed, or a
+# 30x could pivot the request off the configured endpoint to an internal /
+# metadata address (SSRF). These tests patch the relevant httpx entry point,
+# capture the kwargs, and assert follow_redirects=False is forwarded.
+# ---------------------------------------------------------------------------
+
+
+def _fake_response() -> SimpleNamespace:
+    resp = SimpleNamespace(status_code=200)
+    resp.json = lambda: {}  # type: ignore[attr-defined]
+    return resp
+
+
+def _assert_no_redirects(captured: dict[str, Any]) -> None:
+    assert "follow_redirects" in captured, (
+        "outbound httpx call was not made with a follow_redirects kwarg"
+    )
+    assert captured["follow_redirects"] is False, (
+        f"follow_redirects should be False, got {captured['follow_redirects']!r}"
+    )
+
+
+def test_elasticsearch_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.elasticsearch import _default_http_request
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_http_request(
+            "GET", "https://es.example/_search", {"Authorization": "x"}, b"{}"
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_okta_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.okta import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "GET",
+            "https://example.okta.com/api/v1/logs",
+            headers={"Authorization": "SSWS tok"},
+            params={"limit": "100"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_graylog_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.graylog import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_get(url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.get", side_effect=fake_get):
+        _default_transport(
+            "https://graylog.example/api/search/universal/relative",
+            headers={"Authorization": "Basic x"},
+            params={"query": "*"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_azure_monitor_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.azure_monitor import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "POST",
+            "https://api.loganalytics.io/v1/workspaces/w/query",
+            {"Authorization": "Bearer x"},
+            {"query": "Heartbeat"},
+            10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_cloudflare_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.cloudflare import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "GET",
+            "https://api.cloudflare.com/client/v4/zones",
+            headers={"Authorization": "Bearer x"},
+            params={"per_page": "50"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_jaeger_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.jaeger import _HttpxTransport
+
+    captured: dict[str, Any] = {}
+
+    def fake_get(url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.get", side_effect=fake_get):
+        _HttpxTransport().get(
+            "https://jaeger.example/api/traces",
+            params={"service": "svc"},
+            timeout=10.0,
+            headers={"Accept": "application/json"},
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_victoriametrics_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.victoriametrics import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "GET",
+            "https://vm.example/api/v1/query",
+            headers={"Authorization": "Bearer x"},
+            params={"query": "up"},
+            json=None,
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_entra_signin_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.entra_signin import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "GET",
+            "https://graph.microsoft.com/v1.0/auditLogs/signIns",
+            headers={"Authorization": "Bearer x"},
+            params={"$top": "100"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_zabbix_transport_passes_follow_redirects_false() -> None:
+    from general_ludd.connectors.zabbix import _default_transport
+
+    captured: dict[str, Any] = {}
+
+    def fake_request(method: str, url: str, **kwargs: Any) -> SimpleNamespace:
+        captured.update(kwargs)
+        return _fake_response()
+
+    with patch("httpx.request", side_effect=fake_request):
+        _default_transport(
+            "POST",
+            "https://zabbix.example/api_jsonrpc.php",
+            headers={"Content-Type": "application/json-rpc"},
+            params=None,
+            json={"jsonrpc": "2.0"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)
+
+
+def test_parca_transport_client_constructed_with_follow_redirects_false() -> None:
+    """parca sets follow_redirects=False on the httpx.Client CONSTRUCTOR."""
+    from general_ludd.connectors.parca import _HttpxTransport
+
+    captured: dict[str, Any] = {}
+
+    class _FakeClient:
+        def __init__(self, **kwargs: Any) -> None:
+            captured.update(kwargs)
+
+        def __enter__(self) -> _FakeClient:
+            return self
+
+        def __exit__(self, *args: object) -> None:
+            return None
+
+        def post(self, url: str, **kwargs: Any) -> SimpleNamespace:
+            return _fake_response()
+
+    with patch("httpx.Client", _FakeClient):
+        _HttpxTransport().post(
+            "https://parca.example/parca.query.v1alpha1.QueryService/QueryRange",
+            json={"q": "x"},
+            headers={"Authorization": "Bearer x"},
+            timeout=10.0,
+        )
+
+    _assert_no_redirects(captured)

@@ -1,3 +1,5 @@
+> STATUS: POINT-IN-TIME analysis (dated). Reference/history — re-validate against current code/hooks before acting on its recommendations.
+
 # Agent Floor Root-Cause Analysis
 
 **Session:** 9780c7f7-9ec0-4337-8a8a-af36b8de929c

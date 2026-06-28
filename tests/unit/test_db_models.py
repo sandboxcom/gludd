@@ -6,21 +6,26 @@ run without a PostgreSQL instance.
 
 from __future__ import annotations
 
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
-from sqlalchemy import event
+from sqlalchemy import event, select
 from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from sqlalchemy.orm import sessionmaker
 from sqlalchemy.pool import StaticPool
 
 from general_ludd.db.models import (
+    AgentMessageModel,
     AuditEventModel,
     AuditEventType,
     Base,
     BucketLeaseModel,
+    FeatureModel,
+    ProjectModel,
+    PromptProfileModel,
     QueueModel,
+    RoleRunModel,
     TaskDecisionModel,
     TaskReturnModel,
     TodoEventModel,
@@ -29,9 +34,15 @@ from general_ludd.db.models import (
     VariableValueModel,
 )
 from general_ludd.db.repository import (
+    _DEFAULT_LIST_LIMIT,
+    AgentMessageRepository,
+    BenchmarkRepository,
     ConcurrencyError,
+    FeatureRepository,
     InvalidTransitionError,
+    PromptProfileRepository,
     QueueRepository,
+    RoleRunRepository,
     TaskReturnRepository,
     TodoRepository,
 )
@@ -495,3 +506,431 @@ class TestQueueRepository:
         names = [q.queue_name for q in enabled_queues]
         assert "core" in names
         assert "disabled_q" not in names
+
+
+class TestAgentMessageRepositoryPurgeExpired:
+    """P11: set-based DELETE of ttl-expired messages."""
+
+    async def test_purge_expired_bulk_delete_mixed_ttl(
+        self, async_session: AsyncSession
+    ):
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        old = now - timedelta(hours=2)
+        # Two expired (old created_at + short ttl), one not-yet-expired
+        # (old created_at but huge ttl), one with no ttl (never expires).
+        async_session.add_all([
+            AgentMessageModel(
+                sender="a", recipient="r1", created_at=old, ttl_seconds=60
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r2", created_at=old, ttl_seconds=60
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r3", created_at=old, ttl_seconds=86_400
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r4", created_at=old, ttl_seconds=None
+            ),
+        ])
+        await async_session.flush()
+
+        purged = await repo.purge_expired()
+        assert purged == 2
+
+        remaining = (
+            await async_session.execute(select(AgentMessageModel))
+        ).scalars().all()
+        recipients = {m.recipient for m in remaining}
+        # The long-ttl and no-ttl rows survive; the two expired rows are gone.
+        assert recipients == {"r3", "r4"}
+
+    async def test_purge_expired_none_when_no_expiry(
+        self, async_session: AsyncSession
+    ):
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        async_session.add_all([
+            AgentMessageModel(
+                sender="a", recipient="r1", created_at=now, ttl_seconds=None
+            ),
+            AgentMessageModel(
+                sender="a", recipient="r2", created_at=now, ttl_seconds=3600
+            ),
+        ])
+        await async_session.flush()
+        assert await repo.purge_expired() == 0
+
+
+class TestAgentMessageRepositoryUnreadCounts:
+    """P9: GROUP BY per-recipient unread counts with SQL ttl cutoff."""
+
+    async def test_unread_counts_excludes_expired_and_counts_per_recipient(
+        self, async_session: AsyncSession
+    ):
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        old = now - timedelta(hours=2)
+        async_session.add_all([
+            # r1: two live unread
+            AgentMessageModel(sender="s", recipient="r1", created_at=now),
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, ttl_seconds=86_400
+            ),
+            # r1: one expired (must be excluded)
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=old, ttl_seconds=60
+            ),
+            # r2: one live unread
+            AgentMessageModel(sender="s", recipient="r2", created_at=now),
+            # r3: only an expired one -> no bucket at all
+            AgentMessageModel(
+                sender="s", recipient="r3", created_at=old, ttl_seconds=60
+            ),
+            # already-read message must never be counted
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, read_at=now
+            ),
+        ])
+        await async_session.flush()
+
+        counts = await repo.unread_counts()
+        assert counts == {"r1": 2, "r2": 1}
+
+    async def test_unread_counts_respects_project_scope(
+        self, async_session: AsyncSession
+    ):
+        # project_id FK requires real project rows (PRAGMA foreign_keys=ON).
+        async_session.add_all([
+            ProjectModel(project_id="proj-aaa", name="A"),
+            ProjectModel(project_id="proj-bbb", name="B"),
+        ])
+        await async_session.flush()
+        repo = AgentMessageRepository(async_session)
+        now = datetime.now(UTC)
+        async_session.add_all([
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, project_id="proj-aaa"
+            ),
+            AgentMessageModel(
+                sender="s", recipient="r1", created_at=now, project_id="proj-bbb"
+            ),
+            # NULL project_id is global -> always counted
+            AgentMessageModel(
+                sender="s", recipient="r2", created_at=now, project_id=None
+            ),
+        ])
+        await async_session.flush()
+
+        counts = await repo.unread_counts(project_id="proj-aaa")
+        # The proj-bbb message is excluded; the global (NULL) one is included.
+        assert counts == {"r1": 1, "r2": 1}
+
+
+class TestPromptProfileRepositoryListForTaskType:
+    """P10: SQLite LIKE prefilter + json.loads backstop."""
+
+    @staticmethod
+    async def _add(session: AsyncSession, name: str, task_types: str) -> None:
+        session.add(
+            PromptProfileModel(
+                name=name,
+                source="test",
+                prompt_text="x",
+                task_types=task_types,
+            )
+        )
+
+    async def test_empty_list_matches_all(self, async_session: AsyncSession):
+        await self._add(async_session, "p_empty", "[]")
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("code")}
+        assert "p_empty" in names
+
+    async def test_exact_match(self, async_session: AsyncSession):
+        await self._add(async_session, "p_code", '["code", "docs"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("code")}
+        assert "p_code" in names
+
+    async def test_non_match_excluded(self, async_session: AsyncSession):
+        await self._add(async_session, "p_docs", '["docs"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("code")}
+        assert "p_docs" not in names
+
+    async def test_substring_false_positive_guarded(
+        self, async_session: AsyncSession
+    ):
+        # "foo" must NOT match a profile that only lists "foobar": the LIKE
+        # prefilter may admit it (textual substring), but the json.loads
+        # backstop performs an exact-element match and drops it.
+        await self._add(async_session, "p_foobar", '["foobar"]')
+        await self._add(async_session, "p_foo", '["foo"]')
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("foo")}
+        assert "p_foo" in names
+        assert "p_foobar" not in names
+
+    async def test_malformed_json_backstop_matches_all(
+        self, async_session: AsyncSession
+    ):
+        # Malformed JSON -> json.loads raises -> treated as empty ("match all").
+        # The row must survive the LIKE prefilter to reach the backstop.
+        await self._add(async_session, "p_bad", "{not json")
+        await async_session.flush()
+        repo = PromptProfileRepository(async_session)
+        names = {p.name for p in await repo.list_for_task_type("anything")}
+        assert "p_bad" in names
+
+
+class TestListPaginationP12:
+    """P12: bounded pagination (limit/offset) on the unbounded list_* reads.
+
+    Every method caps an explicit ``limit`` at ``_DEFAULT_LIST_LIMIT`` and
+    applies that same cap as the default when no ``limit`` is given, so a
+    single query can never load an unbounded result set into memory.
+    ``offset`` paginates forward. Existing callers pass no ``limit`` and thus
+    receive at most the default cap (backward-compatible).
+    """
+
+    async def test_default_caps_at_limit_when_more_rows_exist(
+        self, async_session: AsyncSession
+    ):
+        # Seed more rows than the cap, then assert the default-limit read
+        # returns exactly _DEFAULT_LIST_LIMIT (not all 1200).
+        n = _DEFAULT_LIST_LIMIT + 200
+        async_session.add_all([
+            PromptProfileModel(
+                name=f"pp-{i:05d}", source="seed", prompt_text="x"
+            )
+            for i in range(n)
+        ])
+        await async_session.flush()
+
+        repo = PromptProfileRepository(async_session)
+        rows = await repo.list_all()
+        assert len(rows) == _DEFAULT_LIST_LIMIT
+
+    async def test_explicit_limit_returns_at_most_limit(
+        self, async_session: AsyncSession
+    ):
+        async_session.add_all([
+            PromptProfileModel(
+                name=f"pp-{i:05d}", source="seed", prompt_text="x"
+            )
+            for i in range(50)
+        ])
+        await async_session.flush()
+
+        repo = PromptProfileRepository(async_session)
+        rows = await repo.list_all(limit=10)
+        assert len(rows) == 10
+
+    async def test_explicit_limit_is_capped_at_default(
+        self, async_session: AsyncSession
+    ):
+        # An over-large explicit limit can never exceed the hard cap.
+        n = _DEFAULT_LIST_LIMIT + 100
+        async_session.add_all([
+            PromptProfileModel(
+                name=f"pp-{i:05d}", source="seed", prompt_text="x"
+            )
+            for i in range(n)
+        ])
+        await async_session.flush()
+
+        repo = PromptProfileRepository(async_session)
+        rows = await repo.list_all(limit=_DEFAULT_LIST_LIMIT * 10)
+        assert len(rows) == _DEFAULT_LIST_LIMIT
+
+    async def test_offset_paginates_queue_list_all(
+        self, async_session: AsyncSession
+    ):
+        for i in range(30):
+            async_session.add(QueueModel(
+                queue_name=f"q-{i:03d}",
+                queue_enabled=True,
+                hard_cap=10,
+                soft_cap=5,
+                max_error_rate=0.5,
+            ))
+        await async_session.flush()
+
+        repo = QueueRepository(async_session)
+        page1 = await repo.list_all(limit=10, offset=0)
+        page2 = await repo.list_all(limit=10, offset=10)
+        assert len(page1) == 10
+        assert len(page2) == 10
+        # Pages are disjoint (no overlap between consecutive windows).
+        names1 = {q.queue_name for q in page1}
+        names2 = {q.queue_name for q in page2}
+        assert names1.isdisjoint(names2)
+
+    async def test_queue_list_enabled_limit_preserves_filter(
+        self, async_session: AsyncSession
+    ):
+        for i in range(5):
+            async_session.add(QueueModel(
+                queue_name=f"on-{i}",
+                queue_enabled=True,
+                hard_cap=10, soft_cap=5, max_error_rate=0.5,
+            ))
+            async_session.add(QueueModel(
+                queue_name=f"off-{i}",
+                queue_enabled=False,
+                hard_cap=10, soft_cap=5, max_error_rate=0.5,
+            ))
+        await async_session.flush()
+
+        repo = QueueRepository(async_session)
+        rows = await repo.list_enabled(limit=3)
+        assert len(rows) == 3
+        # The enabled-only WHERE scope survives the limit/offset wrapping.
+        assert all(q.queue_enabled for q in rows)
+
+    async def test_feature_list_by_status_limit_and_scope(
+        self, async_session: AsyncSession
+    ):
+        from general_ludd.db.models import FeatureStatus
+
+        async_session.add_all([
+            FeatureModel(name=f"feat-req-{i}", status=FeatureStatus.REQUESTED)
+            for i in range(6)
+        ])
+        async_session.add_all([
+            FeatureModel(name=f"feat-ver-{i}", status=FeatureStatus.VERIFIED)
+            for i in range(3)
+        ])
+        await async_session.flush()
+
+        repo = FeatureRepository(async_session)
+        rows = await repo.list_by_status(FeatureStatus.REQUESTED, limit=4)
+        assert len(rows) == 4
+        # The status WHERE scope is preserved under the limit.
+        assert all(f.status == FeatureStatus.REQUESTED.value for f in rows)
+
+    async def test_rolerun_list_all_preserves_project_filter_under_limit(
+        self, async_session: AsyncSession
+    ):
+        async_session.add_all([
+            ProjectModel(project_id="proj-x", name="X"),
+            ProjectModel(project_id="proj-y", name="Y"),
+        ])
+        await async_session.flush()
+        async_session.add_all(
+            [RoleRunModel(project_id="proj-x", role="build") for _ in range(8)]
+            + [RoleRunModel(project_id="proj-y", role="plan") for _ in range(8)]
+        )
+        await async_session.flush()
+
+        repo = RoleRunRepository(async_session)
+        rows = await repo.list_all(project_id="proj-x", limit=5)
+        assert len(rows) == 5
+        # The project_id filter is preserved alongside the new limit/offset.
+        assert all(r.project_id == "proj-x" for r in rows)
+
+
+def _benchmark_data(
+    *,
+    model_profile_id: str = "openai",
+    project_id: str | None = None,
+    task_type: str = "bug_fix",
+    completion_score: float = 0.8,
+    code_quality_score: float = 0.7,
+    instruction_adherence_score: float = 0.75,
+    token_efficiency_score: float = 0.6,
+    success: bool = True,
+) -> dict:
+    return {
+        "prompt_profile_id": None,
+        "project_id": project_id,
+        "model_profile_id": model_profile_id,
+        "task_type": task_type,
+        "completion_score": completion_score,
+        "code_quality_score": code_quality_score,
+        "instruction_adherence_score": instruction_adherence_score,
+        "token_efficiency_score": token_efficiency_score,
+        "cost_usd": 0.01,
+        "success": success,
+    }
+
+
+class TestBenchmarkResultProjectId:
+    """Project-hierarchy phase 3: benchmark_results.project_id (migration 009)
+    and the project-aware get_aggregate_scores filter."""
+
+    async def test_project_id_column_round_trips(
+        self, async_session: AsyncSession
+    ):
+        async_session.add(ProjectModel(project_id="proj-p3", name="P3"))
+        await async_session.flush()
+        repo = BenchmarkRepository(async_session)
+        row = await repo.record_result(
+            data=_benchmark_data(project_id="proj-p3")
+        )
+        assert row.project_id == "proj-p3"
+
+    async def test_project_id_defaults_to_null(
+        self, async_session: AsyncSession
+    ):
+        """Legacy callers omit project_id → NULL (global history)."""
+        data = _benchmark_data()
+        # _benchmark_data sets project_id=None explicitly; round-trip it.
+        repo = BenchmarkRepository(async_session)
+        row = await repo.record_result(data=data)
+        assert row.project_id is None
+
+    async def test_project_id_fk_set_null_on_project_delete(
+        self, async_session: AsyncSession
+    ):
+        """Deleting the owning project degrades benchmark history to global
+        (project_id -> NULL) rather than deleting the rows (SET NULL FK)."""
+        proj = ProjectModel(project_id="proj-del", name="DEL")
+        async_session.add(proj)
+        await async_session.flush()
+        repo = BenchmarkRepository(async_session)
+        row = await repo.record_result(
+            data=_benchmark_data(project_id="proj-del")
+        )
+        await async_session.flush()
+        await async_session.delete(proj)
+        await async_session.flush()
+        await async_session.refresh(row)
+        assert row.project_id is None
+
+    async def test_get_aggregate_scores_filters_by_project_id(
+        self, async_session: AsyncSession
+    ):
+        async_session.add_all([
+            ProjectModel(project_id="proj-a", name="A"),
+            ProjectModel(project_id="proj-b", name="B"),
+        ])
+        await async_session.flush()
+        repo = BenchmarkRepository(async_session)
+        for _ in range(3):
+            await repo.record_result(
+                data=_benchmark_data(model_profile_id="model-a", project_id="proj-a")
+            )
+        for _ in range(3):
+            await repo.record_result(
+                data=_benchmark_data(model_profile_id="model-b", project_id="proj-b")
+            )
+        await async_session.flush()
+
+        a_scores = await repo.get_aggregate_scores(
+            task_type="bug_fix", project_id="proj-a"
+        )
+        assert len(a_scores) == 1
+        assert a_scores[0]["model_profile_id"] == "model-a"
+        assert a_scores[0]["project_id"] == "proj-a"
+        assert a_scores[0]["sample_count"] == 3
+
+        # No project_id (legacy/global call) sees both projects' rows.
+        all_scores = await repo.get_aggregate_scores(task_type="bug_fix")
+        models = {s["model_profile_id"] for s in all_scores}
+        assert models == {"model-a", "model-b"}

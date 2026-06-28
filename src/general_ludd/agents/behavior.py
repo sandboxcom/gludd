@@ -127,7 +127,43 @@ class AgentBehavior(BaseModel):
 
 
 class BehaviorRenderer:
+    """Renders an :class:`AgentBehavior` into a system-prompt string.
+
+    P4 perf fix: the behavior body produced by :meth:`render` is fully
+    determined by the behavior's render-relevant fields and is invariant across
+    dispatches, yet ``render_as_prompt`` (and therefore the per-dispatch path
+    ``AgentRegistry.render_behavior_prompt``) used to rebuild the entire
+    multi-section string from scratch on EVERY invocation. We now memoize the
+    rendered body keyed by the behavior's render-determining content so it is
+    built once per distinct behavior and reused. The cache key is content-based
+    (not object identity) so distinct behaviors are never conflated and two
+    equivalent behaviors share one entry. ``assumption_log`` is excluded from
+    the key because :meth:`render` never reads it — including it would defeat
+    the cache as assumptions accumulate without changing the output."""
+
+    def __init__(self) -> None:
+        # Cache of rendered behavior bodies keyed by render-determining content.
+        self._render_cache: dict[str, str] = {}
+
+    @staticmethod
+    def _cache_key(behavior: AgentBehavior) -> str:
+        """Stable key over the fields that actually affect render() output.
+
+        Excludes ``assumption_log`` (never read by render) so the cache stays
+        effective as assumptions accumulate. ``model_dump_json`` with sorted
+        keys gives a deterministic, hashable representation."""
+        return behavior.model_dump_json(exclude={"assumption_log"})
+
     def render(self, behavior: AgentBehavior) -> str:
+        key = self._cache_key(behavior)
+        cached = self._render_cache.get(key)
+        if cached is not None:
+            return cached
+        rendered = self._render_uncached(behavior)
+        self._render_cache[key] = rendered
+        return rendered
+
+    def _render_uncached(self, behavior: AgentBehavior) -> str:
         sections: list[str] = ["# Agent Behavior Configuration"]
         sections.append("")
 

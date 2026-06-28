@@ -26,7 +26,7 @@
 set -o pipefail 2>/dev/null || true
 
 STREAK_FILE="${GLUDD_MAINTHREAD_STREAK_FILE:-/tmp/gludd-mainthread-streak}"
-THRESHOLD="${GLUDD_MAINTHREAD_THRESHOLD:-8}"   # inline calls in a row before we nag
+THRESHOLD="${GLUDD_MAINTHREAD_THRESHOLD:-12}"  # inline calls in a row before we nag (rev 2026-06-24: raised 8->12; coherent read/edit sets routinely exceed 8)
 TARGET="${CLAUDE_AGENT_TARGET:-10}"
 REPO_DIR="/Users/shawnwilson/gludd"
 
@@ -73,6 +73,14 @@ case "$EVENT" in
     exit 0
     ;;
   PreToolUse)
+    if [ "$CLASS" = "delegate" ]; then
+      # Reset on delegation in PreToolUse too (rev 2026-06-24): PostToolUse does
+      # NOT fire for async Agent/Workflow dispatches, so the PostToolUse-only reset
+      # never ran and the streak accumulated forever (the bogus "276 calls in a
+      # row" the operator hit even right after dispatching agents/workflows).
+      echo 0 > "$STREAK_FILE" 2>/dev/null || true
+      exit 0
+    fi
     [ "$CLASS" = "mainthread" ] || exit 0
     streak="$(read_streak)"
     [ "$streak" -ge "$THRESHOLD" ] || exit 0
@@ -85,11 +93,22 @@ case "$EVENT" in
     case "$live" in ''|*[!0-9]*) exit 0 ;; esac
     [ "$live" -lt "$TARGET" ] || exit 0
 
+    # TIME COOLDOWN (rev 2026-06-24): even with the streak re-arm this could fire
+    # every ~3 inline calls; cap it to once per COOLDOWN secs so a necessary short
+    # inline sequence (reading a few files, applying a coherent edit set) is not
+    # nagged repeatedly. Advisory only; never blocks.
+    _MTB_COOLDOWN="${GLUDD_MAINTHREAD_BUDGET_COOLDOWN:-90}"
+    _MTB_LOCK="${GLUDD_MAINTHREAD_BUDGET_LOCK:-/tmp/gludd-mainthread-budget-lastemit}"
+    _now="$(date +%s 2>/dev/null || echo 0)"
+    _last="$(cat "$_MTB_LOCK" 2>/dev/null)"; case "$_last" in ''|*[!0-9]*) _last=0 ;; esac
+    if [ "$_now" -ne 0 ] && [ "$((_now - _last))" -lt "$_MTB_COOLDOWN" ]; then exit 0; fi
+
     # Re-arm to fire again after a few more inline calls (periodic, not every call).
     rearm=$((THRESHOLD - 3)); [ "$rearm" -lt 0 ] && rearm=0
     echo "$rearm" > "$STREAK_FILE" 2>/dev/null || true
 
     msg="MAIN-THREAD BUDGET: ${streak} main-thread tool calls in a row with no delegation, and only ${live} subagent(s) live (target ${TARGET}). THIS is the grind-inline pattern that drains multitasking. Hand the remaining chunk to an Agent or a Workflow NOW instead of doing it inline — that resets this budget. (If subagent dispatch is blocked by a rate-limit/quota, this is expected; resume delegating once it clears.)"
+    echo "$_now" > "$_MTB_LOCK" 2>/dev/null || true
     python3 -c 'import json,sys; print(json.dumps({"hookSpecificOutput":{"hookEventName":"PreToolUse","additionalContext":sys.argv[1]}}))' "$msg" 2>/dev/null
     exit 0
     ;;

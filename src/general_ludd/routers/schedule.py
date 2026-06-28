@@ -23,16 +23,23 @@ from pydantic import BaseModel, Field
 logger = logging.getLogger(__name__)
 
 
+_MAX_ITEMS = 1000
+_MAX_DEPS = 100
+_MAX_RESOURCES = 100
+
+
 class WorkItemRequest(BaseModel):
     """API-level representation of a work item for the scheduler."""
 
     id: str = Field(min_length=1, description="Unique work-item identifier.")
     resources: list[str] = Field(
         default_factory=list,
+        max_length=_MAX_RESOURCES,
         description="Exclusive resource names this item requires.",
     )
     depends_on: list[str] = Field(
         default_factory=list,
+        max_length=_MAX_DEPS,
         description="Ids of items that must complete before this one starts.",
     )
     is_greenfield: bool = Field(
@@ -45,7 +52,7 @@ class WorkItemRequest(BaseModel):
 
 
 class ScheduleRequest(BaseModel):
-    items: list[WorkItemRequest]
+    items: list[WorkItemRequest] = Field(max_length=_MAX_ITEMS)
 
 
 class ScheduleResponse(BaseModel):

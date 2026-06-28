@@ -83,14 +83,13 @@ class TestRealDaemonEnhancedStatus:
             assert isinstance(data["filestore_binaries"], list)
 
     @pytest.mark.asyncio
-    async def test_status_db_fields_exist(self, transport):
+    async def test_status_db_fields_absent(self, transport):
+        """SEC-8: db_engine and db_url must not appear in /api/status at all."""
         async with AsyncClient(transport=transport, base_url="http://test") as client:
             resp = await client.get("/api/status")
             data = resp.json()
-            assert "db_engine" in data, "db_engine should be present (redacted)"
-            assert "db_url" in data, "db_url should be present (redacted)"
-            if "@" in str(data.get("db_url", "")):
-                assert "***" in str(data["db_url"]), "db_url password must be masked"
+            assert "db_engine" not in data, "SEC-8: db_engine must be absent from public /api/status"
+            assert "db_url" not in data, "SEC-8: db_url must be absent from public /api/status"
 
     @pytest.mark.asyncio
     async def test_status_config_fields_exist(self, transport):

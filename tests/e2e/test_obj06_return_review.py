@@ -74,6 +74,13 @@ class TestReturnReviewPipelineE2E:
         mock_repo = MagicMock()
         mock_repo.get_by_id = AsyncMock(return_value=todo)
         mock_repo.transition = AsyncMock()
+        # Layer-2 evidence gate: apply_decision is called here with no repo_root,
+        # so the completion verifier cannot verify the artifact ref and fail-safe
+        # downgrades the complete decision to needs_more_work (confidence 0.0).
+        # That low-confidence path opens a validation child via repo.create, so
+        # create must be awaitable. The invariant under test is unchanged: a
+        # reviewed decision always transitions the matched todo exactly once.
+        mock_repo.create = AsyncMock()
         mock_session = MagicMock()
 
         decision = TaskDecision(
@@ -81,7 +88,7 @@ class TestReturnReviewPipelineE2E:
             matched_todo_id=todo.todo_id,
             decision="complete",
             confidence=0.95,
-            evidence_refs=["test_result.xml"],
+            evidence_refs=["artifact:test_result.xml"],
         )
         import asyncio
         asyncio.run(apply_decision(decision, mock_repo, mock_session))

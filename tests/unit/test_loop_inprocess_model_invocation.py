@@ -100,7 +100,7 @@ class TestInProcessModelInvocation:
             patch("general_ludd.event_loop.loop.asyncio.to_thread", to_thread),
             patch(
                 "general_ludd.event_loop.loop.invoke_model_for_generation",
-                return_value="GENERATED-CODE",
+                return_value=("GENERATED-CODE", None),
             ) as mock_invoke,
         ):
             await loop._dispatch_execute_job(_todo("code"))
@@ -133,7 +133,7 @@ class TestInProcessModelInvocation:
             patch("general_ludd.event_loop.loop.asyncio.to_thread", to_thread),
             patch(
                 "general_ludd.event_loop.loop.invoke_model_for_generation",
-                return_value="SHOULD-NOT-BE-USED",
+                return_value=("SHOULD-NOT-BE-USED", None),
             ) as mock_invoke,
         ):
             # "review" is NOT a generation work type — no model call.
@@ -160,7 +160,7 @@ class TestInProcessModelInvocation:
             patch("general_ludd.event_loop.loop.asyncio.to_thread", to_thread),
             patch(
                 "general_ludd.event_loop.loop.invoke_model_for_generation",
-                return_value="SHOULD-NOT-BE-USED",
+                return_value=("SHOULD-NOT-BE-USED", None),
             ) as mock_invoke,
         ):
             # Generation work type, but no gateway wired -> no model call.

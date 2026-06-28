@@ -156,7 +156,7 @@ class TestEventLoop:
 
         with patch(
             "general_ludd.event_loop.loop.invoke_model_for_generation",
-            return_value="GENERATED OUTPUT",
+            return_value=("GENERATED OUTPUT", None),
         ):
             await loop._dispatch_execute_job(todo)
 
@@ -293,17 +293,29 @@ class TestEventLoop:
         ), PHASE_ORDER
 
     @pytest.mark.asyncio
-    async def test_event_loop_reconcile_decision_complete(self):
-        loop, mocks = _make_loop()
+    async def test_event_loop_reconcile_decision_complete(self, tmp_path):
+        import json as _json
+
+        # Create a real artifact file so the evidence gate can verify it.
+        artifact = tmp_path / "proof.txt"
+        artifact.write_text("verified")
+
+        loop, mocks = _make_loop(
+            config={"tick_interval": 1.0, "repo_root": str(tmp_path)}
+        )
         todo_model = MagicMock()
         todo_model.todo_id = "TODO-001"
         todo_model.status = "reviewing_return"
         todo_model.version = 1
+        todo_model.project_id = None
         decision_row = MagicMock()
         decision_row.return_id = "RET-001"
         decision_row.matched_todo_id = "TODO-001"
         decision_row.decision = "complete"
         decision_row.confidence = 0.95
+        decision_row.project_id = None
+        decision_row.evidence_refs = _json.dumps(["artifact:proof.txt"])
+        decision_row.audit_notes = "[]"
         result_mock = MagicMock()
         result_mock.scalars().all.return_value = [decision_row]
         mocks["session"].execute.return_value = result_mock
@@ -345,7 +357,8 @@ class TestEventLoop:
         assert "phases_completed" in result
         assert "tick_duration_ms" in result
         assert isinstance(result["tick_duration_ms"], float)
-        assert result["phases_completed"] == 11
+        # 12 phases: the original 11 + run_scheduler (cron/one-shot promotion).
+        assert result["phases_completed"] == 12
 
     @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):
@@ -515,3 +528,564 @@ class TestOneProjectPerTick:
         assert loop._tick_project_id is None, (
             "_tick_project_id must be reset to None after tick completes (W3.14)"
         )
+
+    @pytest.mark.asyncio
+    async def test_select_project_invoked_once_even_when_weighting_varies(self):
+        """M14/W3.14: the underlying project_manager.select_project() must be
+        invoked exactly ONCE per tick, and the SAME selected project must reach
+        both the claim phase and the review phase.
+
+        This stubs select_project() to return a DIFFERENT project on every call
+        (the worst case for a random/weighted selector): if any phase called
+        select_project() independently, the two phases would target different
+        projects in the same tick — the cross-project incoherence W3.14 fixes.
+        Asserting exactly one call + a single shared project proves selection is
+        hoisted once per tick and threaded down, not re-rolled per phase.
+        """
+        # A project_manager whose select_project() yields a fresh project each
+        # call, so any second invocation would change the selected project.
+        projects = [MagicMock(project_id=f"proj-{i}") for i in range(10)]
+        project_manager = MagicMock()
+        project_manager.select_project.side_effect = projects
+
+        loop, _ = _make_loop(project_manager=project_manager)
+
+        seen_projects: list[str | None] = []
+
+        async def _record_claim_phase() -> None:
+            seen_projects.append(loop._tick_project_id)
+
+        async def _record_review_phase() -> None:
+            seen_projects.append(loop._tick_project_id)
+
+        with patch.object(
+            loop, "_phase_claim_runnable_todos", side_effect=_record_claim_phase
+        ), patch.object(
+            loop,
+            "_phase_claim_unreviewed_task_returns",
+            side_effect=_record_review_phase,
+        ):
+            await loop.tick()
+
+        # select_project() called exactly once for the whole tick — never re-rolled
+        # per phase (which, given the side_effect, would have produced proj-1, etc.).
+        assert project_manager.select_project.call_count == 1, (
+            "project_manager.select_project() must be called exactly once per tick; "
+            f"got {project_manager.select_project.call_count} (W3.14: select once, share)"
+        )
+        # Both phases observed the SAME selected project (the first one).
+        assert seen_projects == ["proj-0", "proj-0"], (
+            "claim and review phases must share the single per-tick project; "
+            f"got {seen_projects} (W3.14 cross-project incoherence)"
+        )
+
+
+class TestSpendLimiterCharges:
+    """Bug 1: SpendLimiter must record spend (try_charge), not just check (would_exceed)."""
+
+    @pytest.mark.asyncio
+    async def test_dispatch_records_charge_in_spend_window(self):
+        """After a successful dispatch, window_spend() must be nonzero."""
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        limiter = SpendLimiter(limit_usd=10.0, window_seconds=60, clock=lambda: 0.0)
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/test-spend"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock(), spend_limiter=limiter)
+
+        todo = Todo(
+            title="charge test",
+            todo_id="TODO-CHARGE-1",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )
+
+        assert limiter.window_spend() == 0.0, "pre-condition: window must be empty"
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value=("OUTPUT", None),
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        assert limiter.window_spend() > 0.0, (
+            "SpendLimiter.window_spend() must be nonzero after a successful dispatch "
+            "(try_charge must record; would_exceed alone does not)"
+        )
+
+    @pytest.mark.asyncio
+    async def test_dispatch_skipped_when_spend_cap_reached(self):
+        """Dispatch must be skipped when try_charge() refuses (cap already exhausted)."""
+        from general_ludd.controllers.spend_limiter import SpendLimiter
+
+        # Tiny cap: pre-fill so any additional charge exceeds it.
+        limiter = SpendLimiter(limit_usd=0.00001, window_seconds=60, clock=lambda: 0.0)
+        limiter.record(0.00001, kind="token", at=0.0)
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/test-cap"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock(), spend_limiter=limiter)
+
+        todo = Todo(
+            title="over-cap test",
+            todo_id="TODO-OVERCAP-1",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value=("OUTPUT", None),
+        ) as mock_invoke:
+            await loop._dispatch_execute_job(todo)
+
+        assert not mock_invoke.called, (
+            "invoke_model_for_generation must NOT be called when the spend cap is exhausted"
+        )
+
+
+class TestPidCapRelease:
+    """Bug 2: Todos dropped by PID cap must be transitioned back to QUEUED."""
+
+    @pytest.mark.asyncio
+    async def test_pid_cap_releases_excess_todos_to_queued(self):
+        """When the PID cap is 1 and 3 todos are claimed, the 2 excess must be QUEUED."""
+        loop, mocks = _make_loop()
+
+        t1 = Todo(todo_id="T1", title="task1", status=TodoStatus.ACTIVE, version=1)
+        t2 = Todo(todo_id="T2", title="task2", status=TodoStatus.ACTIVE, version=1)
+        t3 = Todo(todo_id="T3", title="task3", status=TodoStatus.ACTIVE, version=1)
+
+        loop._tick_state["claimed_todos"] = [t1, t2, t3]
+        pid_outputs = MagicMock()
+        pid_outputs.desired_total_active_buckets = 1
+        loop._tick_state["pid_outputs"] = pid_outputs
+
+        mocks["todo_repo"].transition = AsyncMock()
+
+        await loop._phase_dispatch_execute_jobs()
+
+        transition_calls = mocks["todo_repo"].transition.call_args_list
+        queued_calls = [
+            c for c in transition_calls
+            if len(c.args) >= 2 and c.args[1] == TodoStatus.QUEUED
+        ]
+        assert len(queued_calls) >= 2, (
+            f"Expected at least 2 QUEUED transitions for excess todos under PID cap=1; "
+            f"got {len(queued_calls)}: {queued_calls}"
+        )
+        released_ids = {c.args[0] for c in queued_calls}
+        assert "T2" in released_ids or "T3" in released_ids, (
+            f"Expected T2/T3 to be released; got {released_ids}"
+        )
+
+
+class TestLedgerBounds:
+    """Bug 3: _applied_decisions and _active_traces must stay bounded."""
+
+    @pytest.mark.asyncio
+    async def test_applied_decisions_pruned_after_cap(self):
+        """Filling _applied_decisions past _MAX_LEDGER_SIZE then reconciling one
+        new decision must leave the set at or below _MAX_LEDGER_SIZE."""
+        loop, mocks = _make_loop()
+
+        # Pre-fill beyond the cap. P3: _applied_decisions is now an OrderedDict
+        # used as a bounded LRU set, so seed via _ledger_add (which evicts as it
+        # goes); to force an overfull pre-condition we bypass the helper and fill
+        # the OrderedDict directly so the reconcile insert is what trims it.
+        cap = loop._MAX_LEDGER_SIZE
+        for i in range(cap + 1):
+            loop._applied_decisions[f"fake-id:{i}"] = None
+
+        assert len(loop._applied_decisions) > cap, "pre-condition: ledger must be overfull"
+
+        # Build a fresh decision row not already in the set.
+        # evidence_refs="[]" (empty JSON list): verify_completion downgrades to
+        # needs_more_work, but the decision is still processed and _ledger_add fires
+        # so the overfull ledger gets pruned — which is what this test verifies.
+        decision_row = MagicMock()
+        decision_row.id = 99999
+        decision_row.matched_todo_id = "TODO-PRUNE-1"
+        decision_row.decision = "complete"
+        decision_row.return_id = "RET-PRUNE-1"
+        decision_row.project_id = None
+        decision_row.evidence_refs = "[]"
+        decision_row.audit_notes = "[]"
+
+        result_mock = MagicMock()
+        result_mock.scalars.return_value.all.return_value = [decision_row]
+        mocks["session"].execute.return_value = result_mock
+
+        todo_model = MagicMock()
+        todo_model.todo_id = "TODO-PRUNE-1"
+        todo_model.status = TodoStatus.REVIEWING_RETURN.value
+        todo_model.version = 1
+        todo_model.project_id = None
+        mocks["todo_repo"].get_by_id.return_value = todo_model
+        mocks["todo_repo"].transition = AsyncMock(return_value=MagicMock())
+
+        await loop._phase_reconcile_completed_decisions()
+
+        assert len(loop._applied_decisions) <= cap, (
+            f"_applied_decisions must be pruned to <= {cap}; "
+            f"got {len(loop._applied_decisions)}"
+        )
+
+    @pytest.mark.asyncio
+    async def test_active_traces_pruned_after_cap(self):
+        """Filling _active_traces past _MAX_ACTIVE_TRACES then dispatching one job
+        must leave the dict at or below _MAX_ACTIVE_TRACES."""
+        from general_ludd.observability.recorder import AutoBenchmarkRecorder
+        from general_ludd.observability.trace_store import RecentTracesBuffer
+
+        buffer = RecentTracesBuffer()
+        recorder = AutoBenchmarkRecorder(benchmark_repo=None, trace_buffer=buffer)
+
+        runner = MagicMock()
+        runner.prepare_job_dirs.return_value = {"root": "/tmp/test-trace-prune"}
+
+        loop, _ = _make_loop(runner=runner, model_gateway=MagicMock())
+        loop._benchmark_recorder = recorder
+
+        # Pre-fill beyond the cap.
+        trace_cap = loop._MAX_ACTIVE_TRACES
+        for i in range(trace_cap + 5):
+            loop._active_traces[f"fake-trace-{i}"] = MagicMock()
+
+        assert len(loop._active_traces) > trace_cap, "pre-condition: traces must be overfull"
+
+        todo = Todo(
+            title="prune traces test",
+            todo_id="TODO-TRACE-PRUNE-1",
+            status=TodoStatus.ACTIVE,
+            work_type="code",
+        )
+
+        with patch(
+            "general_ludd.event_loop.loop.invoke_model_for_generation",
+            return_value=("GENERATED OUTPUT", None),
+        ):
+            await loop._dispatch_execute_job(todo)
+
+        assert len(loop._active_traces) <= trace_cap, (
+            f"_active_traces must be pruned to <= {trace_cap}; "
+            f"got {len(loop._active_traces)}"
+        )
+
+    def test_ledger_add_stays_bounded_and_keeps_recent_lru(self):
+        """P3: driving many inserts through _ledger_add must keep the ledger at
+        or below _MAX_LEDGER_SIZE AND retain the MOST RECENT ids (LRU), never an
+        arbitrary subset — so the idempotency guarantee holds across the window."""
+        loop, _ = _make_loop()
+        cap = loop._MAX_LEDGER_SIZE
+        ledger = loop._applied_decisions
+
+        # Drive cap + extra insertions of distinct keys.
+        extra = 250
+        for i in range(cap + extra):
+            loop._ledger_add(ledger, f"dec:{i}")
+
+        # Bound holds exactly: never exceeds the cap.
+        assert len(ledger) == cap, (
+            f"ledger must stay == cap ({cap}) after {cap + extra} inserts; "
+            f"got {len(ledger)}"
+        )
+
+        # LRU semantics: the most-recent `cap` keys survive; the oldest `extra`
+        # were evicted FIFO (this is the correctness win over an unordered set
+        # that could evict a still-recent id and re-open the re-apply window).
+        for i in range(extra):  # the oldest `extra` keys must be gone
+            assert f"dec:{i}" not in ledger, f"oldest key dec:{i} should be evicted"
+        for i in range(extra, cap + extra):  # the most-recent `cap` keys survive
+            assert f"dec:{i}" in ledger, f"recent key dec:{i} must survive"
+
+    def test_ledger_add_reinsert_refreshes_recency(self):
+        """P3: re-inserting an existing key moves it to the MRU end so it is not
+        evicted as 'oldest' — protecting a still-touched idempotency id."""
+        loop, _ = _make_loop()
+        cap = loop._MAX_LEDGER_SIZE
+        ledger = loop._pushed_work
+
+        # Fill to exactly the cap.
+        for i in range(cap):
+            loop._ledger_add(ledger, f"work:{i}")
+        # Re-touch the OLDEST key -> it should become most-recent and survive the
+        # next eviction; instead the second-oldest (work:1) is dropped.
+        loop._ledger_add(ledger, "work:0")
+        loop._ledger_add(ledger, "work:new")
+
+        assert len(ledger) == cap
+        assert "work:0" in ledger, "re-touched key must be refreshed, not evicted"
+        assert "work:new" in ledger, "newest key must be present"
+        assert "work:1" not in ledger, "the now-oldest key must be the eviction victim"
+
+    @pytest.mark.asyncio
+    async def test_self_update_applies_audit_list_stays_bounded(self):
+        """P3: the daemon-state self_update_applies audit list must not grow
+        without bound — driving many successful self_update applies must leave it
+        at or below _MAX_SELF_UPDATE_APPLIES with the most recent entries kept."""
+        daemon_state: dict = {}
+        loop, mocks = _make_loop(daemon_state=daemon_state)
+        mocks["todo_repo"].transition = AsyncMock()
+
+        cap = loop._MAX_SELF_UPDATE_APPLIES
+        extra = 30
+
+        # A successful reload verdict so each apply records an audit entry.
+        # _apply_self_update_code reads getattr(reload_result, "status", "") and
+        # treats "success" as ok -> appends to the audit list.
+        ok_reload = MagicMock()
+        ok_reload.status = "success"
+
+        with patch(
+            "general_ludd.event_loop.loop.SelfImprovementWorkflow"
+        ) as MockWorkflow:
+            instance = MockWorkflow.return_value
+            instance.reload_if_needed.return_value = ok_reload
+
+            for i in range(cap + extra):
+                todo = Todo(
+                    title=f"self-update {i}",
+                    todo_id=f"SU-{i}",
+                    status=TodoStatus.ACTIVE,
+                    queue="self_update",
+                    work_type="code",
+                    version=1,
+                    tags=[f"module:mod{i}", f"candidate:/tmp/cand{i}.py"],
+                )
+                await loop._apply_self_update_code(todo)
+
+        applies = daemon_state["self_update_applies"]
+        assert len(applies) == cap, (
+            f"self_update_applies must be bounded to {cap}; got {len(applies)}"
+        )
+        # Most-recent entries survive; the oldest `extra` were trimmed from front.
+        kept_ids = {entry["todo_id"] for entry in applies}
+        assert f"SU-{cap + extra - 1}" in kept_ids, "newest apply must be retained"
+        assert "SU-0" not in kept_ids, "oldest apply must be trimmed"
+
+
+class TestBackgroundTaskTracking:
+    """A3: _background_tasks must be mutated race-safely.
+
+    The fire-and-forget benchmark/trace writes register via
+    _track_background_task (strong-ref add + add_done_callback(discard)) so no
+    running task is GC'd and the set drains to empty when they finish. Shutdown
+    cancels + awaits a SNAPSHOT so a concurrent discard cannot raise
+    "set changed size during iteration".
+    """
+
+    @pytest.mark.asyncio
+    async def test_tracked_tasks_drain_to_empty_when_complete(self):
+        """Many concurrently-registered tasks: none lost, set drains to empty."""
+        import asyncio
+
+        loop = EventLoop()
+
+        async def _work(i: int) -> int:
+            await asyncio.sleep(0)
+            return i
+
+        tasks = [asyncio.ensure_future(_work(i)) for i in range(50)]
+        for t in tasks:
+            loop._track_background_task(t)
+
+        # All references held while pending (no GC drop).
+        assert len(loop._background_tasks) == 50
+
+        results = await asyncio.gather(*tasks)
+        # Let the done-callbacks (set.discard) run.
+        await asyncio.sleep(0)
+
+        assert results == list(range(50))
+        assert len(loop._background_tasks) == 0, (
+            "every completed task must discard itself; set must drain to empty"
+        )
+
+    @pytest.mark.asyncio
+    async def test_already_done_task_is_tracked_then_discarded(self):
+        """Registering an already-completed task must not leak it (callback fires)."""
+        import asyncio
+
+        loop = EventLoop()
+
+        async def _instant() -> str:
+            return "done"
+
+        task = asyncio.ensure_future(_instant())
+        await task  # complete BEFORE tracking
+        loop._track_background_task(task)
+        # add_done_callback on an already-done task schedules the callback soon.
+        await asyncio.sleep(0)
+
+        assert task not in loop._background_tasks
+
+    @pytest.mark.asyncio
+    async def test_shutdown_cancels_and_drains_inflight_tasks(self):
+        """shutdown() must cancel + await in-flight tasks, iterating a snapshot."""
+        import asyncio
+
+        loop = EventLoop()
+        loop._running = True
+
+        async def _long() -> None:
+            await asyncio.sleep(3600)  # would hang without cancellation
+
+        tasks = [asyncio.ensure_future(_long()) for _ in range(20)]
+        for t in tasks:
+            loop._track_background_task(t)
+
+        assert len(loop._background_tasks) == 20
+
+        # Must return promptly (cancels rather than waiting out the sleeps).
+        await asyncio.wait_for(loop.shutdown(), timeout=5.0)
+
+        assert loop._running is False
+        assert all(t.cancelled() for t in tasks)
+        await asyncio.sleep(0)
+        assert len(loop._background_tasks) == 0
+
+    @pytest.mark.asyncio
+    async def test_drain_safe_under_concurrent_discard(self):
+        """A drain must not raise even if tasks settle (discard) mid-iteration.
+
+        This is the "set changed size during iteration" guard: the drain reads a
+        snapshot under the lock, so callbacks discarding from the live set while
+        we gather can never corrupt the iteration.
+        """
+        import asyncio
+
+        loop = EventLoop()
+
+        async def _quick(i: int) -> int:
+            # Stagger completion so some tasks finish (and discard) while the
+            # drain is in flight.
+            await asyncio.sleep(0.001 * (i % 5))
+            return i
+
+        tasks = [asyncio.ensure_future(_quick(i)) for i in range(40)]
+        for t in tasks:
+            loop._track_background_task(t)
+
+        # No exception (e.g. RuntimeError: set changed size during iteration).
+        await asyncio.wait_for(loop._drain_background_tasks(cancel=False), timeout=5.0)
+        await asyncio.sleep(0)
+        assert len(loop._background_tasks) == 0
+
+
+class TestHttpDispatchSkillBody:
+    """W3.1: the HTTP-dispatched JobSpec must carry the resolved skill_body.
+
+    The in-process runner path already threads ``skill_body`` into the job vars
+    (loop.py ~1348). The HTTP-dispatch path (``self._runner is None``, daemon
+    POSTs a JobSpec to the worker) must thread the SAME resolved variable into
+    the JobSpec, or the worker calls the model with ``skill_body=None`` and gets
+    a degraded prompt (missing the skill's system turn).
+    """
+
+    @pytest.mark.asyncio
+    async def test_http_dispatch_jobspec_includes_skill_body(self):
+        from general_ludd.skills.skill import Skill
+
+        skill_reg = MagicMock()
+        skill = Skill(
+            name="tdd",
+            body="Always write tests first",
+            trigger_patterns=["test", "tdd"],
+        )
+        skill_reg.match_trigger.return_value = [skill]
+
+        loop, mocks = _make_loop(skill_registry=skill_reg)
+        # No in-process runner -> the HTTP-dispatch branch builds the JobSpec.
+        assert loop._runner is None
+        todo = Todo(
+            title="Add TDD support for feature X",
+            todo_id="TODO-SKILL-1",
+            status=TodoStatus.ACTIVE,
+            queue="core",
+            work_type="code",
+        )
+        mocks["http_client"].post.return_value = MagicMock(status_code=202)
+        loop._tick_state["claimed_todos"] = [todo]
+        await loop._phase_dispatch_execute_jobs()
+        call_args = mocks["http_client"].post.call_args
+        payload = call_args[1]["json"]
+        assert payload["skill_body"] == "Always write tests first"
+
+    @pytest.mark.asyncio
+    async def test_http_dispatch_jobspec_skill_body_none_without_match(self):
+        skill_reg = MagicMock()
+        skill_reg.match_trigger.return_value = []
+
+        loop, mocks = _make_loop(skill_registry=skill_reg)
+        assert loop._runner is None
+        todo = Todo(
+            title="Refactor database layer",
+            todo_id="TODO-SKILL-2",
+            status=TodoStatus.ACTIVE,
+            queue="core",
+            work_type="code",
+        )
+        mocks["http_client"].post.return_value = MagicMock(status_code=202)
+        loop._tick_state["claimed_todos"] = [todo]
+        await loop._phase_dispatch_execute_jobs()
+        call_args = mocks["http_client"].post.call_args
+        payload = call_args[1]["json"]
+        assert payload["skill_body"] is None
+
+
+class TestResolveRepoRoot:
+    """Tests for EventLoop._resolve_repo_root — the per-project repo_root resolver
+    that feeds verify_completion so the evidence gate VERIFIES instead of always-blocking."""
+
+    def test_no_workspace_no_config_returns_none(self) -> None:
+        loop = EventLoop(config={})
+        assert loop._resolve_repo_root(None) is None
+        assert loop._resolve_repo_root("proj-x") is None
+
+    def test_config_repo_root_fallback(self, tmp_path) -> None:
+        loop = EventLoop(config={"repo_root": str(tmp_path)})
+        result = loop._resolve_repo_root(None)
+        assert result == str(tmp_path)
+
+    def test_config_repo_root_used_when_no_workspace_match(self, tmp_path) -> None:
+        loop = EventLoop(config={"repo_root": str(tmp_path)})
+        result = loop._resolve_repo_root("proj-unknown")
+        assert result == str(tmp_path)
+
+    def test_workspace_repo_dir_used_when_exists(self, tmp_path) -> None:
+        ws = MagicMock()
+        ws.repo_dir = tmp_path / "repo"
+        (tmp_path / "repo").mkdir()
+
+        loop = EventLoop(
+            config={"repo_root": str(tmp_path / "fallback")},
+            project_workspace={"proj-a": ws},
+        )
+        result = loop._resolve_repo_root("proj-a")
+        assert result == str(tmp_path / "repo")
+
+    def test_workspace_repo_dir_not_dir_falls_back_to_config(self, tmp_path) -> None:
+        ws = MagicMock()
+        ws.repo_dir = tmp_path / "repo_nonexistent"  # does not exist
+
+        loop = EventLoop(
+            config={"repo_root": str(tmp_path)},
+            project_workspace={"proj-a": ws},
+        )
+        result = loop._resolve_repo_root("proj-a")
+        assert result == str(tmp_path)
+
+    def test_wrong_project_id_falls_back_to_config(self, tmp_path) -> None:
+        ws = MagicMock()
+        ws.repo_dir = tmp_path / "repo"
+        (tmp_path / "repo").mkdir()
+
+        loop = EventLoop(
+            config={"repo_root": str(tmp_path / "cfg_root")},
+            project_workspace={"proj-a": ws},
+        )
+        result = loop._resolve_repo_root("proj-b")  # different project
+        assert result == str(tmp_path / "cfg_root")

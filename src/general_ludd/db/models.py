@@ -53,6 +53,95 @@ class ProjectModel(Base):
     )
 
 
+class RelationType(enum.StrEnum):
+    PARENT = "parent"      # the environment THIS project runs inside
+    CHILD = "child"        # a project that runs inside THIS one
+    SIBLING = "sibling"    # peer under a shared parent (gludd may control it)
+    EXTERNAL = "external"  # a neighbor gludd does NOT control
+
+
+class LocationKind(enum.StrEnum):
+    GLUDD_PROJECT_NAME = "gludd_project_name"  # resolves to a ProjectModel.name
+    DIRECTORY = "directory"                    # absolute/relative path on disk
+    URL = "url"                                # git/https/service URL
+
+
+def _gen_rel_id() -> str:
+    return f"rel-{uuid4().hex[:12]}"
+
+
+class ProjectRelationshipModel(Base):
+    """A declared edge from one project to a neighbor (parent/child/sibling/external).
+
+    Edges are USER-DECLARED (config or API), never inferred, so the AI never
+    guesses topology. The neighbor is identified by (location_kind, location_value):
+    a gludd project NAME, a DIRECTORY path, or a URL. When the neighbor is itself a
+    gludd project, ``related_project_id`` is resolved and FK-linked; for external
+    neighbors it stays NULL and only the location fields identify it.
+
+    Two FKs to ``projects`` with different ``ondelete``:
+      - ``project_id`` (the owning "from" side) is CASCADE: an edge has no meaning
+        without its owning project.
+      - ``related_project_id`` (a resolved neighbor) is SET NULL: losing the
+        neighbor must not delete the edge — the operator's declared intent survives
+        so it can re-resolve later. Mirrors the repo-wide SET NULL convention.
+
+    One-parent cardinality (at most one ``relation_type='parent'`` per project) is
+    not portably expressible as a SQL UNIQUE, so it is enforced by the repository
+    guard (``ProjectRelationshipRepository.set_parent``); PostgreSQL also gets a
+    partial unique index in the migration.
+    """
+
+    __tablename__ = "project_relationships"
+
+    id: Mapped[str] = mapped_column(String(32), primary_key=True, default=_gen_rel_id)
+    project_id: Mapped[str] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="CASCADE"),
+        nullable=False,
+        index=True,
+    )
+    relation_type: Mapped[str] = mapped_column(String(16), nullable=False, index=True)
+    location_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    # The identifier of the neighbor under location_kind (a name, a path, a URL).
+    location_value: Mapped[str] = mapped_column(String(1024), nullable=False)
+    # Resolved gludd project id of the neighbor, when it IS a gludd project and we
+    # could resolve its name/dir/url to a ProjectModel. NULL for external/unresolved.
+    related_project_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    controlled_by_gludd: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
+    # Optional free-form hint describing the interface this edge implies
+    # (e.g. "GET /health", "publishes kafka topic orders").
+    interface_hint: Mapped[str | None] = mapped_column(String(1024), nullable=True)
+    # Optional structured interface contract (JSON-in-Text). Empty by default.
+    interface_contract: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+    __table_args__ = (
+        # A project declares a given neighbor under a given relation at most once.
+        UniqueConstraint(
+            "project_id",
+            "relation_type",
+            "location_kind",
+            "location_value",
+            name="uq_project_relationship_edge",
+        ),
+        Index("ix_project_rel_from_type", "project_id", "relation_type"),
+        Index("ix_project_rel_related", "related_project_id"),
+    )
+
+
 class AuditEventType(enum.StrEnum):
     TODO_CREATED = "todo_created"
     TODO_STATUS_CHANGED = "todo_status_changed"
@@ -113,8 +202,42 @@ class TodoModel(Base):
     )
     completed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
 
+    # ── Scheduling / cron-style recurrence ──────────────────────────────────
+    # scheduled_at: one-shot fire time. The scheduler promotes the todo
+    # SCHEDULED→QUEUED when now >= scheduled_at (cron must be None).
+    scheduled_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    # cron: 5-field cron expression (croniter grammar). When set, this row
+    # is a TEMPLATE that stays SCHEDULED; the scheduler spawns a QUEUED
+    # child clone on each fire and advances next_run_at.
+    cron: Mapped[str | None] = mapped_column(String(256), nullable=True)
+    schedule_timezone: Mapped[str] = mapped_column(
+        String(64), nullable=False, default="UTC"
+    )
+    next_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    last_run_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    run_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    max_runs: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    schedule_paused: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+
     __table_args__ = (
         Index("ix_todos_status_queue", "status", "queue"),
+        # Supports TodoRepository.list_due_scheduled (scheduler due-todo query):
+        # the (status, schedule_paused) prefix narrows to pending schedules, then
+        # the datetime columns filter on COALESCE(next_run_at, scheduled_at).
+        # Declared here so the ORM matches migration 010 (alembic-check parity).
+        Index(
+            "ix_todos_scheduled_lookup",
+            "status",
+            "schedule_paused",
+            "next_run_at",
+            "scheduled_at",
+        ),
     )
 
     events: Mapped[list[TodoEventModel]] = relationship(
@@ -508,6 +631,17 @@ class BenchmarkResultModel(Base):
         nullable=True,
         index=True,
     )
+    # Project-hierarchy phase 3: benchmark history becomes project-aware so the
+    # AdaptiveRouter can borrow proven picks ACROSS declared project edges with
+    # edge-distance decay. NULL = global/legacy history (today's behaviour). The
+    # SET NULL FK matches the repo-wide project_id convention (a deleted project
+    # degrades its history to global rather than destroying the benchmark rows).
+    project_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
     model_profile_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_type: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
     task_description: Mapped[str] = mapped_column(Text, nullable=False, default="")
@@ -529,6 +663,9 @@ class BenchmarkResultModel(Base):
     __table_args__ = (
         Index("ix_benchmark_task_model", "task_type", "model_profile_id"),
         Index("ix_benchmark_task_prompt", "task_type", "prompt_profile_id"),
+        # Project-aware aggregation key: get_aggregate_scores(project_id=...)
+        # filters and groups on (project_id, task_type) when borrowing is on.
+        Index("ix_benchmark_project_task", "project_id", "task_type"),
     )
 
 

@@ -47,12 +47,20 @@ def invoke_model_for_generation(
     skill_body: str | None,
     budget_guard: Any = None,
     benchmark_recorder: Any = None,
-) -> str | None:
-    """Call the model for a generation job. Returns the generated text or None.
+) -> tuple[str | None, list[dict[str, Any]] | None]:
+    """Call the model for a generation job.
 
-    Mirrors the original ``worker/app.py:_invoke_gateway_for_job`` exactly:
-    the system turn is the skill body, the user turn is the task prompt, both
-    are bounded to the model's token window via AgentCapabilities, and any
+    Returns a ``(content, tool_calls)`` tuple:
+
+    * ``content`` — the generated text (or ``None`` on skip/budget-deny/error).
+    * ``tool_calls`` — the model's STRUCTURED tool/function calls, normalized to
+      the OpenAI-nested shape on ``ModelResponse.tool_calls``
+      (``{"id", "type": "function", "function": {"name", "arguments"}}``), or
+      ``None`` when the model requested none.
+
+    Mirrors the original ``worker/app.py:_invoke_gateway_for_job`` for the text
+    path: the system turn is the skill body, the user turn is the task prompt,
+    both are bounded to the model's token window via AgentCapabilities, and any
     model/transport error is swallowed (logged) so the playbook still runs.
 
     ``benchmark_recorder`` is an optional sink that records a benchmark/score
@@ -63,12 +71,37 @@ def invoke_model_for_generation(
     and a simple scoring pass/fail flag.  This satisfies the CA-T11 integrity
     requirement that a score is recorded on the daemon async execute path.
 
-    Architectural note on tools (CA-T9): generation is intentionally tool-free.
-    Model-driven tool-use lives exclusively in the ``ToolCallLoop`` / ``agent_run``
-    path (``AgentCapabilities.make_tool_loop``).  Passing dispatch-tools into
-    every generation call would be a risky behaviour change that could cause the
-    model to emit tool-call JSON on simple text-generation tasks.  Tool-use is
-    exercised only when the caller explicitly enters a ToolCallLoop.
+    Two-phase generation (CA-T9, keystone):
+
+    * **Phase 1 — this helper — is tool-free BY DESIGN.**  It asks the model for
+      text and deliberately does NOT pass ``tools=`` to ``call_model``.  Binding
+      dispatch-tools into every plain text-generation call would be a risky
+      behaviour change (the model could emit tool-call JSON on tasks where no
+      tool-call loop is running to consume it), so this boundary is intentional
+      and is asserted by ``test_generation_path_is_tool_free_by_design`` /
+      ``test_source_confirms_generation_path_skips_tools``.  Do NOT add ``tools=``
+      here.
+    * **Phase 2 — autonomous tool use — lives in the event loop, NOT here.**  For
+      tool-requiring work types (``event_loop.loop._TOOL_USE_WORK_TYPES``) the
+      event loop instantiates the fully-built ``ToolCallLoop``
+      (``execution/tool_loop.py``), which binds the live MCP tools
+      (``list_tools`` -> ``tools=``), lets the model choose+call them, executes
+      via the MCP client, and iterates on tool results.  That is where
+      model-driven file-writes / git / MCP actions actually fire under model
+      control.
+
+    Tool-use on the Phase-1 generation path (this helper): when the model emits
+    structured tool/function calls (``ModelResponse.tool_calls``) of its own
+    accord, they are returned to the caller (the daemon ``loop.py`` and worker
+    ``app.py`` dispatch sites) which routes them through the ``DynamicDispatcher``
+    so a single round of model-driven tool actions (MCP/git/file writes) still
+    fires.  Previously this helper returned only ``content`` and the callers
+    re-parsed the TEXT via ``parse_tool_calls`` — which cannot recover the
+    structured calls — so model-driven actions were silently discarded on both
+    the daemon and worker generation paths.  The structured ``tool_calls`` are the
+    same ones the ``ToolCallLoop`` consumes; we hand them straight to the
+    dispatcher rather than round-tripping through text.  The full multi-turn
+    agentic loop, however, is Phase 2's ``ToolCallLoop`` — not this helper.
     """
     if not prompt_text:
         logger.warning(
@@ -77,13 +110,13 @@ def invoke_model_for_generation(
             "both a prompt_profile and a title/description to synthesize from",
             job_id,
         )
-        return None
+        return None, None
     from general_ludd.budget_guard_check import budget_pre_check
 
     denial = budget_pre_check(budget_guard)
     if denial is not None:
         logger.warning("Budget denied for job %s: %s", job_id, denial)
-        return None
+        return None, None
     profile_id = model_profile or "default"
     # Bound the prompt to the model's token window via the shared agent
     # capabilities bundle (ContextCompactor + TokenWindowManager). The system
@@ -100,6 +133,7 @@ def invoke_model_for_generation(
     try:
         response = gateway.call_model(profile_id, messages=messages)
         content = response.content
+        tool_calls = getattr(response, "tool_calls", None)
     except Exception as exc:
         logger.warning(
             "Model call failed for job %s (profile=%s): %s",
@@ -107,7 +141,7 @@ def invoke_model_for_generation(
             profile_id,
             exc,
         )
-        return None
+        return None, None
 
     # CA-T11: record a benchmark/score for this generation call when a recorder
     # is wired.  We call record() (sync) or create() (async-shaped) so both the
@@ -124,7 +158,7 @@ def invoke_model_for_generation(
             output_tokens=output_tokens,
         )
 
-    return content
+    return content, tool_calls
 
 
 def _record_generation_benchmark(
@@ -178,7 +212,7 @@ def _record_generation_benchmark(
                         _bg_task.add_done_callback(_BACKGROUND_TASKS.discard)
                     else:
                         loop.run_until_complete(result)
-                except RuntimeError:
-                    pass
-    except Exception:
-        pass
+                except RuntimeError as exc:
+                    logger.warning("Could not schedule async benchmark record: %s", exc, exc_info=True)
+    except Exception as exc:
+        logger.warning("Benchmark recording failed for %s/%s: %s", model_profile, work_type, exc, exc_info=True)

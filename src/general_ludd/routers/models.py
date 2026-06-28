@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 from typing import Any, cast
 
@@ -20,6 +21,7 @@ from general_ludd.db.repository import BenchmarkRepository
 from general_ludd.infra.local_inference import LocalInferenceManager, LocalServerConfig
 from general_ludd.models.auto_configurator import AutoConfigurator, ModelPrioritizer
 from general_ludd.models.gateway import ModelGateway
+from general_ludd.models.langgraph_gateway import LangGraphGateway
 from general_ludd.models.openrouter_discovery import OpenRouterScraper
 from general_ludd.models.provider_presets import (
     detect_credential_alias,
@@ -33,6 +35,13 @@ from general_ludd.models.timeout_detector import ModelHealthTracker
 from general_ludd.observability.comparison import ModelComparison
 from general_ludd.scoring.router import AdaptiveRouter
 from general_ludd.security.sanitize import is_path_within
+
+logger = logging.getLogger(__name__)
+
+# DoS cap: /admin/models/call accepts a caller-supplied max_tokens int that is
+# threaded into the budget gate. An absurd value (e.g. 10**18) is a resource /
+# cost-estimation DoS; reject anything above this ceiling with HTTP 413.
+_MAX_MODELS_CALL_MAX_TOKENS = 1_000_000
 
 
 def _workspace_root(app: FastAPI) -> str:
@@ -121,7 +130,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             # model calls are visible to the cost/metrics subsystem.
             metrics_collector = getattr(app.state, "_metrics_collector", None)
             app.state._model_gateway = ModelGateway(
-                provider_registry=ProviderRegistry(),
+                # CI-1: use the shared factory for consistency with daemon/worker.
+                # No profiles are in scope at this fallback path (profiles are
+                # added afterwards via gateway.add_profile), so the registry is
+                # empty — equivalent to ProviderRegistry() but built via the factory.
+                provider_registry=ProviderRegistry.from_profiles([]),
                 router=ModelRouter(),
                 event_bus=subsys["bus"],
                 hook_system=subsys["hooks"],
@@ -364,15 +377,33 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "model_recommendation": recommendation,
         }
 
-    @app.post("/admin/models/call")
+    @app.post(
+        "/admin/models/call",
+        summary="Call a model with a prompt via the gateway",
+        description=(
+            "Synchronous single-turn generation with optional system prompt, "
+            "explicit/auto-routed model profile, and best-effort "
+            "structured-output hints. Returns text + chosen profile + token "
+            "usage. Budget-gated, PSK-authenticated."
+        ),
+    )
     async def admin_models_call(request: Request) -> dict[str, Any]:
         """W6.2: model generation endpoint for Ansible modules and external callers.
 
         Request body:
           prompt: str (required)
+          system: str (optional — system prompt; prepended as a system message)
           model_profile: str (optional — explicit profile ID)
           route_task_type: str (optional — adaptive routing by task type)
           max_tokens: int (optional, default 2048)
+          response_format / response_schema: optional — BEST-EFFORT structured
+            output. When present the handler appends a light-touch JSON nudge to
+            the system message; it does NOT enable hard provider JSON-mode (the
+            gateway exposes none), so callers must still tolerate non-JSON.
+
+        Unknown body keys (e.g. ``options`` sent by gludd_langgraph_decision)
+        are tolerated — the body is parsed as a plain dict, never a strict
+        pydantic model, so extra fields can never trigger a 422.
 
         Auth: same PSK as other admin routes (enforced by middleware).
         """
@@ -382,11 +413,59 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if not prompt:
             raise HTTPException(status_code=422, detail="prompt is required")
 
+        # Optional system prompt — the langchain/langgraph Ansible modules POST
+        # this so their steering instructions reach the model server-side.
+        system_prompt = body.get("system")
+        system_text: str = system_prompt if isinstance(system_prompt, str) else ""
+
+        # Best-effort structured-output nudge. The gateway has no hard JSON mode,
+        # so when a response_format/response_schema is supplied we append a
+        # prompt-level instruction to the system message asking for JSON. Keep it
+        # safe: never reject, never assume the model honours it.
+        response_format = body.get("response_format")
+        response_schema = body.get("response_schema")
+        _wants_json = (
+            (isinstance(response_format, str) and response_format.strip().lower() == "json")
+            or response_schema is not None
+        )
+        if _wants_json:
+            _nudge = (
+                "Respond ONLY with a single valid JSON value and no surrounding "
+                "prose or Markdown code fences."
+            )
+            if response_schema is not None:
+                try:
+                    _schema_json = json.dumps(response_schema, sort_keys=True)
+                except (TypeError, ValueError):
+                    _schema_json = ""
+                if _schema_json:
+                    _nudge += f" The JSON must match this schema: {_schema_json}."
+            system_text = f"{system_text}\n\n{_nudge}".strip() if system_text else _nudge
+
         model_profile_id: str | None = body.get("model_profile")
         route_task_type: str | None = body.get("route_task_type")
-        # max_tokens available for future use when gateway exposes token limits per-call
-        _max_tokens: int = int(body.get("max_tokens", 2048))
-        del _max_tokens  # currently unused — call_model controls this via profile config
+        # The caller-supplied output cap. The gateway does not yet forward this
+        # to the provider (per-call token limits come from profile config), but
+        # it IS threaded into the budget gate as requested_max_output_tokens so
+        # a call that caps its output is estimated at its real (smaller) cost
+        # instead of the worst-case profile.max_output_tokens — without this a
+        # low-run_budget_usd deployment rejected every metered call (D-21
+        # over-conservatism). estimate_cost min()s it against the profile cap, so
+        # a caller cannot use it to under-report below the profile's capacity.
+        try:
+            requested_max_output_tokens: int | None = int(body.get("max_tokens", 2048))
+        except (TypeError, ValueError):
+            requested_max_output_tokens = None
+        if requested_max_output_tokens is not None and requested_max_output_tokens <= 0:
+            requested_max_output_tokens = None
+        if (
+            requested_max_output_tokens is not None
+            and requested_max_output_tokens > _MAX_MODELS_CALL_MAX_TOKENS
+        ):
+            raise HTTPException(
+                status_code=413,
+                detail="max_tokens exceeds maximum allowed count",
+            )
 
         # B5: budget gate — fail-closed when guard exhausted or degraded startup.
         _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
@@ -408,8 +487,9 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             try:
                 _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
             except Exception as _exc:
+                logger.warning("budget check raised: %s", _exc, exc_info=True)
                 raise HTTPException(
-                    status_code=503, detail=f"budget check raised: {_exc}"
+                    status_code=503, detail="budget check failed"
                 ) from _exc
             if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
                 _reason = (
@@ -427,14 +507,24 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             subsys = _get_or_create_subsystems(app)
             if not hasattr(app.state, "_health_tracker"):
                 app.state._health_tracker = ModelHealthTracker()
+            # H12 (W3.10): pass metrics_collector from app.state so API-driven
+            # model calls through this fallback gateway are visible to the
+            # cost/metrics subsystem (the daemon-built gateway gets the same
+            # collector). Defensive getattr — falls back to the gateway default
+            # when app.state has no collector (degraded startup), never crashes.
+            metrics_collector = getattr(app.state, "_metrics_collector", None)
             gateway = ModelGateway(
-                provider_registry=ProviderRegistry(),
+                # CI-1: use the shared factory for consistency with daemon/worker.
+                # No profiles are in scope at this fallback path, so the registry
+                # is empty — equivalent to ProviderRegistry() but via the factory.
+                provider_registry=ProviderRegistry.from_profiles([]),
                 router=ModelRouter(),
                 event_bus=subsys["bus"],
                 hook_system=subsys["hooks"],
                 worker_broadcaster=subsys["broadcaster"],
                 response_cache=ModelResponseCache(),
                 health_tracker=app.state._health_tracker,
+                metrics_collector=metrics_collector,
             )
             app.state._model_gateway = gateway
 
@@ -468,14 +558,21 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 detail="No model profiles configured. Add a profile via POST /admin/models first.",
             )
 
-        messages: list[dict[str, str]] = [{"role": "user", "content": prompt}]
+        messages: list[dict[str, str]] = []
+        if system_text:
+            messages.append({"role": "system", "content": system_text})
+        messages.append({"role": "user", "content": prompt})
 
         try:
             import asyncio
+            import functools
             response = await asyncio.to_thread(
-                gateway.call_model,
-                used_profile_id,
-                messages,
+                functools.partial(
+                    gateway.call_model,
+                    used_profile_id,
+                    messages,
+                    requested_max_output_tokens=requested_max_output_tokens,
+                )
             )
             return {
                 "text": response.content,
@@ -483,4 +580,148 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "usage": dict(response.usage_metadata) if response.usage_metadata else {},
             }
         except Exception as exc:
-            raise HTTPException(status_code=502, detail=f"model call failed: {exc}") from exc
+            logger.warning("model call failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=502, detail="model call failed") from exc
+
+    @app.post(
+        "/admin/models/workflow",
+        summary="Run the multi-step LangGraph workflow (classify→select→generate→review)",
+        description=(
+            "Quality-gated multi-step model workflow with adaptive routing and "
+            "retries. Returns final content, model, quality score, retry count, "
+            "warnings. Budget-gated, PSK-authenticated."
+        ),
+    )
+    async def admin_models_workflow(request: Request) -> dict[str, Any]:
+        """Run the multi-step LangGraph workflow over a chat-message list.
+
+        Mirrors /admin/models/call's auth (PSK middleware) and budget pre-check,
+        but routes the call through LangGraphGateway so callers (e.g. the new
+        Ansible langchain/langgraph modules) get classify→select→generate→review
+        with quality-gated retries.
+
+        Request body:
+          messages: list[{role, content}]  (required)
+          profile_id: str | null            (default model profile)
+          work_type: str | null             (adaptive-routing task type hint)
+          max_retries: int = 2
+          quality_threshold: float = 0.6
+          enable_graph: bool = true
+
+        Response: the LangGraphGateway result dict
+          {content, model, prompt, quality_score, retries, warnings}.
+
+        Auth: same PSK as other admin routes (enforced by middleware).
+        """
+        body = await _parse_request_body(request)
+
+        messages = body.get("messages")
+        if not isinstance(messages, list) or not messages:
+            raise HTTPException(
+                status_code=422, detail="messages must be a non-empty list"
+            )
+
+        profile_id: str | None = body.get("profile_id")
+        work_type: str | None = body.get("work_type")
+        try:
+            max_retries = int(body.get("max_retries", 2))
+            quality_threshold = float(body.get("quality_threshold", 0.6))
+        except (TypeError, ValueError) as exc:
+            logger.warning("invalid numeric parameter in workflow request: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422, detail="invalid numeric parameter"
+            ) from exc
+        enable_graph = bool(body.get("enable_graph", True))
+
+        # B5: budget gate — mirror /admin/models/call exactly (fail-closed when
+        # the guard is exhausted or startup degraded).
+        _BUDGET_UNSET = object()  # sentinel: attr absent (degraded startup)
+        _budget_guard = getattr(app.state, "_budget_guard", _BUDGET_UNSET)
+        _fail_closed_degraded = os.environ.get(
+            "GLUDD_BUDGET_FAIL_CLOSED_DEGRADED", ""
+        ).strip().lower() in {"1", "true", "yes", "on"}
+        if _budget_guard is _BUDGET_UNSET and _fail_closed_degraded:
+            raise HTTPException(
+                status_code=503,
+                detail="budget guard unavailable (degraded startup); GLUDD_BUDGET_FAIL_CLOSED_DEGRADED=1",
+            )
+        _guard_active = (
+            _budget_guard is not _BUDGET_UNSET
+            and _budget_guard is not None
+            and hasattr(_budget_guard, "check_all_limits")
+        )
+        if _guard_active:
+            try:
+                _verdict = cast(Any, _budget_guard).check_all_limits(estimated_cost=0.0)
+            except Exception as _exc:
+                logger.warning("budget check raised: %s", _exc, exc_info=True)
+                raise HTTPException(
+                    status_code=503, detail="budget check failed"
+                ) from _exc
+            if not isinstance(_verdict, dict) or not _verdict.get("allowed", False):
+                _reason = (
+                    _verdict.get("reason", "budget exhausted")
+                    if isinstance(_verdict, dict)
+                    else "non-dict"
+                )
+                raise HTTPException(
+                    status_code=429, detail=f"budget exhausted: {_reason}"
+                )
+
+        # Resolve the gateway — use app.state if available, else build a minimal
+        # one (same construction path as /admin/models/call).
+        gateway: ModelGateway | None = getattr(app.state, "_model_gateway", None)
+        if gateway is None:
+            subsys = _get_or_create_subsystems(app)
+            if not hasattr(app.state, "_health_tracker"):
+                app.state._health_tracker = ModelHealthTracker()
+            # H12 (W3.10): pass metrics_collector from app.state so API-driven
+            # model calls through this fallback gateway are visible to the
+            # cost/metrics subsystem (the daemon-built gateway gets the same
+            # collector). Defensive getattr — falls back to the gateway default
+            # when app.state has no collector (degraded startup), never crashes.
+            metrics_collector = getattr(app.state, "_metrics_collector", None)
+            gateway = ModelGateway(
+                # CI-1: use the shared factory for consistency with daemon/worker.
+                # No profiles are in scope at this fallback path, so the registry
+                # is empty — equivalent to ProviderRegistry() but via the factory.
+                provider_registry=ProviderRegistry.from_profiles([]),
+                router=ModelRouter(),
+                event_bus=subsys["bus"],
+                hook_system=subsys["hooks"],
+                worker_broadcaster=subsys["broadcaster"],
+                response_cache=ModelResponseCache(),
+                health_tracker=app.state._health_tracker,
+                metrics_collector=metrics_collector,
+            )
+            app.state._model_gateway = gateway
+
+        # call_model is synchronous on ModelGateway; LangGraphGateway invokes
+        # call_model_fn as `await fn(profile_id=..., messages=...)`, so wrap the
+        # blocking call in a thread (mirrors /admin/models/call).
+        import asyncio
+
+        _gateway = gateway
+
+        async def _call_model_fn(profile_id: str, messages: list[Any]) -> Any:
+            return await asyncio.to_thread(_gateway.call_model, profile_id, messages)
+
+        gw = LangGraphGateway(
+            call_model_fn=_call_model_fn,
+            adaptive_router=getattr(app.state, "_adaptive_router", None),
+            scoring_engine=getattr(app.state, "_scoring_engine", None),
+            max_retries=max_retries,
+            quality_threshold=quality_threshold,
+            enable_graph=enable_graph,
+        )
+
+        try:
+            result = await gw.call(
+                messages,
+                task_context={"work_type": work_type},
+                profile_id=profile_id or "default",
+            )
+        except Exception as exc:
+            logger.warning("workflow execution failed: %s", exc, exc_info=True)
+            raise HTTPException(status_code=500, detail="workflow execution failed") from exc
+        return result

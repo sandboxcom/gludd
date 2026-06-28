@@ -66,7 +66,7 @@ class TestMCPStdioClient:
         assert list(pos_args) == cmd
         assert kwargs["stdin"] == asyncio.subprocess.PIPE
         assert kwargs["stdout"] == asyncio.subprocess.PIPE
-        assert kwargs["stderr"] == asyncio.subprocess.PIPE
+        assert kwargs["stderr"] == asyncio.subprocess.DEVNULL
         assert kwargs["env"]["FOO"] == "bar"
 
     async def test_stdio_client_sends_initialize(self):

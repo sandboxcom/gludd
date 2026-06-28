@@ -29,6 +29,7 @@ wins.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import os
@@ -156,7 +157,7 @@ class TaskEmbeddingStore:
         for task_type, canonical_text in CANONICAL_TASK_DESCRIPTIONS.items():
             row = rows_by_type.get(task_type.value)
             if row is None:
-                vec = self._embedder.embed(canonical_text)
+                vec = await asyncio.to_thread(self._embedder.embed, canonical_text)
                 row = TaskEmbeddingModel(
                     task_type=task_type.value,
                     canonical_text=canonical_text,
@@ -167,7 +168,7 @@ class TaskEmbeddingStore:
                 rows_by_type[task_type.value] = row
             elif _is_empty_vector(row):
                 text = row.canonical_text or canonical_text
-                vec = self._embedder.embed(text)
+                vec = await asyncio.to_thread(self._embedder.embed, text)
                 row.canonical_text = text
                 row.embedding = json.dumps(vec)
                 row.dim = len(vec)

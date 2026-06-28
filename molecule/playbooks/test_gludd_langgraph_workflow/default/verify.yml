@@ -1,0 +1,35 @@
+---
+- name: Verify - gludd_langgraph_workflow returned content + quality from mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8860', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8860', true) }}.pid"
+  tasks:
+    - name: Load persisted workflow result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-workflow.json"
+      register: raw
+
+    - name: Parse result
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert workflow returned the canned content + quality metadata
+      ansible.builtin.assert:
+        that:
+          - res.content is defined
+          - res.content == "def solution(): return 42"
+          - res.model == "glm-4.6"
+          - (res.quality_score | float) == 0.82
+          - (res.retries | int) == 1
+          - res.warnings == []
+        fail_msg: "gludd_langgraph_workflow result unexpected: {{ res }}"
+        success_msg: "gludd_langgraph_workflow: got content + quality_score from mock POST /admin/models/workflow"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

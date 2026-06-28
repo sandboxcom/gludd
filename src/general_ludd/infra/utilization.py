@@ -1,11 +1,21 @@
 from __future__ import annotations
 
+import collections
 import logging
 import time
 from dataclasses import dataclass
 from typing import Any
 
 logger = logging.getLogger(__name__)
+
+# Memory-leak guard (follow-up to P3 470253a): ``_task_history`` maps task_id ->
+# endpoint_id and is added to on every ``route_task`` but only removed by a
+# matching ``release_task``. A caller that routes a task and never releases it
+# (crash, dropped result, missed cleanup) leaks one entry per task forever. Cap
+# the dict with FIFO eviction of the oldest task so a long-lived tracker cannot
+# grow without bound; an evicted task simply loses its routing record (a later
+# release_task for it becomes a harmless no-op, exactly as for an unknown id).
+_MAX_TASK_HISTORY = 10_000
 
 
 @dataclass
@@ -56,7 +66,10 @@ class TaskRouting:
 class UtilizationTracker:
     def __init__(self) -> None:
         self._endpoints: dict[str, ComputeEndpoint] = {}
-        self._task_history: dict[str, str] = {}
+        # OrderedDict so we can FIFO-evict the oldest routing record when the
+        # history exceeds _MAX_TASK_HISTORY (popitem(last=False)). Plain dict
+        # assignment/pop semantics are preserved.
+        self._task_history: collections.OrderedDict[str, str] = collections.OrderedDict()
 
     def register_endpoint(self, endpoint_id: str, url: str, model: str = "", **kwargs: Any) -> ComputeEndpoint:
         ep = ComputeEndpoint(endpoint_id=endpoint_id, url=url, model=model, **kwargs)
@@ -78,6 +91,18 @@ class UtilizationTracker:
     def get_endpoint(self, endpoint_id: str) -> ComputeEndpoint | None:
         return self._endpoints.get(endpoint_id)
 
+    def _record_routing(self, task_id: str, endpoint_id: str) -> None:
+        """Record a task->endpoint routing, bounding the history with FIFO eviction.
+
+        Re-inserting an existing task_id moves it to the most-recent end (so a
+        re-routed task is not prematurely evicted). Once the history exceeds
+        ``_MAX_TASK_HISTORY`` the oldest entry is dropped.
+        """
+        self._task_history[task_id] = endpoint_id
+        self._task_history.move_to_end(task_id)
+        while len(self._task_history) > _MAX_TASK_HISTORY:
+            self._task_history.popitem(last=False)
+
     def route_task(self, task_id: str, model: str = "", prefer_model: bool = True) -> TaskRouting | None:
         candidates = [e for e in self._endpoints.values() if e.is_available]
         if not candidates:
@@ -95,7 +120,7 @@ class UtilizationTracker:
             ep.total_requests += 1
             ep.cache_hits += 1
             ep.last_used = time.time()
-            self._task_history[task_id] = ep.endpoint_id
+            self._record_routing(task_id, ep.endpoint_id)
             return TaskRouting(
                 task_id=task_id,
                 endpoint_id=ep.endpoint_id,
@@ -107,7 +132,7 @@ class UtilizationTracker:
         ep.current_load += 1
         ep.total_requests += 1
         ep.last_used = time.time()
-        self._task_history[task_id] = ep.endpoint_id
+        self._record_routing(task_id, ep.endpoint_id)
         return TaskRouting(
             task_id=task_id,
             endpoint_id=ep.endpoint_id,

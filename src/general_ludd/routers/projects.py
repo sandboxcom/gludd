@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import logging
 import os
 from typing import Any, cast
 
@@ -12,6 +13,8 @@ from general_ludd.self_improve.harness import SelfImprovementHarness
 from general_ludd.skills.catalog import SkillCatalog
 from general_ludd.skills.loader import discover_skills
 from general_ludd.skills.registry import SkillRegistry
+
+logger = logging.getLogger(__name__)
 
 
 class AddProjectRequest(BaseModel):
@@ -30,6 +33,11 @@ class SetWeightRequest(BaseModel):
 class RebalanceRequest(BaseModel):
     weights: dict[str, float]
 
+
+# DoS caps: admin endpoints accept unbounded client-supplied collections and
+# iterate/store them. Reject oversized input early with HTTP 413.
+_MAX_TUI_LOG_ENTRIES = 1000
+_MAX_REBALANCE_WEIGHTS = 500
 
 _tui_log_entries: list[dict[str, Any]] = []
 
@@ -77,8 +85,17 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                             dispatch_mode=req.dispatch_mode,
                         )
                         await session.commit()
-                    except Exception:
-                        pass
+                    except Exception as exc:
+                        # Do NOT swallow: a swallowed persist/commit failure
+                        # returned HTTP 200 while the project was never written
+                        # (lost on restart). Log + re-raise so the outer handler
+                        # surfaces it as a 422 instead of a false success.
+                        logger.error(
+                            "Failed to persist project %s to database: %s",
+                            project.project_id,
+                            exc,
+                        )
+                        raise
             return {
                 "project_id": project.project_id,
                 "name": project.name, "weight": project.weight,
@@ -89,7 +106,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "active": project.active,
             }
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("add project failed: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422,
+                detail="invalid project request; check name, weight, and repo URL",
+            ) from exc
 
     @app.delete("/admin/projects/{project_id}")
     async def admin_delete_project(project_id: str) -> dict[str, Any]:
@@ -113,17 +134,28 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             project = ext["projects"].get_project(project_id)
             return {"project_id": project_id, "weight": project.weight if project else req.weight}
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("set project weight failed: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422, detail="invalid weight for project"
+            ) from exc
 
     @app.post("/admin/projects/rebalance")
     async def admin_rebalance_projects(req: RebalanceRequest) -> dict[str, Any]:
         from general_ludd.daemon import _get_or_create_extended_subsystems
+        if len(req.weights) > _MAX_REBALANCE_WEIGHTS:
+            raise HTTPException(
+                status_code=413,
+                detail="weights exceeds maximum allowed count",
+            )
         ext = _get_or_create_extended_subsystems(app)
         try:
             ext["projects"].rebalance(req.weights)
             return {"rebalanced": list(req.weights.keys())}
         except Exception as exc:
-            raise HTTPException(status_code=422, detail=str(exc)) from exc
+            logger.warning("rebalance projects failed: %s", exc, exc_info=True)
+            raise HTTPException(
+                status_code=422, detail="invalid weights in rebalance request"
+            ) from exc
 
     @app.get("/admin/projects")
     async def admin_list_projects() -> dict[str, Any]:
@@ -200,6 +232,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     @app.post("/admin/tui-log")
     async def admin_tui_log(req: dict[str, Any]) -> dict[str, Any]:
         entries = req.get("entries", [])
+        if len(entries) > _MAX_TUI_LOG_ENTRIES:
+            raise HTTPException(
+                status_code=413,
+                detail="entries exceeds maximum allowed count",
+            )
         _tui_log_entries.extend(entries)
         if len(_tui_log_entries) > 10000:
             del _tui_log_entries[:len(_tui_log_entries) - 10000]

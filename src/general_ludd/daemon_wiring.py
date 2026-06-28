@@ -122,6 +122,15 @@ def make_role_handler(
     ``prompt`` key in args (defaulting to the role name itself) is forwarded as
     the AgentTask prompt so the downstream executor has context.
 
+    The dispatched task carries ``invoker_name="build"`` so the dispatcher's
+    ``can_invoke`` permission gate is ACTIVE for daemon-driven role dispatch.
+    An empty invoker bypasses the gate entirely (the agent-permission matrix
+    stays inert); ``"build"`` is the registered primary agent that
+    ``default_registry()`` grants ``can_dispatch_subagents=True`` with
+    ``allowed_subagents=["*"]``, so it truthfully covers every registered role
+    target while a model-supplied ``name`` that is NOT a registered agent is
+    fail-closed (the dispatcher's not-found / can_invoke guards both reject it).
+
     Args:
         agent_dispatcher: An AgentDispatcher instance, or None.
 
@@ -141,6 +150,7 @@ def make_role_handler(
             agent_name=name,
             description=args.get("description", f"Role dispatch: {name}"),
             prompt=args.get("prompt", name),
+            invoker_name="build",
         )
         result = await agent_dispatcher.dispatch_one(task)
         return result.output or ""
@@ -192,6 +202,7 @@ def make_collection_handler(
         return None
 
     async def _collection_handler(name: str, args: dict[str, Any]) -> dict[str, Any]:
+        import asyncio
         import os
         import re
         import uuid
@@ -228,8 +239,14 @@ def make_collection_handler(
         )
         os.makedirs(dispatch_dir, exist_ok=True)
         playbook_path = os.path.join(dispatch_dir, f"{uuid.uuid4().hex}.yml")
-        with open(playbook_path, "w") as f:
-            yaml.safe_dump(playbook, f, default_flow_style=False)
+
+        # AB-1: serialize+write off the event loop so the async daemon handler
+        # does not block on disk I/O under concurrent dispatch.
+        def _write_playbook() -> None:
+            with open(playbook_path, "w") as f:
+                yaml.safe_dump(playbook, f, default_flow_style=False)
+
+        await asyncio.to_thread(_write_playbook)
 
         transient_name = f"_dispatch_{uuid.uuid4().hex}"
         runner_adapter.register_playbook(transient_name, playbook_path)

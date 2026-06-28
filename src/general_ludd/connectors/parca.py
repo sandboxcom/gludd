@@ -83,7 +83,7 @@ class _HttpxTransport:
         headers: dict[str, str] | None = None,
         timeout: float | None = None,
     ) -> _Response:
-        with httpx.Client(timeout=timeout) as client:
+        with httpx.Client(timeout=timeout, follow_redirects=False) as client:
             return client.post(url, json=json, headers=headers)
 
 

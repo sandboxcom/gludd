@@ -1,0 +1,49 @@
+---
+- name: Verify - gludd_osquery returned rows for SELECT and rejected DROP
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8779', true) }}.pid"
+    fake_bin: "/tmp/gludd-fake-osqueryi-{{ mock_port }}"
+  tasks:
+    - name: Load persisted results
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-osquery.json"
+      register: raw
+
+    - name: Parse results
+      ansible.builtin.set_fact:
+        res: "{{ raw.content | b64decode | from_json }}"
+
+    - name: Assert the SELECT query injected rows under gludd_osquery
+      ansible.builtin.assert:
+        that:
+          - not res.select.failed
+          - not res.select.changed
+          - res.select.ansible_facts.gludd_osquery.count == 2
+          - res.select.ansible_facts.gludd_osquery.rows | length == 2
+          - res.select.ansible_facts.gludd_osquery.rows[0].name == "init"
+          - "'SELECT' in res.select.ansible_facts.gludd_osquery.query"
+        fail_msg: "gludd_osquery SELECT failed: {{ res.select }}"
+        success_msg: "gludd_osquery SELECT: 2 rows injected as facts"
+
+    - name: Assert the DROP query was rejected by SELECT-only validation
+      ansible.builtin.assert:
+        that:
+          - res.drop.failed
+          - "'forbidden keyword' in res.drop.msg or 'query rejected' in res.drop.msg"
+        fail_msg: "gludd_osquery DROP was NOT rejected: {{ res.drop }}"
+        success_msg: "gludd_osquery DROP: rejected by SELECT-only validation"
+
+    - name: Clean up fake binary
+      ansible.builtin.file:
+        path: "{{ fake_bin }}"
+        state: absent
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

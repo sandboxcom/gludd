@@ -364,6 +364,43 @@ class GitAutomation:
                 continue
         return total
 
+    def changed_files(self) -> list[str]:
+        """Return the repo-relative paths with uncommitted changes (porcelain).
+
+        Runs ``git status --porcelain`` and parses the path column of each entry,
+        so the result is the set of files this worktree is about to commit —
+        added, modified, deleted, or renamed (the post-rename path is returned).
+        Used by the event loop's git-delivery path to discover a todo's affected
+        files at commit time (they are unknown earlier — the model has not yet
+        produced a diff at dispatch). Fail-safe: any error (not a repo, git
+        missing, timeout) returns ``[]`` and never raises — file-claim
+        coordination must never abort a commit/push flow.
+        """
+        try:
+            proc = self._run_git("status", "--porcelain", check=False)
+        except (subprocess.CalledProcessError, FileNotFoundError, OSError):
+            return []
+        if proc.returncode != 0:
+            return []
+        paths: list[str] = []
+        for line in proc.stdout.splitlines():
+            # Porcelain v1 lines are "XY <path>" (XY = 2 status chars + a space).
+            # Strip those 3 leading chars; a too-short line is skipped.
+            if len(line) < 4:
+                continue
+            entry = line[3:].strip()
+            if not entry:
+                continue
+            # Renames/copies report "old -> new"; keep the destination path.
+            if " -> " in entry:
+                entry = entry.split(" -> ", 1)[1].strip()
+            # git quotes paths with special chars in double quotes; unwrap them.
+            if len(entry) >= 2 and entry[0] == '"' and entry[-1] == '"':
+                entry = entry[1:-1]
+            if entry:
+                paths.append(entry)
+        return paths
+
     def clone(
         self,
         url: str,
@@ -756,12 +793,27 @@ class GitAutomation:
         args = ["git", "push", remote, "--"]
         if branch:
             args.append(branch)
-        result = subprocess.run(
-            args,
-            cwd=repo_path,
-            capture_output=True,
-            text=True,
-        )
+        # GA-1 (real gap): push does network I/O. Without a timeout it can hang
+        # the daemon indefinitely on an unresponsive remote — the exact failure
+        # `_run_git` was built to prevent. Mirror its timeout + non-interactive
+        # env (this method takes an explicit repo_path, so it cannot route
+        # through `_run_git`, which is pinned to self.repo_path).
+        try:
+            result = subprocess.run(
+                args,
+                cwd=repo_path,
+                capture_output=True,
+                text=True,
+                timeout=_GIT_TIMEOUT_SECONDS,
+                env={**os.environ, **_NON_INTERACTIVE_GIT_ENV},
+            )
+        except subprocess.TimeoutExpired:
+            return PushResult(
+                success=False,
+                remote=remote,
+                branch=branch or "",
+                message=f"push timed out after {_GIT_TIMEOUT_SECONDS}s",
+            )
         return PushResult(
             success=result.returncode == 0,
             remote=remote,

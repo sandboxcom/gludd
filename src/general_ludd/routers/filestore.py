@@ -1,12 +1,21 @@
 from __future__ import annotations
 
+import os
 from typing import Any
 
 from fastapi import FastAPI, Request
+from fastapi.responses import JSONResponse
 
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
 from general_ludd.security.sanitize import sanitize_path
+
+# Maximum allowed byte length for a single /admin/filestore/write request body.
+# Override via FILESTORE_WRITE_MAX_BYTES env var (bytes).
+_DEFAULT_MAX_BYTES = 10 * 1024 * 1024  # 10 MB
+FILESTORE_WRITE_MAX_BYTES: int = int(
+    os.environ.get("FILESTORE_WRITE_MAX_BYTES", _DEFAULT_MAX_BYTES)
+)
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
@@ -36,7 +45,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             return {"path": safe_path, "is_dir": False, "binary": True}
 
     @app.post("/admin/filestore/write")
-    async def admin_filestore_write(request: Request) -> dict[str, Any]:
+    async def admin_filestore_write(request: Request) -> Any:
         store = FileStore()
         body = await request.json()
         raw_path = body.get("path", "")
@@ -44,6 +53,17 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if safe_path is None:
             return {"error": "Invalid path", "success": False}
         content = body.get("content", "")
+        content_bytes = content.encode("utf-8") if isinstance(content, str) else content
+        if len(content_bytes) > FILESTORE_WRITE_MAX_BYTES:
+            return JSONResponse(
+                status_code=413,
+                content={
+                    "error": "Content exceeds maximum allowed size",
+                    "max_bytes": FILESTORE_WRITE_MAX_BYTES,
+                    "received_bytes": len(content_bytes),
+                    "success": False,
+                },
+            )
         store.write_text(safe_path, content)
         return {"success": True, "path": safe_path}
 
@@ -67,7 +87,27 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if binary == "openbao":
             success = await boot.download_openbao()
             return {"success": success, "binary": binary, "stored": boot.check_openbao_in_store()}
-        return {"success": False, "error": f"Unknown binary: {binary}"}
+        # Generic path: any other KNOWN_VERSIONS binary (opentofu, osquery,
+        # codebase-memory-mcp, ...) is downloaded/extracted/chmod'd via download().
+        if binary in boot.get_known_versions():
+            if not boot.is_platform_available(binary):
+                return {
+                    "success": False,
+                    "binary": binary,
+                    "error": "No download available for this platform/arch",
+                }
+            success = await boot.download(binary)
+            return {
+                "success": success,
+                "binary": binary,
+                "version": boot.get_known_versions().get(binary),
+                "stored": boot.get_binary_path(binary) is not None,
+            }
+        return {
+            "success": False,
+            "error": f"Unknown binary: {binary}",
+            "known": sorted(boot.get_known_versions()),
+        }
 
     @app.get("/admin/filestore/binaries")
     async def admin_filestore_binaries() -> dict[str, Any]:

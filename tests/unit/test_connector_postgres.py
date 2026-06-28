@@ -145,7 +145,10 @@ class TestHealth:
         src = PostgresStatsSource(executor=_boom)
         h = src.health()
         assert h["ok"] is False
-        assert "connection refused" in h["detail"]
+        # Raw exception text (which can embed a DSN) must not leak to callers;
+        # only the static generic marker is surfaced.
+        assert "connection refused" not in h["detail"]
+        assert h["detail"] == "probe failed"
 
 
 class TestNoHardcodedCredentials:

@@ -111,6 +111,27 @@ def test_normalization_each_datapoint() -> None:
     assert records[2]["ts"] == 1700000120
 
 
+def test_nan_inf_datapoint_value_sanitized_to_none() -> None:
+    # A datapoint whose value is NaN/Inf must normalize to value is None
+    # (unified sanitize_metric_value policy), and must not raise.
+    payload = [
+        {
+            "target": "servers.web1.cpu",
+            "datapoints": [
+                [float("nan"), 1700000000],
+                [float("inf"), 1700000060],
+                [float("-inf"), 1700000120],
+                [0.0, 1700000180],
+            ],
+        }
+    ]
+    src = GraphiteSource(CONFIG, _MockTransport(_Resp(200, payload)), environ={})
+    records = src.query({"target": "servers.web1.cpu"})
+    assert [r["value"] for r in records[:3]] == [None, None, None]
+    # 0.0 is a real sample, never forged to None.
+    assert records[3]["value"] == 0.0
+
+
 @pytest.mark.parametrize(
     "bad",
     [

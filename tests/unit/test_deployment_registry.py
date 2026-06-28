@@ -76,8 +76,10 @@ class TestDestroyRefusesUnknown:
         mgr = _mgr(tmp_path)
         captured_dirs: list[str] = []
 
-        async def fake_run(args):
-            captured_dirs.append(mgr._active_working_dir)
+        async def fake_run(args, *, cwd=None, env=None):
+            # New API: the per-instance terraform dir is passed via cwd=, not by
+            # mutating a shared _active_working_dir attribute.
+            captured_dirs.append(cwd)
             return {"stdout": json.dumps({"instance_ip": {"value": "5.5.5.5"}})}
 
         with patch.object(mgr, "_run_terraform", side_effect=fake_run):

@@ -1,8 +1,10 @@
 from __future__ import annotations
 
+import collections
 import logging
 import os
 import uuid
+from datetime import UTC, datetime
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -26,12 +28,55 @@ class AddTodoRequest(BaseModel):
     project_id: str | None = None
 
 
+class AddScheduledTodoRequest(BaseModel):
+    title: str = Field(min_length=1, max_length=512)
+    description: str = Field(default="", max_length=4096)
+    queue: str = Field(default="core", pattern=r"^[a-z0-9_\-]+$")
+    priority: str = Field(default="medium", pattern=r"^(low|medium|high|critical)$")
+    work_type: str = Field(default="code", pattern=r"^[a-z_]+$")
+    project_id: str | None = None
+    # One-shot: fire once at this UTC datetime.
+    scheduled_at: datetime | None = None
+    # Recurring: 5-field cron expression (e.g. "0 9 * * 1-5").
+    cron: str | None = None
+    schedule_timezone: str = "UTC"
+    max_runs: int | None = None
+
+
 class LogLevelRequest(BaseModel):
     level: str
 
 
 def _get_session_factory(app: FastAPI) -> Any:
     return getattr(app.state, "_session_factory", None)
+
+
+def _validate_project_id(app: FastAPI, project_id: str | None) -> None:
+    """Reject unknown/missing project_id in multi-project mode (mirrors CREATE).
+
+    TG-1: read/update endpoints previously returned 404 ("not found") or an empty
+    result for an unknown project_id, while CREATE returns 422. This unifies the
+    contract: when a ProjectManager exists AND has >=1 active project, a null
+    project_id is 422 ("required") and an unknown id is 422 ("unknown"). When no
+    projects are active the field is unconstrained (single-project / no-PM
+    back-compat) and this is a no-op.
+    """
+    pm = getattr(app.state, "_project_manager", None)
+    if pm is None:
+        return
+    active_ids = {p.project_id for p in pm.list_active()}
+    if not active_ids:
+        return
+    if project_id is None:
+        raise HTTPException(
+            status_code=422,
+            detail="project_id is required in multi-project mode",
+        )
+    if project_id not in active_ids:
+        raise HTTPException(
+            status_code=422,
+            detail=f"Unknown project_id: {project_id}",
+        )
 
 
 def _todo_to_dict(todo: Any) -> dict[str, Any]:
@@ -49,10 +94,47 @@ def _todo_to_dict(todo: Any) -> dict[str, Any]:
     }
 
 
+def _todo_to_dict_scheduled(todo: Any) -> dict[str, Any]:
+    """Serialize a todo including all scheduling fields."""
+    base = _todo_to_dict(todo)
+    base.update({
+        "scheduled_at": str(todo.scheduled_at) if getattr(todo, "scheduled_at", None) else None,
+        "cron": getattr(todo, "cron", None),
+        "schedule_timezone": getattr(todo, "schedule_timezone", "UTC"),
+        "next_run_at": str(todo.next_run_at) if getattr(todo, "next_run_at", None) else None,
+        "last_run_at": str(todo.last_run_at) if getattr(todo, "last_run_at", None) else None,
+        "run_count": getattr(todo, "run_count", 0),
+        "max_runs": getattr(todo, "max_runs", None),
+        "schedule_paused": getattr(todo, "schedule_paused", False),
+    })
+    return base
+
+
 _PRIORITY_MAP: dict[str, int] = {"low": 0, "medium": 1, "high": 2, "critical": 3}
+
+# Memory-leak guard (follow-up to P3 470253a): the degraded-mode in-memory todo
+# fallback (`_daemon_state["todos"]`) is unbounded — without a session factory
+# every POST /api/todos appends forever, so a long-lived degraded daemon grows
+# this list without limit. Bound it to the most-recent N via a deque(maxlen).
+# All consumers iterate or list()-convert it (never index/slice the raw object
+# or JSON-serialize it directly), so a deque is a drop-in: FIFO eviction silently
+# drops the oldest entries once the cap is hit.
+_MAX_INMEMORY_TODOS = 1000
 
 
 def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
+    # Replace whatever the daemon factory seeded (a plain list) with a bounded
+    # deque, preserving any pre-existing entries. Idempotent if already a deque
+    # with the right cap.
+    _existing = _daemon_state.get("todos", [])
+    if not (
+        isinstance(_existing, collections.deque)
+        and _existing.maxlen == _MAX_INMEMORY_TODOS
+    ):
+        _daemon_state["todos"] = collections.deque(
+            _existing, maxlen=_MAX_INMEMORY_TODOS
+        )
+
     @app.post("/admin/preflight")
     async def admin_run_preflight() -> dict[str, Any]:
         result = run_preflight()
@@ -68,11 +150,16 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # no projects are registered the field stays unconstrained (back-compat:
         # single-project / no-project deployments and the many tests that create
         # todos with arbitrary or null project_ids keep working).
-        if req.project_id is not None:
-            pm = getattr(app.state, "_project_manager", None)
-            if pm is not None:
-                active_ids = {p.project_id for p in pm.list_active()}
-                if active_ids and req.project_id not in active_ids:
+        pm = getattr(app.state, "_project_manager", None)
+        if pm is not None:
+            active_ids = {p.project_id for p in pm.list_active()}
+            if active_ids:
+                if req.project_id is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="project_id is required in multi-project mode",
+                    )
+                if req.project_id not in active_ids:
                     raise HTTPException(
                         status_code=422,
                         detail=f"Unknown project_id: {req.project_id}",
@@ -108,12 +195,25 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
     ) -> list[dict[str, Any]]:
         _limit = max(1, min(limit, 500))
         _offset = max(0, offset)
+        # Cross-tenant isolation: when no project_id is supplied in multi-project
+        # mode, refuse to leak all tenants' todos.  Single-project / no-PM
+        # deployments fall through to the unscoped path for back-compat.
+        _pm = getattr(app.state, "_project_manager", None)
+        _active_ids: set[str] = (
+            {p.project_id for p in _pm.list_active()} if _pm is not None else set()
+        )
+        if project_id is None and _active_ids:
+            return []
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
-                repo = TodoRepository(session)
+                repo = (
+                    TodoRepository.scoped(session, project_id)
+                    if project_id is not None
+                    else TodoRepository(session)
+                )
                 todos = await repo.list_all(
-                    queue=queue, status=status, project_id=project_id,
+                    queue=queue, status=status,
                     limit=_limit, offset=_offset,
                 )
                 return [_todo_to_dict(t) for t in todos][:limit]
@@ -126,18 +226,186 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             results = [t for t in results if t.get("project_id") == project_id]
         return results[_offset:_offset + _limit]
 
-    @app.get("/api/todos/{todo_id}")
-    async def api_get_todo(todo_id: str) -> dict[str, Any]:
+    @app.post("/api/todos/scheduled", status_code=201)
+    async def api_create_scheduled_todo(req: AddScheduledTodoRequest) -> dict[str, Any]:
+        """Create a scheduled (one-shot or cron) todo in SCHEDULED status.
+
+        ``scheduled_at`` sets the one-shot fire time; ``cron`` makes it
+        recurring. At least one of the two must be supplied.  ``next_run_at``
+        is computed automatically from ``cron`` when provided.
+        """
+        if req.scheduled_at is None and req.cron is None:
+            raise HTTPException(
+                status_code=422,
+                detail="At least one of scheduled_at or cron must be provided",
+            )
+        if req.cron is not None and len(req.cron.split()) != 5:
+            raise HTTPException(
+                status_code=422,
+                detail="cron must be a 5-field expression (min hour dom month dow)",
+            )
+        pm = getattr(app.state, "_project_manager", None)
+        if pm is not None:
+            active_ids = {p.project_id for p in pm.list_active()}
+            if active_ids:
+                if req.project_id is None:
+                    raise HTTPException(
+                        status_code=422,
+                        detail="project_id is required in multi-project mode",
+                    )
+                if req.project_id not in active_ids:
+                    raise HTTPException(
+                        status_code=422,
+                        detail=f"Unknown project_id: {req.project_id}",
+                    )
+        # Compute initial next_run_at from the cron expression.
+        initial_next_run_at: datetime | None = None
+        if req.cron is not None:
+            try:
+                from zoneinfo import ZoneInfo
+
+                from croniter import croniter
+
+                _zone = ZoneInfo(req.schedule_timezone)
+                _start = (req.scheduled_at or datetime.now(UTC)).astimezone(_zone)
+                _it = croniter(req.cron, _start)
+                _nxt: datetime = _it.get_next(datetime)
+                if _nxt.tzinfo is None:
+                    _nxt = _nxt.replace(tzinfo=_zone)
+                initial_next_run_at = _nxt.astimezone(UTC)
+            except HTTPException:
+                raise
+            except Exception as exc:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Invalid cron expression or timezone: {exc}",
+                ) from exc
+
         factory = _get_session_factory(app)
+        todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
+        todo_data: dict[str, Any] = {
+            "todo_id": todo_id,
+            "title": req.title,
+            "description": req.description,
+            "queue": req.queue,
+            "priority": _PRIORITY_MAP.get(req.priority, 1),
+            "work_type": req.work_type,
+            "status": "scheduled",
+            "project_id": req.project_id,
+            "scheduled_at": req.scheduled_at,
+            "cron": req.cron,
+            "schedule_timezone": req.schedule_timezone,
+            "max_runs": req.max_runs,
+            "schedule_paused": False,
+            "run_count": 0,
+            "next_run_at": initial_next_run_at,
+        }
         if factory is not None:
             async with factory() as session:
                 repo = TodoRepository(session)
+                result = await repo.create(todo_data=todo_data)
+                await session.commit()
+                return _todo_to_dict_scheduled(result)
+        raise HTTPException(status_code=503, detail="No database available")
+
+    @app.get("/api/todos/scheduled")
+    async def api_list_scheduled_todos(
+        project_id: str | None = None,
+        include_paused: bool = True,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[dict[str, Any]]:
+        """List todos in SCHEDULED status (both one-shot and cron templates)."""
+        _limit = max(1, min(limit, 500))
+        _offset = max(0, offset)
+        # Cross-tenant isolation: when no project_id is supplied in multi-project
+        # mode, refuse to leak all tenants' scheduled todos.
+        _pm = getattr(app.state, "_project_manager", None)
+        _active_ids: set[str] = (
+            {p.project_id for p in _pm.list_active()} if _pm is not None else set()
+        )
+        if project_id is None and _active_ids:
+            return []
+        # TG-1: a non-None but UNKNOWN project_id must 422 (not silently scope to
+        # an empty list), matching CREATE and the other read/update endpoints.
+        _validate_project_id(app, project_id)
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = (
+                    TodoRepository.scoped(session, project_id)
+                    if project_id is not None
+                    else TodoRepository(session)
+                )
+                todos = await repo.list_all(
+                    status="scheduled",
+                    limit=_limit,
+                    offset=_offset,
+                    # DEFECT 3: push paused-filtering into SQL so pagination is
+                    # correct (None = no filter, backwards-compatible default).
+                    schedule_paused=None if include_paused else False,
+                )
+                return [_todo_to_dict_scheduled(t) for t in todos]
+        return []
+
+    @app.post("/api/todos/{todo_id}/schedule/pause")
+    async def api_pause_schedule(todo_id: str, project_id: str) -> dict[str, Any]:
+        """Pause a SCHEDULED todo's schedule. Skips future fires until resumed."""
+        _validate_project_id(app, project_id)
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(status_code=503, detail="No database available")
+        async with factory() as session:
+            repo = TodoRepository.scoped(session, project_id)
+            todo = await repo.get_by_id(todo_id)
+            if todo is None:
+                raise HTTPException(status_code=404, detail="Todo not found")
+            if todo.status != "scheduled":
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cannot pause a todo in status {todo.status!r}; must be 'scheduled'",
+                )
+            await repo.update(todo_id, {"schedule_paused": True}, expected_version=todo.version)
+            await session.commit()
+        return {"todo_id": todo_id, "schedule_paused": True, "status": "ok"}
+
+    @app.post("/api/todos/{todo_id}/schedule/resume")
+    async def api_resume_schedule(todo_id: str, project_id: str) -> dict[str, Any]:
+        """Resume a paused SCHEDULED todo's schedule."""
+        _validate_project_id(app, project_id)
+        factory = _get_session_factory(app)
+        if factory is None:
+            raise HTTPException(status_code=503, detail="No database available")
+        async with factory() as session:
+            repo = TodoRepository.scoped(session, project_id)
+            todo = await repo.get_by_id(todo_id)
+            if todo is None:
+                raise HTTPException(status_code=404, detail="Todo not found")
+            if todo.status != "scheduled":
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Cannot resume a todo in status {todo.status!r}; must be 'scheduled'",
+                )
+            await repo.update(todo_id, {"schedule_paused": False}, expected_version=todo.version)
+            await session.commit()
+        return {"todo_id": todo_id, "schedule_paused": False, "status": "ok"}
+
+    @app.get("/api/todos/{todo_id}")
+    async def api_get_todo(todo_id: str, project_id: str) -> dict[str, Any]:
+        _validate_project_id(app, project_id)
+        factory = _get_session_factory(app)
+        if factory is not None:
+            async with factory() as session:
+                repo = TodoRepository.scoped(session, project_id)
                 todo = await repo.get_by_id(todo_id)
                 if todo is not None:
                     return _todo_to_dict(todo)
                 raise HTTPException(status_code=404, detail="Todo not found")
         for todo in _daemon_state["todos"]:
-            if str(todo.get("todo_id", "")) == todo_id:
+            if (
+                str(todo.get("todo_id", "")) == todo_id
+                and todo.get("project_id") == project_id
+            ):
                 return dict(todo)
         raise HTTPException(status_code=404, detail="Todo not found")
 
@@ -146,6 +414,13 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         status: str | None = None,
         project_id: str | None = None,
     ) -> dict[str, Any]:
+        # ADMIN cross-tenant listing is INTENTIONAL here: this route is NOT in
+        # daemon._PUBLIC_PATHS, so it is PSK-gated (operator-only). Unlike the
+        # public GET /api/todos — which returns [] when project_id is omitted in
+        # multi-project mode to avoid leaking other tenants — an operator needs
+        # global visibility, so an unscoped TodoRepository(session) with
+        # project_id=None (full cross-tenant scan) is correct. Do NOT add the
+        # multi-project isolation guard from api_list_todos to this handler.
         factory = _get_session_factory(app)
         if factory is not None:
             async with factory() as session:
@@ -160,7 +435,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             results = [t for t in results if t.get("project_id") == project_id]
         return {"todos": results, "count": len(results)}
 
-    @app.get("/api/status")
+    @app.get(
+        "/api/status",
+        summary="Get daemon status, queue depths, and hardware info",
+        description=(
+            "Observability snapshot: version, uptime ticks, per-queue counts, "
+            "tick metrics, filestore + binary versions, quality gate, hardware "
+            "profile. Public GET."
+        ),
+    )
     async def api_status() -> dict[str, Any]:
         factory = _get_session_factory(app)
         queue_depths: dict[str, int] = {}
@@ -168,11 +451,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         if factory is not None:
             async with factory() as session:
                 repo = TodoRepository(session)
-                todos = await repo.list_all()
-                for t in todos:
-                    q = t.queue or "unknown"
-                    queue_depths[q] = queue_depths.get(q, 0) + 1
-                    todo_count += 1
+                # P12/Defect-1: use aggregate COUNT queries (status_summary)
+                # instead of list_all() so queue-depth counts are never
+                # silently truncated by the _DEFAULT_LIST_LIMIT cap.
+                summary = await repo.status_summary()
+                todo_count = summary["total"]
+                for q, c in summary["by_queue"].items():
+                    queue_depths[q or "unknown"] = (
+                        queue_depths.get(q or "unknown", 0) + c
+                    )
         else:
             for todo in _daemon_state["todos"]:
                 q = todo.get("queue", "unknown")
@@ -202,14 +489,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 if f.endswith(".yml") or f.endswith(".yaml")
             )
 
-        engine = getattr(app.state, "_db_engine", None)
-        if engine is not None:
-            db_url = engine.url.render_as_string(hide_password=True)
-            db_engine = engine.url.render_as_string(hide_password=True)
-        else:
-            db_url = "sqlite"
-            db_engine = "None"
-
         elapsed = _daemon_state.get("tick_metrics", {})
         qg = _daemon_state.get("quality_gate", {})
         if not qg:
@@ -226,8 +505,6 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             "quality_gate": qg,
             "hardware": (getattr(app.state, "_hardware", None) and app.state._hardware.to_dict()) or {},
             "config_file_count": config_file_count,
-            "db_url": db_url,
-            "db_engine": db_engine,
         }
 
     @app.get("/api/deployments")

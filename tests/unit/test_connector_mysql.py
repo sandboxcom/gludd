@@ -146,7 +146,10 @@ class TestHealth:
         src = MysqlStatsSource(executor=_boom)
         h = src.health()
         assert h["ok"] is False
-        assert "access denied" in h["detail"]
+        # Redacted: the raw exception detail must NOT leak into the client-facing
+        # health response (it is logged server-side instead).
+        assert h["detail"] == "probe failed"
+        assert "access denied" not in h["detail"]
 
 
 class TestNoHardcodedCredentials:

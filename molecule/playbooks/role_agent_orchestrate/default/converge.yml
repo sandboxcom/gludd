@@ -1,0 +1,253 @@
+---
+# Exercise the REAL agent_orchestrate role across all three of its decision
+# paths against the mock daemon:
+#   1. work_type=feature -> advice.use_workflow TRUE  -> gludd_langgraph_workflow
+#      (POST /admin/models/workflow), status surfaced via PATCH /api/todos/<id>.
+#   2. work_type=docs    -> advice.use_workflow FALSE -> gludd_model_call
+#      (POST /admin/models/call),     status surfaced via PATCH /api/todos/<id>.
+#   3. min_remaining_usd above the mock's run_remaining_usd -> DEFER (budget_floor)
+#      -> writes a deferred artifact and ends the play WITHOUT any model call.
+#
+# FAITHFUL-GREEN UPGRADE
+# ----------------------
+# Asserting only that an artifact exists with path=='workflow'/'single_shot'/
+# 'deferred' is WEAK: a role that HARDCODED a path would still pass. To prove the
+# role actually CONSUMED advice.use_workflow / budget to branch, this converge
+# captures, per branch, the DECISION INPUT the role saw and the ENDPOINTS that
+# fired, into sidecar fact files alongside the result artifact:
+#
+#   * advice input  -- an INDEPENDENT gludd_environment call with the SAME
+#     work_type (the exact advice the role consumed): use_workflow,
+#     recommendation.model_profile, resource_hints.budget_ok, budget.run_remaining_usd,
+#     plus the min_remaining_usd floor this branch was run with.
+#   * endpoint hits -- the mock's in-memory request log (reset before each branch,
+#     snapshotted after) so verify can cross-check that the branch TAKEN matches
+#     the advice INPUT *and* that exactly the right daemon endpoints fired.
+#
+# verify.yml then asserts (per branch) decision == f(input) AND the right
+# endpoints fired / did NOT fire — not merely that an artifact exists.
+- name: Converge - run agent_orchestrate role across its branches
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    daemon: "http://127.0.0.1:{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    wf_dir: "/tmp/gludd-agent-orchestrate-wf-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    ss_dir: "/tmp/gludd-agent-orchestrate-ss-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    defer_dir: "/tmp/gludd-agent-orchestrate-defer-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+  tasks:
+
+    # =====================================================================
+    # BRANCH 1 — workflow path (work_type=feature)
+    # =====================================================================
+    - name: B1 - reset mock request log so this branch's hits are isolated
+      ansible.builtin.uri:
+        url: "{{ daemon }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: B1 - capture the advice INPUT the role will consume (independent fetch)
+      general_ludd.agent.gludd_environment:
+        work_type: "feature"
+        daemon_url: "{{ daemon }}"
+        psk: ""
+      register: b1_env
+
+    - name: BRANCH 1 - workflow path (work_type=feature)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_orchestrate
+      vars:
+        work_type: "feature"
+        prompt_text: "Implement a function that reverses a linked list."
+        daemon_url: "{{ daemon }}"
+        psk: ""
+        todo_id: "TODO-MOL-WF"
+        artifact_dir: "{{ wf_dir }}"
+
+    - name: B1 - snapshot the endpoints that fired during the workflow branch
+      ansible.builtin.uri:
+        url: "{{ daemon }}/__requests"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: b1_hits
+
+    - name: B1 - write decision-vs-input sidecar (advice input + endpoint hits)
+      ansible.builtin.copy:
+        dest: "{{ wf_dir }}/agent_orchestrate_decision.json"
+        mode: "0644"
+        content: "{{ _b1_sidecar | to_nice_json }}"
+      vars:
+        _adv: "{{ b1_env.ansible_facts.gludd_environment.advice | default({}, true) }}"
+        _budget: "{{ b1_env.ansible_facts.gludd_environment.budget | default({}, true) }}"
+        _b1_sidecar:
+          branch: "workflow"
+          work_type: "feature"
+          min_remaining_usd: 0.0
+          advice_use_workflow: "{{ _adv.use_workflow | default(false, true) | bool }}"
+          advice_model_profile: "{{ _adv.recommendation.model_profile | default('', true) }}"
+          advice_budget_ok: "{{ _adv.resource_hints.budget_ok | default(true, true) | bool }}"
+          run_remaining_usd: "{{ _budget.run_remaining_usd | default(none, true) }}"
+          endpoint_hits: "{{ b1_hits.json.requests | default([], true) }}"
+
+    # =====================================================================
+    # BRANCH 2 — single-shot path (work_type=docs)
+    # =====================================================================
+    - name: B2 - reset mock request log so this branch's hits are isolated
+      ansible.builtin.uri:
+        url: "{{ daemon }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: B2 - capture the advice INPUT the role will consume (independent fetch)
+      general_ludd.agent.gludd_environment:
+        work_type: "docs"
+        daemon_url: "{{ daemon }}"
+        psk: ""
+      register: b2_env
+
+    - name: BRANCH 2 - single-shot path (work_type=docs)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_orchestrate
+      vars:
+        work_type: "docs"
+        prompt_text: "Draft a release note for v1.2.0."
+        daemon_url: "{{ daemon }}"
+        psk: ""
+        todo_id: "TODO-MOL-SS"
+        artifact_dir: "{{ ss_dir }}"
+
+    - name: B2 - snapshot the endpoints that fired during the single-shot branch
+      ansible.builtin.uri:
+        url: "{{ daemon }}/__requests"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: b2_hits
+
+    - name: B2 - write decision-vs-input sidecar (advice input + endpoint hits)
+      ansible.builtin.copy:
+        dest: "{{ ss_dir }}/agent_orchestrate_decision.json"
+        mode: "0644"
+        content: "{{ _b2_sidecar | to_nice_json }}"
+      vars:
+        _adv: "{{ b2_env.ansible_facts.gludd_environment.advice | default({}, true) }}"
+        _budget: "{{ b2_env.ansible_facts.gludd_environment.budget | default({}, true) }}"
+        _b2_sidecar:
+          branch: "single_shot"
+          work_type: "docs"
+          min_remaining_usd: 0.0
+          advice_use_workflow: "{{ _adv.use_workflow | default(false, true) | bool }}"
+          advice_model_profile: "{{ _adv.recommendation.model_profile | default('', true) }}"
+          advice_budget_ok: "{{ _adv.resource_hints.budget_ok | default(true, true) | bool }}"
+          run_remaining_usd: "{{ _budget.run_remaining_usd | default(none, true) }}"
+          endpoint_hits: "{{ b2_hits.json.requests | default([], true) }}"
+
+    # =====================================================================
+    # BRANCH 3 — deferral path (budget floor above remaining)
+    #
+    # The role's defer guard calls `meta: end_play`, which ends THIS play the
+    # moment it defers. So the reset + independent advice-capture happen here
+    # (before the role runs), the role include runs in its OWN play below (where
+    # end_play only ends that play), and the endpoint snapshot + sidecar write
+    # happen in a THIRD play afterwards. The mock's request log is in-memory in
+    # the long-lived daemon process, so it survives across plays and still
+    # reflects exactly what branch 3 fired (or did NOT fire).
+    # =====================================================================
+    - name: B3 - ensure the deferral artifact dir exists for the input sidecar
+      ansible.builtin.file:
+        path: "{{ defer_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: B3 - reset mock request log so this branch's hits are isolated
+      ansible.builtin.uri:
+        url: "{{ daemon }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: B3 - capture the advice INPUT the role will consume (independent fetch)
+      general_ludd.agent.gludd_environment:
+        work_type: "feature"
+        daemon_url: "{{ daemon }}"
+        psk: ""
+      register: b3_env
+
+    - name: B3 - persist the advice INPUT for the post-defer sidecar write
+      ansible.builtin.copy:
+        dest: "{{ defer_dir }}/.agent_orchestrate_input.json"
+        mode: "0644"
+        content: "{{ _b3_input | to_nice_json }}"
+      vars:
+        _adv: "{{ b3_env.ansible_facts.gludd_environment.advice | default({}, true) }}"
+        _budget: "{{ b3_env.ansible_facts.gludd_environment.budget | default({}, true) }}"
+        _b3_input:
+          advice_use_workflow: "{{ _adv.use_workflow | default(false, true) | bool }}"
+          advice_model_profile: "{{ _adv.recommendation.model_profile | default('', true) }}"
+          advice_budget_ok: "{{ _adv.resource_hints.budget_ok | default(true, true) | bool }}"
+          run_remaining_usd: "{{ _budget.run_remaining_usd | default(none, true) }}"
+
+
+# Separate play so the role's `meta: end_play` (on defer) ends ONLY this play —
+# the snapshot/sidecar play below still runs.
+- name: Converge B3 - run agent_orchestrate deferral branch in isolation
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    daemon: "http://127.0.0.1:{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    defer_dir: "/tmp/gludd-agent-orchestrate-defer-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+  tasks:
+    - name: BRANCH 3 - deferral path (budget floor above remaining)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.agent_orchestrate
+      vars:
+        work_type: "feature"
+        prompt_text: "This should never reach a model call."
+        daemon_url: "{{ daemon }}"
+        psk: ""
+        todo_id: "TODO-MOL-DEFER"
+        # Mock budget.run_remaining_usd is 5.0; a 99.0 floor forces the defer.
+        min_remaining_usd: 99.0
+        artifact_dir: "{{ defer_dir }}"
+
+
+# Runs AFTER branch 3 has deferred (and end_play'd its play). Snapshots the
+# endpoints branch 3 fired and folds the persisted advice input into the final
+# decision sidecar that verify cross-checks.
+- name: Converge B3 finalize - snapshot endpoints + write deferral sidecar
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    daemon: "http://127.0.0.1:{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+    defer_dir: "/tmp/gludd-agent-orchestrate-defer-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8862', true) }}"
+  tasks:
+    - name: B3 - snapshot the endpoints that fired during the deferral branch
+      ansible.builtin.uri:
+        url: "{{ daemon }}/__requests"
+        method: GET
+        status_code: 200
+        return_content: true
+      register: b3_hits
+
+    - name: B3 - load the advice INPUT captured before the role deferred
+      ansible.builtin.set_fact:
+        b3_input: "{{ (lookup('file', defer_dir ~ '/.agent_orchestrate_input.json')) | from_json }}"
+
+    - name: B3 - write decision-vs-input sidecar (advice input + endpoint hits)
+      ansible.builtin.copy:
+        dest: "{{ defer_dir }}/agent_orchestrate_decision.json"
+        mode: "0644"
+        content: "{{ _b3_sidecar | to_nice_json }}"
+      vars:
+        _b3_sidecar:
+          branch: "deferred"
+          work_type: "feature"
+          min_remaining_usd: 99.0
+          advice_use_workflow: "{{ b3_input.advice_use_workflow | bool }}"
+          advice_model_profile: "{{ b3_input.advice_model_profile }}"
+          advice_budget_ok: "{{ b3_input.advice_budget_ok | bool }}"
+          run_remaining_usd: "{{ b3_input.run_remaining_usd }}"
+          endpoint_hits: "{{ b3_hits.json.requests | default([], true) }}"

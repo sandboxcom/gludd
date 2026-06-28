@@ -55,7 +55,17 @@ def _role_scenario(role: str) -> str:
 # Empty: every gludd_* module now has a dedicated test_gludd_* scenario,
 # including gludd_reload (re-added under #47 with an import-clean PYTHONPATH +
 # /readyz health gate so the HotReloader hot-swap + degraded rollback both run).
-_NOT_YET_COVERED_MODULES: set[str] = set()
+# gludd_langchain_generate and gludd_langgraph_decision both POST the shared
+# /admin/models/call endpoint and are exercised end-to-end through the
+# role_langgraph_decision scenario (the decision module runs unchanged over real
+# HTTP inside the role); gludd_langgraph_workflow has its own dedicated
+# test_gludd_langgraph_workflow scenario (POST /admin/models/workflow). The two
+# call-endpoint modules have no separate test_<module> dir yet, so they remain on
+# the shrinking checklist.
+_NOT_YET_COVERED_MODULES: set[str] = {
+    "gludd_langchain_generate",
+    "gludd_langgraph_decision",
+}
 # All other gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
 #   gludd_db          -> test_gludd_db          (port 8776, todo_get/update/resource_preference)

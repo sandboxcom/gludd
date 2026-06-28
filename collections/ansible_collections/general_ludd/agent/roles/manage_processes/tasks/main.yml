@@ -1,0 +1,125 @@
+---
+# manage_processes: enumerate, monitor, and (optionally) signal the OS processes
+# gludd started. Signalling is confined by the daemon to gludd-managed PIDs
+# (registry + PID-reuse identity guard); this role only ever asks the daemon to
+# act. dry_run defaults to true, so the role never sends a real signal unless the
+# operator explicitly opts in.
+
+- name: Enumerate gludd-managed processes
+  general_ludd.agent.gludd_process:
+    action: list
+    daemon_url: "{{ gludd_daemon_url }}"
+    psk: "{{ gludd_psk }}"
+  no_log: "{{ gludd_psk | length > 0 }}"
+
+- name: Sample resource utilization, I/O and locks
+  general_ludd.agent.gludd_proc_monitor:
+    pid: "{{ target_pid | int }}"
+    daemon_url: "{{ gludd_daemon_url }}"
+    psk: "{{ gludd_psk }}"
+  no_log: "{{ gludd_psk | length > 0 }}"
+
+- name: Report per-process utilization
+  ansible.builtin.debug:
+    msg: >-
+      pid={{ item.pid | default('?') }}
+      cpu={{ item.cpu_percent | default('?') }}%
+      rss_mb={{ ((item.memory.rss | default(0) | int) / 1048576) | round(1) }}
+      fds={{ item.num_fds | default('?') }}
+      io_read={{ (item.io | default({})).read_bytes | default('?') }}
+      io_write={{ (item.io | default({})).write_bytes | default('?') }}
+      locks={{ item.locks | default([]) | length }}
+      status={{ item.status | default('?') }}
+  loop: "{{ ansible_facts.gludd_proc_monitor.processes | default([]) }}"
+  loop_control:
+    label: "{{ item.pid | default('?') }}"
+
+# ----- signalling (only when explicitly requested) -----------------------
+- name: Determine processes breaching resource thresholds
+  ansible.builtin.set_fact:
+    _breaching: "{{ _breaching | default([]) + [item] }}"
+  loop: "{{ ansible_facts.gludd_proc_monitor.processes | default([]) }}"
+  loop_control:
+    label: "{{ item.pid | default('?') }}"
+  when:
+    - manage_processes_action == "signal"
+    - >-
+      ((item.cpu_percent | default(0) | float) > (cpu_percent_max | float))
+      or
+      ((item.memory.rss | default(0) | int) > ((memory_rss_mb_max | int) * 1048576))
+
+- name: Report signalling plan (dry-run)
+  ansible.builtin.debug:
+    msg: >-
+      DRY-RUN: would send {{ signal_to_send }} to pid {{ item.pid }}
+      (breached cpu/memory threshold){{ '' if not escalate_to_kill
+      else ', escalating to SIGKILL after ' ~ kill_grace_seconds ~ 's if still alive' }}
+  loop: "{{ _breaching | default([]) }}"
+  loop_control:
+    label: "{{ item.pid }}"
+  when:
+    - manage_processes_action == "signal"
+    - dry_run | bool
+
+- name: Send graceful signal to breaching processes
+  general_ludd.agent.gludd_process:
+    action: signal
+    pid: "{{ item.pid | int }}"
+    signal: "{{ signal_to_send }}"
+    daemon_url: "{{ gludd_daemon_url }}"
+    psk: "{{ gludd_psk }}"
+  loop: "{{ _breaching | default([]) }}"
+  loop_control:
+    label: "{{ item.pid }}"
+  no_log: "{{ gludd_psk | length > 0 }}"
+  when:
+    - manage_processes_action == "signal"
+    - not (dry_run | bool)
+
+- name: Grace period before forced escalation
+  ansible.builtin.pause:
+    seconds: "{{ kill_grace_seconds | int }}"
+  when:
+    - manage_processes_action == "signal"
+    - not (dry_run | bool)
+    - escalate_to_kill | bool
+    - (_breaching | default([]) | length) > 0
+
+- name: Re-list managed processes to find survivors
+  general_ludd.agent.gludd_process:
+    action: list
+    daemon_url: "{{ gludd_daemon_url }}"
+    psk: "{{ gludd_psk }}"
+  no_log: "{{ gludd_psk | length > 0 }}"
+  when:
+    - manage_processes_action == "signal"
+    - not (dry_run | bool)
+    - escalate_to_kill | bool
+    - (_breaching | default([]) | length) > 0
+
+- name: Force-kill processes that survived the graceful signal
+  general_ludd.agent.gludd_process:
+    action: signal
+    pid: "{{ item.pid | int }}"
+    signal: SIGKILL
+    daemon_url: "{{ gludd_daemon_url }}"
+    psk: "{{ gludd_psk }}"
+  loop: "{{ _breaching | default([]) }}"
+  loop_control:
+    label: "{{ item.pid }}"
+  no_log: "{{ gludd_psk | length > 0 }}"
+  when:
+    - manage_processes_action == "signal"
+    - not (dry_run | bool)
+    - escalate_to_kill | bool
+    - item.pid in (ansible_facts.gludd_process.processes | default([])
+      | selectattr('alive', 'equalto', true) | map(attribute='pid') | list)
+
+# ----- reap (advisory) ---------------------------------------------------
+- name: Reap note
+  ansible.builtin.debug:
+    msg: >-
+      Reap is performed server-side by the daemon's process registry
+      (dead/exited PIDs are dropped on the next reap cycle); this role only
+      enumerates the current managed set.
+  when: manage_processes_action == "reap"

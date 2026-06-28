@@ -1,0 +1,1056 @@
+[
+  {
+    "name": "general_ludd.agent.gludd_abtest",
+    "description": "Crash-isolated A/B test of a candidate code variant in a fresh subprocess — Runs a baseline (A = current C(src)) and a candidate (B = candidate worktree) under the SAME workload, each in a FRESH interpreter child process via C(general_ludd.abtest.run_ab). The candidate is NEVER imported into this process, so a candidate built to crash the whole app (C(os._exit), segfault, infinite loop, OOM) CANNOT take down the Ansible controller or the daemon. Fail-closed: B is promoted ONLY if A passed and B ran ok, did not crash, did not time out, and stayed within a duration slack. Any crash/timeout yields C(promote=false). Runs in-process (same venv as C(general_ludd)); does NOT call the daemon.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "candidate_root": {
+          "type": "string"
+        },
+        "baseline_root": {
+          "type": "string"
+        },
+        "repo_root": {
+          "type": "string",
+          "default": "."
+        },
+        "module": {
+          "type": "string"
+        },
+        "expect_attr": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "number",
+          "default": 60.0
+        },
+        "mem_limit_mb": {
+          "type": "integer",
+          "default": 512
+        },
+        "verdict_path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "candidate_root",
+        "module"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_accounting",
+    "description": "Fetch per-project accounting snapshots via the daemon — C(state=all) calls C(GET /api/accounting) and returns accounting snapshots for ALL known projects as C(ansible_facts.gludd_accounting). C(state=project) calls C(GET /api/accounting/{project_id}) and returns the accounting snapshot for a single project. Both operations are read-only. PSK-authed; check-mode safe.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "all",
+            "project"
+          ],
+          "default": "all"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_agent_run",
+    "description": "Run the agent tool-call loop (prompt + tools → answer) — W6.8 decision: uses the existing C(ToolCallLoop) from C(execution.tool_loop) — langgraph/langchain are declared deps with zero production callers, so option (b) was chosen (keep ToolCallLoop; note that langgraph removal is deferred to W4.5 deps-audit). Accepts a prompt and optional tool list, iterates model/tool calls up to C(max_iterations) times, and returns the final answer and tool call history. Check mode skips the model call and returns a placeholder.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "system_prompt": {
+          "type": "string",
+          "default": ""
+        },
+        "tools": {
+          "type": "array",
+          "default": []
+        },
+        "max_iterations": {
+          "type": "integer",
+          "default": 10
+        },
+        "model_profile": {
+          "type": "string",
+          "default": ""
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "prompt"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_db",
+    "description": "Todo/resource CRUD via daemon HTTP API (never raw SQLite) — Performs todo and resource operations against the daemon's REST API. {'Supported ops': 'C(todo_get), C(todo_create), C(todo_update_status), C(resource_preference).'} C(todo_create) issues POST /api/todos on the daemon (never raw SQLite). NEVER opens the SQLite file directly (single-writer rule). Check mode skips write operations.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "todo_get",
+            "todo_create",
+            "todo_update_status",
+            "resource_preference"
+          ]
+        },
+        "todo_id": {
+          "type": "string"
+        },
+        "status": {
+          "type": "string"
+        },
+        "resource_type": {
+          "type": "string"
+        },
+        "title": {
+          "type": "string"
+        },
+        "description": {
+          "type": "string",
+          "default": ""
+        },
+        "work_type": {
+          "type": "string",
+          "default": "code"
+        },
+        "queue": {
+          "type": "string",
+          "default": "core"
+        },
+        "priority": {
+          "type": "string",
+          "default": "medium"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        },
+        "role": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "op"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_dispatch",
+    "description": "Interact with the daemon's dynamic-dispatch API — C(state=dispatch) POSTs a tool-call to C(POST /api/dispatch) with a C(kind)/C(name)/C(args) body and returns the dispatch result as C(ansible_facts.gludd_dispatch). C(state=available) calls C(GET /api/dispatch/available) and returns the list of dispatchable tool handlers. C(state=recent) calls C(GET /api/dispatch/recent) and returns the most recent dispatch records. PSK-authed; check-mode safe on C(state=available) and C(state=recent). C(state=dispatch) skips the API call in check mode and returns an empty result.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "dispatch",
+            "available",
+            "recent"
+          ],
+          "default": "available"
+        },
+        "kind": {
+          "type": "string"
+        },
+        "name": {
+          "type": "string"
+        },
+        "args": {
+          "type": "object"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_embed",
+    "description": "Embedding similarity over the daemon's bert surface — With C(op=similar) (the default) queries the daemon's read-only C(POST /api/embeddings/similar) endpoint and returns the ranked similar canonical task types under C(ansible_facts.gludd_embed) so a playbook (or the model running a job) can borrow a good model/prompt from a semantically-neighboring task type. With C(op=compare) queries C(POST /api/embeddings/compare) to measure the pairwise similarity of two strings (C(text_a)/C(text_b)) produced by separate bots/agents — so a role can decide how to proceed (near-duplicate strings -> merge/dedupe; divergent -> escalate). Supply C(texts) (2+) instead for the full pairwise similarity matrix. The snapshot is injected under C(ansible_facts.gludd_embed). With C(op=search) queries C(POST /api/embeddings/search) to take a string a bot produced (C(text)) and search a real corpus with it (RAG search), returning the C(top_k) most-similar items ranked by cosine similarity. C(corpus) selects the corpus — C(skills) (the live skill registry, descriptions matched on the fly), C(task_types) (the canonical task types), C(prompts) (the persisted prompt profiles), C(traces) (recent execution traces, work_type/phase/span descriptions matched on the fly), or C(events) (recent audit events, event_type/entity_type and a summary of the details JSON matched on the fly). The snapshot is injected under C(ansible_facts.gludd_embed). Read-only and check-mode safe — it performs no writes (C(changed=False)). Similarity is computed over the same embedding layer the adaptive router uses (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "op": {
+          "type": "string",
+          "enum": [
+            "similar",
+            "compare",
+            "search"
+          ],
+          "default": "similar"
+        },
+        "text": {
+          "type": "string"
+        },
+        "corpus": {
+          "type": "string",
+          "enum": [
+            "skills",
+            "task_types",
+            "prompts",
+            "traces",
+            "events"
+          ],
+          "default": "skills"
+        },
+        "text_a": {
+          "type": "string"
+        },
+        "text_b": {
+          "type": "string"
+        },
+        "texts": {
+          "type": "array"
+        },
+        "top_k": {
+          "type": "integer",
+          "default": 5
+        },
+        "work_type": {
+          "type": "string"
+        },
+        "include_embedding": {
+          "type": "boolean",
+          "default": false
+        },
+        "include_embeddings": {
+          "type": "boolean",
+          "default": false
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_environment",
+    "description": "Inject the consolidated environment + optimization brief as ansible_facts — Queries the daemon's read-only C(GET /api/environment) endpoint and returns the consolidated environment brief under C(ansible_facts.gludd_environment) so a playbook (or the model running a job) can see the environment it runs inside and how to optimize for the task. Read-only and check-mode safe — it performs no writes. Exposes C(models) (roster, NO secrets), C(routing), C(budget), C(compute), C(tools), C(skills), C(queues), C(system), and C(optimization) (advisor hints + per-work-type recommended profiles). The model roster NEVER contains api keys, tokens, or credential aliases.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        },
+        "work_type": {
+          "type": "string"
+        },
+        "prompt_tokens": {
+          "type": "integer"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "cost",
+            "quality",
+            "latency"
+          ],
+          "default": "quality"
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_facts",
+    "description": "Inject live daemon facts (work/todo/model/history/messages) as ansible_facts — Queries the daemon's read-only C(GET /api/facts) aggregation endpoint and returns the structured snapshot under C(ansible_facts.gludd) so a playbook can branch on live data in C(when:) / C(vars:). Read-only and check-mode safe — it performs no writes. Exposes C(gludd.work), C(gludd.todos), C(gludd.models), C(gludd.history), and C(gludd.messages).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "project_id": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_features",
+    "description": "Fetch and verify the feature database via the daemon — C(state=list) calls C(GET /api/features) and returns all features (optionally filtered by status/category) as C(ansible_facts.gludd_features). C(state=verify) calls C(POST /api/features/verify) to trigger the server-side FeatureVerifier pass and returns the verification summary + per-feature results. Both operations are read-only from the controller perspective; the daemon may persist verification results internally on a C(state=verify) call. PSK-authed; check-mode safe on C(state=list). C(state=verify) skips the API call in check mode and returns an empty summary.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "list",
+            "verify"
+          ],
+          "default": "list"
+        },
+        "status": {
+          "type": "string",
+          "enum": [
+            "requested",
+            "implemented",
+            "verified",
+            "regressed"
+          ]
+        },
+        "category": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_git",
+    "description": "Git operations (commit/branch) via git_automation — Performs git commit or branch operations on a local repository. Wraps C(general_ludd.git_automation.repo.GitAutomation). Idempotent for C(branch) (no-op if branch already exists). C(commit) reports C(changed=true) when a commit is created; C(changed=false) if there is nothing to commit.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string"
+        },
+        "op": {
+          "type": "string",
+          "enum": [
+            "commit",
+            "branch"
+          ]
+        },
+        "message": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "path",
+        "op"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_introspect",
+    "description": "Inject codebase self-knowledge facts (churn/complexity/coverage/debt) as ansible_facts — Queries the daemon's read-only C(GET /api/facts) endpoint and returns the C(codebase) self-introspection block under C(ansible_facts.gludd.codebase) so a self-improvement playbook can pick a high-value target (low coverage intersect high churn intersect debt). Read-only and check-mode safe — performs no writes. Exposes C(gludd.codebase.churn), C(gludd.codebase.complexity), C(gludd.codebase.coverage), C(gludd.codebase.debt), C(gludd.codebase.dead_code), C(gludd.codebase.missing_tests), C(gludd.codebase.perf_cost), and C(gludd.codebase.recent_failures). Each facet is C(null) when its source is unavailable — nothing is faked.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_langchain_generate",
+    "description": "Generate text (optionally structured JSON) via the daemon — Sends a prompt to the daemon's POST /admin/models/call endpoint, which runs the generation through the LangChain-backed model gateway. When C(response_schema) is supplied the returned text is fence-stripped and parsed as JSON; a parse failure is returned as a clean module failure rather than a traceback. This module is stdlib-only; it never imports LangChain itself. All LangChain work happens server-side in the daemon.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "system": {
+          "type": "string",
+          "default": ""
+        },
+        "model_profile": {
+          "type": "string"
+        },
+        "route_task_type": {
+          "type": "string"
+        },
+        "response_schema": {
+          "type": "object"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "default": 2048
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "prompt"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_langgraph_decision",
+    "description": "Ask the model to choose one option from a fixed set — Sends a decision prompt plus a list of allowed option tokens to the daemon's POST /admin/models/call endpoint and asks the model to reply with JSON of the form {\"decision\": ..., \"rationale\": ...}. The reply is fence-stripped and JSON-parsed; the chosen decision is validated against C(options). On any failure (bad JSON, decision not in the option set) the module falls back to the first option, marks C(valid)=false, and records a warning rather than crashing. This module is stdlib-only; it never imports LangGraph/LangChain.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "options": {
+          "type": "array"
+        },
+        "system": {
+          "type": "string"
+        },
+        "model_profile": {
+          "type": "string"
+        },
+        "route_task_type": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "prompt",
+        "options"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_langgraph_workflow",
+    "description": "Run a multi-step LangGraph generate/review workflow — Sends a message list to the daemon's POST /admin/models/workflow endpoint, which executes a LangGraph generate -> review -> retry loop server-side and returns the best content plus quality metadata. This module is stdlib-only; it never imports LangGraph itself. All graph execution happens in the daemon.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "system": {
+          "type": "string",
+          "default": ""
+        },
+        "work_type": {
+          "type": "string",
+          "default": "code"
+        },
+        "model_profile": {
+          "type": "string",
+          "default": "default"
+        },
+        "max_retries": {
+          "type": "integer",
+          "default": 2
+        },
+        "quality_threshold": {
+          "type": "number",
+          "default": 0.6
+        },
+        "enable_graph": {
+          "type": "boolean",
+          "default": true
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 300
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "prompt"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_mcp_tool",
+    "description": "Invoke an MCP tool (honest placeholder — not yet wired) — Per the W3.9 decision in TASKS.md (MCP honestly fenced): the daemon loads C(mcp_servers) config but passes C(mcp_client=None) — no MCP tools can be called through the daemon today. This module exists so playbooks can reference C(general_ludd.agent.gludd_mcp_tool) without import errors; it always returns C(not_implemented=true) and C(failed=false) so callers can C(when: not mcp_result.not_implemented) gate around it cleanly. When MCP wiring (W3.9 option a) is completed, replace the body of this module and remove this note.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "server": {
+          "type": "string"
+        },
+        "tool": {
+          "type": "string"
+        },
+        "arguments": {
+          "type": "object",
+          "default": {}
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "server",
+        "tool"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_message",
+    "description": "Inter-agent message queue — send, receive, or ack messages via the daemon — Talks to the daemon message-queue API so agents/roles can coordinate. C(state=send) posts a message to a recipient role/agent (or C(broadcast)). C(state=receive) fetches the inbox for C(recipient); messages are returned both as C(ansible_facts.gludd_inbox) and a C(messages) list. Pass C(ack=true) to mark every received message read in the same task. C(state=ack) marks a single C(message_id) read. Check mode skips the write side of C(send)/C(ack); C(receive) is always safe.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "send",
+            "receive",
+            "ack"
+          ]
+        },
+        "sender": {
+          "type": "string"
+        },
+        "recipient": {
+          "type": "string"
+        },
+        "topic": {
+          "type": "string",
+          "default": ""
+        },
+        "body": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "low",
+            "normal",
+            "high",
+            "urgent"
+          ],
+          "default": "normal"
+        },
+        "ttl_seconds": {
+          "type": "integer"
+        },
+        "message_id": {
+          "type": "string"
+        },
+        "unread": {
+          "type": "boolean",
+          "default": true
+        },
+        "ack": {
+          "type": "boolean",
+          "default": false
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "state"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_metrics",
+    "description": "Inject live daemon metrics (agents/usage/cost/benchmarks) as ansible_facts — Queries the daemon's read-only C(GET /api/metrics) endpoint and returns the metrics snapshot under C(ansible_facts.gludd_metrics) so a playbook can branch on live cost/usage/benchmark data in C(when:) / C(vars:). Read-only and check-mode safe — it performs no writes. Exposes agent-level metrics, global per-model usage, per-project cost, and benchmark rankings (when benchmark data is available). Reuses the daemon's MetricsCollector / BenchmarkRepository — no stat logic is recomputed client-side.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "agent_id": {
+          "type": "string"
+        },
+        "project_id": {
+          "type": "string"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_model_call",
+    "description": "Run a model generation via the daemon API — Sends a prompt to the daemon's POST /admin/models/call endpoint. Supports direct model profile selection or adaptive routing by task type. Returns the generated text plus usage metadata.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "prompt": {
+          "type": "string"
+        },
+        "model_profile": {
+          "type": "string"
+        },
+        "route_task_type": {
+          "type": "string"
+        },
+        "max_tokens": {
+          "type": "integer",
+          "default": 2048
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "prompt"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_osquery",
+    "description": "Query live system state via osquery and inject rows as ansible_facts — Runs a B(read-only) C(SELECT) query against C(osqueryi --json) and returns the result rows under C(ansible_facts.gludd_osquery) so a playbook (or the model running a job) can branch on real system state — processes, users, mounts, network interfaces, installed packages, system_info, etc. SECURITY — only C(SELECT) queries are permitted. The query is validated to start with C(SELECT) (after optional C(WITH ...) CTEs) and is rejected if it contains any mutating / side-effecting keyword (C(INSERT)/C(UPDATE)/C(DELETE)/C(DROP)/C(CREATE)/C(ALTER)/C(ATTACH)/ C(DETACH)/C(PRAGMA)/C(REPLACE)/C(VACUUM)). osquery's virtual tables are mostly read-only, but this module refuses to even hand a write-shaped query to the binary. The osquery binary is resolved from the daemon's filestore (C(binaries/osquery), downloaded on first use by the BinaryBootstrapper) when running in the same venv as the daemon; otherwise it falls back to an C(osqueryi) on the system C(PATH). Runs the binary via an explicit argument list (never C(shell=True)). Read-only and check-mode safe — it performs no writes. In check mode the query is validated and the binary located, but osquery is not executed.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string"
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 10
+        },
+        "osquery_path": {
+          "type": "string",
+          "default": ""
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "query"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_ping",
+    "description": "Verify daemon reachability — Pings the general_ludd daemon by calling /healthz. Returns C(pong=true) and C(daemon_reachable) flag. Safe to use in check mode (read-only).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 10
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_reload",
+    "description": "Hot-rotate a validated leaf code module with health-gated auto-rollback — Wraps C(general_ludd.reload.hot_reloader.HotReloader.reload_code_module): snapshots the live module bytes, C(os.replace)s the candidate source over the live path, C(importlib.reload)s the module, then runs a health gate (a C(/readyz) poll). If the health gate fails or the reload raises, the original bytes are restored and the module is reloaded again — the live module ends up exactly as it started. Fail-closed: a missing/non-importable target, a missing candidate, or a failed health gate all yield C(success=false). Runs in-process (same venv as C(general_ludd)).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "module_name": {
+          "type": "string"
+        },
+        "candidate_source_path": {
+          "type": "string"
+        },
+        "health_url": {
+          "type": "string"
+        },
+        "health_timeout": {
+          "type": "number",
+          "default": 5.0
+        },
+        "config_dir": {
+          "type": "string",
+          "default": "config"
+        },
+        "result_path": {
+          "type": "string"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "module_name",
+        "candidate_source_path"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_schedule",
+    "description": "Compute concurrency-safe execution batches via the daemon scheduler — Posts a list of work-item descriptors to C(POST /api/schedule) and returns the ordered concurrency-safe batches as C(ansible_facts.gludd_schedule). Each work item specifies its exclusive resource requirements, upstream dependencies, and whether it is greenfield (no shared-resource conflicts). The daemon scheduler topologically sorts items, then groups them into batches where items within a batch may run concurrently and all dependencies are satisfied by strictly earlier batches. PSK-authed; check-mode safe (skips the API call and returns empty batches).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "items": {
+          "type": "array"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "items"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_skill",
+    "description": "Select and render a skill with Jinja2 variables — Looks up a skill by name or trigger pattern and renders its body with Jinja2 C(StrictUndefined) — an unknown variable is an error, not silent empty text. Uses the shared C(render_skill) renderer also wired into C(execution.engine) so playbook and prompt paths render identically. Frontmatter C(required_vars) list is checked before rendering; missing vars fail the task with the variable name in the error message.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "trigger": {
+          "type": "string"
+        },
+        "variables": {
+          "type": "object",
+          "default": {}
+        },
+        "skills_path": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_spend",
+    "description": "Fetch and configure the daemon spend-limiter — C(state=get) calls C(GET /api/spend) and returns the current spend snapshot as C(ansible_facts.gludd_spend). C(state=configure) calls C(POST /api/spend/configure) to update the spend-limiter settings (limit_usd and/or window_seconds). PSK-authed; check-mode safe on C(state=get). C(state=configure) skips the API call in check mode and returns an empty diff.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "get",
+            "configure"
+          ],
+          "default": "get"
+        },
+        "limit_usd": {
+          "type": "number"
+        },
+        "window_seconds": {
+          "type": "integer"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_traces",
+    "description": "Inject recent execution traces (spans/cost/phase) as ansible_facts — Queries the daemon's read-only C(GET /api/traces) endpoint and returns the recent execution-trace snapshot under C(ansible_facts.gludd_traces) so a playbook can branch on live trace data in C(when:) / C(vars:). Read-only and check-mode safe — it performs no writes. Exposes a bounded list of recent traces (trace_id, todo_id, work_type, total_cost_usd, total_tokens, success_rate, span_count, spans), a by-phase aggregate summary, and the OpenTelemetry exporter status (C(available) / C(disabled)). Traces are sourced ONLY from the daemon's in-process recent-traces buffer (genuinely-captured telemetry); no spans are fabricated. When no OTLP collector is configured the otel exporter status is honestly C(disabled).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "todo_id": {
+          "type": "string"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 20
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_worktree",
+    "description": "Manage git worktrees (idempotent) — Creates or removes a git worktree via git_automation.repo.GitAutomation. Idempotent — C(changed=false) when the desired state already exists. In check mode reports what would change without modifying the filesystem.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "repo_path": {
+          "type": "string"
+        },
+        "branch": {
+          "type": "string"
+        },
+        "worktree_path": {
+          "type": "string"
+        },
+        "state": {
+          "type": "string",
+          "enum": [
+            "present",
+            "absent"
+          ],
+          "default": "present"
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "repo_path",
+        "branch",
+        "worktree_path"
+      ]
+    },
+    "server_id": "ansible"
+  }
+]
