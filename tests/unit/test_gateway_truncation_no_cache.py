@@ -96,7 +96,7 @@ class TestGW2TruncatedResponseNotCached:
         mock_cache.get.return_value = None  # force cache miss -> provider is called
 
         profile = _make_profile("p-trunc")
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):  # pragma: allowlist secret
             gw = ModelGateway(
                 profiles={"p-trunc": profile},
                 provider_registry=mock_registry,
@@ -126,7 +126,7 @@ class TestGW2TruncatedResponseNotCached:
         mock_cache.get.return_value = None  # force cache miss -> provider is called
 
         profile = _make_profile("p-stop")
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):  # pragma: allowlist secret
             gw = ModelGateway(
                 profiles={"p-stop": profile},
                 provider_registry=mock_registry,
@@ -161,7 +161,7 @@ class TestGW2TruncatedResponseNotCached:
         mock_cache.get.return_value = None
 
         profile = _make_profile("p-no-meta")
-        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):
+        with patch.dict("os.environ", {"OPENAI_API_KEY": "test-key"}):  # pragma: allowlist secret
             gw = ModelGateway(
                 profiles={"p-no-meta": profile},
                 provider_registry=mock_registry,

@@ -29,32 +29,7 @@ import * as path from "node:path"
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
-const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
-const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"  // DEFAULT: blocking (2026-06-22)
-
-// ============================================================================
-// HELPERS
-// ============================================================================
-function countLiveAgents(): number | null {
-  try {
-    const { execSync } = require("node:child_process")
-    const out = execSync(
-      "python3 " + path.join(process.cwd(), "scripts", "agent_liveness.py") + " --count",
-      {
-        timeout: 5000,
-        cwd: process.cwd(),
-        encoding: "utf8",
-        stdio: ["pipe", "pipe", "pipe"],
-        env: { ...process.env, FLOOR_PROBE_SECS: "0.6", FLOOR_TAIL_SECS: "12.0" },
-      },
-    )
-    const n = parseInt(String(out).trim(), 10)
-    return Number.isNaN(n) ? null : n
-  } catch {
-    return null
-  }
-}
 
 // ============================================================================
 // NO-BLOCKING-QUESTIONS (port of no_blocking_questions_pretool.sh)
@@ -364,30 +339,32 @@ function backlogBlockResponse(openItems: string[]): string {
 
 // ============================================================================
 // SESSION-START ORCHESTRATE (port of session_start_orchestrate.sh)
-// Injects orchestration context on every session (re)start so the model
-// resumes the agent-floor refill discipline on the first turn. In opencode we
+// Injects orchestration context on every session (re)start. In opencode we
 // hook system.transform (which fires per-conversation, not per-turn) — the
 // context is appended to the system prompt, where the model reads it once at
 // session start and acts on it.
+//
+// NOTE (2026-06-28): the agent-floor + dispatch-wave directives were the
+// SESSION START PROTOCOL banner's domain and are now owned ENTIRELY by
+// enforce-session-start.ts. This function retains ONLY the standing policy
+// items that enforce-session-start.ts does NOT cover: workflow preference,
+// pending-work resumption (unmerged branches + security backlog), and the
+// make-only commit rule. Trimmed to avoid dual-emitter confusion.
 // ============================================================================
 function buildOrchestrationContext(): string {
-  const live = countLiveAgents() ?? 0
   return [
     "[orchestration auto-start] Session (re)started. Standing orchestration",
-    "policy is ACTIVE:",
-    `1. AGENT FLOOR: maintain ${FLOOR}-${TARGET} concurrent subagents on disjoint`,
-    `   work. Currently ${live} live -- if below ${FLOOR}, dispatch toward`,
-    `   ${TARGET} now (read-only proposers / commit-bootstrap writers; worktree`,
-    "   only for concurrent mutation).",
-    `2. WORKFLOW: for any multi-step batch (backlog drain, feature build),`,
+    "policy is ACTIVE (agent-floor + dispatch-wave directives are owned by",
+    "the SESSION START PROTOCOL banner in enforce-session-start.ts; the items",
+    "below cover the gaps it does not):",
+    "1. WORKFLOW: for any multi-step batch (backlog drain, feature build),",
     "   prefer the deterministic workflow tool over manual bursts — it holds",
     "   the pool steady.",
-    "3. PENDING WORK: verified-but-unmerged feature branches await a",
+    "2. PENDING WORK: verified-but-unmerged feature branches await a",
     "   consolidated gated merge; the security backlog is in",
     "   docs/audit/NEW_FINDINGS*.md. Resume both.",
-    "4. COMMITS are make-only: feature branches use 'make commit-bootstrap'",
+    "3. COMMITS are make-only: feature branches use 'make commit-bootstrap'",
     "   (no-gate); never make ship/gate mid-fleet (basetemp stampede).",
-    "Act on item 1 before ending the first turn.",
   ].join("\n")
 }
 

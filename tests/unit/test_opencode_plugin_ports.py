@@ -482,8 +482,20 @@ class TestSessionStartOrchestratePort:
         assert "orchestration" in content.lower() or "FLOOR" in content
 
     def test_floor_target_reference(self):
-        content = ENFORCE_STOP.read_text()
-        assert "TARGET" in content or "target" in content.lower()
+        """The floor/target session-start directives now live in
+        enforce-session-start.ts (the canonical session-start orchestration
+        owner, 2026-06-28 dedup). enforce-stop.ts retains its
+        system.transform hook for the gap-filling items (workflow /
+        pending-work / make-only commits) but no longer duplicates the
+        floor/target content.
+        """
+        # The floor/target wiring must still exist SOMEWHERE in the plugin
+        # layer — enforce-session-start.ts is the canonical owner now.
+        session_start_src = ENFORCE_SESSION_START.read_text()
+        assert "FLOOR" in session_start_src or "floor" in session_start_src.lower(), (
+            "Floor directive must live in enforce-session-start.ts after the "
+            "dedup trim removed it from enforce-stop.ts"
+        )
 
     def test_system_transform_hook(self):
         content = ENFORCE_STOP.read_text()

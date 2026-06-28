@@ -9,18 +9,17 @@
 #
 # Artifact contract: writes render.json to {{ artifact_dir }}/render.json.
 
-renderer: true
-description: >-
-  Live system-facts report. Gathers the /api/facts snapshot and renders it
-  as a titled page with a metric grid (work queue / todos / unread messages)
-  and a markdown overview section.
-
 - name: Render system facts
   hosts: localhost
   connection: local
   gather_facts: false
 
   vars:
+    renderer: true
+    renderer_description: >-
+      Live system-facts report. Gathers the /api/facts snapshot and renders it
+      as a titled page with a metric grid (work queue / todos / unread messages)
+      and a markdown overview section.
     artifact_dir: "{{ artifact_dir | default('/tmp/gludd-render-system_facts') }}"
     daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
     psk: "{{ psk | default('') }}"
