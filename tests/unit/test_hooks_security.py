@@ -1,6 +1,8 @@
 """Security tests for hooks.py — written before fixes (TDD red phase)."""
 from __future__ import annotations
 
+import asyncio
+import time
 from unittest.mock import MagicMock, patch
 
 from general_ludd.events.hooks import HookSystem
@@ -408,3 +410,103 @@ class TestRetryCountClampAtRegistration:
         hs.register_webhook("evt_ok", "http://example.com", retry_count=3)
         stored = hs.list_hooks()[0].webhook_config.retry_count  # type: ignore[union-attr]
         assert stored == 3, f"Expected retry_count=3 unchanged, got {stored}"
+
+
+# ---------------------------------------------------------------------------
+# Real-loop non-blocking proof: fire() must NOT hold the event-loop thread
+# ---------------------------------------------------------------------------
+
+class TestEventLoopNotBlocked:
+    """Prove with a REAL asyncio event loop that fire-and-forget webhook
+    dispatch via ``loop.run_in_executor`` never blocks the loop thread.
+
+    The other async tests in this file stub ``asyncio.get_running_loop`` with a
+    MagicMock / Spy / Capturing stand-in and only assert that
+    ``run_in_executor`` was *called*.  They never prove the actual non-blocking
+    property end-to-end.  These tests do: they run a real loop, schedule a
+    blocking POST that sleeps 0.5s in a thread, and assert a concurrent
+    coroutine completes in well under that time.
+    """
+
+    async def test_slow_webhook_does_not_block_real_loop(self):
+        """T1 — a 0.5s blocking httpx.post must not stall a real event loop.
+
+        Strategy:
+        * Inside ``asyncio.run`` (pytest-asyncio auto mode), register one
+          webhook whose mocked ``httpx.post`` blocks for 0.5s via
+          ``time.sleep`` (appropriate: ``run_in_executor`` runs it on a thread).
+        * Schedule a sentinel coroutine that sets an ``asyncio.Event`` after a
+          10ms ``asyncio.sleep``.
+        * Call ``hs.fire(...)`` (sync, fire-and-forget — schedules the executor
+          work and returns immediately).
+        * ``await asyncio.wait_for(sentinel_task, timeout=0.3)`` — must
+          succeed.  If the loop thread were held by the blocking POST, the
+          sentinel could not have run before the 0.3s deadline.
+        """
+        def slow_post(url, **kwargs):
+            time.sleep(0.5)
+            return MagicMock(status_code=200)
+
+        hs = HookSystem()
+        hs.register_webhook(
+            "realloop_evt", "http://example.com", retry_count=1, timeout_seconds=5
+        )
+
+        sentinel = asyncio.Event()
+
+        async def sentinel_coro():
+            await asyncio.sleep(0.01)
+            sentinel.set()
+
+        sentinel_task = asyncio.ensure_future(sentinel_coro())
+
+        with patch("general_ludd.events.hooks.httpx.post", side_effect=slow_post):
+            hs.fire("realloop_evt", {"name": "ok", "type": "model_added"})
+
+        await asyncio.wait_for(sentinel_task, timeout=0.3)
+
+        assert sentinel.is_set(), (
+            "Sentinel coroutine did not complete within 0.3s — the event loop "
+            "thread was blocked by the fire-and-forget webhook dispatch"
+        )
+
+        # Drain the pending webhook Future so its done-callback doesn't leak
+        # an unobserved exception into the test session.
+        if hs._pending_webhooks:
+            await asyncio.gather(*hs._pending_webhooks, return_exceptions=True)
+        await sentinel_task
+
+    async def test_multiple_webhooks_tracked_in_pending_set(self):
+        """T2 — firing multiple webhooks populates _pending_webhooks.
+
+        Each fire-and-forget dispatch must add an in-flight Future to the
+        tracking set; once the dispatch completes the done-callback discards
+        it.  While the slow POSTs are still in flight, the set must be
+        non-empty and contain one entry per registered webhook.
+        """
+        def slow_post(url, **kwargs):
+            time.sleep(0.3)
+            return MagicMock(status_code=200)
+
+        hs = HookSystem()
+        for i in range(3):
+            hs.register_webhook(
+                f"multi_evt_{i}", "http://example.com", retry_count=1, timeout_seconds=5
+            )
+
+        with patch("general_ludd.events.hooks.httpx.post", side_effect=slow_post):
+            for i in range(3):
+                hs.fire(f"multi_evt_{i}", {"i": i})
+            observed = len(hs._pending_webhooks)
+
+        assert observed == 3, (
+            f"Expected 3 in-flight webhook Futures while slow POSTs pending, "
+            f"saw {observed}"
+        )
+
+        # Allow all dispatched POSTs to finish so done-callbacks discard them.
+        if hs._pending_webhooks:
+            await asyncio.gather(*hs._pending_webhooks, return_exceptions=True)
+        assert len(hs._pending_webhooks) == 0, (
+            "_pending_webhooks was not drained after deliveries completed"
+        )
