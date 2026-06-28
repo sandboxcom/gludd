@@ -74,6 +74,85 @@ def _load_migration_001():
     return mod
 
 
+def _load_migration_011():
+    """Load alembic/versions/011_add_bucket_leases_expires_at_index.py via importlib."""
+    import importlib.util
+    import pathlib
+
+    src = (
+        pathlib.Path(__file__).parent.parent.parent
+        / "alembic"
+        / "versions"
+        / "011_add_bucket_leases_expires_at_index.py"
+    )
+    spec = importlib.util.spec_from_file_location("migration_011_add_bucket_leases_expires_at_index", src)
+    assert spec is not None and spec.loader is not None
+    mod = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(mod)  # type: ignore[union-attr]
+    return mod
+
+
+class TestMigration011ExpiresAtIndex:
+    """F4: ``reclaim_expired_leases`` filters ``expires_at < now`` every tick.
+    Without an index this is a full-table scan on ``bucket_leases`` per tick.
+    Migration 011 adds ``ix_bucket_leases_expires_at`` to make the reclaim query
+    indexed.
+    """
+
+    _EXPECTED_INDEX = "ix_bucket_leases_expires_at"
+
+    def test_revision_links_to_010(self):
+        mod = _load_migration_011()
+        assert mod.revision == "011"
+        assert mod.down_revision == "010"
+
+    def test_upgrade_creates_index(self):
+        mod = _load_migration_011()
+        with patch.object(mod, "op") as mock_op:
+            mod.upgrade()
+        create_calls = [c.args[0] for c in mock_op.create_index.call_args_list]
+        assert self._EXPECTED_INDEX in create_calls, (
+            f"upgrade() did not create {self._EXPECTED_INDEX}; "
+            f"create_index calls={create_calls}"
+        )
+        # Sanity: the index is on (expires_at) of bucket_leases.
+        idx_call = next(
+            c for c in mock_op.create_index.call_args_list if c.args[0] == self._EXPECTED_INDEX
+        )
+        assert idx_call.kwargs.get("table_name") == "bucket_leases" or (
+            len(idx_call.args) > 2 and idx_call.args[1] == "bucket_leases"
+        )
+        assert "expires_at" in idx_call.args[2], (
+            f"index columns={idx_call.args[2]} does not include expires_at"
+        )
+
+    def test_downgrade_drops_index(self):
+        mod = _load_migration_011()
+        with patch.object(mod, "op") as mock_op:
+            mod.downgrade()
+        drop_calls = [c.args[0] for c in mock_op.drop_index.call_args_list]
+        assert self._EXPECTED_INDEX in drop_calls, (
+            f"downgrade() did not drop {self._EXPECTED_INDEX}; "
+            f"drop_index calls={drop_calls}"
+        )
+
+
+class TestBucketLeaseModelExpiresAtIndexed:
+    """F4 (model layer): BucketLeaseModel.expires_at must declare index=True so
+    ``Base.metadata.create_all`` (used by tests + fresh SQLite DBs) also gets
+    the index, not only Alembic-managed Postgres deployments.
+    """
+
+    def test_expires_at_column_has_index(self):
+        from general_ludd.db.models import BucketLeaseModel
+
+        col = BucketLeaseModel.__table__.c.expires_at
+        assert col.index is True, (
+            "BucketLeaseModel.expires_at must be indexed (index=True) so "
+            "reclaim_expired_leases does not full-table-scan every tick."
+        )
+
+
 class TestAlembicEnvDatabaseURLOverride:
     """D-37: alembic/env.py must read DATABASE_URL and call config.set_main_option.
 
