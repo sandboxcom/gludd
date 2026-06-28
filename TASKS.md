@@ -476,3 +476,12 @@ Goal: make .github/workflows/build.yml actually pass in real CI. Observed (sandb
 ## Release v0.1.0-alpha.3 — SHIPPED (2026-06-24)
 
 - [x] RELEASE-alpha.3 — v0.1.0-alpha.3 published with 11 artifacts | evidence: make verify-release-artifact TAG=v0.1.0-alpha.3 PASS; https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.3; CI GREEN on 009af30 run 28135312354
+
+## Phase Q — Queue-lease concurrency fixes (2026-06-25)
+
+Findings source: `docs/audit/QUEUE_LEASE_CLAIM_CONCURRENCY_AUDIT_2026-06-25.md` (F1–F4). Each fix re-verified this session via its named acceptance test.
+
+- [x] Q.F1 — reclaim skips requeue when a live lease exists for the same bucket (prevents double-dispatch / ACTIVE→QUEUED yank mid-flight) | evidence: make test-specific TESTFILE='tests/security/test_eventloop_redteam.py::test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket' 1 passed 4e13936
+- [x] Q.F2 — claim_runnable orders candidates by priority DESC, created_at ASC (prevents priority inversion in PID-cap victim selection) | evidence: make test-specific TESTFILE='tests/unit/test_claim_runnable_fifo.py::TestClaimRunnablePriority' 2 passed (test_higher_priority_claimed_first, test_priority_breaks_tie_then_created_at) 6e684b4
+- [x] Q.F3 — PID-cap release deletes the bucket-lease row in the same session before flush (prevents orphan-lease accumulation + closes F1's main trigger) | evidence: make test-specific TESTFILE='tests/security/test_eventloop_redteam.py::test_pid_cap_release_deletes_lease_row' 1 passed bba8c92
+- [x] Q.F4 — bucket_leases.expires_at indexed (models.py index=True) + alembic migration 011 (upgrade creates index, downgrade drops, revision→010) | evidence: make test-specific TESTFILE='tests/unit/test_db_migrations.py::TestMigration011ExpiresAtIndex' 3 passed (test_revision_links_to_010, test_upgrade_creates_index, test_downgrade_drops_index) + TestBucketLeaseModelExpiresAtIndexed::test_expires_at_column_has_index 1 passed 14ee691
