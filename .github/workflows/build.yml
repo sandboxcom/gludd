@@ -67,6 +67,14 @@ jobs:
         env:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
+      - name: Check status table current (fast)
+        # Verify README.md status table matches docs/features.yml generation.
+        # Uses --fast (file-existence checks only, no pytest) so it is cheap in CI.
+        # Fails if the table was hand-edited or features.yml was updated without
+        # regenerating README.md (fix: make gen-status-table + commit).
+        run: make check-status-table
+        env:
+          GLUDD_PSK: ""
 
   # Parallel test shards — 4 path-based groups × 2 Python versions = 8 jobs.
   # Each shard is independent: a failure in shard "unit-1" is reported at the
@@ -438,6 +446,13 @@ jobs:
     steps:
       - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
       - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Verify status table current (release gate)
+        # On tag builds the release must not be cut with a stale status table.
+        run: |
+          uv sync
+          make check-status-table
+        env:
+          GLUDD_PSK: ""
       - name: Generate SBOM
         run: |
           uv sync

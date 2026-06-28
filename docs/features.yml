@@ -1,0 +1,1202 @@
+# docs/features.yml
+#
+# Declarative manifest for the README "Feature & Task Completion Status" table.
+# This file is the SINGLE SOURCE OF TRUTH for feature metadata.
+#
+# Generator: scripts/gen_status_table.py
+# Gate:      make check-status-table   (--check --fast; no pytest)
+# Regenerate: make gen-status-table   (--write --fast)
+#
+# Schema per feature:
+#   id           : unique slug (snake_case)
+#   title        : display name (verbatim README row)
+#   pct          : integer 0-100 (human-maintained; reflects partial completion)
+#   pct_note     : optional string appended to pct display (e.g. "(local)")
+#   evidence_refs: list of structured refs for FeatureVerifier
+#                  test:path[::selector]  — file checked (fast), pytest run (full)
+#                  file:path::symbol      — path exists + symbol present (always fast)
+#                  role:name              — collections/.../roles/<name>/ dir
+#                  module:name            — plugins/modules/<name>.py
+#                  molecule:scenario      — molecule/playbooks/<scenario>/ dir
+#   notes        : short evidence narrative for the Evidence column
+#                  (SHAs, test counts, caveats; do NOT duplicate evidence_refs verbatim)
+
+sections:
+
+  # ---------------------------------------------------------------------------
+  - title: "Core Engine / Daemon Spine"
+    features:
+      - id: g0-daemon-starts
+        title: "G0 Daemon starts configured (env-var passthrough, default config search)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_daemon_launch_config.py"
+          - "file:src/general_ludd/daemon.py::register_all"
+        notes: "`[b4de809]`"
+
+      - id: g1-event-loop-session
+        title: "G1 Event loop opens DB session per tick + commits"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_event_loop_session_per_tick.py"
+          - "file:src/general_ludd/event_loop/loop.py::_run_tick"
+        notes: "`[a7a97c6]`"
+
+      - id: g2-post-todos
+        title: "G2 `POST /api/todos` persists to DB"
+        pct: 100
+        evidence_refs:
+          - "test:tests/e2e/test_todos_persistence.py"
+          - "file:src/general_ludd/routers/todos.py::create_todo"
+        notes: "`[60cdb4d]`"
+
+      - id: g3-playbook-resolution
+        title: "G3 Playbook resolution real + extravars reach playbook"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_runner_resolution.py"
+        notes: "`[506ed44]`"
+
+      - id: g4-dispatched-job-model
+        title: "G4 Dispatched job calls model + applies edits"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_execution_engine.py"
+        notes: "`[b4de809]`"
+
+      - id: g5-return-reviewer
+        title: "G5 ReturnReviewer wired; failure escalates (never silent pass)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_w3_2_reviewer_wiring.py"
+          - "file:src/general_ludd/review/decision_applier.py::DecisionApplier"
+        notes: "3 passed; `[a7a97c6]`"
+
+      - id: g6-work-lands-git
+        title: "G6 Work lands in git (branch + commit + SHA)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_execution_git_delivery.py"
+        notes: "`[56fbec7]`"
+
+      - id: g7-full-pipeline-e2e
+        title: "G7 Full pipeline e2e (submit → model → review → commit)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_full_pipeline_e2e.py"
+        notes: "`[6915362]`"
+
+      - id: w3-1-worker-model-gateway
+        title: "Worker invokes ModelGateway for generation jobs (W3.1/C1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/e2e/test_obj03_worker.py::TestWorkerModelGatewayCall"
+        notes: "3 passed; `[b4de809]`"
+
+      - id: w3-3-asyncio-thread
+        title: "asyncio.to_thread for playbook runs (W3.3/M9)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w3_3_asyncio_thread.py"
+        notes: "`[779937c]`"
+
+      - id: w3-4-readyz
+        title: "/readyz degraded-state endpoint (W3.4/N1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w3_4_readyz.py"
+          - "file:src/general_ludd/daemon.py::readyz"
+        notes: "`[779937c]`"
+
+      - id: w3-5-sqlite-single-worker
+        title: "SQLite-only enforced + single-worker clamp (W3.5/M8/H18)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_single_worker_sqlite.py"
+        notes: "7 passed; `[312e403]`"
+
+      - id: w3-7-self-improve-persist
+        title: "Self-improvement todos persist via TodoRepository (W3.7/H2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_w3_7_self_improve_persist.py"
+        notes: "2 passed; `[a7a97c6]`"
+
+      - id: w3-8-worker-501
+        title: "Worker stub endpoints return HTTP 501 (W3.8/H3)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w3_8_worker_501.py"
+        notes: "`[779937c]`"
+
+      - id: w3-14-single-project-per-tick
+        title: "One `select_project()` per tick (W3.14/M14)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_w3_14_single_project_per_tick.py"
+        notes: "2 passed; `[a7a97c6]`"
+
+      - id: c5-deployments-endpoint
+        title: "/api/deployments endpoint + deploy-before-destroy registry (C5/M2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_deployment_registry.py"
+        notes: "7 passed; `[eb84b0c]`"
+
+      - id: h15-lease-expiry
+        title: "Lease acquisition + expiry reclaim (H15)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/e2e/test_obj04_event_loop.py::test_reclaims_expired_lease"
+        notes: "`[a7a97c6]`"
+
+      - id: h13-project-workspaces
+        title: "Project workspaces cloned from repo_url + persisted (H13)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_project_workspace_clone.py"
+        notes: "6 passed; `[a4c04a9]`"
+
+      - id: h14-hot-reload
+        title: "Hot-reload honesty — reports only real reloads (H14)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w3_12_reload.py"
+        notes: "`[779937c]`"
+
+      - id: scheduler-parallel-dispatch
+        title: "Scheduler drives parallel dispatch (#23/#32)"
+        pct: 75
+        evidence_refs:
+          - "file:src/general_ludd/event_loop/loop.py::_dispatch_execute_job"
+          - "file:src/general_ludd/event_loop/scheduler.py::Scheduler"
+        notes: "wired at `loop.py`; no dedicated e2e parallel-dispatch proof; stale TODO in scheduler; `[audit]`"
+
+      - id: dynamic-dispatcher
+        title: "DynamicDispatcher for autonomous tool-call dispatch (#26)"
+        pct: 50
+        evidence_refs:
+          - "test:tests/unit/test_generation_tool_dispatch.py"
+          - "file:src/general_ludd/dispatch/dynamic_dispatcher.py::structured_tool_calls_to_calls"
+        notes: "dispatch path wired+tested `[8fe3dcb]`; BUT generation does NOT bind tools → path INERT end-to-end; pending design decision"
+
+      - id: pipeline-controller
+        title: "PipelineController async lanes (pipeline/)"
+        pct: 75
+        evidence_refs:
+          - "test:tests/unit/test_pipeline_lanes.py"
+          - "file:src/general_ludd/pipeline/controller.py::PipelineController"
+        notes: "223 lines; daemon config-gated lazy-import; no e2e proof of `pipeline.enabled=True`; `[audit]`"
+
+      - id: spend-limiter
+        title: "SpendLimiter rolling budget cap (#27/#49)"
+        pct: 80
+        evidence_refs:
+          - "test:tests/unit/test_spend_limiter_dispatch_wiring.py"
+          - "file:src/general_ludd/controllers/spend_limiter.py::SpendLimiter"
+        notes: "3 passed; `[6761126]`; inert-when-unconfigured by design"
+
+      - id: environment-endpoint
+        title: "`GET /api/environment` introspection endpoint + per-work-type advisor"
+        pct: 75
+        evidence_refs:
+          - "file:src/general_ludd/routers/facts.py::environment"
+          - "module:gludd_environment"
+        notes: "`[d37f13b]` (advisor), `[5beeee6]` (project facet); NEW 2026-06-25; −25% pending dedicated route-level test"
+
+      - id: agent-orchestrate-role
+        title: "`agent_orchestrate` role — advice/budget-driven workflow vs single-shot dispatch"
+        pct: 90
+        evidence_refs:
+          - "role:agent_orchestrate"
+          - "molecule:role_agent_orchestrate"
+        notes: "`[d37f13b]` + molecule `[38b0d09]`; NEW 2026-06-25"
+
+      - id: project-hierarchy-phase1
+        title: "Project-hierarchy: relationship model + migration + repository (phase 1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_project_relationships.py"
+          - "file:src/general_ludd/db/models.py::ProjectRelationshipModel"
+        notes: "ORM + alembic 008 + repository; `[04ef43f]`; NEW 2026-06-25"
+
+      - id: project-hierarchy-phase2
+        title: "Project-hierarchy: relationships facet in `/api/environment` + role var exposure (phase 2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_environment_project_facet.py"
+          - "file:src/general_ludd/routers/facts.py::_project_facet"
+        notes: "`[5beeee6]`; NEW 2026-06-25"
+
+      - id: project-hierarchy-phase3
+        title: "Project-hierarchy: cross-project knowledge borrowing (phase 3)"
+        pct: 70
+        evidence_refs:
+          - "file:src/general_ludd/db/repository.py::ProjectRelationshipRepository"
+        notes: "`[78c031b]`; default-OFF flag; router-default borrowing not enabled; NEW 2026-06-25"
+
+  # ---------------------------------------------------------------------------
+  - title: "Models / Gateway"
+    features:
+      - id: model-gateway-real-api
+        title: "Model gateway real API calls + cost accounting"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_model_gateway_fallback.py"
+        notes: "`[3ef7eb6]`"
+
+      - id: w4-1-tenacity-retry
+        title: "Tenacity retry — hand-rolled loop deleted (W4.1/V3.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w4_1_tenacity_retry.py"
+        notes: "5 passed incl. `test_call_with_tenacity_demo_deleted`; `[15db868]`"
+
+      - id: f6-model-failover
+        title: "Model failover chain (F6)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_model_gateway_fallback.py"
+          - "test:tests/unit/test_r2_5a_profiles_failover.py"
+        notes: "PASS"
+
+      - id: h12-metrics-collector
+        title: "Router gateway gets metrics_collector (H12)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w3_10_metrics_gateway.py"
+        notes: "`[779937c]`"
+
+      - id: h11-budget-guard
+        title: "Budget guard wired (H11)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_budget_wiring.py"
+        notes: "budget config section consumed"
+
+      - id: f5-per-todo-budget
+        title: "Per-todo/daily budget caps (F5)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_budget_caps.py"
+          - "test:tests/unit/test_budget_guards.py::test_check_todo_budget_concurrent_same_todo_replaces_not_stacks"
+        notes: "`[c5ffec1]`; retry-on-same-todo idempotent"
+
+      - id: h17-secrets-auto-mode
+        title: "Secrets auto mode tries OpenBao before env (H17)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_secrets_auto_mode.py"
+        notes: "4 passed; `[1bbe4b8]`"
+
+      - id: m11-cli-admin-parity
+        title: "CLI ↔ /admin/code/* endpoint parity (M11/W3.13)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w3_13_cli_code_parity.py"
+        notes: "`[779937c]`"
+
+      - id: scoring-cost-routing
+        title: "Scoring cost-constrained routing (#59/#69)"
+        pct: 80
+        evidence_refs:
+          - "test:tests/unit/test_benchmark_repo.py::test_cost_cap_bites_with_real_repo_avg_cost"
+          - "file:src/general_ludd/models/gateway.py::AdaptiveRouter"
+        notes: "`avg_cost` real; `[436af0d]`"
+
+      - id: model-routing-roles
+        title: "Model routing roles + weights (`routing_roles/`)"
+        pct: 25
+        evidence_refs:
+          - "file:src/general_ludd/routing_roles/roles.py::role"
+        notes: "worktree-only; `model_weights/` absent; 7/10 weight pairs diverge; `[audit]`"
+
+      - id: p1-benchmark-task-role
+        title: "BenchmarkResult `task_role` field (P1)"
+        pct: 0
+        evidence_refs: []
+        notes: "`schemas/benchmark.py` has no `task_role` field; P1; `[audit]`"
+
+      - id: bert-embeddings-search
+        title: "BERT/embeddings search verb (similar / compare / search)"
+        pct: 85
+        evidence_refs:
+          - "test:tests/unit/test_embeddings_router.py"
+          - "test:tests/unit/test_gludd_embed_module.py"
+          - "file:src/general_ludd/routers/embeddings.py::router"
+          - "module:gludd_embed"
+        notes: "`[79a84d1]`/`[c4613eb]`/`[ad14a8a]`; −15% v1-only corpora; NEW 2026-06-25"
+
+      - id: model-weights-package
+        title: "`model_weights/` package (seed_data.json, schema, store, loader)"
+        pct: 0
+        evidence_refs: []
+        notes: "absent from both main tree and worktree; P0; `[audit]`"
+
+  # ---------------------------------------------------------------------------
+  - title: "Connectors / Observability"
+    features:
+      - id: obs-connector-base
+        title: "Observability connector base + normalize + registry (38 connectors)"
+        pct: 60
+        evidence_refs:
+          - "file:src/general_ludd/connectors/registry.py::ConnectorRegistry"
+          - "file:src/general_ludd/routers/observe.py::router"
+        notes: "38 modules + 38 test files exist; `daemon.py` never imports connectors; observe router not registered; `[audit #1]`"
+
+      - id: gludd-metrics-traces-modules
+        title: "gludd_metrics + gludd_traces Ansible modules"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_playbook_registry.py::TestMetricsAndTracesModules"
+          - "module:gludd_metrics"
+          - "module:gludd_traces"
+          - "molecule:module_gludd_metrics"
+          - "molecule:module_gludd_traces"
+        notes: "145 passed; molecule 27+28; `[86389be]`"
+
+      - id: metrics-traces-endpoints
+        title: "/api/metrics + /api/traces endpoints"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_facts_live_seam.py"
+          - "file:src/general_ludd/daemon.py::RecentTracesBuffer"
+        notes: "4 passed; `[86389be]`"
+
+      - id: obs-router-wired
+        title: "Observability router (`routers/observe.py`) wired into daemon"
+        pct: 5
+        evidence_refs:
+          - "file:src/general_ludd/routers/observe.py::register"
+        notes: "register() exists; never called; 1 daemon.py line needed; `[audit]`"
+
+      - id: receiver
+        title: "Receiver (buffer + parsers + OTLP/webhook/gelf)"
+        pct: 30
+        evidence_refs:
+          - "file:src/general_ludd/receiver/router.py::router"
+          - "file:src/general_ludd/receiver/buffer.py::ReceiverBuffer"
+        notes: "393 lines; not wired; `[audit]`"
+
+      - id: issue-sources
+        title: "Issue sources (~17 connectors: GitHub, Linear, CSV, Markdown, etc.)"
+        pct: 20
+        evidence_refs:
+          - "file:src/general_ludd/issue_sources/base.py::IssueSourceBase"
+        notes: "base + adapters with tests; NOT wired; package incomplete; `[audit]`"
+
+      - id: connector-dedup
+        title: "Connector dedup cleanup (7 duplicate pairs)"
+        pct: 0
+        evidence_refs: []
+        notes: "pipeline_controller vs controller, windows_event vs windows_event_log, etc.; all unresolved; `[audit]`"
+
+      - id: misconfig-detector-dedup
+        title: "MisconfigDetector dedup (`misconfig_detector.py` vs `model_deploy_check.py`)"
+        pct: 0
+        evidence_refs: []
+        notes: "two classes both named MisconfigDetector; neither canonical; `[audit]`"
+
+  # ---------------------------------------------------------------------------
+  - title: "Security Hardening"
+    features:
+      - id: mcp-timeouts
+        title: "MCP per-request timeouts + kill fallback"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/tool_loop.py::timeout"
+        notes: "`[9d487ab]`"
+
+      - id: webmcp-require-auth
+        title: "webmcp dogfood + GLUDD_REQUIRE_AUTH (#20)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/daemon.py::GLUDD_REQUIRE_AUTH"
+        notes: "`[9d487ab]`"
+
+      - id: fs-write-policy
+        title: "FS write policy default-DENY + adversarial tests (#43)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_fs_write_audit.py"
+        notes: "`[audit #43 DONE-VERIFIED]`"
+
+      - id: capability-policy
+        title: "capability_policy default-DENY per-role (#44)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_fs_write_audit.py"
+          - "file:src/general_ludd/security/capability_lattice.py::DENY"
+        notes: "`capability_lattice.py:211-235`; `[4314a6c]`"
+
+      - id: conflict-scanner
+        title: "Conflict scanner + pre-commit hook (#33)"
+        pct: 100
+        evidence_refs:
+          - "file:scripts/scan_conflicts.py::scan_conflicts"
+        notes: "`make scan-conflicts`; `[9d487ab]`"
+
+      - id: ci-regression-guards
+        title: "CI regression guards (#30)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_ci_regression_guards.py"
+        notes: "`[9d487ab]`"
+
+      - id: clone-rce-ssrf
+        title: "Clone RCE/SSRF hardening (#56)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_git_repo_clone_hardening.py"
+          - "file:src/general_ludd/security/auth.py::validate_repo_url"
+        notes: "`[audit #56 DONE-VERIFIED]`"
+
+      - id: db-races-redteam
+        title: "DB races red-team (#52)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_db_redteam.py"
+        notes: "`[audit #52 DONE-VERIFIED]`"
+
+      - id: secrets-lifecycle-redteam
+        title: "Secrets lifecycle red-team (#53)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_secrets_redteam.py"
+        notes: "`[audit #53 DONE-VERIFIED]`"
+
+      - id: gateway-concurrency-redteam
+        title: "Gateway concurrency red-team (#54)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_gateway_concurrency_redteam.py"
+        notes: "`[audit #54 DONE-VERIFIED]`"
+
+      - id: self-modification-guards
+        title: "Self-modification guards (#58)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_self_modify_guards.py"
+        notes: "`[audit #58 DONE-VERIFIED]`"
+
+      - id: ansible-ssti-redteam
+        title: "Ansible SSTI red-team (#50)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_ansible_ssti_redteam.py"
+        notes: "`[audit #50 DONE-VERIFIED]`"
+
+      - id: skill-renderer-ssti
+        title: "Skill renderer SSTI fix (SandboxedEnvironment)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_skills_renderer_adversarial.py"
+          - "file:src/general_ludd/skills/renderer.py::SandboxedEnvironment"
+        notes: "`renderer.py:68`; `[audit BUG-1 DONE-VERIFIED]`"
+
+      - id: base-url-ssrf
+        title: "base_url SSRF guard (#61)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_gateway_base_url_ssrf.py"
+          - "file:src/general_ludd/models/gateway.py::_validate_base_url"
+        notes: "`gateway.py:259-278`; `[audit #61 DONE-VERIFIED]`"
+
+      - id: ssh-key-gitignored
+        title: "SSH key gitignored + enforcement layers (W5.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_guardrails.py::TestNoTrackedPrivateKeys"
+        notes: "2 passed; `make git-tracked-keys` NONE TRACKED; `[526104b]`"
+
+      - id: w5-2-dist-license
+        title: "dist packs LICENSE + THIRD_PARTY_LICENSES + SBOM (W5.2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_dist_license_pack.py"
+        notes: "6 passed; `[526104b]`"
+
+      - id: w5-3-secrets-scan
+        title: "Fresh secrets scan adjudicated; dist paths clean (W5.3)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_dist_license_pack.py::test_dist_scrubs_build_paths"
+        notes: "`[526104b]`"
+
+      - id: w5-6-worker-psk
+        title: "Worker /jobs/* require PSK auth (W5.6)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w5_6_worker_auth.py"
+        notes: "9 passed; `[526104b]`"
+
+      - id: metric-label-cardinality
+        title: "Metric-label cardinality guard (#60)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_metrics_cardinality.py"
+          - "file:src/general_ludd/observability/metrics_exporter.py::cardinality"
+        notes: "`metrics_exporter.py:34-79`; `[audit #60 DONE-VERIFIED]`"
+
+      - id: batch3-security
+        title: "F5b/F6a/F6b security features (fast-follow branch)"
+        pct: 50
+        evidence_refs: []
+        notes: "branch `85158c2`; 14/14 tests local; NOT merged to master; `[SESSION.md]`"
+
+      - id: batch4-security
+        title: "D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch)"
+        pct: 10
+        evidence_refs: []
+        notes: "building; not merged; `[SESSION.md:56]`"
+
+      - id: d07-d47-backlog
+        title: "D-07 through D-47 security backlog"
+        pct: 5
+        evidence_refs: []
+        notes: "catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled"
+
+      - id: cve-diskcache
+        title: "CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE)"
+        pct: 0
+        evidence_refs: []
+        notes: "`TASKS.md:252-253` open; `pip-audit` gated; `[audit]`"
+
+  # ---------------------------------------------------------------------------
+  - title: "Orchestration / Agents"
+    features:
+      - id: w6-1-collection-skeleton
+        title: "`general_ludd.agent` Ansible collection skeleton + gludd_ping (W6.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_playbook_registry.py::TestCollectionStructure"
+          - "module:gludd_ping"
+        notes: "12 passed; `[ea2e915]`"
+
+      - id: w6-2-gludd-model-call
+        title: "gludd_model_call + POST /admin/models/call (W6.2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_playbook_registry.py::TestModuleSecurityProperties"
+          - "module:gludd_model_call"
+        notes: "32 passed; `[ea2e915]`"
+
+      - id: w6-3-gludd-worktree-git
+        title: "gludd_worktree + gludd_git modules (W6.3)"
+        pct: 100
+        evidence_refs:
+          - "module:gludd_worktree"
+          - "module:gludd_git"
+        notes: "`[2aae2ef]`"
+
+      - id: w6-4-gludd-db
+        title: "gludd_db module (W6.4)"
+        pct: 100
+        evidence_refs:
+          - "module:gludd_db"
+          - "test:tests/integration/test_playbook_registry.py::TestModuleSecurityProperties::test_gludd_db_no_log"
+        notes: "`[2aae2ef]`"
+
+      - id: w6-5-skill-rendering
+        title: "Skill rendering with Jinja2 StrictUndefined (W6.5)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_playbook_registry.py::TestSkillRenderer"
+        notes: "5 passed; `[2aae2ef]`"
+
+      - id: w6-6-gludd-mcp-tool
+        title: "gludd_mcp_tool (honestly fenced W3.9, W6.6)"
+        pct: 100
+        evidence_refs:
+          - "module:gludd_mcp_tool"
+          - "file:collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_mcp_tool.py::not_implemented"
+        notes: "`not_implemented=True`; decision in `TASKS.md:324-342`; `[2aae2ef]`"
+
+      - id: w6-7-agent-task-role
+        title: "agent_task role + playbook migration (W6.7/W6.9)"
+        pct: 100
+        evidence_refs:
+          - "role:agent_task"
+          - "test:tests/integration/test_playbook_registry.py"
+        notes: "`make ansible-collection-test` 118 passed; `[d0203ba]`"
+
+      - id: w6-8-gludd-agent-run
+        title: "gludd_agent_run (ToolCallLoop kept, W6.8)"
+        pct: 100
+        evidence_refs:
+          - "module:gludd_agent_run"
+          - "test:tests/integration/test_playbook_registry.py::TestModuleSecurityProperties::test_psk_no_log_in_gludd_agent_run"
+        notes: "`[c337fdb]`"
+
+      - id: w7-1-agent-message-repo
+        title: "AgentMessageRepository + /api/messages (W7.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_agent_message_repo.py"
+          - "test:tests/integration/test_messages_and_facts_api.py::TestMessagesApi"
+        notes: "8+4 passed; `[bd80f5a]`"
+
+      - id: w7-2-3-facts-messages
+        title: "/api/facts aggregation + gludd_facts + gludd_message modules (W7.2/W7.3)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_messages_and_facts_api.py::TestFactsApi"
+          - "module:gludd_facts"
+          - "module:gludd_message"
+        notes: "2+11 passed; `[bd80f5a]`"
+
+      - id: w7-4-prompt-message-queue
+        title: "Prompt message-queue section for agent roles (W7.4)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_prompt_message_queue_section.py"
+        notes: "9 passed; `[bd80f5a]`"
+
+      - id: w8-1-ai-coding-roles
+        title: "7 AI-coding-agent roles (implement_change, write_tests, etc.) (W8.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_w8_roles_and_reports.py"
+          - "role:implement_change"
+          - "role:write_tests"
+        notes: "107 passed; `[2eec9e1]`"
+
+      - id: w8-2-audit-roles
+        title: "5 audit/report roles (W8.2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_w8_roles_and_reports.py"
+          - "role:report_audit"
+          - "role:audit_security"
+        notes: "107 passed; `[2eec9e1]`"
+
+      - id: w8-3-coordination-playbooks
+        title: "Agent coordination playbooks (W8.3)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/integration/test_w8_roles_and_reports.py::TestNewPlaybooksStructure"
+        notes: "`make ansible-syntax` 31 playbooks; `[2eec9e1]`"
+
+      - id: w9-1-completion-audit
+        title: "completion_audit 83% → 100% (W9.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_completion_audit_wiring.py"
+        notes: "26 passed; `make preflight` completion_audit PASS 100.0%; `[6915362]`"
+
+      - id: w10-1-5-molecule-modules
+        title: "Molecule mock-daemon harness + 14 module scenarios (W10.1–W10.5)"
+        pct: 100
+        pct_note: "(local)"
+        evidence_refs:
+          - "molecule:module_gludd_ping"
+          - "molecule:module_gludd_facts"
+          - "molecule:module_gludd_model_call"
+        notes: "`make molecule-test-all` 14/14; CI-green unverified; `[761f79c]`"
+
+      - id: w10-6-role-scenarios
+        title: "All 12 role molecule scenarios (W10.6)"
+        pct: 100
+        pct_note: "(local)"
+        evidence_refs:
+          - "molecule:role_implement_change"
+          - "molecule:role_write_tests"
+          - "molecule:role_agent_task"
+        notes: "`make molecule-test-all` 26/26; CI-green unverified; `[41889e6]`"
+
+      - id: w13-1-workflow-roles
+        title: "5 workflow-pipeline roles + molecule scenarios (W13.1)"
+        pct: 100
+        pct_note: "(local)"
+        evidence_refs:
+          - "role:ci_pipeline_repair"
+          - "role:gate_triage"
+          - "molecule:role_ci_pipeline_repair"
+        notes: "`make molecule-test-all` 33/33; CI-green unverified; `[2a8f97b]`"
+
+      - id: w14-1-secure-sdlc-roles
+        title: "7 secure-SDLC roles + molecule scenarios (W14.1)"
+        pct: 100
+        pct_note: "(local)"
+        evidence_refs:
+          - "role:security_review"
+          - "role:secret_scan"
+          - "molecule:role_security_review"
+        notes: "`make molecule-test-all` 40/40; CI-green unverified; `[9629e20]`"
+
+      - id: w15-1-agile-roles
+        title: "9 agile/sprint roles + molecule scenarios (W15.1)"
+        pct: 100
+        pct_note: "(local)"
+        evidence_refs:
+          - "role:sprint_plan"
+          - "role:retrospective"
+          - "molecule:role_sprint_plan"
+        notes: "`make molecule-test-all` 49/49; CI-green unverified; `[8b252e1]`"
+
+      - id: file-overlap-router
+        title: "File-overlap coordination router (#31)"
+        pct: 10
+        evidence_refs:
+          - "file:src/general_ludd/routers/coordination.py::FileClaimRegistry"
+        notes: "exists; has `# TODO(integration)`; NOT registered in daemon; `[audit]`"
+
+      - id: per-project-accounting
+        title: "Per-project cost/time/LoC accounting (#28)"
+        pct: 20
+        evidence_refs:
+          - "file:src/general_ludd/observability/metrics_collector.py::get_cost_by_project"
+        notes: "cost only; time/LoC/role stats missing; `[audit]`"
+
+      - id: watchdog-stall
+        title: "Watchdog/stall detection improvements (mt-6-watchdog branch)"
+        pct: 15
+        evidence_refs: []
+        notes: "branch building; not merged; `[SESSION.md:28]`"
+
+      - id: floor-controller
+        title: "Gate-safe + predictive floor controller (floor_controller-consolidated branch)"
+        pct: 15
+        evidence_refs: []
+        notes: "branch building; not merged; `[SESSION.md:29]`"
+
+      - id: self-update-wired
+        title: "self_update wired into daemon"
+        pct: 90
+        evidence_refs:
+          - "file:src/general_ludd/daemon.py::self_update"
+          - "file:src/general_ludd/event_loop/loop.py::_apply_self_update_code"
+        notes: "wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof"
+
+      - id: g1-persistent-agent-memory
+        title: "Persistent agent memory (G1)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `memory/` package; design-only; `[audit]`"
+
+      - id: g2-offline-eval
+        title: "Offline eval harness (G2)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `eval/` package; design-only; `[audit]`"
+
+      - id: g3-semantic-retrieval
+        title: "Semantic codebase retrieval (G3)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `retrieval/` package; design-only; `[audit]`"
+
+      - id: g4-sandboxed-execution
+        title: "Sandboxed code execution (G4)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `sandbox/` package; design-only; `[audit]`"
+
+      - id: g7-hitl-approval
+        title: "HITL approval gates (G7)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `approvals/` package; design-only; `[audit]`"
+
+      - id: g11-multi-agent-debate
+        title: "Multi-agent debate / consensus (G11)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `review/consensus.py`; design-only; `[audit]`"
+
+      - id: g9-plan-critique
+        title: "Plan/critique layer (G9)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `planning/` package; design-only; `[audit]`"
+
+      - id: g6-prompt-versioning
+        title: "Prompt/skill versioning A/B (G6)"
+        pct: 0
+        evidence_refs: []
+        notes: "`PromptRegistry` has no version/hash/history; design-only; `[audit]`"
+
+      - id: g5-outcome-self-improve
+        title: "Outcome-driven self-improve (G5)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `OutcomeAnalyzer`; blocked on G2 (eval harness); `[audit]`"
+
+      - id: g8-cost-quality-pareto
+        title: "Cost/quality Pareto router (G8)"
+        pct: 0
+        evidence_refs: []
+        notes: "no implementation; blocked on avg_cost DB fix; `[audit]`"
+
+      - id: g10-per-run-replay
+        title: "Per-run replay (G10)"
+        pct: 0
+        evidence_refs: []
+        notes: "no `replay/` package; design-only; `[audit]`"
+
+      - id: g12-live-web-retrieval
+        title: "Live web retrieval MCP tool (G12)"
+        pct: 0
+        evidence_refs: []
+        notes: "no implementation; design-only; `[audit]`"
+
+      - id: g13-structured-task-spec
+        title: "Structured task-spec / acceptance_criteria (G13)"
+        pct: 0
+        evidence_refs: []
+        notes: "todos are free-text; no schema field; design-only; `[audit]`"
+
+  # ---------------------------------------------------------------------------
+  - title: "DB / Migrations"
+    features:
+      - id: w35-alembic-errors
+        title: "Alembic 23 → 0 errors (W35)"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/db/models.py::Base"
+        notes: "`make lint 0`; ruff clean; `[9d487ab]`"
+
+      - id: w5-4-mypy-zero
+        title: "mypy 18 → 0 errors (W5.4)"
+        pct: 100
+        evidence_refs:
+          - "file:Makefile::MYPY_MAX"
+        notes: "`.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]`"
+
+      - id: alembic-stamp-head
+        title: "Alembic stamp_head + SQLite-only enforced"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_single_worker_sqlite.py"
+        notes: "7 passed; `[312e403]`"
+
+      - id: message-queue-schema
+        title: "Message queue DB schema (AgentMessageModel)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_agent_message_repo.py"
+          - "file:src/general_ludd/db/models.py::AgentMessageModel"
+        notes: "8 passed; `[bd80f5a]`"
+
+      - id: trace-store
+        title: "Observability trace store (RecentTracesBuffer)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_trace_store.py"
+          - "file:src/general_ludd/daemon.py::RecentTracesBuffer"
+        notes: "7 passed; `[86389be]`"
+
+      - id: repo-query-perf
+        title: "Repository query perf + relationship pagination (P1/P6–P12)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_project_relationships.py::TestListForProjectCap"
+          - "file:src/general_ludd/db/repository.py::_DEFAULT_LIST_LIMIT"
+        notes: "4 tests: default cap, explicit-limit clamp, type filter, list_children cap; `[db56eee]`; NEW 2026-06-25"
+
+      - id: cve-deps-upgrade
+        title: "CVE diskcache + pip dependency upgrades"
+        pct: 0
+        evidence_refs: []
+        notes: "`TASKS.md:252-253` open; `make pip-audit` gated; `[audit]`"
+
+      - id: avg-cost-column
+        title: "avg_cost column in BenchmarkRepository.get_aggregate_scores"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_benchmark_repo.py::test_get_aggregate_scores_includes_avg_cost"
+          - "file:src/general_ludd/db/repository.py::get_aggregate_scores"
+        notes: "no longer defaults 0.0; `[436af0d]`"
+
+  # ---------------------------------------------------------------------------
+  - title: "Release / CI"
+    features:
+      - id: ci-gate-matrix
+        title: "CI gate job Python 3.11/3.12 matrix (V1.7/W16.1)"
+        pct: 75
+        evidence_refs:
+          - "file:.github/workflows/build.yml::python-version"
+        notes: "matrix exists; prior CI had 10x event-loop-closed; `[11d3060]`"
+
+      - id: w11-1-pep440
+        title: "CI version PEP 440 fix (W11.1)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_ci_workflow.py::TestVersionPEP440"
+        notes: "7 passed; `[11d3060]`"
+
+      - id: molecule-ci-job
+        title: "Molecule CI job"
+        pct: 75
+        pct_note: "(local)"
+        evidence_refs:
+          - "file:.github/workflows/build.yml::molecule-test-shard"
+        notes: "locally 49/49; CI-green unverified; `[audit]`"
+
+      - id: dist-license-sbom
+        title: "dist packs LICENSE + SBOM + no build-machine paths"
+        pct: 100
+        evidence_refs:
+          - "test:tests/security/test_dist_license_pack.py"
+        notes: "6 passed; `[526104b]`"
+
+      - id: pre-commit-hooks
+        title: "Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.)"
+        pct: 100
+        evidence_refs:
+          - "file:.pre-commit-config.yaml::detect-secrets"
+        notes: "`make install-hooks`; enforcing since `[7035e8c]`"
+
+      - id: dogfood-passes
+        title: "make dogfood passes self-hosting"
+        pct: 100
+        evidence_refs:
+          - "file:Makefile::dogfood"
+        notes: "PASSES; no API key required (monkeypatches dispatch)"
+
+      - id: ssh-key-rotation
+        title: "Operator SSH key rotation + history scrub"
+        pct: 0
+        evidence_refs: []
+        notes: "explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1`"
+
+      - id: wave3-merge
+        title: "Wave 3 merge to master"
+        pct: 75
+        evidence_refs: []
+        notes: "branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged"
+
+  # ---------------------------------------------------------------------------
+  - title: "Dev-Harness Guardrails"
+    features:
+      - id: w1-1-ratchet-max
+        title: "Ratchet-growth guard (W1.1) — RATCHET_MAX constant"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_guardrails.py::RATCHET_MAX"
+          - "file:config/ratchet.yml::xfail"
+        notes: "`test_guardrails.py:401 RATCHET_MAX=11`; `[audit W1.1 DONE-VERIFIED]`"
+
+      - id: w1-2-tasks-tick-guard
+        title: "TASKS.md tick guard in preflight (W1.2)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_preflight.py"
+          - "file:scripts/preflight.py::tasks_tick_guard"
+        notes: "`[audit W1.2 DONE-VERIFIED]`"
+
+      - id: w1-3-stop-checks
+        title: "State-based stop checks only — vocabulary list deleted (W1.3)"
+        pct: 100
+        evidence_refs:
+          - "file:.claude/hooks/no_wait_stop.sh::state"
+        notes: "`[audit W1.2-W1.7 DONE-VERIFIED]`"
+
+      - id: w1-4-status-snapshot
+        title: "status-snapshot writes SESSION.md in place + drift detector (W1.4)"
+        pct: 100
+        evidence_refs:
+          - "file:scripts/status_snapshot.py::write_session_md"
+        notes: "`[audit W1.2-W1.7 DONE-VERIFIED]`"
+
+      - id: w1-5-audit-evidence
+        title: "audit-evidence wired into validate (W1.5)"
+        pct: 100
+        evidence_refs:
+          - "file:Makefile::audit-evidence"
+        notes: "`[audit W1.2-W1.7 DONE-VERIFIED]`"
+
+      - id: w1-6-makefile-hygiene
+        title: "Makefile hygiene: stderr capture, MYPY_MAX var, gate coverage (W1.6)"
+        pct: 100
+        evidence_refs:
+          - "file:Makefile::MYPY_MAX"
+        notes: "`[audit W1.2-W1.7 DONE-VERIFIED]`"
+
+      - id: w1-7-preflight-fail-closed
+        title: "preflight fails closed on unknown criteria (W1.7/H16)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_preflight.py"
+        notes: "asserts FAIL on unknown criterion; `[audit W1.2-W1.7 DONE-VERIFIED]`"
+
+      - id: w2-ratchet-burndown
+        title: "Ratchet burn-down: 93 → 11 entries (W2 phases)"
+        pct: 100
+        evidence_refs:
+          - "file:config/ratchet.yml::xfail"
+          - "file:Makefile::RATCHET_MAX"
+        notes: "`config/ratchet.yml` 11 entries; `[audit W2.x DONE-VERIFIED]`"
+
+      - id: anti-stop-fuzz
+        title: "Anti-stop fuzz test (6/6 catching BUGS.md incidents)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_anti_stop_fuzz.py"
+        notes: "6 passed; `[a1c1185]`"
+
+      - id: w3-6-proof-table
+        title: "W3.6 per-item proof table (50 G/S/F/M proofs, 0 GAP)"
+        pct: 100
+        evidence_refs:
+          - "file:TASKS.md::proof"
+        notes: "`TASKS.md:167-246`; 50 named tests; `[6915362]`; caveat: ~5-6 pass tests of partially-inert prod code"
+
+      - id: w4-4-pydantic-settings
+        title: "pydantic-settings UserConfig + GLUDD_ env prefix (W4.4)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w4_4_pydantic_settings.py"
+        notes: "5 passed; `[15db868]`"
+
+      - id: w4-3-watchdog
+        title: "Watchdog FileWatcher in integrity scanner (W4.3)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w4_3_watchdog.py"
+        notes: "2 passed + 3 xpassed; `[15db868]`"
+
+      - id: w4-5-deptry
+        title: "deptry installed; langchain/langgraph deferred (W4.5)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_w4_5_deps_audit.py"
+        notes: "`[15db868]`"
+
+      - id: w5-5-readme-no-hardcoded
+        title: "README claims measured / no hardcoded numbers (W5.5)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_status_snapshot.py::TestReadmeNoHardcodedMetrics"
+        notes: "5 passed; `[526104b]`"
+
+      - id: release-cut-target
+        title: "`make release-cut` target exists and runs (enforcement of this table)"
+        pct: 100
+        evidence_refs:
+          - "file:Makefile::release-cut"
+          - "file:scripts/check_readme_status_current.py::main"
+        notes: "`Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact"
+
+  # ---------------------------------------------------------------------------
+  - title: "Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)"
+    features:
+      - id: sf-return-id-no-fk
+        title: "`TaskDecisionModel.return_id` no FK/unique — dangling decisions"
+        pct: 0
+        evidence_refs: []
+        notes: "`db/models.py:191`; P1; not built; `[NEW_FINDINGS]`"
+
+      - id: sf-todo-version-noop
+        title: "`TodoModel.version` optimistic lock is no-op"
+        pct: 0
+        evidence_refs: []
+        notes: "`db/models.py:109`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-resolve-secret-leak
+        title: "`resolve()` leaks secret material via `str(exc)` in logs"
+        pct: 0
+        evidence_refs: []
+        notes: "`secrets/manager.py:112-115,248`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-secret-alias-injection
+        title: "`SecretAlias` path/mount injection — arbitrary backend path read"
+        pct: 0
+        evidence_refs: []
+        notes: "`secrets/manager.py:66-91`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-worker-workspace-leak
+        title: "Worker workspace leak on failure (no cleanup)"
+        pct: 0
+        evidence_refs: []
+        notes: "`worker/app.py:195-217`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-cosign-key-repr
+        title: "`CosignKey.__repr__` leaks private_key + password to logs"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/secrets/cosign.py::__repr__"
+        notes: "FIXED on `feature/alpha4-green-the-gate`; redacts private key + password; verified 2026-06-25"
+
+      - id: sf-circuit-breaker-health
+        title: "`call_model_with_fallback` never checks circuit-breaker health"
+        pct: 0
+        evidence_refs: []
+        notes: "`models/gateway.py:663-688`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-can-invoke-dead
+        title: "`AgentDispatcher.dispatch_one` never calls `registry.can_invoke` — permission matrix dead"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_can_invoke_daemon_activation.py"
+          - "file:src/general_ludd/pipeline/daemon_adapters.py::make_dispatch_fn"
+          - "file:src/general_ludd/daemon_wiring.py::make_role_handler"
+        notes: "FIXED `[a4a2e1a]`; both dispatch sites stamp `invoker_name=build` (`pipeline/daemon_adapters.py:48,82` + `daemon_wiring.py:153`); verified 2026-06-25"
+
+      - id: sf-alembic-migration-drift
+        title: "Alembic migration drift: 9 tables created, ORM defines 16+"
+        pct: 0
+        evidence_refs: []
+        notes: "`alembic/migrations/001_initial_schema.py`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-fire-webhook-sync
+        title: "`_fire_webhook` calls sync `httpx.post` from async path — freezes event loop"
+        pct: 30
+        evidence_refs:
+          - "file:src/general_ludd/events/hooks.py::_fire_webhook"
+        notes: "STILL-OPEN as of 2026-06-26 audit — `_fire_webhook` (`hooks.py:227`) still calls blocking `httpx.post` (`hooks.py:252`), NOT `AsyncClient`; code comment defers async as a follow-up; can block event loop up to `timeout_seconds`; P1; `[NEW_FINDINGS]`"
+
+      - id: sf-webhook-credentials-leak
+        title: "Webhook full event payload leaks model credentials"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/events/hooks.py::_redact_payload"
+        notes: "FIXED on `feature/alpha4-green-the-gate`; payload filtered/redacted; verified 2026-06-25"
+
+      - id: sf-mcp-tool-collision
+        title: "MCP tool-name collision silently hijacks routing"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_tool_loop_routing.py::test_refused_collision_leaves_dispatch_pinned_to_legit_server"
+          - "file:src/general_ludd/mcp/registry.py::collision"
+        notes: "FIXED `[45fcfe7]`; `MCPToolRegistry.register_tool` (`mcp/registry.py:51`) raises `ValueError(Tool name collision)` — fail-closes on duplicate registration"
+
+      - id: sf-importlib-ace
+        title: "`connectors/registry.py` arbitrary code execution via `importlib.import_module`"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/connectors/registry.py::_ALLOWED_CONNECTOR_MODULES"
+        notes: "FIXED on `feature/alpha4-green-the-gate`; pkgutil-built `_ALLOWED_CONNECTOR_MODULES` frozenset (`registry.py:310-313`) gates every importlib call via `_check_module_allowlist` (`registry.py:370-413`)"
+
+      - id: sf-psk-fail-open
+        title: "PSK fail-open: unset `GLUDD_PSK` + `GLUDD_REQUIRE_AUTH` → no auth on /admin"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/daemon.py::GLUDD_REQUIRE_AUTH"
+        notes: "FIXED on `feature/alpha4-green-the-gate`; now fail-closed; verified 2026-06-25"
+
+      - id: sf-status-db-url
+        title: "`/api/status` returns db_url (with credentials) to unauthenticated callers"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/routers/todos.py::status"
+        notes: "FIXED on `feature/alpha4-green-the-gate`; db_url redacted/removed from response"
+
+      - id: sf-spend-limiter-negative
+        title: "`SpendLimiter.restore()` accepts negative cost → cap evasion"
+        pct: 100
+        evidence_refs:
+          - "file:src/general_ludd/controllers/spend_limiter.py::restore"
+        notes: "FIXED on `feature/alpha4-green-the-gate`; guards against negative cost"
+
+      - id: sf-batch3-security
+        title: "F5b/F6a/F6b security features (batch3-security, 14 tests)"
+        pct: 50
+        evidence_refs: []
+        notes: "branch `85158c2`; gate-clean; not merged; `[SESSION.md]`"
+
+      - id: sf-batch4-security
+        title: "D-04/D-05/D-06/D-29/D-30/D-31 (batch-4 branch)"
+        pct: 10
+        evidence_refs: []
+        notes: "building; not merged; `[SESSION.md]`"
