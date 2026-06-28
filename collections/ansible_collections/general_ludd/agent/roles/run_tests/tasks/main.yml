@@ -1,5 +1,8 @@
 ---
-# run_tests role — run project tests and write artifact
+# run_tests role — run project tests and write artifact.
+#
+# Ported from the legacy root ``roles/run_tests/`` so the collection is the
+# single canonical home. Invoked via FQCN ``general_ludd.agent.run_tests``.
 
 - name: Create artifact directory
   ansible.builtin.file:

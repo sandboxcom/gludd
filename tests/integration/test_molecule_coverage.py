@@ -63,8 +63,11 @@ def _role_scenario(role: str) -> str:
 # call-endpoint modules have no separate test_<module> dir yet, so they remain on
 # the shrinking checklist.
 _NOT_YET_COVERED_MODULES: set[str] = {
+    "gludd_embed",
+    "gludd_environment",
     "gludd_langchain_generate",
     "gludd_langgraph_decision",
+    "gludd_proc_monitor",
 }
 # All other gludd_* modules now have molecule scenarios (W10 complete):
 #   gludd_agent_run   -> test_gludd_agent_run  (port 8781, POST /admin/models/call HTTP fallback)
@@ -85,14 +88,20 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 # Roles that DO NOT yet have a role_<name> molecule scenario.
 # New roles added in the observability batch (W-observe) that don't yet have
 # molecule scenarios — tracked here as the shrinking checklist.
+# run_tests / lint_and_check: thin wrappers ported from the legacy root
+# roles/ dir during the single-home migration (2026-06-28). They do not hit
+# the daemon — scenarios are TODO but the roles are wired via FQCN.
 _NOT_YET_COVERED_ROLES: set[str] = {
     "gludd_update",
+    "lint_and_check",
+    "manage_processes",
     "observe_deploy_correlator",
     "observe_error_spike_rca",
     "observe_incident_triage",
     "observe_latency_regression",
     "observe_saturation_capacity",
     "observe_security_signal",
+    "run_tests",
 }
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)

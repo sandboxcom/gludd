@@ -19,7 +19,7 @@
 
     - name: Run test suite via run_tests role
       ansible.builtin.include_role:
-        name: run_tests
+        name: general_ludd.agent.run_tests
       vars:
         test_dir: "{{ test_dir }}"
         test_cmd: "make test-count"

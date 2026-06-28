@@ -20,7 +20,7 @@
 
     - name: Run lint and check after dependency update
       ansible.builtin.include_role:
-        name: lint_and_check
+        name: general_ludd.agent.lint_and_check
       vars:
         project_dir: "{{ project_dir }}"
         artifact_dir: "{{ artifact_dir }}"
