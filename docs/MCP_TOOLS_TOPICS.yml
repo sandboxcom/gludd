@@ -362,8 +362,10 @@ general_ludd.agent.gludd_embed:
       the C(top_k) most-similar items ranked by cosine similarity. C(corpus) selects
       the corpus — C(skills) (the live skill registry, descriptions matched on the
       fly), C(task_types) (the canonical task types), C(prompts) (the persisted prompt
-      profiles), or C(traces) (recent execution traces, work_type/phase/span descriptions
-      matched on the fly). The snapshot is injected under C(ansible_facts.gludd_embed).
+      profiles), C(traces) (recent execution traces, work_type/phase/span descriptions
+      matched on the fly), or C(events) (recent audit events, event_type/entity_type
+      and a summary of the details JSON matched on the fly). The snapshot is injected
+      under C(ansible_facts.gludd_embed).
     - Read-only and check-mode safe — it performs no writes (C(changed=False)).
     - Similarity is computed over the same embedding layer the adaptive router uses
       (HashEmbedder offline, OpenAIEmbedder when C(OPENAI_API_KEY) is set on the daemon).
@@ -375,13 +377,16 @@ general_ludd.agent.gludd_embed:
         - task_types
         - prompts
         - traces
+        - events
         default: skills
         description:
         - The real corpus to search when C(op=search). C(skills) matches the live
           skill registry; C(task_types) matches the canonical task types; C(prompts)
           matches the persisted prompt profiles (each prompt_text embedded on the
           fly); C(traces) matches recent execution traces (each trace's work_type/phase
-          labels/span descriptions embedded on the fly).
+          labels/span descriptions embedded on the fly); C(events) matches recent
+          audit events (each event's event_type/entity_type and a summary of its details
+          JSON embedded on the fly).
         type: str
       daemon_url:
         default: http://localhost:8000
@@ -1354,6 +1359,86 @@ general_ludd.agent.gludd_model_call:
       returned: success
       type: dict
   module: gludd_model_call
+general_ludd.agent.gludd_osquery:
+  DOCUMENTATION:
+    description:
+    - Runs a B(read-only) C(SELECT) query against C(osqueryi --json) and returns the
+      result rows under C(ansible_facts.gludd_osquery) so a playbook (or the model
+      running a job) can branch on real system state — processes, users, mounts, network
+      interfaces, installed packages, system_info, etc.
+    - SECURITY — only C(SELECT) queries are permitted. The query is validated to start
+      with C(SELECT) (after optional C(WITH ...) CTEs) and is rejected if it contains
+      any mutating / side-effecting keyword (C(INSERT)/C(UPDATE)/C(DELETE)/C(DROP)/C(CREATE)/C(ALTER)/C(ATTACH)/
+      C(DETACH)/C(PRAGMA)/C(REPLACE)/C(VACUUM)). osquery's virtual tables are mostly
+      read-only, but this module refuses to even hand a write-shaped query to the
+      binary.
+    - The osquery binary is resolved from the daemon's filestore (C(binaries/osquery),
+      downloaded on first use by the BinaryBootstrapper) when running in the same
+      venv as the daemon; otherwise it falls back to an C(osqueryi) on the system
+      C(PATH).
+    - Runs the binary via an explicit argument list (never C(shell=True)).
+    - Read-only and check-mode safe — it performs no writes. In check mode the query
+      is validated and the binary located, but osquery is not executed.
+    module: gludd_osquery
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon (reserved for future remote resolution).
+        type: str
+      osquery_path:
+        default: ''
+        description:
+        - Explicit path to the C(osqueryi) binary. When unset the module resolves
+          it from the daemon filestore, then from the system C(PATH).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      query:
+        description: A single read-only osquery SQL C(SELECT) statement.
+        required: true
+        type: str
+      timeout:
+        default: 10
+        description: Subprocess timeout in seconds for the osqueryi call.
+        type: int
+    short_description: Query live system state via osquery and inject rows as ansible_facts
+  EXAMPLES:
+  - general_ludd.agent.gludd_osquery:
+      query: SELECT pid, name, state FROM processes LIMIT 20
+    name: List running processes
+    register: procs
+  - ansible.builtin.debug:
+      msg: nginx is running
+    name: Branch on a process being present
+    when: ansible_facts.gludd_osquery.rows | selectattr('name', 'equalto', 'nginx')
+      | list | length > 0
+  - general_ludd.agent.gludd_osquery:
+      query: SELECT hostname, cpu_brand, physical_memory FROM system_info
+    name: System info
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_osquery:
+          contains:
+            count:
+              description: Number of rows returned.
+              type: int
+            query:
+              description: The validated query that was executed.
+              type: str
+            rows:
+              description: List of result rows (each a dict of column->value).
+              type: list
+          description: The osquery result — C(rows), C(count), and the C(query) run.
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_osquery) result.
+      returned: always
+      type: dict
+  module: gludd_osquery
 general_ludd.agent.gludd_ping:
   DOCUMENTATION:
     description:
