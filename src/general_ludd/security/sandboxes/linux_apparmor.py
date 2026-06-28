@@ -1,8 +1,8 @@
 """Linux AppArmor backend.
 
 Translates a :class:`PermissionSpec` into an AppArmor profile under
-``/etc/apparmor.d/gludd-<agent_id>``, loads it via ``apparmor_parser -r``, and
-verifies via ``aa-status --json``. Denies (``spec.denied``) become ``deny``
+``/etc/apparmor.d/gludd-<agent_type>``, loads it via ``apparmor_parser -r``,
+and verifies via ``aa-status --json``. Denies (``spec.denied``) become ``deny``
 rules that win over any ``allow``; file-path constraints become
 ``path.prefix=`` rules and net constraints become ``network ... peer=`` rules.
 """
@@ -20,6 +20,9 @@ from general_ludd.security.sandboxes import (
     PermissionSpec,
     SandboxHandle,
     SandboxTarget,
+    allowed_hosts,
+    allowed_ports,
+    path_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -27,36 +30,44 @@ logger = logging.getLogger(__name__)
 PROFILE_DIR = Path("/etc/apparmor.d")
 
 
+def _is_file_family(cap: Capability) -> bool:
+    return cap.resource.startswith("file:")
+
+
+def _is_net_family(cap: Capability) -> bool:
+    return cap.resource.startswith("net:")
+
+
 def _deny_rule_for(cap: Capability) -> str:
-    if cap.resource == "fs":
-        prefix = cap.constraint_value("path_prefix")
-        target = prefix if isinstance(prefix, str) else "/**"
+    if _is_file_family(cap):
+        prefix = path_prefix(cap)
+        target = prefix or "/**"
         return f"  deny {target} rwklx,"
-    if cap.resource == "net":
-        host = cap.constraint_value("host")
-        peer = f' peer="{host}"' if isinstance(host, str) else ""
+    if _is_net_family(cap):
+        hosts = allowed_hosts(cap)
+        peer = f' peer="{hosts[0]}"' if hosts else ""
         return f"  deny network inet stream,{peer}"
     return f"  deny {cap.resource} **,"
 
 
 def _allow_rule_for(cap: Capability) -> str:
-    if cap.resource == "fs":
-        prefix = cap.constraint_value("path_prefix")
-        target = prefix if isinstance(prefix, str) else "/**"
+    if _is_file_family(cap):
+        prefix = path_prefix(cap)
+        target = prefix or "/**"
         perms = "".join(sorted(cap.actions)) or "r"
         return f"  {target} {perms},"
-    if cap.resource == "net":
-        host = cap.constraint_value("host")
-        port = cap.constraint_value("port")
-        peer = f' peer="{host}"' if isinstance(host, str) else ""
-        port_clause = f" port={port}" if isinstance(port, int) else ""
+    if _is_net_family(cap):
+        hosts = allowed_hosts(cap)
+        ports = allowed_ports(cap)
+        peer = f' peer="{hosts[0]}"' if hosts else ""
+        port_clause = f" port={ports[0]}" if ports else ""
         return f"  network inet stream,{peer}{port_clause}"
     return f"  {cap.resource},"
 
 
 def render_profile(spec: PermissionSpec, target: SandboxTarget) -> str:
     """Render an AppArmor profile text for ``spec``."""
-    profile_name = f"gludd-{spec.agent_id}"
+    profile_name = f"gludd-{spec.agent_type}"
     attach = ""
     if target.pid is not None:
         attach = f"\n  audit deny ptrace,\n  signal peer=@{profile_name},"
@@ -95,7 +106,7 @@ class AppArmorBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
-        profile_name = f"gludd-{spec.agent_id}"
+        profile_name = f"gludd-{spec.agent_type}"
         path = PROFILE_DIR / profile_name
         try:
             text = render_profile(spec, target)
@@ -146,7 +157,10 @@ class AppArmorBackend:
             message=f"profile {profile_name} loaded",
             capability=None,
         ))
-        text = (PROFILE_DIR / profile_name).read_text() if (PROFILE_DIR / profile_name).exists() else ""
+        text = (
+            (PROFILE_DIR / profile_name).read_text()
+            if (PROFILE_DIR / profile_name).exists() else ""
+        )
         for cap in spec.denied:
             rule = _deny_rule_for(cap).strip()
             if rule not in text:
