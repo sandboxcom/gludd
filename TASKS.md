@@ -485,3 +485,16 @@ Findings source: `docs/audit/QUEUE_LEASE_CLAIM_CONCURRENCY_AUDIT_2026-06-25.md` 
 - [x] Q.F2 — claim_runnable orders candidates by priority DESC, created_at ASC (prevents priority inversion in PID-cap victim selection) | evidence: make test-specific TESTFILE='tests/unit/test_claim_runnable_fifo.py::TestClaimRunnablePriority' 2 passed (test_higher_priority_claimed_first, test_priority_breaks_tie_then_created_at) 6e684b4
 - [x] Q.F3 — PID-cap release deletes the bucket-lease row in the same session before flush (prevents orphan-lease accumulation + closes F1's main trigger) | evidence: make test-specific TESTFILE='tests/security/test_eventloop_redteam.py::test_pid_cap_release_deletes_lease_row' 1 passed bba8c92
 - [x] Q.F4 — bucket_leases.expires_at indexed (models.py index=True) + alembic migration 011 (upgrade creates index, downgrade drops, revision→010) | evidence: make test-specific TESTFILE='tests/unit/test_db_migrations.py::TestMigration011ExpiresAtIndex' 3 passed (test_revision_links_to_010, test_upgrade_creates_index, test_downgrade_drops_index) + TestBucketLeaseModelExpiresAtIndexed::test_expires_at_column_has_index 1 passed 14ee691
+
+## Phase Q2 — Session-Start + Schema + Renderer + Terraform (2026-06-28)
+
+Placeholder rows for in-flight work. Implementing subagents tick `[x]` when their gate goes green and paste evidence (test file + pass count + commit hash).
+
+- [ ] Q2.1 — Session-start orchestration contract: `.opencode/plugin/enforce-session-start.ts` PREPENDS `🚨 SESSION-START DIRECTIVE` as first system-prompt block; opt-in `tool.execute.before` hard gate via `GLUDD_SESSION_START_ENFORCE=1`; registered in `opencode.json` | evidence: pending gate
+- [ ] Q2.2 — opencode.json schema guard: `tests/unit/test_opencode_json_schema.py` allowlist of 35 schema-allowed top-level keys + regression marker for `env` breakage; PreToolUse guard denies Write/Edit to `opencode.json` with unknown top-level keys | evidence: pending gate
+- [ ] Q2.3 — Session-start plugin shape test: `tests/unit/test_session_start_plugin.py` pins directive-injection + opt-in hard-gate shape | evidence: pending gate
+- [ ] Q2.4 — Terraform phase 0: bootstrap module structure | evidence: pending gate
+- [ ] Q2.5 — Terraform phase 1: base infrastructure provisioning | evidence: pending gate
+- [ ] Q2.6 — Terraform phase 2: application layer wiring | evidence: pending gate
+- [ ] Q2.7 — Renderer phase 1: prompt/skill renderer wiring | evidence: pending gate
+- [ ] Q2.8 — `make validate-opencode-config` target wired as gate prerequisite | evidence: pending gate

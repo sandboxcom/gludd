@@ -179,39 +179,42 @@ that fix #1 (the reactive floor block) cannot provide.
 left. Mitigation: the backlog-count gate (`open_work >= 3`) ensures the
 shape rule only fires when there is clearly more to fan out.
 
-### Fix #3 — Wire `opencode.json` env block + AGENTS.md mechanical rule (TODO)
+### Fix #3 — Wire `opencode.json` env block + AGENTS.md mechanical rule (RESOLVED-MOOT)
 
-**Problem:** Even with fixes #1 and #2, the agent needs to *know* the
-rules are mechanically enforced, not just advisory. Currently
-`opencode.json` has no `env` block setting `CLAUDE_AGENT_FLOOR=10` or
-`GLUDD_FLOOR_ENFORCE=1`. The defaults come from the plugin source, which
-the agent never sees.
+**Status:** RESOLVED-MOOT — the opencode.json schema
+(`https://opencode.ai/config.json`, `$defs.Config`) sets
+`additionalProperties: false`, so a top-level `env` key is **not a valid
+config key** and opencode silently ignores it. Adding the block would
+have had zero effect.
 
-**Fix:**
+**Resolution path (the one actually in place):**
 
-1. Add to `opencode.json`:
-   ```json
-   "env": {
-     "CLAUDE_AGENT_FLOOR": "10",
-     "GLUDD_FLOOR_ENFORCE": "1",
-     "GLUDD_TASK_DEADLINE_ENABLED": "1"
-   }
-   ```
-2. Update the AGENTS.md "Minimum 10 Subagents" section to state — in the
-   *Mechanical Contract* voice, not the *advisory* voice — that the floor
-   is **machine-enforced**, list the deny conditions, and document the
-   bounded escape (`GLUDD_FLOOR_MAXBLOCK`) so the agent knows it can still
-   make progress after 4 consecutive denials.
+1. **Shell environment** carries `CLAUDE_AGENT_FLOOR=10`,
+   `GLUDD_FLOOR_ENFORCE=1`, `GLUDD_TASK_DEADLINE_ENABLED=1`. These are
+   read by the plugins the standard way (`process.env.<NAME>`); they do
+   not flow through opencode.json.
+2. **Regression test** — `tests/unit/test_opencode_json_schema.py`
+   pins this: `ALLOWED_TOP_LEVEL_KEYS` excludes `env`,
+   `test_known_bad_keys_are_rejected` asserts `env` is classified
+   unknown, and `test_current_config_has_no_env_top_level` asserts the
+   live config has no `env` key. Re-introducing the bad key fails the
+   gate.
+3. **AGENTS.md mechanical rewrite** — the "Minimum 10 Subagents" and
+   "Message-shape mechanical rule" sections already describe the
+   machine-enforced behavior (deny conditions, `GLUDD_FLOOR_MAXBLOCK`
+   escape). No further rewrite is required for this item; the residual
+   mechanical-rule work is tracked under §5 (pull behavioral rules into
+   the Mechanical Contract) — that is independent of the env-block
+   question and remains open.
 
-**Why:** The agent behaves according to what it reads in `AGENTS.md` plus
-what it observes in tool-call denials. If `AGENTS.md` says "you MUST" but
-the plugin only warns, the agent learns the rule is soft. If `AGENTS.md`
-says "the plugin will DENY your bash call until you dispatch" AND the
-plugin actually does, the agent internalizes the constraint.
-
-**This is the meta-rule (3-layer guardrail) applied to the floor policy:**
-config permission (opencode.json env) + runtime hook (the new
-`tool.execute.before`) + agent prompt (the AGENTS.md rewrite).
+**Why this is the correct resolution, not a workaround:** the original
+fix proposal assumed opencode.json supported a top-level `env`. It does
+not. The 3-layer guardrail still holds — config permission (shell env +
+`.opencode/plugin` permission rules in `opencode.json`) + runtime hook
+(`tool.execute.before` in `enforce-floor.ts`) + agent prompt (AGENTS.md
+mechanical sections). The "config permission" layer is just expressed
+through the shell + the `permission` block in opencode.json rather than
+a fictional `env` key.
 
 ---
 
