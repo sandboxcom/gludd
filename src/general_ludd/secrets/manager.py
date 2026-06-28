@@ -3,17 +3,21 @@
 from __future__ import annotations
 
 import asyncio
+import fnmatch
 import logging
 import os
 import re
 import uuid
 from dataclasses import dataclass, field
-from typing import Any
+from typing import TYPE_CHECKING, Any
 
 import hvac
 
 from general_ludd.config.binary_paths import BinaryPathResolver
 from general_ludd.secrets.config import OpenBaoConfig
+
+if TYPE_CHECKING:
+    from general_ludd.security.permissions import PermissionSpec
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +37,40 @@ class SecretsUnavailableError(RuntimeError):
     auth failure silently masquerade as a missing secret, causing callers to
     fail OPEN. Surfacing this error instead forces callers to fail CLOSED.
     """
+
+
+class SecretPermissionDeniedError(SecretsUnavailableError):
+    """The active PermissionSpec refused access to ``path`` for ``action``.
+
+    Raised by SecretsManager when ``permission_spec`` is set and the spec has
+    no ``secret:openbao`` capability granting ``action`` on a pattern matching
+    ``path``. Inherits from :class:`SecretsUnavailableError` so existing
+    fail-closed callers catching that base also intercept permission denials
+    (the call must NOT be retried as if the backend were down — the spec is
+    the authority, not the backend).
+
+    The error carries the SANITIZED allow-list (glob patterns only — never
+    secret values) so the caller can introspect "what paths COULD I have
+    read?" without re-issuing the request or escalating privileges.
+    """
+
+    def __init__(
+        self,
+        path: str,
+        action: str,
+        agent_type: str,
+        allowed_patterns: list[str],
+    ) -> None:
+        self.path = path
+        self.action = action
+        self.agent_type = agent_type
+        self.allowed_patterns = list(allowed_patterns)
+        patterns_repr = ", ".join(allowed_patterns) if allowed_patterns else "<none>"
+        super().__init__(
+            f"secret permission denied: agent_type={agent_type!r} "
+            f"action={action!r} path={path!r} "
+            f"allowed_openbao_paths=[{patterns_repr}]"
+        )
 
 
 def _is_genuine_not_found(exc: BaseException) -> bool:
@@ -85,6 +123,7 @@ class SecretsManager:
         client: Any = None,
         aliases: dict[str, SecretAlias] | None = None,
         config: OpenBaoConfig | None = None,
+        permission_spec: PermissionSpec | None = None,
     ) -> None:
         self._client = client
         self._aliases = aliases or {}
@@ -96,6 +135,43 @@ class SecretsManager:
         # W5.1: secret-id accessors we have issued, tracked so a rotation can
         # destroy the prior secret_id once a fresh one is minted.
         self._secret_id_accessors: dict[str, list[str]] = {}
+        # OpenBao capability gate. ``None`` = back-compat: no enforcement
+        # (existing callers — admin PSK, internal daemon subsystems — are
+        # unaffected). When non-None, every read/write/list/delete consults the
+        # spec's ``secret:openbao`` capability and raises
+        # SecretPermissionDeniedError when the path is outside the allow-list.
+        self._permission_spec = permission_spec
+
+    def _enforce_permission(self, path: str, action: str) -> None:
+        """Raise SecretPermissionDeniedError unless the spec permits ``action`` on ``path``.
+
+        No-op when no spec is attached (back-compat / admin PSK path). When a
+        spec IS attached, finds the ``secret:openbao`` capability, checks that
+        ``action`` is in its actions list, and asserts that at least one glob
+        pattern in ``constraints["openbao_paths"]`` matches ``path`` via
+        :func:`fnmatch.fnmatchcase` (so ``*`` matches across ``/`` separators).
+        """
+        spec = self._permission_spec
+        if spec is None:
+            return
+        cap = spec.capability_for("secret:openbao")
+        if cap is None or action not in cap.actions:
+            raise SecretPermissionDeniedError(
+                path=path,
+                action=action,
+                agent_type=spec.agent_type,
+                allowed_patterns=list(
+                    (cap.constraints.get("openbao_paths") if cap else None) or []
+                ),
+            )
+        patterns = list(cap.constraints.get("openbao_paths") or [])
+        if not any(fnmatch.fnmatchcase(path, pat) for pat in patterns):
+            raise SecretPermissionDeniedError(
+                path=path,
+                action=action,
+                agent_type=spec.agent_type,
+                allowed_patterns=patterns,
+            )
 
     def register_alias(self, alias: SecretAlias) -> None:
         if not _PATH_RE.match(alias.path) or ".." in alias.path.split("/"):
@@ -279,6 +355,7 @@ class SecretsManager:
 
     def write_secret(self, path: str, value: dict[str, Any]) -> None:
         self._validate_secret_path(path)
+        self._enforce_permission(path, action="write")
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         self._client.secrets.kv.v2.create_or_update_secret(
@@ -289,6 +366,7 @@ class SecretsManager:
 
     def read_secret(self, path: str) -> dict[str, Any] | None:
         self._validate_secret_path(path)
+        self._enforce_permission(path, action="read")
         self._require_connected_for_read(context_label=f"reading {path!r}")
         try:
             result = self._client.secrets.kv.v2.read_secret_version(
@@ -307,11 +385,41 @@ class SecretsManager:
 
     def delete_secret(self, path: str) -> None:
         self._validate_secret_path(path)
+        self._enforce_permission(path, action="delete")
         if self._client is None:
             raise RuntimeError("Not connected. Call connect() first.")
         self._client.secrets.kv.v2.delete_metadata_and_all_versions(
             path=path, mount_point=self._config.kv_mount,
         )
+
+    def list_secrets(self, prefix: str) -> list[str]:
+        """List secret keys under ``prefix`` (the OpenBao KV v2 metadata path).
+
+        Permission-gated by ``action="list"``: the prefix must be inside the
+        spec's allow-list (matched as a path so a denied prefix cannot be
+        enumerated). Returns the list of keys the backend reports, or ``[]``
+        when the prefix does not exist.
+        """
+        self._validate_secret_path(prefix)
+        self._enforce_permission(prefix, action="list")
+        if self._client is None:
+            raise RuntimeError("Not connected. Call connect() first.")
+        try:
+            result = self._client.secrets.kv.v2.list_metadata(
+                path=prefix, mount_point=self._config.kv_mount,
+            )
+        except Exception as exc:
+            if _is_genuine_not_found(exc):
+                return []
+            logger.error(
+                "Failed to list secrets at %s: %s", prefix, type(exc).__name__
+            )
+            raise SecretsUnavailableError(
+                f"secrets backend unavailable listing {prefix!r}: {type(exc).__name__}"
+            ) from exc
+        if not result or "data" not in result:
+            return []
+        return list(result["data"].get("keys", []))
 
     def pin_image_digest(self, image_ref: str, digest: str) -> None:
         self.write_secret(
