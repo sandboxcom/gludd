@@ -1653,7 +1653,13 @@ def create_daemon_app(
             return True
         if method.upper() not in _SAFE_METHODS:
             return False
-        return path in _PUBLIC_PATHS or path == "/docs" or path.startswith("/docs/")
+        if path in _PUBLIC_PATHS or path == "/docs" or path.startswith("/docs/"):
+            return True
+        # /render/<name> is a public read-only HTML page (the renderer output).
+        # It must be reachable without the admin PSK so operators can share a
+        # rendered report URL. Only GET/HEAD/OPTIONS land here (mutating methods
+        # were rejected above by the _SAFE_METHODS gate).
+        return path.startswith("/render/")
 
     @app.middleware("http")
     async def auth_and_stats_middleware(request: Any, call_next: Any) -> Any:
@@ -1881,6 +1887,7 @@ def create_daemon_app(
         projects,
         quantization,
         reload,
+        render,
         schedule,
         self_improve,
         self_update,
@@ -1923,6 +1930,22 @@ def create_daemon_app(
     self_improve.register(app, daemon_state)
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
+    # Playbook web renderer (Phase 1): /api/renderers (PSK) + /render/<name> (public).
+    # Registry discovery is best-effort — a missing playbooks/renderers/ dir must
+    # not crash daemon startup (the router serves a 503 in that case).
+    try:
+        from general_ludd.renderers.executor import RendererExecutor
+        from general_ludd.renderers.registry import RendererRegistry
+
+        _renderer_registry = RendererRegistry()
+        app.state._renderer_registry = _renderer_registry
+        app.state._renderer_executor = RendererExecutor(
+            registry=_renderer_registry,
+            runner=getattr(app.state, "_runner", None),
+        )
+    except Exception as exc:
+        logger.warning("renderer subsystem unavailable: %s", exc)
+    render.register(app, daemon_state)
     # Construct the receiver buffer BEFORE registering the router: the router's
     # routes close over the buffer at register-time (app-creation), which runs
     # before the lifespan. If we left this to the lifespan only, the routes would

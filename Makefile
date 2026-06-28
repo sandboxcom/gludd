@@ -110,7 +110,8 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         test-other-shard \
         alembic-check liveness-debug gate-lowmem-background pygrep \
         mcp-gen mcp-docs-check test-no-false-completion \
-        gen-status-table gen-status-table-full check-status-table
+        gen-status-table gen-status-table-full check-status-table \
+        validate-opencode-config
 
 liveness-debug:
 	@$(UV) run python3 scripts/liveness_debug.py
@@ -394,7 +395,16 @@ collect-check:
 	fi; \
 	echo "Collection OK"
 
-gate:
+# Schema-conformance gate for opencode.json (validates agent/skill/plugin/mcp
+# topology against the project's declared schema). Runs FIRST in the gate
+# (as a prerequisite of `gate:`) so schema drift fails before any slower phase.
+validate-opencode-config:
+	@echo "==> Validating opencode.json schema conformance..."
+	@$(UV) run python -m pytest tests/unit/test_opencode_json_schema.py -q --no-header || \
+		(echo "FAIL: opencode.json schema validation failed — see tests/unit/test_opencode_json_schema.py"; exit 1)
+	@echo "==> opencode.json schema OK"
+
+gate: validate-opencode-config
 	@rm -f .gate-failed
 	@echo "=== GATE $(shell date -u +%Y-%m-%dT%H:%M:%SZ) ===" > .gate-status
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase

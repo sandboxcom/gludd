@@ -68,9 +68,39 @@ function appendWarning(line: string): void {
 function loadDeadlines(): Record<string, number> {
   try {
     const data = JSON.parse(fs.readFileSync(DEADLINE_STATE, "utf8"))
-    return data && typeof data === "object" ? data as Record<string, number> : {}
+    const out = data && typeof data === "object" ? data as Record<string, number> : {}
+    // TTL sweep: drop any entry older than TASK_TIMEOUT_MS * 3 (15 min default).
+    // Prevents unbounded accumulation if a tool.execute.after ever fails to
+    // delete its entry (mismatched id, missing args, hook error). Without this
+    // sweep, a long session leaks entries that throttle-warn once and then sit
+    // in the persistent file forever.
+    sweepStaleEntries(out)
+    return out
   } catch {
     return {}
+  }
+}
+
+function sweepStaleEntries(d: Record<string, number>): void {
+  const now = Date.now()
+  const maxAge = TASK_TIMEOUT_MS * 3 // 15 min default; 3x the deadline window
+  let mutated = false
+  for (const id of Object.keys(d)) {
+    const start = d[id]
+    if (typeof start !== "number") continue
+    if (now - start > maxAge) {
+      delete d[id]
+      warnedIds.delete(id)
+      mutated = true
+    }
+  }
+  // Caller owns the save; sweep only mutates the in-memory dict.
+  if (mutated) {
+    try {
+      const tmp = DEADLINE_STATE + ".tmp"
+      fs.writeFileSync(tmp, JSON.stringify(d))
+      fs.renameSync(tmp, DEADLINE_STATE)
+    } catch { /* fail open */ }
   }
 }
 
@@ -88,6 +118,24 @@ function extractTaskId(args: unknown): string | null {
     const a = args as Record<string, unknown>
     if (typeof a.task_id === "string" && a.task_id) return a.task_id
     if (typeof a.id === "string" && a.id) return a.id
+    // Deterministic fallback: combine stable fields so tool.execute.before and
+    // tool.execute.after produce the SAME id for the same dispatch. Without
+    // this, both hooks see args without a task_id/id (opencode assigns its
+    // own internal ses_... id elsewhere), before falls back to
+    // `auto-${Date.now()}` (timestamp-based, different each call), and after
+    // gets null → never deletes the entry → leak + repeated throttle warns.
+    // djb2 hash of `${subagent_type}:${description}` gives a stable id for the
+    // lifetime of one dispatch (both hooks receive the same args).
+    const desc = typeof a.description === "string" ? a.description : ""
+    const subtype = typeof a.subagent_type === "string" ? a.subagent_type : ""
+    if (desc || subtype) {
+      const raw = `${subtype}:${desc}`
+      let hash = 5381 // djb2
+      for (let i = 0; i < raw.length; i++) {
+        hash = ((hash << 5) + hash + raw.charCodeAt(i)) | 0
+      }
+      return `d-${(hash >>> 0).toString(16)}`
+    }
     return null
   } catch { return null }
 }

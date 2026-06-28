@@ -444,6 +444,125 @@ class TestEnforceStopResponseLooksTerminal:
 
 
 # --------------------------------------------------------------------------- #
+# 3d. enforce-stop.ts — repoHasPendingWork (2026-06-28 incident fix)
+# --------------------------------------------------------------------------- #
+# The "## Done — answer to your question" premature-stop incident bypassed the
+# state-based check because ratchet.yml was empty (the test suite was green).
+# The ratchet-only proxy tracked test failures, not commit/push state, so an
+# agent that did work locally but never committed/pushed could stop with a
+# completion-finale undetected. repoHasPendingWork closes the hole by asking
+# the actual git state (unpushed commits / dirty tree). These tests pin the
+# fix and the new incident-vocabulary patterns.
+class TestEnforceStopRepoPendingWork:
+    """repoHasPendingWork must exist, be wired into both state checks, and the
+    incident-class NO_WAIT_PATTERNS must be present."""
+
+    def test_repo_has_pending_work_function_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "function repoHasPendingWork" in src, (
+            "repoHasPendingWork function missing from enforce-stop.ts — the "
+            "2026-06-28 incident fix (ratchet-only proxy bypass) is gone"
+        )
+
+    def test_repo_has_pending_work_uses_exec_sync(self):
+        """Must shell out to git via execSync (sync, fast, fail-open)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract repoHasPendingWork body"
+        body = m.group(1)
+        assert "execSync" in body, (
+            "repoHasPendingWork must use execSync for synchronous git inspection"
+        )
+        assert "git log --oneline @{u}..HEAD" in body, (
+            "repoHasPendingWork must check unpushed commits via "
+            "'git log --oneline @{u}..HEAD'"
+        )
+        assert "git status --porcelain" in body, (
+            "repoHasPendingWork must check the working tree via 'git status --porcelain'"
+        )
+
+    def test_repo_has_pending_work_has_timeout(self):
+        """Each execSync call must carry a timeout (fail-open under all conditions)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract repoHasPendingWork body"
+        body = m.group(1)
+        assert "timeout: 3000" in body, (
+            "repoHasPendingWork execSync calls must set timeout: 3000 (3s) "
+            "so a wedged git cannot stall the response transform"
+        )
+
+    def test_repo_has_pending_work_fails_open(self):
+        """Errors (no upstream, not a git repo, git unavailable) return false."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function repoHasPendingWork\(.*?\{(.*?)^}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract repoHasPendingWork body"
+        body = m.group(1)
+        # Both inner checks must be wrapped in try/catch that falls through,
+        # and the outer function must have a top-level catch returning false.
+        assert body.count("catch") >= 2, (
+            "repoHasPendingWork must wrap both git calls in try/catch AND have "
+            "a top-level catch — fail-open on any error"
+        )
+
+    def test_repo_has_pending_work_wired_into_state_check(self):
+        """The state-based check must OR repoHasPendingWork() with ratchetEntries."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"repoHasPendingWork\(\)\s*\|\|\s*ratchetEntries\.length",
+            src,
+        ), (
+            "State-based check must use 'repoHasPendingWork() || ratchetEntries.length' "
+            "so uncommitted/unpushed work is treated as pending regardless of ratchet"
+        )
+
+    def test_repo_has_pending_work_called_in_both_blocks(self):
+        """Both the terminal check AND the vocabulary check must use hasPendingWork."""
+        src = ENFORCE_STOP.read_text()
+        # The terminal check
+        assert re.search(r"hasPendingWork\s*&&\s*responseLooksTerminal", src), (
+            "Terminal check must be 'hasPendingWork && responseLooksTerminal(output)'"
+        )
+        # The vocabulary check
+        assert re.search(r"if\s*\(\s*hasPendingWork\s*\)\s*\{", src), (
+            "Vocabulary check must be 'if (hasPendingWork) { ... }' — was it "
+            "left gated on ratchet only?"
+        )
+
+    def test_no_wait_patterns_include_done_answer(self):
+        """The exact incident phrase 'done — answer' must be matched."""
+        body = TestEnforceStopNoWaitPatterns._extract_no_wait_patterns_body(self)
+        assert "done — answer" in body, (
+            "NO_WAIT_PATTERNS missing the 'done — answer' pattern from the "
+            "2026-06-28 incident (## Done — answer to your question)"
+        )
+
+    def test_no_wait_patterns_include_qa_recap(self):
+        """Q&A-recap-as-finale phrasings must be matched."""
+        body = TestEnforceStopNoWaitPatterns._extract_no_wait_patterns_body(self)
+        required = ["answer to your question", "what i changed"]
+        missing = [s for s in required if s not in body]
+        assert not missing, (
+            f"NO_WAIT_PATTERNS missing Q&A-recap incident patterns: {missing}"
+        )
+
+    def test_no_wait_patterns_include_completion_recap_variants(self):
+        """The full set of past-tense completion-framing patterns must be present."""
+        body = TestEnforceStopNoWaitPatterns._extract_no_wait_patterns_body(self)
+        # Each of these regex tokens must appear in the array body.
+        required_tokens = [
+            "what i (?:did|changed|implemented|delivered)",
+            "here'?s|here is) what (?:i|we)",
+            "i (?:made|landed|pushed|committed|shipped|applied)",
+            "single canonical",
+        ]
+        missing = [t for t in required_tokens if t not in body]
+        assert not missing, (
+            f"NO_WAIT_PATTERNS missing incident-class completion-recap patterns: {missing}"
+        )
+
+
+# --------------------------------------------------------------------------- #
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:
@@ -518,6 +637,58 @@ class TestEnforceFloorConstants:
         assert re.search(r"active\s*>\s*CEILING", src), (
             "Ceiling-breach branch (active > CEILING) missing — the guardrail "
             "cannot detect an over-staffed pool (disk/overload risk)"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 4b. enforce-floor.ts — blocking mode (GLUDD_FLOOR_ENFORCE=1)
+# --------------------------------------------------------------------------- #
+class TestEnforceFloorBlocking:
+    """The floor breach must BLOCK, not just append, when enforce mode is on."""
+
+    def test_references_floor_enforce_env_var(self):
+        src = ENFORCE_FLOOR.read_text()
+        assert "GLUDD_FLOOR_ENFORCE" in src, (
+            "enforce-floor.ts must reference GLUDD_FLOOR_ENFORCE so blocking "
+            "mode can be toggled by the operator."
+        )
+
+    def test_floor_breach_has_block_path(self):
+        """When enforce mode is on AND floor is breached, plugin MUST deny/block."""
+        src = ENFORCE_FLOOR.read_text()
+        has_deny = (
+            'permissionDecision: "deny"' in src
+            or "permissionDecision: 'deny'" in src
+            or 'decision: "block"' in src
+            or "decision: 'block'" in src
+            or "tool.execute.before" in src
+        )
+        assert has_deny, (
+            "No deny/block return path in enforce-floor.ts — floor breach is "
+            "still advisory-only. With GLUDD_FLOOR_ENFORCE=1 the plugin MUST "
+            "BLOCK non-dispatch tool calls, not just append a banner."
+        )
+
+    def test_floor_breach_skips_dispatch_tools(self):
+        """Blocking must NOT fire on task/agent/workflow dispatch tools."""
+        src = ENFORCE_FLOOR.read_text()
+        has_helper = (
+            "isDispatchTool" in src
+            or re.search(r'input\.tool\s*===\s*"(?:task|agent|workflow)"', src) is not None
+            or re.search(r"input\.tool\s*===\s*'(?:task|agent|workflow)'", src) is not None
+        )
+        assert has_helper, (
+            "enforce-floor.ts must have an isDispatchTool helper (or direct "
+            "input.tool === 'task'|'agent'|'workflow' check) so dispatch tools "
+            "are NEVER blocked."
+        )
+
+    def test_advisory_append_preserved_as_default(self):
+        """Default mode must still append the advisory banner (back-compat)."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "AGENT-FLOOR BREACH" in src, (
+            "Advisory banner (⛔ AGENT-FLOOR BREACH) must remain as default "
+            "behavior — blocking is opt-in via GLUDD_FLOOR_ENFORCE=1."
         )
 
 
@@ -629,3 +800,53 @@ class TestEnforceDeadlinePlugin:
         src = ENFORCE_DEADLINE.read_text()
         for t in ("task", "agent", "workflow"):
             assert f'"{t}"' in src, f"Dispatch tool '{t}' not covered by deadline plugin"
+
+    def test_extract_task_id_deterministic_fallback(self):
+        """extractTaskId must produce a STABLE id when task_id/id are absent.
+
+        Bug (2026-06-28): tool.execute.before fell back to `auto-${Date.now()}`
+        (different on every call) while tool.execute.after extracted null from
+        the same args → entries were never deleted → leaked into the state file
+        and triggered repeated throttle warns. Fix: djb2-hash the stable
+        dispatch fields (subagent_type + description) so both hooks derive the
+        same id.
+        """
+        src = ENFORCE_DEADLINE.read_text()
+        # Must reference the djb2 hash seed or the d- prefixed fallback shape.
+        assert "5381" in src or "djb2" in src, (
+            "extractTaskId deterministic fallback missing the djb2 hash (5381) — "
+            "before/after id mismatch bug is back"
+        )
+        assert re.search(r"d-\$\{", src) or "d-${" in src, (
+            "extractTaskId must return a `d-<hex>` deterministic id when "
+            "task_id/id are absent (before/after must agree)"
+        )
+        # Must consult subagent_type and description as the stable inputs.
+        assert "subagent_type" in src and "description" in src, (
+            "extractTaskId deterministic fallback must combine subagent_type "
+            "and description from the dispatch args"
+        )
+
+    def test_sweep_stale_entries(self):
+        """A TTL sweep must drop entries older than TASK_TIMEOUT_MS * 3.
+
+        Belt-and-suspenders for any future id-mismatch edge case: even if a
+        tool.execute.after fails to delete its entry, the next loadDeadlines
+        call purges entries older than 3x the timeout window (15 min default).
+        Without this, the persistent state file grows unboundedly across a
+        long session.
+        """
+        src = ENFORCE_DEADLINE.read_text()
+        assert "sweepStaleEntries" in src or "sweep_stale" in src.lower(), (
+            "sweepStaleEntries function missing — loadDeadlines does not purge "
+            "stale entries, so any id mismatch leaks forever"
+        )
+        assert re.search(r"TASK_TIMEOUT_MS\s*\*\s*3", src), (
+            "TTL sweep must use TASK_TIMEOUT_MS * 3 (15 min default) as the "
+            "max age boundary"
+        )
+        # Sweep must be invoked inside loadDeadlines so every read cleans up.
+        assert re.search(r"sweepStaleEntries\s*\(", src), (
+            "sweepStaleEntries must be called from loadDeadlines so stale "
+            "entries are purged on every state file read"
+        )

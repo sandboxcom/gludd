@@ -137,6 +137,20 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\bstatus of (?:your|the|all|this)\b/i,            // "Status of your requests"
   /\bthe moment\b/i,                                  // "The moment CI goes green" (standalone)
   /\ball code work is (?:done|complete|committed)\b/i, // "all code work is DONE"
+  // Past-tense completion framing (2026-06-28 incident): agent said
+  // "## Done — answer to your question" and ended the turn with uncommitted
+  // work. The state-based check missed it (ratchet empty), and these phrases
+  // were absent from the vocabulary list. They catch Q&A-recap-as-finale:
+  // "done — answer", "answer to your question", "## done", "what i changed",
+  // "here's what i did", "i landed/pushed/shipped N commits", etc.
+  /\bdone — answer\b/i,
+  /\banswer to your question\b/i,
+  /^##\s+done\b/im,
+  /\bwhat i changed\b/i,
+  /\bsingle canonical\b/i,
+  /\bwhat i (?:did|changed|implemented|delivered)\b/i,
+  /\b(?:here'?s|here is) what (?:i|we) (?:did|changed|shipped|delivered)\b/i,
+  /\bi (?:made|landed|pushed|committed|shipped|applied)\s+(?:\d+|several|three|two|four)\b/i,
 ]
 
 // ============================================================================
@@ -161,6 +175,55 @@ function responseLooksTerminal(text: string): boolean {
 
 function detectNoWaitPattern(text: string): boolean {
   return NO_WAIT_PATTERNS.some(p => p.test(text))
+}
+
+// ============================================================================
+// REPO PENDING-WORK DETECTOR (2026-06-28 incident fix)
+// The ratchet-only proxy was broken: it tracks TEST failures, not commit/push
+// state. An agent that did work locally (uncommitted or unpushed) then stopped
+// with a "## Done — answer to your question" finale bypassed the state-based
+// check because ratchet.yml was empty. This function closes that hole by asking
+// the actual git state: unpushed commits on a tracked branch OR uncommitted
+// changes in the working tree = pending work.
+// FAIL-OPEN: returns false on any error (not a git repo, no upstream, etc.).
+// ============================================================================
+function repoHasPendingWork(): boolean {
+  try {
+    const { execSync } = require("node:child_process")
+    const cwd = process.cwd()
+    // (a) Unpushed commits on a tracked branch.
+    // `git log --oneline @{u}..HEAD` lists commits reachable from HEAD but
+    // not from the upstream. Empty output = nothing to push. A branch with
+    // no upstream configured exits non-zero (caught -> false).
+    try {
+      const unpushed = execSync("git log --oneline @{u}..HEAD", {
+        cwd,
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+      if (unpushed.trim().length > 0) return true
+    } catch {
+      // no upstream / not a git repo / other — fall through to working-tree check
+    }
+    // (b) Uncommitted changes in the working tree.
+    // `git status --porcelain` prints one line per modified/untracked file.
+    // Empty output = clean tree.
+    try {
+      const status = execSync("git status --porcelain", {
+        cwd,
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+      if (status.trim().length > 0) return true
+    } catch {
+      // not a git repo or git unavailable — fail open
+    }
+    return false
+  } catch {
+    return false
+  }
 }
 
 // ============================================================================
@@ -362,71 +425,74 @@ export default (async ({ }) => {
       try {
         if (typeof output !== "string") return output
 
-        // --- STATE-BASED CHECK (BUGS.md audit #1): if ratchet has entries AND
-        // response looks terminal, block. This is the Whac-A-Mole fix: instead
-        // of matching specific phrases, ask 'does the repo have pending work?'
-        // AND 'does this response look like a finale?' If both are true, the
-        // response is BLOCKED regardless of wording. ---
+        // --- STATE-BASED CHECK (BUGS.md audit #1): if the repo has pending work
+        // (ratchet entries OR git pending state: unpushed commits / dirty tree)
+        // AND the response looks terminal, block. This is the Whac-A-Mole fix:
+        // instead of matching specific phrases, ask 'does the repo have pending
+        // work?' AND 'does this response look like a finale?' If both are true,
+        // the response is BLOCKED regardless of wording. The git-pending check
+        // (repoHasPendingWork) was added 2026-06-28 after the ratchet-only proxy
+        // missed an incident where work was done locally but not pushed/committed
+        // and the agent stopped with a "## Done — answer" finale. ---
         const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+        let ratchetEntries: string[] = []
         if (fs.existsSync(ratchetPath)) {
           const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
-          const ratchetEntries = ratchetContent.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
-          if (ratchetEntries.length > 0 && responseLooksTerminal(output)) {
-            return [
-              "⛔ STATE-BASED STOP BLOCKED: config/ratchet.yml has",
-              `${ratchetEntries.length} entries AND your response looks like a completion`,
-              "report (table, hash, DONE/COMPLETE). This is the Whac-A-Mole fix: instead",
-              "of matching specific phrases, this check asks 'does the repo have pending",
-              "work?' AND 'does this response look like a finale?' If both are true, the",
-              "response is BLOCKED regardless of wording.",
-              "",
-              "MAKE A TOOL CALL. Do NOT end your turn with a status report.",
-            ].join("\n")
-          }
+          ratchetEntries = ratchetContent.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
+        }
+        const hasPendingWork = repoHasPendingWork() || ratchetEntries.length > 0
+        if (hasPendingWork && responseLooksTerminal(output)) {
+          return [
+            "⛔ STATE-BASED STOP BLOCKED: the repo has pending work",
+            `(ratchet: ${ratchetEntries.length} entries; git pending: ${repoHasPendingWork() ? "yes" : "no"})`,
+            "AND your response looks like a completion report (table, hash,",
+            "DONE/COMPLETE). This is the Whac-A-Mole fix: instead of matching",
+            "specific phrases, this check asks 'does the repo have pending work?'",
+            "AND 'does this response look like a finale?' If both are true, the",
+            "response is BLOCKED regardless of wording.",
+            "",
+            "MAKE A TOOL CALL. Do NOT end your turn with a status report.",
+          ].join("\n")
         }
 
-        // --- RATCHET CHECK (vocabulary-based): if config/ratchet.yml has entries,
-        // the project has
-        // known-unfixed work. Any response that sounds like a completion report
-        // or a stop-to-ask is BLOCKED. This is the state-based check that catches
-        // stop patterns vocabulary lists miss. ---
-        if (fs.existsSync(ratchetPath)) {
-          const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
-          const ratchetEntries = ratchetContent.split("\n").filter(
-            l => l.trim() && !l.trim().startsWith("#") && l.includes(":")
+        // --- RATCHET CHECK (vocabulary-based): if the repo has pending work
+        // (ratchet entries OR git pending state), the project has known-unfixed
+        // work. Any response that sounds like a completion report or a
+        // stop-to-ask is BLOCKED. This is the state-based check that catches
+        // stop patterns vocabulary lists miss. Same hasPendingWork OR as the
+        // terminal check above so uncommitted/unpushed work is treated as
+        // pending regardless of ratchet contents. ---
+        if (hasPendingWork) {
+          const lower = output.toLowerCase()
+          const soundsLikeStop = (
+            lower.includes("which do you want") ||
+            lower.includes("which would you") ||
+            lower.includes("which option") ||
+            lower.includes("what would you like") ||
+            lower.includes("do you want me to") ||
+            lower.includes("want me to") ||
+            lower.includes("should i") ||
+            lower.includes("shall i") ||
+            lower.includes("let me know") ||
+            lower.includes("your call") ||
+            lower.includes("up to you") ||
+            lower.includes("prefer") ||
+            lower.includes("options:") ||
+            lower.includes("option 1") ||
+            (lower.includes("options") && lower.includes("?"))
           )
-          if (ratchetEntries.length > 0) {
-            const lower = output.toLowerCase()
-            const soundsLikeStop = (
-              lower.includes("which do you want") ||
-              lower.includes("which would you") ||
-              lower.includes("which option") ||
-              lower.includes("what would you like") ||
-              lower.includes("do you want me to") ||
-              lower.includes("want me to") ||
-              lower.includes("should i") ||
-              lower.includes("shall i") ||
-              lower.includes("let me know") ||
-              lower.includes("your call") ||
-              lower.includes("up to you") ||
-              lower.includes("prefer") ||
-              lower.includes("options:") ||
-              lower.includes("option 1") ||
-              (lower.includes("options") && lower.includes("?"))
-            )
-            if (soundsLikeStop) {
-              return [
-                "⛔ STOP BLOCKED (pending-work audit): config/ratchet.yml has",
-                `${ratchetEntries.length} known-failure entries. The project has`,
-                "unfixed work. Your response presents options / asks permission",
-                "instead of DOING THE WORK. Per the Never-Block-on-Questions",
-                "policy: pick the highest-probability-success option, state the",
-                "assumption in one line, and EXECUTE. Do NOT present options and",
-                "ask which one the user wants. That is the stop-and-ask bug.",
-                "",
-                "DEFAULT TO ACTION NOW.",
-              ].join("\n")
-            }
+          if (soundsLikeStop) {
+            return [
+              "⛔ STOP BLOCKED (pending-work audit): the repo has pending work",
+              `(${ratchetEntries.length} ratchet entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}).`,
+              "Your response presents options / asks permission",
+              "instead of DOING THE WORK. Per the Never-Block-on-Questions",
+              "policy: pick the highest-probability-success option, state the",
+              "assumption in one line, and EXECUTE. Do NOT present options and",
+              "ask which one the user wants. That is the stop-and-ask bug.",
+              "",
+              "DEFAULT TO ACTION NOW.",
+            ].join("\n")
           }
         }
 

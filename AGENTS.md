@@ -12,6 +12,22 @@
 8. **Use existing mature projects — never write custom code when a well-formed existing tool exists.** Before writing a secrets scanner, linter, formatter, type checker, test runner, git hook framework, build system, or security scanner, check if an established project (detect-secrets, gitleaks, trufflehog, ruff, mypy, pytest, pre-commit, etc.) exists. Writing custom infrastructure code that duplicates a mature OSS project is a bug. The only exception is application-specific business logic that has no standard library.
 9. **No unseen events — an unobservable operation is a broken operation.** Any operation that runs longer than a few seconds (a gate, a test suite, a build, a poll loop, a backgrounded task, a daemon background job) MUST surface continuous progress: stream its output (`tee`), emit a per-phase marker, or print a periodic heartbeat. Never redirect a long-running operation solely to `/dev/null` or a buffered file with no live signal. If an event happens and no one can see it, it did not happen. Enforced by `tests/unit/test_observability_guardrails.py`; mirrored for agent behavior in [[gludd-observability-invariant]] memory.
 
+## CRITICAL: Session Start Protocol (FIRST action of every session)
+
+**The FIRST actions of every session, in strict order:**
+
+1. **LOCATE work.** In ONE tool-call message, read `TASKS.md`, `BUGS.md`, `config/ratchet.yml`, `SESSION.md`, and run `make git-status` + `make git-log`. These 6 calls go in ONE message — never serial.
+2. **FAN OUT.** Immediately dispatch a ≥10-wide subagent wave in ONE message on disjoint work units. Do NOT write any prose between session start and the first dispatch wave. No introductions, no status reports, no "here's what I'll do" — just tool calls.
+
+The ONLY valid exceptions to step 2: (a) the user's first message is a direct factual question with a one-word/one-line answer; (b) the user explicitly says "don't multitask yet." In both cases, answer briefly and then dispatch.
+
+A Q&A-style first response ("Sure! Let me look into that.") with no tool calls is a **policy violation** whenever a task backlog exists. Prose-first session starts are forbidden.
+
+**Enforcement (3-layer guardrail):**
+- **Prompt** — this section (proactive instruction).
+- **Plugin** — `.opencode/plugin/enforce-session-start.ts` injects a `SESSION START PROTOCOL` banner at boot via `experimental.chat.system.transform` AND (via `tool.execute.before`) tracks per-session dispatch count in `/tmp/gludd-session-start.json`. Until `GLUDD_SESSION_START_MIN_DISPATCHES` (default 5) parallel task/agent dispatches have been made, every non-dispatch, non-read tool call gets a loud `console.warn`. Set `GLUDD_SESSION_START_ENFORCE=1` to elevate to a hard deny.
+- **Test** — `tests/unit/test_session_start_protocol.py` pins the plugin shape (system.transform + tool.execute.before + state file + floor constant).
+
 ## Completion = Green Gate + TASKS.md Evidence
 
 A task may be called complete ONLY when:
@@ -112,6 +128,52 @@ The sections below are the full policy. The 7-rule contract above is the priorit
 
 **This is a HARD block. Text-only responses while work remains are a policy violation.**
 
+## CRITICAL: Session-Start Orchestration Contract
+
+**The FIRST action of every session is finding your tasks and immediately multitasking on them. No prose before the first dispatch wave.**
+
+This is the antidote to the recurring failure mode where the agent answers the first prompt with inline grinding — reading files serially, running `make` targets on the main thread (which block ALL subagent dispatch), and replying with status prose. That pattern leaves the subagent pool at 0 for the entire first turn.
+
+### The two-step first action (MANDATORY)
+
+**STEP 1 (FIRST tool-call message of the session): read the task backlog in parallel.**
+In ONE message, dispatch these four reads concurrently:
+- `TASKS.md` — current task ledger
+- `BUGS.md` — premature-stop incidents + process failures
+- `config/ratchet.yml` — known-unfixed work (if this file has ANY entries, the project has pending work)
+- `SESSION.md` — last session's state, known gaps, next steps
+
+**STEP 2 (SECOND tool-call message): identify pending work and dispatch a ≥10-wide subagent wave.**
+From the backlog reads, enumerate the pending items and IMMEDIATELY dispatch ≥10 subagents in ONE message (per the Pipeline Orchestration Model and the 10-agent floor). The dispatch wave is the deliverable of turn 1 — not a status report, not a plan, not a Q&A recap.
+
+### What is FORBIDDEN on turn 1
+
+- Answering the user's first prompt with prose, then starting work on turn 2.
+- Serial inline reads (`read TASKS.md` → wait → `read BUGS.md` → wait → ...).
+- Running ANY `make` target on the main thread before the first dispatch wave (`make test-unit`, `make gate`, etc. all block subagent dispatch for their full duration).
+- "Let me first check the state of the repo" followed by text — the state check IS the four parallel reads, and the response to it IS the dispatch wave.
+
+### Enforcement (three layers)
+
+1. **Prompt** — this section.
+2. **Plugin** — `.opencode/plugin/enforce-session-start.ts` registers `experimental.chat.system.transform` to PREPEND a loud `🚨 SESSION-START DIRECTIVE` block as the FIRST section of the system prompt on every conversation. The directive names the four task-tracking files, requires parallel reads, and requires a ≥10-wide dispatch as the second action.
+3. **Hard gate (default ON)** — `GLUDD_SESSION_START_ENFORCE=0` disables the `tool.execute.before` hook that DENIES Write/Edit/mutating Bash on turn 1 until at least one task-tracking file has been read. The gate is ON by default so prose-first relapses are blocked structurally; set `GLUDD_SESSION_START_ENFORCE=0` only for focused single-file work where the directive would wedge a legitimate Q&A turn.
+
+### The exception
+
+If the user's first message is a single specific question that does not imply continuation of prior work ("what does file X do?", "what is 2+2?"), answer it briefly and proceed. The contract binds when there is pending work in the backlog OR the user says "continue", "resume", "keep working", or equivalent. When in doubt, read the backlog — a 4-file parallel read is cheap; grinding inline for a turn is expensive.
+
+## CRITICAL: Continuous Multitasking Enforcement (During-Run)
+
+The session-start contract gets turn 1 right. **This section keeps the floor at 10 for the rest of the run.** A session that opens with a 10-wide dispatch wave and then collapses to serial main-thread grinding has the same aggregate failure mode as never dispatching at all — the pool drains to zero and the next 40 minutes of work runs single-threaded.
+
+1. **The 10-agent floor is enforced AT ALL TIMES, not just at session start.** Whenever the live subagent count drops below 10, the next non-dispatch tool call (Write/Edit/mutating-Bash) is DENIED until a refill wave brings the count back up. Enforced by `.opencode/plugin/enforce-floor.ts` (`tool.execute.before` hook, default ON). Set `GLUDD_FLOOR_ENFORCE=0` for focused single-file work where the floor would wedge legitimate serial edits.
+2. **The session-start gate is also default ON.** The first mutating tool call of a session is denied until at least one task-tracking file (`TASKS.md` / `BUGS.md` / `config/ratchet.yml` / `SESSION.md`) has been read. Set `GLUDD_SESSION_START_ENFORCE=0` to disable.
+3. **Message-shape rule (hard).** Every assistant response containing tool calls MUST satisfy ONE of: (a) zero task/agent/workflow dispatches (pure read/edit/bash for serial hot-file work like `daemon.py` / `loop.py`); OR (b) FIVE OR MORE parallel task/agent/workflow dispatches in ONE message. A response with 1–4 dispatches is a policy violation when ≥3 known work items remain — batch wider, or add research filler to reach 5.
+4. **Fill thin waves with read-only research.** When fewer than 5 edit tasks are queued, fill the remaining dispatch slots with read-only research / audit / review tasks. They never conflict and are always productive. Do not let the wave shrink to 1–4 just because the edit backlog is short.
+5. **Main-thread grind is the anti-pattern.** Four or more main-thread tool calls in a row with no delegation triggers a budget warning from the plugin. Heed it by handing the next chunk of work to a subagent — do not continue grinding inline.
+6. **Refill on every completion.** The moment a subagent result arrives, dispatch a replacement (or a research filler) so the count never lingers below 10. Do not wait for the rest of the batch to drain.
+
 ## CRITICAL: Instruction-Following Priority
 
 **When the user gives a specific instruction that contradicts your current plan, you MUST follow the instruction IMMEDIATELY, before anything else.**
@@ -199,6 +261,7 @@ in code — they must be tracked, root-caused, and fixed before moving on.
 - Presenting a plan or analysis and waiting for approval before implementing
 - Saying "Here's what needs to be done" and then NOT doing it immediately
 - Asking any question that is really "should I do my job?" in disguise
+- **Q&A-style summary as terminal response** — framing the final message as a recap with bolded question headers ("**What changed?**", "**Why?**", "**What's left?**") is the same violation as a markdown status table. A recap with no tool call is a premature stop regardless of phrasing. If anything is uncommitted, unpushed, or stale (README version mismatch, TASKS.md missing rows, .secrets.baseline churn, remote tip behind local), the response MUST be a tool call, never prose — even prose that "answers the user's question."
 
 **The ONLY valid response to identifying work that needs to be done is to DO IT.**
 Never ask. Never wait. Just do the work. If the user wants you to stop,
@@ -1098,6 +1161,18 @@ The goal is a **continuous, pipelined** stream of subagent batches — not a saw
 5. **Read-only research tasks are the filler.** When you don't have 10 edit tasks, fill the remaining slots with research/audit/review tasks. They're reliable and always productive.
 6. **Dispatch commit+push AS a subagent.** One of the 10 tasks runs `make ship-commit MSG='...'`. This keeps 9 productive tasks running while the commit happens in parallel.
 
+### Message-shape mechanical rule (HARD ENFORCEMENT)
+
+Every assistant response containing tool calls MUST satisfy ONE of:
+- **(a) Zero task/agent/workflow dispatches** — pure read/edit/bash, no subagent fan-out. Valid for: serial mutations to hot files (daemon.py, loop.py), git operations, single-file edits during a hot-file conflict.
+- **(b) Five or more parallel task/agent/workflow dispatches in ONE message** — the dispatch wave pattern. This is the steady-state.
+
+A response with 1–4 task dispatches is a **policy violation** when ≥3 known work items remain. The agent MUST either batch them into a ≥5-wide wave OR add read-only research/dispatch filler to reach 5.
+
+**Never**: make a single-task-dispatch message and wait for the result when ≥3 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
+
+This rule exists because the agent repeatedly claimed "dispatching 10 parallel agents" but delivered 1-3 in sequence, serializing work that should have been concurrent. The floor plugin (enforce-floor.ts) blocks non-dispatch tool calls when live < 10 and GLUDD_FLOOR_ENFORCE=1; this prompt rule is the proactive layer that prevents the breach from happening in the first place.
+
 ## Codify Improvements (Meta-Rule)
 
 **When you discover a better way to work, codify it IN THE SAME SESSION before
@@ -1144,6 +1219,14 @@ live agents for the purposes of the floor check.
 When you discover that a hook fires too aggressively or too rarely, narrow the
 check (see "Guardrail Integrity Policy") — do NOT remove the hook or make it
 permanently advisory when the intent is enforcement.
+
+### Todowrite discipline (mandatory for ≥3-ask sessions)
+
+When the user raises ≥3 distinct asks in one session (including implicit asks like "fix the bug that allowed you to stop"), the agent MUST maintain a `todowrite` list tracking every ask until its codification is complete. "Complete" means: codified at all 3 layers (AGENTS.md policy + hook/plugin enforcement + test), committed, and (if applicable) pushed.
+
+Dropping an ask between subagent results is a bug. The todowrite list is the contract that prevents it. Update it after every subagent result lands: mark completed only when the codification is committed, not when the subagent returns.
+
+Pattern that failed (this session): agent dispatched 6 parallel subagents, got 6 results, then sent a text summary without codifying any of them or updating todos. The user had to ask "are you codifying all of these efforts?" — that question is itself a bug report.
 
 ## Constraints Are To Engineer Around
 

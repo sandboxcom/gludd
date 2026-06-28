@@ -82,6 +82,51 @@ function isNonBehavioralEdit(oldContent: string, newContent: string): boolean {
   return true
 }
 
+// --- opencode.json schema allowlist -----------------------------------------
+// Sourced from tests/unit/test_opencode_json_schema.py (ALLOWED_TOP_LEVEL_KEYS),
+// which is in turn sourced from https://opencode.ai/config.json
+// ($defs.Config.properties). The opencode Config type sets
+// `additionalProperties: false`, so any top-level key NOT in this set is
+// silently dropped — and any plugin relying on the dropped key is broken.
+// Keep this set in sync with the Python test file.
+const ALLOWED_TOP_LEVEL_KEYS: ReadonlySet<string> = new Set([
+  "$schema",
+  "shell",
+  "logLevel",
+  "server",
+  "command",
+  "skills",
+  "references",
+  "reference",
+  "watcher",
+  "snapshot",
+  "plugin",
+  "share",
+  "autoshare",
+  "autoupdate",
+  "disabled_providers",
+  "enabled_providers",
+  "model",
+  "small_model",
+  "default_agent",
+  "username",
+  "mode",
+  "agent",
+  "provider",
+  "mcp",
+  "formatter",
+  "lsp",
+  "instructions",
+  "layout",
+  "permission",
+  "tools",
+  "attachment",
+  "enterprise",
+  "tool_output",
+  "compaction",
+  "experimental",
+])
+
 // --- Gate-concurrency probe (port of gate_concurrency_pretool.sh) -------------
 // Two independent signals (either fires the block): fresh basetemp mtime, OR
 // pgrep for a running pytest. FAIL-OPEN on any error (can't probe -> allow).
@@ -428,7 +473,81 @@ export default (async ({ }) => {
       }
 
       if (input.tool === "edit" || input.tool === "write") {
-        const filePath: string = output?.args?.filePath ?? ""
+        const filePath: string = output?.args?.filePath ?? output?.args?.path ?? ""
+
+        // --- opencode.json schema guard -----------------------------------
+        // Blocks writes/edits that introduce a top-level key not allowed by
+        // the opencode Config schema (additionalProperties: false). opencode
+        // silently drops unknown top-level keys, so any plugin relying on
+        // them breaks at runtime with no observable error. This catches the
+        // regression at edit time.
+        //
+        // For `write` we parse `output.args.content` directly. For `edit`,
+        // the replacement snippet (`newString`) is partial and not parseable
+        // in isolation, so we read the current file from disk, apply the
+        // oldString→newString substitution once, and parse the result. If the
+        // disk read or substitution fails we fail-OPEN for edit (a partial
+        // guard is better than none — see comment below).
+        const opencodeBaseName = filePath.split("/").pop() ?? filePath
+        if (opencodeBaseName === "opencode.json") {
+          try {
+            let proposedContent: string | null = null
+            if (input.tool === "write") {
+              const c: unknown = output?.args?.content ?? output?.args?.text ?? null
+              if (typeof c === "string") proposedContent = c
+            } else {
+              // edit: read current file and apply the single replacement.
+              try {
+                const oldStr: string = output?.args?.oldString ?? ""
+                const newStr: string = output?.args?.newString ?? ""
+                const current = fs.readFileSync(filePath, "utf-8")
+                if (oldStr && current.includes(oldStr)) {
+                  proposedContent = current.replace(oldStr, newStr)
+                } else {
+                  // Cannot reliably reconstruct post-edit content; skip the
+                  // check rather than risk a false positive. (Partial guard
+                  // trade-off documented at top of block.)
+                  proposedContent = null
+                }
+              } catch {
+                proposedContent = null
+              }
+            }
+            if (proposedContent !== null) {
+              let parsed: unknown
+              try {
+                parsed = JSON.parse(proposedContent)
+              } catch (e) {
+                const msg = e instanceof Error ? e.message : String(e)
+                throw new Error(
+                  "BLOCKED: opencode.json must be valid JSON. Parse error: " + msg,
+                )
+              }
+              if (parsed !== null && typeof parsed === "object" && !Array.isArray(parsed)) {
+                const keys = Object.keys(parsed as Record<string, unknown>)
+                const unknown = keys.filter(k => !ALLOWED_TOP_LEVEL_KEYS.has(k))
+                if (unknown.length > 0) {
+                  throw new Error([
+                    "BLOCKED: opencode.json top-level key(s) not in opencode schema: " +
+                      unknown.slice().sort().join(", ") + ".",
+                    "The Config type sets additionalProperties: false — these keys are silently",
+                    "dropped by opencode, and any plugin relying on them is broken.",
+                    "Allowed top-level keys are listed in tests/unit/test_opencode_json_schema.py",
+                    "(ALLOWED_TOP_LEVEL_KEYS). If you intended to add a new env/config section,",
+                    "put it inside the plugin that needs it (via the plugin's runtime env) or",
+                    "inside `experimental` — NOT at the top level. See",
+                    "https://opencode.ai/config.json $defs.Config.properties.",
+                  ].join("\n"))
+                }
+              }
+            }
+          } catch (e) {
+            // RE-THROW: we intentionally want parse failures and unknown-key
+            // violations to surface as denies. Only an opencode.json path
+            // reaches this block, so a parse error here MUST block.
+            throw e
+          }
+        }
 
         // --- Flag-file write prevention -------------------------------------
         // Port of .claude/hooks/no_flag_file_write_pretool.sh

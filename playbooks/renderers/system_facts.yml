@@ -1,0 +1,84 @@
+---
+# playbooks/renderers/system_facts.yml
+#
+# Phase 1 example renderer playbook. Emits the canonical renderer JSON shape
+# (title / sections[] / metadata) by gathering the live /api/facts snapshot.
+#
+# `renderer: true` is the marker RendererRegistry looks for when cataloging
+# playbooks/renderers/*.yml — without it the file is ignored.
+#
+# Artifact contract: writes render.json to {{ artifact_dir }}/render.json.
+
+renderer: true
+description: >-
+  Live system-facts report. Gathers the /api/facts snapshot and renders it
+  as a titled page with a metric grid (work queue / todos / unread messages)
+  and a markdown overview section.
+
+- name: Render system facts
+  hosts: localhost
+  connection: local
+  gather_facts: false
+
+  vars:
+    artifact_dir: "{{ artifact_dir | default('/tmp/gludd-render-system_facts') }}"
+    daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
+    psk: "{{ psk | default('') }}"
+    renderer_timeout_s: 30
+
+  tasks:
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Gather live daemon facts
+      general_ludd.agent.gludd_facts:
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: live_facts
+      no_log: "{{ psk | length > 0 }}"
+      ignore_errors: true
+
+    - name: Set fact-derived metric values (with safe defaults)
+      ansible.builtin.set_fact:
+        _sf_total_work: "{{ live_facts.ansible_facts.gludd.work.total | default(0) | int }}"
+        _sf_backlog: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
+        _sf_done: "{{ live_facts.ansible_facts.gludd.todos.done | default(0) | int }}"
+        _sf_unread: "{{ live_facts.ansible_facts.gludd.messages.total_unread | default(0) | int }}"
+        _sf_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default('N/A') }}"
+
+    - name: Write canonical render.json artifact
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'title': 'System Facts Report',
+            'sections': [
+              {
+                'type': 'metric_grid',
+                'metrics': [
+                  {'label': 'Work items',  'value': _sf_total_work | string},
+                  {'label': 'Backlog',     'value': _sf_backlog | string},
+                  {'label': 'Done',        'value': _sf_done | string},
+                  {'label': 'Unread',      'value': _sf_unread | string},
+                  {'label': 'Success %',   'value': _sf_success_rate | string}
+                ]
+              },
+              {
+                'type': 'markdown',
+                'body': '## Overview\nLive snapshot from /api/facts. Rendered by the gludd playbook web renderer.'
+              }
+            ],
+            'metadata': {
+              'renderer': 'system_facts',
+              'source': 'api/facts'
+            }
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/render.json"
+        mode: "0644"
+
+    - name: Renderer completion marker
+      ansible.builtin.debug:
+        msg: "system_facts renderer wrote {{ artifact_dir }}/render.json"

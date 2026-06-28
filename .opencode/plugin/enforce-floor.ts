@@ -35,6 +35,54 @@ const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const TARGET = parseInt(process.env.CLAUDE_AGENT_TARGET || "14", 10)
 const CEILING = parseInt(process.env.CLAUDE_AGENT_CEILING || "16", 10)
 
+// BLOCKING mode (2026-06-28 user directive): the floor breach was advisory-only
+// by default, which let the agent serialize work. Per AGENTS.md "Guardrail
+// Integrity Policy" the fix is to make the guardrail SMARTER (block when
+// warranted), not delete it. The plugin BLOCKS non-dispatch tool calls (via
+// tool.execute.before) when the floor is breached AND there is known open work
+// — forcing the agent to dispatch subagents rather than grind inline.
+// DEFAULT ON (continuous multitasking enforcement). Set GLUDD_FLOOR_ENFORCE=0
+// to disable the hard gate (back to advisory-only append). Mirrors
+// GLUDD_NO_WAIT_ENFORCE in enforce-stop.ts.
+const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
+
+// Dispatch tools are ALWAYS allowed — even when the floor is breached and
+// enforce mode is on. Blocking a dispatch attempt would be counterproductive
+// (the whole point is to force MORE dispatches). This helper is the load-bearing
+// exemption that keeps the block from wedging the session.
+function isDispatchTool(tool: string): boolean {
+  return tool === "task" || tool === "agent" || tool === "workflow"
+}
+
+// Open-work probe: only block when the repo actually has pending work. Avoids
+// wedging a session where the floor is breached because the work is genuinely
+// done. Signals (any one triggers "open work"): ratchet.yml entries, the
+// multitasking backlog file present, or uncommitted git changes.
+// FAIL-OPEN: any error -> false (don't block on a probe bug).
+function openWorkExists(): boolean {
+  try {
+    const ratchet = path.join(process.cwd(), "config", "ratchet.yml")
+    if (fs.existsSync(ratchet)) {
+      const entries = fs.readFileSync(ratchet, "utf8")
+        .split("\n")
+        .filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
+      if (entries.length > 0) return true
+    }
+    const backlog = path.join(process.cwd(), "scripts", "multitasking_backlog.json")
+    if (fs.existsSync(backlog)) return true
+    const { execSync } = require("node:child_process")
+    const status = execSync("git status --porcelain", {
+      cwd: process.cwd(),
+      encoding: "utf8",
+      timeout: 3000,
+    })
+    if (status.trim()) return true
+    return false
+  } catch {
+    return false
+  }
+}
+
 // Count live agents via the SAME ground-truth probe the shell hooks use
 // (scripts/agent_liveness.py), so the plugin and the hooks can never disagree.
 // The old fs-mtime heuristic here used a 45s window while the probe uses a
@@ -63,6 +111,38 @@ function countActiveAgents(): number | null {
 
 export default (async ({ }) => {
   return {
+    // --- BLOCKING mode (default ON; GLUDD_FLOOR_ENFORCE=0 disables): deny
+    // non-dispatch tools when the floor is breached AND open work exists.
+    // Dispatch tools (task/agent/workflow) are always ALLOWED — never block the
+    // agent from refilling the pool. Returns a permissionDecision:"deny" so
+    // opencode surfaces it as a blocked tool call, not a silent append. ---
+    "tool.execute.before": async (input: { tool?: string }, _output: unknown) => {
+      try {
+        if (!FLOOR_ENFORCE) return
+        const tool = (input?.tool ?? "") as string
+        if (isDispatchTool(tool)) return  // never block dispatch
+        const active = countActiveAgents()
+        if (active === null) return       // can't tell -> fail open
+        if (active >= FLOOR) return        // not below floor -> allow
+        if (!openWorkExists()) return      // no pending work -> allow
+        const need = Math.max(0, TARGET - active)
+        return {
+          permissionDecision: "deny" as const,
+          message: [
+            "⛔ TOOL DENIED — AGENT-FLOOR BREACH (default-enforced).",
+            `Only ~${active} agents are streaming; floor=${FLOOR}, target=${TARGET}.`,
+            "Open work is pending (ratchet/backlog/uncommitted changes). This non-dispatch",
+            `tool ('${tool}') is BLOCKED until the floor is refilled. DISPATCH ≥ ${need}`,
+            "more subagents via task/agent/workflow on DISJOINT work NOW — those dispatch",
+            "tools are explicitly ALLOWED (never blocked). After refilling toward target,",
+            "resume this step.",
+          ].join("\n"),
+        }
+      } catch {
+        return  // fail open — never wedge the session on a guardrail bug
+      }
+    },
+
     "experimental.chat.response.transform": async (_input: unknown, output: unknown) => {
       try {
         if (typeof output !== "string") return output

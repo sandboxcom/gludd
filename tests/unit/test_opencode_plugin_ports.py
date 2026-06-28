@@ -43,6 +43,7 @@ ENFORCE_MAKE = PLUGIN_DIR / "enforce-make.ts"
 ENFORCE_FLOOR = PLUGIN_DIR / "enforce-floor.ts"
 ENFORCE_DELEGATE = PLUGIN_DIR / "enforce-delegate.ts"
 ENFORCE_STOP = PLUGIN_DIR / "enforce-stop.ts"
+ENFORCE_SESSION_START = PLUGIN_DIR / "enforce-session-start.ts"
 
 
 def _plugin_list() -> list[str]:
@@ -70,6 +71,22 @@ class TestPluginsRegistered:
         plugins = _plugin_list()
         assert any("enforce-stop" in p for p in plugins), (
             "enforce-stop.ts must be registered in opencode.json"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# enforce-session-start.ts — session-start orchestration port.
+# --------------------------------------------------------------------------- #
+class TestSessionStartPort:
+    def test_session_start_plugin_registered(self):
+        plugins = _plugin_list()
+        assert any("enforce-session-start" in p for p in plugins), (
+            "enforce-session-start.ts must be registered in opencode.json"
+        )
+
+    def test_session_start_plugin_file_exists(self):
+        assert ENFORCE_SESSION_START.exists(), (
+            "enforce-session-start.ts must exist at .opencode/plugin/enforce-session-start.ts"
         )
 
 
