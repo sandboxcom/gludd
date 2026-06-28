@@ -1,12 +1,13 @@
 # MCP Catalog/Loader OOM + Blocking-IO Fix Spec (apply-ready)
 
-Status: **✍️ DRAFTED, NOT applied** — 2026-06-26. Apply-queue item B (MCP catalog.py OOM).
-Source: read-only audit agent ac555. Files are disjoint from all other in-flight streams
-(catalog.py / loader.py / test_mcp_catalog.py / new test_mcp_loader.py) — safe to apply
-in isolation. **Must run targeted pytest after applying** (changes the test mock surface);
-do NOT apply blind while the pytest lock is held.
+Status: **✅ APPLIED** — 2026-06-28. All four findings (C-1, C-2, C-3, C-4) are
+implemented in `src/general_ludd/mcp/catalog.py` and `src/general_ludd/mcp/loader.py`
+with tests in `tests/unit/test_mcp_catalog.py` and `tests/unit/test_mcp_loader.py`.
+Source: read-only audit agent ac555. Files were disjoint from all other in-flight
+streams (catalog.py / loader.py / test_mcp_catalog.py / test_mcp_loader.py) and were
+applied in isolation.
 
-## C-1 — `mcp/catalog.py:113-114` — Unbounded `resp.read()` (Smithery branch) [HIGH]
+## C-1 — `mcp/catalog.py:137-143` — Unbounded `resp.read()` (Smithery branch) [HIGH]
 
 Add module-level constant (near line 14, after `logger = ...`):
 ```python
@@ -25,7 +26,7 @@ with urllib.request.urlopen(req, timeout=10) as resp:
 `resp.read(n)` bounds memory at n+1; the `ValueError` is caught by the existing
 `except Exception` at ~line 61-62 → search degrades gracefully to empty.
 
-## C-2 — `mcp/catalog.py:129-130` — Same unbounded read (MCP registry branch) [HIGH]
+## C-2 — `mcp/catalog.py:158-164` — Same unbounded read (MCP registry branch) [HIGH]
 
 Identical fix, reusing `_REGISTRY_RESPONSE_MAX_BYTES`:
 ```python

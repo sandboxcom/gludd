@@ -5,53 +5,38 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-24 (audit corrections applied)
+- 2026-06-28
 
-## Current Work — Release Manager
+## Current Work
 
-Fixing missing release artifacts for v0.1.0-alpha.2 and v0.1.0-alpha.3. Neither
-version produced a downloadable artifact because their tags pointed at red-gate
-commits; the `release` CI job (`needs: [gate]`) was skipped.
-
-### v0.1.0-alpha.2
-- **Root cause:** original tag `7516aaf` had 105 test failures → gate red → release skipped.
-- **Fix:** re-tagged at green commit `f1991f2` via new `make release-recut`.
-- **Status:** CI run `28074485254` in_progress. Awaiting green.
-
-### v0.1.0-alpha.3
-- **Root cause:** merge resolution bug in `routers/todos.py` — `/api/status` response
-  was missing `config_file_count`, `db_engine`, `db_url` fields (lost during merge).
-- **Fix:** restored the missing fields. Committed as `07e2fc2`.
-- **Status:** SHIPPED — 11 artifacts at https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.3
-
-### New Tooling
-- `make git-tag-rm TAG=...` — delete a tag locally + on remote
-- `make release-recut TAG=...` — remove + re-tag a release at a different commit
-- `make git-tag-push` now accepts `COMMIT=<sha>` to tag a specific commit
+- master pushed at `171946b` (merge of `feature/alpha4-green-the-gate`).
+- CI run `28315808445` for `171946b` pending — awaiting green verdict.
+- Queue-lease fixes (F1–F4) being applied on a feature branch.
+- W13.3 ticked in TASKS.md (all 5 CI-pipeline sub-items verified DONE).
+- MCP Catalog/Loader OOM spec status flipped DRAFTED → APPLIED (C-1..C-4 landed).
 
 ## Last Commit
-- `07e2fc2` (alpha.3 merge-resolution fix)
+- `171946b` (Merge branch 'feature/alpha4-green-the-gate')
 
 ## Known Gaps
 
-1. **alpha.2 CI pending** — run `28074485254` must go green, then `make verify-release-artifact TAG=v0.1.0-alpha.2`.
-2. **alpha.3 CI pending** — must go green before `make release-cut TAG=v0.1.0-alpha.3`.
-3. Both versions still need artifact verification (tag alone ≠ shipped release).
+1. CI run `28315808445` for `171946b` must go green before next release-cut.
+2. Queue-lease fixes (F1–F4) still in-flight on feature branch.
 
 ## Next Steps
 
-1. Wait for alpha.2 CI green → run `make verify-release-artifact TAG=v0.1.0-alpha.2`.
-2. alpha.3 SHIPPED — 11 artifacts at https://github.com/sandboxcom/gludd/releases/tag/v0.1.0-alpha.3.
-3. After alpha.2 artifact verified → close out release manager work.
+1. Await CI green for `171946b` (`make ci-verdict BRANCH=master`).
+2. Land queue-lease fixes F1–F4 on master after green.
+3. After green → proceed with next release-cut per TASKS.md.
 
-## Current Gate Status
-
+## Current Gate Status (2026-06-26)
 <!-- gate:begin -->
-- lint PASS 0
+- mcp-docs-check PASS 0
+- lint FAIL 8
 - typecheck PASS 0
 - collect PASS 0
-- test PASS (284+ tests green at HEAD d4f684d)
-- smoke PASS
+- test FAIL non-zero-exit
+
 <!-- gate:end -->
 
 ## Historical State
