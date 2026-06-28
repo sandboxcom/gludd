@@ -1,0 +1,50 @@
+---
+- name: Verify - the renderer wrote a canonical-shape render.json
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8865', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    artifact_dir: "/tmp/gludd-molecule-system_facts-renderer"
+  tasks:
+    - name: Slurp render.json
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/render.json"
+      register: render_raw
+
+    - name: Parse render.json
+      ansible.builtin.set_fact:
+        render_doc: "{{ render_raw.content | b64decode | from_json }}"
+
+    - name: Assert canonical shape (title + sections + metadata)
+      ansible.builtin.assert:
+        that:
+          - render_doc.title is defined
+          - render_doc.title | length > 0
+          - render_doc.sections is defined
+          - render_doc.sections is sequence
+          - render_doc.metadata is defined
+          - render_doc.metadata is mapping
+          - render_doc.metadata.playbook == 'system_facts.yml'
+          - render_doc.metadata.renderer_version | int == 1
+        fail_msg: "render.json shape invalid: {{ render_doc }}"
+        success_msg: "system_facts renderer emitted canonical shape"
+
+    - name: Assert a metric_grid section sourced from work/history is present
+      ansible.builtin.assert:
+        that: "'metric_grid' in (render_doc.sections | map(attribute='type') | list)"
+        fail_msg: "no metric_grid section in {{ render_doc.sections | map(attribute='type') | list }}"
+        success_msg: "metric_grid section present"
+
+    - name: Assert a table section sourced from models is present
+      ansible.builtin.assert:
+        that: "'table' in (render_doc.sections | map(attribute='type') | list)"
+        fail_msg: "no table section in {{ render_doc.sections | map(attribute='type') | list }}"
+        success_msg: "table section present"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

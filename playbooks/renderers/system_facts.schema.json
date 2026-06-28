@@ -1,0 +1,268 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://gludd.example/schemas/system_facts.schema.json",
+  "title": "System Facts Renderer Output",
+  "description": "Formal JSON Schema contract for the render.json artifact written by playbooks/renderers/system_facts.yml. The renderer pulls a snapshot of live daemon facts via general_ludd.agent.gludd_facts and emits a fixed-shape document: a three-cell metric grid (running agents, completed today, success rate) followed by a per-model usage table. Every field is machine-checked; this file is the single source of truth for what the playbook MUST emit and what the renderer MUST consume.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["title", "sections", "metadata"],
+  "properties": {
+    "title": {
+      "title": "Document Title",
+      "description": "Human-readable heading rendered at the top of the dashboard page.",
+      "type": "string",
+      "const": "System Facts"
+    },
+    "sections": {
+      "title": "Sections",
+      "description": "Ordered list of dashboard sections; exactly one metric_grid followed by exactly one table.",
+      "type": "array",
+      "minItems": 2,
+      "maxItems": 2,
+      "prefixItems": [
+        { "$ref": "#/$defs/MetricGridSection" },
+        { "$ref": "#/$defs/TableSection" }
+      ],
+      "items": false
+    },
+    "metadata": {
+      "$ref": "#/$defs/Metadata",
+      "title": "Render Metadata",
+      "description": "Provenance block: when the artifact was generated and which renderer version produced it."
+    }
+  },
+  "$defs": {
+    "Metric": {
+      "title": "Metric",
+      "description": "A single label/value/unit triple rendered as one card in the metric grid.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["label", "value", "unit"],
+      "properties": {
+        "label": {
+          "title": "Label",
+          "description": "Human-readable name shown above the value.",
+          "type": "string"
+        },
+        "value": {
+          "title": "Value",
+          "description": "Numeric reading; type/range constrained by the containing prefixItem slot."
+        },
+        "unit": {
+          "title": "Unit",
+          "description": "Unit suffix rendered next to the value; empty string means unitless.",
+          "type": "string"
+        }
+      }
+    },
+    "MetricGridSection": {
+      "title": "Metric Grid Section",
+      "description": "The three-card top-of-page grid: running agents, completed today, success rate - in that fixed order.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "metrics"],
+      "properties": {
+        "type": {
+          "title": "Section Type",
+          "description": "Literal discriminator pinned to the metric_grid variant.",
+          "type": "string",
+          "const": "metric_grid",
+          "enum": ["metric_grid"]
+        },
+        "metrics": {
+          "title": "Metrics",
+          "description": "Exactly three metric cards in fixed order: Running agents, Completed today, Success rate.",
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": false,
+          "prefixItems": [
+            {
+              "title": "Running Agents Metric",
+              "description": "Live count of in-flight agents reported by gludd.work.running_agents.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "value", "unit"],
+              "properties": {
+                "label": {
+                  "title": "Label",
+                  "description": "Human-readable name pinned to 'Running agents'.",
+                  "type": "string",
+                  "const": "Running agents"
+                },
+                "value": {
+                  "title": "Running Agents",
+                  "description": "Number of currently running agents; non-negative integer.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unit": {
+                  "title": "Unit",
+                  "description": "Unitless count.",
+                  "type": "string",
+                  "const": ""
+                }
+              }
+            },
+            {
+              "title": "Completed Today Metric",
+              "description": "Count of finished jobs reported by gludd.work.completed_today.",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "value", "unit"],
+              "properties": {
+                "label": {
+                  "title": "Label",
+                  "description": "Human-readable name pinned to 'Completed today'.",
+                  "type": "string",
+                  "const": "Completed today"
+                },
+                "value": {
+                  "title": "Completed Today",
+                  "description": "Number of jobs completed in the current UTC day; non-negative integer.",
+                  "type": "integer",
+                  "minimum": 0
+                },
+                "unit": {
+                  "title": "Unit",
+                  "description": "Unitless count.",
+                  "type": "string",
+                  "const": ""
+                }
+              }
+            },
+            {
+              "title": "Success Rate Metric",
+              "description": "Historical success rate reported by gludd.history.success_rate, expressed as a fraction in [0.0, 1.0].",
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["label", "value", "unit"],
+              "properties": {
+                "label": {
+                  "title": "Label",
+                  "description": "Human-readable name pinned to 'Success rate'.",
+                  "type": "string",
+                  "const": "Success rate"
+                },
+                "value": {
+                  "title": "Success Rate",
+                  "description": "Success fraction in the closed interval [0.0, 1.0]; rendered with a '%' unit suffix by convention.",
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 1
+                },
+                "unit": {
+                  "title": "Unit",
+                  "description": "Percent-style unit suffix.",
+                  "type": "string",
+                  "const": "%"
+                }
+              }
+            }
+          ]
+        }
+      }
+    },
+    "ModelRow": {
+      "title": "Per-Model Usage Row",
+      "description": "One row in the per-model usage table: model identifier, call count, and accumulated spend.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["model", "calls"],
+      "properties": {
+        "model": {
+          "title": "Model Identifier",
+          "description": "Stable model name as reported by the daemon's /api/facts models map key.",
+          "type": "string",
+          "minLength": 1
+        },
+        "calls": {
+          "title": "Call Count",
+          "description": "Number of dispatches recorded for this model; non-negative integer.",
+          "type": "integer",
+          "minimum": 0
+        },
+        "cost_usd": {
+          "title": "Accumulated Cost (USD)",
+          "description": "Total spend on this model in US dollars; non-negative number. Optional because the daemon may omit cost telemetry for locally-served models.",
+          "type": "number",
+          "minimum": 0
+        }
+      }
+    },
+    "TableSection": {
+      "title": "Per-Model Usage Table Section",
+      "description": "Table of per-model usage statistics sorted into one row per model.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type", "columns", "rows"],
+      "properties": {
+        "type": {
+          "title": "Section Type",
+          "description": "Literal discriminator pinned to the table variant.",
+          "type": "string",
+          "const": "table",
+          "enum": ["table"]
+        },
+        "title": {
+          "title": "Table Title",
+          "description": "Heading rendered above the table.",
+          "type": "string",
+          "const": "Per-model usage"
+        },
+        "columns": {
+          "title": "Column Names",
+          "description": "Ordered list of column names matching the row object keys.",
+          "type": "array",
+          "minItems": 3,
+          "maxItems": 3,
+          "items": false,
+          "prefixItems": [
+            { "type": "string", "const": "model" },
+            { "type": "string", "const": "calls" },
+            { "type": "string", "const": "cost_usd" }
+          ]
+        },
+        "rows": {
+          "title": "Rows",
+          "description": "Zero or more per-model usage rows.",
+          "type": "array",
+          "items": { "$ref": "#/$defs/ModelRow" }
+        }
+      }
+    },
+    "Metadata": {
+      "title": "Render Metadata",
+      "description": "Provenance block: when the artifact was generated and which renderer version produced it.",
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["generated_at", "playbook", "renderer_version"],
+      "properties": {
+        "generated_at": {
+          "title": "Generated At",
+          "description": "RFC 3339 / ISO 8601 UTC timestamp marking when the artifact was written.",
+          "type": "string"
+        },
+        "playbook": {
+          "title": "Source Playbook",
+          "description": "File stem of the renderer playbook that produced this artifact.",
+          "type": "string",
+          "const": "system_facts.yml"
+        },
+        "renderer_version": {
+          "title": "Renderer Version",
+          "description": "Integer version of the renderer contract this artifact conforms to.",
+          "type": "integer",
+          "minimum": 1,
+          "const": 1
+        },
+        "execution_ms": {
+          "title": "Execution Duration (ms)",
+          "description": "Optional wall-clock execution time in milliseconds, populated by the runner after execution.",
+          "type": ["integer", "null"],
+          "minimum": 0
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,13 @@
+<section class="table">
+  {% if section.title %}<h2>{{ section.title }}</h2>{% endif %}
+  <table>
+    <thead>
+      <tr>{% for col in section.columns %}<th>{{ col }}</th>{% endfor %}</tr>
+    </thead>
+    <tbody>
+      {% for row in section.rows %}
+      <tr>{% for cell in row %}<td>{{ cell }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

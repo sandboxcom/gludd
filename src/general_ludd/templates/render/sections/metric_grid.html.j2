@@ -1,0 +1,8 @@
+<section class="metrics">
+  {% for m in section.metrics %}
+  <div class="metric">
+    <span class="label">{{ m.label }}</span>
+    <span class="value">{{ m.value }}{% if m.unit %}<span class="unit">{{ m.unit }}</span>{% endif %}</span>
+  </div>
+  {% endfor %}
+</section>

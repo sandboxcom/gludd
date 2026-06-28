@@ -1,0 +1,92 @@
+{#- Macro that renders a single JSON Schema property value as a <dt>/<dd> pair. -#}
+{#- The caller is expected to wrap the output in a <dl>. -#}
+{#- Args: name (str), prop_schema (dict), value (any), required (bool). -#}
+{% macro render_field(name, prop_schema, value, required=false) %}
+{% set field_type = prop_schema.type | default("null") %}
+{% set label = prop_schema.title | default(name) %}
+<dt class="schema-field-label{% if required %} field-required{% endif %}">
+  <label>{{ label }}{% if required %} <span class="field-required-marker" aria-label="required">*</span>{% endif %}</label>
+</dt>
+<dd class="schema-field{% if required %} field-required{% endif %}">
+  {% if field_type == "string" %}
+    {% if prop_schema.enum is defined %}
+      <select name="{{ name }}" disabled>
+        {% for option in prop_schema.enum %}
+          <option value="{{ option }}"{{ ' selected' if option == value else '' }}>{{ option }}</option>
+        {% endfor %}
+      </select>
+    {% elif prop_schema.format is defined and prop_schema.format == "date-time" %}
+      {% if value is not none and value != "" %}
+        <time datetime="{{ value }}">{{ value }}</time>
+      {% else %}
+        <em>null</em>
+      {% endif %}
+    {% elif prop_schema.format is defined and prop_schema.format == "uri" %}
+      {% if value is not none and value != "" %}
+        <a href="{{ value }}">{{ value }}</a>
+      {% else %}
+        <em>null</em>
+      {% endif %}
+    {% else %}
+      <span class="field-value">{{ value }}</span>
+    {% endif %}
+  {% elif field_type == "number" or field_type == "integer" %}
+    <span class="field-number">{{ value }}{% if prop_schema.unit is defined %} {{ prop_schema.unit }}{% endif %}</span>
+  {% elif field_type == "boolean" %}
+    <input type="checkbox" disabled{{ ' checked' if value else '' }}>
+  {% elif field_type == "array" %}
+    {#- Bracket access for `items`: the `.items` attribute collides with the dict method. -#}
+    {% set items_schema = prop_schema["items"] | default({}) %}
+    {% if items_schema and items_schema.type | default("") == "object" %}
+      {% set item_props = items_schema.properties | default({}) %}
+      <table class="schema-table">
+        <thead>
+          <tr>
+            {% for col_name, col_schema in item_props.items() %}
+              <th>{{ col_schema.title | default(col_name) }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% if value is iterable and value is not string %}
+            {% for row in value %}
+              <tr>
+                {% for col_name in item_props.keys() %}
+                  <td>{{ row.get(col_name, "") if row is mapping else "" }}</td>
+                {% endfor %}
+              </tr>
+            {% endfor %}
+          {% endif %}
+        </tbody>
+      </table>
+    {% else %}
+      <ul>
+        {% if value is iterable and value is not string %}
+          {% for item in value %}
+            <li>{{ item }}</li>
+          {% endfor %}
+        {% endif %}
+      </ul>
+    {% endif %}
+  {% elif field_type == "object" %}
+    {% set sub_props = prop_schema.properties | default({}) %}
+    {% set sub_required = prop_schema.required | default([]) %}
+    <fieldset class="schema-fieldset">
+      {% if prop_schema.title is defined %}<legend>{{ prop_schema.title }}</legend>{% endif %}
+      <dl>
+        {% for sub_name, sub_schema in sub_props.items() %}
+          {% set sub_value = value.get(sub_name) if (value is mapping and value is not none) else none %}
+          {{ render_field(sub_name, sub_schema, sub_value, required=(sub_name in sub_required)) }}
+        {% endfor %}
+      </dl>
+    </fieldset>
+  {% elif field_type == "null" %}
+    <em>null</em>
+  {% else %}
+    <span class="field-value">{{ value }}</span>
+  {% endif %}
+  {% if prop_schema.description is defined %}
+    <small class="field-description">{{ prop_schema.description }}</small>
+  {% endif %}
+</dd>
+{% endmacro %}

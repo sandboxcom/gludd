@@ -1,0 +1,20 @@
+{% extends "base.html.j2" %}
+{% import "_schema_field.html.j2" as fields %}
+{% block title %}{{ schema.title | default("Rendered Page") }}{% endblock %}
+{% block body %}
+<h1>{{ schema.title | default("Rendered Page") }}</h1>
+{% if schema.description is defined %}<p class="schema-description">{{ schema.description }}</p>{% endif %}
+{% set _properties = schema.properties | default({}) %}
+{% set _required = schema.required | default([]) %}
+<dl class="schema-document">
+  {% for name, prop_schema in _properties.items() %}
+    {% set field_value = data.get(name) if (data is mapping and data is not none) else none %}
+    {% set is_required = name in _required %}
+    {% if is_required and field_value is none %}
+      {{ fields.render_field(name, prop_schema, none, required=true) }}
+    {% else %}
+      {{ fields.render_field(name, prop_schema, field_value, required=is_required) }}
+    {% endif %}
+  {% endfor %}
+</dl>
+{% endblock %}

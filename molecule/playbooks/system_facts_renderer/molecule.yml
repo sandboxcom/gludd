@@ -1,0 +1,25 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    GLUDD_MOCK_PORT: "8865"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+verifier:
+  name: ansible
+scenario:
+  # Renderer playbooks snapshot live data and always emit a fresh artifact
+  # (new `generated_at` timestamp per run), so they are non-idempotent by
+  # design. We skip the idempotence step; converge + verify cover the contract.
+  test_sequence:
+    - prepare
+    - converge
+    - verify
+    - cleanup
+    - destroy

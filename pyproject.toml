@@ -36,6 +36,7 @@ dependencies = [
     "tenacity>=9.0.0",
     "ansible-core>=2.16.0",
     "jinja2>=3.1.0",
+    "jsonschema>=4.21",
     "pyyaml>=6.0.0",
     "hvac>=2.3.0",
     "langchain>=0.3.0",
@@ -122,7 +123,7 @@ warn_unused_configs = true
 disallow_untyped_defs = true
 
 [[tool.mypy.overrides]]
-module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*"]
+module = ["ansible.*", "hvac.*", "psycopg.*", "yaml.*", "tree_sitter.*", "tree_sitter_python.*", "huggingface_hub.*", "diskcache.*", "watchdog.*", "croniter.*", "jsonschema"]
 ignore_missing_imports = true
 
 [[tool.mypy.overrides]]

@@ -1934,15 +1934,15 @@ def create_daemon_app(
     # Registry discovery is best-effort — a missing playbooks/renderers/ dir must
     # not crash daemon startup (the router serves a 503 in that case).
     try:
-        from general_ludd.renderers.executor import RendererExecutor
+        from general_ludd.ansible.runner import _resolve_playbooks_root
+        from general_ludd.renderers.cache import RendererCache
         from general_ludd.renderers.registry import RendererRegistry
 
-        _renderer_registry = RendererRegistry()
+        _bundled = _resolve_playbooks_root() / "renderers"
+        _renderer_registry = RendererRegistry(bundled_dir=_bundled)
+        _renderer_registry.discover()
         app.state._renderer_registry = _renderer_registry
-        app.state._renderer_executor = RendererExecutor(
-            registry=_renderer_registry,
-            runner=getattr(app.state, "_runner", None),
-        )
+        app.state._renderer_cache = RendererCache(ttl_default=30)
     except Exception as exc:
         logger.warning("renderer subsystem unavailable: %s", exc)
     render.register(app, daemon_state)

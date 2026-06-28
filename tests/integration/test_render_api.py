@@ -5,14 +5,15 @@ PSK auth enabled:
   - GET /api/renderers  (PSK-authed list of registered renderers)
   - GET /render/<name>  (public read; executes renderer, returns HTML)
 
-The renderer executor is injected on app.state so the test does NOT depend
-on a live Ansible run — it uses a deterministic stub that returns the
-canonical RendererOutput shape.
+The renderer runner is injected on ``app.state._renderer_runner`` so the test
+does NOT depend on a live Ansible run — it uses a deterministic stub that
+returns the canonical RenderDocument shape. The router uses ``run_renderer``
+which checks for the stub hook before falling back to AnsibleRunnerAdapter.
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Any
 
 import pytest
@@ -20,8 +21,10 @@ from httpx import ASGITransport, AsyncClient
 
 from general_ludd.renderers.schema import (
     MarkdownSection,
+    Metric,
     MetricGridSection,
-    RendererOutput,
+    RenderDocument,
+    RenderMetadata,
 )
 
 PSK = "test-psk-secret"
@@ -29,49 +32,59 @@ AUTH = {"Authorization": f"Bearer {PSK}"}
 
 
 @dataclass
-class _StubExecutor:
-    """Deterministic stand-in for RendererExecutor used by the router.
+class _StubRunner:
+    """Deterministic stand-in for the Ansible-backed renderer runner.
 
-    The router only depends on `async def run(name) -> RendererOutput`,
-    so a dataclass with a matching method satisfies the contract without
-    needing the real Ansible-backed executor (which would require a live
-    daemon + PSK + ansible-core in the test environment).
+    ``run_renderer`` consults ``app.state._renderer_runner`` first; if set,
+    the Ansible path is bypassed entirely. The stub records every call so
+    cache-hit tests can assert the runner was invoked exactly once.
     """
 
-    output: RendererOutput
+    output: RenderDocument
+    calls: list[str] = field(default_factory=list)
+    fail: bool = False
+    timeout: bool = False
 
-    async def run(self, name: str) -> RendererOutput:
+    async def run(self, spec: Any) -> RenderDocument:
+        self.calls.append(spec.name)
+        if self.timeout:
+            from general_ludd.renderers.runner import RendererTimeout
+
+            raise RendererTimeout(spec.name, float(spec.timeout_seconds))
+        if self.fail:
+            from general_ludd.renderers.runner import RendererFailure
+
+            raise RendererFailure(spec.name, "stub failure", stdout="boom", stderr="oops")
         return self.output
 
 
-def _stub_output() -> RendererOutput:
-    return RendererOutput(
+def _stub_document() -> RenderDocument:
+    return RenderDocument(
         title="System Facts Report",
         sections=[
-            MarkdownSection(body="## Overview\nAll systems nominal."),
+            MarkdownSection(content="## Overview\nAll systems nominal."),
             MetricGridSection(
                 metrics=[
-                    {"label": "Backlog", "value": "3"},
-                    {"label": "Unread", "value": "1"},
+                    Metric(label="Backlog", value=3),
+                    Metric(label="Unread", value=1, unit="msg"),
                 ]
             ),
         ],
-        metadata={"renderer": "system_facts"},
+        metadata=RenderMetadata(renderer_version=1),
     )
 
 
-async def _make_app(monkeypatch) -> tuple[Any, AsyncClient]:
-    """Build the real daemon app with the render router's executor stubbed.
-
-    Mirrors the harness in test_messages_and_facts_api.py: PSK is set via
-    monkeypatch (auto-reverted) so it does not leak into other tests, and
-    the renderer executor is injected on app.state before any request.
-    """
+async def _make_app(
+    monkeypatch,
+    *,
+    runner: _StubRunner | None = None,
+) -> tuple[Any, AsyncClient]:
     monkeypatch.setenv("GLUDD_PSK", PSK)
     from general_ludd.daemon import create_daemon_app
 
     app = create_daemon_app(tick_interval=1.0)
-    app.state._renderer_executor = _StubExecutor(output=_stub_output())
+    if runner is not None:
+        app.state._renderer_runner = runner
     transport = ASGITransport(app=app)
     client = AsyncClient(transport=transport, base_url="http://test")
     return app, client
@@ -79,18 +92,34 @@ async def _make_app(monkeypatch) -> tuple[Any, AsyncClient]:
 
 class TestRenderApi:
     @pytest.mark.asyncio
-    async def test_list_renderers_returns_system_facts(self, monkeypatch):
-        app, client = await _make_app(monkeypatch)
+    async def test_render_known_renderer_returns_html(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document())
+        _app, client = await _make_app(monkeypatch, runner=runner)
         try:
-            reg = getattr(app.state, "_renderer_registry", None)
-            print(f"DEBUG registry={reg!r} type={type(reg).__name__}")
-            if reg is not None:
-                print(f"DEBUG playbooks_dir={reg.playbooks_dir}")
-                renderers_dir = reg.playbooks_dir / "renderers"
-                print(f"DEBUG renderers_dir exists={renderers_dir.is_dir()}")
-                if renderers_dir.is_dir():
-                    print(f"DEBUG files={list(renderers_dir.glob('*.yml'))}")
-                print(f"DEBUG list_all={reg.list_all()}")
+            resp = await client.get("/render/system_facts")
+            assert resp.status_code == 200, resp.text
+            assert "text/html" in resp.headers.get("content-type", "")
+            assert "System Facts Report" in resp.text
+            assert "Backlog" in resp.text
+            assert "## Overview" in resp.text  # Phase 1: rendered as <pre>
+        finally:
+            await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_render_unknown_returns_404(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document())
+        _app, client = await _make_app(monkeypatch, runner=runner)
+        try:
+            resp = await client.get("/render/does_not_exist")
+            assert resp.status_code == 404
+        finally:
+            await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_api_renderers_lists_renderer(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document())
+        _app, client = await _make_app(monkeypatch, runner=runner)
+        try:
             resp = await client.get("/api/renderers", headers=AUTH)
             assert resp.status_code == 200, resp.text
             data = resp.json()
@@ -100,8 +129,9 @@ class TestRenderApi:
             await client.aclose()
 
     @pytest.mark.asyncio
-    async def test_list_renderers_requires_psk(self, monkeypatch):
-        _app, client = await _make_app(monkeypatch)
+    async def test_api_renderers_requires_psk(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document())
+        _app, client = await _make_app(monkeypatch, runner=runner)
         try:
             resp = await client.get("/api/renderers")
             assert resp.status_code == 401
@@ -109,13 +139,37 @@ class TestRenderApi:
             await client.aclose()
 
     @pytest.mark.asyncio
-    async def test_render_system_facts_returns_html(self, monkeypatch):
-        _app, client = await _make_app(monkeypatch)
+    async def test_renderer_cache_hit_skips_execution(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document())
+        _app, client = await _make_app(monkeypatch, runner=runner)
+        try:
+            r1 = await client.get("/render/system_facts")
+            r2 = await client.get("/render/system_facts")
+            assert r1.status_code == 200 and r2.status_code == 200
+            # Cache hit: runner only invoked on the first request.
+            assert runner.calls == ["system_facts"], runner.calls
+        finally:
+            await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_renderer_failure_returns_500(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document(), fail=True)
+        _app, client = await _make_app(monkeypatch, runner=runner)
         try:
             resp = await client.get("/render/system_facts")
-            assert resp.status_code == 200, resp.text
-            assert "text/html" in resp.headers.get("content-type", "")
-            assert "System Facts Report" in resp.text
-            assert "Backlog" in resp.text
+            assert resp.status_code == 500, resp.text
+            assert "Renderer failed" in resp.text
+            assert "stub failure" in resp.text
+        finally:
+            await client.aclose()
+
+    @pytest.mark.asyncio
+    async def test_renderer_timeout_returns_504(self, monkeypatch):
+        runner = _StubRunner(output=_stub_document(), timeout=True)
+        _app, client = await _make_app(monkeypatch, runner=runner)
+        try:
+            resp = await client.get("/render/system_facts")
+            assert resp.status_code == 504, resp.text
+            assert "timeout" in resp.text.lower()
         finally:
             await client.aclose()

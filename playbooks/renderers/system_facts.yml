@@ -1,13 +1,15 @@
 ---
 # playbooks/renderers/system_facts.yml
 #
-# Phase 1 example renderer playbook. Emits the canonical renderer JSON shape
-# (title / sections[] / metadata) by gathering the live /api/facts snapshot.
+# Phase 1 acceptance fixture for the Playbook Web Renderer
+# (docs/design/PLAYBOOK_WEB_RENDERER.md §2 + §5).
 #
-# `renderer: true` is the marker RendererRegistry looks for when cataloging
-# playbooks/renderers/*.yml — without it the file is ignored.
+# `renderer: true` is the marker RendererRegistry keys on during discovery
+# (§6). Without it the file is ignored, so other playbooks may coexist in
+# this directory.
 #
-# Artifact contract: writes render.json to {{ artifact_dir }}/render.json.
+# Artifact contract (§5): writes render.json to {{ artifact_dir }}/render.json
+# in the canonical shape (§4): { title, sections[], metadata }.
 
 - name: Render system facts
   hosts: localhost
@@ -16,14 +18,15 @@
 
   vars:
     renderer: true
+    renderer_timeout_seconds: 20
+    renderer_cache_ttl_seconds: 30
     renderer_description: >-
-      Live system-facts report. Gathers the /api/facts snapshot and renders it
-      as a titled page with a metric grid (work queue / todos / unread messages)
-      and a markdown overview section.
+      Live system-facts dashboard. Pulls the /api/facts snapshot via the
+      gludd_facts module and renders a metric grid (running agents, completed
+      today, success rate) plus a per-model cost table.
     artifact_dir: "{{ artifact_dir | default('/tmp/gludd-render-system_facts') }}"
     daemon_url: "{{ daemon_url | default('http://localhost:8000') }}"
     psk: "{{ psk | default('') }}"
-    renderer_timeout_s: 30
 
   tasks:
 
@@ -33,7 +36,7 @@
         state: directory
         mode: "0755"
 
-    - name: Gather live daemon facts
+    - name: Pull live daemon facts
       general_ludd.agent.gludd_facts:
         daemon_url: "{{ daemon_url }}"
         psk: "{{ psk }}"
@@ -41,42 +44,62 @@
       no_log: "{{ psk | length > 0 }}"
       ignore_errors: true
 
-    - name: Set fact-derived metric values (with safe defaults)
+    - name: Build metric_grid + table rows from the facts snapshot
       ansible.builtin.set_fact:
-        _sf_total_work: "{{ live_facts.ansible_facts.gludd.work.total | default(0) | int }}"
-        _sf_backlog: "{{ live_facts.ansible_facts.gludd.todos.backlog_size | default(0) | int }}"
-        _sf_done: "{{ live_facts.ansible_facts.gludd.todos.done | default(0) | int }}"
-        _sf_unread: "{{ live_facts.ansible_facts.gludd.messages.total_unread | default(0) | int }}"
-        _sf_success_rate: "{{ live_facts.ansible_facts.gludd.history.success_rate | default('N/A') }}"
+        _sf_running_agents: >-
+          {{ live_facts.ansible_facts.gludd.work.running_agents | default(0) | int }}
+        _sf_completed_today: >-
+          {{ live_facts.ansible_facts.gludd.work.completed_today | default(0) | int }}
+        _sf_success_rate: >-
+          {{ live_facts.ansible_facts.gludd.history.success_rate | default(0) }}
+        # Project the {model: stats} map into flat rows matching the
+        # companion schema (playbooks/renderers/system_facts.schema.json):
+        # each row is {model, calls, cost_usd}. A namespace loop is used
+        # because Jinja2 `set` inside `for` does not escape scope, and
+        # `map('default', ...)` does not flatten nested dicts.
+        _sf_model_rows: >-
+          {%- set _ns = namespace(rows=[]) -%}
+          {%- for _model, _stats in (live_facts.ansible_facts.gludd.models | default({})).items() -%}
+          {%- set _stats = _stats | default({}) -%}
+          {%- set _ = _ns.rows.append({
+            'model': _model,
+            'calls': (_stats.calls | default(0)) | int,
+            'cost_usd': (_stats.cost_usd | default(0.0)) | float
+          }) -%}
+          {%- endfor -%}
+          {{ _ns.rows }}
+        _sf_generated_at: >-
+          {{ lookup('pipe', 'date -u +%Y-%m-%dT%H:%M:%SZ') }}
 
     - name: Write canonical render.json artifact
       ansible.builtin.copy:
+        dest: "{{ artifact_dir }}/render.json"
+        mode: "0644"
         content: >-
           {{ {
-            'title': 'System Facts Report',
+            'title': 'System Facts',
             'sections': [
               {
                 'type': 'metric_grid',
                 'metrics': [
-                  {'label': 'Work items',  'value': _sf_total_work | string},
-                  {'label': 'Backlog',     'value': _sf_backlog | string},
-                  {'label': 'Done',        'value': _sf_done | string},
-                  {'label': 'Unread',      'value': _sf_unread | string},
-                  {'label': 'Success %',   'value': _sf_success_rate | string}
+                  {'label': 'Running agents',  'value': _sf_running_agents,  'unit': ''},
+                  {'label': 'Completed today', 'value': _sf_completed_today, 'unit': ''},
+                  {'label': 'Success rate',    'value': _sf_success_rate,    'unit': '%'}
                 ]
               },
               {
-                'type': 'markdown',
-                'body': '## Overview\nLive snapshot from /api/facts. Rendered by the gludd playbook web renderer.'
+                'type': 'table',
+                'title': 'Per-model usage',
+                'columns': ['model', 'calls', 'cost_usd'],
+                'rows': _sf_model_rows
               }
             ],
             'metadata': {
-              'renderer': 'system_facts',
-              'source': 'api/facts'
+              'generated_at': _sf_generated_at,
+              'playbook': 'system_facts.yml',
+              'renderer_version': 1
             }
           } | to_nice_json }}
-        dest: "{{ artifact_dir }}/render.json"
-        mode: "0644"
 
     - name: Renderer completion marker
       ansible.builtin.debug:

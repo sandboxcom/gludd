@@ -1,87 +1,92 @@
-"""Canonical JSON shape emitted by renderer playbooks.
+"""Canonical JSON shape emitted by renderer playbooks (Phase 1).
 
-A renderer playbook writes ``render.json`` to its ``artifact_dir`` with the
-shape::
-
-    {
-      "title": "Human-readable page title",
-      "sections": [
-        {"type": "markdown",    "body": "## ..."},
-        {"type": "metric_grid", "metrics": [{"label": "...", "value": "..."}]},
-        {"type": "raw_html",    "html": "<iframe .../>"}
-      ],
-      "metadata": {"renderer": "system_facts", ...}
-    }
-
-Phase 1 supports ``markdown`` + ``metric_grid`` + ``raw_html``. ``chart`` and
-``table`` are reserved for Phase 2 (declared in the union so a future playbook
-that emits them fails validation with a clear error rather than silently
-passing through).
+Spec: docs/design/PLAYBOOK_WEB_RENDERER.md §4. A renderer playbook writes
+``{{ artifact_dir }}/render.json`` matching :class:`RenderDocument`; the
+runner validates it at execution time and overwrites the ``metadata``
+block so the playbook cannot lie about timing.
 """
 
 from __future__ import annotations
 
-from typing import Annotated, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
 
-class MarkdownSection(BaseModel):
-    """Free-form markdown body. Autoescaped by the template."""
-
+class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+
+class MarkdownSection(_Strict):
     type: Literal["markdown"] = "markdown"
-    body: str = Field(min_length=0)
+    content: str = Field(min_length=0)
 
 
-class MetricGridSection(BaseModel):
-    """Grid of label/value metric cards. Autoescaped by the template."""
+class Metric(_Strict):
+    label: str
+    value: Any
+    unit: str | None = None
 
-    model_config = ConfigDict(extra="forbid")
 
+class MetricGridSection(_Strict):
     type: Literal["metric_grid"] = "metric_grid"
-    metrics: list[dict[str, str]] = Field(default_factory=list)
+    metrics: list[Metric]
 
 
-class RawHtmlSection(BaseModel):
-    """Pre-rendered HTML. The template emits this UNescaped (``| safe``).
+class TableSection(_Strict):
+    type: Literal["table"] = "table"
+    title: str | None = None
+    columns: list[str]
+    rows: list[list[Any]]
 
-    Only this section type bypasses Jinja2 autoescaping — markdown and
-    metric_grid values are always escaped. Renderer playbooks are trusted
-    (operator-authored, PSK-gated execution path), so raw_html is the
-    escape hatch for embedded widgets / iframes.
-    """
 
-    model_config = ConfigDict(extra="forbid")
+class ChartSeries(_Strict):
+    name: str
+    values: list[Any] = Field(default_factory=list)
 
+
+class ChartData(_Strict):
+    labels: list[Any] = Field(default_factory=list)
+    series: list[ChartSeries]
+
+
+class ChartSection(_Strict):
+    type: Literal["chart"] = "chart"
+    title: str | None = None
+    chart_type: Literal["line", "bar", "pie"]
+    data: ChartData
+
+
+class RawHtmlSection(_Strict):
     type: Literal["raw_html"] = "raw_html"
     html: str = Field(min_length=0)
 
 
-# Discriminated union keyed on `type`. Add chart/table subtypes in Phase 2.
-RendererSection = Annotated[
-    MarkdownSection | MetricGridSection | RawHtmlSection,
+# Discriminated union keyed on `type` — the closed set of §4.
+Section = Annotated[
+    MarkdownSection
+    | MetricGridSection
+    | TableSection
+    | ChartSection
+    | RawHtmlSection,
     Field(discriminator="type"),
 ]
 
 
-class RendererOutput(BaseModel):
-    """Top-level canonical shape validated against the playbook's render.json."""
+class RenderMetadata(_Strict):
+    generated_at: str | None = None
+    playbook: str | None = None
+    execution_ms: int | None = None
+    renderer_version: int | None = None
 
-    model_config = ConfigDict(extra="forbid")
 
+class RenderDocument(_Strict):
     title: str = Field(min_length=1)
-    sections: list[RendererSection] = Field(default_factory=list)
-    metadata: dict[str, str] = Field(default_factory=dict)
+    sections: list[Section] = Field(default_factory=list)
+    metadata: RenderMetadata = Field(default_factory=RenderMetadata)
 
 
-class RendererMeta(BaseModel):
-    """Catalog entry for a discovered renderer playbook."""
-
-    model_config = ConfigDict(extra="forbid")
-
-    name: str
-    description: str = ""
-    playbook_path: str
-    timeout_s: float = 30.0
+# Backward-compat aliases for prior partial work that referenced the older
+# `RendererOutput` name. The canonical name per the design doc is
+# `RenderDocument`; new code should use that.
+RendererOutput = RenderDocument

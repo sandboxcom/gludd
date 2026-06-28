@@ -1,0 +1,6 @@
+{# Phase 1 markdown rendering: no `markdown` library is a dependency, so the
+   body is rendered as escaped <pre> (per design doc §10 Phase 1). Phase 2
+   will add CommonMark rendering once `markdown` is added to pyproject.toml. #}
+<section class="markdown">
+  <pre>{{ section.content }}</pre>
+</section>

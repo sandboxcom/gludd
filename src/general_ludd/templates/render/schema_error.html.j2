@@ -1,0 +1,30 @@
+{% extends "base.html.j2" %}
+{% block title %}Schema validation error{% endblock %}
+{% block body %}
+<section class="error schema-error">
+  <h2>Schema validation error{% if schema is defined and schema.title is defined %}: {{ schema.title }}{% endif %}</h2>
+  {% if errors is defined and errors %}
+    <ul class="schema-error-list">
+      {% for err in errors %}
+        <li class="field-error">
+          <p class="schema-error-path">
+            <strong>Path:</strong>
+            <code>{{ err.path | default("(root)") }}</code>
+          </p>
+          {% if err.message is defined and err.message %}
+            <p class="schema-error-message"><strong>Message:</strong> {{ err.message }}</p>
+          {% endif %}
+          {% if err.schema_snippet is defined and err.schema_snippet %}
+            <details>
+              <summary>schema at failure point</summary>
+              <pre class="schema-snippet">{{ err.schema_snippet }}</pre>
+            </details>
+          {% endif %}
+        </li>
+      {% endfor %}
+    </ul>
+  {% else %}
+    <p>No error details available.</p>
+  {% endif %}
+</section>
+{% endblock %}

@@ -1,0 +1,24 @@
+{# Phase 1 chart stub: render the `data` block as a table fallback. The
+   design doc §10 defers inline SVG rendering to Phase 2. #}
+<section class="chart">
+  {% if section.title %}<h2>{{ section.title }}</h2>{% endif %}
+  <div class="chart-placeholder">
+    Chart rendering ({{ section.chart_type }}) arrives in Phase 2; showing data table fallback.
+  </div>
+  <table>
+    <thead>
+      <tr>
+        <th>label</th>
+        {% for s in section.data.series %}<th>{{ s.name }}</th>{% endfor %}
+      </tr>
+    </thead>
+    <tbody>
+      {% for lbl in section.data.labels %}
+      <tr>
+        <td>{{ lbl }}</td>
+        {% for s in section.data.series %}<td>{{ s.values[loop.index0] }}</td>{% endfor %}
+      </tr>
+      {% endfor %}
+    </tbody>
+  </table>
+</section>

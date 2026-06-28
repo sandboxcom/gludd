@@ -20,6 +20,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     from general_ludd.routers.projects import register as register_projects
     from general_ludd.routers.quantization import register as register_quantization
     from general_ludd.routers.reload import register as register_reload
+    from general_ludd.routers.render import register as register_render
     from general_ludd.routers.self_improve import register as register_self_improve
     from general_ludd.routers.signing import register as register_signing
     from general_ludd.routers.skills import register as register_skills
@@ -37,6 +38,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     register_projects(app, daemon_state)
     register_quantization(app, daemon_state)
     register_reload(app, daemon_state)
+    register_render(app, daemon_state)
     register_signing(app, daemon_state)
     register_skills(app, daemon_state)
     register_slurm(app, daemon_state)

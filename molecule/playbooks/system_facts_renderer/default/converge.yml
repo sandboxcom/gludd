@@ -1,0 +1,8 @@
+---
+# Execute the shipped Phase 1 renderer fixture against the mock daemon and
+# capture its render.json artifact for verification.
+- import_playbook: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}/playbooks/renderers/system_facts.yml"
+  vars:
+    artifact_dir: "/tmp/gludd-molecule-system_facts-renderer"
+    daemon_url: "http://127.0.0.1:{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8865', true) }}"
+    psk: ""

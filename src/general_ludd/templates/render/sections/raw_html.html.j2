@@ -1,0 +1,11 @@
+{# raw_html is disabled unless the renderer spec sets allow_raw_html=true.
+   The router passes `allow_raw_html` in the render context; when false the
+   body is escaped into a <pre> block so a misconfigured renderer cannot
+   inject markup. #}
+<section class="raw-html">
+  {% if allow_raw_html %}
+    {{ section.html | safe }}
+  {% else %}
+    <pre>{{ section.html }}</pre>
+  {% endif %}
+</section>

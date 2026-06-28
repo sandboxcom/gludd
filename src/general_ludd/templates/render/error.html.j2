@@ -1,0 +1,12 @@
+{% extends "base.html.j2" %}
+{% block title %}Renderer error{% endblock %}
+{% block body %}
+<section class="error">
+  <h2>{{ title }}</h2>
+  <p><strong>Renderer:</strong> {{ name }}</p>
+  {% if detail %}<p><strong>Detail:</strong> {{ detail }}</p>{% endif %}
+  {% if timeout_s is not none %}<p><strong>Timeout:</strong> {{ timeout_s }}s</p>{% endif %}
+  {% if stdout %}<details><summary>stdout</summary><pre>{{ stdout }}</pre></details>{% endif %}
+  {% if stderr %}<details><summary>stderr</summary><pre>{{ stderr }}</pre></details>{% endif %}
+</section>
+{% endblock %}
