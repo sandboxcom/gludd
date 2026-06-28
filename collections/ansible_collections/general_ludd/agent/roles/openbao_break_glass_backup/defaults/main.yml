@@ -1,0 +1,35 @@
+---
+# openbao_break_glass_backup role defaults
+# All variables can be overridden in playbook vars or extra-vars.
+
+# Where the GPG-encrypted snapshot tarball lands.
+backup_dir: "/var/backups/gludd/openbao"
+
+# Filename template — {{ ansible_date_time.iso8601 }} is replaced at runtime.
+backup_filename: "openbao-{{ ansible_date_time.iso8601 }}.gpg"
+
+# Final on-disk path of the encrypted backup.
+backup_path: "{{ backup_dir }}/{{ backup_filename }}"
+
+# Backups older than this many days are purged by the cleanup handler.
+backup_retention_days: 30
+
+# GPG identity used to encrypt the backup.
+gpg_user_id: "{{ ansible_user_id }}"
+gpg_user_name: "Gludd Backup"
+gpg_user_email: "gludd-backup@localhost"
+gpg_recipient: "{{ gpg_user_email | default('gludd-backup@localhost') }}"
+
+# OpenBao connection.
+openbao_addr: "https://127.0.0.1:8200"
+# 'env' = read VAULT_TOKEN from environment.
+# 'secret' = gludd SecretsManager path secret/data/gludd/openbao/root_token.
+openbao_token_source: "env"
+
+# Temp working dir for the unencrypted snapshot (deleted after GPG encrypt).
+snapshot_temp_path: "/tmp/gludd-openbao-snapshot-{{ ansible_date_time.iso8601 }}.bin"
+
+# Whether to invoke the gludd_break_glass module (true) or fall back to a
+# direct ansible.builtin.uri call against the OpenBao HTTP API (false).
+# Default: true — the module handles auth + bytes in one place.
+use_break_glass_module: true

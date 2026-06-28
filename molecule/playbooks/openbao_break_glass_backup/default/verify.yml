@@ -1,0 +1,55 @@
+---
+- name: Verify - openbao_break_glass_backup produced an encrypted backup
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    backup_dir: "/tmp/gludd-openbao-backup-{{ mock_port }}"
+    gnupghome: "/tmp/gludd-mock-gnupg-{{ mock_port }}"
+    backup_path: "{{ backup_dir }}/openbao-molecule-test.gpg"
+    snap_path: "/tmp/gludd-openbao-snap-{{ mock_port }}.bin"
+  environment:
+    GNUPGHOME: "{{ gnupghome }}"
+  tasks:
+    - name: Assert encrypted backup exists
+      ansible.builtin.stat:
+        path: "{{ backup_path }}"
+      register: bk
+      failed_when: not bk.stat.exists
+
+    - name: Assert temp snapshot was shredded
+      ansible.builtin.stat:
+        path: "{{ snap_path }}"
+      register: snap
+      failed_when: snap.stat.exists
+
+    - name: Verify the encrypted file is well-formed GPG (no decrypt)
+      ansible.builtin.shell:
+        cmd: "gpg --list-packets {{ backup_path }}"
+      register: packets
+      changed_when: false
+      failed_when: packets.rc != 0
+
+    - name: Assert backup is non-empty
+      ansible.builtin.assert:
+        that:
+          - bk.stat.size > 0
+        fail_msg: "encrypted backup is 0 bytes"
+        success_msg: "encrypted backup {{ backup_path }} ({{ bk.stat.size }} bytes)"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove backup dir + GNUPGHOME
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ backup_dir }}"
+        - "{{ gnupghome }}"
+      failed_when: false

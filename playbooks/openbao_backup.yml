@@ -1,0 +1,11 @@
+---
+- name: OpenBao break-glass backup
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  become: false
+  roles:
+    - role: general_ludd.agent.openbao_break_glass_backup
+      vars:
+        backup_dir: "{{ backup_dir | default('/var/backups/gludd/openbao') }}"
+        gpg_recipient: "{{ gpg_recipient | default('gludd-backup@localhost') }}"

@@ -1,0 +1,21 @@
+---
+# handlers/main.yml — retention pruner for the openbao_break_glass_backup role.
+# Notified by tasks/main.yml after the encrypted backup has been verified.
+
+- name: cleanup old backups
+  ansible.builtin.find:
+    paths: "{{ backup_dir }}"
+    patterns: "openbao-*.gpg"
+    age: "{{ backup_retention_days }}d"
+    age_stamp: mtime
+  register: _obg_old_backups
+  listen: cleanup old backups
+
+- name: Remove expired backups
+  ansible.builtin.file:
+    path: "{{ item.path }}"
+    state: absent
+  loop: "{{ _obg_old_backups.files | default([]) }}"
+  loop_control:
+    label: "{{ item.path }}"
+  listen: cleanup old backups

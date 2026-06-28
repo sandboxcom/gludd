@@ -1,0 +1,30 @@
+---
+- name: Converge - run openbao_break_glass_backup role
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    backup_dir: "/tmp/gludd-openbao-backup-{{ mock_port }}"
+    gnupghome: "/tmp/gludd-mock-gnupg-{{ mock_port }}"
+  environment:
+    GNUPGHOME: "{{ gnupghome }}"
+    VAULT_TOKEN: "mock-token"
+  tasks:
+    - name: Invoke openbao_break_glass_backup
+      ansible.builtin.include_role:
+        name: general_ludd.agent.openbao_break_glass_backup
+      vars:
+        backup_dir: "/tmp/gludd-openbao-backup-{{ mock_port }}"
+        # Use http+loopback so the role's openbao_addr check passes; the mock
+        # daemon stands in for OpenBao on the same port.
+        openbao_addr: "http://127.0.0.1:{{ mock_port }}"
+        openbao_token_source: "env"
+        gpg_user_email: "molecule-backup@localhost"
+        gpg_user_name: "Molecule Backup"
+        gpg_recipient: "molecule-backup@localhost"
+        # Force the key generation probe to see the existing throwaway key
+        # (the GNUPGHOME env var is exported by the environment block above).
+        gpg_user_id: "molecule-backup@localhost"
+        snapshot_temp_path: "/tmp/gludd-openbao-snap-{{ mock_port }}.bin"
+        backup_filename: "openbao-molecule-test.gpg"

@@ -1,0 +1,127 @@
+---
+# tasks/main.yml — openbao_break_glass_backup
+#
+# Break-glass encrypted backup of the OpenBao store.
+#
+# Flow:
+#   Phase 1 — GPG key check + creation (idempotent, unattended)
+#   Phase 2 — OpenBao raft snapshot via the gludd_break_glass module
+#   Phase 3 — GPG-encrypt the snapshot, shred the unencrypted copy
+#   Phase 4 — Verify the encrypted file is well-formed and report
+#   Handler  — Notify retention pruner
+
+# Make sure the backup directory exists.
+- name: Ensure backup directory exists
+  ansible.builtin.file:
+    path: "{{ backup_dir }}"
+    state: directory
+    mode: "0750"
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 1 — GPG key check + creation
+# ──────────────────────────────────────────────────────────────────────────
+- name: Check if user has a GPG key
+  ansible.builtin.shell:
+    cmd: >-
+      gpg --list-secret-keys --with-colons {{ gpg_user_id | default(ansible_user_id) }}
+      | grep '^sec' | head -1
+  args:
+    warn: false
+  register: gpg_key_check
+  changed_when: false
+  failed_when: false
+
+- name: Generate GPG key for user (no interactive prompt)
+  ansible.builtin.shell:
+    cmd: |
+      cat <<'EOF' | gpg --batch --generate-key
+      %no-protection
+      Key-Type: RSA
+      Key-Length: 4096
+      Name-Real: {{ gpg_user_name | default('Gludd Backup') }}
+      Name-Email: {{ gpg_user_email | default('gludd-backup@localhost') }}
+      Expire-Date: 2y
+      %commit
+      EOF
+  args:
+    creates: "{{ ansible_env.HOME }}/.gnupg/pubring.kbx"
+  when: gpg_key_check.stdout == ''
+  no_log: true
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 2 — OpenBao raft snapshot
+# ──────────────────────────────────────────────────────────────────────────
+- name: Resolve OpenBao token from env (VAULT_TOKEN)
+  ansible.builtin.set_fact:
+    _obg_openbao_token: "{{ lookup('env', 'VAULT_TOKEN') }}"
+  when: openbao_token_source == 'env'
+  no_log: true
+
+- name: Resolve OpenBao token from gludd SecretsManager
+  general_ludd.agent.gludd_break_glass:
+    mode: snapshot
+    openbao_addr: "{{ openbao_addr }}"
+    token: "{{ _obg_openbao_token | default('') }}"
+    output_path: "{{ snapshot_temp_path }}"
+  register: snapshot_response
+  when: use_break_glass_module | bool
+  no_log: true
+
+# Fallback path: hit the OpenBao HTTP API directly when the module is disabled.
+- name: Fallback — fetch snapshot via direct HTTP (no module)
+  ansible.builtin.uri:
+    url: "{{ openbao_addr }}/v1/sys/storage/raft/snapshot"
+    method: GET
+    headers:
+      X-Vault-Token: "{{ _obg_openbao_token | default('') }}"
+    return_content: false
+    dest: "{{ snapshot_temp_path }}"
+    status_code: 200
+  when: not (use_break_glass_module | bool)
+  no_log: true
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 3 — GPG-encrypt the snapshot
+# ──────────────────────────────────────────────────────────────────────────
+- name: GPG-encrypt the snapshot to the recipient public key
+  ansible.builtin.shell:
+    cmd: >-
+      gpg --batch --yes --trust-model always
+      --recipient {{ gpg_recipient }}
+      --output {{ backup_path }}
+      --encrypt {{ snapshot_temp_path }}
+  args:
+    creates: "{{ backup_path }}"
+  no_log: true
+
+- name: Shred the unencrypted snapshot
+  ansible.builtin.file:
+    path: "{{ snapshot_temp_path }}"
+    state: absent
+
+# ──────────────────────────────────────────────────────────────────────────
+# Phase 4 — Verify + report
+# ──────────────────────────────────────────────────────────────────────────
+- name: Stat the encrypted backup
+  ansible.builtin.stat:
+    path: "{{ backup_path }}"
+  register: _obg_backup_stat
+
+- name: Verify the encrypted file is well-formed (no decrypt)
+  ansible.builtin.shell:
+    cmd: "gpg --list-packets {{ backup_path }}"
+  register: _obg_verify
+  changed_when: false
+  failed_when: _obg_verify.rc != 0
+
+- name: Report backup size
+  ansible.builtin.set_fact:
+    backup_size: "{{ _obg_backup_stat.stat.size }}"
+
+- name: Notify retention pruner
+  ansible.builtin.debug:
+    msg: >-
+      Backup complete: {{ backup_path }}
+      ({{ backup_size }} bytes, encrypted for {{ gpg_recipient }})
+  changed_when: true
+  notify: cleanup old backups

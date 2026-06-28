@@ -1,0 +1,18 @@
+---
+galaxy_info:
+  role_name: openbao_break_glass_backup
+  author: gludd
+  description: >
+    OpenBao break-glass encrypted backup. Snapshots the OpenBao raft store,
+    GPG-encrypts the snapshot with a local (auto-created) user key, writes the
+    encrypted tarball to disk, and prunes backups older than the retention window.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

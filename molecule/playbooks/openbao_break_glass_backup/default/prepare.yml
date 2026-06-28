@@ -1,0 +1,69 @@
+---
+- name: Prepare - mock OpenBao + throwaway GPG key for openbao_break_glass_backup
+  hosts: localhost
+  connection: local
+  gather_facts: true
+  vars:
+    project_dir: "{{ lookup('env', 'MOLECULE_PROJECT_DIRECTORY') }}"
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    backup_dir: "/tmp/gludd-openbao-backup-{{ mock_port }}"
+    gnupghome: "/tmp/gludd-mock-gnupg-{{ mock_port }}"
+  tasks:
+    - name: Launch mock daemon (background, nohup)
+      ansible.builtin.shell:
+        cmd: >-
+          nohup {{ lookup('env', 'VIRTUAL_ENV') | default('/usr', true) }}/bin/python3
+          "{{ project_dir }}/molecule/mock_daemon/server.py"
+          --port {{ mock_port }} --host 127.0.0.1 --pidfile "{{ pidfile }}"
+          > /tmp/gludd-mock-{{ mock_port }}.log 2>&1 &
+      changed_when: true
+
+    - name: Wait for mock OpenBao /healthz
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/healthz"
+        method: GET
+        status_code: 200
+      register: health
+      until: health.status == 200
+      retries: 20
+      delay: 0.5
+
+    - name: Remove stale backup dir + GNUPGHOME
+      ansible.builtin.file:
+        path: "{{ item }}"
+        state: absent
+      loop:
+        - "{{ backup_dir }}"
+        - "{{ gnupghome }}"
+        - "{{ pidfile }}"
+
+    - name: Recreate backup dir
+      ansible.builtin.file:
+        path: "{{ backup_dir }}"
+        state: directory
+        mode: "0750"
+
+    - name: Generate throwaway GPG key for the test
+      environment:
+        GNUPGHOME: "{{ gnupghome }}"
+      ansible.builtin.shell: |
+        set -e
+        mkdir -p "{{ gnupghome }}"
+        chmod 700 "{{ gnupghome }}"
+        cat <<'EOF' | gpg --batch --generate-key
+        %no-protection
+        Key-Type: RSA
+        Key-Length: 2048
+        Name-Real: Molecule Backup
+        Name-Email: molecule-backup@localhost
+        Expire-Date: 1d
+        %commit
+        EOF
+      args:
+        creates: "{{ gnupghome }}/pubring.kbx"
+      changed_when: true
+
+    - name: Export throwaway GPG pubring path for converge
+      ansible.builtin.set_fact:
+        _obg_gnupghome: "{{ gnupghome }}"
