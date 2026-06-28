@@ -1002,6 +1002,22 @@ class EventLoop:
                         await self._todo_repo.transition(
                             _todo.todo_id, TodoStatus.QUEUED, _todo.version
                         )
+                    # F3: also DELETE the lease row acquired for this todo so it
+                    # does not accumulate as an orphan and later trip
+                    # ``reclaim_expired_leases`` to requeue the same todo we
+                    # just released (a double-dispatch vector). Best-effort: a
+                    # failure here only delays cleanup to the lease TTL.
+                    if self._active_session is not None:
+                        _bucket = _safe_str(_todo, "queue", "core") or "core"
+                        _tid = _safe_str(_todo, "todo_id", "") or ""
+                        if _tid:
+                            with contextlib.suppress(Exception):
+                                from general_ludd.event_loop.lease import release_lease
+
+                                await release_lease(
+                                    self._active_session,
+                                    bucket_key=f"{_bucket}:{_tid}",
+                                )
 
         # W(#23): wire Scheduler.plan() to determine concurrency-safe batches.
         # Each batch may run concurrently (asyncio.gather) when a session_factory

@@ -87,3 +87,26 @@ async def reclaim_expired_leases(
         await session.delete(lease)
     await session.flush()
     return len(expired)
+
+
+async def release_lease(
+    session: AsyncSession,
+    bucket_key: str,
+    holder_id: str | None = None,
+) -> int:
+    """Delete the bucket lease for a released todo. Returns rows deleted.
+
+    Called from the PID-cap trim path (and any other place a claimed todo is
+    released back to QUEUED without ever being dispatched): without this, the
+    lease row is orphaned, accumulates, eventually expires, and trips
+    ``reclaim_expired_leases`` to requeue a todo that was just requeued by the
+    trim — a double-dispatch vector.
+    """
+    from sqlalchemy import delete
+
+    stmt = delete(BucketLeaseModel).where(BucketLeaseModel.bucket_key == bucket_key)
+    if holder_id is not None:
+        stmt = stmt.where(BucketLeaseModel.holder_id == holder_id)
+    result = await session.execute(stmt)
+    await session.flush()
+    return int(result.rowcount or 0)  # type: ignore[attr-defined]

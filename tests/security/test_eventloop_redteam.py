@@ -19,6 +19,7 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 import pytest_asyncio
+from sqlalchemy import select
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
 from general_ludd.controllers.pid import LoadController
@@ -81,6 +82,124 @@ async def _insert_created_return(factory, return_id: str = "R1") -> None:
             )
         )
         await s.commit()
+
+
+# ===========================================================================
+# AREA 7 — PID-cap release must delete the orphan lease (F3)
+# ===========================================================================
+class _CapOutputs:
+    """Minimal stand-in for a PID outputs object exposing the cap attribute."""
+
+    def __init__(self, desired_total_active_buckets: int) -> None:
+        self.desired_total_active_buckets = desired_total_active_buckets
+
+
+async def _noop_dispatch(_todos: object) -> int:
+    """Replace EventLoop._dispatch_jobs_via_scheduler so the cap-trim test does
+    not try to run real ansible/HTTP dispatch."""
+    return 0
+
+
+async def _insert_active_todo_with_lease(
+    factory,
+    todo_id: str,
+    holder_id: str = "tick-5",
+    bucket_key: str | None = None,
+    expires_delta: timedelta = timedelta(minutes=10),
+) -> None:
+    """Seed an ACTIVE todo plus a live bucket lease for that todo."""
+    bk = bucket_key or f"core:{todo_id}"
+    async with factory() as s:
+        s.add(
+            TodoModel(
+                todo_id=todo_id,
+                title="redteam",
+                status=TodoStatus.ACTIVE.value,
+                queue="core",
+                version=2,
+            )
+        )
+        s.add(
+            BucketLeaseModel(
+                bucket_key=bk,
+                holder_id=holder_id,
+                expires_at=datetime.now(UTC) + expires_delta,
+            )
+        )
+        await s.commit()
+
+
+@pytest.mark.asyncio
+async def test_pid_cap_release_deletes_lease_row(session_factory):
+    """Trace: 3 ACTIVE todos each hold a live bucket lease; PID cap trims 2 of
+    them back to QUEUED. A correct trim also DELETES the orphan lease rows so
+    they cannot accumulate, expire, and trip F1's reclaim on the SAME todo that
+    was just requeued.
+    """
+    from general_ludd.event_loop.loop import EventLoop
+
+    await _insert_active_todo_with_lease(session_factory, "T1", holder_id="tick-6")
+    await _insert_active_todo_with_lease(session_factory, "T2", holder_id="tick-6")
+    await _insert_active_todo_with_lease(session_factory, "T3", holder_id="tick-6")
+
+    async with session_factory() as s:
+        loop = EventLoop(session=s)
+        loop._active_session = s
+        loop._todo_repo = TodoRepository(s)
+
+        # Re-load the 3 ACTIVE todos as the claimed batch this tick.
+        claimed = list(
+            (
+                await s.execute(
+                    select(TodoModel).where(TodoModel.status == TodoStatus.ACTIVE.value)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        loop._tick_state["claimed_todos"] = claimed
+        loop._tick_state["pid_outputs"] = _CapOutputs(1)
+
+        # Skip the actual dispatch path so the test isolates the cap-trim logic.
+        loop._dispatch_jobs_via_scheduler = _noop_dispatch  # type: ignore[assignment]
+
+        await loop._phase_dispatch_execute_jobs()
+        await s.commit()
+
+    # Exactly ONE lease row survives (the one for the dispatched todo). The two
+    # over-cap todos' lease rows must be DELETED, not left to expire.
+    async with session_factory() as s:
+        remaining_leases = list(
+            (await s.execute(select(BucketLeaseModel))).scalars().all()
+        )
+        active_todos = list(
+            (
+                await s.execute(
+                    select(TodoModel).where(TodoModel.status == TodoStatus.ACTIVE.value)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        queued_todos = list(
+            (
+                await s.execute(
+                    select(TodoModel).where(TodoModel.status == TodoStatus.QUEUED.value)
+                )
+            )
+            .scalars()
+            .all()
+        )
+
+    assert len(remaining_leases) == 1, (
+        f"Expected exactly 1 surviving lease row, got {len(remaining_leases)} "
+        f"(orphan leases accumulate and later trip F1). rows="
+        f"{[r.bucket_key for r in remaining_leases]}"
+    )
+    assert len(active_todos) == 1, f"Expected 1 ACTIVE todo, got {len(active_todos)}"
+    assert len(queued_todos) == 2, (
+        f"Expected 2 over-cap todos flipped to QUEUED, got {len(queued_todos)}"
+    )
 
 
 # ===========================================================================
