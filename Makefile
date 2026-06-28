@@ -251,6 +251,7 @@ help:
 	@echo ""
 	@echo "  --- Ansible ---"
 	@echo "  ansible-syntax        Validate playbook syntax"
+	@echo "  terraform-validate    terraform fmt -check + validate on infra/terraform/ (skips if no terraform binary)"
 	@echo "  playbook-list         List registered playbooks"
 	@echo "  molecule-test         Run molecule tests"
 	@echo ""
@@ -703,7 +704,7 @@ healthcheck:
 	@$(UV) run python -c "from general_ludd.event_loop.loop import EventLoop; print('Event loop import OK')"
 
 ansible-syntax:
-	@for f in playbooks/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook --syntax-check "$$f" || exit 1; done
+	@for f in playbooks/*.yml playbooks/renderers/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook --syntax-check "$$f" || exit 1; done
 
 ansible-lint-playbooks:
 	@$(UV) run ansible-lint playbooks/roles || true
@@ -2153,6 +2154,24 @@ validate: lint ansible-syntax healthcheck
 	@$(MAKE) --no-print-directory smoke > /dev/null 2>&1 && echo "smoke: PASS" || (echo "smoke: FAIL" && exit 1)
 	@$(MAKE) --no-print-directory audit-evidence > /dev/null 2>&1 && echo "audit-evidence: PASS" || (echo "audit-evidence: FAIL" && exit 1)
 	@echo "Full validation passed."
+
+# Run `terraform fmt -check` and `terraform validate` across every module and
+# stack under infra/terraform/. Skips gracefully (exit 0) if the terraform
+# binary is absent — same pattern as the gh/podman optional-tool targets.
+# Phase 1 of TERRAFORM_INFRA_STRUCTURE.md §7.
+terraform-validate:
+	@command -v terraform >/dev/null 2>&1 || { echo "terraform not installed, skipping terraform-validate"; exit 0; }
+	@EXIT=0; \
+	for d in infra/terraform/modules/*/ infra/terraform/stacks/*/; do \
+		[ -d "$$d" ] || continue; \
+		[ -f "$$d/main.tf" ] || continue; \
+		echo "--- terraform fmt -check $$d"; \
+		terraform fmt -check -diff "$$d" || { echo "FMT FAIL: $$d"; EXIT=1; continue; }; \
+		echo "--- terraform validate $$d"; \
+		( cd "$$d" && terraform init -backend=false -input=false >/dev/null 2>&1 \
+			&& terraform validate ) || { echo "VALIDATE FAIL: $$d"; EXIT=1; }; \
+	done; \
+	exit $$EXIT
 
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."

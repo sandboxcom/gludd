@@ -1,0 +1,23 @@
+# vsphere-vllm stack tfvars example (Terraform Phase 2)
+# Copy to vsphere-vllm.tfvars and fill in real values.
+# Auth (vsphere_user / vsphere_password / vsphere_server) is injected at deploy
+# time from OpenBao / SecretsManager; do NOT commit real credentials here.
+
+datacenter      = "DC0"
+cluster         = "Cluster0"
+datastore       = "datastore0"
+network         = "VM Network"
+
+gpu_type        = "a100_80"
+gpu_count       = 1
+disk_size_gb    = 100
+
+engine          = "vllm"
+model_name      = "meta-llama/Llama-3.1-70B"
+container_image = "vllm/vllm-openai:latest"
+
+max_cost_usd    = "10.0"
+timeout_minutes = "60.0"
+
+# Loopback-only by default; set to your operator CIDR (e.g. "10.0.0.0/8").
+allowed_cidr    = "127.0.0.1/32"

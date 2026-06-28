@@ -18,6 +18,12 @@ class ProviderInfo(BaseModel):
     min_gpu: GPUType
     max_gpu: GPUType
     pricing: dict[str, float] = {}
+    # Environment variables required to authenticate the Terraform provider.
+    # Populated only for providers whose auth flow is non-trivial (e.g. vSphere).
+    auth_env: list[str] = []
+    # Free-form note describing where the auth_env values are sourced from at
+    # runtime (OpenBao, SecretsManager, env, etc.).
+    auth_source: str | None = None
 
     @field_validator("display_name", mode="before")
     @classmethod
@@ -129,6 +135,18 @@ _BUILTIN_PROVIDERS: list[dict[str, Any]] = [
         "min_gpu": GPUType.A10,
         "max_gpu": GPUType.A100_80,
         "pricing": {"a10": 0.75, "a100_80": 25.00},
+    },
+    {
+        "provider": ComputeProvider.VMWARE,
+        "display_name": "VMware vSphere",
+        "terraform_provider": "hashicorp/vsphere",
+        "supports_spot": False,
+        "sub_hour_billing": False,
+        "min_gpu": GPUType.A100_80,
+        "max_gpu": GPUType.A100_80,
+        "pricing": {"a100_80": 0.0},
+        "auth_env": ["VSPHERE_USER", "VSPHERE_PASSWORD", "VSPHERE_SERVER"],
+        "auth_source": "OpenBao / SecretsManager",
     },
 ]
 

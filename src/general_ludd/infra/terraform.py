@@ -51,6 +51,31 @@ _GCP_MACHINE_TYPES: dict[str, str] = {
 }
 
 
+def escape_tfvar_value(s: str) -> str:
+    """Escape a Python string for use as a quoted tfvars/HCL string value.
+
+    Wraps the value in double-quotes and escapes the characters that are
+    significant inside an HCL string literal: backslash, double-quote,
+    interpolation marker (``${``), and newline. The result is a single
+    self-contained HCL string token — a stray ``"``/``}``/``${...}`` in a
+    config field becomes a tfvars parse error (or a benign literal), never
+    valid HCL structure.
+
+    Phase 0 of TERRAFORM_INFRA_STRUCTURE.md §7 — defense-in-depth on top of
+    the ComputeConfig field validators; the primary injection control under
+    Option B is that tfvars carry values, not HCL.
+    """
+    # Order matters: backslash must be doubled first so we don't double the
+    # backslashes introduced by the later escapes.
+    escaped = (
+        s.replace("\\", "\\\\")
+        .replace('"', '\\"')
+        .replace("${", "\\${")
+        .replace("\n", "\\n")
+    )
+    return f'"{escaped}"'
+
+
 def _default_image(engine: InferenceEngine) -> str:
     if engine == InferenceEngine.LLAMACPP:
         return "ghcr.io/ggerganov/llama.cpp:server"
@@ -117,9 +142,46 @@ class TerraformGenerator:
             ComputeProvider.COREWEAVE: self._generate_generic,
             ComputeProvider.DIGITAL_OCEAN: self._generate_generic,
             ComputeProvider.ORACLE: self._generate_generic,
+            ComputeProvider.VMWARE: self._generate_vsphere,
         }
         handler = dispatch.get(config.provider, self._generate_generic)
         return handler(config)
+
+    # ------------------------------------------------------------------
+    # tfvars emission — the Phase 1 (Option B) values channel.
+    # ------------------------------------------------------------------
+    # Every config-derived value that would otherwise be f-string-interpolated
+    # into an HCL string literal MUST go through ``escape_tfvar_value`` here.
+    # This is the structural injection control described in §4/§8 of the
+    # design doc: tfvars carry values, not HCL, so a stray ``"``/``}``/``${``
+    # in a config field becomes a tfvars parse error, not an arbitrary HCL
+    # fragment. The inline ``_generate_*`` paths still exist for backwards
+    # compatibility (Phase 4 removes them); the module-style ``_generate_vsphere``
+    # path and any future module-style provider consume this method.
+
+    def build_tfvars(self, config: ComputeConfig) -> str:
+        """Render a ``terraform.tfvars`` body for a ComputeConfig.
+
+        All string values are passed through :func:`escape_tfvar_value` so the
+        output is always a syntactically valid HCL tfvars file regardless of
+        the characters in the config fields. Numeric values are emitted bare.
+        """
+        image = _container_image(config)
+        lines: list[str] = [
+            f"provider       = {escape_tfvar_value(config.provider.value)}",
+            f"engine         = {escape_tfvar_value(config.engine.value)}",
+            f"gpu_type       = {escape_tfvar_value(config.gpu_type.value)}",
+            f"gpu_count      = {config.gpu_count}",
+            f"model_name     = {escape_tfvar_value(config.model_name)}",
+            f"container_image = {escape_tfvar_value(image)}",
+            f"disk_size_gb   = {config.disk_size_gb}",
+            f"max_cost_usd   = {escape_tfvar_value(str(config.max_cost_usd))}",
+            f"timeout_minutes = {escape_tfvar_value(str(config.timeout_minutes))}",
+            f"allowed_cidr   = {escape_tfvar_value(config.allowed_cidr)}",
+        ]
+        if config.region is not None:
+            lines.append(f"region         = {escape_tfvar_value(config.region)}")
+        return "\n".join(lines) + "\n"
 
     def _generate_aws(self, config: ComputeConfig) -> str:
         instance_type = _AWS_GPU_TO_INSTANCE.get(config.gpu_type.value, "g5.xlarge")
@@ -728,5 +790,80 @@ class TerraformGenerator:
 
             output "instance_endpoint" {{
               value = "${{{provider_name}_instance.gpu_instance.endpoint}}:8000/v1"
+            }}
+        """)
+
+    def _generate_vsphere(self, config: ComputeConfig) -> str:
+        # Lazy-import pyvmomi so it is NOT a hard top-level dependency; the
+        # vSphere provider only needs the SDK for direct vAPI calls (inventory
+        # discovery, customization spec validation), which Terraform itself
+        # does not require at plan/apply time.
+        import importlib.util
+
+        pyvmomi_available = importlib.util.find_spec("pyvmomi") is not None
+        if not pyvmomi_available:
+            # Terraform generation still proceeds — pyvmomi is only required
+            # for live vSphere API calls during the deploy step, not for HCL
+            # emission. Surface the requirement loudly so callers know.
+            import warnings
+
+            warnings.warn(
+                "pyvmomi is not installed; vSphere live-API features "
+                "(inventory discovery, customization spec validation) are "
+                "disabled. HCL generation proceeds normally.",
+                stacklevel=2,
+            )
+
+        image = _container_image(config)
+        user_data = _user_data_script(config)
+        datacenter = "DC0"
+        cluster = "Cluster0"
+        datastore = "datastore0"
+        network = "VM Network"
+
+        return textwrap.dedent(f"""\
+            terraform {{
+              required_providers {{
+                vsphere = {{
+                      source  = "hashicorp/vsphere"
+                      version = "~> 2.8"
+                }}
+              }}
+            }}
+
+            provider "vsphere" {{
+              user                 = var.vsphere_user
+              password             = var.vsphere_password
+              vsphere_server       = var.vsphere_server
+              allow_unverified_ssl = true
+            }}
+
+            module "vllm_server" {{
+              source = "../modules/vllm-server"
+
+              datacenter       = "{datacenter}"
+              cluster          = "{cluster}"
+              datastore        = "{datastore}"
+              network          = "{network}"
+              gpu_type         = "{config.gpu_type.value}"
+              gpu_count        = {config.gpu_count}
+              disk_size_gb     = {config.disk_size_gb}
+              engine           = "{config.engine.value}"
+              model_name       = "{config.model_name}"
+              container_image  = "{image}"
+              max_cost_usd     = "{config.max_cost_usd}"
+              timeout_minutes  = "{config.timeout_minutes}"
+              user_data_script = <<-EOT
+            {user_data}
+              EOT
+              allowed_cidr     = "{config.allowed_cidr}"
+            }}
+
+            output "instance_ip" {{
+              value = module.vllm_server.instance_ip
+            }}
+
+            output "endpoint_url" {{
+              value = module.vllm_server.endpoint_url
             }}
         """)

@@ -38,6 +38,17 @@ id_dsa
 
 scripts/scan-secrets.py
 
+# ── Terraform: never track state, plans, plugin cache, or real tfvars ─────────
+# Phase 1 (TERRAFORM_INFRA_STRUCTURE.md §8) requires these before any .tf lands.
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+.terraform.lock.hcl
+# Real tfvars carry secrets; only *.tfvars.example is committed (negated below).
+*.tfvars
+!*.tfvars.example
+
 # Z.AI / GLM API key material — never track (.zai.key also matches *.key above)
 zai.api
 .zai.key
@@ -52,4 +63,16 @@ zai.key
 .claude/shell-snapshots/    # machine-local shell history snapshots
 .claude/projects/           # machine-local project memory
 .claude/settings.local.json # machine-local permission overrides (keep settings.json)
+# ─────────────────────────────────────────────────────────────────────────────
+
+# ── Terraform — never check in runtime state or real tfvars ──────────────────
+# Per TERRAFORM_INFRA_STRUCTURE.md §8: .tfstate / .tfplan / .terraform/ / real
+# *.tfvars MUST be ignored before any stack is checked in. *.tfvars.example is
+# the only tfvars-shaped file that should ever be tracked.
+*.tfstate
+*.tfstate.*
+*.tfplan
+.terraform/
+*.tfvars
+!*.tfvars.example
 # ─────────────────────────────────────────────────────────────────────────────

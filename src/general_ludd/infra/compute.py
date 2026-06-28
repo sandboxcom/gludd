@@ -29,6 +29,7 @@ class ComputeProvider(enum.StrEnum):
     COREWEAVE = "coreweave"
     DIGITAL_OCEAN = "digital_ocean"
     ORACLE = "oracle"
+    VMWARE = "vmware"
 
 
 class GPUType(enum.StrEnum):
