@@ -14,6 +14,33 @@ on:
   pull_request:
     branches: [master, main]
   workflow_dispatch:
+    inputs:
+      vllm_base_url:
+        description: "Pre-running vLLM /v1 base URL (leave empty to use spawn)"
+        required: false
+        default: ""
+      llamacpp_base_url:
+        description: "Pre-running llama.cpp /v1 base URL (leave empty to use spawn)"
+        required: false
+        default: ""
+      spawn_vllm:
+        description: "Spawn a real vllm server via LocalInferenceManager"
+        type: boolean
+        required: false
+        default: false
+      spawn_llamacpp:
+        description: "Spawn a real llama.cpp server via LocalInferenceManager"
+        type: boolean
+        required: false
+        default: false
+      vllm_model:
+        description: "Model id for the spawned vllm (e.g. Qwen/Qwen2.5-0.5B-Instruct)"
+        required: false
+        default: ""
+      llamacpp_model:
+        description: "Model path for the spawned llama.cpp (gguf file)"
+        required: false
+        default: ""
 
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
@@ -435,6 +462,32 @@ jobs:
           labels: ${{ steps.meta.outputs.labels }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+  # Manual-dispatch-only E2E job for the local-provider tests
+  # (tests/e2e/providers/). NEVER runs on push or PR — the whole point of the
+  # env-gated skip contract is that the default suite stays green with no
+  # vllm/llama_cpp available. An operator triggers this with concrete backend
+  # URLs (or opts into the spawn variant) when they want a real end-to-end run.
+  e2e-providers:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      VLLM_BASE_URL: ${{ inputs.vllm_base_url }}
+      LLAMACPP_BASE_URL: ${{ inputs.llamacpp_base_url }}
+      VLLM_E2E_SPAWN: ${{ inputs.spawn_vllm && '1' || '' }}
+      LLAMACPP_E2E_SPAWN: ${{ inputs.spawn_llamacpp && '1' || '' }}
+      VLLM_TEST_MODEL: ${{ inputs.vllm_model }}
+      LLAMACPP_TEST_MODEL: ${{ inputs.llamacpp_model }}
+    steps:
+      - uses: actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd  # v5.0.1 (node24)
+      - uses: astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39  # v8.2.0 (node24)
+      - name: Run provider E2E
+        run: |
+          uv sync
+          uv run python -m pytest tests/e2e/providers/ -v
+        env:
+          GLUDD_PSK: ""
 
   release:
     needs: [version, gate, test-shard, linux, macos, windows, termux, container]
