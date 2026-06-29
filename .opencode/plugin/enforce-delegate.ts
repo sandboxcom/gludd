@@ -407,14 +407,24 @@ function enforceForceDelegate(
 // ============================================================================
 function readStreak(): number {
   try {
-    const v = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
-    const n = parseInt(v, 10)
+    const raw = fs.readFileSync(MAINTHREAD_STREAK_FILE, "utf8").trim()
+    // Back-compat: accept a bare integer (pre-.json format) OR a JSON object.
+    if (raw.startsWith("{")) {
+      const obj = JSON.parse(raw)
+      const n = parseInt(obj.count, 10)
+      return Number.isNaN(n) ? 0 : n
+    }
+    const n = parseInt(raw, 10)
     return Number.isNaN(n) ? 0 : n
   } catch { return 0 }
 }
 
 function writeStreak(n: number): void {
-  try { fs.writeFileSync(MAINTHREAD_STREAK_FILE, String(n)) } catch { /* fail open */ }
+  try {
+    const tmp = MAINTHREAD_STREAK_FILE + ".tmp"
+    fs.writeFileSync(tmp, JSON.stringify({ count: n, ts: Date.now() }))
+    fs.renameSync(tmp, MAINTHREAD_STREAK_FILE)
+  } catch { /* fail open */ }
 }
 
 function isMainthreadTool(tool: string): boolean {

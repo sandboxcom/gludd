@@ -276,6 +276,36 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                             row.parent_agent_todo_id,
                             exc,
                         )
+            # Reverse-direction propagation: if this human-todo is linked to
+            # a permission-escalation row (tag ``escalation:N``), reflect the
+            # resolution back onto the escalation row. Best-effort + non-fatal.
+            if row.category == "permission_escalation" and row.status in {
+                "done",
+                "dismissed",
+            }:
+                try:
+                    import json as _json2
+                    from general_ludd.routers.security import (
+                        _sync_escalation_from_human_todo,
+                    )
+                    try:
+                        _tags = _json2.loads(row.tags or "[]")
+                    except Exception:
+                        _tags = []
+                    await _sync_escalation_from_human_todo(
+                        app,
+                        row.id,
+                        tags=_tags,
+                        status=row.status,
+                        human_resolver=row.human_resolver,
+                        human_resolution=row.human_resolution,
+                    )
+                except Exception as exc:
+                    logger.warning(
+                        "escalation sync failed for human-todo %s: %s",
+                        row.id,
+                        exc,
+                    )
             await session.commit()
             return _human_todo_to_dict(row)
 

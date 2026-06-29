@@ -6,6 +6,7 @@ PSK-gated centrally by the daemon's ``auth_and_stats_middleware`` (every
 from __future__ import annotations
 
 import json
+import logging
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
@@ -22,6 +23,8 @@ from general_ludd.security.permissions import (
     PermissionSubject,
 )
 from general_ludd.security.sts import StsAuditLog, StsIssuer
+
+logger = logging.getLogger(__name__)
 
 
 def _get_issuer(app: FastAPI) -> StsIssuer:
@@ -100,6 +103,120 @@ def _esc_counter(app: FastAPI) -> int:
         app.state._escalation_counter = counter
     counter[0] += 1
     return int(counter[0])
+
+
+async def _file_human_todo_for_escalation(
+    app: FastAPI, esc_row: dict[str, Any]
+) -> str | None:
+    """File a HumanTodo(category=permission_escalation) for a pending escalation.
+
+    Returns the human_todo_id, or None if no DB session factory is wired
+    (the escalation row is still recorded; the human is just not surfaced
+    a queue entry — logged so the gap is observable).
+    """
+    factory = getattr(app.state, "_session_factory", None)
+    if factory is None:
+        logger.warning(
+            "no session factory — pending escalation %s will not surface a "
+            "HumanTodo; configure app.state._session_factory",
+            esc_row.get("id"),
+        )
+        return None
+    from general_ludd.db.repository import HumanTodoRepository
+
+    esc_id = esc_row["id"]
+    agent_id = esc_row["agent_id"]
+    title = f"Permission escalation #{esc_id} from {agent_id}"
+    body = (
+        f"Agent {agent_id} requested additional capabilities.\n\n"
+        f"Reason: {esc_row['reason']}\n\n"
+        f"Requested capabilities:\n{esc_row['requested_capabilities_yaml']}\n\n"
+        f"Resolve via: gludd perm escalations approve {esc_id} "
+        f"--reason '...' OR gludd perm escalations deny {esc_id} --reason '...'"
+    )
+    async with factory() as session:
+        repo = HumanTodoRepository(session)
+        row = await repo.create(
+            agent_id=agent_id,
+            title=title,
+            body=body,
+            category="permission_escalation",
+            priority="high",
+            tags=[f"escalation:{esc_id}"],
+        )
+        await session.commit()
+        return row.id
+
+
+async def _resolve_human_todo_for_escalation(
+    app: FastAPI, esc_row: dict[str, Any], *, status: str, resolver: str, reason: str
+) -> None:
+    """Mark the HumanTodo linked to this escalation as done/dismissed.
+
+    ``status`` must be 'done' (approval) or 'dismissed' (denial). Silently
+    no-ops if no linked human_todo_id or no DB. Idempotent: a terminal
+    HumanTodo is left untouched.
+    """
+    ht_id = esc_row.get("human_todo_id")
+    factory = getattr(app.state, "_session_factory", None)
+    if ht_id is None or factory is None:
+        return
+    from general_ludd.db.repository import HumanTodoRepository
+
+    async with factory() as session:
+        repo = HumanTodoRepository(session)
+        row = await repo.get(ht_id)
+        if row is None:
+            return
+        # Skip if already terminal (e.g. human resolved via the human-todo
+        # endpoint directly).
+        if row.status in {"done", "dismissed", "superseded"}:
+            return
+        if status == "done":
+            await repo.mark_done(ht_id, resolver, reason)
+        else:
+            await repo.dismiss(ht_id, resolver, reason)
+        await session.commit()
+
+
+async def _sync_escalation_from_human_todo(
+    app: FastAPI,
+    human_todo_id: str,
+    *,
+    tags: list[str],
+    status: str,
+    human_resolver: str | None,
+    human_resolution: str | None,
+) -> None:
+    """If a resolved HumanTodo carries an ``escalation:N`` tag, propagate the
+    resolution to the in-memory escalation row.
+
+    Fired after a successful PATCH /api/human-todos/{id}. done → approved,
+    dismissed → denied. Idempotent — only acts on rows still pending.
+
+    The caller passes the tag list + status directly so this helper does NOT
+    need to open a new session (the outer PATCH transaction may not yet be
+    committed, so a fresh session would not see the updated row).
+    """
+    store = getattr(app.state, "_escalation_store", None)
+    if not store or status not in {"done", "dismissed"}:
+        return
+    esc_id: int | None = None
+    for t in tags or []:
+        if isinstance(t, str) and t.startswith("escalation:"):
+            try:
+                esc_id = int(t.split(":", 1)[1])
+            except ValueError:
+                pass
+    if esc_id is None:
+        return
+    for esc in store:
+        if esc.get("id") == esc_id and esc.get("status") == "pending":
+            esc["status"] = "approved" if status == "done" else "denied"
+            esc["human_reviewer"] = human_resolver
+            esc["decided_at"] = datetime.now(UTC).isoformat()
+            esc["decided_reason"] = human_resolution
+            break
 
 
 def _caps_to_yaml(caps: list[dict[str, Any]]) -> str:
@@ -378,6 +495,17 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         }
         _get_esc_store(app).append(row)
 
+        # Pending escalations MUST surface a HumanTodo so the human can see
+        # and resolve them (AGENTS.md "Human Permission Subjects" → outside-
+        # intersection requests are pending → HumanTodo(category=
+        # permission_escalation)). The id is stored on the row so the
+        # approve/deny path can resolve it; the human-todo tags carry
+        # escalation:N so reverse-direction resolution propagates back.
+        human_todo_id: str | None = None
+        if not auto:
+            human_todo_id = await _file_human_todo_for_escalation(app, row)
+            row["human_todo_id"] = human_todo_id
+
         # For auto_approved: immediately mint an STS token scoped to the
         # intersection of (current + requested) and the human spec.
         sts_token_id = None
@@ -419,6 +547,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
                 "status": row["status"],
                 "decided_reason": row["decided_reason"],
                 "sts_token_id": sts_token_id,
+                "human_todo_id": row.get("human_todo_id"),
             },
         )
 
@@ -492,6 +621,15 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         row["human_reviewer"] = req.get("human_reviewer")
         row["decided_at"] = datetime.now(UTC).isoformat()
         row["decided_reason"] = reason
+        # Propagate to the linked HumanTodo (if any) so the human queue
+        # reflects the resolution.
+        await _resolve_human_todo_for_escalation(
+            app,
+            row,
+            status="done",
+            resolver=req.get("human_reviewer") or "system",
+            reason=reason,
+        )
         return {
             "id": esc_id,
             "status": "approved",
@@ -519,4 +657,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         row["human_reviewer"] = req.get("human_reviewer")
         row["decided_at"] = datetime.now(UTC).isoformat()
         row["decided_reason"] = str(reason)
+        await _resolve_human_todo_for_escalation(
+            app,
+            row,
+            status="dismissed",
+            resolver=req.get("human_reviewer") or "system",
+            reason=str(reason),
+        )
         return {"id": esc_id, "status": "denied", "decided_reason": reason}

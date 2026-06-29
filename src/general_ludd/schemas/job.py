@@ -29,6 +29,7 @@ class JobSpec(BaseModel):
     ansible_roles_path: str | None = None
     templates_dir: str | None = None
     timeout: float | None = None
+    human_input: str | None = None
 
     @field_validator("timeout", mode="before")
     @classmethod

@@ -497,3 +497,53 @@ class TestInputKeyStateMachine:
         state = mod._InputKeyState(mode="before", key_bytes=b"TRIGGER")
         buf.push(b"just some text, no key here")
         assert mod._input_key_step(state, buf) == []
+
+    def test_input_key_mode_before_two_keys_one_chunk_two_dispatches(self) -> None:
+        """Two TRIGGER markers in a single buffer load produce two before-key
+        dispatches when the state machine is driven to fixpoint.
+        """
+        mod, buf_mod = self._load()
+        RollingBuffer = buf_mod.RollingBuffer
+        buf = RollingBuffer(max_bytes=4096)
+        state = mod._InputKeyState(mode="before", key_bytes=b"TRIGGER")
+        buf.push(b"INFO x\nINFO y\nTRIGGER\nINFO z\nINFO w\nTRIGGER\nINFO a\n")
+        dispatches: list[tuple[bytes, str, int]] = []
+        while True:
+            step = mod._input_key_step(state, buf)
+            if not step:
+                break
+            dispatches.extend(step)
+        assert len(dispatches) == 2
+        assert dispatches[0][1] == "before_key"
+        assert dispatches[1][1] == "before_key"
+        assert b"INFO x" in dispatches[0][0]
+        assert b"INFO z" in dispatches[1][0]
+        assert b"TRIGGER" not in dispatches[0][0]
+        assert b"TRIGGER" not in dispatches[1][0]
+        assert dispatches[0][2] == 0
+        assert dispatches[1][2] == 1
+
+    def test_input_key_mode_both_two_keys_produce_four_dispatches(self) -> None:
+        """Two TRIGGER markers in mode=both produce 2 before + 2 after = 4
+        dispatches: each key hit emits a before chunk AND the after chunk
+        of the previous key (same bytes, different tag).
+        """
+        mod, buf_mod = self._load()
+        RollingBuffer = buf_mod.RollingBuffer
+        buf = RollingBuffer(max_bytes=4096)
+        state = mod._InputKeyState(
+            mode="both", key_bytes=b"TRIGGER", max_bytes_after=1048576
+        )
+        buf.push(b"INFO x\nINFO y\nTRIGGER\nINFO z\nINFO w\nTRIGGER\nINFO a\n")
+        dispatches: list[tuple[bytes, str, int]] = []
+        while True:
+            step = mod._input_key_step(state, buf)
+            if not step:
+                break
+            dispatches.extend(step)
+        # Drain remaining post-key bytes as the final after chunk.
+        dispatches.extend(mod._input_key_drain_final(state, buf))
+        positions = [d[1] for d in dispatches]
+        assert positions.count("before_key") == 2
+        assert positions.count("after_key") == 2
+        assert len(dispatches) == 4

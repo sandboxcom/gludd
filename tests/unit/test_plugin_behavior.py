@@ -693,6 +693,237 @@ class TestEnforceFloorBlocking:
 
 
 # --------------------------------------------------------------------------- #
+# 4c. enforce-floor.ts — HARD-DENY of mutating tools below floor (2026-06-29)
+# --------------------------------------------------------------------------- #
+# The user repeatedly complained that the agent grinds inline despite the floor
+# plugin. The block path existed but was loosely pinned. These tests tighten the
+# pin: (a) mutating tools (edit/write/bash) MUST be hard-denied when live count
+# < floor AND open work exists; (b) the default polarity MUST be `!== "0"` so
+# the gate is ON by default (not opt-in via `=== "1"`).
+class TestEnforceFloorHardDenyMutating:
+    """Below-floor + open-work MUST hard-deny Edit/Write/mutating-Bash."""
+
+    def test_floor_plugin_hard_denies_mutating_tools_when_below_floor(self):
+        """The tool.execute.before hook must return permissionDecision:"deny"
+        for non-dispatch tools (Edit/Write/Bash) when live < floor AND open
+        work exists. The deny must be a deny DECISION, not just a console.warn
+        or appended banner — otherwise the agent can grind edits forever.
+        """
+        src = ENFORCE_FLOOR.read_text()
+        # Must declare permissionDecision:"deny" (hard deny, surfaced as a
+        # blocked tool call by opencode).
+        assert re.search(
+            r'permissionDecision:\s*"deny"',
+            src,
+        ) or re.search(r"permissionDecision:\s*'deny'", src), (
+            "enforce-floor.ts tool.execute.before must return "
+            "permissionDecision:'deny' to HARD-BLOCK mutating tools below "
+            "floor. A console.warn or appended banner is insufficient — the "
+            "agent ignores advisories and keeps grinding."
+        )
+        # Must explicitly skip dispatch tools (task/agent/workflow) so the
+        # block can't wedge the session by preventing the refill.
+        assert "isDispatchTool" in src, (
+            "isDispatchTool helper missing — the deny must not fire on "
+            "task/agent/workflow dispatch tools"
+        )
+        # The deny path must be gated on BOTH live < floor AND open work.
+        assert re.search(r"active\s*<\s*FLOOR", src), (
+            "Deny must be gated on active < FLOOR"
+        )
+        assert "openWorkExists" in src, (
+            "Deny must consult openWorkExists() so it doesn't wedge a "
+            "session where the work is genuinely done"
+        )
+
+    def test_floor_plugin_default_on(self):
+        """The FLOOR_ENFORCE flag must default ON via `!== "0"` (not `=== "1"`).
+
+        The recurring incident was the agent grinding inline with the floor
+        breached because enforcement was opt-in (`=== "1"`, default OFF). The
+        fix is default-ON polarity: any value other than the literal string
+        "0" keeps enforcement active. This test pins the polarity so a future
+        edit cannot silently revert to opt-in.
+        """
+        src = ENFORCE_FLOOR.read_text()
+        # The load-bearing line: const FLOOR_ENFORCE = process.env.GLUDD_FLOOR_ENFORCE !== "0"
+        m = re.search(
+            r"FLOOR_ENFORCE\s*=\s*process\.env\.GLUDD_FLOOR_ENFORCE\s*!==\s*[\"']0[\"']",
+            src,
+        )
+        assert m, (
+            "FLOOR_ENFORCE must be `process.env.GLUDD_FLOOR_ENFORCE !== \"0\"` "
+            "(default ON). Found either opt-in polarity (=== \"1\", which "
+            "defaults OFF — the bug) or the constant was renamed/removed. "
+            "The default-on polarity is the fix for the recurring "
+            "'agent grinds inline despite the floor plugin' complaint."
+        )
+        # Negative assertion: must NOT use the opt-in polarity.
+        assert not re.search(
+            r"FLOOR_ENFORCE\s*=\s*process\.env\.GLUDD_FLOOR_ENFORCE\s*===\s*[\"']1[\"']",
+            src,
+        ), (
+            "FLOOR_ENFORCE uses opt-in polarity (=== \"1\") — that defaults OFF "
+            "and is the exact bug this test pins against. Revert to !== \"0\"."
+        )
+
+    def test_floor_plugin_deny_message_loads_spec_phrases(self):
+        """The deny message must carry the user-mandated instruction phrases
+        so the agent gets actionable guidance when blocked."""
+        src = ENFORCE_FLOOR.read_text()
+        # Pin the spec phrases: "Live subagent count", "Dispatch a wave",
+        # "GLUDD_FLOOR_ENFORCE=0 to disable".
+        assert "Live subagent count" in src, (
+            "Deny message must include 'Live subagent count' header"
+        )
+        assert "Dispatch a wave" in src, (
+            "Deny message must instruct 'Dispatch a wave BEFORE continuing'"
+        )
+        assert "GLUDD_FLOOR_ENFORCE=0 to disable" in src, (
+            "Deny message must surface the GLUDD_FLOOR_ENFORCE=0 escape hatch"
+        )
+
+    def test_floor_plugin_open_work_checks_todowrite(self):
+        """openWorkExists() must consult the todowrite state mirror so an agent
+        with pending todos (but a clean git tree) is still blocked from
+        grinding inline."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "todowrite" in src.lower(), (
+            "openWorkExists() must check the todowrite state mirror "
+            "(GLUDD_TODOWRITE_STATE / /tmp/gludd-todowrite-state.json) — "
+            "without it, an agent with pending todos and a clean tree can "
+            "grind inline undetected"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 4d. enforce-delegate.ts — mainthread streak blocker (2026-06-29 strengthening)
+# --------------------------------------------------------------------------- #
+# The streak counter existed but was loosely pinned and always-on (not
+# toggleable). The strengthening pins: (a) after 4 consecutive main-thread
+# mutating calls with no intervening dispatch, the 5th MUST be hard-denied;
+# (b) a dispatch MUST reset the streak to 0; (c) default ON, disable via
+# GLUDD_FORCE_DELEGATE=0; (d) state file is a separate .json file so the
+# nothing-dropped plugin's frequency caps cannot interfere.
+class TestEnforceDelegateMainthreadStreak:
+    """The mainthread streak blocker must hard-deny after 4 consecutive
+    mutating calls and reset on dispatch."""
+
+    def test_mainthread_streak_denies_after_4_consecutive_mutating_calls(self):
+        """mainthreadBudgetBefore must throw (hard-deny) when streak >=
+        MAINTHREAD_THRESHOLD (default 4) AND live < TARGET. The 5th consecutive
+        mutating call with no intervening dispatch MUST be blocked."""
+        src = ENFORCE_DELEGATE.read_text()
+        # Threshold must default to 4 — after 4 consecutive mutating calls,
+        # the 5th is denied.
+        m = re.search(
+            r"MAINTHREAD_THRESHOLD\s*=\s*parseInt\s*\(\s*process\.env\.GLUDD_MAINTHREAD_THRESHOLD\s*\|\|\s*[\"'](\d+)[\"']",
+            src,
+        )
+        assert m, "MAINTHREAD_THRESHOLD declaration not found"
+        assert m.group(1) == "4", (
+            f"MAINTHREAD_THRESHOLD default is {m.group(1)}, expected 4 — the "
+            "5th consecutive mutating call must be the one that blocks"
+        )
+        # mainthreadBudgetBefore must compare streak >= threshold (via
+        # `streak < MAINTHREAD_THRESHOLD ... return null` inverted — i.e. the
+        # block fires when streak >= threshold).
+        assert re.search(r"streak\s*<\s*MAINTHREAD_THRESHOLD", src), (
+            "Streak check must gate on `streak < MAINTHREAD_THRESHOLD` "
+            "(allow) vs the inverse (block)"
+        )
+        # The function must be wired to throw via the tool.execute.before hook.
+        assert re.search(
+            r"mainthreadBudgetBefore\s*\(\s*tool\s*\)", src,
+        ), (
+            "mainthreadBudgetBefore(tool) must be called inside "
+            "tool.execute.before to actually block"
+        )
+        assert re.search(
+            r"budgetMsg\s*=\s*mainthreadBudgetBefore[\s\S]*?throw new Error\s*\(\s*budgetMsg\s*\)",
+            src,
+        ), (
+            "tool.execute.before must `throw new Error(budgetMsg)` when "
+            "mainthreadBudgetBefore returns a message — a console.warn is "
+            "ignorable and does not block the grind"
+        )
+
+    def test_mainthread_streak_resets_on_dispatch(self):
+        """A task/agent/workflow dispatch MUST reset the streak to 0 so the
+        agent can resume inline work after refilling the pool."""
+        src = ENFORCE_DELEGATE.read_text()
+        # isDelegateTool must cover task/agent/workflow.
+        assert re.search(
+            r'isDelegateTool\s*\([^)]*\)\s*\{[^}]*"task"[^}]*"workflow"[^}]*"agent"',
+            src,
+        ) or (
+            "task" in src and "workflow" in src and "agent" in src
+            and "isDelegateTool" in src
+        ), (
+            "isDelegateTool must recognize task/agent/workflow as dispatches"
+        )
+        # mainthreadBudgetAfter must reset streak to 0 on a dispatch tool.
+        assert re.search(
+            r"if\s*\(\s*isDelegateTool\s*\(\s*tool\s*\)\s*\)\s*\{?\s*writeStreak\s*\(\s*0\s*\)",
+            src,
+        ), (
+            "mainthreadBudgetAfter must call writeStreak(0) when the tool is "
+            "a dispatch — otherwise the streak never resets and the agent is "
+            "permanently blocked from inline work even after delegating"
+        )
+
+    def test_mainthread_streak_default_on_via_force_delegate_not_zero(self):
+        """The streak blocker must default ON: any GLUDD_FORCE_DELEGATE value
+        other than "0" keeps it active. Polarity must be `!== "0"`, NOT
+        opt-in `=== "1"` (which defaults OFF and was the gap)."""
+        src = ENFORCE_DELEGATE.read_text()
+        m = re.search(
+            r"MAINTHREAD_STREAK_ENABLED\s*=\s*process\.env\.GLUDD_FORCE_DELEGATE\s*!==\s*[\"']0[\"']",
+            src,
+        )
+        assert m, (
+            "MAINTHREAD_STREAK_ENABLED must be "
+            "`process.env.GLUDD_FORCE_DELEGATE !== \"0\"` (default ON). "
+            "The opt-in polarity (=== \"1\") defaults OFF and is the bug."
+        )
+        # And mainthreadBudgetBefore must consult the flag.
+        assert re.search(
+            r"if\s*\(\s*!MAINTHREAD_STREAK_ENABLED\s*\)\s*return null",
+            src,
+        ), (
+            "mainthreadBudgetBefore must early-return when "
+            "MAINTHREAD_STREAK_ENABLED is false (the GLUDD_FORCE_DELEGATE=0 "
+            "escape hatch)"
+        )
+
+    def test_mainthread_streak_uses_dedicated_json_state_file(self):
+        """The streak state must live in a dedicated JSON file
+        (/tmp/gludd-mainthread-streak.json) so it CANNOT collide with the
+        nothing-dropped plugin's frequency caps (separate state files)."""
+        src = ENFORCE_DELEGATE.read_text()
+        assert "gludd-mainthread-streak.json" in src, (
+            "MAINTHREAD_STREAK_FILE default must be "
+            "/tmp/gludd-mainthread-streak.json (JSON, dedicated) so the "
+            "nothing-dropped plugin's frequency caps cannot interfere"
+        )
+        # writeStreak must JSON.stringify (not raw number) so the .json file
+        # is valid JSON.
+        assert re.search(r"JSON\.stringify\s*\(\s*\{\s*count", src), (
+            "writeStreak must JSON.stringify({count: n, ...}) — a bare number "
+            "would not be valid JSON for a .json state file"
+        )
+
+    def test_mainthread_streak_message_loads_force_delegate_disable_hint(self):
+        """The block message must surface GLUDD_FORCE_DELEGATE=0 as the
+        escape hatch so the agent can tell the operator how to disable."""
+        src = ENFORCE_DELEGATE.read_text()
+        assert "GLUDD_FORCE_DELEGATE=0" in src, (
+            "mainthreadBudgetBefore block message must mention "
+            "GLUDD_FORCE_DELEGATE=0 as the disable switch"
+        )
+
+
+# --------------------------------------------------------------------------- #
 # 5. enforce-deadline.ts — subagent task wall-clock timeout enforcement
 # --------------------------------------------------------------------------- #
 class TestEnforceDeadlinePlugin:

@@ -1324,6 +1324,49 @@ class EventLoop:
             return agent_spec
         return PermissionSpecParser.intersection(human_spec, agent_spec)
 
+    async def _resolve_human_input_for_todo(self, todo_id: str) -> str | None:
+        """Return the resolution text of the most-recently-resolved HumanTodo
+        that names this todo as its parent (``parent_agent_todo_id``).
+
+        Injected into the next dispatch's extravars as ``human_input`` so the
+        agent receives the human's response to a blocker it raised. Returns
+        ``None`` when no resolved human-todo exists for this parent (the
+        common case — most todos never block on a human).
+
+        Only terminal-and-done human-todos are surfaced (dismissed todos
+        cancel the parent agent todo, so it never re-dispatches).
+        """
+        factory = self._session_factory
+        if factory is None:
+            return None
+        try:
+            from general_ludd.db.repository import HumanTodoRepository
+        except Exception:
+            return None
+        try:
+            async with factory() as session:
+                repo = HumanTodoRepository(session)
+                rows = await repo.list_all(limit=50)
+                # Most recent DONE human-todo naming this parent.
+                done_for_this = [
+                    r for r in rows
+                    if r.parent_agent_todo_id == todo_id and r.status == "done"
+                ]
+                if not done_for_this:
+                    return None
+                done_for_this.sort(
+                    key=lambda r: r.resolved_at or r.updated_at,
+                    reverse=True,
+                )
+                top = done_for_this[0]
+                return top.human_resolution
+        except Exception as exc:
+            logger.warning(
+                "could not resolve human_input for todo %s: %s",
+                todo_id, exc,
+            )
+            return None
+
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
         results = self._tick_state.get("rule_evaluation_results", [])
@@ -1714,6 +1757,13 @@ class EventLoop:
                     )
             # write_vars does blocking os.makedirs + yaml file write + os.chmod;
             # offload so it does not stall the daemon's single asyncio loop (AB).
+            # Flow 4: surface the most recent resolved HumanTodo's resolution
+            # text as ``human_input`` so the agent receives the human's answer
+            # to a blocker it raised. None when no human-todo resolved for
+            # this todo (the common case).
+            _human_input: str | None = await self._resolve_human_input_for_todo(
+                todo.todo_id
+            )
             await asyncio.to_thread(self._runner.write_vars, job_id, job_vars={
                 "job_id": job_id, "todo_id": todo.todo_id,
                 "queue": _safe_str(todo, "queue", "core"),
@@ -1723,6 +1773,7 @@ class EventLoop:
                 "prompt_text": prompt_text, "skill_body": skill_body,
                 "model_response": model_response,
                 "playbook": playbook, **budget_context,
+                **({"human_input": _human_input} if _human_input else {}),
             }, shared_vars=shared_vars)
             runner_env: dict[str, str] = {}
             if ws is not None and hasattr(ws, "roles_dir") and ws.roles_dir.is_dir():
@@ -1764,6 +1815,7 @@ class EventLoop:
             vars_namespace_refs=list(shared_vars.keys()) if shared_vars else [],
             ansible_roles_path=roles_path,
             templates_dir=tpl_dir,
+            human_input=await self._resolve_human_input_for_todo(todo.todo_id),
         )
         resp = await self._http_client.post(
             f"{self.worker_base_url}/jobs/execute",

@@ -633,13 +633,19 @@ def _input_key_step(state: _InputKeyState, buffer: RollingBuffer) -> list[tuple[
             remaining = _tail[klen:]
             buffer.drain()
             buffer.push(remaining)
-            if state.post_key_active and head:
-                dispatches.append((_maybe_after_prefix(head), "after_key", state.key_index))
-            elif head:
-                state.key_index += 1
-                dispatches.append((head, "before_key", state.key_index))
-            elif not state.post_key_active:
-                state.key_index += 1
+            if state.post_key_active:
+                if head:
+                    dispatches.append((_maybe_after_prefix(head), "after_key", state.key_index))
+                    state.key_index += 1
+                    dispatches.append((head, "before_key", state.key_index))
+                else:
+                    state.key_index += 1
+            else:
+                if head:
+                    state.key_index += 1
+                    dispatches.append((head, "before_key", state.key_index))
+                else:
+                    state.key_index += 1
             state.post_key_active = True
         elif state.post_key_active and len(buffer) >= state.max_bytes_after:
             payload = buffer.drain()
@@ -821,9 +827,13 @@ def main() -> None:
             bytes_processed += len(chunk)
 
             if key_state is not None:
-                for payload, position, chunk_index in _input_key_step(key_state, buffer):
-                    if not _do_dispatch(payload, position, chunk_index):
-                        return
+                while True:
+                    step_dispatches = _input_key_step(key_state, buffer)
+                    if not step_dispatches:
+                        break
+                    for payload, position, chunk_index in step_dispatches:
+                        if not _do_dispatch(payload, position, chunk_index):
+                            return
                 continue
 
             if _trigger_fires(trigger, buffer, start_ts, last_dispatch_ts):
