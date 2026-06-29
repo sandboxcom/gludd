@@ -28,7 +28,7 @@ import yaml
 
 PERM_SUBCOMMANDS = [
     "list", "show", "grant", "deny", "revoke", "edit", "validate",
-    "diff", "project", "sts", "audit",
+    "diff", "project", "sts", "audit", "escalations",
 ]
 
 
@@ -579,6 +579,98 @@ def _cmd_perm_audit(args: argparse.Namespace) -> None:
             f"{str(e.get('capability', '?'))[:15]:<16} "
             f"{str(e.get('target', '?'))[:15]:<16} "
             f"{e.get('event', '')}"
+        )
+
+
+# ---------------------------------------------------------------------------
+# Subcommand handlers — escalations
+# ---------------------------------------------------------------------------
+
+
+def _cmd_perm_escalations_list(args: argparse.Namespace) -> None:
+    params: dict[str, Any] = {}
+    if getattr(args, "status", None):
+        params["status"] = args.status
+    data = _http_with_psk(
+        "GET",
+        f"{args.daemon_url}/admin/perm/escalations",
+        psk=_resolve_psk(args),
+        params=params,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(data, indent=2, default=str))
+        return
+    items = (data or {}).get("items", [])
+    if not items:
+        print("No escalation requests.")
+        return
+    print(f"{'id':<6} {'agent_id':<24} {'status':<16} {'reason'}")
+    print("-" * 80)
+    for it in items:
+        print(
+            f"{it.get('id', '?')!s:<6} "
+            f"{str(it.get('agent_id', '?'))[:23]:<24} "
+            f"{str(it.get('status', '?'))[:15]:<16} "
+            f"{str(it.get('reason', '?'))[:40]}"
+        )
+
+
+def _cmd_perm_escalations_approve(args: argparse.Namespace) -> None:
+    body: dict[str, Any] = {}
+    if getattr(args, "reason", None):
+        body["reason"] = args.reason
+    data = _http_with_psk(
+        "POST",
+        f"{args.daemon_url}/admin/perm/escalations/{args.escalation_id}/approve",
+        psk=_resolve_psk(args),
+        json_body=body,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(data, indent=2, default=str))
+        return
+    print(f"Escalation {args.escalation_id}: {data.get('status', '?')}")
+    if data.get("sts_token_id"):
+        print(f"  STS token: {data['sts_token_id']}")
+
+
+def _cmd_perm_escalations_deny(args: argparse.Namespace) -> None:
+    data = _http_with_psk(
+        "POST",
+        f"{args.daemon_url}/admin/perm/escalations/{args.escalation_id}/deny",
+        psk=_resolve_psk(args),
+        json_body={"reason": args.reason},
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(data, indent=2, default=str))
+        return
+    print(f"Escalation {args.escalation_id}: {data.get('status', '?')}")
+
+
+def _cmd_perm_escalations_history(args: argparse.Namespace) -> None:
+    params: dict[str, Any] = {}
+    if getattr(args, "agent_id", None):
+        params["agent_id"] = args.agent_id
+    data = _http_with_psk(
+        "GET",
+        f"{args.daemon_url}/admin/perm/escalations/history",
+        psk=_resolve_psk(args),
+        params=params,
+    )
+    if getattr(args, "json", False):
+        print(json.dumps(data, indent=2, default=str))
+        return
+    items = (data or {}).get("items", [])
+    if not items:
+        print("No escalation history.")
+        return
+    print(f"{'id':<6} {'agent_id':<24} {'status':<16} {'created_at'}")
+    print("-" * 80)
+    for it in items:
+        print(
+            f"{it.get('id', '?')!s:<6} "
+            f"{str(it.get('agent_id', '?'))[:23]:<24} "
+            f"{str(it.get('status', '?'))[:15]:<16} "
+            f"{str(it.get('created_at', '?'))[:30]}"
         )
 
 

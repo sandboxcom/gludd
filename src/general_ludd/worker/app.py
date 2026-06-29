@@ -43,12 +43,16 @@ def get_playbook_registry() -> set[str]:
     return set(get_runner().list_playbooks())
 
 
-def build_gateway_from_config() -> ModelGateway | None:
+def build_gateway_from_config(permission_spec: Any = None) -> ModelGateway | None:
     """Build a ModelGateway from the worker's config, or None when unconfigured.
 
     The worker is stateless; model profiles come from the same user config the
     daemon reads. When no profiles are configured the worker simply does not
     perform model calls (the playbook still runs).
+
+    ``permission_spec``: when provided, the worker's hvac-backed
+    SecretsManager is scoped to this spec (the STS token's spec for this
+    job). ``None`` means back-compat (no enforcement — admin PSK path).
     """
     try:
         from general_ludd.config.loader import load_user_config
@@ -70,10 +74,31 @@ def build_gateway_from_config() -> ModelGateway | None:
 
         # CI-1 fix: register providers so the worker's gateway can make live calls
         # (provider_registry omitted → None → "No provider registry configured").
+        # Permission gate: when the caller (daemon dispatch, STS-bearing job)
+        # passes a permission_spec, scope the SecretsManager to it so a narrow
+        # STS token cannot read secrets outside its allow-list. ``None`` keeps
+        # the historical EnvSecretsManager (no path gating, back-compat).
+        secrets_manager: Any = EnvSecretsManager()
+        if permission_spec is not None:
+            try:
+                from general_ludd.secrets.config import OpenBaoConfig
+                from general_ludd.secrets.manager import SecretsManager
+
+                secrets_manager = SecretsManager(
+                    config=OpenBaoConfig(),
+                    permission_spec=permission_spec,
+                )
+            except Exception:
+                logger.warning(
+                    "Worker: failed to build scoped SecretsManager; "
+                    "falling back to EnvSecretsManager (no path gating)",
+                    exc_info=True,
+                )
+                secrets_manager = EnvSecretsManager()
         return ModelGateway(
             profiles=profiles,
             provider_registry=ProviderRegistry.from_profiles(profiles),
-            secrets_manager=EnvSecretsManager(),
+            secrets_manager=secrets_manager,
         )
     except Exception:  # pragma: no cover - defensive config path
         # E2: best-effort config fallback — the worker degrades to no model
@@ -153,14 +178,17 @@ def build_dispatcher_from_config() -> Any:
 def create_app(
     gateway: ModelGateway | None = _UNSET,
     dispatcher: Any = _UNSET,
+    permission_spec: Any = None,
 ) -> FastAPI:
     application = FastAPI(
         title="General Ludd Worker",
         version="0.1.0",
     )
     # ``gateway`` omitted → build from config; explicit None → no model calls.
+    # ``permission_spec`` is forwarded only when the gateway is built here —
+    # an explicit ``gateway`` argument is assumed already scoped by the caller.
     if gateway is _UNSET:
-        gateway = build_gateway_from_config()
+        gateway = build_gateway_from_config(permission_spec=permission_spec)
     application.state.gateway = gateway
     # ``dispatcher`` omitted → build from config; explicit None → detect-only.
     if dispatcher is _UNSET:
