@@ -1,0 +1,38 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.7.0",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_security_group.ssh",
+          "mode": "managed",
+          "type": "aws_security_group",
+          "name": "ssh",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "ingress": [
+              {
+                "cidr_blocks": ["0.0.0.0/0"],
+                "from_port": 22,
+                "to_port": 22,
+                "protocol": "tcp"
+              }
+            ],
+            "egress": []
+          }
+        }
+      ]
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "aws": {
+        "name": "registry.terraform.io/hashicorp/aws",
+        "full_name": "registry.terraform.io/hashicorp/aws",
+        "version_constraint": "~> 2.8"
+      }
+    }
+  }
+}

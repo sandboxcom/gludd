@@ -1,0 +1,31 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.7.0",
+  "planned_values": {
+    "root_module": {
+      "resources": [
+        {
+          "address": "aws_instance.example",
+          "mode": "managed",
+          "type": "aws_instance",
+          "name": "example",
+          "provider_name": "registry.terraform.io/hashicorp/aws",
+          "schema_version": 0,
+          "values": {
+            "associate_public_ip_address": false,
+            "tags": {"Owner": "team"}
+          }
+        }
+      ]
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "aws": {
+        "name": "registry.terraform.io/hashicorp/aws",
+        "full_name": "registry.terraform.io/hashicorp/aws",
+        "version_constraint": "~> 2.8"
+      }
+    }
+  }
+}

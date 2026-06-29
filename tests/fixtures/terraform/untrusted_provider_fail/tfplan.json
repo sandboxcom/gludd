@@ -1,0 +1,18 @@
+{
+  "format_version": "1.0",
+  "terraform_version": "1.7.0",
+  "planned_values": {
+    "root_module": {
+      "resources": []
+    }
+  },
+  "configuration": {
+    "provider_config": {
+      "someprovider": {
+        "name": "registry.terraform.io/somecorp/some-provider",
+        "full_name": "registry.terraform.io/somecorp/some-provider",
+        "version_constraint": "~> 1.0"
+      }
+    }
+  }
+}
