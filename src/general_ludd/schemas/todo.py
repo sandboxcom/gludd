@@ -18,6 +18,7 @@ class TodoStatus(enum.StrEnum):
     REVIEWING_RETURN = "reviewing_return"
     NEEDS_MORE_WORK = "needs_more_work"
     BLOCKED = "blocked"
+    BLOCKED_ON_HUMAN = "blocked_on_human"
     MANUAL_HOLD = "manual_hold"
     APPROVAL_REQUIRED = "approval_required"
     COMPLETE = "complete"
@@ -65,10 +66,17 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     # SCHEDULED and spawns QUEUED child clones on each fire (the scheduler does
     # not transition the template — it advances next_run_at).
     TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
-    TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.BLOCKED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
+    TodoStatus.QUEUED: {
+        TodoStatus.ACTIVE,
+        TodoStatus.BLOCKED,
+        TodoStatus.BLOCKED_ON_HUMAN,
+        TodoStatus.CANCELLED,
+        TodoStatus.MANUAL_HOLD,
+    },
     TodoStatus.ACTIVE: {
         TodoStatus.AWAITING_RESULT,
         TodoStatus.BLOCKED,
+        TodoStatus.BLOCKED_ON_HUMAN,
         TodoStatus.FAILED,
         TodoStatus.CANCELLED,
         TodoStatus.BUDGET_EXCEEDED,
@@ -89,6 +97,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     },
     TodoStatus.NEEDS_MORE_WORK: {TodoStatus.QUEUED, TodoStatus.ACTIVE, TodoStatus.CANCELLED},
     TodoStatus.BLOCKED: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
+    TodoStatus.BLOCKED_ON_HUMAN: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.MANUAL_HOLD: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.APPROVAL_REQUIRED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
     TodoStatus.COMPLETE: set(),

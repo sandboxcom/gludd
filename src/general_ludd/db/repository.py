@@ -17,6 +17,7 @@ from general_ludd.db.models import (
     BenchmarkResultModel,
     FeatureModel,
     FeatureStatus,
+    HumanTodoModel,
     LocationKind,
     ProjectModel,
     ProjectRelationshipModel,
@@ -46,9 +47,10 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     # MANUAL_HOLD allows an operator to pause a pending schedule without
     # cancelling it. CANCELLED retires the schedule permanently.
     TodoStatus.SCHEDULED: {TodoStatus.QUEUED, TodoStatus.CANCELLED, TodoStatus.MANUAL_HOLD},
-    TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED},
+    TodoStatus.QUEUED: {TodoStatus.ACTIVE, TodoStatus.FAILED, TodoStatus.BLOCKED, TodoStatus.BLOCKED_ON_HUMAN},
     TodoStatus.ACTIVE: {
         TodoStatus.COMPLETE, TodoStatus.FAILED, TodoStatus.BLOCKED,
+        TodoStatus.BLOCKED_ON_HUMAN,
         TodoStatus.REVIEWING_RETURN, TodoStatus.MANUAL_HOLD,
         TodoStatus.NEEDS_MORE_WORK, TodoStatus.QUEUED,
     },
@@ -59,6 +61,7 @@ VALID_TRANSITIONS: dict[TodoStatus, set[TodoStatus]] = {
     TodoStatus.NEEDS_MORE_WORK: {TodoStatus.QUEUED, TodoStatus.ACTIVE},
     TodoStatus.MANUAL_HOLD: {TodoStatus.QUEUED, TodoStatus.ACTIVE},
     TodoStatus.BLOCKED: {TodoStatus.QUEUED},
+    TodoStatus.BLOCKED_ON_HUMAN: {TodoStatus.QUEUED, TodoStatus.CANCELLED},
     TodoStatus.FAILED: {TodoStatus.QUEUED},
     TodoStatus.COMPLETE: set(),
 }
@@ -1824,6 +1827,290 @@ class RoleRunRepository:
             stmt = stmt.where(RoleRunModel.project_id == project_id)
         stmt = stmt.offset(offset).limit(
             min(limit, _DEFAULT_LIST_LIMIT) if limit is not None else _DEFAULT_LIST_LIMIT
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+
+# ---------------------------------------------------------------------------
+# HumanTodo — bot→human request store (separate from agent TodoModel)
+# ---------------------------------------------------------------------------
+
+HUMAN_TODO_STATUSES: frozenset[str] = frozenset(
+    {"open", "in_progress", "done", "dismissed", "superseded"}
+)
+HUMAN_TODO_TERMINAL: frozenset[str] = frozenset({"done", "dismissed", "superseded"})
+HUMAN_TODO_CATEGORIES: frozenset[str] = frozenset(
+    {
+        "permission_escalation",
+        "external_action",
+        "decision",
+        "input_request",
+        "blocker",
+    }
+)
+HUMAN_TODO_PRIORITIES: frozenset[str] = frozenset({"low", "medium", "high", "urgent"})
+
+_HUMAN_TODO_TRANSITIONS: dict[str, frozenset[str]] = {
+    "open": frozenset({"in_progress", "done", "dismissed", "superseded"}),
+    "in_progress": frozenset({"done", "dismissed", "superseded", "open"}),
+    "done": frozenset(),
+    "dismissed": frozenset(),
+    "superseded": frozenset(),
+}
+
+
+class HumanTodoRepository:
+    """Persistence + state-machine for bot→human requests.
+
+    Separate from :class:`TodoRepository` (agent todos). The link between the
+    two is ``parent_agent_todo_id``: when a human-todo with a parent is filed,
+    the parent agent todo transitions to ``blocked_on_human``; when the
+    human-todo resolves (done/dismissed), the parent moves back to ``queued``
+    (done) or ``cancelled`` (dismissed). The blocking integration is opt-in:
+    a human-todo filed without ``parent_agent_todo_id`` is just a logged need.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    @staticmethod
+    def _validate_category(category: str) -> None:
+        if category not in HUMAN_TODO_CATEGORIES:
+            raise ValueError(
+                f"invalid category {category!r}; must be one of: "
+                f"{sorted(HUMAN_TODO_CATEGORIES)}"
+            )
+
+    @staticmethod
+    def _validate_priority(priority: str) -> None:
+        if priority not in HUMAN_TODO_PRIORITIES:
+            raise ValueError(
+                f"invalid priority {priority!r}; must be one of: "
+                f"{sorted(HUMAN_TODO_PRIORITIES)}"
+            )
+
+    @staticmethod
+    def _validate_transition(current: str, target: str) -> None:
+        allowed = _HUMAN_TODO_TRANSITIONS.get(current, frozenset())
+        if target not in allowed:
+            raise InvalidTransitionError(
+                f"invalid human-todo transition: {current!r} -> {target!r}"
+            )
+
+    async def create(
+        self,
+        *,
+        agent_id: str,
+        title: str,
+        body: str,
+        category: str,
+        priority: str = "medium",
+        parent_agent_todo_id: str | None = None,
+        session_id: str | None = None,
+        due_at: datetime | None = None,
+        tags: list[str] | None = None,
+    ) -> HumanTodoModel:
+        if not title or not title.strip():
+            raise ValueError("title must not be empty")
+        if not body or not body.strip():
+            raise ValueError("body must not be empty")
+        if not agent_id or not agent_id.strip():
+            raise ValueError("agent_id must not be empty")
+        self._validate_category(category)
+        self._validate_priority(priority)
+        import json as _json
+
+        row = HumanTodoModel(
+            agent_id=agent_id,
+            title=title.strip(),
+            body=body,
+            category=category,
+            priority=priority,
+            parent_agent_todo_id=parent_agent_todo_id,
+            session_id=session_id,
+            due_at=due_at,
+            tags=_json.dumps(tags or []),
+            status="open",
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def get(self, human_todo_id: str) -> HumanTodoModel | None:
+        stmt = select(HumanTodoModel).where(HumanTodoModel.id == human_todo_id)
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_open(
+        self,
+        filter_category: str | None = None,
+        filter_agent_id: str | None = None,
+        filter_priority: str | None = None,
+    ) -> list[HumanTodoModel]:
+        stmt = select(HumanTodoModel).where(HumanTodoModel.status == "open")
+        if filter_category is not None:
+            stmt = stmt.where(HumanTodoModel.category == filter_category)
+        if filter_agent_id is not None:
+            stmt = stmt.where(HumanTodoModel.agent_id == filter_agent_id)
+        if filter_priority is not None:
+            stmt = stmt.where(HumanTodoModel.priority == filter_priority)
+        stmt = stmt.order_by(HumanTodoModel.created_at.asc()).limit(_DEFAULT_LIST_LIMIT)
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_all(
+        self,
+        limit: int = 100,
+        offset: int = 0,
+        status: str | None = None,
+        category: str | None = None,
+        priority: str | None = None,
+        agent_id: str | None = None,
+    ) -> list[HumanTodoModel]:
+        stmt = select(HumanTodoModel)
+        if status is not None:
+            stmt = stmt.where(HumanTodoModel.status == status)
+        if category is not None:
+            stmt = stmt.where(HumanTodoModel.category == category)
+        if priority is not None:
+            stmt = stmt.where(HumanTodoModel.priority == priority)
+        if agent_id is not None:
+            stmt = stmt.where(HumanTodoModel.agent_id == agent_id)
+        stmt = (
+            stmt.order_by(HumanTodoModel.created_at.desc())
+            .offset(max(0, offset))
+            .limit(min(limit, _DEFAULT_LIST_LIMIT))
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_changed_since(self, since: datetime) -> list[HumanTodoModel]:
+        stmt = (
+            select(HumanTodoModel)
+            .where(HumanTodoModel.updated_at >= since)
+            .order_by(HumanTodoModel.updated_at.asc())
+            .limit(_DEFAULT_LIST_LIMIT)
+        )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def _transition(
+        self,
+        human_todo_id: str,
+        target: str,
+        *,
+        human_resolver: str | None = None,
+        resolution_text: str | None = None,
+    ) -> HumanTodoModel:
+        row = await self.get(human_todo_id)
+        if row is None:
+            raise InvalidTransitionError(f"human-todo {human_todo_id} not found")
+        self._validate_transition(row.status, target)
+        now = datetime.now(UTC)
+        row.status = target
+        row.updated_at = now
+        if human_resolver is not None:
+            row.human_resolver = human_resolver
+        if resolution_text is not None:
+            row.human_resolution = resolution_text
+        if target in HUMAN_TODO_TERMINAL:
+            row.resolved_at = now
+        await self._session.flush()
+        return row
+
+    async def mark_done(
+        self,
+        human_todo_id: str,
+        human_resolver: str,
+        resolution_text: str,
+    ) -> HumanTodoModel:
+        if not resolution_text or not resolution_text.strip():
+            raise ValueError("resolution_text must not be empty")
+        return await self._transition(
+            human_todo_id,
+            "done",
+            human_resolver=human_resolver,
+            resolution_text=resolution_text,
+        )
+
+    async def mark_in_progress(self, human_todo_id: str) -> HumanTodoModel:
+        return await self._transition(human_todo_id, "in_progress")
+
+    async def dismiss(
+        self,
+        human_todo_id: str,
+        human_resolver: str,
+        reason: str,
+    ) -> HumanTodoModel:
+        if not reason or not reason.strip():
+            raise ValueError("dismiss reason must not be empty")
+        return await self._transition(
+            human_todo_id,
+            "dismissed",
+            human_resolver=human_resolver,
+            resolution_text=reason,
+        )
+
+    async def supersede(
+        self,
+        human_todo_id: str,
+        new_id: str,
+        reason: str,
+    ) -> HumanTodoModel:
+        return await self._transition(
+            human_todo_id,
+            "superseded",
+            resolution_text=f"superseded by {new_id}: {reason}",
+        )
+
+    async def add_tag(self, human_todo_id: str, tag: str) -> HumanTodoModel:
+        import json as _json
+
+        row = await self.get(human_todo_id)
+        if row is None:
+            raise InvalidTransitionError(f"human-todo {human_todo_id} not found")
+        tags: list[str] = _json.loads(row.tags or "[]")
+        if tag not in tags:
+            tags.append(tag)
+            row.tags = _json.dumps(tags)
+            row.updated_at = datetime.now(UTC)
+            await self._session.flush()
+        return row
+
+    async def remove_tag(self, human_todo_id: str, tag: str) -> HumanTodoModel:
+        import json as _json
+
+        row = await self.get(human_todo_id)
+        if row is None:
+            raise InvalidTransitionError(f"human-todo {human_todo_id} not found")
+        tags: list[str] = _json.loads(row.tags or "[]")
+        if tag in tags:
+            tags.remove(tag)
+            row.tags = _json.dumps(tags)
+            row.updated_at = datetime.now(UTC)
+            await self._session.flush()
+        return row
+
+    async def search(self, query: str) -> list[HumanTodoModel]:
+        if not query or not query.strip():
+            return []
+        from sqlalchemy import or_
+
+        escaped = (
+            query.replace("\\", "\\\\").replace("%", "\\%").replace("_", "\\_")
+        )
+        like = f"%{escaped}%"
+        stmt = (
+            select(HumanTodoModel)
+            .where(
+                or_(
+                    HumanTodoModel.title.like(like, escape="\\"),
+                    HumanTodoModel.body.like(like, escape="\\"),
+                )
+            )
+            .order_by(HumanTodoModel.created_at.desc())
+            .limit(_DEFAULT_LIST_LIMIT)
         )
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

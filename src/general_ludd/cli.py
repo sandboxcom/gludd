@@ -735,6 +735,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     perm_parser = _register_perm(sub)
 
+    # `gludd human-todo` — bot→human task requests.
+    from general_ludd.cli_human_todos import add_human_todo_subparser
+
+    add_human_todo_subparser(sub)
+    human_todo_parser = sub.choices["human-todo"]
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -754,6 +760,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "slurm": slurm_parser,
         "connectors": connectors_parser,
         "perm": perm_parser,
+        "human-todo": human_todo_parser,
     }
 
     return parser, subcommand_map

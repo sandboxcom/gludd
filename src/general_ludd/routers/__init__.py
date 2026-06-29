@@ -14,6 +14,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     from general_ludd.routers.benchmark import register as register_benchmark
     from general_ludd.routers.compute import register as register_compute
     from general_ludd.routers.filestore import register as register_filestore
+    from general_ludd.routers.human_todos import register as register_human_todos
     from general_ludd.routers.integrity import register as register_integrity
     from general_ludd.routers.mcp import register as register_mcp
     from general_ludd.routers.models import register as register_models
@@ -21,6 +22,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     from general_ludd.routers.quantization import register as register_quantization
     from general_ludd.routers.reload import register as register_reload
     from general_ludd.routers.render import register as register_render
+    from general_ludd.routers.security import register as register_security
     from general_ludd.routers.self_improve import register as register_self_improve
     from general_ludd.routers.signing import register as register_signing
     from general_ludd.routers.skills import register as register_skills
@@ -33,6 +35,7 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     register_benchmark(app, daemon_state)
     register_compute(app, daemon_state)
     register_filestore(app, daemon_state)
+    register_human_todos(app, daemon_state)
     register_integrity(app, daemon_state)
     register_mcp(app, daemon_state)
     register_models(app, daemon_state)
@@ -47,3 +50,4 @@ def register_all(app: FastAPI, daemon_state: dict[str, Any]) -> None:
     register_todos(app, daemon_state)
     register_worktree(app, daemon_state)
     register_self_improve(app, daemon_state)
+    register_security(app, daemon_state)

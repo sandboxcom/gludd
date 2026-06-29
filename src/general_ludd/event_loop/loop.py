@@ -1151,23 +1151,179 @@ class EventLoop:
         (load_shared_vars, persist_task_return) so this coroutine is safe to run
         concurrently with other _dispatch_execute_job_isolated calls in the same
         asyncio.gather() batch — no shared _active_session is touched.
+
+        # Sandbox wiring: BEFORE the agent's first tool call we resolve its
+        # PermissionSpec (from config — a per-queue default) and ask the host's
+        # SandboxBackend to apply it. After the job completes (or raises) the
+        # backend's release() runs in the finally block. The whole lifecycle is
+        # wrapped in try/except so a sandbox bug never wedges the daemon — a
+        # failure logs loudly + dispatches with a "no sandbox" warning.
         """
         assert self._session_factory is not None
 
-        async with self._session_factory() as job_session:
-            # Build a per-job variable_repo bound to this session.
-            job_variable_repo = VariableNamespaceRepository(job_session)
-            job_task_return_repo = TaskReturnRepository(job_session)
-            await self._dispatch_execute_job(
-                todo,
-                _variable_repo_override=job_variable_repo,
-                _task_return_repo_override=job_task_return_repo,
-                _session_override=job_session,
+        sandbox_handle = await self._sandbox_apply_for_todo(todo)
+        try:
+            async with self._session_factory() as job_session:
+                # Build a per-job variable_repo bound to this session.
+                job_variable_repo = VariableNamespaceRepository(job_session)
+                job_task_return_repo = TaskReturnRepository(job_session)
+                await self._dispatch_execute_job(
+                    todo,
+                    _variable_repo_override=job_variable_repo,
+                    _task_return_repo_override=job_task_return_repo,
+                    _session_override=job_session,
+                )
+                try:
+                    await job_session.commit()
+                except Exception as exc:
+                    logger.warning(
+                        "Failed to commit isolated job session for %s: %s",
+                        getattr(todo, "todo_id", "?"), exc,
+                    )
+        finally:
+            if sandbox_handle is not None:
+                await self._sandbox_release(sandbox_handle)
+
+    async def _sandbox_apply_for_todo(self, todo: Any) -> Any | None:
+        """Resolve this todo's PermissionSpec and apply the host sandbox.
+
+        Fail-open: any exception (no backend, apply raised, spec missing) is
+        swallowed and logged; the agent is dispatched UNSANDBOXED with a
+        warning rather than wedging the daemon. Returns the opaque
+        SandboxHandle or None.
+        """
+        try:
+            from general_ludd.security.sandboxes import SandboxTarget, detect
+            backend = detect.auto()
+            if backend is None:
+                logger.warning(
+                    "No sandbox backend for todo %s — dispatching UNSANDBOXED",
+                    _safe_str(todo, "todo_id", "?"),
+                )
+                return None
+            spec = self._resolve_permission_spec(todo)
+            if spec is None:
+                logger.info(
+                    "No PermissionSpec resolved for todo %s — skipping sandbox",
+                    _safe_str(todo, "todo_id", "?"),
+                )
+                return None
+            target = SandboxTarget(
+                directory=self._resolve_repo_root(getattr(todo, "project_id", None)),
             )
+            handle = await asyncio.to_thread(backend.apply, spec, target)
+            findings = await asyncio.to_thread(backend.verify, spec, handle)
+            fails = [f for f in findings if f.severity == "fail"]
+            if fails or not handle.applied:
+                logger.error(
+                    "Sandbox verify reported %d fail / %d warn findings for todo "
+                    "%s (handle.applied=%s) — proceeding UNSANDBOXED: %s",
+                    len(fails),
+                    sum(1 for f in findings if f.severity == "warn"),
+                    _safe_str(todo, "todo_id", "?"),
+                    handle.applied,
+                    [f.message for f in fails],
+                )
+            else:
+                logger.info(
+                    "Sandbox applied for todo %s via %s (token=%s, %d ok findings)",
+                    _safe_str(todo, "todo_id", "?"),
+                    getattr(backend, "name", "?"),
+                    handle.token,
+                    sum(1 for f in findings if f.severity == "ok"),
+                )
+            return handle
+        except Exception as exc:
+            logger.error(
+                "Sandbox apply raised for todo %s — dispatching UNSANDBOXED: %s",
+                _safe_str(todo, "todo_id", "?"), exc, exc_info=True,
+            )
+            return None
+
+    async def _sandbox_release(self, handle: Any) -> None:
+        """Release a sandbox handle; best-effort + fail-open."""
+        try:
+            from general_ludd.security.sandboxes import detect
+            backend = detect.auto()
+            if backend is None or handle is None:
+                return
+            await asyncio.to_thread(backend.release, handle)
+        except Exception as exc:
+            logger.warning(
+                "Sandbox release raised (token=%s): %s",
+                getattr(handle, "token", "?"), exc,
+            )
+
+    def _resolve_permission_spec(self, todo: Any) -> Any | None:
+        """Resolve a PermissionSpec for this todo from config.
+
+        Effective scope = ``human ∩ agent ∩ requested``:
+
+        1. ``agent_spec`` — the per-queue ``permission_spec`` block in
+           ``self.config`` (``queues[].permission_spec``).
+        2. ``human_spec`` — the active human user's spec. Resolved from
+           ``self._human_spec`` (set per-session by the daemon) or the
+           default human role from ``self.config['default_human_role']``
+           (default ``human-operator``). See
+           :func:`general_ludd.security.permissions.default_human_spec`.
+        3. The two are intersected via
+           :meth:`PermissionSpecParser.intersection`. The result is what
+           the dispatched subagent actually runs with — never more.
+
+        Returns ``None`` if the security module is unavailable or no queue
+        spec is configured (matching pre-existing unscoped behavior).
+        """
+        try:
+            from general_ludd.security.permissions import (
+                Capability,
+                PermissionSpec,
+                PermissionSpecParser,
+                default_human_spec,
+            )
+        except Exception:
+            return None
+        queue = _safe_str(todo, "queue", "core") or "core"
+        queues_cfg = self.config.get("queues", []) if isinstance(self.config, dict) else []
+        spec_cfg: dict[str, Any] | None = None
+        for q in queues_cfg:
+            if isinstance(q, dict) and q.get("name") == queue:
+                spec_cfg = q.get("permission_spec")
+                break
+        if spec_cfg is None:
+            return None
+        caps = [
+            Capability(
+                resource=str(c.get("resource", "file:repo")),
+                actions=list(c.get("actions") or []),
+                constraints=dict(c.get("constraints") or {}),
+            )
+            for c in (spec_cfg.get("capabilities") or [])
+        ]
+        denied = [
+            Capability(
+                resource=str(c.get("resource", "file:repo")),
+                actions=list(c.get("actions") or []),
+                constraints=dict(c.get("constraints") or {}),
+            )
+            for c in (spec_cfg.get("denied") or [])
+        ]
+        agent_spec = PermissionSpec(
+            agent_type=f"{queue}-{getattr(todo, 'todo_id', 'agent')}",
+            capabilities=caps,
+            denied=denied,
+        )
+
+        human_spec = getattr(self, "_human_spec", None)
+        if human_spec is None and isinstance(self.config, dict):
+            role = self.config.get("default_human_role") or "human-operator"
             try:
-                await job_session.commit()
-            except Exception as exc:
-                logger.warning("Failed to commit isolated job session for %s: %s", getattr(todo, "todo_id", "?"), exc)
+                human_spec = default_human_spec(role)
+            except Exception:
+                human_spec = None
+        if human_spec is None:
+            return agent_spec
+        return PermissionSpecParser.intersection(human_spec, agent_spec)
+
 
     def _get_rule_overrides_for_todo(self, todo: Any) -> dict[str, Any]:
         results = self._tick_state.get("rule_evaluation_results", [])

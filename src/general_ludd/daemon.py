@@ -1675,7 +1675,8 @@ def create_daemon_app(
         )
 
     _PUBLIC_PATHS = {
-        "/healthz", "/readyz", "/api/status", "/api/todos", "/api/webmcp",
+        "/healthz", "/readyz", "/api/status", "/api/todos", "/api/human-todos",
+        "/api/webmcp",
         "/docs", "/openapi.json", "/redoc",
     }
 
@@ -1922,6 +1923,7 @@ def create_daemon_app(
         facts,
         features,
         filestore,
+        human_todos,
         integrity,
         maintenance,
         mcp,
@@ -1933,6 +1935,7 @@ def create_daemon_app(
         reload,
         render,
         schedule,
+        security,
         self_improve,
         self_update,
         signing,
@@ -1963,8 +1966,10 @@ def create_daemon_app(
     compute.register(app, daemon_state)
     processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
+    human_todos.register(app, daemon_state)
     integrity.register(app, daemon_state)
     signing.register(app, daemon_state)
+    security.register(app, daemon_state)
     projects.register(app, daemon_state)
     quantization.register(app, daemon_state)
     reload.register(app, daemon_state)

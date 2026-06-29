@@ -741,3 +741,114 @@ class TaskEmbeddingModel(Base):
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
     )
+
+
+class StsAuditModel(Base):
+    __tablename__ = "sts_audit"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    token_id: Mapped[str] = mapped_column(String(64), unique=True, nullable=False, index=True)
+    issuer_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    subject_agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    spec_yaml: Mapped[str] = mapped_column(Text, nullable=False)
+    issued_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    expires_at: Mapped[float] = mapped_column(Float, nullable=False, index=True)
+    last_used_at: Mapped[float | None] = mapped_column(Float, nullable=True)
+    use_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    events: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow
+    )
+
+    __table_args__ = (
+        Index("ix_sts_audit_agents", "issuer_agent_id", "subject_agent_id"),
+    )
+
+
+class PermissionEscalationRequestModel(Base):
+    """Persistent record of a permission-escalation request.
+
+    Populated by POST /admin/perm/escalation-request. Each row records the
+    agent's current spec (yaml), the additional capabilities it requested
+    (yaml), the alternatives it documented, and the human/automated
+    decision.
+    """
+
+    __tablename__ = "permission_escalation_request"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    current_spec_yaml: Mapped[str] = mapped_column(Text, nullable=False)
+    requested_capabilities_yaml: Mapped[str] = mapped_column(Text, nullable=False)
+    reason: Mapped[str] = mapped_column(Text, nullable=False)
+    alternatives_tried_json: Mapped[str] = mapped_column(
+        Text, nullable=False, default="[]"
+    )
+    status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
+    human_reviewer: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    decided_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    decided_reason: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+
+
+def _gen_human_todo_id() -> str:
+    return f"HTODO-{uuid4().hex[:10].upper()}"
+
+
+class HumanTodoModel(Base):
+    """A request from an agent to a human.
+
+    Distinct from :class:`TodoModel` (which represents work a user assigns to
+    an agent). A ``HumanTodoModel`` is filed by an agent when it cannot
+    complete its work without a human action — a permission escalation, an
+    external action, a decision, missing input, or an unblocker. The human
+    resolves it (done / dismissed / superseded); the resolution is fed back to
+    the agent via ``human_resolution`` and, when ``parent_agent_todo_id`` is
+    set, the parent agent todo is unblocked.
+
+    Lifecycle: ``open`` → ``in_progress`` → {``done``, ``dismissed``,
+    ``superseded``}. Terminal states: ``done``, ``dismissed``, ``superseded``.
+    """
+
+    __tablename__ = "human_todos"
+
+    id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=_gen_human_todo_id
+    )
+    # The agent todo whose progress is blocked on this human-todo. NULL when
+    # the agent is merely logging a need (no parent todo to block).
+    parent_agent_todo_id: Mapped[str | None] = mapped_column(
+        String(32), nullable=True, index=True
+    )
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False, index=True)
+    session_id: Mapped[str | None] = mapped_column(String(128), nullable=True, index=True)
+    title: Mapped[str] = mapped_column(String(512), nullable=False)
+    body: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    category: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    priority: Mapped[str] = mapped_column(String(16), nullable=False, default="medium", index=True)
+    status: Mapped[str] = mapped_column(String(16), nullable=False, default="open", index=True)
+    human_resolution: Mapped[str | None] = mapped_column(Text, nullable=True)
+    human_resolver: Mapped[str | None] = mapped_column(String(128), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+    resolved_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    due_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True), nullable=True)
+    # JSON array of tag strings, following the JSON-in-Text convention.
+    tags: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+
+    __table_args__ = (
+        Index("ix_human_todos_status_category", "status", "category"),
+        Index("ix_human_todos_status_priority", "status", "priority"),
+    )

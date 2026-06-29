@@ -72,6 +72,7 @@ def _role_scenario(role: str) -> str:
 _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_embed",
     "gludd_environment",
+    "gludd_human_todo",
     "gludd_langchain_generate",
     "gludd_langgraph_decision",
     "gludd_proc_monitor",
