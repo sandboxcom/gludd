@@ -64,6 +64,7 @@ ENFORCED IN CODE: `.claude/hooks/no_false_completion_stop.sh` (Stop hook) blocks
 that ends on a completion claim carrying no evidence token and no honest hedge
 (`GLUDD_FALSE_DONE_ENFORCE=1`; proof: `make test-no-false-completion`). Mirrors
 Mechanical Contract rule 3 and "A Release is an Artifact, Not a Tag".
+Enforced in opencode by `.opencode/plugin/enforce-false-done.ts` (response.transform replacement + anti-wedge counter); mirrors `.claude/hooks/no_false_completion_stop.sh`.
 
 ## No Unseen Events (observability invariant)
 

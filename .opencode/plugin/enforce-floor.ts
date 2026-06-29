@@ -56,11 +56,18 @@ function isDispatchTool(tool: string): boolean {
 
 // Open-work probe: only block when the repo actually has pending work. Avoids
 // wedging a session where the floor is breached because the work is genuinely
-// done. Signals (any one triggers "open work"): ratchet.yml entries, the
-// multitasking backlog file present, uncommitted git changes, OR a live
-// todowrite list with pending/in_progress items (state file mirror at
-// /tmp/gludd-todowrite-state.json written by enforce-todos.ts). The todowrite
-// check closes the hole where the agent has pending todos but a clean tree.
+// done. Signals (any one triggers "open work"):
+//   - ratchet.yml entries
+//   - the multitasking backlog file present
+//   - uncommitted git changes
+//   - a live todowrite list with pending/in_progress items (state file mirror
+//     at /tmp/gludd-todowrite-state.json written by enforce-todos.ts)
+//   - unchecked markdown task rows in TASKS.md (`- [ ]`, `* [ ]`)
+//   - open incident headers in BUGS.md
+// The TASKS.md/BUGS.md scans close the gap where the agent has unchecked
+// task-ledger rows but a clean git tree, so the floor gate no longer silently
+// disables. Paths are configurable via GLUDD_TASKS_MD / GLUDD_BUGS_MD env vars
+// (default <cwd>/TASKS.md / <cwd>/BUGS.md).
 // FAIL-OPEN: any error -> false (don't block on a probe bug).
 function openWorkExists(): boolean {
   try {
@@ -86,6 +93,33 @@ function openWorkExists(): boolean {
         }
       }
     } catch { /* malformed mirror -> ignore */ }
+    // TASKS.md scan — count unchecked markdown task rows (`- [ ]` or `* [ ]`).
+    // Configurable via GLUDD_TASKS_MD (default <cwd>/TASKS.md).
+    const tasksMd = process.env.GLUDD_TASKS_MD || path.join(process.cwd(), "TASKS.md")
+    try {
+      if (fs.existsSync(tasksMd)) {
+        const tasksSrc = fs.readFileSync(tasksMd, "utf8")
+        // Match `^\s*[-*]\s+\[\s*\]` — a list marker followed by an empty
+        // (unchecked) markdown task box. `- [x]` / `- [X]` do NOT match.
+        const unchecked = tasksSrc
+          .split("\n")
+          .filter(l => /^\s*[-*]\s+\[\s*\]/.test(l))
+        if (unchecked.length > 0) return true
+      }
+    } catch { /* unreadable TASKS.md -> ignore */ }
+    // BUGS.md scan — count open incident headers (date-stamped `### YYYY-MM-DD —`
+    // rows that are not marked resolved). Configurable via GLUDD_BUGS_MD.
+    const bugsMd = process.env.GLUDD_BUGS_MD || path.join(process.cwd(), "BUGS.md")
+    try {
+      if (fs.existsSync(bugsMd)) {
+        const bugsSrc = fs.readFileSync(bugsMd, "utf8")
+        const openIncidents = bugsSrc
+          .split("\n")
+          .filter(l => /^###\s+\d{4}-\d{2}-\d{2}\s+—/.test(l))
+          .filter(l => !/\b(resolved|fixed|closed|wontfix|duplicate)\b/i.test(l))
+        if (openIncidents.length > 0) return true
+      }
+    } catch { /* unreadable BUGS.md -> ignore */ }
     const { execSync } = require("node:child_process")
     const status = execSync("git status --porcelain", {
       cwd: process.cwd(),
@@ -136,21 +170,55 @@ export default (async ({ }) => {
       try {
         if (!FLOOR_ENFORCE) return
         const tool = (input?.tool ?? "") as string
-        if (isDispatchTool(tool)) return  // never block dispatch
+        const isDispatch = isDispatchTool(tool)
         const active = countActiveAgents()
-        if (active === null) return       // can't tell -> fail open
-        if (active >= FLOOR) return        // not below floor -> allow
+
+        // --- CEILING BREACH (deny on dispatch, warn on read-only ops) ---
+        // When live count > CEILING we MUST stop adding worktree-isolated
+        // agents (each creates a ~320MB venv -> disk exhaustion risk). A
+        // hard deny on dispatch is the load-bearing fix; the old code only
+        // appended a warning and disk proceeded unchecked. Read-only ops
+        // (Read/Edit/Grep/etc.) add NO venv so they may proceed with a
+        // warning. FAIL-OPEN for the ceiling: when active is null (probe
+        // error) we do NOT deny — blocking ALL dispatches could wedge the
+        // session, which is worse than the rare over-dispatch.
+        if (active !== null && active > CEILING && isDispatch) {
+          return {
+            permissionDecision: "deny" as const,
+            message: [
+              `⛔ AGENT CEILING BREACHED: live subagent count ${active} > ceiling ${CEILING}.`,
+              "Dispatching more agents risks disk exhaustion (each worktree-isolated",
+              "agent creates a ~320MB venv). Run `make clean-worktree-venvs` first,",
+              "or wait for in-flight agents to complete. Set GLUDD_FLOOR_ENFORCE=0",
+              "to disable both floor AND ceiling enforcement.",
+            ].join("\n"),
+          }
+        }
+
+        // --- FLOOR BREACH (fail-closed: treat null probe as 0) ---
+        // When the agent_liveness.py probe errored (killed, missing, etc.)
+        // countActiveAgents returns null. For the FLOOR check we treat null
+        // as 0 (fail-closed → assume no agents live → deny mutating tools,
+        // forcing the agent to dispatch). This is asymmetric with the
+        // ceiling (which is fail-open) by design: a missing probe is much
+        // more likely to indicate zero observable agents than an invisible
+        // herd over the ceiling. Dispatch tools are ALWAYS allowed so the
+        // agent can refill the pool.
+        if (isDispatch) return  // never block a dispatch on the floor path
+        const floorActive = active === null ? 0 : active
+        if (floorActive >= FLOOR) return   // not below floor -> allow
         if (!openWorkExists()) return      // no pending work -> allow
-        const need = Math.max(0, TARGET - active)
+        const need = Math.max(0, TARGET - floorActive)
         return {
           permissionDecision: "deny" as const,
           message: [
-            `Live subagent count is ${active} (< floor ${FLOOR}). Dispatch a wave`,
-            `BEFORE continuing inline work. Set GLUDD_FLOOR_ENFORCE=0 to disable.`,
+            `Live subagent count is ${floorActive} (< floor ${FLOOR}). Dispatch a wave`,
+            "BEFORE continuing inline work. Set GLUDD_FLOOR_ENFORCE=0 to disable.",
             "",
             `(Need ~${need} more dispatch(es) to reach target ${TARGET}. Dispatch tools`,
             "task/agent/workflow are explicitly ALLOWED — never blocked. Open work is",
-            "pending: ratchet/backlog/todowrite/uncommitted. Refill the pool, then resume.)",
+            "pending: ratchet/backlog/todowrite/TASKS.md/BUGS.md/uncommitted. Refill",
+            "the pool, then resume.)",
           ].join("\n"),
         }
       } catch {

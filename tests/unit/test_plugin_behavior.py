@@ -1081,3 +1081,242 @@ class TestEnforceDeadlinePlugin:
             "sweepStaleEntries must be called from loadDeadlines so stale "
             "entries are purged on every state file read"
         )
+
+
+# --------------------------------------------------------------------------- #
+# 6. enforce-floor.ts — openWorkExists TASKS.md/BUGS.md scan (2026-06-29 audit)
+# --------------------------------------------------------------------------- #
+# Audit gap #1: openWorkExists() checked ratchet.yml, the multitasking backlog,
+# todowrite state, and git status — but NOT TASKS.md / BUGS.md. So whenever
+# the tree was clean (no uncommitted changes) and ratchet was empty, an agent
+# with unchecked TASKS.md rows could grind inline with the floor disabled.
+# The fix adds a markdown-task scan (`- [ ]` / `* [ ]`) and an open-incident
+# header scan in BUGS.md. These tests pin the wiring.
+class TestEnforceFloorOpenWorkScan:
+    """openWorkExists must scan TASKS.md and BUGS.md for open items."""
+
+    def test_open_work_exists_detects_unchecked_tasks_md_dash(self):
+        """openWorkExists must return true when TASKS.md has `- [ ]` rows."""
+        src = ENFORCE_FLOOR.read_text()
+        m = re.search(r"function openWorkExists\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "openWorkExists function body not found"
+        body = m.group(1)
+        assert "TASKS" in body.upper(), (
+            "openWorkExists must read TASKS.md — without it a clean tree + "
+            "unchecked TASKS.md rows silently disable the floor gate"
+        )
+        # Must match an unchecked markdown task box (`[ ]` with optional inner
+        # whitespace) preceded by a list marker.
+        assert re.search(r"\\\[\s*\\\]|\\\[\s*\*\\\]|\\\\\[\s*\\\\\]", body) or \
+               ("\\[" in body and "\\s" in body and "\\]" in body) or \
+               re.search(r"\[\s*\\s\*\]", body), (
+            "openWorkExists must count unchecked markdown task boxes "
+            "(regex matching `^[\\s*][-*]\\s+\\[\\s*\\]`)"
+        )
+
+    def test_open_work_exists_detects_unchecked_tasks_md_asterisk(self):
+        """The TASKS.md scan must also match `* [ ]` (asterisk marker), not
+        just `-` markers — both are valid markdown unordered-list syntax."""
+        src = ENFORCE_FLOOR.read_text()
+        m = re.search(r"function openWorkExists\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "openWorkExists function body not found"
+        body = m.group(1)
+        # The character class for the list marker must include both `-` and `*`.
+        assert "[-*]" in body or "[-+*]" in body or ("-" in body and "*" in body), (
+            "TASKS.md scan must accept both `-` and `*` list markers (markdown "
+            "allows both); a `-`-only regex misses `* [ ]` rows"
+        )
+
+    def test_open_work_exists_false_when_tasks_md_all_checked(self):
+        """Checked rows (`- [x]`) must NOT trigger openWorkExists. The regex
+        must require an EMPTY box (`[ ]`), not match `[x]`."""
+        src = ENFORCE_FLOOR.read_text()
+        m = re.search(r"function openWorkExists\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "openWorkExists function body not found"
+        body = m.group(1)
+        # The unchecked-box regex must NOT match `x` or `X` inside the box.
+        # We assert the regex uses `\\s*` (whitespace only) between the
+        # brackets, not `\\S` or `.`.
+        assert re.search(r"\\\[\s*\\\s\*\\\]|\\\[\s*\\\\s\*\\\]", body) or \
+               re.search(r"\\\[\s*\\s\*\s*\\\]", body) or \
+               "\\s*" in body, (
+            "The unchecked-box regex must use `\\s*` (whitespace) inside the "
+            "brackets so `[x]`/`[X]` (checked) rows do NOT match"
+        )
+
+    def test_open_work_exists_false_when_no_tasks_md(self):
+        """When TASKS.md is absent, the scan must not throw (fail-open)."""
+        src = ENFORCE_FLOOR.read_text()
+        m = re.search(r"function openWorkExists\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "openWorkExists function body not found"
+        body = m.group(1)
+        # Must guard the read with fs.existsSync (so absent file is a no-op).
+        assert "existsSync" in body, (
+            "TASKS.md scan must guard with fs.existsSync so an absent file "
+            "does not throw (fail-open)"
+        )
+
+    def test_tasks_md_path_env_override(self):
+        """GLUDD_TASKS_MD must override the default TASKS.md path."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "process.env.GLUDD_TASKS_MD" in src, (
+            "openWorkExists must honor process.env.GLUDD_TASKS_MD so tests "
+            "can point at a fixture path"
+        )
+
+    def test_bugs_md_path_env_override(self):
+        """GLUDD_BUGS_MD must override the default BUGS.md path."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "process.env.GLUDD_BUGS_MD" in src, (
+            "openWorkExists must honor process.env.GLUDD_BUGS_MD so tests "
+            "can point at a fixture path"
+        )
+
+    def test_tasks_md_default_path(self):
+        """Default TASKS.md path is <cwd>/TASKS.md."""
+        src = ENFORCE_FLOOR.read_text()
+        assert re.search(r'[\'"][^\'"]*TASKS\.md[\'"]', src), (
+            "openWorkExists must default to <cwd>/TASKS.md"
+        )
+
+    def test_bugs_md_default_path(self):
+        """Default BUGS.md path is <cwd>/BUGS.md."""
+        src = ENFORCE_FLOOR.read_text()
+        assert re.search(r'[\'"][^\'"]*BUGS\.md[\'"]', src), (
+            "openWorkExists must default to <cwd>/BUGS.md"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 7. enforce-floor.ts — ceiling deny-on-dispatch + probe fail asymmetry
+# --------------------------------------------------------------------------- #
+# Audit gaps #2 and #3:
+#   #2 — the ceiling was APPEND-only (advisory warning), never a deny. So
+#        disk exhaustion proceeded unchecked as the agent kept dispatching
+#        worktree-isolated agents (each ~320MB venv).
+#   #3 — countActiveAgents returned null on probe error -> fail-open for
+#        BOTH floor and ceiling, silently disabling ALL enforcement when
+#        agent_liveness.py was killed.
+# Fixes:
+#   - ceiling: HARD-DENY dispatches when active > CEILING (read-only ops
+#     still warn — they add no venv).
+#   - probe: floor FAIL-CLOSED (null -> 0, deny mutating, force dispatch),
+#     ceiling FAIL-OPEN (null -> unknown, do NOT deny dispatch — wedging
+#     the session by blocking all dispatches is worse).
+class TestEnforceFloorCeilingDenyAndProbeAsymmetry:
+    """Ceiling must deny dispatches; floor probe fail-closed, ceiling fail-open."""
+
+    def test_ceiling_denies_dispatch_when_exceeded(self):
+        """When active > CEILING AND the tool is a dispatch (task/agent/
+        workflow), the plugin MUST return permissionDecision:'deny' — not
+        just append a warning. The warning-only path let disk exhaustion
+        proceed unchecked."""
+        src = ENFORCE_FLOOR.read_text()
+        # Must emit the load-bearing ceiling-deny header.
+        assert "AGENT CEILING BREACHED" in src, (
+            "tool.execute.before ceiling-deny must emit an 'AGENT CEILING "
+            "BREACHED' header (distinct from the advisory 'AGENT-CEILING "
+            "BREACH' banner) so operators can grep dispatch-denials"
+        )
+        # The deny must be gated on `active > CEILING` inside the
+        # tool.execute.before hook (not just the response.transform).
+        assert re.search(r"active\s*>\s*CEILING", src), (
+            "Ceiling deny must compare `active > CEILING`"
+        )
+
+    def test_ceiling_warns_non_dispatch_when_exceeded(self):
+        """For non-dispatch tools (Read/Edit/Bash read-only) over ceiling,
+        the plugin must NOT hard-deny — read-only ops add no venv. The
+        advisory AGENT-CEILING BREACH banner must remain on the
+        response.transform channel."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "AGENT-CEILING BREACH" in src, (
+            "response.transform must retain the 'AGENT-CEILING BREACH' "
+            "advisory banner — non-dispatch / response-level guidance"
+        )
+
+    def test_count_live_agents_fail_closed_for_floor(self):
+        """On probe error (countActiveAgents returns null), the FLOOR check
+        must treat null as 0 (fail-closed) — deny mutating tools, forcing
+        the agent to dispatch. The old code did `if (active === null)
+        return` which was fail-open and silently disabled enforcement."""
+        src = ENFORCE_FLOOR.read_text()
+        m = re.search(
+            r'"tool\.execute\.before"(.*?)(?="experimental\.chat\.response\.transform)',
+            src,
+            re.DOTALL,
+        )
+        assert m, "tool.execute.before hook not found"
+        before_body = m.group(1)
+        # The floor branch must coerce null -> 0 (NOT early-return on null).
+        assert re.search(r"active\s*===\s*null\s*\?\s*0", before_body) or \
+               re.search(r"\|\|\s*0\b", before_body), (
+            "Floor branch must coerce countActiveAgents() null to 0 "
+            "(fail-closed) so a dead agent_liveness.py probe does NOT "
+            "silently disable enforcement"
+        )
+        # Must NOT have the old fail-open early-return on the floor path.
+        # (The ceiling path may early-return on null — that's the asymmetry.)
+
+    def test_count_live_agents_fail_open_for_ceiling(self):
+        """On probe error (null), the CEILING check must NOT deny dispatches
+        (fail-open). Blocking ALL dispatches when the probe is dead would
+        wedge the session — worse than the rare over-dispatch."""
+        src = ENFORCE_FLOOR.read_text()
+        m = re.search(
+            r'"tool\.execute\.before"(.*?)(?="experimental\.chat\.response\.transform)',
+            src,
+            re.DOTALL,
+        )
+        assert m, "tool.execute.before hook not found"
+        before_body = m.group(1)
+        # Ceiling deny branch must guard on `active !== null` so a probe
+        # error does not trigger the deny.
+        assert re.search(r"active\s*!==\s*null", before_body), (
+            "Ceiling deny branch must guard on `active !== null` — when the "
+            "probe errored we cannot know if we're over ceiling, so we must "
+            "NOT block dispatches (fail-open for ceiling, fail-closed for floor)"
+        )
+
+    def test_probe_asymmetry_documented_in_comment(self):
+        """The fail-closed/fail-open asymmetry must be documented in a
+        comment so a future reader does not 'fix' one side to match the
+        other (which would re-introduce the bug)."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "fail-closed" in src.lower() or "fail closed" in src.lower(), (
+            "enforce-floor.ts must document the floor fail-closed side of "
+            "the asymmetry in a comment"
+        )
+        assert "fail-open" in src.lower() or "fail open" in src.lower(), (
+            "enforce-floor.ts must document the ceiling fail-open side of "
+            "the asymmetry in a comment"
+        )
+
+    def test_ceiling_deny_message_loads_spec_phrases(self):
+        """The ceiling-deny message must carry the user-mandated phrases:
+        disk-exhaustion warning, clean-worktree-venvs hint, and the
+        GLUDD_FLOOR_ENFORCE=0 disable switch."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "disk exhaustion" in src.lower(), (
+            "Ceiling-deny message must warn about disk exhaustion"
+        )
+        assert "clean-worktree-venvs" in src, (
+            "Ceiling-deny message must suggest `make clean-worktree-venvs`"
+        )
+        assert "GLUDD_FLOOR_ENFORCE=0" in src, (
+            "Ceiling-deny message must surface GLUDD_FLOOR_ENFORCE=0 as the "
+            "disable switch (same as the floor deny)"
+        )
+
+    def test_open_work_message_lists_tasks_md_bugs_md(self):
+        """The floor-deny message must now list TASKS.md/BUGS.md as open-work
+        signals (so the operator knows the gate consulted them)."""
+        src = ENFORCE_FLOOR.read_text()
+        assert "TASKS.md" in src, (
+            "Floor-deny message must list TASKS.md as one of the open-work "
+            "signals it consulted"
+        )
+        assert "BUGS.md" in src, (
+            "Floor-deny message must list BUGS.md as one of the open-work "
+            "signals it consulted"
+        )
