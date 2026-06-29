@@ -1,0 +1,20 @@
+version: 1
+agent_type: human-viewer
+subject: human
+parent_agent_id: null
+max_sts_ttl_seconds: 3600
+max_subagent_permissions: same_or_fewer
+capabilities:
+  - resource: file:repo
+    actions: ["read"]
+    constraints:
+      path_prefix: "/repo/"
+  - resource: net:egress:llm_api
+    actions: ["connect"]
+    constraints:
+      allowed_hosts: ["api.anthropic.com", "api.openai.com", "api.z.ai"]
+  - resource: secret:openbao
+    actions: ["read"]
+    constraints:
+      openbao_paths: ["secret/data/gludd/read-only/*"]
+denied: []

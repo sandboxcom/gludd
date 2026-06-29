@@ -22,12 +22,12 @@ Design notes:
 
 from __future__ import annotations
 
+import enum
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any
 
 import yaml
-
 
 _RESOURCE_CONSTRAINTS: dict[str, tuple[str, ...]] = {
     "secret:openbao": ("openbao_paths",),
@@ -38,6 +38,22 @@ _RESOURCE_CONSTRAINTS: dict[str, tuple[str, ...]] = {
 
 class PermissionDeniedError(RuntimeError):
     """Raised when a subject spec requests capabilities its issuer lacks."""
+
+
+class PermissionSubject(enum.StrEnum):
+    """Who a :class:`PermissionSpec` applies to.
+
+    ``AGENT`` is the back-compat default for agent-type specs.
+    ``HUMAN`` marks specs that apply to human users (human-admin /
+    human-operator / human-viewer).
+    ``STS_TOKEN`` marks a derived spec produced by
+    :meth:`PermissionSpecParser.intersection` — it is the effective scope
+    handed to a subagent.
+    """
+
+    AGENT = "agent"
+    HUMAN = "human"
+    STS_TOKEN = "sts_token"
 
 
 @dataclass(frozen=True)
@@ -63,15 +79,36 @@ class Capability:
 
 @dataclass(frozen=True)
 class PermissionSpec:
-    """The set of capabilities granted to an agent type or STS token."""
+    """The set of capabilities granted to an agent type or STS token.
+
+    Attributes:
+        agent_type: Label identifying the spec source (``build`` / ``primary``
+            / ``subagent`` / ``human-admin`` / a custom type). For
+            intersection results this is the literal string ``"sts_token"``.
+        capabilities: Positive grants.
+        version: Schema version.
+        parent_agent_id: The agent_id of the issuer when this spec arrived
+            via STS delegation. ``None`` for top-level specs.
+        parent_human_id: The human_id whose spec participated in the
+            intersection that produced this spec (audit only). ``None`` when
+            no human intersection occurred.
+        denied: Negative grants.
+        max_sts_ttl_seconds: Hard ceiling for any STS token minted FROM this
+            spec.
+        max_subagent_permissions: Delegation policy (``same_or_fewer``).
+        subject: Who/what the spec applies to (agent / human / sts_token).
+            Defaults to :attr:`PermissionSubject.AGENT` for back-compat.
+    """
 
     agent_type: str
     capabilities: list[Capability] = field(default_factory=list)
     version: int = 1
     parent_agent_id: str | None = None
+    parent_human_id: str | None = None
     denied: list[Capability] = field(default_factory=list)
     max_sts_ttl_seconds: int = 3600
     max_subagent_permissions: str = "same_or_fewer"
+    subject: PermissionSubject = PermissionSubject.AGENT
 
     def capability_for(self, resource: str) -> Capability | None:
         """Return the first capability matching ``resource`` or ``None``."""
@@ -147,6 +184,112 @@ def default_spec(agent_type: str) -> PermissionSpec:
     return _DEFAULTS.get(agent_type, _subagent_default_spec())
 
 
+# ---------------------------------------------------------------------------
+# Default human specs
+#
+# Humans carry specs too. The human spec is one of three roles shipped in
+# ``config/permissions/human-*.yml``; the daemon config field
+# ``default_human_role`` (default ``human-operator``) selects which applies
+# when no per-user override exists. A human spec never widens a subagent's
+# scope — the EFFECTIVE subagent spec is the INTERSECTION of the human spec
+# and the dispatching agent's spec (see ``PermissionSpecParser.intersection``).
+# ---------------------------------------------------------------------------
+
+
+def _human_admin_default_spec() -> PermissionSpec:
+    """``human-admin``: full permissions — the admin can do anything."""
+    return PermissionSpec(
+        agent_type="human-admin",
+        subject=PermissionSubject.HUMAN,
+        capabilities=[
+            Capability(
+                resource="file:",
+                actions=["read", "write"],
+                constraints={"path_prefix": "/"},
+            ),
+            Capability(
+                resource="net:egress:any",
+                actions=["connect"],
+                constraints={"allowed_hosts": ["*"]},
+            ),
+            Capability(
+                resource="secret:openbao",
+                actions=["read", "write", "list", "delete"],
+                constraints={"openbao_paths": ["secret/data/gludd/*"]},
+            ),
+        ],
+        max_sts_ttl_seconds=3600,
+    )
+
+
+def _human_operator_default_spec() -> PermissionSpec:
+    """``human-operator``: can run playbooks + read secrets, cannot mutate OpenBao config."""
+    return PermissionSpec(
+        agent_type="human-operator",
+        subject=PermissionSubject.HUMAN,
+        capabilities=[
+            Capability(
+                resource="file:repo",
+                actions=["read", "write"],
+                constraints={"path_prefix": "/repo/"},
+            ),
+            Capability(
+                resource="net:egress:any",
+                actions=["connect"],
+                constraints={"allowed_hosts": ["*"]},
+            ),
+            Capability(
+                resource="secret:openbao",
+                actions=["read"],
+                constraints={"openbao_paths": ["secret/data/gludd/*"]},
+            ),
+        ],
+        max_sts_ttl_seconds=3600,
+    )
+
+
+def _human_viewer_default_spec() -> PermissionSpec:
+    """``human-viewer``: read-only everywhere; connect-only on LLM APIs."""
+    return PermissionSpec(
+        agent_type="human-viewer",
+        subject=PermissionSubject.HUMAN,
+        capabilities=[
+            Capability(
+                resource="file:repo",
+                actions=["read"],
+                constraints={"path_prefix": "/repo/"},
+            ),
+            Capability(
+                resource="net:egress:llm_api",
+                actions=["connect"],
+                constraints={"allowed_hosts": ["api.anthropic.com", "api.openai.com", "api.z.ai"]},
+            ),
+            Capability(
+                resource="secret:openbao",
+                actions=["read"],
+                constraints={"openbao_paths": ["secret/data/gludd/read-only/*"]},
+            ),
+        ],
+        max_sts_ttl_seconds=3600,
+    )
+
+
+_HUMAN_DEFAULTS: dict[str, PermissionSpec] = {
+    "human-admin": _human_admin_default_spec(),
+    "human-operator": _human_operator_default_spec(),
+    "human-viewer": _human_viewer_default_spec(),
+}
+
+
+def default_human_spec(role: str) -> PermissionSpec:
+    """Return the canonical default human :class:`PermissionSpec` for ``role``.
+
+    Unknown roles fall back to ``human-viewer`` (most restrictive) so a typo
+    cannot silently widen access.
+    """
+    return _HUMAN_DEFAULTS.get(role, _human_viewer_default_spec())
+
+
 class PermissionSpecParser:
     """Parse and validate :class:`PermissionSpec` from YAML.
 
@@ -184,16 +327,23 @@ class PermissionSpecParser:
             )
             for item in (data.get("denied") or [])
         ]
+        subject_raw = data.get("subject", "agent")
+        try:
+            subject = PermissionSubject(str(subject_raw))
+        except ValueError:
+            subject = PermissionSubject.AGENT
         return PermissionSpec(
             version=int(data.get("version", 1)),
             agent_type=str(data["agent_type"]),
             parent_agent_id=data.get("parent_agent_id"),
+            parent_human_id=data.get("parent_human_id"),
             capabilities=capabilities,
             denied=denied,
             max_sts_ttl_seconds=int(data.get("max_sts_ttl_seconds", 3600)),
             max_subagent_permissions=str(
                 data.get("max_subagent_permissions", "same_or_fewer")
             ),
+            subject=subject,
         )
 
     @staticmethod
@@ -266,6 +416,131 @@ class PermissionSpecParser:
         return True
 
     @staticmethod
+    def intersection(
+        a: PermissionSpec,
+        b: PermissionSpec,
+        *,
+        parent_human_id: str | None = None,
+    ) -> PermissionSpec:
+        """Return the conservative intersection of two :class:`PermissionSpec`s.
+
+        Formal definition (also in ``docs/design/PERMISSION_SYSTEM.md`` §10):
+
+            intersection(a, b).capabilities =
+                [intersect(c, c') for c in a.capabilities
+                                   if exists c' in b.capabilities
+                                   where c.resource == c'.resource
+                                   and intersect(c, c') is non-empty]
+
+        For each overlapping capability:
+
+        * ``actions`` = set intersection.
+        * ``path_prefix`` (file:) = the LONGER (narrower) prefix.
+        * ``allowed_hosts`` / ``allowed_ports`` (net:) = set intersection.
+        * ``openbao_paths`` (secret:openbao) = set intersection.
+
+        Whole-spec fields:
+
+        * ``denied`` = UNION of both denied lists.
+        * ``max_sts_ttl_seconds`` = MIN of the two.
+        * ``subject`` = :attr:`PermissionSubject.STS_TOKEN` (a derived scope).
+        * ``parent_agent_id`` / ``parent_human_id`` = recorded for audit
+          (``parent_agent_id`` carries ``b``'s issuer id when present;
+          ``parent_human_id`` is the explicit kwarg or ``a``'s when ``a`` is
+          a HUMAN subject).
+
+        If two capabilities share a resource but their intersected actions or
+        constraints are EMPTY, the capability is dropped entirely
+        (conservative: if unsure whether to grant, deny).
+        """
+        out_caps: list[Capability] = []
+        for cap_a in a.capabilities:
+            cap_b = next(
+                (c for c in b.capabilities if c.resource == cap_a.resource),
+                None,
+            )
+            if cap_b is None:
+                continue
+            family = PermissionSpecParser._family(cap_a.resource)
+            if family is None:
+                continue
+            actions = sorted(set(cap_a.actions) & set(cap_b.actions))
+            if not actions:
+                continue
+            constraints = PermissionSpecParser._intersect_constraints(
+                cap_a.constraints, cap_b.constraints, family
+            )
+            if constraints is None:
+                continue
+            out_caps.append(
+                Capability(resource=cap_a.resource, actions=actions, constraints=constraints)
+            )
+
+        denied_union: list[Capability] = []
+        seen_denied: set[tuple[str, tuple[str, ...]]] = set()
+        for d in list(a.denied) + list(b.denied):
+            key = (d.resource, tuple(sorted(d.actions)))
+            if key in seen_denied:
+                continue
+            seen_denied.add(key)
+            denied_union.append(d)
+
+        parent_agent_id = b.parent_agent_id or a.parent_agent_id
+        if parent_human_id is None and a.subject == PermissionSubject.HUMAN:
+            parent_human_id = a.parent_agent_id or a.agent_type
+
+        return PermissionSpec(
+            agent_type="sts_token",
+            capabilities=out_caps,
+            denied=denied_union,
+            max_sts_ttl_seconds=min(a.max_sts_ttl_seconds, b.max_sts_ttl_seconds),
+            max_subagent_permissions="same_or_fewer",
+            parent_agent_id=parent_agent_id,
+            parent_human_id=parent_human_id,
+            subject=PermissionSubject.STS_TOKEN,
+        )
+
+    @staticmethod
+    def _intersect_constraints(
+        a: dict[str, Any],
+        b: dict[str, Any],
+        family: str,
+    ) -> dict[str, Any] | None:
+        """Return the narrowed constraints for ``family`` or ``None`` if empty.
+
+        ``None`` is the signal to drop the capability entirely (no overlap).
+        """
+        if family == "file:":
+            ap = a.get("path_prefix")
+            bp = b.get("path_prefix")
+            if not isinstance(ap, str) or not isinstance(bp, str):
+                return None
+            # Longer prefix = narrower scope.
+            chosen = ap if len(ap) >= len(bp) else bp
+            if not chosen:
+                return None
+            return {"path_prefix": chosen}
+        if family == "net:":
+            out: dict[str, Any] = {}
+            for key in ("allowed_hosts", "allowed_ports"):
+                aset = set(a.get(key, []) or [])
+                bset = set(b.get(key, []) or [])
+                inter = sorted(aset & bset)
+                if inter:
+                    out[key] = inter
+            if not out:
+                return None
+            return out
+        if family == "secret:openbao":
+            aset = set(a.get("openbao_paths", []) or [])
+            bset = set(b.get("openbao_paths", []) or [])
+            inter = sorted(aset & bset)
+            if not inter:
+                return None
+            return {"openbao_paths": inter}
+        return None
+
+    @staticmethod
     def _family(resource: str) -> str | None:
         for key in sorted(_RESOURCE_CONSTRAINTS.keys(), key=len, reverse=True):
             if resource.startswith(key):
@@ -303,5 +578,7 @@ __all__ = [
     "PermissionDeniedError",
     "PermissionSpec",
     "PermissionSpecParser",
+    "PermissionSubject",
+    "default_human_spec",
     "default_spec",
 ]

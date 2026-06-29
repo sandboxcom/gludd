@@ -21,9 +21,16 @@ from __future__ import annotations
 
 import secrets as _py_secrets
 import time
-from dataclasses import dataclass
+import uuid
+from dataclasses import dataclass, replace
+from typing import Any
 
-from general_ludd.security.permissions import PermissionSpec
+from general_ludd.security.permissions import (
+    Capability,
+    PermissionDeniedError,
+    PermissionSpec,
+    PermissionSpecParser,
+)
 
 DEFAULT_TTL_SECONDS: int = 3600
 
@@ -58,8 +65,9 @@ class STSRegistry:
     ``__setitem__`` are atomic in CPython.
     """
 
-    def __init__(self, clock: time.time | None = None) -> None:
+    def __init__(self, clock: Any = None) -> None:
         # ``clock`` is injectable for deterministic tests; defaults to wall time.
+        # Typed as Any because ``time.time`` is a function, not a type.
         self._claims: dict[str, STSClaim] = {}
         self._clock = clock or time.time
 
@@ -110,8 +118,167 @@ class STSRegistry:
         return len(dead)
 
 
+@dataclass(frozen=True)
+class StsToken:
+    """A short-lived, scoped token minted by :class:`StsIssuer`."""
+
+    token_id: str
+    issuer_agent_id: str
+    subject_agent_id: str
+    spec: PermissionSpec
+    issued_at: float
+    expires_at: float
+    last_used_at: float | None = None
+    use_count: int = 0
+
+
+class StsIssuer:
+    """Mints :class:`StsToken` instances scoped to a subset of an issuer spec."""
+
+    def __init__(self, clock: Any = time.time) -> None:
+        self._clock = clock
+        self._tokens: dict[str, StsToken] = {}
+
+    def issue(
+        self,
+        issuer_spec: PermissionSpec,
+        subject_spec_request: PermissionSpec,
+        issuer_id: str,
+        subject_id: str,
+        ttl_seconds: int,
+    ) -> StsToken:
+        if not PermissionSpecParser.is_subset(subject_spec_request, issuer_spec):
+            raise PermissionDeniedError(
+                "subject spec requests capabilities not held by issuer"
+            )
+        capped_ttl = min(ttl_seconds, issuer_spec.max_sts_ttl_seconds)
+        now = self._clock()
+        token = StsToken(
+            token_id=uuid.uuid4().hex,
+            issuer_agent_id=issuer_id,
+            subject_agent_id=subject_id,
+            spec=subject_spec_request,
+            issued_at=now,
+            expires_at=now + float(capped_ttl),
+        )
+        self._tokens[token.token_id] = token
+        return token
+
+    def validate(self, token: StsToken, required_capability: Capability) -> bool:
+        if self._clock() >= token.expires_at:
+            return False
+        cap = token.spec.capability_for(required_capability.resource)
+        if cap is None:
+            return False
+        return set(required_capability.actions).issubset(set(cap.actions))
+
+    def record_use(self, token_id: str) -> None:
+        token = self._tokens.get(token_id)
+        if token is None:
+            return
+        self._tokens[token_id] = replace(
+            token,
+            use_count=token.use_count + 1,
+            last_used_at=self._clock(),
+        )
+
+    def get_token(self, token_id: str) -> StsToken | None:
+        return self._tokens.get(token_id)
+
+    def list_active(self) -> list[StsToken]:
+        """Return all non-expired tokens (lazy-evicting expired ones)."""
+        now = self._clock()
+        live: list[StsToken] = []
+        dead: list[str] = []
+        for tid, tok in self._tokens.items():
+            if now >= tok.expires_at:
+                dead.append(tid)
+            else:
+                live.append(tok)
+        for tid in dead:
+            self._tokens.pop(tid, None)
+        return live
+
+    def revoke(self, token_id: str) -> bool:
+        """Immediately revoke a token. Returns True if a live token was dropped."""
+        return self._tokens.pop(token_id, None) is not None
+
+
+class StsAuditLog:
+    """In-memory audit log for STS issuance, use, and expiry events."""
+
+    def __init__(self) -> None:
+        self._events: list[dict[str, Any]] = []
+
+    def record_issue(self, token: StsToken) -> None:
+        self._events.append(
+            {
+                "event": "issued",
+                "token_id": token.token_id,
+                "issuer_agent_id": token.issuer_agent_id,
+                "subject_agent_id": token.subject_agent_id,
+                "capability": None,
+                "target": None,
+                "at": token.issued_at,
+            }
+        )
+
+    def record_use(
+        self, token_id: str, capability: Capability, target: str
+    ) -> None:
+        self._events.append(
+            {
+                "event": "used",
+                "token_id": token_id,
+                "issuer_agent_id": None,
+                "subject_agent_id": None,
+                "capability": capability.resource,
+                "target": target,
+                "at": time.time(),
+            }
+        )
+
+    def record_expiry(self, token_id: str) -> None:
+        self._events.append(
+            {
+                "event": "expired",
+                "token_id": token_id,
+                "issuer_agent_id": None,
+                "subject_agent_id": None,
+                "capability": None,
+                "target": None,
+                "at": time.time(),
+            }
+        )
+
+    def query(
+        self,
+        agent_id: str | None = None,
+        since: float | None = None,
+        capability: str | None = None,
+    ) -> list[dict[str, Any]]:
+        results: list[dict[str, Any]] = []
+        for ev in self._events:
+            if agent_id is not None and ev.get(
+                "subject_agent_id"
+            ) != agent_id and ev.get("issuer_agent_id") != agent_id:
+                continue
+            if since is not None and ev.get("at", 0.0) < since:
+                continue
+            if (
+                capability is not None
+                and ev.get("capability") != capability
+            ):
+                continue
+            results.append(ev)
+        return results
+
+
 __all__ = [
     "DEFAULT_TTL_SECONDS",
     "STSClaim",
     "STSRegistry",
+    "StsAuditLog",
+    "StsIssuer",
+    "StsToken",
 ]

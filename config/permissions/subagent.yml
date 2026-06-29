@@ -1,0 +1,19 @@
+version: 1
+agent_type: subagent
+parent_agent_id: null
+max_sts_ttl_seconds: 1800
+max_subagent_permissions: same_or_fewer
+capabilities:
+  - resource: file:tmp
+    actions: ["read", "write"]
+    constraints:
+      path_prefix: "/tmp/gludd/"
+  - resource: net:egress:llm_api
+    actions: ["connect"]
+    constraints:
+      allowed_hosts: ["api.anthropic.com"]
+denied:
+  - resource: secret:openbao
+    actions: ["read", "write"]
+    constraints:
+      openbao_paths: ["secret/data/gludd/*"]
