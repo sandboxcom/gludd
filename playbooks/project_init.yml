@@ -1,0 +1,7 @@
+---
+- name: Initialize a gludd project-specific collection
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: general_ludd.agent.project_init

@@ -1,0 +1,141 @@
+---
+# project_init — scaffold a project-local ansible collection.
+#
+# Single source of truth for the scaffold shape. The `gludd project init`
+# CLI invokes this role via playbooks/project_init.yml; operators can
+# shadow the whole role by dropping a same-FQCN role at
+# <project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/.
+#
+# NOTE: var is `collection_namespace` (not `namespace`) — `namespace` is
+# reserved in ansible-core.
+
+- name: Validate required vars (collection_namespace, collection_name, project_dir)
+  ansible.builtin.assert:
+    that:
+      - collection_namespace is defined
+      - collection_namespace | trim | length > 0
+      - collection_name is defined
+      - collection_name | trim | length > 0
+      - project_dir is defined
+      - project_dir | trim | length > 0
+    fail_msg: >-
+      project_init requires non-empty 'collection_namespace', 'collection_name',
+      and 'project_dir'. Got collection_namespace={{ collection_namespace | default('<undefined>') }},
+      collection_name={{ collection_name | default('<undefined>') }},
+      project_dir={{ project_dir | default('<undefined>') }}.
+
+- name: Resolve collection root path
+  ansible.builtin.set_fact:
+    _pi_collection_root: >-
+      {{ project_dir }}/.gludd/collections/ansible_collections/{{ collection_namespace }}/{{ collection_name }}
+    _pi_galaxy_path: >-
+      {{ project_dir }}/.gludd/collections/ansible_collections/{{ collection_namespace }}/{{ collection_name }}/galaxy.yml
+    _pi_config_path: "{{ project_dir }}/.gludd/config.yml"
+
+- name: Stat existing galaxy.yml
+  ansible.builtin.stat:
+    path: "{{ _pi_galaxy_path }}"
+  register: _pi_galaxy_stat
+
+- name: Refuse to overwrite existing galaxy.yml unless force=true
+  ansible.builtin.fail:
+    msg: >-
+      {{ _pi_galaxy_path }} already exists. Pass force=true (CLI: --force)
+      to overwrite.
+  when:
+    - _pi_galaxy_stat.stat.exists
+    - not (force | bool)
+
+- name: Create collection root
+  ansible.builtin.file:
+    path: "{{ _pi_collection_root }}"
+    state: directory
+    mode: "0755"
+
+- name: Write galaxy.yml from template
+  ansible.builtin.template:
+    src: galaxy.yml.j2
+    dest: "{{ _pi_galaxy_path }}"
+    mode: "0644"
+    force: "{{ force | bool }}"
+
+- name: Write README.md from template
+  ansible.builtin.template:
+    src: README.md.j2
+    dest: "{{ _pi_collection_root }}/README.md"
+    mode: "0644"
+    force: "{{ force | bool }}"
+
+- name: Write .gitignore
+  ansible.builtin.copy:
+    content: |
+      *.pyc
+      __pycache__/
+    dest: "{{ _pi_collection_root }}/.gitignore"
+    mode: "0644"
+    force: "{{ force | bool }}"
+
+- name: Create skeleton dirs
+  ansible.builtin.file:
+    path: "{{ _pi_collection_root }}/{{ item }}"
+    state: directory
+    mode: "0755"
+  loop:
+    - roles
+    - plugins/modules
+    - plugins/module_utils
+    - plugins/terraform
+
+- name: Touch .gitkeep in each skeleton dir
+  ansible.builtin.copy:
+    content: ""
+    dest: "{{ _pi_collection_root }}/{{ item }}/.gitkeep"
+    mode: "0644"
+    force: "{{ force | bool }}"
+  loop:
+    - roles
+    - plugins/modules
+    - plugins/module_utils
+    - plugins/terraform
+
+- name: Load existing config.yml (if any)
+  ansible.builtin.slurp:
+    path: "{{ _pi_config_path }}"
+  register: _pi_config_existing
+  failed_when: false
+  changed_when: false
+
+- name: Parse existing config.yml
+  ansible.builtin.set_fact:
+    _pi_config_data: "{{ (_pi_config_existing.content | b64decode | from_yaml) if (_pi_config_existing.stat is defined and _pi_config_existing.stat.exists) else {} }}"
+
+- name: Default config data to empty dict
+  ansible.builtin.set_fact:
+    _pi_config_data: {}
+  when: _pi_config_data is not defined
+
+- name: Merge collection section into config
+  ansible.builtin.set_fact:
+    _pi_config_merged: >-
+      {{ _pi_config_data | default({}) | combine({'collection': {'namespace': collection_namespace, 'name': collection_name}}, recursive=True) }}
+
+- name: Ensure .gludd dir exists
+  ansible.builtin.file:
+    path: "{{ project_dir }}/.gludd"
+    state: directory
+    mode: "0755"
+
+- name: Write merged config.yml
+  ansible.builtin.copy:
+    content: "{{ _pi_config_merged | to_nice_yaml(indent=2, sort_keys=false) }}"
+    dest: "{{ _pi_config_path }}"
+    mode: "0644"
+    force: true
+
+- name: Report scaffold summary
+  ansible.builtin.debug:
+    msg: >-
+      Scaffolded project collection at: {{ _pi_collection_root | relpath(project_dir) }}
+      | FQCN prefix: {{ collection_namespace }}.{{ collection_name }}.<role_or_module>
+      | Config updated: .gludd/config.yml
+      | Precedence (first match wins): 1. project-local (.gludd/collections/...)  2. user-level (~/.local/share/gludd/collections/...)  3. bundled (general_ludd.agent)

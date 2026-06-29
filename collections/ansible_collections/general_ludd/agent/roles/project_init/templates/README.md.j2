@@ -1,0 +1,35 @@
+# {{ collection_namespace }}.{{ collection_name }}
+
+Project-local ansible collection scaffolded by `gludd project init` (which
+delegates to the `general_ludd.agent.project_init` role).
+
+## Collection precedence
+
+gludd resolves FQCNs (`{{ collection_namespace }}.{{ collection_name }}.<role_or_module>`)
+through a 3-tier precedence contract — first match wins:
+
+1. **Project-local** (`<project>/.gludd/collections/...`) — this collection.
+2. **User-level** (`~/.local/share/gludd/collections/...`) — operator-wide overrides.
+3. **Bundled** (`general_ludd.agent`) — general-purpose roles shipped with gludd.
+
+Add roles and modules here when they encode project-specific business logic or
+team-private automation. Add to the bundled collection when the role is
+general-purpose and shareable across projects.
+
+## Layout
+
+```
+roles/                 project-specific ansible roles
+plugins/modules/       project-specific ansible modules
+plugins/module_utils/  shared module helpers
+plugins/terraform/     project terraform modules / OPA policies
+```
+
+Re-run `gludd project init --force` to refresh this scaffold.
+
+## Customizing the scaffold itself
+
+The scaffold shape is owned by the `general_ludd.agent.project_init` role.
+To override it for THIS project only, drop a same-FQCN role at
+`<project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/`.
+The precedence system shadows the bundled role automatically — no extra wiring.

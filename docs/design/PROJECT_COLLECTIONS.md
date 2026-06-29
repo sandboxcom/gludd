@@ -93,8 +93,69 @@ the project-local collection at
   `collection:` key, so the daemon and tooling can read it without re-parsing
   galaxy.yml.
 
-See `cli_project_init.py` for the implementation and
-`tests/unit/test_project_init_cli.py` for the contract.
+### Customizing `gludd project init`
+
+The CLI is a **thin wrapper** over the `general_ludd.agent.project_init` role
+(located at
+`collections/ansible_collections/general_ludd/agent/roles/project_init/`).
+The role is the single source of truth for the scaffold shape — all file
+creation lives there. The Python CLI does only arg parsing + role invocation
+via `AnsibleRunnerAdapter.run_playbook("playbooks/project_init.yml", ...)`.
+
+Operators can override the scaffold for a single project by placing a
+same-FQCN role at
+`<project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/`.
+The project-collection precedence system (see *Override rule* above) shadows
+the bundled role automatically. The CLI keeps working unchanged — it invokes
+`general_ludd.agent.project_init`, and ansible-core resolves that FQCN to the
+project-local copy first.
+
+#### Worked example — add a pre-commit hook to the scaffold
+
+A project that wants every scaffolded collection to ship a `.pre-commit-config.yaml`
+overrides the role:
+
+1. Scaffold the project-local collection with the SAME FQCN as bundled:
+
+   ```
+   $ cd /Users/x/acme-internal
+   $ gludd project init --namespace general_ludd --collection agent --force
+   ```
+
+2. Drop the override role at the project tier:
+
+   `<project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/tasks/main.yml`:
+
+   ```yaml
+   ---
+   # Copy the bundled tasks/main.yml verbatim (so the base scaffold still
+   # happens), then append project-specific extras:
+   - name: Write pre-commit config from template
+     ansible.builtin.template:
+       src: pre-commit-config.j2
+       dest: "{{ _pi_collection_root }}/.pre-commit-config.yaml"
+       mode: "0644"
+       force: "{{ force | bool }}"
+   ```
+
+   `<project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/templates/pre-commit-config.j2`:
+
+   ```yaml
+   repos:
+     - repo: https://github.com/astral-sh/ruff-pre-commit
+       rev: v0.5.0
+       hooks:
+         - id: ruff
+   ```
+
+3. Re-run init — the project-local role wins:
+
+   ```
+   $ gludd project init --namespace acme
+   ```
+
+   The scaffold now includes `.pre-commit-config.yaml` next to `galaxy.yml`,
+   with no change to the CLI, the playbook, or the daemon.
 
 ## Operations — daemon resolution
 

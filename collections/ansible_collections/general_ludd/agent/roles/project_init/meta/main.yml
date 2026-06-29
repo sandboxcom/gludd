@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: project_init
+  author: gludd
+  description: >
+    Scaffold a project-specific ansible collection under
+    <project_dir>/.gludd/collections/. Creates galaxy.yml, README.md,
+    .gitignore, the roles/ + plugins/{modules,module_utils,terraform}/
+    skeleton, and updates .gludd/config.yml with the collection section.
+    The `gludd project init` CLI is a thin wrapper over this role; operators
+    can shadow it by placing a same-FQCN role at
+    <project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

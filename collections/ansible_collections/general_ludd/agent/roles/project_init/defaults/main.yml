@@ -1,0 +1,23 @@
+---
+# project_init role defaults — scaffold a project-local ansible collection
+# under <project_dir>/.gludd/collections/.
+
+# Required: empty namespace triggers validation failure (no silent default).
+# NOTE: var is named collection_namespace (not 'namespace') because 'namespace'
+# is a reserved variable name in ansible-core.
+collection_namespace: ""
+
+# Collection name — sensible default so `gludd project init --namespace acme`
+# produces acme.project out of the box.
+collection_name: "project"
+
+# Project root to scaffold into. Defaults to the playbook's directory so a
+# bare `ansible-playbook playbooks/project_init.yml -e namespace=acme` works.
+project_dir: "{{ playbook_dir }}"
+
+# Overwrite an existing galaxy.yml. Refuse by default to avoid clobbering.
+force: false
+
+# galaxy.yml metadata defaults.
+license: "MIT"
+version: "1.0.0"

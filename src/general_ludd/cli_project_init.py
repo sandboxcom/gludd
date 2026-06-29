@@ -1,12 +1,13 @@
 """CLI subcommand: ``gludd project init``.
 
-Scaffolds a project-local ansible collection under
-``<project_dir>/.gludd/collections/ansible_collections/<namespace>/<collection>/``
-so an operator can immediately drop project-specific roles/modules into a
-collection that gludd discovers via the 3-tier precedence contract
-(project-local > user-level > bundled).
+Thin wrapper around the ``general_ludd.agent.project_init`` ansible role.
+The role (under the bundled collection) is the single source of truth for the
+scaffold shape; this module does ONLY arg parsing + role invocation. All file
+I/O lives in the role.
 
-This module performs only local filesystem operations — no daemon connection.
+Operators override the scaffold by placing a same-FQCN role at
+``<project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/``;
+the project-collection precedence system shadows the bundled copy.
 """
 
 from __future__ import annotations
@@ -16,190 +17,76 @@ import sys
 from pathlib import Path
 from typing import Any
 
-import yaml
-
 DEFAULT_COLLECTION_NAME = "project"
-DEFAULT_VERSION = "1.0.0"
-
-_GALAXY_YML_TEMPLATE = """\
----
-namespace: {namespace}
-name: {collection}
-version: {version}
-readme: README.md
-description: >
-  Project-local ansible collection for {namespace}.{collection}. Holds
-  project-specific roles, modules, and terraform/OPA content discovered by
-  gludd at the project tier of the collection precedence contract.
-license:
-  - MIT
-authors:
-  - Project operator <operator@example.invalid>
-tags:
-  - project
-  - gludd
-  - automation
-dependencies: {{}}
-"""
-
-_README_TEMPLATE = """\
-# {namespace}.{collection}
-
-Project-local ansible collection scaffolded by `gludd project init`.
-
-## Collection precedence
-
-gludd resolves FQCNs (`{namespace}.{collection}.<role_or_module>`) through a
-3-tier precedence contract — first match wins:
-
-1. **Project-local** (`<project>/.gludd/collections/...`) — this collection.
-2. **User-level** (`~/.local/share/gludd/collections/...`) — operator-wide overrides.
-3. **Bundled** (`general_ludd.agent`) — general-purpose roles shipped with gludd.
-
-Add roles and modules here when they encode project-specific business logic or
-team-private automation. Add to the bundled collection when the role is
-general-purpose and shareable across projects.
-
-## Layout
-
-```
-roles/                 project-specific ansible roles
-plugins/modules/       project-specific ansible modules
-plugins/module_utils/  shared module helpers
-plugins/terraform/     project terraform modules / OPA policies (see COLLECTION_STRUCTURE.md)
-```
-
-Re-run `gludd project init --force` to refresh this scaffold.
-"""
-
-_GITIGNORE = """\
-*.pyc
-__pycache__/
-"""
-
-
-def _write_file(path: Path, content: str, *, force: bool) -> None:
-    if path.exists() and not force:
-        return
-    path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text(content)
-
-
-def _touch_keepfile(path: Path, *, force: bool) -> None:
-    target = path / ".gitkeep"
-    if target.exists() and not force:
-        return
-    path.mkdir(parents=True, exist_ok=True)
-    target.write_text("")
-
-
-def _update_config_yml(config_path: Path, namespace: str, collection: str) -> None:
-    """Merge a `collection:` section into <project_dir>/.gludd/config.yml."""
-    data: dict[str, Any] = {}
-    if config_path.exists():
-        try:
-            loaded = yaml.safe_load(config_path.read_text())
-            if isinstance(loaded, dict):
-                data = loaded
-        except yaml.YAMLError:
-            data = {}
-    data["collection"] = {"namespace": namespace, "name": collection}
-    config_path.parent.mkdir(parents=True, exist_ok=True)
-    config_path.write_text(yaml.safe_dump(data, sort_keys=False))
-
-
-def scaffold_project_collection(
-    project_dir: Path,
-    namespace: str,
-    collection: str,
-    *,
-    force: bool,
-) -> Path:
-    """Create the collection scaffold and return the collection root path."""
-    collection_root = (
-        project_dir
-        / ".gludd"
-        / "collections"
-        / "ansible_collections"
-        / namespace
-        / collection
-    )
-    galaxy_path = collection_root / "galaxy.yml"
-    if galaxy_path.exists() and not force:
-        print(
-            f"Error: {galaxy_path} already exists. "
-            "Pass --force to overwrite.",
-            file=sys.stderr,
-        )
-        sys.exit(1)
-
-    collection_root.mkdir(parents=True, exist_ok=True)
-
-    _write_file(
-        galaxy_path,
-        _GALAXY_YML_TEMPLATE.format(
-            namespace=namespace,
-            collection=collection,
-            version=DEFAULT_VERSION,
-        ),
-        force=force,
-    )
-    _write_file(
-        collection_root / "README.md",
-        _README_TEMPLATE.format(namespace=namespace, collection=collection),
-        force=force,
-    )
-    _write_file(collection_root / ".gitignore", _GITIGNORE, force=force)
-
-    _touch_keepfile(collection_root / "roles", force=force)
-    _touch_keepfile(collection_root / "plugins" / "modules", force=force)
-    _touch_keepfile(collection_root / "plugins" / "module_utils", force=force)
-    _touch_keepfile(collection_root / "plugins" / "terraform", force=force)
-
-    config_path = project_dir / ".gludd" / "config.yml"
-    _update_config_yml(config_path, namespace, collection)
-
-    return collection_root
-
-
-def _print_summary(
-    collection_root: Path,
-    namespace: str,
-    collection: str,
-    project_dir: Path,
-) -> None:
-    fqcn_prefix = f"{namespace}.{collection}"
-    try:
-        rel_root = collection_root.relative_to(project_dir)
-    except ValueError:
-        rel_root = collection_root
-    print(f"Scaffolded project collection at: {rel_root}")
-    print(f"FQCN prefix: {fqcn_prefix}.<role_or_module>")
-    print(f"Config updated: {Path('.gludd') / 'config.yml'}")
-    print()
-    print("Precedence (first match wins):")
-    print("  1. project-local  (.gludd/collections/...)  <- this collection")
-    print("  2. user-level     (~/.local/share/gludd/collections/...)")
-    print("  3. bundled        (general_ludd.agent)")
+PROJECT_INIT_PLAYBOOK = "project_init.yml"
 
 
 def _cmd_project_init(args: argparse.Namespace) -> None:
-    project_dir = Path(getattr(args, "project_dir", None) or os_cwd())
     namespace = getattr(args, "namespace", None)
     collection = getattr(args, "collection", None) or DEFAULT_COLLECTION_NAME
     force = bool(getattr(args, "force", False))
+    project_dir = Path(getattr(args, "project_dir", None) or os_cwd())
 
     if not namespace:
         print("Error: --namespace is required.", file=sys.stderr)
         sys.exit(2)
 
-    collection_root = scaffold_project_collection(
-        project_dir,
-        namespace,
-        collection,
-        force=force,
-    )
-    _print_summary(collection_root, namespace, collection, project_dir)
+    extra_vars: dict[str, Any] = {
+        "collection_namespace": namespace,
+        "collection_name": collection,
+        "project_dir": str(project_dir),
+        "force": force,
+    }
+
+    result = _invoke_role(PROJECT_INIT_PLAYBOOK, extra_vars)
+
+    rc = int(result.get("rc", 1))
+    status = str(result.get("status", "failed"))
+
+    summary = _extract_summary(result)
+    if summary:
+        print(summary)
+    else:
+        print(f"project_init role finished: status={status} rc={rc}")
+
+    if status != "successful" or rc != 0:
+        sys.exit(1 if rc == 0 else rc)
+
+
+def _invoke_role(playbook: str, extra_vars: dict[str, Any]) -> dict[str, Any]:
+    """Run the project_init playbook via AnsibleRunnerAdapter."""
+    from general_ludd.ansible.runner import AnsibleRunnerAdapter
+
+    adapter = AnsibleRunnerAdapter(project_root=extra_vars.get("project_dir"))
+    if playbook not in adapter.list_playbooks():
+        # Fall back to the absolute path under the repo playbooks/ dir.
+        adapter.register_playbook(playbook, str(_resolve_playbook_path(playbook)))
+    return adapter.run_playbook(playbook, extravars=extra_vars)
+
+
+def _resolve_playbook_path(name: str) -> Path:
+    here = Path(__file__).resolve().parent.parent.parent
+    candidates = [here / "playbooks" / name, Path.cwd() / "playbooks" / name]
+    for c in candidates:
+        if c.is_file():
+            return c
+    return candidates[0]
+
+
+def _extract_summary(result: dict[str, Any]) -> str:
+    """Pull the role's debug summary message out of the runner result."""
+    events = result.get("events") or []
+    summaries: list[str] = []
+    for ev in events:
+        if not isinstance(ev, dict):
+            continue
+        ev_data = ev.get("event_data") or ev
+        task = str(ev_data.get("task", "")).lower()
+        if "report scaffold summary" in task or "summary" in task:
+            msg = ev_data.get("res", {}).get("msg") if isinstance(ev_data.get("res"), dict) else None
+            if msg:
+                summaries.append(str(msg))
+    return "\n".join(summaries)
 
 
 def os_cwd() -> str:

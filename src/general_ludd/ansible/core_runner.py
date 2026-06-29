@@ -590,7 +590,12 @@ class CoreAnsibleRunner:
         inventory_mgr = InventoryManager(loader=loader, sources=options.inventory)
         variable_mgr = VariableManager(loader=loader, inventory=inventory_mgr)
         if extravars:
-            variable_mgr.extra_vars = extravars
+            # In ansible-core >= 2.14, VariableManager.extra_vars is a read-only
+            # property (getter returns self._extra_vars; no setter). Assigning to
+            # it raises AttributeError. Write the backing field directly — this
+            # is what the property getter reads and what PlaybookExecutor
+            # consumes via variable_manager._extra_vars.
+            variable_mgr._extra_vars = extravars
 
         self._collected_events = []
 
@@ -624,8 +629,13 @@ class CoreAnsibleRunner:
         _original_env = os.environ.copy()
         os.environ.clear()
         os.environ.update(scrubbed_env)
+        pb_rc = 0
         try:
-            pb_exec.run()
+            # PlaybookExecutor.run() returns a return code: 0 on success,
+            # non-zero on any task failure (including ansible.builtin.fail).
+            # The previous code discarded this and always reported success,
+            # masking role failures. Capture and propagate it.
+            pb_rc = int(pb_exec.run() or 0)
         finally:
             os.environ.clear()
             os.environ.update(_original_env)
@@ -639,10 +649,35 @@ class CoreAnsibleRunner:
                 stats = dict(tqm_stats.process_tally) if tqm_stats.process_tally else {}
             elif hasattr(tqm_stats, "processed"):
                 for _host, host_stats in tqm_stats.processed.items():
-                    for key, val in host_stats.items():
-                        stats[key] = stats.get(key, 0) + val
+                    # In modern ansible-core, AggregateStats.processed[host] may
+                    # be either a dict {counter: int} or an int (sum of changes).
+                    # Defensive: only iterate when it is actually a mapping.
+                    if isinstance(host_stats, dict):
+                        for key, val in host_stats.items():
+                            stats[key] = stats.get(key, 0) + val
+                    elif isinstance(host_stats, int):
+                        stats[_host] = stats.get(_host, 0) + host_stats
         if not stats:
             stats = dict(callback._host_stats)
+
+        # Determine success from the executor return code; a non-zero pb_rc
+        # means at least one task failed (fail/assert/unreachable). Fall back
+        # to scanning the host_stats for failures/unreachable as a second
+        # signal (covers executors that return 0 while reporting failures).
+        failed_count = (
+            stats.get("failures", 0)
+            + stats.get("failed", 0)
+            + stats.get("unreachable", 0)
+            if isinstance(stats, dict)
+            else 0
+        )
+        if pb_rc != 0 or failed_count:
+            return AnsibleResult(
+                status="failed",
+                rc=pb_rc if pb_rc != 0 else 1,
+                stats=stats,
+                events=list(self._collected_events),
+            )
 
         return AnsibleResult(
             status="successful",
@@ -688,7 +723,9 @@ class CoreAnsibleRunner:
         inventory_mgr = InventoryManager(loader=loader, sources=sources)
         variable_mgr = VariableManager(loader=loader, inventory=inventory_mgr)
         if extravars:
-            variable_mgr.extra_vars = extravars
+            # See note in _execute_playbook: extra_vars is read-only in
+            # ansible-core >= 2.14; write the backing field directly.
+            variable_mgr._extra_vars = extravars
 
         hosts = inventory_mgr.get_hosts(pattern=host)
         if not hosts:

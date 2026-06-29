@@ -1,0 +1,18 @@
+---
+namespace: {{ collection_namespace }}
+name: {{ collection_name }}
+version: {{ version }}
+readme: README.md
+description: >
+  Project-local ansible collection for {{ collection_namespace }}.{{ collection_name }}. Holds
+  project-specific roles, modules, and terraform/OPA content discovered by
+  gludd at the project tier of the collection precedence contract.
+license:
+  - {{ license }}
+authors:
+  - Project operator <operator@example.invalid>
+tags:
+  - project
+  - gludd
+  - automation
+dependencies: {}
