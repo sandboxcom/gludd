@@ -17,6 +17,7 @@ import yaml
 
 from general_ludd.ansible.core_runner import CoreAnsibleRunner
 from general_ludd.ansible.isolation import ProcessIsolationConfig
+from general_ludd.ansible.paths import resolve_collections_paths, to_ansible_env
 from general_ludd.events.types import PlaybookRegisteredEvent
 from general_ludd.security.sanitize import sanitize_job_id
 
@@ -59,6 +60,7 @@ class AnsibleRunnerAdapter:
         playbooks_dir: str | None = None,
         event_bus: Any | None = None,
         default_env: dict[str, str] | None = None,
+        project_root: str | Path | None = None,
     ) -> None:
         self.private_data_dir = private_data_dir or tempfile.mkdtemp(prefix="gl-runner-")
         self.registry = _build_registry(registry)
@@ -66,11 +68,45 @@ class AnsibleRunnerAdapter:
         self._playbooks_dir = playbooks_dir
         self._event_bus = event_bus
         self._default_env: dict[str, str] = default_env or {}
+        self._project_root: Path | None = (
+            Path(project_root) if project_root else None
+        )
+        self._collections_env: dict[str, str] = {}
+        self._refresh_collections_env()
         self._core_runner = CoreAnsibleRunner(
             process_isolation=isolation_config,
         )
         if playbooks_dir:
             self._scan_playbook_dir(playbooks_dir)
+
+    def set_project_root(self, project_root: str | Path | None) -> None:
+        """Update the active project root and re-resolve the collections env.
+
+        Called by the daemon when the active project changes so that
+        ``run_playbook`` invocations pick up the project-specific collections
+        path (``<project_root>/.gludd/collections/``) without re-instantiating
+        the adapter.
+        """
+        self._project_root = Path(project_root) if project_root else None
+        self._refresh_collections_env()
+
+    def _refresh_collections_env(self) -> None:
+        """Resolve project/user/bundled collections paths into ANSIBLE_* env.
+
+        Logs the resolved path order at INFO for operator visibility. Missing
+        directories are silently skipped (a project may have no
+        ``.gludd/collections/``).
+        """
+        entries = resolve_collections_paths(project_root=self._project_root)
+        self._collections_env = to_ansible_env(entries)
+        if entries:
+            rendered = ", ".join(
+                f"{e.source}:{e.path}" for e in entries
+            )
+            logger.info(
+                "Resolved ansible collections search path (precedence high→low): %s",
+                rendered,
+            )
 
     def resolve_playbook(self, playbook_name: str) -> str:
         if playbook_name not in self.registry:
@@ -154,7 +190,15 @@ class AnsibleRunnerAdapter:
             from general_ludd.ansible.core_runner import _env_default_timeout
 
             effective_timeout = _env_default_timeout() if timeout is None else timeout
-            _merged_env = {**self._default_env, **(env or {})}
+            # Merge precedence: caller-supplied env (highest) > collections-path
+            # env (resolved from project_root) > per-adapter default_env. The
+            # collections env is rebuilt on project-root changes via
+            # set_project_root / _refresh_collections_env.
+            _merged_env = {
+                **self._default_env,
+                **self._collections_env,
+                **(env or {}),
+            }
             result = self._core_runner.run_playbook(
                 playbook_path=playbook_path,
                 extravars=extravars or {},
