@@ -498,3 +498,21 @@ Placeholder rows for in-flight work. Implementing subagents tick `[x]` when thei
 - [ ] Q2.6 — Terraform phase 2: application layer wiring | evidence: pending gate
 - [ ] Q2.7 — Renderer phase 1: prompt/skill renderer wiring | evidence: pending gate
 - [ ] Q2.8 — `make validate-opencode-config` target wired as gate prerequisite | evidence: pending gate
+
+## Phase Stream — gludd_stream module + dispatch endpoint (2026-06-28)
+
+Example operator playbooks + molecule scenarios for the new `gludd_stream`
+module and `/admin/stream/dispatch` endpoint. Each row ticks when
+`make molecule-test SCENARIO=<name>` is green for the named scenario AND
+`make ansible-syntax` is clean. The `gludd_stream` module itself + the
+daemon-side `/admin/stream/dispatch` route are owned by parallel tasks;
+the rows below cover only the operator-facing playbooks + scenarios + the
+mock-daemon handler extension.
+
+- [x] S.1 — `gludd_stream` module exists (owned by parallel task) | evidence: collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_stream.py present; make ansible-syntax clean on playbooks/stream_*.yml
+- [x] S.2 — `/admin/stream/dispatch` daemon route exists (owned by parallel task); mock-daemon handler added | evidence: molecule/mock_daemon/server.py:814 `elif path == "/admin/stream/dispatch"` returns canned {task_id, clone_path, accepted}
+- [x] S.3 — `playbooks/stream_audio_to_tasks.yml` operator example (ALSA → whisper.cpp → gludd todo) | evidence: make ansible-syntax PASS; make molecule-test SCENARIO=stream_audio_to_tasks "Executed: Successful" (prepare+converge+verify all green)
+- [x] S.4 — `playbooks/stream_video_feature_detection.yml` operator example (webcam → agent → markdown report) | evidence: make ansible-syntax PASS; make molecule-test SCENARIO=stream_video_feature_detection "Executed: Successful"
+- [x] S.5 — `playbooks/stream_text_log_tail.yml` operator example (log tail → grep → Slack) | evidence: make ansible-syntax PASS; make molecule-test SCENARIO=stream_text_log_tail "Executed: Successful" (stopped_by=max_dispatches dispatches=1)
+- [x] S.6 — Mock-daemon extended: `POST /admin/stream/dispatch` returns canned `{task_id, clone_path, accepted}` | evidence: make test-specific TESTFILE='tests/integration/test_molecule_coverage.py' 11 passed (TestStreamExampleScenarios::test_stream_dispatch_handler_in_mock_daemon green)
+- [x] S.7 — Molecule coverage test: 3 stream scenarios + stream-dispatch handler asserted | evidence: make test-specific TESTFILE='tests/integration/test_molecule_coverage.py' "11 passed" (4 new TestStreamExampleScenarios tests green)
