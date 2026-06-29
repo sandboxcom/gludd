@@ -1,0 +1,1 @@
+# User OPA policies. These ADD deny rules to the core set at `infra/terraform/policies/`. They CANNOT subtract (no `deny -= ...`); the importer rejects any .rego containing set reassignment. Rego's `deny` set is additive.
