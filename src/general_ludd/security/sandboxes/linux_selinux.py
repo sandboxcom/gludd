@@ -1,8 +1,8 @@
 """Linux SELinux backend.
 
-Generates a Type-Enforcement policy (``gludd_<agent_id>.te``) + a file-contexts
-file, compiles via ``checkmodule`` + ``semodule_package`` + ``semodule -i``,
-and verifies via ``semanage fcontext -l`` and ``ps -eZ``.
+Generates a Type-Enforcement policy (``gludd_<agent_type>.te``) + a
+file-contexts file, compiles via ``checkmodule`` + ``semodule_package`` +
+``semodule -i``, and verifies via ``semanage fcontext -l`` and ``ps -eZ``.
 """
 
 from __future__ import annotations
@@ -12,10 +12,12 @@ import subprocess
 from pathlib import Path
 
 from general_ludd.security.sandboxes import (
+    Capability,
     Finding,
     PermissionSpec,
     SandboxHandle,
     SandboxTarget,
+    path_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -23,19 +25,27 @@ logger = logging.getLogger(__name__)
 BUILD_DIR = Path("/tmp/gludd-selinux")
 
 
+def _is_file_family(cap: Capability) -> bool:
+    return cap.resource.startswith("file:")
+
+
+def _is_net_family(cap: Capability) -> bool:
+    return cap.resource.startswith("net:")
+
+
 def _te_for(spec: PermissionSpec) -> str:
-    agent = spec.agent_id.replace("-", "_")
+    agent = spec.agent_type.replace("-", "_")
     type_name = f"gludd_{agent}_t"
     allow: list[str] = []
     deny: list[str] = []
     for cap in spec.capabilities:
-        if cap.resource == "fs":
-            prefix = cap.constraint_value("path_prefix")
+        if _is_file_family(cap):
+            prefix = path_prefix(cap)
             klass = "dir" if prefix and str(prefix).endswith("/") else "file"
             allow.append(
                 f"allow {type_name} usr_t:{klass} {{ read write }};"
             )
-        elif cap.resource == "net":
+        elif _is_net_family(cap):
             allow.append(
                 f"allow {type_name} unreserved_port_t:tcp_socket name_connect;"
             )
@@ -58,17 +68,19 @@ def _te_for(spec: PermissionSpec) -> str:
 
 
 def _fc_for(spec: PermissionSpec) -> str:
-    agent = spec.agent_id.replace("-", "_")
+    agent = spec.agent_type.replace("-", "_")
     type_name = f"gludd_{agent}_t"
     lines: list[str] = []
     for cap in spec.capabilities:
-        if cap.resource == "fs":
-            prefix = cap.constraint_value("path_prefix")
-            if isinstance(prefix, str):
-                lines.append(f"{prefix}(/.*)? -- gen_context(system_u:object_r:{type_name},s0)")
+        if _is_file_family(cap):
+            prefix = path_prefix(cap)
+            if prefix:
+                lines.append(
+                    f"{prefix}(/.*)? -- gen_context(system_u:object_r:{type_name},s0)"
+                )
     if not lines:
         lines.append(
-            f"/tmp/gludd/{spec.agent_id}(/.*)? -- "
+            f"/tmp/gludd/{spec.agent_type}(/.*)? -- "
             f"gen_context(system_u:object_r:{type_name},s0)"
         )
     return "\n".join(lines) + "\n"
@@ -102,7 +114,7 @@ class SELinuxBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
-        agent = spec.agent_id.replace("-", "_")
+        agent = spec.agent_type.replace("-", "_")
         module_name = f"gludd_{agent}"
         try:
             BUILD_DIR.mkdir(parents=True, exist_ok=True)

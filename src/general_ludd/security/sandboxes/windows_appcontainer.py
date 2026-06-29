@@ -14,15 +14,27 @@ from __future__ import annotations
 
 import logging
 import subprocess
+from typing import Any
 
 from general_ludd.security.sandboxes import (
+    Capability,
     Finding,
     PermissionSpec,
     SandboxHandle,
     SandboxTarget,
+    allowed_hosts,
+    allowed_ports,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_file_family(cap: Capability) -> bool:
+    return cap.resource.startswith("file:")
+
+
+def _is_net_family(cap: Capability) -> bool:
+    return cap.resource.startswith("net:")
 
 
 def _icacls_deny_all_except(directory: str, sid: str) -> list[str]:
@@ -35,26 +47,25 @@ def _icacls_deny_all_except(directory: str, sid: str) -> list[str]:
 
 
 def _firewall_rule_name(spec: PermissionSpec) -> str:
-    return f"gludd-{spec.agent_id}-egress"
+    return f"gludd-{spec.agent_type}-egress"
 
 
-def _net_allow_rules(spec: PermissionSpec, sid: str) -> list[list[str]]:
+def _net_allow_rules(spec: PermissionSpec) -> list[list[str]]:
     rules: list[list[str]] = []
     for cap in spec.capabilities:
-        if cap.resource != "net":
+        if not _is_net_family(cap):
             continue
-        host = cap.constraint_value("host")
-        port = cap.constraint_value("port")
-        if not (isinstance(host, str) and isinstance(port, int)):
-            continue
-        rule = _firewall_rule_name(spec) + f"-{host}-{port}"
-        rules.append([
-            "netsh", "advfirewall", "firewall", "add", "rule",
-            f"name={rule}", "dir=out", "action=allow",
-            "program=any", f"remoteip={host}", "localport=any",
-            f"remoteport={port}", "protocol=TCP",
-        ])
-    # Default-deny egress from this SID.
+        hosts = allowed_hosts(cap)
+        ports = allowed_ports(cap)
+        for host in hosts:
+            for port in ports:
+                rule = _firewall_rule_name(spec) + f"-{host}-{port}"
+                rules.append([
+                    "netsh", "advfirewall", "firewall", "add", "rule",
+                    f"name={rule}", "dir=out", "action=allow",
+                    "program=any", f"remoteip={host}", "localport=any",
+                    f"remoteport={port}", "protocol=TCP",
+                ])
     rules.append([
         "netsh", "advfirewall", "firewall", "add", "rule",
         f"name={_firewall_rule_name(spec)}-deny",
@@ -77,7 +88,6 @@ class AppContainerBackend:
             return False
         try:
             import win32security  # type: ignore[import-not-found]  # noqa: F401
-            from pywintypes import IID  # type: ignore[import-not-found]  # noqa: F401
         except Exception:
             return False
         return True
@@ -85,32 +95,29 @@ class AppContainerBackend:
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
         import sys
-        agent = spec.agent_id
+        agent = spec.agent_type
         try:
             if not sys.platform.startswith("win"):
                 raise RuntimeError("AppContainer only available on Windows")
             from win32.api import CreateAppContainerProfile  # type: ignore[import-not-found]
-            from win32com.shell import shell  # type: ignore[import-not-found]  # noqa: F401
-            capabilities = []  # simple: no fine-grained Store capabilities
+            capabilities: list[Any] = []
             sid, _ = CreateAppContainerProfile(
                 f"gludd-{agent}", f"gludd-{agent}", "gludd sandbox", capabilities,
             )
             sid_str = str(sid)
-            # File ACLs
             if target.directory:
                 subprocess.run(
                     _icacls_deny_all_except(target.directory, sid_str),
                     check=False, capture_output=True, timeout=30,
                 )
-            # Firewall egress rules
-            for rule in _net_allow_rules(spec, sid_str):
+            for rule in _net_allow_rules(spec):
                 subprocess.run(
                     rule, check=False, capture_output=True, timeout=15,
                 )
             logger.info("AppContainer %s created (sid=%s)", agent, sid_str)
             return SandboxHandle(
                 backend="appcontainer", token=sid_str, applied=True,
-                extra={"agent_id": agent},
+                extra={"agent_type": agent},
             )
         except Exception as exc:
             logger.error(
@@ -125,15 +132,6 @@ class AppContainerBackend:
     @staticmethod
     def verify(spec: PermissionSpec, handle: SandboxHandle) -> list[Finding]:
         findings: list[Finding] = []
-        try:
-            pass  # type: ignore[import-not-found]
-        except Exception as exc:
-            return [Finding(
-                severity="fail",
-                message=f"pywin32 shell API unavailable: {exc}",
-                capability=None,
-            )]
-        # Best-effort: presence of the firewall rule by name.
         try:
             out = subprocess.run(
                 ["netsh", "advfirewall", "firewall", "show", "rule",
@@ -167,6 +165,6 @@ class AppContainerBackend:
             return
         try:
             from win32.api import DeleteAppContainerProfile  # type: ignore[import-not-found]
-            DeleteAppContainerProfile(handle.extra.get("agent_id", handle.token))
+            DeleteAppContainerProfile(handle.extra.get("agent_type", handle.token))
         except Exception as exc:
             logger.warning("AppContainer release failed: %s", exc)

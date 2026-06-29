@@ -19,6 +19,13 @@ permission denied, unsupported kernel), the backend logs loudly and returns a
 ``SandboxHandle`` whose ``applied`` flag is ``False``. The daemon continues
 to dispatch the agent with a "no sandbox" warning rather than wedging. The
 ``verify`` step is the trust anchor — applying without verifying is theater.
+
+The canonical ``PermissionSpec`` / ``Capability`` types live in
+``general_ludd.security.permissions`` (the parallel permissions task). We
+re-export them here so callers can keep importing from one place. The
+constraint shape used by the backends is ``cap.constraints: dict[str, Any]``
+with keys like ``path_prefix``, ``allowed_hosts``, ``allowed_ports`` — see
+:mod:`general_ludd.security.permissions` for the full vocabulary.
 """
 
 from __future__ import annotations
@@ -26,80 +33,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 from typing import Any, Protocol, runtime_checkable
 
-# ---------------------------------------------------------------------------
-# PermissionSpec shim
-# ---------------------------------------------------------------------------
-# The canonical schema lives in ``general_ludd.security.permissions`` (the
-# parallel permissions task). When that module is present we re-export its
-# types so callers can keep importing from here. When it is absent (the
-# permissions task has not landed yet) we fall back to local definitions that
-# match the documented shape so the sandboxes layer is independently usable
-# and testable today. The two must agree on the field names below; if they
-# ever diverge the test ``test_permission_spec_shim_is_consistent`` will fail.
-# ---------------------------------------------------------------------------
-try:
-    from general_ludd.security.permissions import (  # type: ignore[attr-defined]
-        Capability as Capability,
-    )
-    from general_ludd.security.permissions import (
-        Constraint as Constraint,
-    )
-    from general_ludd.security.permissions import (
-        PermissionSpec as PermissionSpec,
-    )
-except Exception:  # pragma: no cover - exercised only when permissions.py lands
-    @dataclass(frozen=True)
-    class Constraint:
-        """A single constraint on a capability (e.g. path prefix, peer host).
-
-        ``kind`` is a small closed vocabulary: ``"path_prefix"``, ``"host"``,
-        ``"port"``, ``"proto"``. ``value`` is the constraint payload (a string
-        for path/host/proto, an int for port).
-        """
-
-        kind: str
-        value: str | int
-
-    @dataclass(frozen=True)
-    class Capability:
-        """A granted capability: do ``actions`` on ``resource`` under
-        ``constraints``.
-
-        ``resource`` is one of ``"fs"``, ``"net"``, ``"process"``, ``"ipc"``,
-        ``"sys"`` (the closed resource vocabulary). ``actions`` is the set of
-        verbs (``"read"``, ``"write"``, ``"connect"``, ...). ``constraints``
-        narrows the resource — e.g. ``fs`` + ``read`` + ``path_prefix=/tmp/gludd``.
-        """
-
-        resource: str
-        actions: frozenset[str] = field(default_factory=frozenset)
-        constraints: tuple[Constraint, ...] = field(default_factory=tuple)
-
-        def has_constraint(self, kind: str) -> bool:
-            return any(c.kind == kind for c in self.constraints)
-
-        def constraint_value(self, kind: str) -> str | int | None:
-            for c in self.constraints:
-                if c.kind == kind:
-                    return c.value
-            return None
-
-    @dataclass(frozen=True)
-    class PermissionSpec:
-        """A full permission specification: granted capabilities + explicit
-        denies.
-
-        ``agent_id`` scopes the sandbox identity (AppArmor profile name,
-        SELinux domain, jail hostname, AppContainer SID). ``denied`` is a list
-        of :class:`Capability` the agent must NEVER be able to exercise; the
-        sandbox backend turns each into a ``deny`` rule that wins over any
-        ``allow``.
-        """
-
-        agent_id: str
-        capabilities: tuple[Capability, ...] = field(default_factory=tuple)
-        denied: tuple[Capability, ...] = field(default_factory=tuple)
-
+from general_ludd.security.permissions import Capability, PermissionSpec
 
 # ---------------------------------------------------------------------------
 # Target / Handle / Finding
@@ -117,7 +51,7 @@ class SandboxTarget:
     """
 
     pid: int | None = None
-    popen: Any | None = None  # subprocess.Popen
+    popen: Any | None = None
     directory: str | None = None
     service: str | None = None
 
@@ -155,6 +89,42 @@ class Finding:
 
 
 # ---------------------------------------------------------------------------
+# Constraint helpers (work against the canonical dict-based constraints)
+# ---------------------------------------------------------------------------
+
+
+def constraint_value(cap: Capability, key: str) -> Any | None:
+    """Return ``cap.constraints[key]`` or ``None`` (dict-based constraints)."""
+    return cap.constraints.get(key) if isinstance(cap.constraints, dict) else None
+
+
+def path_prefix(cap: Capability) -> str | None:
+    """Return the ``path_prefix`` constraint value as a string or None."""
+    v = constraint_value(cap, "path_prefix")
+    return v if isinstance(v, str) else None
+
+
+def allowed_hosts(cap: Capability) -> list[str]:
+    """Return the ``allowed_hosts`` constraint as a list (may be empty)."""
+    v = constraint_value(cap, "allowed_hosts")
+    if isinstance(v, (list, tuple)):
+        return [str(h) for h in v]
+    if isinstance(v, str):
+        return [v]
+    return []
+
+
+def allowed_ports(cap: Capability) -> list[int]:
+    """Return the ``allowed_ports`` constraint as a list of ints (may be empty)."""
+    v = constraint_value(cap, "allowed_ports")
+    if isinstance(v, (list, tuple)):
+        return [int(p) for p in v]
+    if isinstance(v, int):
+        return [v]
+    return []
+
+
+# ---------------------------------------------------------------------------
 # Backend Protocol
 # ---------------------------------------------------------------------------
 
@@ -171,12 +141,7 @@ class SandboxBackend(Protocol):
 
     @staticmethod
     def available() -> bool:
-        """True iff this backend is usable on the current host.
-
-        Implementations probe for the kernel feature AND the userland tool
-        (``apparmor_parser``, ``checkmodule``, ``jail``, ``sandbox-exec``,
-        ``pywin32``). Cheap — no side effects, no exceptions.
-        """
+        """True iff this backend is usable on the current host."""
         ...
 
     @staticmethod
@@ -190,13 +155,9 @@ class SandboxBackend(Protocol):
         ...
 
     @staticmethod
-    def verify(
-        spec: PermissionSpec, handle: SandboxHandle
-    ) -> list[Finding]:
+    def verify(spec: PermissionSpec, handle: SandboxHandle) -> list[Finding]:
         """Re-read OS state and report any divergence between ``spec`` and
         what the kernel is actually enforcing.
-
-        This is the trust anchor: applying without verifying is theater.
         """
         ...
 
@@ -204,18 +165,20 @@ class SandboxBackend(Protocol):
     def release(handle: SandboxHandle) -> None:
         """Tear down the sandbox (unload profile, stop jail, revoke SID).
 
-        Best-effort + fail-open: a release failure is logged but does not
-        propagate (the daemon must keep running even if cleanup is partial).
+        Best-effort + fail-open.
         """
         ...
 
 
 __all__ = [
     "Capability",
-    "Constraint",
     "Finding",
     "PermissionSpec",
     "SandboxBackend",
     "SandboxHandle",
     "SandboxTarget",
+    "allowed_hosts",
+    "allowed_ports",
+    "constraint_value",
+    "path_prefix",
 ]

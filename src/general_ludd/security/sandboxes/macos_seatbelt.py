@@ -1,9 +1,9 @@
 """macOS sandbox-exec (Seatbelt / ``sandbox.d``) backend.
 
 Writes a Seatbelt profile with ``(allow file-read* (subpath ...))`` for file
-caps and ``(allow network-outbound (to ...))`` for net caps, then launches the
-target under ``sandbox-exec -p <profile>``. ``verify`` runs ``sandbox-exec -p
-<profile> -n`` (dry-run) to confirm the profile compiles.
+caps and ``(allow network-outbound (to ...))`` for net caps, then dry-runs
+the target under ``sandbox-exec -f <profile>``. ``verify`` re-runs the
+dry-run to confirm the profile still compiles.
 
 Seatbelt is DEPRECATED. Apple removed ``sandbox-exec`` from shipping macOS in
 15.4+; on those hosts :func:`available` returns False and the auto-detector
@@ -23,6 +23,9 @@ from general_ludd.security.sandboxes import (
     PermissionSpec,
     SandboxHandle,
     SandboxTarget,
+    allowed_hosts,
+    allowed_ports,
+    path_prefix,
 )
 
 logger = logging.getLogger(__name__)
@@ -30,43 +33,59 @@ logger = logging.getLogger(__name__)
 PROFILE_DIR = Path("/tmp/gludd-seatbelt")
 
 
+def _is_file_family(cap: Capability) -> bool:
+    return cap.resource.startswith("file:")
+
+
+def _is_net_family(cap: Capability) -> bool:
+    return cap.resource.startswith("net:")
+
+
 def _file_clause(cap: Capability) -> str:
-    prefix = cap.constraint_value("path_prefix")
-    path = prefix if isinstance(prefix, str) else "/tmp/gludd/"
-    verbs = []
+    prefix = path_prefix(cap) or "/tmp/gludd/"
+    verbs: list[str] = []
     if "read" in cap.actions:
         verbs.append("file-read*")
     if "write" in cap.actions:
         verbs.append("file-write*")
     if not verbs:
         verbs.append("file-read*")
-    clauses = [f'(allow {v} (subpath "{path}"))' for v in verbs]
+    clauses = [f'(allow {v} (subpath "{prefix}"))' for v in verbs]
     return "\n  ".join(clauses)
 
 
 def _net_clause(cap: Capability) -> str:
-    host = cap.constraint_value("host")
-    port = cap.constraint_value("port")
-    if isinstance(host, str):
-        port_s = str(port) if isinstance(port, int) else "443"
-        return f'(allow network-outbound (to (remote tcp "{host}:{port_s}")))'
+    hosts = allowed_hosts(cap)
+    ports = allowed_ports(cap)
+    if hosts:
+        clauses: list[str] = []
+        for host in hosts:
+            port_s = str(ports[0]) if ports else "443"
+            clauses.append(
+                f'(allow network-outbound (to (remote tcp "{host}:{port_s}")))'
+            )
+        return "\n  ".join(clauses)
     return "(allow network-outbound)"
+
+
+def _deny_clause(cap: Capability) -> str:
+    if _is_file_family(cap):
+        prefix = path_prefix(cap) or "/"
+        return f'(deny file-read* (subpath "{prefix}"))'
+    if _is_net_family(cap):
+        return "(deny network-outbound)"
+    return f'(deny {cap.resource})'
 
 
 def render_profile(spec: PermissionSpec) -> str:
     """Render a Seatbelt ``sandbox.d`` profile text for ``spec``."""
     allow_clauses: list[str] = []
     for cap in spec.capabilities:
-        if cap.resource == "fs":
+        if _is_file_family(cap):
             allow_clauses.append(_file_clause(cap))
-        elif cap.resource == "net":
+        elif _is_net_family(cap):
             allow_clauses.append(_net_clause(cap))
-    deny_clauses: list[str] = []
-    for cap in spec.denied:
-        if cap.resource == "fs":
-            deny_clauses.append(f'(deny file-read* (subpath "{cap.constraint_value("path_prefix") or "/"}"))')
-        elif cap.resource == "net":
-            deny_clauses.append("(deny network-outbound)")
+    deny_clauses: list[str] = [_deny_clause(cap) for cap in spec.denied]
     body = "\n  ".join(allow_clauses + deny_clauses) or "  ;; empty spec — default deny"
     return (
         "(version 1)\n"
@@ -78,7 +97,7 @@ def render_profile(spec: PermissionSpec) -> str:
 
 
 def _profile_path(spec: PermissionSpec) -> Path:
-    return PROFILE_DIR / f"gludd-{spec.agent_id}.sb"
+    return PROFILE_DIR / f"gludd-{spec.agent_type}.sb"
 
 
 class SeatbeltBackend:
@@ -98,15 +117,13 @@ class SeatbeltBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
-        profile_name = f"gludd-{spec.agent_id}"
+        profile_name = f"gludd-{spec.agent_type}"
         try:
             PROFILE_DIR.mkdir(parents=True, exist_ok=True)
             path = _profile_path(spec)
             path.write_text(render_profile(spec))
-            # Dry-run compile check first — fail-open with applied=False if it
-            # does not compile.
             rc = subprocess.run(
-                ["sandbox-exec", "-p", str(path), "-n", "/bin/true"],
+                ["sandbox-exec", "-f", str(path), "/bin/true"],
                 check=False, capture_output=True, timeout=10,
             ).returncode
             if rc != 0:
@@ -118,8 +135,6 @@ class SeatbeltBackend:
                     backend="seatbelt", token=profile_name, applied=False,
                     extra={"path": str(path), "compile_rc": rc},
                 )
-            # If the caller passed a popen / pid, that is the target; otherwise
-            # the profile is staged for a caller-driven sandbox-exec launch.
             logger.info("Seatbelt profile %s compiled (dry-run)", profile_name)
             return SandboxHandle(
                 backend="seatbelt", token=profile_name, applied=True,
@@ -153,7 +168,7 @@ class SeatbeltBackend:
             ).returncode
         except Exception as exc:
             return [Finding(
-                severity="fail", message=f"sandbox-exec -n failed: {exc}", capability=None,
+                severity="fail", message=f"sandbox-exec dry-run failed: {exc}", capability=None,
             )]
         if rc == 0:
             findings.append(Finding(

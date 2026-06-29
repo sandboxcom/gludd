@@ -13,24 +13,36 @@ import subprocess
 from pathlib import Path
 
 from general_ludd.security.sandboxes import (
+    Capability,
     Finding,
     PermissionSpec,
     SandboxHandle,
     SandboxTarget,
+    allowed_hosts,
+    allowed_ports,
+    path_prefix,
 )
 
 logger = logging.getLogger(__name__)
+
+
+def _is_file_family(cap: Capability) -> bool:
+    return cap.resource.startswith("file:")
+
+
+def _is_net_family(cap: Capability) -> bool:
+    return cap.resource.startswith("net:")
 
 
 def _jail_path(spec: PermissionSpec, target: SandboxTarget) -> str:
     if target.directory:
         return target.directory
     for cap in spec.capabilities:
-        if cap.resource == "fs":
-            prefix = cap.constraint_value("path_prefix")
-            if isinstance(prefix, str):
+        if _is_file_family(cap):
+            prefix = path_prefix(cap)
+            if prefix:
                 return prefix.rstrip("/")
-    return f"/tmp/gludd/{spec.agent_id}"
+    return f"/tmp/gludd/{spec.agent_type}"
 
 
 def _pf_rules(spec: PermissionSpec, anchor: str) -> str:
@@ -38,14 +50,20 @@ def _pf_rules(spec: PermissionSpec, anchor: str) -> str:
     lines = [f'# pf anchor {anchor}']
     has_net = False
     for cap in spec.capabilities:
-        if cap.resource != "net":
+        if not _is_net_family(cap):
             continue
         has_net = True
-        host = cap.constraint_value("host")
-        port = cap.constraint_value("port")
-        host_clause = f' to "{host}"' if isinstance(host, str) else ""
-        port_clause = f" port {port}" if isinstance(port, int) else ""
-        lines.append(f"pass out quick proto tcp{host_clause}{port_clause}")
+        hosts = allowed_hosts(cap)
+        ports = allowed_ports(cap)
+        if hosts and ports:
+            for host in hosts:
+                for port in ports:
+                    lines.append(
+                        f'pass out quick proto tcp to "{host}" port {port}'
+                    )
+        elif hosts:
+            for host in hosts:
+                lines.append(f'pass out quick proto tcp to "{host}"')
     if has_net:
         lines.append("block out quick proto tcp from any to any")
     return "\n".join(lines) + "\n"
@@ -68,7 +86,7 @@ def render_jail_command(spec: PermissionSpec, target: SandboxTarget) -> list[str
     return [
         "jail", "-c",
         f"path={path}",
-        f"host.hostname=gludd-{spec.agent_id}",
+        f"host.hostname=gludd-{spec.agent_type}",
         "ip4=inherit",
         "allow.mount",
         "devfs_ruleset=10",
@@ -90,7 +108,7 @@ class JailBackend:
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
-        jail_name = f"gludd-{spec.agent_id}"
+        jail_name = f"gludd-{spec.agent_type}"
         try:
             path = _jail_path(spec, target)
             Path(path).mkdir(parents=True, exist_ok=True)
@@ -102,7 +120,6 @@ class JailBackend:
                 logger.warning("cannot write /etc/devfs.rules — using default devfs")
             cmd = [*render_jail_command(spec, target), f"name={jail_name}"]
             subprocess.run(cmd, check=True, capture_output=True, timeout=30)
-            # Install pf anchor if net caps are present.
             pf_rules = _pf_rules(spec, anchor=jail_name)
             anchor_path = Path(f"/var/db/gludd/pf-{jail_name}.conf")
             anchor_path.parent.mkdir(parents=True, exist_ok=True)
