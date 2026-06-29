@@ -866,21 +866,48 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             except Exception as exc:
                 logger.warning("Alembic stamp failed: %s", exc)
 
-        # Phase 2: inject project .gludd/collections on the Ansible search path so
-        # project-local roles/collections shadow (or augment) the global ones.
+        # Phase 2: resolve Ansible collections/roles search paths via the 3-tier
+        # resolver (project .gludd/collections → user → bundled) so project-local
+        # roles/collections shadow the bundled ones. The adapter self-resolves
+        # _collections_env from project_root; we ALSO publish the resolved
+        # paths/env on app.state for observability + the EventLoop project-switch
+        # rebuild path.
+        from general_ludd.ansible.paths import (
+            resolve_collections_paths,
+            to_ansible_env,
+        )
+
         _proj_gludd = startup_config.get("project_gludd_dir")
-        _runner_default_env: dict[str, str] = {}
-        if _proj_gludd is not None:
-            _existing_cp = os.environ.get("ANSIBLE_COLLECTIONS_PATH", "")
-            _runner_default_env["ANSIBLE_COLLECTIONS_PATH"] = (
-                f"{_proj_gludd}/collections:{_existing_cp}".rstrip(":")
-            )
-            _existing_rp = os.environ.get("ANSIBLE_ROLES_PATH", "")
-            _runner_default_env["ANSIBLE_ROLES_PATH"] = (
-                f"{_proj_gludd}/collections/roles:{_existing_rp}".rstrip(":")
-            )
+        _initial_project_root = (
+            str(Path(_proj_gludd).parent) if _proj_gludd is not None else None
+        )
+        _collections_paths = resolve_collections_paths(_initial_project_root)
+        _ansible_env: dict[str, str] = to_ansible_env(_collections_paths)
+        app.state._collections_paths = _collections_paths
+        app.state._ansible_env = dict(_ansible_env)
+        logger.info(
+            "Resolved Ansible collections paths (%d tier(s)): %s",
+            len(_collections_paths),
+            ", ".join(f"{e.source}={e.path}" for e in _collections_paths),
+        )
+
+        def _update_ansible_env(
+            paths: list[Any], env: dict[str, str]
+        ) -> None:
+            """Callback the EventLoop invokes on project switch.
+
+            Republishes the resolved paths/env on app.state. The adapter's own
+            ``set_project_root`` (invoked separately by the EventLoop) handles
+            rebinding its ``_collections_env``.
+            """
+            app.state._collections_paths = paths
+            app.state._ansible_env = dict(env)
+
+        app.state._ansible_env_updater = _update_ansible_env
+
         runner = AnsibleRunnerAdapter(
-            default_env=_runner_default_env if _runner_default_env else None,
+            default_env=dict(_ansible_env) if _ansible_env else None,
+            project_root=_initial_project_root,
         )
         subsys = _get_or_create_subsystems(app)
 
@@ -1210,6 +1237,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # surfaced via /api/coordination + /api/facts) with the event loop's
             # git-delivery path so concurrent todos cannot clobber the same file.
             file_claim_registry=getattr(app.state, "_file_claims", None),
+            ansible_env_updater=getattr(app.state, "_ansible_env_updater", None),
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner

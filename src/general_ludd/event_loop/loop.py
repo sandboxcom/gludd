@@ -236,6 +236,7 @@ class EventLoop:
         loc_ledger: Any | None = None,
         spend_limiter: Any | None = None,
         file_claim_registry: Any | None = None,
+        ansible_env_updater: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -324,6 +325,13 @@ class EventLoop:
         # affected files here BEFORE committing and releases them after, so two
         # concurrent todos can never write+commit the same file in the same tick.
         self._file_claims = file_claim_registry
+        # Ansible collections env rebuild callback (daemon startup wires this to
+        # a closure that updates app.state._ansible_env + the runner's
+        # _default_env). Invoked from _select_tick_project_id when the active
+        # project changes so playbook invocations pick up the new project's
+        # .gludd/collections/ on the next run.
+        self._ansible_env_updater = ansible_env_updater
+        self._last_ansible_env_project_id: str | None = None
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -628,7 +636,84 @@ class EventLoop:
         if self._project_manager is None:
             return None
         project = self._project_manager.select_project()
-        return project.project_id if project is not None else None
+        project_id = project.project_id if project is not None else None
+        # Rebuild the Ansible collections env when the active project changes
+        # so the next playbook run uses the new project's .gludd/collections/.
+        if project_id != self._last_ansible_env_project_id:
+            self._rebuild_ansible_env_for_project(project_id)
+            self._last_ansible_env_project_id = project_id
+        return project_id
+
+    def _resolve_project_root_for_collections(
+        self, project_id: str | None
+    ) -> str | None:
+        """Resolve the directory whose ``.gludd/collections/`` holds the
+        project-local Ansible content.
+
+        Looks up the per-project workspace (``self._project_workspace``) and
+        returns its ``repo_dir`` (where the project repo — and its
+        ``.gludd/`` — is cloned). Falls back to the workspace ``root`` when
+        ``repo_dir`` is unavailable. Returns ``None`` when no project is
+        selected or no workspace is registered — the resolver then yields
+        bundled-only.
+        """
+        if project_id is None:
+            return None
+        workspaces = (
+            self._project_workspace
+            if isinstance(self._project_workspace, dict)
+            else None
+        )
+        if not workspaces or project_id not in workspaces:
+            return None
+        ws = workspaces[project_id]
+        # repo_dir is where the project repo (with its .gludd/) lives.
+        repo_dir = getattr(ws, "repo_dir", None)
+        if repo_dir is not None:
+            try:
+                return str(repo_dir)
+            except Exception:
+                pass
+        # Fallback: workspace root (test/standalone setups may host .gludd/
+        # directly at the workspace root rather than under repo/).
+        root = getattr(ws, "root", None)
+        return str(root) if root is not None else None
+
+    def _rebuild_ansible_env_for_project(self, project_id: str | None) -> None:
+        """Re-resolve Ansible collections paths for a new active project.
+
+        Called when ``_select_tick_project_id`` detects the active project has
+        changed. Resolves the new project's root, re-runs the 3-tier resolver,
+        and invokes the daemon-supplied ``_ansible_env_updater`` callback so
+        ``app.state._ansible_env`` / ``app.state._collections_paths`` and the
+        adapter's ``_default_env`` are all rebound. Also updates the local
+        adapter directly when no callback is wired (test/standalone use).
+        """
+        from general_ludd.ansible.paths import (
+            resolve_collections_paths,
+            to_ansible_env,
+        )
+
+        project_root = self._resolve_project_root_for_collections(project_id)
+        entries = resolve_collections_paths(project_root)
+        env = to_ansible_env(entries)
+        if self._ansible_env_updater is not None:
+            try:
+                self._ansible_env_updater(entries, env)
+            except Exception as exc:
+                logger.warning(
+                    "ansible_env_updater callback failed for project %s: %s",
+                    project_id,
+                    exc,
+                )
+            if self._runner is not None:
+                with contextlib.suppress(Exception):
+                    self._runner._default_env = dict(env)
+        logger.info(
+            "Rebuilt Ansible collections env for project %s (%d tier(s))",
+            project_id,
+            len(entries),
+        )
 
     def _estimated_dispatch_cost(self, item_count: int) -> float:
         budget_cfg = self.config.get("budget", {}) if isinstance(self.config, dict) else {}
