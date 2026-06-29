@@ -1,0 +1,10 @@
+---
+galaxy_info:
+  author: gludd
+  description: Stream input-key chunk handler (before+after key segments)
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: ["9"]
+dependencies: []
