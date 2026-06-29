@@ -151,15 +151,35 @@ tcpdump -i pflog0
 pfctl -a gludd-<id> -s info
 ```
 
-### macOS — Seatbelt / `sandbox-exec` (`macos_seatbelt.py`)
+### macOS — Seatbelt / `sandbox-exec` (`macos_seatbelt.py`) — ⚠️ DEPRECATED
 
-**⚠️ DEPRECATED.** Apple removed `sandbox-exec` from shipping macOS in 15.4+.
-On those hosts `detect.auto()` returns `None` and warns loudly. There is no
-supported replacement for arbitrary sandbox profiles; deployments on 15.4+
-MUST use a VM or container for isolation.
+**DEPRECATED since macOS 15.4.** Apple removed `sandbox-exec` from shipping
+macOS in 15.4+ with no replacement for arbitrary sandbox profiles. The only
+third-party option is the Endpoint Security entitlement, which Apple gates
+to AV/EDR vendors (not available to gludd).
 
-**Prerequisites:**
-- macOS ≤ 14.x (15.0–15.3 still ship `sandbox-exec`; 15.4+ removed it)
+On macOS 15.4+:
+- `detect.auto()` returns `None` and logs a loud warning.
+- `SeatbeltBackend.apply()` returns `SandboxHandle(applied=False)` with
+  `extra={"reason": "sandbox-exec deprecated on macOS 15.4+; no enforcement"}`.
+- The daemon dispatches UNSANDBOXED with an audit-tagged warning.
+
+On macOS < 15.4:
+- `sandbox-exec` path works but logs a deprecation warning.
+- Operators should plan migration BEFORE the 15.4 cutoff.
+
+**Migration path for 15.4+:**
+Operators MUST run untrusted agent work in a Linux VM. Supported runners:
+- **Tart** (https://github.com/cirruslabs/tart) — Apple Silicon native
+  (Virtualization.framework); fastest cold-start.
+- **Lima** (https://github.com/lima-vm/lima) — cross-arch (qemu or vz);
+  good for Intel Macs.
+- **UTM** — GUI-first alternative.
+
+The macOS host daemon becomes a thin scheduler that SSHes agent work into
+the Linux guest where Landlock + bubblewrap enforce the spec.
+
+**Prerequisites (macOS < 15.4 only):**
 - `/usr/bin/sandbox-exec` on PATH
 
 **Apply:** writes a `sandbox.d` profile under `/tmp/gludd-seatbelt/` with
@@ -234,10 +254,22 @@ metrics tag the agent as "unsandboxed" for the run.
 
 | Platform | Selection order |
 |---|---|
-| Linux | SELinux (`selinuxenabled` + `checkmodule`) → AppArmor (`aa-status`) → `None` (warn) |
+| **Linux** | **Landlock** (pylandlock importable + kernel ABI > 0) → **bubblewrap** (`bwrap` on PATH) → **AppArmor** (defense-in-depth) → **SELinux** (defense-in-depth) → `None` (warn) |
 | FreeBSD | `jail` present → JailBackend → `None` (warn) |
-| macOS | `sandbox-exec` present → SeatbeltBackend → `None` (warn about 15.4+ removal) |
+| macOS | `sandbox-exec` present AND macOS < 15.4 → SeatbeltBackend → `None` (loud warn about 15.4+ removal) |
 | Windows | `pywin32` + AppContainer API → AppContainerBackend → `None` (warn) |
+
+### Recommendation matrix (from permission/sandbox research survey)
+
+| Use case | Recommended backend | Why |
+|---|---|---|
+| Per-agent sandbox (Linux) | **Landlock** | Per-process, unprivileged, fine-grained FS+net |
+| Per-agent sandbox (Linux, no pylandlock) | **bubblewrap** | Namespace jail, unprivileged, no LSM needed |
+| Host hardening (Linux) | AppArmor / SELinux | System-wide policy; complements per-agent sandbox |
+| Per-agent sandbox (macOS < 15.4) | seatbelt (`sandbox-exec`) | Deprecated; plan migration |
+| Per-agent sandbox (macOS 15.4+) | **Linux VM (Tart/Lima)** | No host-side option remains |
+| Per-agent sandbox (FreeBSD) | `jail` + `pf` anchor | Native, root-required |
+| Per-agent sandbox (Windows) | AppContainer + firewall | Native API |
 
 When `auto()` returns `None`, the daemon dispatches the agent UNSANDBOXED and
 logs a `no-sandbox-backend` warning. Deployments that require sandbox

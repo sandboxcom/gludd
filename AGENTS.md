@@ -306,6 +306,58 @@ This is enforced by:
 - The `no-manual-default` check in this section
 - Plugin guardrail in `enforce-make.ts`
 
+## CRITICAL: Nothing-Dropped Guardrail
+
+**Every parallel subagent result MUST be codified BEFORE the agent sends a
+terminal response.** Codified means one of: committed, ticked completed in
+`todowrite`, OR explicitly cancelled-with-reason. The pattern of "dispatch N
+agents → get N results → write summary" is a **bug** — the summary itself is
+NOT the deliverable, and any dispatched work that is not codified is dropped.
+
+This was a recurring incident (2026-06-22 et seq): the agent dispatched a
+6-wide wave, received 6 results, then sent a prose recap. None of the results
+were committed, none were ticked in `todowrite`, none were cancelled — the
+work evaporated at session end. The user had to ask "are you codifying all of
+these efforts?" — that question is itself a bug report.
+
+**Enforced by `.opencode/plugin/enforce-todos.ts` at two layers:**
+
+1. **`experimental.chat.response.transform`** — when an active `todowrite`
+   list has `pending` or `in_progress` items AND the outgoing response looks
+   like a summary (heuristic: contains "summary"/"completed"/"done"/"results"
+   or has bullet points, AND has no `make` invocation), the plugin PREPENDS a
+   loud `⛔ NOTHING-DROPPED GUARDRAIL` directive telling the agent to resume
+   work. Advisory — the response still ships — but un-ignorable on the next
+   turn.
+
+2. **`tool.execute.before`** — the **commit block** (DEFAULT ON via
+   `GLUDD_TODO_GUARD_ENFORCE !== "0"`). When a commit-shaped `make` target
+   (`git-commit`, `commit-no-verify`, `repo-commit`, `ship-commit`,
+   `git-commit-file`, `commit-bootstrap`, `test-and-commit`) runs while
+   pending `todowrite` items exist AND those items are neither referenced in
+   the commit message (`MSG=`) nor addressed by a staged `TASKS.md` update,
+   the commit is DENIED with guidance. The agent must either complete the
+   items, cancel them with a reason, or stage a `TASKS.md` update referencing
+   each one.
+
+**Opt-outs (never the default):**
+
+- `GLUDD_TODO_GUARD_ENFORCE=0` — makes the plugin advisory-only (directive
+  prepended, no commit block). Use only for focused single-file sessions.
+- `GLUDD_TODO_GUARD_BYPASS=1` — emergency hotfix escape hatch; skips the
+  commit block for a single commit. Documented but never the default.
+
+**The rule, restated:** a subagent result is not "done" when the agent reads
+it — it is done when it is COMMITTED (or explicitly cancelled with a reason
+recorded in `todowrite`). A summary message is never a substitute for
+codification.
+
+This is enforced by:
+- `.opencode/plugin/enforce-todos.ts` — response.transform directive +
+  tool.execute.before commit block
+- `tests/unit/test_todo_guard_plugin.py` — structural + behavioral pin
+- This AGENTS.md section — proactive instruction
+
 ## Meta-Rule: Guardrail Policy
 
 When you introduce ANY new restriction or policy on agent behavior, you MUST

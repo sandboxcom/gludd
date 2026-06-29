@@ -105,6 +105,24 @@ observability = [
     "opentelemetry-sdk>=1.20.0",
     "opentelemetry-exporter-otlp-proto-grpc>=1.20.0",
 ]
+sandbox = [
+    # Optional per-agent sandboxing backends.
+    #
+    # bubblewrap: binary dependency (NOT pip) — operators install via
+    #   `apt install bubblewrap` (Debian/Ubuntu) / `dnf install bubblewrap`
+    #   (Fedora) / `brew install bubblewrap` (macOS dev). The backend probes
+    #   `shutil.which("bwrap")` and fail-opens if absent.
+    #
+    # pylandlock: the upstream Python Landlock bindings are not reliably
+    #   published to PyPI across all resolver contexts (no wheels for some
+    #   Python versions). Operators install pylandlock OUT OF BAND on the
+    #   Linux host that needs Landlock enforcement — e.g. via
+    #   `pip install pylandlock` from the host's own Python, or from source
+    #   (https://github.com/Jamesitive/pylandlock). The backend's
+    #   `LandlockBackend.apply()` does a lazy `import landlock` and returns
+    #   applied=False (fail-open) if it is not importable; the [sandbox]
+    #   extra exists as the documented install surface, not a hard dep.
+]
 
 [project.scripts]
 gludd = "general_ludd.cli:main"

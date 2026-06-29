@@ -230,7 +230,11 @@ def test_auto_detect_returns_correct_backend_per_os():
         assert detect.auto() is JailBackend
 
     with mock.patch.object(detect.sys, "platform", "darwin"), \
-         mock.patch.object(detect, "_seatbelt_present", return_value=True):
+         mock.patch.object(detect, "_seatbelt_present", return_value=True), \
+         mock.patch(
+             "general_ludd.security.sandboxes.macos_seatbelt._is_deprecated_host",
+             return_value=False,
+         ):
         from general_ludd.security.sandboxes.macos_seatbelt import SeatbeltBackend
 
         assert detect.auto() is SeatbeltBackend
@@ -311,3 +315,221 @@ def test_release_does_not_raise_when_not_applied():
 
     handle = SandboxHandle(backend="apparmor", token="x", applied=False)
     AppArmorBackend.release(handle)
+
+
+# ---------------------------------------------------------------------------
+# Landlock backend
+# ---------------------------------------------------------------------------
+
+
+def test_landlock_backend_exists():
+    """LandlockBackend is importable + matches the SandboxBackend protocol shape."""
+    from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
+
+    assert LandlockBackend.name == "landlock"
+    for attr in ("available", "apply", "verify", "release"):
+        assert hasattr(LandlockBackend, attr), f"LandlockBackend missing {attr}"
+
+
+def test_landlock_apply_requires_pr_set_no_new_privs():
+    """Structural: the source MUST reference PR_SET_NO_NEW_PRIVS / no_new_privs.
+
+    Landlock requires prctl(PR_SET_NO_NEW_PRIVS) before landlock_restrict_self;
+    without it a setuid binary could later escalate out of the sandbox.
+    """
+    import inspect
+
+    from general_ludd.security.sandboxes import linux_landlock
+
+    src = inspect.getsource(linux_landlock)
+    assert "PR_SET_NO_NEW_PRIVS" in src or "no_new_privs" in src.lower(), (
+        "Landlock backend must call prctl(PR_SET_NO_NEW_PRIVS) before restrict_self"
+    )
+
+
+def test_landlock_irreversibility_documented():
+    """The docstring MUST call out that Landlock restrictions are irreversible.
+
+    This is a documented property, not a bug. Chrome / Firefox / OpenSSH use
+    the same one-way sandbox model.
+    """
+    from general_ludd.security.sandboxes import linux_landlock
+
+    docstring = (linux_landlock.__doc__ or "") + "\n" + (linux_landlock.LandlockBackend.__doc__ or "")
+    assert "irrevers" in docstring.lower(), (
+        "Landlock module + class docstrings must document irreversibility"
+    )
+    assert "irrevers" in linux_landlock.LANDLOCK_RESTRICTIONS_ARE_IRREVERSIBLE.lower()
+
+
+def test_landlock_apply_fails_open_without_pylandlock(sample_spec, sample_target):
+    """When pylandlock is not importable, apply() returns applied=False (fail-open)."""
+    import builtins
+
+    from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
+
+    real_import = builtins.__import__
+
+    def fake_import(name, *args, **kwargs):
+        if name == "landlock" or name.startswith("landlock."):
+            raise ImportError("pylandlock not installed (test)")
+        return real_import(name, *args, **kwargs)
+
+    with mock.patch("builtins.__import__", side_effect=fake_import):
+        handle = LandlockBackend.apply(sample_spec, sample_target)
+    assert isinstance(handle, SandboxHandle)
+    assert handle.applied is False
+
+
+# ---------------------------------------------------------------------------
+# bubblewrap backend
+# ---------------------------------------------------------------------------
+
+
+def test_bubblewrap_backend_exists():
+    from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend
+
+    assert BubblewrapBackend.name == "bubblewrap"
+    for attr in ("available", "apply", "verify", "release"):
+        assert hasattr(BubblewrapBackend, attr)
+
+
+def test_bubblewrap_uses_unshare_all():
+    """Structural: the source MUST use --unshare-all (the namespace-isolation primitive)."""
+    import inspect
+
+    from general_ludd.security.sandboxes import linux_bubblewrap
+
+    src = inspect.getsource(linux_bubblewrap)
+    assert "--unshare-all" in src, (
+        "bubblewrap backend must use --unshare-all (full namespace isolation)"
+    )
+
+
+def test_bubblewrap_render_argv_includes_binds(sample_spec, sample_target):
+    from general_ludd.security.sandboxes.linux_bubblewrap import render_argv
+
+    argv = render_argv(sample_spec, sample_target, cmd=["/bin/agent"])
+    assert argv[0] == "bwrap"
+    assert "--ro-bind" in argv
+    assert "/usr" in argv
+    assert "--bind" in argv
+    assert "/tmp/gludd/" in argv  # from sample_spec file:repo path_prefix
+    assert "--unshare-all" in argv
+    assert "--die-with-parent" in argv
+    assert argv[-1] == "/bin/agent"
+
+
+def test_bubblewrap_apply_fails_open_without_binary(sample_spec, sample_target):
+    from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend
+
+    with mock.patch("shutil.which", return_value=None):
+        handle = BubblewrapBackend.apply(sample_spec, sample_target)
+    assert isinstance(handle, SandboxHandle)
+    assert handle.applied is False
+
+
+# ---------------------------------------------------------------------------
+# macOS 15.4 deprecation
+# ---------------------------------------------------------------------------
+
+
+def test_macos_seatbelt_deprecated_on_15_4(sample_spec, sample_target):
+    """On macOS 15.4+ apply() must return applied=False with a reason."""
+    from general_ludd.security.sandboxes.macos_seatbelt import SeatbeltBackend
+
+    with mock.patch(
+        "general_ludd.security.sandboxes.macos_seatbelt._macos_version_tuple",
+        return_value=(15, 4, 0),
+    ), mock.patch(
+        "general_ludd.security.sandboxes.macos_seatbelt._is_deprecated_host",
+        return_value=True,
+    ):
+        handle = SeatbeltBackend.apply(sample_spec, sample_target)
+    assert isinstance(handle, SandboxHandle)
+    assert handle.applied is False
+    assert "deprecated" in handle.extra.get("reason", "").lower() or handle.extra.get("deprecated") is True
+
+
+def test_macos_seatbelt_still_applies_below_15_4(sample_spec, sample_target):
+    """On macOS < 15.4 (sandbox-exec present), apply() still attempts enforcement."""
+    from general_ludd.security.sandboxes.macos_seatbelt import SeatbeltBackend
+
+    with mock.patch(
+        "general_ludd.security.sandboxes.macos_seatbelt._macos_version_tuple",
+        return_value=(14, 5, 0),
+    ), mock.patch(
+        "general_ludd.security.sandboxes.macos_seatbelt._is_deprecated_host",
+        return_value=False,
+    ), mock.patch("subprocess.run") as run, \
+         mock.patch("pathlib.Path.mkdir"), \
+         mock.patch("pathlib.Path.write_text"):
+        run.return_value = mock.Mock(returncode=0)
+        handle = SeatbeltBackend.apply(sample_spec, sample_target)
+    # Either applied=True (sandbox-exec compiled) or applied=False with a
+    # non-deprecation reason; either way it must NOT short-circuit on the
+    # deprecation gate.
+    if not handle.applied:
+        assert "deprecated on macOS" not in handle.extra.get("reason", "")
+
+
+# ---------------------------------------------------------------------------
+# auto() preference ordering
+# ---------------------------------------------------------------------------
+
+
+def test_auto_detect_prefers_landlock_on_modern_linux():
+    """On Linux with Landlock available, auto() MUST pick LandlockBackend first."""
+    with mock.patch.object(detect.sys, "platform", "linux"), \
+         mock.patch.object(detect, "_landlock_available", return_value=True), \
+         mock.patch.object(detect, "_bubblewrap_present", return_value=True), \
+         mock.patch.object(detect, "_apparmor_enabled", return_value=True), \
+         mock.patch.object(detect, "_selinux_enabled", return_value=True):
+        from general_ludd.security.sandboxes.linux_landlock import LandlockBackend
+
+        assert detect.auto() is LandlockBackend
+
+
+def test_auto_detect_falls_back_to_bubblewrap_when_landlock_absent():
+    """Landlock absent + bubblewrap present -> BubblewrapBackend (not AppArmor/SELinux)."""
+    with mock.patch.object(detect.sys, "platform", "linux"), \
+         mock.patch.object(detect, "_landlock_available", return_value=False), \
+         mock.patch.object(detect, "_bubblewrap_present", return_value=True), \
+         mock.patch.object(detect, "_apparmor_enabled", return_value=True), \
+         mock.patch.object(detect, "_selinux_enabled", return_value=True):
+        from general_ludd.security.sandboxes.linux_bubblewrap import BubblewrapBackend
+
+        assert detect.auto() is BubblewrapBackend
+
+
+def test_auto_detect_falls_back_to_apparmor_when_landlock_and_bwrap_absent():
+    """Both per-process backends absent -> AppArmor (defense-in-depth)."""
+    with mock.patch.object(detect.sys, "platform", "linux"), \
+         mock.patch.object(detect, "_landlock_available", return_value=False), \
+         mock.patch.object(detect, "_bubblewrap_present", return_value=False), \
+         mock.patch.object(detect, "_apparmor_enabled", return_value=True), \
+         mock.patch.object(detect, "_selinux_enabled", return_value=True):
+        from general_ludd.security.sandboxes.linux_apparmor import AppArmorBackend
+
+        assert detect.auto() is AppArmorBackend
+
+
+def test_auto_detect_linux_returns_none_when_no_backend():
+    """All Linux backends absent -> None + warning."""
+    with mock.patch.object(detect.sys, "platform", "linux"), \
+         mock.patch.object(detect, "_landlock_available", return_value=False), \
+         mock.patch.object(detect, "_bubblewrap_present", return_value=False), \
+         mock.patch.object(detect, "_apparmor_enabled", return_value=False), \
+         mock.patch.object(detect, "_selinux_enabled", return_value=False):
+        assert detect.auto() is None
+
+
+def test_auto_detect_macos_15_4_returns_none_even_if_binary_present():
+    """On macOS 15.4+ auto() returns None even if sandbox-exec binary exists."""
+    with mock.patch.object(detect.sys, "platform", "darwin"), \
+         mock.patch.object(detect, "_seatbelt_present", return_value=True), \
+         mock.patch(
+             "general_ludd.security.sandboxes.macos_seatbelt._is_deprecated_host",
+             return_value=True,
+         ), mock.patch("platform.mac_ver", return_value=("15.4", (), "")):
+        assert detect.auto() is None

@@ -5,15 +5,35 @@ caps and ``(allow network-outbound (to ...))`` for net caps, then dry-runs
 the target under ``sandbox-exec -f <profile>``. ``verify`` re-runs the
 dry-run to confirm the profile still compiles.
 
-Seatbelt is DEPRECATED. Apple removed ``sandbox-exec`` from shipping macOS in
-15.4+; on those hosts :func:`available` returns False and the auto-detector
-warns loudly. There is no supported replacement for arbitrary sandbox
-profiles; deployments on 15.4+ MUST use a VM/container for isolation.
+DEPRECATED — Apple removed ``sandbox-exec`` from shipping macOS in 15.4+.
+On those hosts :func:`available` returns False and :func:`apply` returns a
+handle with ``applied=False`` and a LOUD log warning. There is NO supported
+replacement for arbitrary sandbox profiles; the only third-party option is
+the Endpoint Security entitlement, which Apple gates to AV/EDR vendors.
+
+Migration path
+--------------
+
+Operators on macOS 15.4+ who need to run untrusted agent work MUST run it in
+a Linux VM. Supported paths:
+
+  * **Tart** (https://github.com/cirruslabs/tart) — Apple Silicon native,
+    uses the Virtualization.framework; fastest cold-start. Launch a Linux
+    guest and let the agent dispatch into the Linux-side daemon where
+    Landlock + bubblewrap enforce the spec.
+  * **Lima** (https://github.com/lima-vm/lima) — cross-arch (qemu or vz),
+    good for Intel Macs; same Linux-side enforcement model.
+  * **UTM** — GUI-first alternative.
+
+The macOS host daemon in this configuration becomes a thin scheduler that
+SSHes agent work into the Linux guest; it must NOT run agent subprocesses
+directly because there is no enforcement layer left on the host.
 """
 
 from __future__ import annotations
 
 import logging
+import platform
 import subprocess
 from pathlib import Path
 
@@ -31,6 +51,30 @@ from general_ludd.security.sandboxes import (
 logger = logging.getLogger(__name__)
 
 PROFILE_DIR = Path("/tmp/gludd-seatbelt")
+
+# macOS version where sandbox-exec was removed. 15.4 → (15, 4, 0).
+DEPRECATED_SINCE = (15, 4, 0)
+
+
+def _macos_version_tuple() -> tuple[int, ...]:
+    """Return the macOS version as an int tuple (major, minor, patch)."""
+    try:
+        raw = platform.mac_ver()[0]
+        if not raw:
+            return ()
+        return tuple(int(p) for p in raw.split(".") if p.isdigit())
+    except Exception:
+        return ()
+
+
+def _is_deprecated_host() -> bool:
+    """True iff the host is macOS 15.4+ (sandbox-exec removed)."""
+    ver = _macos_version_tuple()
+    if not ver:
+        return False
+    # Pad to 3-tuple for safe comparison.
+    padded = ver + (0,) * (3 - len(ver))
+    return padded >= DEPRECATED_SINCE
 
 
 def _is_file_family(cap: Capability) -> bool:
@@ -107,17 +151,51 @@ class SeatbeltBackend:
     def available() -> bool:
         import shutil
         if shutil.which("sandbox-exec") is None:
-            import platform
             logger.warning(
                 "sandbox-exec missing — likely macOS %s (removed in 15.4+)",
                 platform.mac_ver()[0],
             )
             return False
+        if _is_deprecated_host():
+            logger.warning(
+                "sandbox-exec is DEPRECATED on macOS %s (>= 15.4). Apple has "
+                "marked it for removal; the binary may exist but enforcement "
+                "is unreliable. Backend is NOT considered available.",
+                platform.mac_ver()[0],
+            )
+            return False
+        # Below 15.4 — binary present, but the path is on Apple's deprecation
+        # track. Log loudly so the operator knows.
+        logger.warning(
+            "sandbox-exec is on Apple's deprecation track (macOS %s < 15.4 "
+            "still ships it). Migrate to a Linux VM (Tart/Lima) before the "
+            "15.4 cutoff.",
+            platform.mac_ver()[0],
+        )
         return True
 
     @staticmethod
     def apply(spec: PermissionSpec, target: SandboxTarget) -> SandboxHandle:
         profile_name = f"gludd-{spec.agent_type}"
+        # LOUD deprecation gate: on macOS 15.4+ we refuse to claim enforcement.
+        if _is_deprecated_host():
+            logger.error(
+                "REFUSING to apply seatbelt on macOS %s — sandbox-exec is "
+                "DEPRECATED (>= 15.4) and may not enforce. Dispatching "
+                "UNSANDBOXED. Run untrusted agent work in a Linux VM "
+                "(Tart/Lima) on this host; see module docstring.",
+                platform.mac_ver()[0],
+            )
+            return SandboxHandle(
+                backend="seatbelt", token=profile_name, applied=False,
+                extra={
+                    "reason": (
+                        f"sandbox-exec deprecated on macOS {platform.mac_ver()[0]} "
+                        f"(>= 15.4); no enforcement"
+                    ),
+                    "deprecated": True,
+                },
+            )
         try:
             PROFILE_DIR.mkdir(parents=True, exist_ok=True)
             path = _profile_path(spec)
