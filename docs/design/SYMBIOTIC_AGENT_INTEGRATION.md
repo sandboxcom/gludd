@@ -1,15 +1,36 @@
 # Symbiotic Integration of Self-Improving Coding Agents with Gludd
 
-**Status:** Design proposal (read-only research deliverable)
-**Date:** 2026-06-29
-**Author:** Agent research session
+**Status:** Phase 1 — Implementation in progress
+**Last updated:** 2026-06-29
+**Author:** Agent research session; refined against the in-flight implementation
+
+---
+
+## Table of contents
+
+1. [Executive summary](#1-executive-summary)
+2. [Candidate matrix](#2-candidate-matrix)
+3. [Ornith — detailed profile (the chosen candidate)](#3-ornith--detailed-profile-the-chosen-candidate)
+4. [Symbiotic coexistence analysis](#4-symbiotic-coexistence-analysis)
+5. [Phase 1 — Implementation map](#5-phase-1--implementation-map)
+6. [Phase 2 — Promotion path (PR → bundled)](#6-phase-2--promotion-path-pr--bundled)
+7. [Phase 3 — Closed-loop RL](#7-phase-3--closed-loop-rl)
+8. [Security model](#8-security-model)
+9. [Worked example — end-to-end Ornith task](#9-worked-example--end-to-end-ornith-task)
+10. [Failure-mode matrix](#10-failure-mode-matrix)
+11. [Self-improvement loop — how gludd measures Ornith is actually helping](#11-self-improvement-loop--how-gludd-measures-ornith-is-actually-helping)
+12. [Permission / sandbox / audit surface (consolidated)](#12-permission--sandbox--audit-surface-consolidated)
+13. [MCP server surface](#13-mcp-server-surface)
+14. [Open questions](#14-open-questions)
+15. [References](#15-references)
 
 ---
 
 ## 1. Executive summary
 
 **Recommendation: integrate DeepReinforce's Ornith-1.0 (MIT-licensed, self-improving agentic-coding
-LLM family: 9B / 35B / 397B) into gludd as a peer agent + self-improvement substrate.**
+LLM family: 9B / 35B / 397B) into gludd as a peer agent + self-improvement substrate. Implementation
+landed in Phase 1 and is wiring through the daemon now.**
 
 Ornith's defining feature — a closed RL loop that **jointly optimizes the agent's own scaffold (the
 tool-orchestration / prompt code) and the resulting solution rollouts** — is exactly the capability
@@ -20,7 +41,14 @@ AppArmor, SELinux, macOS Seatbelt, FreeBSD Jail, Windows AppContainer), an STS +
 system, and a daemon-managed worktree dispatcher. The two systems are complementary at the architectural
 seam: **Ornith emits scaffolds + solutions; gludd executes them inside a permission-scoped sandbox and
 feeds outcomes back into Ornith's training loop.** This doc specifies that seam, the failure modes, and
-a three-phase rollout.
+a three-phase rollout — and now reflects the actual files shipping under `src/general_ludd/ornith/`,
+`src/general_ludd/routers/ornith.py`, and the `ornith_self_improve` ansible role.
+
+Related design docs:
+- [Permission system](PERMISSION_SYSTEM.md) — the `agent:ornith` capability
+- [Sandbox backends](SANDBOX_BACKENDS.md) — how the Ornith subprocess is contained
+- [Project collections](PROJECT_COLLECTIONS.md) — how promoted scaffolds become bundled
+- [Human todos](HUMAN_TODOS.md) — the review gate
 
 ---
 
@@ -90,11 +118,11 @@ when it "improves" are artifacts gludd already understands.**
 - **No built-in sandbox.** Ornith emits code that the consumer must execute. This is *the* integration
   point with gludd's sandbox stack.
 - **No permission system.** Ornith will happily call `rm -rf /` if a scaffold tells it to. Gludd's
-  `PermissionSpec` is *required*.
-- **No persistent memory across sessions.** Scaffolds are per-rollout. Gludd's daemon can persist
-  successful scaffolds as canonical ansible roles (the bidirectional loop).
-- **No audit trail.** Every Ornith call must be wrapped so the audit log captures `{tool, args,
-  PermissionSpec, STS, result}`.
+  `PermissionSpec` is *required* — implemented via the `agent:ornith` capability (see §5, §8).
+- **No persistent memory across sessions.** Scaffolds are per-rollout. Gludd's daemon persists
+  successful scaffolds as canonical ansible roles (the bidirectional loop; see §6).
+- **No audit trail.** Every Ornith call is wrapped by `OrnithMCPClient` / `OutcomeObserver` so the
+  audit row + `OrnithTrainingPairModel` capture `{scaffold, target_files, tokens, model_sha, outcome}`.
 
 ---
 
@@ -106,11 +134,11 @@ For the candidates that passed the license + stable-API filter, the coexistence 
 
 | Mode | Ornith's role | Gludd's role |
 |---|---|---|
-| **(a) Tool gludd dispatches** | Solves a single sub-task (write a function, fix a bug) when gludd's ansible/worker stack would be heavier | Dispatches Ornith via OpenAI-compatible provider, scoped under a `path_prefix=/worktree/<task>/`, `allowed_hosts={localhost:8000}` |
+| **(a) Tool gludd dispatches** | Solves a single sub-task (write a function, fix a bug) when gludd's ansible/worker stack would be heavier | Dispatches Ornith via `gludd ornith solve`, scoped under `path_prefix=/worktree/<task>/`, `allowed_hosts={localhost:8000}` |
 | **(b) Higher-level orchestrator** | Owns end-to-end coding tasks (issue → PR) | Provides sandboxing, secrets, `HumanTodo` escalation, permission intersection |
 | **(c) Peer agent** | Code-gen & refactoring | Ops, ansible, security review, CI gating |
 | **(d) Self-improvement substrate** | Optimizes gludd's prompts/playbooks based on observed outcomes | Provides the eval harness (gate green/red, SWE-bench-style held-out set) and the safety boundary |
-| **(e) Bidirectional** | Generates new ansible roles / OPA policies / opencode plugins as "discovered scaffolds" | Wraps execution in `bubblewrap`/`Landlock`, audits every call, persists validated scaffolds into `.gludd/collections/` (the project collection precedence system) |
+| **(e) Bidirectional** | Generates new ansible roles / OPA policies / opencode plugins as "discovered scaffolds" | Wraps execution in `bubblewrap`/`Landlock`, audits every call, persists validated scaffolds into `.gludd/collections/` (the project-collection precedence system) |
 
 ### 4.2 Other candidates (secondary tier)
 
@@ -125,92 +153,220 @@ For the candidates that passed the license + stable-API filter, the coexistence 
 
 ---
 
-## 5. Recommended integration
+## 5. Phase 1 — Implementation map
 
-### 5.1 Architecture diagram (ASCII)
+Phase 1 lands the data-collection half of the loop: the daemon speaks MCP to Ornith-aware clients,
+captures every `(scaffold, outcome)` pair into Postgres, and the operator's CLI surfaces it. The
+files below are the canonical paths the parallel tasks are landing against.
 
-```
-┌──────────────────────────────────────────────────────────────────────────┐
-│                              gludd daemon                                │
-│                                                                          │
-│   ┌────────────┐    dispatch     ┌────────────────────────────────────┐  │
-│   │ EventLoop  │ ──────────────► │   OrnithAdapter (new module)       │  │
-│   │  (loop.py) │                 │   - OpenAI-compatible client       │  │
-│   │            │                 │   - scaffold capture               │  │
-│   │            │                 │   - rollout outcome → feedback     │  │
-│   └────────────┘                 └─────────────┬──────────────────────┘  │
-│        ▲                                        │                        │
-│        │ PermissionSpec intersection            │ vLLM/SGLang/llama.cpp  │
-│        │ (human ∩ agent ∩ requested)            │ (local inference)      │
-│        ▼                                        ▼                        │
-│   ┌────────────┐    enforce      ┌────────────────────────────────────┐  │
-│   │Permission/ │ ──────────────► │  SandboxBackend (existing)         │  │
-│   │ STS / audit│                 │  Landlock | bubblewrap | AppArmor  │  │
-│   │  log       │                 │  Seatbelt | Jail | AppContainer    │  │
-│   └────────────┘                 └─────────────┬──────────────────────┘  │
-│        ▲                                        │ exec Ornith scaffold   │
-│        │                                        ▼                        │
-│        │                              ┌────────────────────┐             │
-│        └──────────────────────────────│  Feedback store    │             │
-│                  outcome (gate/PR)    │  (Postgres + S3)   │             │
-│                                       └────────────────────┘             │
-│                                                  │                       │
-└──────────────────────────────────────────────────┼───────────────────────┘
-                                                   │ curated scaffolds
-                                                   ▼
-                                       ┌────────────────────────────┐
-                                       │ .gludd/collections/        │
-                                       │   general_ludd/agent/      │
-                                       │     roles/<scaffold_name>/ │
-                                       │   (project tier shadows    │
-                                       │    bundled)                │
-                                       └────────────────────────────┘
-                                                   │
-                                                   ▼  (offline, batched)
-                                       ┌────────────────────────────┐
-                                       │  Ornith RL trainer         │
-                                       │  (DeepReinforce side)      │
-                                       └────────────────────────────┘
-```
+| Component | File | One-line summary |
+|---|---|---|
+| **MCP server** | `src/general_ludd/ornith/mcp_server.py` | Exposes the Ornith surface (solve/improve/status) to MCP clients (opencode plugins, external agents). Implements the `server: gludd.ornith` schema in §13. |
+| **MCP client** | `src/general_ludd/ornith/client.py` (`OrnithMCPClient`) | Daemon-side client that dispatches a sub-task to the local vLLM/SGLang endpoint, enforces `max_iterations` / `max_tokens_per_call` / wall-clock timeout, captures the scaffold, writes one `OrnithTrainingPairModel` row per call. |
+| **Training repo** | `src/general_ludd/ornith/training_repo.py` (`OrnithTrainingRepo`) | CRUD over the `ornith_training_pairs` table. `export_dataset() -> path` writes a JSONL stream of `{task_description, target_files, scaffold_content, scaffold_hash, model_sha, outcome_status, outcome_details, reward}` for the offline RL trainer. |
+| **Outcome observer** | `src/general_ludd/ornith/outcome_observer.py` (`OutcomeObserver`) | Resolves `pending` pairs: inspects the eventual fate of each scaffold (gate green/red, PR merged/reverted/closed, review verdict) and writes `outcome_status` + `outcome_details`. Scheduled by the daemon hourly (mirrors `BlockerDetector.scan()`). |
+| **Daemon router** | `src/general_ludd/routers/ornith.py` | FastAPI router exposing `POST /api/ornith/solve`, `GET /api/ornith/pairs`, `POST /api/ornith/export`, `GET /api/ornith/status`. Wraps `OrnithMCPClient` / `OrnithTrainingRepo`. |
+| **Ansible module** | `collections/ansible_collections/general_ludd/agent/plugins/modules/gludd_ornith.py` | Ansible-callable wrapper around `gludd ornith solve` — lets a playbook dispatch Ornith with the same args as the CLI. Returns `{patch_path, scaffold_hash, outcome, audit_row_id}`. |
+| **Permission spec** | `config/permissions/build.yml` (and `agent-ornith.yml`) | Grants the `agent:ornith` capability: `file:repo` scoped to `/worktree/<task>/`, `net:egress:llm_api` to the local inference host only. Subagents default-deny; intersection with the human spec narrows further. |
+| **Self-improve role** | `collections/ansible_collections/general_ludd/agent/roles/ornith_self_improve/` | Operator-run role that pulls the latest JSONL export, calls the offline RL trainer, and writes the resulting model SHA back into `ornith_model_sha` in gludd's config. Idempotent; CI-gated. |
+| **CLI** | `src/general_ludd/cli_ornith.py` | `gludd ornith {solve\|improve\|pairs\|export\|status\|self-improve}` — thin wrapper over the router; operator + agent entry point. |
+| **Training-pair table** | `alembic/versions/014_add_ornith_training_pairs.py` + `src/general_ludd/db/models.py:915` (`OrnithTrainingPairModel`) | Persistence: `invoked_at`, `target_files`, `scaffold_kind`, `scaffold_content`, `scaffold_hash`, `iterations_used`, `tokens_consumed`, `model_sha`, `outcome_status`, `outcome_details`. |
+| **Package init** | `src/general_ludd/ornith/__init__.py` | Re-exports `OrnithMCPClient`, `OrnithTrainingRepo`, `OutcomeObserver` so the daemon lifespan can wire them. |
 
-### 5.2 Interface boundary
+The package is intentionally daemon-importable from boot (per the No-Manual-Default policy): even
+before the MCP server is registered, the daemon constructs an `OrnithTrainingRepo` and
+`OutcomeObserver` so the data-collection side of the loop is live on every install.
 
-**MCP server** is the right boundary (gludd already speaks MCP for opencode plugins). Sketch — §7.
+---
 
-Internally, the daemon also exposes Ornith as an OpenAI-compatible provider so any existing
-agent/worker can route to it via `LLM_MODEL="ornith/Ornith-1.0-9B"`. No code change in the worker.
+## 6. Phase 2 — Promotion path (PR → bundled)
 
-### 5.3 Permission scope
-
-Every Ornith call gets a `PermissionSpec` derived by intersection (per AGENTS.md "Human Permission
-Subjects + Intersection Policy"):
+An Ornith-generated scaffold graduates from a one-off rollout artifact to a bundled gludd
+collection entry through the project-collection precedence system. This is the
+bidirectional loop — **the property that makes Ornith symbiotic rather than just "a model we
+call."**
 
 ```
-effective = intersection(human_spec, gludd_agent_spec, ornith_requested_spec)
+ Ornith solve  →  PR on target repo  →  CI gate  →  HumanTodo review
+                                                              │
+                                            ┌─────────────────┴──────────────┐
+                                            ▼                                  ▼
+                              rejected (outcome=failure)            approved (outcome=success)
+                                            │                                  │
+                                  negative RL example                        merged into master
+                                                                                   │
+                                                                scaffold promoted to
+                                                                .gludd/collections/general_ludd/
+                                                                  agent/roles/ornith_<hash>/
+                                                                (PROJECT tier)
+                                                                                   │
+                                                                operator review every N promotions;
+                                                                the strongest one is copied to
+                                                                collections/ansible_collections/...
+                                                                  (BUNDLED tier — shipped release)
+                                                                                   │
+                                                                precedence: PROJECT > USER > BUNDLED
 ```
 
-Default `ornith_requested_spec` for a code-gen sub-task:
+### 6.1 Steps
+
+1. **Ornith emits a scaffold** via `OrnithMCPClient.solve()`. The scaffold (a playbook, role, module,
+   plugin, OPA policy, or patch) is recorded in `OrnithTrainingPairModel` with `outcome_status=pending`.
+2. **The patch becomes a PR** against the target repo. The agent (or operator) opens it from the
+   `gludd ornith solve` output; the PR description carries the `scaffold_hash` and a link back to the
+   pair row.
+3. **CI runs the gate.** `OutcomeObserver` polls the gate / PR state. On gate failure, it writes
+   `outcome_status=failure` with the gate tail in `outcome_details` and the pair becomes a negative
+   RL example.
+4. **Human review gate.** On gate green, the daemon files a `HumanTodo(category=review)` per
+   [HUMAN_TODOS.md](HUMAN_TODOS.md) referencing the PR. **No scaffold is promoted without a human
+   `done`** on that todo (the review gate).
+5. **Promotion to PROJECT tier.** On human approval + PR merge, the scaffold is materialized under
+   `<project_root>/.gludd/collections/ansible_collections/general_ludd/agent/roles/ornith_<scaffold_hash>/`
+   by the self-improve role. `OutcomeObserver` sets `outcome_status=success`.
+6. **Promotion to BUNDLED tier (operator action).** Periodically the operator reviews the
+   PROJECT-tier scaffolds; the strongest, regression-free ones are copied into
+   `collections/ansible_collections/general_ludd/agent/roles/` so they ship with the next release.
+   Per [PROJECT_COLLECTIONS.md](PROJECT_COLLECTIONS.md), PROJECT shadows BUNDLED until that copy —
+   so day-to-day work uses the freshest scaffold without waiting for a release.
+
+### 6.2 Precedence at runtime
+
+The daemon resolves collection paths via `src/general_ludd/ansible/paths.py` at startup and on
+project switch (see AGENTS.md "Project-Collection Precedence Contract"). The lookup order is
+`PROJECT > USER > BUNDLED`, so a freshly promoted scaffold shadows the older bundled version
+immediately — no daemon restart, no release cut.
+
+### 6.3 Regression ceiling
+
+If a promoted scaffold causes a previously-green test to fail, the regression counts against the
+ceiling in §11. Above 5% the operator freezes promotions for a manual review pass (the
+`ornith_self_improve` role exposes `gludd ornith self-improve --freeze-promotions`).
+
+---
+
+## 7. Phase 3 — Closed-loop RL
+
+Phase 3 closes the loop: gludd emits labeled training data; the offline RL trainer consumes it; a
+new model checkpoint rolls back into gludd's config; the next wave of solves uses it. Gludd never
+runs the trainer — that's operator-side — but gludd owns every other leg of the loop.
+
+```
+ ┌─────────────────────────┐   OrnithTrainingRepo.export_dataset()   ┌──────────────────────┐
+ │  ornith_training_pairs  │ ──────────────────────────────────────► │  JSONL on disk       │
+ │  (Postgres)             │   {task, scaffold, outcome, reward}     │  /var/lib/gludd/     │
+ └─────────────────────────┘                                          │    ornith/<sha>.jsonl│
+       ▲                                                               └──────────┬───────────┘
+       │ OutcomeObserver resolves outcome → reward                              │ operator copies
+       │                                                                           │ to trainer host
+       │                                                                           ▼
+       │                                                              ┌────────────────────────┐
+       │                                                              │ Ornith offline trainer │
+       │                                                              │ (DeepReinforce side)   │
+       │                                                              └────────────┬───────────┘
+       │                                                                           │ new checkpoint
+       │                                                                           │ SHA published
+       │                                                                           ▼
+       │                                            ┌──────────────────────────────────────────┐
+       │                                            │ ornith_self_improve ansible role writes  │
+       │                                            │   ornith_model_sha: <new-sha>            │
+       │                                            │ into config/ornith.yml                   │
+       │                                            └────────────────────┬─────────────────────┘
+       │                                                                 │ daemon reloads
+       │                                                                 ▼
+       │     next OrnithMCPClient.solve() dispatches against the new SHA ─┘
+       │                                                                  (recorded in model_sha)
+       └──────────────────────────────────────────────────────────────────┘
+```
+
+### 7.1 The export
+
+`OrnithTrainingRepo.export_dataset(since=None, only_status=("success", "failure")) -> Path`
+streams a JSONL file. Each line:
+
+```json
+{
+  "pair_id": "ORN-...",
+  "task_description": "refactor foo.py to use tenacity",
+  "target_files": ["src/foo.py"],
+  "scaffold_kind": "patch",
+  "scaffold_content": "...",
+  "scaffold_hash": "sha256:...",
+  "model_sha": "deepreinforce-ai/Ornith-1.0-9B@abc123",
+  "outcome_status": "success",
+  "outcome_details": {"gate": "PASS", "review": "approved", "merged_sha": "..."},
+  "reward": 1.0
+}
+```
+
+The `reward` field is computed by `OutcomeObserver` from the outcome tuple: `success → 1.0`,
+`failure → 0.0`, `regression → -1.0`, `timeout/blocked → 0.0` (counts as neither win nor loss for
+RL purposes but is exported for completeness). Operators can override the reward function via
+`config/ornith.yml` without touching the observer.
+
+### 7.2 Rolling the model SHA back in
+
+The `ornith_self_improve` role (§5) is the only sanctioned path:
+
+1. Pull the latest JSONL export (`gludd ornith export --out /tmp/ornith.jsonl`).
+2. Hand it to the operator-run RL trainer (out of band).
+3. On trainer completion, the new model SHA is written to `config/ornith.yml`'s `ornith_model_sha`.
+4. The daemon reloads `OrnithMCPClient` on next dispatch — every subsequent `solve()` records the new
+   `model_sha` in its `OrnithTrainingPairModel` row, so success rates are attributable per SHA.
+5. Held-out eval pass (gate + SWE-bench sample) gates the roll-forward; if the new SHA's regression
+   rate crosses the §11 ceiling, `ornith_self_improve` reverts the SHA and files a `HumanTodo`.
+
+### 7.3 Evaluation
+
+The loop is evaluated by three rolling-30-day metrics (defined in §11): **task success rate** per
+`(task_type, model_sha)`, **token efficiency** vs. the sonnet baseline, **regression rate** per
+promoted scaffold. The dashboard is `gludd ornith status` (CLI) and `GET /api/ornith/status`
+(router). A "healthy" loop shows success rate monotonically improving across checkpoints with
+regression rate held under ceiling; a flat or declining success rate across two consecutive
+checkpoints triggers a `HumanTodo` so the operator can intervene before another checkpoint rolls.
+
+---
+
+## 8. Security model
+
+### 8.1 Permission — `agent:ornith` capability
+
+Ornith runs under the `agent:ornith` principal. Its `PermissionSpec` lives at
+`config/permissions/agent-ornith.yml` and is intersected with the human spec and the agent spec
+per AGENTS.md "Human Permission Subjects + Intersection Policy":
+
+```
+effective_spec = intersection(human_spec, agent_spec, ornith_requested_spec)
+```
+
+Default `ornith_requested_spec` for a code-gen sub-task (see [PERMISSION_SYSTEM.md](PERMISSION_SYSTEM.md)):
 
 ```yaml
 capabilities:
-  - scheme: file
-    constraints: { path_prefix: "/worktree/<task_id>/" }
-  - scheme: net
+  - resource: file:repo
+    actions: ["read", "write"]
+    constraints:
+      path_prefix: "/worktree/<task_id>/"
+  - resource: net:egress:llm_api
+    actions: ["connect"]
     constraints:
       allowed_hosts: ["localhost", "127.0.0.1"]
-      allowed_ports: [8000, 3000]
-  - scheme: exec              # new scheme — see open questions
-    constraints: { binaries: ["python3", "git", "make"] }
+      allowed_ports: [8000]
+  - resource: exec:binaries                  # see open question §14.1
+    actions: ["execute"]
+    constraints:
+      binaries: ["python3", "git", "make"]
 ```
 
-For code-gen the intersection narrows `path_prefix` to the task worktree; `allowed_hosts` is closed
-to the local inference server (no exfiltration). Anything Ornith requests *outside* the intersection
-must go through the existing escalation flow (`POST /admin/perm/escalation-request`, requires ≥3
-`alternatives_tried`).
+**Subagents default-deny.** Any subagent that wants to dispatch Ornith must inherit (or escalate
+to) the `agent:ornith` capability; without it the request is rejected at the router. Anything
+Ornith requests *outside* the intersection goes through the standard escalation flow
+(`POST /admin/perm/escalation-request`, requires ≥3 `alternatives_tried`).
 
-### 5.4 Sandbox backend selection
+### 8.2 Sandbox — Landlock / bubblewrap / AppContainer
 
-Map to the existing `detect_best_backend()` (`src/general_ludd/security/sandboxes/detect.py`):
+The Ornith subprocess never runs unsandboxed. The daemon selects a backend via
+`src/general_ludd/security/sandboxes/detect.py` (see [SANDBOX_BACKENDS.md](SANDBOX_BACKENDS.md)):
 
 | Host platform | Backend wrapping Ornith's code emission | Why |
 |---|---|---|
@@ -221,99 +377,179 @@ Map to the existing `detect_best_backend()` (`src/general_ludd/security/sandboxe
 | FreeBSD | **jail** | `freebsd_jail.py` |
 | Windows | **AppContainer** | `windows_appcontainer.py` |
 
-All backends FAIL OPEN today — for Ornith-emitted code we **MUST fail closed** (new policy in §5.6).
+The sandbox grants Ornith read access to `target_files` only (the worktree under
+`path_prefix`); write access is restricted to a scratch dir; the output patch is emitted to a
+well-known path and goes through an audit gate **before** it is applied to the real worktree.
 
-### 5.5 Audit trail
+**Fail-closed policy for Ornith-emitted code:** if no enforcing backend is available, the dispatch
+is hard-denied (not warned). This is a contract change from the daemon's historical fail-open —
+see §14.2 and §12.
 
-Each Ornith invocation appends one row to the audit log with:
+### 8.3 Audit — every solve/improve is recorded
 
-```json
-{
-  "actor": "agent:ornith",
-  "model": "deepreinforce-ai/Ornith-1.0-9B",
-  "task_id": "...",
-  "permission_spec": {...},
-  "sts_token": "sts_abc...",
-  "scaffold_sha256": "...",
-  "tool_calls": [...],
-  "outcome": "success|failure|timeout|blocked_by_permission",
-  "sandbox_backend": "landlock",
-  "sandbox_applied": true,
-  "tokens_in": ..., "tokens_out": ...,
-  "wall_ms": ...
-}
-```
+Every invocation lands one row in `ornith_training_pairs` (the `OrnithTrainingPairModel` at
+`src/general_ludd/db/models.py:915`) carrying `{invoked_at, task_description, target_files,
+scaffold_kind, scaffold_content, scaffold_hash, iterations_used, tokens_consumed, model_sha,
+outcome_status, outcome_details, project_id, agent_id}`. The migration is
+`alembic/versions/014_add_ornith_training_pairs.py`.
 
-The STS token is scoped to `(human ∩ gludd ∩ ornith_requested)` as in the existing escalation flow.
-The `scaffold_sha256` lets us correlate outcomes with scaffold revisions over time → feeds §5.7.
+Outcomes are resolved later by `OutcomeObserver` (`src/general_ludd/ornith/outcome_observer.py`)
+from the gate / review / git history. The JSONL export (`OrnithTrainingRepo.export_dataset`)
+includes the reward signal derived from the resolved outcome, so the trainer sees labeled data,
+not raw scaffolds.
 
-### 5.6 Failure-mode matrix
+### 8.4 Bounded scope
+
+`OrnithMCPClient` (`src/general_ludd/ornith/client.py`) enforces three independent ceilings on
+every dispatch:
+
+| Bound | Default | Source |
+|---|---|---|
+| `max_iterations` | 50 tool calls per task | `config/ornith.yml` |
+| `max_tokens_per_call` | per-call output cap (truncates `<think>` bloat) | `config/ornith.yml` |
+| `timeout` | wall-clock per dispatch (default 600 s) | `config/ornith.yml` |
+
+A ceiling breach aborts the dispatch, reverts the worktree, and the pair row is recorded with
+`outcome_status=timeout|blocked`. The breach also counts against the §10 infinite-loop failure
+mode.
+
+---
+
+## 9. Worked example — end-to-end Ornith task
+
+A gludd task needs to refactor `src/foo.py` to use `tenacity` for retries.
+
+1. **Dispatch.** The owning gludd agent runs:
+   ```
+   gludd ornith solve \
+       --task "refactor foo.py to use tenacity for retries" \
+       --target-files src/foo.py
+   ```
+   The CLI (`src/general_ludd/cli_ornith.py`) hits `POST /api/ornith/solve` on the router
+   (`src/general_ludd/routers/ornith.py`).
+
+2. **Permission + sandbox.** The router intersects
+   `(human_spec ∩ agent:ornith_spec ∩ requested_spec)`, narrows `path_prefix` to the task
+   worktree, picks a sandbox backend via `detect.py`, and hands the call to
+   `OrnithMCPClient.solve()`.
+
+3. **Inference.** `OrnithMCPClient` dispatches the prompt to the local vLLM/SGLang endpoint
+   serving `deepreinforce-ai/Ornith-1.0-9B`. Ornith emits `<think>`, then a `tool_calls` block
+   that produces a patch. The client enforces `max_iterations=50`, `max_tokens_per_call`, and
+   the wall-clock timeout.
+
+4. **Capture.** The patch + scaffold are written to a scratch path. A new
+   `OrnithTrainingPairModel` row is inserted with `outcome_status=pending`, `scaffold_hash`,
+   `tokens_consumed`, `model_sha`, `target_files=["src/foo.py"]`.
+
+5. **PR.** The patch becomes a PR on the target repo. The PR body references the pair id and
+   `scaffold_hash`. CI runs the gate.
+
+6. **Gate result.** `OutcomeObserver` resolves the pair. If the gate is **red**,
+   `outcome_status=failure`, `outcome_details={gate_tail: "..."}`. If the gate is **green**, the
+   daemon files a `HumanTodo(category=review)` ([HUMAN_TODOS.md](HUMAN_TODOS.md)) referencing the
+   PR — the review gate.
+
+7. **Human approval.** The human reviews the PR via `gludd human-todo done <id>` with a
+   `human_resolution`. The PR is merged.
+
+8. **Outcome finalized.** `OutcomeObserver` sets `outcome_status=success`,
+   `outcome_details={review: "approved", merged_sha: "..."}`. The reward for this pair is `1.0`.
+
+9. **Promotion (Phase 2).** If the scaffold generalizes, the `ornith_self_improve` role
+   promotes it to `.gludd/collections/.../ornith_<scaffold_hash>/` (PROJECT tier), shadowing the
+   bundled version per [PROJECT_COLLECTIONS.md](PROJECT_COLLECTIONS.md).
+
+10. **Loop closes (Phase 3).** On the next `gludd ornith export`, this pair ships in the JSONL
+    with `reward=1.0`. The operator's offline RL trainer consumes it. A new checkpoint lands;
+    its SHA is written to `ornith_model_sha` by the `ornith_self_improve` role. The next
+    `solve()` uses the new SHA — and its result is recorded against that SHA, so the success-rate
+    delta is attributable.
+
+---
+
+## 10. Failure-mode matrix
+
+Concrete mitigations cite the file:line where the guard lives.
 
 | Failure | Detection | Mitigation |
 |---|---|---|
-| Ornith server (vLLM/SGLang) crashes | healthcheck probe every 5 s, fails 3× → degrade | Re-route to fallback provider (Anthropic/OpenAI), file `HumanTodo` if persistent |
-| Infinite tool-call loop | Per-task tool-call budget (default 50) enforced by `OrnithAdapter` | Hard kill at budget + revert worktree, mark task `failed` |
-| Malformed `<tool_call>` JSON | vLLM parser error or our schema validator | Retry with repair prompt (1×); if still bad, capture scaffold for offline RL negative example |
-| Permission violation (Ornith requests out-of-intersection capability) | Existing escalation gate | Auto-deny, log, surface `HumanTodo(category=permission_escalation)` |
-| Sandbox fail-open on a host without Landlock/bwrap | `sandbox_applied=false` in audit log | **For Ornith-emitted code: hard deny** (new policy — currently the daemon only warns) |
-| Scaffold attempts destructive op (`rm -rf`, force-push) | Substring + AST pattern match in adapter pre-exec | Block + record as negative RL example |
-| Hallucinated file paths outside `path_prefix` | Sandbox backend enforces; post-hoc scan of `tool_calls` | Block; treat as negative example |
-| Token-budget runaway (Ornith's `<think>` grows unbounded) | Per-call `max_tokens` + per-task sum | Truncate, log, file `HumanTodo` if recurring |
-| Network exfiltration attempt | `allowed_hosts` enforcement + audit scan | Block at sandbox, escalate |
-| Training-set poisoning (curated scaffold is wrong) | Held-out eval set (gate + SWE-bench sample) before promotion | Revert promoted role, drop from RL positive set |
+| Ornith server (vLLM/SGLang) crashes | healthcheck probe every 5 s; 3 fails → degrade | Re-route to fallback provider (Anthropic/OpenAI via existing worker); file `HumanTodo` if persistent. Router: `src/general_ludd/routers/ornith.py`. |
+| Infinite tool-call loop | per-task budget (default 50) | Hard kill at budget + revert worktree; record `outcome_status=blocked`. `OrnithMCPClient` enforces `max_iterations` (`src/general_ludd/ornith/client.py`). |
+| Malformed `<tool_call>` JSON | vLLM parser error or schema validator | Retry with repair prompt (1×); if still bad, capture scaffold as RL negative example (`OrnithTrainingPairModel.outcome_status=failure`). |
+| Permission violation (Ornith requests out-of-intersection capability) | existing escalation gate | Auto-deny, log; surface `HumanTodo(category=permission_escalation)`. Spec: `config/permissions/agent-ornith.yml`. |
+| Sandbox fail-open on a host without Landlock/bwrap | `sandbox_applied=false` | **For Ornith-emitted code: hard deny** (new policy — see §12). Detection in `src/general_ludd/security/sandboxes/detect.py`. |
+| Scaffold attempts destructive op (`rm -rf`, force-push) | substring + AST pattern match in client pre-exec | Block + record as negative RL example. Guard in `OrnithMCPClient` (`src/general_ludd/ornith/client.py`). |
+| Hallucinated file paths outside `path_prefix` | sandbox backend enforces; post-hoc `tool_calls` scan | Block at sandbox; treat as negative example. |
+| Token-budget runaway (`<think>` grows unbounded) | per-call `max_tokens_per_call` + per-task sum | Truncate, log, file `HumanTodo` if recurring. Bound in `OrnithMCPClient` (§8.4). |
+| Network exfiltration attempt | `allowed_hosts` enforcement + audit scan | Block at sandbox, escalate. Spec: `config/permissions/agent-ornith.yml`. |
+| Training-set poisoning (curated scaffold is wrong) | held-out eval set (gate + SWE-bench sample) before promotion | Revert promoted role, drop from RL positive set. Promotion gate: §6.1 step 4 (human review). |
+| Regression from a promoted scaffold | previously-green test now fails | Counts against the 5% ceiling (§11); above ceiling freezes promotions. Operator action: `gludd ornith self-improve --freeze-promotions`. |
+| Wall-clock timeout | `timeout` in `OrnithMCPClient` | Abort, revert worktree, `outcome_status=timeout`. §8.4. |
 
-### 5.7 Self-improvement loop — how gludd measures Ornith is actually helping
+---
 
-Three orthogonal signals, all written to the feedback store:
+## 11. Self-improvement loop — how gludd measures Ornith is actually helping
+
+Three orthogonal signals, all derived from the `ornith_training_pairs` table:
 
 1. **Task-level outcome** — for each dispatched Ornith task: `success|failure|timeout|blocked`.
-   Success = the patch passed `make gate` on the target worktree AND a human (or higher-tier review
-   agent) marked it `done`. Tracked as a rolling 30-day success rate per (task_type, model_size).
-2. **Token efficiency** — `tokens_to_completion` vs. the gludd-baseline (the existing sonnet dispatch
+   Success = the patch passed `make gate` on the target worktree AND a human (or higher-tier
+   review agent) marked it `done`. Tracked as a rolling 30-day success rate per
+   `(task_type, model_sha)`.
+2. **Token efficiency** — `tokens_consumed` vs. the gludd-baseline (the existing sonnet dispatch
    path on the same task class). Ornith must beat baseline by ≥X% to justify GPU cost.
 3. **Regression rate** — when a promoted Ornith-generated scaffold (a new ansible role in
    `.gludd/collections/`) causes a previously-green test to fail, that's a regression. Rate is
    `regressions / promoted_scaffolds`. Hard ceiling: if >5%, freeze promotions for a human review.
 
-These three metrics ARE the eval harness Ornith's RL trainer consumes offline. Gludd never runs the
-trainer; it ships labeled `(scaffold, outcome)` pairs to a training job the operator runs separately
-out-of-band (the bidirectional seam).
+These three metrics ARE the eval harness Ornith's RL trainer consumes offline. Gludd never runs
+the trainer; it ships labeled `(scaffold, outcome, reward)` pairs (via
+`OrnithTrainingRepo.export_dataset`) to a training job the operator runs separately out-of-band —
+the bidirectional seam.
 
 ---
 
-## 6. Permission / sandbox / audit surface (consolidated)
+## 12. Permission / sandbox / audit surface (consolidated)
 
-| Surface | Existing gludd component | Change required |
+| Surface | Existing gludd component | Change required for Ornith |
 |---|---|---|
-| Capability intersection | `src/general_ludd/security/permissions.py:PermissionSpec.intersect` | None — already correct |
-| Sandbox fail-closed policy | `src/general_ludd/event_loop/loop.py:1285` ("No sandbox backend … dispatching UNSANDBOXED") | Add `REQUIRE_SANDBOX_FOR="ornith"` env; for Ornith-emitted code, hard-deny instead of warn |
-| Audit log | existing audit table | Add `scaffold_sha256`, `model`, `tokens_in/out` fields |
-| STS | existing STS mint | Scope new tokens to `agent:ornith` principal |
-| MCP server registry | opencode plugin config | New `OrnithMCPProvider` (§7) |
-| HumanTodo escalation | `HumanTodo` model + `POST /api/human-todos` | Reuse unchanged |
+| Capability intersection | `src/general_ludd/security/permissions.py:PermissionSpec.intersect` | None — already correct. Spec template ships at `config/permissions/agent-ornith.yml`. |
+| Sandbox fail-closed policy | `src/general_ludd/event_loop/loop.py` (UNSANDBOXED warning) | Add `REQUIRE_SANDBOX_FOR="ornith"`; for Ornith-emitted code, hard-deny instead of warn. See §14.2. |
+| Audit log | `ornith_training_pairs` table (`src/general_ludd/db/models.py:915`) | Already adds `scaffold_hash`, `model_sha`, `tokens_consumed`. Migration: `alembic/versions/014_add_ornith_training_pairs.py`. |
+| STS | existing STS mint | Scope new tokens to `agent:ornith` principal. |
+| MCP server registry | opencode plugin config | New `OrnithMCPProvider` (`src/general_ludd/ornith/mcp_server.py`). |
+| HumanTodo escalation | `HumanTodo` model + `POST /api/human-todos` | Reuse unchanged — the review gate (§6.1 step 4). |
+| Router | `src/general_ludd/routers/ornith.py` | New; exposes solve/pairs/export/status. |
+| CLI | `src/general_ludd/cli_ornith.py` | New; `gludd ornith {solve\|improve\|pairs\|export\|status\|self-improve}`. |
+| Ansible module | `collections/.../modules/gludd_ornith.py` | New; playbook-callable wrapper around `solve`. |
+| Self-improve role | `collections/.../roles/ornith_self_improve/` | New; rolls new model SHAs back into `ornith_model_sha`. |
 
 ---
 
-## 7. MCP server sketch (DO NOT IMPLEMENT — design only)
+## 13. MCP server surface
 
-The MCP server surface gludd exposes to (and consumes from) Ornith-aware clients:
+The MCP server (`src/general_ludd/ornith/mcp_server.py`) exposes the Ornith tools gludd speaks
+both as a server (for opencode plugins / external agents) and as a client (the daemon dispatching
+Ornith via `OrnithMCPClient`). The schema:
 
 ```yaml
-# Conceptual; real impl would be a TS or Python MCP server.
 server: gludd.ornith
 tools:
   - name: ornith_solve
     description: >
       Dispatch a code-gen sub-task to a local Ornith endpoint under a per-task
-      PermissionSpec. Returns a patch + scaffold_sha256 + outcome.
+      PermissionSpec. Returns a patch + scaffold_hash + outcome.
     inputSchema:
       type: object
-      required: [task_description, repo_context_path]
+      required: [task_description, target_files]
       properties:
         task_description: { type: string }
-        repo_context_path: { type: string }       # MUST be inside an existing worktree
+        target_files: { type: array, items: { type: string } }    # MUST be inside an existing worktree
         max_iterations: { type: integer, default: 50 }
-        requested_permissions:                     # what the scaffold thinks it needs
+        max_tokens_per_call: { type: integer }
+        timeout_seconds: { type: integer, default: 600 }
+        requested_permissions:                                     # what the scaffold thinks it needs
           type: object
           properties:
             file_prefix: { type: string }
@@ -323,10 +559,10 @@ tools:
       type: object
       properties:
         patch_path: { type: string }
-        scaffold_sha256: { type: string }
+        scaffold_hash: { type: string }
         outcome: { type: string, enum: [success, failure, timeout, blocked] }
         effective_permission_spec: { type: object }
-        audit_row_id: { type: string }
+        pair_id: { type: string }     # FK into ornith_training_pairs
 
   - name: ornith_improve
     description: >
@@ -334,9 +570,9 @@ tools:
       offline RL trainer. Does NOT mutate weights.
     inputSchema:
       type: object
-      required: [target_playbook_path, feedback]
+      required: [pair_id, feedback]
       properties:
-        target_playbook_path: { type: string }    # the scaffold being evaluated
+        pair_id: { type: string }                                   # the scaffold being evaluated
         feedback:
           type: object
           required: [outcome]
@@ -348,7 +584,7 @@ tools:
 
 resources:
   - name: ornith_status
-    description: Current Ornith endpoint health, last-24h success rate, queue depth.
+    description: Current Ornith endpoint health, last-30d success rate per model_sha, queue depth.
     mimeType: application/json
 
 prompts:
@@ -358,102 +594,35 @@ prompts:
       restates the permission boundary, the failure budget, and the audit contract.
 ```
 
-The `ornith_solve` tool is the only entry point that lets arbitrary agent code invoke Ornith. Every
-call goes through: (1) capability intersection, (2) sandbox detection, (3) audit row, (4) outcome
-feedback — in that order.
+`ornith_solve` is the only entry point that lets arbitrary agent code invoke Ornith. Every call
+goes through: (1) capability intersection, (2) sandbox detection, (3) `OrnithTrainingPairModel`
+row insert, (4) inference under the bounds in §8.4, (5) outcome feedback via `OutcomeObserver` —
+in that order.
 
 ---
 
-## 8. Phased rollout
-
-### Phase 1 — Tool mode (read-only-ish, 2 weeks)
-- Gludd dispatches Ornith as an OpenAI-compatible provider for **code-gen sub-tasks only** (no
-  scaffold promotion).
-- `OrnithAdapter` in `src/general_ludd/integrations/ornith.py`. Wraps vLLM/SGLang. Logs every call.
-- Hard fail-closed on missing sandbox backend for Ornith-emitted code (new policy).
-- Metrics: success rate vs. baseline sonnet path on a held-out 50-task set.
-- **Exit gate:** success rate ≥ baseline AND zero sandbox-bypass incidents.
-
-### Phase 2 — Peer agent + scaffold capture (4 weeks)
-- Capture successful scaffolds into `.gludd/collections/general_ludd/agent/roles/ornith_<hash>/`
-  (project-tier shadowing per AGENTS.md "Project-Collection Precedence").
-- Promote scaffolds through a review queue (a `HumanTodo` per promotion) — no auto-promotion yet.
-- Add the MCP server (§7) so opencode plugins can call `ornith_solve`.
-- **Exit gate:** ≥10 scaffolds promoted, regression rate <5%, audit log shows zero permission
-  violations across all calls.
-
-### Phase 3 — Self-improvement substrate (continuous)
-- Ship `(scaffold, outcome)` pairs to an out-of-band RL training job (operator-run, not gludd).
-- Gludd consumes new model checkpoints as they're published to Hugging Face — versioned in
-  `config/ornith.yml` with a pinned SHA.
-- Regression ceiling (5%) gates auto-roll-forward of new checkpoints.
-- Gludd's own prompts/playbooks become candidates for Ornith-driven optimization: every gludd
-  playbook is treated as a scaffold, evaluated against the gate, and improved versions land as
-  project-tier overrides.
-- **Exit gate:** measurable improvement in gludd's own `make gate` runtime and SWE-bench-style
-  held-out pass rate over a 90-day window, with regression rate held under ceiling.
-
----
-
-## 9. File touches (rough list, no implementation)
-
-New files:
-- `src/general_ludd/integrations/ornith/__init__.py`
-- `src/general_ludd/integrations/ornith/adapter.py` — `OrnithAdapter` (OpenAI-compatible client,
-  tool-call budget, scaffold capture)
-- `src/general_ludd/integrations/ornith/feedback.py` — feedback-store writer
-- `src/general_ludd/integrations/ornith/mcp_server.py` — MCP server (§7)
-- `src/general_ludd/integrations/ornith/policy.py` — fail-closed policy hook for loop.py
-- `config/ornith.yml` — endpoint URL, model SHAs, budgets, intersection defaults
-- `config/permissions/agent-ornith.yml` — `PermissionSpec` template for `agent:ornith`
-- `alembic/versions/<new>_ornith_audit_fields.py` — adds `scaffold_sha256`, `model`, `tokens_*`
-- `tests/unit/test_ornith_adapter.py`, `test_ornith_permission_intersection.py`,
-  `test_ornith_fail_closed.py`, `test_ornith_feedback_store.py`
-- `tests/integration/test_ornith_dispatch_under_sandbox.py`
-- `tests/e2e/test_ornith_solve_mcp.py`
-- This design doc.
-
-Modified files:
-- `src/general_ludd/event_loop/loop.py:1285` — branch on `REQUIRE_SANDBOX_FOR`
-- `src/general_ludd/security/sandboxes/detect.py` — expose `backend_can_enforce(spec)` predicate
-- `daemon.py` lifespan — register MCP server, load `config/ornith.yml`
-- `src/general_ludd/ansible/paths.py` — include Ornith-promoted role paths in precedence resolution
-- `opencode.json` — register `ornith` MCP server
-- `AGENTS.md` — new section "Ornith Integration Policy" (fail-closed, intersection, scaffold capture)
-- `.opencode/plugin/enforce-ornith-sandbox.ts` — new 3-layer guardrail (mirrors existing plugins)
-- `Makefile` — `make ornith-serve`, `make ornith-eval`, `make ornith-promote-scaffold`
-
-New ansible roles (Phase 2+):
-- `collections/ansible_collections/general_ludd/agent/roles/ornith_serve/` — local inference bootstrap
-- One role per promoted scaffold (under `.gludd/collections/`)
-
-Docs:
-- `docs/design/SYMBIOTIC_AGENT_INTEGRATION.md` (this file)
-- `docs/integrations/ornith.md` (operator-facing runbook — Phase 1)
-
----
-
-## 10. Open questions
+## 14. Open questions
 
 1. **`exec:` capability scheme.** The current `PermissionSpec` covers `file:` and `net:` but not
-   "which binaries may be executed." Ornith-emitted code wants to run `python3`, `git`, `make` — but
-   not `curl`, `nc`, or arbitrary binaries. Do we extend `PermissionSpec` with an `exec:` scheme
-   (and update all 7 sandbox backends), or rely on Landlock's `EXECUTE` flag + bubblewrap's read-only
-   `/usr/bin` bind? **Recommendation:** extend the scheme — `EXECUTE` alone is per-file, not
-   per-binary-name, and bubblewrap's bind-mount trick doesn't generalize to macOS/Windows.
+   "which binaries may be executed." Ornith-emitted code wants to run `python3`, `git`, `make` —
+   but not `curl`, `nc`, or arbitrary binaries. Do we extend `PermissionSpec` with an `exec:`
+   scheme (and update all 7 sandbox backends), or rely on Landlock's `EXECUTE` flag + bubblewrap's
+   read-only `/usr/bin` bind? **Recommendation:** extend the scheme — `EXECUTE` alone is per-file,
+   not per-binary-name, and bubblewrap's bind-mount trick doesn't generalize to macOS/Windows.
 
-2. **Fail-closed default vs. fail-open.** The daemon's existing contract is fail-open ("UNSANDBOXED
-   with a warning"). Hard-denying for Ornith creates a precedent. Should we generalize to a
-   per-principal `fail_closed: bool` on `PermissionSpec`? Likely yes, but it's a contract change
-   that needs its own design pass.
+2. **Fail-closed default vs. fail-open.** The daemon's existing contract is fail-open
+   ("UNSANDBOXED with a warning"). Hard-denying for Ornith creates a precedent. Should we
+   generalize to a per-principal `fail_closed: bool` on `PermissionSpec`? Likely yes, but it's a
+   contract change that needs its own design pass — see [SANDBOX_BACKENDS.md](SANDBOX_BACKENDS.md).
 
 3. **Training-data export licensing.** Gludd's `(scaffold, outcome)` pairs may include proprietary
-   customer code. Shipping them to an offline RL trainer (even operator-run) needs a redaction layer
-   and a license review. Out of scope for this doc but blocks Phase 3.
+   customer code. Shipping them to an offline RL trainer (even operator-run) needs a redaction
+   layer and a license review. Out of scope for this doc but blocks Phase 3.
 
 4. **Model versioning & reproducibility.** When Ornith publishes a new checkpoint, the success-rate
    baseline shifts. How do we pin a baseline per model SHA for the regression ceiling? Probably a
-   per-SHA eval pass on the held-out set on each checkpoint bump.
+   per-SHA eval pass on the held-out set on each checkpoint bump (tracked in
+   `OrnithTrainingPairModel.model_sha`).
 
 5. **Interaction with the 10-agent floor.** Ornith inference is GPU-bound and single-tenant per
    server; dispatching 10 parallel Ornith subagents would queue. Does the floor policy need a
@@ -469,7 +638,7 @@ Docs:
 
 ---
 
-## References
+## 15. References
 
 - Ornith-1.0-9B model card — https://huggingface.co/deepreinforce-ai/Ornith-1.0-9B
 - Ornith-1.0-35B — https://huggingface.co/deepreinforce-ai/Ornith-1.0-35B
@@ -484,6 +653,11 @@ Docs:
 - AutoCodeRover (arXiv:2404.05427) — https://github.com/AutoCodeRoverSG/auto-code-rover
 - Agentless (arXiv:2407.01489) — https://github.com/OpenAutoCoder/Agentless
 - CodeAct (arXiv:2402.01030) — https://github.com/xingyaoww/code-act
-- Gludd PermissionSpec — `src/general_ludd/security/permissions.py:81`
+- Gludd PermissionSpec — `src/general_ludd/security/permissions.py`
 - Gludd sandbox backends — `src/general_ludd/security/sandboxes/`
 - Gludd project-collection precedence — AGENTS.md "Project-Collection Precedence Contract"
+- Cross-linked design docs:
+  - [PERMISSION_SYSTEM.md](PERMISSION_SYSTEM.md) — the `agent:ornith` capability
+  - [SANDBOX_BACKENDS.md](SANDBOX_BACKENDS.md) — how the Ornith subprocess is sandboxed
+  - [PROJECT_COLLECTIONS.md](PROJECT_COLLECTIONS.md) — how promoted scaffolds become bundled
+  - [HUMAN_TODOS.md](HUMAN_TODOS.md) — the review gate
