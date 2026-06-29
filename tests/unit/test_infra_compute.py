@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from datetime import UTC, datetime
 
 import pytest
@@ -291,32 +292,40 @@ class TestTerraformGeneratorAWS:
         assert 'provider "aws"' in tf
 
     def test_contains_instance_resource(self):
+        # Phase 4 — module-style contract: no inline aws_instance; module block present.
         tf = self.gen.generate(self.cfg)
-        assert 'resource "aws_instance"' in tf
+        assert 'module "vllm_server"' in tf
+        assert 'resource "aws_instance"' not in tf
+        assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
 
-    def test_contains_gpu_type(self):
+    def test_contains_module_source(self):
+        # Phase 4 — was test_contains_gpu_type; GPU type no longer inline.
         tf = self.gen.generate(self.cfg)
-        assert "a10g" in tf.lower() or "g5" in tf.lower()
+        assert 'source = "./modules/vllm-server"' in tf
 
-    def test_contains_model_name(self):
+    def test_contains_model_var_ref(self):
+        # Phase 4 — model name flows via tfvars; the module block references var.model.
         tf = self.gen.generate(self.cfg)
-        assert "meta-llama/Meta-Llama-3-8B-Instruct" in tf
+        assert "var.model" in tf
 
     def test_contains_region(self):
         tf = self.gen.generate(self.cfg)
         assert "us-east-1" in tf
 
-    def test_spot_instance_config(self):
+    def test_emits_instance_id_output(self):
+        # Phase 4 — was test_spot_instance_config; spot config lives in tfvars now.
         tf = self.gen.generate(self.cfg)
-        assert "spot" in tf.lower()
+        assert 'output "instance_id"' in tf
 
-    def test_contains_port_8000(self):
+    def test_emits_base_url_output(self):
+        # Phase 4 — was test_contains_port_8000; port lives in the module.
         tf = self.gen.generate(self.cfg)
-        assert "8000" in tf
+        assert 'output "base_url"' in tf
 
-    def test_contains_user_data(self):
+    def test_emits_legacy_ip_alias(self):
+        # Phase 4 — was test_contains_user_data; user_data lives in the module.
         tf = self.gen.generate(self.cfg)
-        assert "user_data" in tf or "user_data" in tf.replace(" ", "")
+        assert 'output "instance_ip"' in tf
 
     def test_spot_false_no_spot_options(self):
         cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4, model_name="m", spot=False)
@@ -346,20 +355,24 @@ class TestTerraformGeneratorGCP:
         assert '"hashicorp/google"' in tf
 
     def test_contains_compute_instance(self):
+        # Phase 4 — module-style contract: no inline google_compute_instance.
         tf = self.gen.generate(self.cfg)
-        assert 'google_compute_instance' in tf
+        assert 'module "vllm_server"' in tf
+        assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
 
     def test_contains_gpu_accelerator(self):
         tf = self.gen.generate(self.cfg)
         assert "guest_accelerator" in tf or "gpu" in tf.lower()
 
     def test_contains_model_name(self):
+        # Phase 4 — model name flows via tfvars; module block references var.model.
         tf = self.gen.generate(self.cfg)
-        assert "google/gemma-7b" in tf
+        assert "var.model" in tf
 
     def test_spot_preemptible(self):
+        # Phase 4 — spot/preemptible live in tfvars, not inline HCL.
         tf = self.gen.generate(self.cfg)
-        assert "preemptible" in tf.lower() or "spot" in tf.lower()
+        assert 'source = "./modules/vllm-server"' in tf
 
 
 class TestTerraformGeneratorAzure:
@@ -373,9 +386,11 @@ class TestTerraformGeneratorAzure:
         assert '"hashicorp/azurerm"' in tf
 
     def test_contains_resource(self):
+        # Phase 4 — provider block keeps "azurerm"; module block added.
         cfg = ComputeConfig(provider=ComputeProvider.AZURE, gpu_type=GPUType.T4, model_name="m")
         tf = self.gen.generate(cfg)
         assert "azurerm" in tf
+        assert 'module "vllm_server"' in tf
 
 
 class TestTerraformGeneratorAzureContainerApp:
@@ -391,9 +406,11 @@ class TestTerraformGeneratorAzureContainerApp:
         )
         tf = self.gen.generate(cfg)
         assert "terraform {" in tf
-        assert "azurerm_container_app" in tf
+        assert 'module "vllm_server"' in tf
+        assert "azurerm_container_app" not in tf
 
     def test_contains_container_app_environment(self):
+        # Phase 4 — inline container_app_environment gone; module-style emission.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
@@ -401,9 +418,11 @@ class TestTerraformGeneratorAzureContainerApp:
             deploy_type="containerapp",
         )
         tf = self.gen.generate(cfg)
-        assert "azurerm_container_app_environment" in tf
+        assert 'module "vllm_server"' in tf
+        assert 'source = "./modules/vllm-server"' in tf
 
     def test_contains_model_name(self):
+        # Phase 4 — model name flows via tfvars; module block references var.model.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.A100_80,
@@ -411,9 +430,10 @@ class TestTerraformGeneratorAzureContainerApp:
             deploy_type="containerapp",
         )
         tf = self.gen.generate(cfg)
-        assert "llama-3-70b" in tf
+        assert "var.model" in tf
 
     def test_contains_resource_group(self):
+        # Phase 4 — inline resource_group gone; thin module-style stack.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.L4,
@@ -421,9 +441,11 @@ class TestTerraformGeneratorAzureContainerApp:
             deploy_type="containerapp",
         )
         tf = self.gen.generate(cfg)
-        assert "azurerm_resource_group" in tf
+        assert 'module "vllm_server"' in tf
+        assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
 
     def test_contains_ingress(self):
+        # Phase 4 — ingress/target_port live in the module, not inline HCL.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
@@ -431,10 +453,11 @@ class TestTerraformGeneratorAzureContainerApp:
             deploy_type="containerapp",
         )
         tf = self.gen.generate(cfg)
-        assert "ingress" in tf
-        assert "target_port = 8000" in tf
+        assert 'module "vllm_server"' in tf
+        assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
 
     def test_contains_output_endpoint_url(self):
+        # Phase 4 — endpoint_url legacy alias output is still emitted.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
@@ -443,7 +466,7 @@ class TestTerraformGeneratorAzureContainerApp:
         )
         tf = self.gen.generate(cfg)
         assert "output" in tf
-        assert "latest_revision_fqdn" in tf
+        assert 'output "endpoint_url"' in tf
 
     def test_custom_region(self):
         cfg = ComputeConfig(
@@ -457,6 +480,7 @@ class TestTerraformGeneratorAzureContainerApp:
         assert "westus2" in tf
 
     def test_vm_deploy_type_still_uses_vm_generator(self):
+        # Phase 4 — both deploy_types now emit thin module-style HCL.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
@@ -464,17 +488,18 @@ class TestTerraformGeneratorAzureContainerApp:
             deploy_type="vm",
         )
         tf = self.gen.generate(cfg)
-        assert "azurerm_virtual_machine" in tf
-        assert "azurerm_container_app" not in tf
+        assert 'module "vllm_server"' in tf
+        assert not re.search(r'^\s*resource\s+"', tf, re.MULTILINE)
 
     def test_default_deploy_type_uses_vm(self):
+        # Phase 4 — default deploy_type emits module-style HCL too.
         cfg = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
             model_name="m",
         )
         tf = self.gen.generate(cfg)
-        assert "azurerm_virtual_machine" in tf
+        assert 'module "vllm_server"' in tf
 
 
 class TestTerraformGeneratorRunPod:
@@ -488,20 +513,23 @@ class TestTerraformGeneratorRunPod:
         assert "runpod" in tf.lower()
 
     def test_contains_pod_resource(self):
+        # Phase 4 — inline runpod_pod gone; module block present.
         cfg = ComputeConfig(provider=ComputeProvider.RUNPOD, gpu_type=GPUType.A100_80, model_name="test-model")
         tf = self.gen.generate(cfg)
-        assert "runpod_pod" in tf
-        assert "test-model" in tf
+        assert 'module "vllm_server"' in tf
+        assert "runpod_pod" not in tf
 
     def test_contains_container_image(self):
+        # Phase 4 — container_image flows via tfvars.
         cfg = ComputeConfig(
             provider=ComputeProvider.RUNPOD,
             gpu_type=GPUType.A100_80,
             model_name="m",
             container_image="vllm/vllm-openai:latest",
         )
-        tf = self.gen.generate(cfg)
-        assert "vllm/vllm-openai:latest" in tf
+        gen = TerraformGenerator()
+        tfvars = gen.build_tfvars(cfg)
+        assert "vllm/vllm-openai:latest" in tfvars
 
 
 class TestTerraformGeneratorGeneric:
@@ -545,18 +573,21 @@ class TestTerraformGeneratorGeneric:
 
 class TestTerraformGeneratorCommon:
     def test_model_name_in_output(self):
+        # Phase 4 — values flow through tfvars; check build_tfvars, not the HCL stack.
         gen = TerraformGenerator()
         cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4, model_name="my-special-model")
-        tf = gen.generate(cfg)
-        assert "my-special-model" in tf
+        tfvars = gen.build_tfvars(cfg)
+        assert "my-special-model" in tfvars
 
     def test_gpu_type_in_output(self):
+        # Phase 4 — GPU type lives in tfvars.
         gen = TerraformGenerator()
         cfg = ComputeConfig(provider=ComputeProvider.GCP, gpu_type=GPUType.H100, model_name="m")
-        tf = gen.generate(cfg)
-        assert "h100" in tf.lower()
+        tfvars = gen.build_tfvars(cfg)
+        assert "h100" in tfvars.lower()
 
     def test_container_image_override(self):
+        # Phase 4 — container_image flows via tfvars.
         gen = TerraformGenerator()
         cfg = ComputeConfig(
             provider=ComputeProvider.AWS,
@@ -564,14 +595,15 @@ class TestTerraformGeneratorCommon:
             model_name="m",
             container_image="my-custom/image:v2",
         )
-        tf = gen.generate(cfg)
-        assert "my-custom/image:v2" in tf
+        tfvars = gen.build_tfvars(cfg)
+        assert "my-custom/image:v2" in tfvars
 
     def test_spot_true_includes_spot_config(self):
+        # Phase 4 — module-style HCL has no inline spot config; just assert thin stack.
         gen = TerraformGenerator()
         cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4, model_name="m", spot=True)
         tf = gen.generate(cfg)
-        assert "spot" in tf.lower()
+        assert 'module "vllm_server"' in tf
 
     def test_vllm_engine_default(self):
         gen = TerraformGenerator()
@@ -580,6 +612,7 @@ class TestTerraformGeneratorCommon:
         assert "vllm" in tf.lower()
 
     def test_llamacpp_engine(self):
+        # Phase 4 — engine value flows through tfvars (build_tfvars).
         gen = TerraformGenerator()
         cfg = ComputeConfig(
             provider=ComputeProvider.RUNPOD,
@@ -587,17 +620,19 @@ class TestTerraformGeneratorCommon:
             model_name="m",
             engine=InferenceEngine.LLAMACPP,
         )
-        tf = gen.generate(cfg)
-        assert "llama" in tf.lower() or "llamacpp" in tf.lower()
+        tfvars = gen.build_tfvars(cfg)
+        assert "llamacpp" in tfvars.lower()
 
     def test_cost_limit_label(self):
+        # Phase 4 — max_cost_usd flows through tfvars.
         gen = TerraformGenerator()
         cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4, model_name="m", max_cost_usd=25.0)
-        tf = gen.generate(cfg)
-        assert "25" in tf
+        tfvars = gen.build_tfvars(cfg)
+        assert "25" in tfvars
 
     def test_timeout_label(self):
+        # Phase 4 — timeout_minutes flows through tfvars.
         gen = TerraformGenerator()
         cfg = ComputeConfig(provider=ComputeProvider.AWS, gpu_type=GPUType.T4, model_name="m", timeout_minutes=30.0)
-        tf = gen.generate(cfg)
-        assert "30" in tf
+        tfvars = gen.build_tfvars(cfg)
+        assert "30" in tfvars

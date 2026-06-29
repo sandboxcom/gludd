@@ -265,10 +265,12 @@ def test_engine_serve_cmd_image_is_quoted() -> None:
 # ---------------------------------------------------------------------------
 
 def test_azure_vm_nsg_uses_allowed_cidr() -> None:
-    """Azure VM HCL must use config.allowed_cidr in the NSG source_address_prefix.
+    """Phase 4 — allowed_cidr flows through build_tfvars() as an escaped value.
 
-    Regression test: source_address_prefix was hardcoded to '*' (any), ignoring
-    the allowed_cidr field that AWS and GCP already respected.
+    Pre-Phase-4 this asserted an inline `source_address_prefix` line in the
+    Azure NSG resource HCL. The NSG now lives behind the vllm-server module
+    interface, so the regression check moved to the tfvars channel: the value
+    must appear, properly quoted/escaped, in `build_tfvars()` output.
     """
     from general_ludd.infra.terraform import TerraformGenerator
 
@@ -276,10 +278,15 @@ def test_azure_vm_nsg_uses_allowed_cidr() -> None:
         provider=ComputeProvider.AZURE,
         allowed_cidr="10.0.0.0/8",
     )
-    hcl = TerraformGenerator().generate(cfg)
-    assert 'source_address_prefix      = "10.0.0.0/8"' in hcl
-    # The old hardcoded '*' must no longer appear in the ingress rule position
-    # (destination_address_prefix still uses '*' — only source is restricted)
-    lines_with_source = [ln for ln in hcl.splitlines() if "source_address_prefix" in ln and "destination" not in ln]
-    assert lines_with_source, "source_address_prefix line not found"
-    assert all('"10.0.0.0/8"' in ln for ln in lines_with_source)
+    gen = TerraformGenerator()
+    tfvars = gen.build_tfvars(cfg)
+
+    # The allowed_cidr value must be present in tfvars as a quoted HCL string.
+    assert 'allowed_cidr   = "10.0.0.0/8"' in tfvars, (
+        f"allowed_cidr not threaded through build_tfvars: {tfvars!r}"
+    )
+    # And the inline NSG HCL must be gone from the generated stack.
+    hcl = gen.generate(cfg)
+    assert "source_address_prefix" not in hcl, (
+        "Phase 4 violation: inline NSG resource leaked into the root HCL"
+    )

@@ -755,6 +755,9 @@ class TestYAMLTaskDefinitions:
 
 class TestEphemeralGPUCompute:
     def test_aws_terraform_generation(self) -> None:
+        # Phase 4 — module-style stack; no inline aws_instance resource.
+        import re
+
         config = ComputeConfig(
             provider=ComputeProvider.AWS,
             gpu_type=GPUType.T4,
@@ -765,13 +768,15 @@ class TestEphemeralGPUCompute:
         )
         gen = TerraformGenerator()
         hcl = gen.generate(config)
-        assert 'resource "aws_instance" "gpu_instance"' in hcl
-        assert "g4dn.xlarge" in hcl
+        assert 'module "vllm_server"' in hcl
+        assert re.search(r'^\s*resource\s+"', hcl, re.MULTILINE) is None
+        assert '"aws"' in hcl or 'provider "aws"' in hcl
         assert "us-east-1" in hcl
-        assert "meta-llama/Llama-3-8B" in hcl
-        assert "ephemeral-gpu-t4" in hcl
 
     def test_gcp_terraform_generation(self) -> None:
+        # Phase 4 — module-style stack; no inline google_compute_instance.
+        import re
+
         config = ComputeConfig(
             provider=ComputeProvider.GCP,
             gpu_type=GPUType.L4,
@@ -782,11 +787,14 @@ class TestEphemeralGPUCompute:
         )
         gen = TerraformGenerator()
         hcl = gen.generate(config)
-        assert 'resource "google_compute_instance" "gpu_instance"' in hcl
-        assert "nvidia-l4" in hcl
-        assert "count = 2" in hcl
+        assert 'module "vllm_server"' in hcl
+        assert re.search(r'^\s*resource\s+"', hcl, re.MULTILINE) is None
+        assert '"google"' in hcl or 'provider "google"' in hcl
 
     def test_azure_terraform_generation(self) -> None:
+        # Phase 4 — module-style stack; no inline azurerm_* resources.
+        import re
+
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,
             gpu_type=GPUType.T4,
@@ -795,10 +803,14 @@ class TestEphemeralGPUCompute:
         )
         gen = TerraformGenerator()
         hcl = gen.generate(config)
-        assert 'resource "azurerm_virtual_machine" "gpu_vm"' in hcl
-        assert 'resource "azurerm_resource_group" "gpu_rg"' in hcl
+        assert 'module "vllm_server"' in hcl
+        assert re.search(r'^\s*resource\s+"', hcl, re.MULTILINE) is None
+        assert '"azurerm"' in hcl or 'provider "azurerm"' in hcl
 
     def test_runpod_terraform_generation(self) -> None:
+        # Phase 4 — module-style stack; no inline runpod_pod resource.
+        import re
+
         config = ComputeConfig(
             provider=ComputeProvider.RUNPOD,
             gpu_type=GPUType.A100_80,
@@ -808,8 +820,9 @@ class TestEphemeralGPUCompute:
         )
         gen = TerraformGenerator()
         hcl = gen.generate(config)
-        assert 'resource "runpod_pod" "gpu_pod"' in hcl
-        assert "NVIDIA A100 80GB" in hcl
+        assert 'module "vllm_server"' in hcl
+        assert re.search(r'^\s*resource\s+"', hcl, re.MULTILINE) is None
+        assert '"runpod"' in hcl or 'provider "runpod"' in hcl
 
     def test_provider_registry_pricing(self) -> None:
         registry = InfraProviderRegistry()

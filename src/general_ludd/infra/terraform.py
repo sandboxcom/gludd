@@ -184,25 +184,17 @@ class TerraformGenerator:
         return "\n".join(lines) + "\n"
 
     def _generate_aws(self, config: ComputeConfig) -> str:
-        instance_type = _AWS_GPU_TO_INSTANCE.get(config.gpu_type.value, "g5.xlarge")
+        # Phase 4 — module-style: emit a thin stack that composes
+        # ./modules/<engine>-server. No inline resource blocks; all config
+        # fields flow through tfvars (build_tfvars) as escaped values, never
+        # interpolated into HCL structure.
         region = config.region or "us-east-1"
-        image = _container_image(config)
-        user_data = _user_data_script(config)
-
-        spot_block = ""
-        if config.spot:
-            spot_block = textwrap.dedent("""\
-              instance_market_options {
-                market_type = "spot"
-              }
-            """)
-
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
                 aws = {{
-                      source  = "hashicorp/aws"
-                      version = "~> 5.0"
+                  source  = "hashicorp/aws"
+                  version = "~> 5.0"
                 }}
               }}
             }}
@@ -211,96 +203,51 @@ class TerraformGenerator:
               region = "{region}"
             }}
 
-            data "aws_ami" "dl_ami" {{
-              most_recent = true
-              owners      = ["amazon"]
+            module "vllm_server" {{
+              source = "./modules/vllm-server"
 
-              filter {{
-                name   = "name"
-                values = ["Deep Learning AMI GPU CUDA*"]
-              }}
-
-              filter {{
-                name   = "virtualization-type"
-                values = ["hvm"]
-              }}
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
             }}
 
-            resource "aws_instance" "gpu_instance" {{
-              ami           = data.aws_ami.dl_ami.id
-              instance_type = "{instance_type}"
-              {spot_block}
-              root_block_device {{
-                volume_size = {config.disk_size_gb}
-                volume_type = "gp3"
-              }}
-
-              user_data = <<-EOT
-            {user_data}
-              EOT
-
-              tags = {{
-                Name        = "ephemeral-gpu-{config.gpu_type.value}"
-                Engine      = "{config.engine.value}"
-                Model       = "{config.model_name}"
-                MaxCostUSD  = "{config.max_cost_usd}"
-                TimeoutMin  = "{config.timeout_minutes}"
-                GPUType     = "{config.gpu_type.value}"
-                GPUCount    = "{config.gpu_count}"
-                ContainerImage = "{image}"
-              }}
+            output "instance_id" {{
+              value = module.vllm_server.instance_id
             }}
 
-            resource "aws_security_group" "gpu_sg" {{
-              name_prefix = "gpu-compute-"
-
-              ingress {{
-                from_port   = 8000
-                to_port     = 8000
-                protocol    = "tcp"
-                cidr_blocks = ["{config.allowed_cidr}"]
-              }}
-
-              egress {{
-                from_port   = 0
-                to_port     = 0
-                protocol    = "-1"
-                cidr_blocks = ["0.0.0.0/0"]
-              }}
+            output "base_url" {{
+              value = module.vllm_server.base_url
             }}
 
+            # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
+            # endpoint_url from `terraform output -json`. Keep the reader
+            # working through the Phase 4 transition without a deploy-side
+            # change. Remove once deployment.py is updated to read the new
+            # instance_id / base_url names directly.
             output "instance_ip" {{
-              value = aws_instance.gpu_instance.public_ip
+              value = module.vllm_server.instance_id
             }}
 
             output "endpoint_url" {{
-              value = "http://${{aws_instance.gpu_instance.public_ip}}:8000/v1"
+              value = module.vllm_server.base_url
             }}
         """)
 
     def _generate_gcp(self, config: ComputeConfig) -> str:
-        gpu_type = _GCP_GPU_TO_TYPE.get(config.gpu_type.value, "nvidia-l4")
-        machine_type = _GCP_MACHINE_TYPES.get(config.gpu_type.value, "g2-standard-4")
+        # Phase 4 — module-style; provider-specific GPU→machine-type mapping
+        # now lives in tfvars (build_tfvars), not in inline HCL resources.
         region = config.region or "us-central1"
-        zone = f"{region}-a"
-        image = _container_image(config)
-        user_data = _user_data_script(config)
-
-        preemptible_block = ""
-        if config.spot:
-            preemptible_block = textwrap.dedent("""\
-                scheduling {
-                  preemptible = true
-                  automatic_restart = false
-                }
-            """)
-
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
                 google = {{
-                      source  = "hashicorp/google"
-                      version = "~> 5.0"
+                  source  = "hashicorp/google"
+                  version = "~> 5.0"
                 }}
               }}
             }}
@@ -309,80 +256,53 @@ class TerraformGenerator:
               region = "{region}"
             }}
 
-            resource "google_compute_instance" "gpu_instance" {{
-              name         = "ephemeral-gpu-{config.gpu_type.value}"
-              machine_type = "{machine_type}"
-              zone         = "{zone}"
+            module "vllm_server" {{
+              source = "./modules/vllm-server"
 
-              boot_disk {{
-                initialize_params {{
-                  image = "projects/deeplearning-platform-release/global/images/family/common-cu121"
-                  size  = {config.disk_size_gb}
-                }}
-              }}
-
-              network_interface {{
-                network = "default"
-                access_config {{}}
-              }}
-
-              guest_accelerator {{
-                type  = "{gpu_type}"
-                count = {config.gpu_count}
-              }}
-
-              metadata = {{
-                user-data = <<-EOT
-            {user_data}
-                EOT
-              }}
-
-              {preemptible_block}
-
-              labels = {{
-                engine        = "{config.engine.value}"
-                model         = replace("{config.model_name}", "/", "-")
-                max_cost_usd  = "{config.max_cost_usd}"
-                timeout_min   = "{config.timeout_minutes}"
-                gpu_type      = "{config.gpu_type.value}"
-                gpu_count     = "{config.gpu_count}"
-                container     = "{image}"
-              }}
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
             }}
 
-            resource "google_compute_firewall" "gpu_fw" {{
-              name    = "gpu-compute-{config.gpu_type.value}"
-              network = "default"
-
-              allow {{
-                protocol = "tcp"
-                ports    = ["8000"]
-              }}
-
-              source_ranges = ["{config.allowed_cidr}"]
-              target_tags   = ["gpu-instance"]
+            output "instance_id" {{
+              value = module.vllm_server.instance_id
             }}
 
+            output "base_url" {{
+              value = module.vllm_server.base_url
+            }}
+
+            # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
+            # endpoint_url from `terraform output -json`. Keep the reader
+            # working through the Phase 4 transition without a deploy-side
+            # change. Remove once deployment.py is updated to read the new
+            # instance_id / base_url names directly.
             output "instance_ip" {{
-              value = google_compute_instance.gpu_instance.network_interface[0].access_config[0].nat_ip
+              value = module.vllm_server.instance_id
             }}
 
             output "endpoint_url" {{
-              value = "http://${{google_compute_instance.gpu_instance.network_interface[0].access_config[0].nat_ip}}:8000/v1"
+              value = module.vllm_server.base_url
             }}
         """)
 
     def _generate_azure(self, config: ComputeConfig) -> str:
+        # Phase 4 — module-style; the azurerm_resource_group / virtual_network
+        # / subnet / nsg / vm / nic / public_ip bodies now live behind the
+        # module interface (./modules/vllm-server for vLLM). The generator
+        # only composes provider + module block; values flow via tfvars.
         region = config.region or "eastus"
-        image = _container_image(config)
-        user_data = _user_data_script(config)
-
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
                 azurerm = {{
-                      source  = "hashicorp/azurerm"
-                      version = "~> 3.0"
+                  source  = "hashicorp/azurerm"
+                  version = "~> 3.0"
                 }}
               }}
             }}
@@ -392,138 +312,54 @@ class TerraformGenerator:
               location = "{region}"
             }}
 
-            resource "azurerm_resource_group" "gpu_rg" {{
-              name     = "gpu-rg-{config.gpu_type.value}"
-              location = "{region}"
+            module "vllm_server" {{
+              source = "./modules/vllm-server"
+
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
             }}
 
-            resource "azurerm_virtual_network" "gpu_vnet" {{
-              name                = "gpu-vnet"
-              address_space       = ["10.0.0.0/16"]
-              location            = azurerm_resource_group.gpu_rg.location
-              resource_group_name = azurerm_resource_group.gpu_rg.name
+            output "instance_id" {{
+              value = module.vllm_server.instance_id
             }}
 
-            resource "azurerm_subnet" "gpu_subnet" {{
-              name                 = "gpu-subnet"
-              resource_group_name  = azurerm_resource_group.gpu_rg.name
-              virtual_network_name = azurerm_virtual_network.gpu_vnet.name
-              address_prefixes     = ["10.0.1.0/24"]
+            output "base_url" {{
+              value = module.vllm_server.base_url
             }}
 
-            resource "azurerm_network_security_group" "gpu_nsg" {{
-              name                = "gpu-nsg"
-              location            = azurerm_resource_group.gpu_rg.location
-              resource_group_name = azurerm_resource_group.gpu_rg.name
-
-              security_rule {{
-                name                       = "allow-inference"
-                priority                   = 100
-                direction                  = "Inbound"
-                access                     = "Allow"
-                protocol                   = "Tcp"
-                source_port_range          = "*"
-                destination_port_range     = "8000"
-                source_address_prefix      = "{config.allowed_cidr}"
-                destination_address_prefix = "*"
-              }}
+            # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
+            # endpoint_url from `terraform output -json`. Keep the reader
+            # working through the Phase 4 transition without a deploy-side
+            # change. Remove once deployment.py is updated to read the new
+            # instance_id / base_url names directly.
+            output "instance_ip" {{
+              value = module.vllm_server.instance_id
             }}
 
-            resource "azurerm_virtual_machine" "gpu_vm" {{
-              name                  = "gpu-vm-{config.gpu_type.value}"
-              location              = azurerm_resource_group.gpu_rg.location
-              resource_group_name   = azurerm_resource_group.gpu_rg.name
-              network_interface_ids = [azurerm_network_interface.gpu_nic.id]
-              vm_size               = "Standard_NC4as_T4_v3"
-
-              storage_os_disk {{
-                name              = "gpu-osdisk"
-                caching           = "ReadWrite"
-                create_option     = "FromImage"
-                disk_size_gb      = {config.disk_size_gb}
-              }}
-
-              storage_image_reference {{
-                publisher = "microsoft-dsvm"
-                offer     = "ubuntu-hpc"
-                sku       = "2204"
-                version   = "latest"
-              }}
-
-              os_profile {{
-                computer_name  = "gpuvm"
-                admin_username = "azureuser"
-                custom_data    = base64encode(<<-EOT
-            {user_data}
-                EOT
-                )
-              }}
-
-              os_profile_linux_config {{
-                disable_password_authentication = true
-                ssh_keys {{
-                  key_data = ""
-                  path     = "/home/azureuser/.ssh/authorized_keys"
-                }}
-              }}
-
-              tags = {{
-                engine       = "{config.engine.value}"
-                model        = "{config.model_name}"
-                max_cost_usd = "{config.max_cost_usd}"
-                timeout_min  = "{config.timeout_minutes}"
-                gpu_type     = "{config.gpu_type.value}"
-                container    = "{image}"
-              }}
-            }}
-
-            resource "azurerm_network_interface" "gpu_nic" {{
-              name                = "gpu-nic"
-              location            = azurerm_resource_group.gpu_rg.location
-              resource_group_name = azurerm_resource_group.gpu_rg.name
-
-              ip_configuration {{
-                name                          = "internal"
-                subnet_id                     = azurerm_subnet.gpu_subnet.id
-                private_ip_address_allocation = "Dynamic"
-                public_ip_address_id          = azurerm_public_ip.gpu_pip.id
-              }}
-            }}
-
-            resource "azurerm_public_ip" "gpu_pip" {{
-              name                = "gpu-pip"
-              location            = azurerm_resource_group.gpu_rg.location
-              resource_group_name = azurerm_resource_group.gpu_rg.name
-              allocation_method   = "Static"
+            output "endpoint_url" {{
+              value = module.vllm_server.base_url
             }}
         """)
 
     def _generate_azure_containerapp(self, config: ComputeConfig) -> str:
+        # Phase 4 — module-style; the azurerm_container_app /
+        # container_app_environment / container_registry / vnet / subnet
+        # resource bodies and the GPU→SKU mapping now live behind the module
+        # interface (passed in via tfvars as instance_type). The generator
+        # only composes provider + module block.
         region = config.region or "eastus"
-        image = _container_image(config)
-        gpu_sku_map: dict[str, str] = {
-            "t4": "Standard_NC4as_T4_v3",
-            "a10g": "Standard_NC24ads_A100_v4",
-            "l4": "Standard_NC24ads_A100_v4",
-            "a10": "Standard_NC24ads_A100_v4",
-            "rtx_4090": "Standard_NC24ads_A100_v4",
-            "rtx_6000_ada": "Standard_NC24ads_A100_v4",
-            "a40": "Standard_ND96asr_v4",
-            "l40s": "Standard_NC24ads_A100_v4",
-            "a100_40": "Standard_ND96asr_v4",
-            "a100_80": "Standard_ND96asr_v4",
-            "h100": "Standard_ND96isr_v5",
-            "h200": "Standard_ND96isr_v5",
-        }
-        sku = gpu_sku_map.get(config.gpu_type.value, "Standard_NC4as_T4_v3")
-        acr_suffix = config.gpu_type.value.replace("_", "").replace("-", "")[:8]
-
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
                 azurerm = {{
-                      source  = "hashicorp/azurerm"
-                      version = "~> 3.0"
+                  source  = "hashicorp/azurerm"
+                  version = "~> 3.0"
                 }}
               }}
             }}
@@ -533,263 +369,184 @@ class TerraformGenerator:
               location = "{region}"
             }}
 
-            resource "azurerm_resource_group" "ca_rg" {{
-              name     = "ca-rg-{config.gpu_type.value}"
-              location = "{region}"
+            module "vllm_server" {{
+              source = "./modules/vllm-server"
+
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
             }}
 
-            resource "azurerm_container_registry" "gpu_acr" {{
-              name                = "gpuacr{acr_suffix}"
-              resource_group_name = azurerm_resource_group.ca_rg.name
-              location            = azurerm_resource_group.ca_rg.location
-              sku                 = "Standard"
-              admin_enabled       = true
+            output "instance_id" {{
+              value = module.vllm_server.instance_id
             }}
 
-            resource "azurerm_container_app_environment" "gpu_env" {{
-              name                       = "gpu-inference-env"
-              location                   = azurerm_resource_group.ca_rg.location
-              resource_group_name        = azurerm_resource_group.ca_rg.name
-              infrastructure_subnet_id   = azurerm_subnet.ca_subnet.id
+            output "base_url" {{
+              value = module.vllm_server.base_url
             }}
 
-            resource "azurerm_virtual_network" "ca_vnet" {{
-              name                = "ca-vnet"
-              address_space       = ["10.1.0.0/16"]
-              location            = azurerm_resource_group.ca_rg.location
-              resource_group_name = azurerm_resource_group.ca_rg.name
-            }}
-
-            resource "azurerm_subnet" "ca_subnet" {{
-              name                 = "ca-subnet"
-              resource_group_name  = azurerm_resource_group.ca_rg.name
-              virtual_network_name = azurerm_virtual_network.ca_vnet.name
-              address_prefixes     = ["10.1.0.0/23"]
-            }}
-
-            resource "azurerm_container_app" "gpu_inference" {{
-              name                         = "gpu-inference-{config.gpu_type.value}"
-              container_app_environment_id = azurerm_container_app_environment.gpu_env.id
-              resource_group_name          = azurerm_resource_group.ca_rg.name
-              revision_mode                = "Single"
-
-              container {{
-                name   = "inference"
-                image  = "{image}"
-
-                resources {{
-                  cpu    = "4.0"
-                  memory = "16Gi"
-                }}
-
-                env {{
-                  name  = "MODEL_NAME"
-                  value = "{config.model_name}"
-                }}
-
-                env {{
-                  name  = "HOST"
-                  value = "0.0.0.0"
-                }}
-
-                env {{
-                  name  = "PORT"
-                  value = "8000"
-                }}
-
-                env {{
-                  name  = "NVIDIA_VISIBLE_DEVICES"
-                  value = "all"
-                }}
-              }}
-
-              ingress {{
-                target_port = 8000
-                transport   = "http"
-                external_enabled = true
-
-                traffic_weight {{
-                  percentage = 100
-                  latest_revision = true
-                }}
-              }}
-
-              template {{
-                container {{
-                  name  = "inference"
-                  image = "{image}"
-                }}
-              }}
-
-              tags = {{
-                engine       = "{config.engine.value}"
-                model        = "{config.model_name}"
-                gpu_type     = "{config.gpu_type.value}"
-                compute_type = "containerapp"
-                vm_sku       = "{sku}"
-                gpu_required = "true"
-                nvidia_gpu   = "{config.gpu_type.value}"
-              }}
+            # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
+            # endpoint_url from `terraform output -json`. Keep the reader
+            # working through the Phase 4 transition without a deploy-side
+            # change. Remove once deployment.py is updated to read the new
+            # instance_id / base_url names directly.
+            output "instance_ip" {{
+              value = module.vllm_server.instance_id
             }}
 
             output "endpoint_url" {{
-              value = azurerm_container_app.gpu_inference.latest_revision_fqdn
+              value = module.vllm_server.base_url
             }}
         """)
 
     def _generate_runpod(self, config: ComputeConfig) -> str:
-        image = _container_image(config)
-        gpu_types: dict[str, str] = {
-            "l4": "NVIDIA L4",
-            "a100_80": "NVIDIA A100 80GB",
-            "a100_40": "NVIDIA A100 40GB",
-            "rtx_4090": "RTX 4090",
-            "h100": "NVIDIA H100 80GB",
-        }
-        gpu_name = gpu_types.get(config.gpu_type.value, f"NVIDIA {config.gpu_type.value}")
+        # Phase 4 — module-style; runpod_pod resource body and GPU→name mapping
+        # now live behind the module interface. The generator composes provider
+        # + module block; values flow through tfvars (build_tfvars).
+        return textwrap.dedent("""\
+            terraform {
+              required_providers {
+                runpod = {
+                  source  = "runpod/runpod"
+                  version = "~> 1.0"
+                }
+              }
+            }
 
-        return textwrap.dedent(f"""\
-            terraform {{
-              required_providers {{
-                runpod = {{
-                      source  = "runpod/runpod"
-                      version = "~> 1.0"
-                }}
-              }}
-            }}
+            provider "runpod" {}
 
-            provider "runpod" {{}}
+            module "vllm_server" {
+              source = "./modules/vllm-server"
 
-            resource "runpod_pod" "gpu_pod" {{
-              name         = "ephemeral-gpu-{config.gpu_type.value}"
-              image_name   = "{image}"
-              gpu_type_id  = "{gpu_name}"
-              gpu_count    = {config.gpu_count}
-              container_disk_size_gb = {config.disk_size_gb}
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
+            }
 
-              env = [
-                {{
-                  key   = "MODEL_NAME"
-                  value = "{config.model_name}"
-                }},
-                {{
-                  key   = "ENGINE"
-                  value = "{config.engine.value}"
-                }},
-                {{
-                  key   = "MAX_COST_USD"
-                  value = "{config.max_cost_usd}"
-                }},
-                {{
-                  key   = "TIMEOUT_MIN"
-                  value = "{config.timeout_minutes}"
-                }},
-              ]{"true" if False else ""}
+            output "instance_id" {
+              value = module.vllm_server.instance_id
+            }
 
-              ports = {{
-                http  = 8000
-              }}
+            output "base_url" {
+              value = module.vllm_server.base_url
+            }
 
-              tags = {{
-                engine       = "{config.engine.value}"
-                gpu_type     = "{config.gpu_type.value}"
-                model        = "{config.model_name}"
-                container    = "{image}"
-              }}
-            }}
+            # Legacy aliases (see other providers for rationale).
+            output "instance_ip" {
+              value = module.vllm_server.instance_id
+            }
 
-            output "pod_id" {{
-              value = runpod_pod.gpu_pod.id
-            }}
-
-            output "endpoint_url" {{
-              value = "${{runpod_pod.gpu_pod.default_domain}}:8000/v1"
-            }}
+            output "endpoint_url" {
+              value = module.vllm_server.base_url
+            }
         """)
 
     def _generate_vast_ai(self, config: ComputeConfig) -> str:
-        image = _container_image(config)
+        # Phase 4 — module-style; vast-ai_instance resource body now lives
+        # behind the module interface. Generator composes provider + module.
+        return textwrap.dedent("""\
+            terraform {
+              required_providers {
+                vast-ai = {
+                  source  = "vast-ai/vast-ai"
+                  version = "~> 1.0"
+                }
+              }
+            }
 
-        return textwrap.dedent(f"""\
-            terraform {{
-              required_providers {{
-                vast-ai = {{
-                      source  = "vast-ai/vast-ai"
-                      version = "~> 1.0"
-                }}
-              }}
-            }}
+            provider "vast-ai" {}
 
-            provider "vast-ai" {{}}
+            module "vllm_server" {
+              source = "./modules/vllm-server"
 
-            resource "vast-ai_instance" "gpu_instance" {{
-              image       = "{image}"
-              gpu_name    = "{config.gpu_type.value}"
-              gpu_count   = {config.gpu_count}
-              disk_size   = {config.disk_size_gb}
-              region      = "{config.region or "us"}"
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
+            }
 
-              env = {{
-                MODEL_NAME    = "{config.model_name}"
-                ENGINE        = "{config.engine.value}"
-                MAX_COST_USD  = "{config.max_cost_usd}"
-                TIMEOUT_MIN   = "{config.timeout_minutes}"
-              }}
+            output "instance_id" {
+              value = module.vllm_server.instance_id
+            }
 
-              ports = ["8000:8000"]
+            output "base_url" {
+              value = module.vllm_server.base_url
+            }
 
-              tags = {{
-                engine   = "{config.engine.value}"
-                gpu_type = "{config.gpu_type.value}"
-              }}
-            }}
+            # Legacy aliases (see other providers for rationale).
+            output "instance_ip" {
+              value = module.vllm_server.instance_id
+            }
 
-            output "instance_ip" {{
-              value = vast-ai_instance.gpu_instance.public_ip
-            }}
+            output "endpoint_url" {
+              value = module.vllm_server.base_url
+            }
         """)
 
     def _generate_generic(self, config: ComputeConfig) -> str:
-        image = _container_image(config)
+        # Phase 4 — module-style fallback for stub providers (lambda_labs,
+        # modal, coreweave, digital_ocean, oracle). Same thin-stack shape as
+        # the named providers: required_providers + provider block + one
+        # module block. No inline resource HCL.
         provider_name = config.provider.value
-
         return textwrap.dedent(f"""\
             terraform {{
               required_providers {{
                 {provider_name} = {{
-                      source  = "{provider_name}/{provider_name}"
-                      version = ">= 1.0"
+                  source  = "{provider_name}/{provider_name}"
+                  version = ">= 1.0"
                 }}
               }}
             }}
 
             provider "{provider_name}" {{}}
 
-            resource "{provider_name}_instance" "gpu_instance" {{
-              name        = "ephemeral-gpu-{config.gpu_type.value}"
-              gpu_type    = "{config.gpu_type.value}"
-              gpu_count   = {config.gpu_count}
-              image       = "{image}"
-              disk_size   = {config.disk_size_gb}
+            module "vllm_server" {{
+              source = "./modules/vllm-server"
 
-              env = {{
-                MODEL_NAME    = "{config.model_name}"
-                ENGINE        = "{config.engine.value}"
-                MAX_COST_USD  = "{config.max_cost_usd}"
-                TIMEOUT_MIN   = "{config.timeout_minutes}"
-              }}
-
-              ports = ["8000:8000"]
-
-              tags = {{
-                engine   = "{config.engine.value}"
-                gpu_type = "{config.gpu_type.value}"
-                model    = "{config.model_name}"
-              }}
+              image           = var.image
+              gpus            = var.gpus
+              model           = var.model
+              region          = var.region
+              instance_type   = var.instance_type
+              extra_args      = var.extra_args
+              max_cost_usd    = var.max_cost_usd
+              timeout_minutes = var.timeout_minutes
             }}
 
-            output "instance_endpoint" {{
-              value = "${{{provider_name}_instance.gpu_instance.endpoint}}:8000/v1"
+            output "instance_id" {{
+              value = module.vllm_server.instance_id
+            }}
+
+            output "base_url" {{
+              value = module.vllm_server.base_url
+            }}
+
+            # Legacy aliases — DeploymentManager.deploy() reads instance_ip /
+            # endpoint_url from `terraform output -json`. Keep the reader
+            # working through the Phase 4 transition without a deploy-side
+            # change. Remove once deployment.py is updated to read the new
+            # instance_id / base_url names directly.
+            output "instance_ip" {{
+              value = module.vllm_server.instance_id
+            }}
+
+            output "endpoint_url" {{
+              value = module.vllm_server.base_url
             }}
         """)
 

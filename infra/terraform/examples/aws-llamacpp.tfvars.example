@@ -1,0 +1,21 @@
+# Example tfvars for an AWS + llama.cpp stack.
+# Real values never live here — placeholders only. At apply time the
+# TerraformGenerator composer writes a real terraform.tfvars into a tempdir
+# from ComputeConfig + SecretsManager (see TERRAFORM_INFRA_STRUCTURE.md §8).
+#
+# Copy to terraform.tfvars and fill in, OR pass via -var-file at apply time.
+
+# llamacpp-server module inputs
+image           = "ghcr.io/ggerganov/llama.cpp:server"
+model           = "meta-llama/Llama-2-7b-Chat-GGUF"
+gpus            = 1
+extra_args      = ""
+region          = "us-east-1"
+instance_type   = "g5.xlarge"
+max_cost_usd    = 10
+timeout_minutes = 60
+
+# Stack-only inputs (referenced by the stack's provider/ami data sources, not
+# by the module). Documented here so a full deployment is one -var-file away.
+# aws_credentials are NOT included — they come from the standard AWS provider
+# chain (env / instance profile) per SecretsManager, never tfvars.

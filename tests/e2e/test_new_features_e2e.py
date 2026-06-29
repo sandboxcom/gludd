@@ -107,6 +107,9 @@ class TestBinaryPathConfig:
 
 class TestDeploymentLifecycle:
     def test_deployment_manager_generates_hcl(self) -> None:
+        # Phase 4 — module-style stack; no inline aws_instance resource.
+        import re
+
         dm = DeploymentManager()
         config = ComputeConfig(
             provider=ComputeProvider.AWS,
@@ -116,8 +119,9 @@ class TestDeploymentLifecycle:
             region="us-east-1",
         )
         hcl = dm._generator.generate(config)
-        assert 'resource "aws_instance" "gpu_instance"' in hcl
-        assert "g4dn.xlarge" in hcl
+        assert 'module "vllm_server"' in hcl
+        assert re.search(r'^\s*resource\s+"', hcl, re.MULTILINE) is None
+        assert '"aws"' in hcl or 'provider "aws"' in hcl
 
     @pytest.mark.asyncio
     @patch("general_ludd.infra.deployment.BinaryPathResolver.get_infra_binary", return_value="tofu")

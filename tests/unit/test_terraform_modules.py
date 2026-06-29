@@ -66,6 +66,23 @@ def _strip_comments(text: str) -> str:
     )
 
 
+def _strip_var_refs(text: str) -> str:
+    """Drop HCL attribute lines whose RHS is a ``var.<name>`` reference.
+
+    A credential *literal* is a hardcoded string/secret embedded in the HCL
+    body (``password = "hunter2"``). A credential *reference* is an attribute
+    that pulls the value from a variable at apply time
+    (``password = var.vsphere_password``) — that is the SAFE pattern, the
+    whole point of the OpenBao/SecretsManager flow. The credential-scan
+    regex matches the attribute name regardless of RHS, so we drop the
+    safe-reference lines before scanning and let only true literals through.
+    """
+    return "\n".join(
+        line for line in text.splitlines()
+        if not re.search(r"=\s*var\.[A-Za-z_][A-Za-z0-9_]*\s*$", line)
+    )
+
+
 # ---------------------------------------------------------------------------
 # Structural: every module has the required files.
 # ---------------------------------------------------------------------------
@@ -216,7 +233,7 @@ class TestNoHardcodedCredentials:
             f = mod / fname
             if not f.is_file():
                 continue
-            active = _strip_comments(f.read_text())
+            active = _strip_var_refs(_strip_comments(f.read_text()))
             for pat in _CREDENTIAL_PATTERNS:
                 assert not pat.search(active), (
                     f"{f}: credential literal matched by {pat.pattern!r}"
@@ -226,8 +243,203 @@ class TestNoHardcodedCredentials:
         examples_dir = REPO_ROOT / "infra" / "terraform" / "examples"
         assert examples_dir.is_dir(), f"expected {examples_dir} to exist"
         for ex in examples_dir.glob("*.tfvars.example"):
-            active = _strip_comments(ex.read_text())
+            active = _strip_var_refs(_strip_comments(ex.read_text()))
             for pat in _CREDENTIAL_PATTERNS:
                 assert not pat.search(active), (
                     f"{ex}: credential literal matched by {pat.pattern!r}"
                 )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: thin stacks that compose the static modules — no inline resources.
+# ---------------------------------------------------------------------------
+
+STACKS_DIR = REPO_ROOT / "infra" / "terraform" / "stacks"
+EXPECTED_STACKS = {
+    "aws-vllm", "aws-llamacpp", "gcp-vllm", "gcp-llamacpp",
+    "azure-vllm", "azure-container-app-vllm", "runpod-vllm",
+    "vast-vllm", "vsphere-vllm",
+}
+
+# module source must point at ../modules/<engine>-server, where engine matches
+# the stack-name suffix (the last `-`-delimited token).
+_STACK_MODULE_SOURCE_RE = re.compile(
+    r'source\s*=\s*"\.\./modules/(vllm-server|llamacpp-server)"'
+)
+# Stacks must be thin: no inline `resource "..."` blocks.
+_INLINE_RESOURCE_RE = re.compile(r'^\s*resource\s+"', re.MULTILINE)
+
+
+class TestStacksPhase4:
+    def test_stacks_dir_exists(self):
+        assert STACKS_DIR.is_dir(), f"expected {STACKS_DIR} to exist"
+
+    def test_expected_stacks_present(self):
+        if not STACKS_DIR.is_dir():
+            pytest.skip("stacks dir not present yet")
+        actual = {p.name for p in STACKS_DIR.iterdir() if p.is_dir()}
+        missing = EXPECTED_STACKS - actual
+        assert not missing, f"missing stack dirs: {missing}"
+
+    @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
+    def test_stack_has_required_files(self, stack_name: str):
+        stack = STACKS_DIR / stack_name
+        assert stack.is_dir(), f"stack dir missing: {stack}"
+        for fname in REQUIRED_FILES:
+            f = stack / fname
+            assert f.is_file(), f"missing {fname} in stack {stack_name}"
+
+    @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
+    def test_stack_main_tf_parses_as_hcl(self, stack_name: str):
+        main_tf = STACKS_DIR / stack_name / "main.tf"
+        assert main_tf.is_file(), f"missing {main_tf}"
+        text = main_tf.read_text()
+        hcl2 = _try_import_hcl2()
+        if hcl2 is not None:
+            import io
+
+            ast = hcl2.load(io.StringIO(text))
+            assert isinstance(ast, dict), f"{main_tf}: hcl2 did not return a dict"
+            assert len(ast) > 0, f"{main_tf}: hcl2 parsed zero top-level blocks"
+        else:
+            _assert_structurally_valid_hcl(text, main_tf)
+
+    @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
+    def test_stack_main_tf_uses_correct_module_source(self, stack_name: str):
+        main_tf = STACKS_DIR / stack_name / "main.tf"
+        assert main_tf.is_file(), f"missing {main_tf}"
+        text = main_tf.read_text()
+
+        engine_suffix = stack_name.rsplit("-", 1)[-1]
+        expected_module = "vllm-server" if engine_suffix == "vllm" else "llamacpp-server"
+
+        m = _STACK_MODULE_SOURCE_RE.search(text)
+        assert m is not None, (
+            f"{main_tf}: no module source matching "
+            f'"../modules/(vllm-server|llamacpp-server)" found'
+        )
+        assert m.group(1) == expected_module, (
+            f"{main_tf}: module source {m.group(1)!r} does not match "
+            f"stack engine suffix {engine_suffix!r} (expected {expected_module!r})"
+        )
+
+    @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
+    def test_stack_main_tf_has_no_inline_resources(self, stack_name: str):
+        main_tf = STACKS_DIR / stack_name / "main.tf"
+        assert main_tf.is_file(), f"missing {main_tf}"
+        text = main_tf.read_text()
+        assert not _INLINE_RESOURCE_RE.search(text), (
+            f"{main_tf}: stacks must be thin — found an inline "
+            f'resource "..." block (Phase 4 violation)'
+        )
+
+    @pytest.mark.parametrize("stack_name", sorted(EXPECTED_STACKS))
+    def test_stack_no_hardcoded_credentials(self, stack_name: str):
+        stack = STACKS_DIR / stack_name
+        if not stack.is_dir():
+            pytest.skip(f"stack {stack_name} not present yet")
+        for fname in REQUIRED_FILES:
+            f = stack / fname
+            if not f.is_file():
+                continue
+            active = _strip_var_refs(_strip_comments(f.read_text()))
+            for pat in _CREDENTIAL_PATTERNS:
+                assert not pat.search(active), (
+                    f"{f}: credential literal matched by {pat.pattern!r}"
+                )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4: every TerraformGenerator provider method emits a module-style HCL,
+# never an inline `resource "..."` block.
+# ---------------------------------------------------------------------------
+
+TERRAFORM_PY = REPO_ROOT / "src" / "general_ludd" / "infra" / "terraform.py"
+
+
+def _build_cfg(provider, gpu_type, deploy_type="vm"):
+    from general_ludd.infra.compute import ComputeConfig
+
+    return ComputeConfig(
+        provider=provider,
+        gpu_type=gpu_type,
+        model_name="test-model",
+        allowed_cidr="127.0.0.1/32",
+        deploy_type=deploy_type,
+    )
+
+
+class TestProviderMethodsPhase4:
+    @pytest.mark.parametrize(
+        ("provider", "gpu_type", "deploy_type"),
+        [
+            pytest.param(
+                "aws", "t4", "vm",
+                id="aws",
+            ),
+            pytest.param(
+                "gcp", "l4", "vm",
+                id="gcp",
+            ),
+            pytest.param(
+                "azure", "t4", "vm",
+                id="azure-vm",
+            ),
+            pytest.param(
+                "azure", "t4", "containerapp",
+                id="azure-container-app",
+            ),
+            pytest.param(
+                "runpod", "l4", "vm",
+                id="runpod",
+            ),
+            pytest.param(
+                "vast_ai", "a100_80", "vm",
+                id="vast",
+            ),
+            pytest.param(
+                "vmware", "a100_80", "vm",
+                id="vsphere",
+            ),
+        ],
+    )
+    def test_generate_emits_module_no_inline_resource(
+        self, provider, gpu_type, deploy_type
+    ):
+        from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
+        from general_ludd.infra.terraform import TerraformGenerator
+
+        cfg = ComputeConfig(
+            provider=ComputeProvider(provider),
+            gpu_type=GPUType(gpu_type),
+            model_name="test-model",
+            allowed_cidr="127.0.0.1/32",
+            deploy_type=deploy_type,
+        )
+        hcl = TerraformGenerator().generate(cfg)
+
+        assert "module" in hcl, (
+            f"provider={provider} deploy_type={deploy_type}: emitted HCL "
+            f"contains no `module` block (Phase 4 contract)"
+        )
+        assert not _INLINE_RESOURCE_RE.search(hcl), (
+            f"provider={provider} deploy_type={deploy_type}: emitted HCL "
+            f'contains an inline resource "..." block (Phase 4 violation)'
+        )
+
+
+# ---------------------------------------------------------------------------
+# Phase 4 exit criterion: terraform.py contains no inline resource emission.
+# ---------------------------------------------------------------------------
+
+
+def test_phase4_exit_no_inline_resource_in_generator():
+    """Literal Phase 4 exit criterion from §7 of TERRAFORM_INFRA_STRUCTURE.md:
+    the generator source must not emit inline `resource "..."` blocks.
+    """
+    assert TERRAFORM_PY.is_file(), f"expected {TERRAFORM_PY} to exist"
+    text = TERRAFORM_PY.read_text()
+    assert not _INLINE_RESOURCE_RE.search(text), (
+        f"{TERRAFORM_PY}: Phase 4 exit criterion failed — found an inline "
+        f'resource "..." block in the generator source'
+    )

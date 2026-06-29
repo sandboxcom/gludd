@@ -6,7 +6,10 @@ Implements TDD coverage for docs/design/TERRAFORM_INFRA_STRUCTURE.md §6+§7 Pha
 from __future__ import annotations
 
 import ast
+import re
 from pathlib import Path
+
+import pytest
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, GPUType
 from general_ludd.infra.providers import ProviderRegistry
@@ -93,3 +96,46 @@ class TestPyvmomiLazyImport:
         assert not pyvmomi_top_level, (
             f"pyvmomi must not be a top-level import in terraform.py; found: {pyvmomi_top_level}"
         )
+
+
+_ALL_PROVIDER_CONFIGS = [
+    pytest.param(ComputeProvider.AWS, GPUType.T4, "vm", id="aws"),
+    pytest.param(ComputeProvider.GCP, GPUType.L4, "vm", id="gcp"),
+    pytest.param(ComputeProvider.AZURE, GPUType.T4, "vm", id="azure-vm"),
+    pytest.param(ComputeProvider.AZURE, GPUType.T4, "containerapp", id="azure-containerapp"),
+    pytest.param(ComputeProvider.RUNPOD, GPUType.L4, "vm", id="runpod"),
+    pytest.param(ComputeProvider.VAST_AI, GPUType.A100_80, "vm", id="vast-ai"),
+    pytest.param(ComputeProvider.VMWARE, GPUType.A100_80, "vm", id="vmware"),
+]
+
+
+class TestAllProvidersEmitModuleStyle:
+    @pytest.mark.parametrize("provider,gpu_type,deploy_type", _ALL_PROVIDER_CONFIGS)
+    def test_provider_emits_module_style(self, provider, gpu_type, deploy_type):
+        cfg = ComputeConfig(
+            provider=provider,
+            gpu_type=gpu_type,
+            model_name="test-model",
+            allowed_cidr="127.0.0.1/32",
+            deploy_type=deploy_type,
+        )
+        hcl = TerraformGenerator().generate(cfg)
+        assert 'module "vllm_server"' in hcl
+        assert not re.search(r'^\s*resource\s+"', hcl, re.MULTILINE)
+        if provider is ComputeProvider.VMWARE:
+            assert "modules/vllm-server" in hcl
+
+    def test_phase4_no_inline_resource_in_any_provider(self):
+        for param in _ALL_PROVIDER_CONFIGS:
+            provider, gpu_type, deploy_type = param.values
+            cfg = ComputeConfig(
+                provider=provider,
+                gpu_type=gpu_type,
+                model_name="test-model",
+                allowed_cidr="127.0.0.1/32",
+                deploy_type=deploy_type,
+            )
+            hcl = TerraformGenerator().generate(cfg)
+            assert not re.search(r'^\s*resource\s+"', hcl, re.MULTILINE), (
+                f"provider {provider} emitted an inline resource block"
+            )

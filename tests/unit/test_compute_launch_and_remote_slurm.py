@@ -399,7 +399,17 @@ class TestRemoteSlurmRESTClient:
 
 
 class TestAzureContainerAppFixes:
-    def test_acr_name_alphanumeric_no_underscores(self):
+    """Phase 4 — Azure ContainerApp stack is module-style; values flow via tfvars.
+
+    Pre-Phase-4 these tests asserted inline `azurerm_container_app`,
+    `azurerm_container_registry`, ACR name shape, and GPU SKU coverage directly
+    in the generated HCL. Those resources now live behind the vllm-server
+    module interface, so the assertions moved to: (a) thin module-style stack
+    emission (no inline `resource "..."`), and (b) the GPU type flowing through
+    `build_tfvars()`.
+    """
+
+    def test_emits_module_style_no_inline_resources(self):
         gen = TerraformGenerator()
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,
@@ -408,12 +418,15 @@ class TestAzureContainerAppFixes:
             deploy_type="containerapp",
         )
         hcl = gen.generate(config)
-        assert 'name = "gpuacr' not in hcl or "gpuacra10080" in hcl.replace("_", "")
-        for line in hcl.splitlines():
-            if "container_registry" in line and 'name' in line and 'gpuacr' in line:
-                assert "_" not in line.split('"')[1].replace("gpuacr", "", 1) or "gpuacr" in line
+        assert 'module "vllm_server"' in hcl
+        assert 'source = "./modules/vllm-server"' in hcl
+        import re
+        assert not re.search(r'^\s*resource\s+"', hcl, re.MULTILINE), (
+            "Phase 4 violation: inline resource block in ContainerApp HCL"
+        )
 
-    def test_acr_name_is_valid(self):
+    def test_acr_and_container_app_not_inline(self):
+        # Phase 4 — the inline ACR / container_app bodies moved behind the module.
         gen = TerraformGenerator()
         for gpu in [GPUType.T4, GPUType.A100_80, GPUType.A100_40, GPUType.L40S, GPUType.H100]:
             config = ComputeConfig(
@@ -423,13 +436,16 @@ class TestAzureContainerAppFixes:
                 deploy_type="containerapp",
             )
             hcl = gen.generate(config)
-            for line in hcl.splitlines():
-                if 'name = "gpuacr' in line:
-                    acr_name = line.split('"')[1]
-                    assert acr_name.isalnum(), f"ACR name {acr_name!r} must be alphanumeric"
-                    assert 5 <= len(acr_name) <= 50, f"ACR name {acr_name!r} must be 5-50 chars"
+            assert "azurerm_container_app" not in hcl, (
+                f"gpu={gpu}: inline azurerm_container_app leaked into root HCL"
+            )
+            assert "azurerm_container_registry" not in hcl, (
+                f"gpu={gpu}: inline azurerm_container_registry leaked into root HCL"
+            )
+            assert 'module "vllm_server"' in hcl
 
-    def test_gpu_sku_map_covers_all_gpu_types(self):
+    def test_gpu_type_flows_through_tfvars_for_all_gpu_types(self):
+        # Phase 4 — GPU→SKU mapping is now a tfvars concern (build_tfvars).
         gen = TerraformGenerator()
         for gpu in GPUType:
             config = ComputeConfig(
@@ -438,11 +454,12 @@ class TestAzureContainerAppFixes:
                 model_name="test",
                 deploy_type="containerapp",
             )
-            hcl = gen.generate(config)
-            assert "azurerm_container_app" in hcl
-            assert "azurerm_container_registry" in hcl
+            tfvars = gen.build_tfvars(config)
+            assert "gpu_type" in tfvars, f"gpu={gpu}: gpu_type missing from tfvars"
+            assert gpu.value in tfvars, f"gpu={gpu}: gpu value not in tfvars"
 
-    def test_container_app_has_gpu_resource_request(self):
+    def test_module_block_references_gpus_var(self):
+        # Phase 4 — GPU count flows to the module via var.gpus.
         gen = TerraformGenerator()
         config = ComputeConfig(
             provider=ComputeProvider.AZURE,
@@ -451,8 +468,7 @@ class TestAzureContainerAppFixes:
             deploy_type="containerapp",
         )
         hcl = gen.generate(config)
-        assert "gpu" in hcl.lower() or "nvidia" in hcl.lower() or "GPU" in hcl, \
-            "ContainerApp HCL should include GPU resource allocation"
+        assert "var.gpus" in hcl, "module block must reference var.gpus"
 
 
 class TestEnvVarAuthFallback:
