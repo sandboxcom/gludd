@@ -389,6 +389,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
 
     add_project_init_subparser(proj_sub)
 
+    from general_ludd.cli_project_paths import add_project_paths_subparser
+
+    add_project_paths_subparser(proj_sub)
+
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
     mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")
