@@ -1,0 +1,83 @@
+---
+- name: Verify - input_key (before) dispatched exactly two pre-key chunks
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8844', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    artifact_dir: "/tmp/gludd-stream-input-key-before"
+  tasks:
+    - name: Load stream result
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/stream-result.json"
+      register: result_raw
+
+    - name: Parse stream result
+      ansible.builtin.set_fact:
+        stream_result: "{{ result_raw.content | b64decode | from_json }}"
+
+    - name: Assert exactly two dispatches (two TRIGGER markers)
+      ansible.builtin.assert:
+        that:
+          - not stream_result.failed
+          - stream_result.dispatches == 2
+        fail_msg: "expected 2 dispatches, got {{ stream_result.dispatches | default(-1) }}: {{ stream_result }}"
+        success_msg: "input_key before: {{ stream_result.dispatches }} dispatches"
+
+    - name: Load chunk-0 (lead-up to first TRIGGER)
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/chunk-0.bin"
+      register: chunk0_raw
+
+    - name: Load chunk-1 (between first and second TRIGGER)
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/chunk-1.bin"
+      register: chunk1_raw
+
+    - name: Decode chunks
+      ansible.builtin.set_fact:
+        chunk0: "{{ chunk0_raw.content | b64decode }}"
+        chunk1: "{{ chunk1_raw.content | b64decode }}"
+
+    - name: Assert chunk-0 contains the first two INFO lines, no TRIGGER, no later lines
+      ansible.builtin.assert:
+        that:
+          - "'INFO x' in chunk0"
+          - "'INFO y' in chunk0"
+          - "'TRIGGER' not in chunk0"
+          - "'INFO z' not in chunk0"
+        fail_msg: "chunk-0 wrong content: {{ chunk0 }}"
+        success_msg: "chunk-0 is the pre-key lead-up: {{ chunk0 }}"
+
+    - name: Assert chunk-1 contains the inter-TRIGGER lines, no TRIGGER, no trailing INFO a
+      ansible.builtin.assert:
+        that:
+          - "'INFO z' in chunk1"
+          - "'INFO w' in chunk1"
+          - "'TRIGGER' not in chunk1"
+          - "'INFO a' not in chunk1"
+        fail_msg: "chunk-1 wrong content: {{ chunk1 }}"
+        success_msg: "chunk-1 is the inter-key segment: {{ chunk1 }}"
+
+    - name: Load request log
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/requests.json"
+      register: req_raw
+
+    - name: Parse request log
+      ansible.builtin.set_fact:
+        requests: "{{ (req_raw.content | b64decode | from_json).requests }}"
+
+    - name: Assert exactly two POST /admin/stream/dispatch calls
+      ansible.builtin.assert:
+        that:
+          - "requests | select('match', 'POST /admin/stream/dispatch') | list | length == 2"
+        fail_msg: "expected 2 stream dispatch POSTs, got: {{ requests }}"
+        success_msg: "2 stream dispatch POSTs recorded"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

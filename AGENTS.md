@@ -358,6 +358,69 @@ This is enforced by:
 - `tests/unit/test_todo_guard_plugin.py` — structural + behavioral pin
 - This AGENTS.md section — proactive instruction
 
+## CRITICAL: Human Permission Subjects + Intersection Policy
+
+**Human users carry a `PermissionSpec` just like agents.** Defaults ship in
+`config/permissions/human-admin.yml`, `human-operator.yml`, `human-viewer.yml`.
+The daemon config `default_human_role` (default `human-operator`) selects the
+applied spec when no per-user override exists.
+
+**Intersection rule.** When an agent dispatches a subagent, the effective
+permission is the INTERSECTION (lowest-common-subset):
+
+    effective_spec = intersection(human_spec, agent_spec, requested_spec)
+
+Narrowest path-prefix wins; allowed-hosts set-intersected; denied lists
+unioned; TTL is the min. No entity ever exercises a permission outside its own
+spec — intersection only narrows.
+
+**Escalation requests.** An agent may REQUEST additional permissions via
+`POST /admin/perm/escalation-request` ONLY after documenting ≥3 distinct
+alternatives it tried (`alternatives_tried` with `{approach, outcome}` entries).
+Fewer than 3 → 422.
+
+**Auto-approval.** Requests within the human ∩ agent intersection are
+auto-approved (the agent is asking for something it would have had but for an
+overly-narrow intersection).
+
+**Outside-intersection requests.** `pending` → surfaced to the human via a
+`HumanTodo` (`category=permission_escalation`). Human resolves via
+`gludd perm escalations {approve|deny}`. Approval mints an STS scoped to
+`(current + requested) ∩ human_spec` — humans cannot grant more than they have.
+
+Enforced by: this section (proactive), the daemon intersection evaluator, and
+the escalation request validator (`tests/unit/test_permission_intersection.py`).
+
+## CRITICAL: Human Todo System (bot→human task requests)
+
+**Agents communicate task-blockers to humans via `HumanTodo` records — NOT
+logs, NOT event errors, NOT agent todos.** A log line is not a request; a
+`HumanTodo` is.
+
+**Use cases:** permission escalation requests, external actions ("create an AWS
+account"), decisions ("which of these 3 designs?"), input requests ("paste the
+API token"), generic blockers.
+
+**Filing.** Use the `general_ludd.agent.gludd_human_todo` ansible module or
+`POST /api/human-todos`.
+
+**Parent linkage.** When a human-todo has `parent_agent_todo_id`, the parent
+agent todo transitions to `blocked_on_human` (non-runnable) until the human
+resolves it.
+
+- On `done`: parent → `pending`, agent resumes with the human's
+  `human_resolution` text injected as `human_input`.
+- On `dismissed`: parent cancelled, OR requeued with the dismissal reason so
+  the agent can try a different approach.
+
+**CLI:** `gludd human-todo {list|show|done|dismiss|in-progress|comment|watch|stats}`.
+
+**Distinct from:** `TodoModel` (agent-assigned tasks), event log (system
+occurrences), audit log (security decisions). Don't conflate them.
+
+Enforced by: this section (proactive), the `HumanTodo` model + daemon route,
+and `tests/unit/test_human_todo_*`.
+
 ## Meta-Rule: Guardrail Policy
 
 When you introduce ANY new restriction or policy on agent behavior, you MUST

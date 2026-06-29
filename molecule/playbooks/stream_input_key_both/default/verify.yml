@@ -1,0 +1,48 @@
+---
+- name: Verify - input_key (both) dispatched pre-key + post-key chunks per hit
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8845', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ mock_port }}.pid"
+    artifact_dir: "/tmp/gludd-stream-input-key-both"
+  tasks:
+    - name: Load stream result
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/stream-result.json"
+      register: result_raw
+
+    - name: Parse stream result
+      ansible.builtin.set_fact:
+        stream_result: "{{ result_raw.content | b64decode | from_json }}"
+
+    - name: Assert dispatch count (2 before + 2 after + 1 trailing after = 5)
+      ansible.builtin.assert:
+        that:
+          - not stream_result.failed
+          - stream_result.dispatches >= 4
+        fail_msg: "expected >= 4 dispatches (2 before + 2 after), got {{ stream_result.dispatches | default(-1) }}: {{ stream_result }}"
+        success_msg: "input_key both: {{ stream_result.dispatches }} dispatches"
+
+    - name: Load request log
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/requests.json"
+      register: req_raw
+
+    - name: Parse request log
+      ansible.builtin.set_fact:
+        requests: "{{ (req_raw.content | b64decode | from_json).requests }}"
+
+    - name: Assert at least 4 POST /admin/stream/dispatch calls
+      ansible.builtin.assert:
+        that:
+          - "requests | select('match', 'POST /admin/stream/dispatch') | list | length >= 4"
+        fail_msg: "expected >= 4 stream dispatch POSTs, got: {{ requests }}"
+        success_msg: "{{ requests | select('match','POST /admin/stream/dispatch') | list | length }} stream dispatch POSTs recorded"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

@@ -1,0 +1,65 @@
+---
+# Exercise gludd_stream input_key (mode=both). Each TRIGGER produces TWO
+# dispatches: a before_key chunk (the lead-up) and an after_key chunk (the
+# continuation, flushed when the next key fires or max_bytes_after is hit).
+# With two TRIGGER markers we expect 2 before + 2 after = 4 dispatches, plus
+# the trailing "INFO a" tail flushed at EOF (1 more after_key) = 5 total.
+- name: Converge - gludd_stream input_key (both) against mock daemon
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8845', true) }}"
+    fixture_log: "/tmp/gludd-input-key-both-fixture.log"
+    artifact_dir: "/tmp/gludd-stream-input-key-both"
+  tasks:
+    - name: Ensure artifact directory exists
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Reset mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Stream fixture via gludd_stream (input_key, mode=both)
+      general_ludd.agent.gludd_stream:
+        device: "{{ fixture_log }}"
+        device_kind: binary
+        buffer_size: 1048576
+        daemon_url: "http://127.0.0.1:{{ mock_port }}"
+        dispatch_trigger:
+          type: input_key
+          key: "TRIGGER"
+          mode: both
+          max_bytes_after: 1048576
+          include_key_in_after: true
+        dispatch_role_clone:
+          inject_as: stream_chunk
+          role: stream_input_key_both
+        stop_condition:
+          type: eof
+        artifact_dir: "{{ artifact_dir }}"
+      register: stream_result
+
+    - name: Persist stream result
+      ansible.builtin.copy:
+        content: "{{ stream_result | to_nice_json }}"
+        dest: "{{ artifact_dir }}/stream-result.json"
+        mode: "0644"
+
+    - name: Snapshot mock-daemon request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests"
+        method: GET
+        status_code: 200
+      register: requests_snapshot
+
+    - name: Persist request log for verify
+      ansible.builtin.copy:
+        content: "{{ requests_snapshot.json | to_nice_json }}"
+        dest: "{{ artifact_dir }}/requests.json"
+        mode: "0644"
