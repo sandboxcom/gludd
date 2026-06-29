@@ -91,6 +91,7 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         git-tracked-keys git-ls-tracked git-history-file dist-path-check git-is-ancestor git-revlist-count \
         molecule-clean plan ps-gludd kill-stale kill-gate-force \
         gate-async gate-status gate-background gate-bg-check gate-bg-wait floor-plan gated-merge ship-async write-gate-safe-hook \
+        gate-status-check gate-tail gate-kill gate-logs \
         test-hooks test-stop-hooks set-sonnet-target check-readme-status release-cut \
         verify-release-artifact \
         git-tag-rm release-recut \
@@ -194,8 +195,12 @@ help:
 	@echo "  validate              Full validation (lint + typecheck + test + ansible + healthcheck)"
 	@echo "  gate                  Full gate: lint + typecheck + collect-check + test"
 	@echo "  gate-async            Launch gate detached (non-blocking); writes .gate-status"
-	@echo "  gate-background       Launch gate via nohup (non-blocking); log -> /tmp/gludd-gate-bg.log"
-	@echo "  gate-bg-check         Tail background gate log + check if PID is still alive"
+	@echo "  gate-background       Launch gate via nohup (non-blocking); log -> .gate-logs/, PID -> .gate-background.pid"
+	@echo "  gate-status-check     Non-blocking status probe: phase, terminal marker, tail, .gate-status"
+	@echo "  gate-tail             Live tail of the latest gate log (Ctrl-C to stop)"
+	@echo "  gate-logs             List every .gate-logs/*.log with PASS/FAIL/incomplete status"
+	@echo "  gate-kill             Kill the background gate (SIGTERM, then SIGKILL after 5s)"
+	@echo "  gate-bg-check         Legacy alias for gate-status-check"
 	@echo "  gate-bg-wait          BLOCK until background gate finishes (polls every 5s)"
 	@echo "  gate-status           Print current .gate-status (RUNNING/PASS/FAIL)"
 	@echo "  collect-check         Fast collection-error gate"
@@ -412,9 +417,12 @@ gate: validate-opencode-config
 	@# OBSERVABILITY INVARIANT (see AGENTS.md "No unseen events"): every gate phase
 	@# emits a timestamped stdout marker as it STARTS, so a running gate (even
 	@# backgrounded) is visibly advancing through phases — never a silent black box.
+	@# The `=== GATE PHASE: <name> ===` markers are the canonical phase signal that
+	@# `make gate-status-check` greps for (see test_gate_background_targets.py).
 	@# MCP docs-presence guard (light, fast — pure AST/YAML parse, NOT heavy_sem).
 	@# Runs FIRST so a gludd_* module landing without MCP-usable docs fails the
 	@# gate immediately, keeping the generated MCP surface complete (PHASE 1).
+	@echo "=== GATE PHASE: mcp-docs-check ==="
 	@echo "[gate $$(date +%H:%M:%S)] phase 0/5 mcp-docs-check ..."
 	@printf "mcp-docs-check " >> .gate-status
 	@if $(MAKE) --no-print-directory mcp-docs-check > /tmp/gludd-gate-mcp.log 2>&1; then \
@@ -422,6 +430,7 @@ gate: validate-opencode-config
 	else \
 		echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] mcp-docs-check FAILED:" && cat /tmp/gludd-gate-mcp.log; \
 	fi
+	@echo "=== GATE PHASE: lint ==="
 	@echo "[gate $$(date +%H:%M:%S)] phase 1/5 lint ..."
 	@printf "lint " >> .gate-status
 	@if $(UV) run ruff check src tests --output-format concise > /dev/null 2>&1; then \
@@ -429,6 +438,7 @@ gate: validate-opencode-config
 	else \
 		echo "FAIL $$($(UV) run ruff check src tests --output-format concise 2>&1 | grep -c .)" >> .gate-status && touch .gate-failed; \
 	fi
+	@echo "=== GATE PHASE: typecheck ==="
 	@echo "[gate $$(date +%H:%M:%S)] phase 2/5 typecheck (mypy, ~30-60s) ..."
 	@printf "typecheck " >> .gate-status
 	@# Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3): mypy on 407 files is a
@@ -438,9 +448,11 @@ gate: validate-opencode-config
 	@TC_ERRS=$$($(HEAVY_SEM) $(UV) run mypy src 2>&1 | grep -c 'error:'); \
 	TC_ERRS=$${TC_ERRS:-0}; \
 	if [ "$$TC_ERRS" -le "$(MYPY_MAX)" ]; then echo "PASS $$TC_ERRS" >> .gate-status; else echo "FAIL $$TC_ERRS" >> .gate-status && touch .gate-failed; fi
+	@echo "=== GATE PHASE: collect ==="
 	@echo "[gate $$(date +%H:%M:%S)] phase 3/5 collect ..."
 	@printf "collect " >> .gate-status
 	@$(MAKE) --no-print-directory collect-check > /dev/null 2>&1 && echo "PASS 0" >> .gate-status || (echo "FAIL collection-errors" >> .gate-status && touch .gate-failed)
+	@echo "=== GATE PHASE: test ==="
 	@echo "[gate $$(date +%H:%M:%S)] phase 4/5 test (full suite, streams below; ~16 min) ..."
 	@printf "test " >> .gate-status
 	@# Delegate to scripts/run_gate.sh which provides:
@@ -456,6 +468,7 @@ gate: validate-opencode-config
 	if [ "$$EXIT" -ne 0 ] && [ ! -f .gate-failed ]; then touch .gate-failed; fi; \
 	exit $$EXIT
 	@echo "[gate $$(date +%H:%M:%S)] phase 5/5 smoke (real daemon boot) ..."
+	@echo "=== GATE PHASE: smoke ==="
 	@printf "smoke " >> .gate-status
 	@$(MAKE) --no-print-directory smoke > /tmp/gludd-gate-smoke.log 2>&1 && echo "PASS" >> .gate-status || (echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] smoke FAILED — tail:" && tail -20 /tmp/gludd-gate-smoke.log)
 	@$(MAKE) --no-print-directory .terraform-plan-check
@@ -466,51 +479,141 @@ gate: validate-opencode-config
 	@# not when it began — the full gate can run longer than 30 min as the suite grows.
 	@echo "epoch $$(date +%s)" >> .gate-status
 	@cat .gate-status
-	@if [ -f .gate-failed ]; then rm -f .gate-failed; exit 1; fi
+	@if [ -f .gate-failed ]; then \
+		rm -f .gate-failed; \
+		echo "=== GATE: FAILED ==="; \
+		exit 1; \
+	fi
+	@echo "=== GATE: PASSED ==="
 	@echo "Gate: ALL PASSED"
 
 # ---------------------------------------------------------------------------
 # gate-background: launch `make gate` via nohup so the foreground is NOT blocked.
-# Returns immediately. Output -> /tmp/gludd-gate-bg.log, PID -> /tmp/gludd-gate-bg.pid.
-# Refuses to launch a second time if the recorded PID is still alive (the gate
-# flock in scripts/run_gate.sh would reject it anyway). Check progress with
-# `tail -f /tmp/gludd-gate-bg.log`, `make gate-bg-check`, or `make gate-status`.
+# Returns immediately. Output -> .gate-logs/gate-<timestamp>.log,
+# PID -> .gate-background.pid. This is the canonical way to run a long gate
+# (~40 min) without blocking the main thread (see AGENTS.md "Main-thread command
+# restriction"). Refuses to launch a second time if the recorded PID is still
+# alive (the gate flock in scripts/run_gate.sh would reject it anyway).
+# Poll progress with: `make gate-status-check`, `make gate-tail`, or
+# `make gate-bg-check` (legacy). Stop a running gate with `make gate-kill`.
 # ---------------------------------------------------------------------------
 gate-background:
-	@if [ -f /tmp/gludd-gate-bg.pid ] && kill -0 $$(cat /tmp/gludd-gate-bg.pid) 2>/dev/null; then \
-		echo "gate-background already running (PID $$(cat /tmp/gludd-gate-bg.pid))"; \
-		echo "  tail -f /tmp/gludd-gate-bg.log"; \
-		echo "  make gate-bg-check"; \
+	@mkdir -p .gate-logs
+	@if [ -f .gate-background.pid ] && kill -0 $$(cat .gate-background.pid) 2>/dev/null; then \
+		echo "gate-background already running (PID $$(cat .gate-background.pid))"; \
+		echo "  make gate-status-check"; \
+		echo "  make gate-tail"; \
 		exit 0; \
 	fi
-	@nohup $(MAKE) --no-print-directory gate > /tmp/gludd-gate-bg.log 2>&1 & \
-	echo $$! > /tmp/gludd-gate-bg.pid
-	@echo "gate launched in background (PID $$(cat /tmp/gludd-gate-bg.pid))"
-	@echo "  tail -f /tmp/gludd-gate-bg.log"
-	@echo "  make gate-status"
-	@echo "  make gate-bg-check"
+	@LOG=$$(date +.gate-logs/gate-%Y%m%d-%H%M%S.log); \
+	echo "Launching gate in background; log: $$LOG"; \
+	nohup $(MAKE) --no-print-directory gate > $$LOG 2>&1 & echo $$! > .gate-background.pid; \
+	echo "PID: $$(cat .gate-background.pid); poll with: make gate-status-check"
+
+# Non-blocking status probe of the background gate. Prints:
+#   - whether the background gate PID is still alive (ps -p)
+#   - the current phase (greps the log for `=== GATE PHASE: <name> ===` markers)
+#   - the last 20 log lines (tail)
+#   - terminal marker if present (`=== GATE: PASSED ===` / `=== GATE: FAILED ===`)
+#   - .gate-status content if written
+# Exit 0 = still running OR finished-pass; exit 1 = finished-fail / no PID file.
+gate-status-check:
+	@if [ ! -f .gate-background.pid ]; then \
+		echo "no .gate-background.pid — gate-background not launched (or pid file removed)"; \
+		exit 1; \
+	fi
+	@PID=$$(cat .gate-background.pid); \
+	if kill -0 $$PID 2>/dev/null; then STATE=running; else STATE=finished; fi; \
+	echo "gate-background $$STATE (PID $$PID)"; \
+	LOG=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -z "$$LOG" ]; then echo "(no .gate-logs/*.log found)"; LOG=/dev/null; fi; \
+	echo "--- log: $$LOG ---"; \
+	echo "--- current phase ---"; \
+	PHASE=$$(grep -E '^=== GATE PHASE: ' $$LOG 2>/dev/null | tail -1); \
+	if [ -n "$$PHASE" ]; then echo "$$PHASE"; else echo "(no phase marker yet — gate may be in startup)"; fi; \
+	echo "--- terminal marker ---"; \
+	if grep -q '^=== GATE: PASSED ===' $$LOG 2>/dev/null; then echo "=== GATE: PASSED ==="; RESULT=pass; \
+	elif grep -q '^=== GATE: FAILED ===' $$LOG 2>/dev/null; then echo "=== GATE: FAILED ==="; RESULT=fail; \
+	else echo "(no terminal marker yet)"; RESULT=unknown; fi; \
+	echo "--- last 20 log lines ---"; \
+	tail -20 $$LOG 2>/dev/null || echo "(log empty or missing)"; \
+	echo "--- .gate-status ---"; \
+	if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status yet)"; fi; \
+	if [ "$$STATE" = running ]; then exit 0; fi; \
+	if [ "$$RESULT" = fail ]; then exit 1; fi; \
+	exit 0
+
+# Continuously tail the latest gate log for live monitoring (Ctrl-C to stop).
+gate-tail:
+	@LOG=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -z "$$LOG" ]; then echo "no .gate-logs/*.log found — run make gate-background first"; exit 1; fi; \
+	echo "tailing $$LOG (Ctrl-C to stop)"; \
+	tail -f $$LOG
+
+# List every .gate-logs/*.log file with mtime + terminal status (pass/fail/incomplete).
+gate-logs:
+	@mkdir -p .gate-logs
+	@ls -t .gate-logs/gate-*.log 2>/dev/null | while read -r L; do \
+		if grep -q '^=== GATE: PASSED ===' $$L 2>/dev/null; then STATUS=PASS; \
+		elif grep -q '^=== GATE: FAILED ===' $$L 2>/dev/null; then STATUS=FAIL; \
+		else STATUS=incomplete; fi; \
+		printf '%-22s %-12s %s\n' "$$(basename $$L)" "$$STATUS" "$$(stat -f '%Sm' $$L 2>/dev/null || stat -c '%y' $$L 2>/dev/null)"; \
+	done || echo "(no gate logs yet)"
+
+# Kill the background gate: SIGTERM, then SIGKILL after 5s if still alive.
+# Removes the PID file so gate-background can launch again. The gate flock in
+# scripts/run_gate.sh + tmp basetemp dirs are released by the killed process
+# tree (trap), so no extra cleanup is needed for normal kills.
+gate-kill:
+	@if [ ! -f .gate-background.pid ]; then echo "no .gate-background.pid — nothing to kill"; exit 0; fi
+	@PID=$$(cat .gate-background.pid); \
+	if ! kill -0 $$PID 2>/dev/null; then \
+		echo "PID $$PID not alive — removing stale .gate-background.pid"; \
+		rm -f .gate-background.pid; \
+		exit 0; \
+	fi; \
+	echo "gate-kill: sending SIGTERM to PID $$PID"; \
+	kill -TERM $$PID 2>/dev/null || true; \
+	for i in 1 2 3 4 5; do \
+		sleep 1; \
+		if ! kill -0 $$PID 2>/dev/null; then \
+			echo "gate-kill: PID $$PID terminated after SIGTERM"; \
+			rm -f .gate-background.pid; \
+			exit 0; \
+		fi; \
+	done; \
+	echo "gate-kill: SIGTERM did not take — sending SIGKILL to PID $$PID"; \
+	kill -KILL $$PID 2>/dev/null || true; \
+	rm -f .gate-background.pid; \
+	echo "gate-kill: PID $$PID killed"
 
 # Non-blocking probe of the background gate. COUNTERINTUITIVE SEMANTICS:
 # exit 0 while the gate is RUNNING, exit 1 when it has FINISHED (or died).
 # In other words, `make gate-bg-check && echo done` prints "done" while the
 # gate is still in flight — NOT when it has finished. This is so a poll loop
 # can treat "still running" as the truthy/continue state and a dead PID as
-# the terminal/error state. Pairs with gate-background's
-# /tmp/gludd-gate-bg.{log,pid}. For a blocking wait that exits 0 on finish,
-# use `make gate-bg-wait`.
+# the terminal/error state. Legacy alias for `make gate-status-check` —
+# prefer gate-status-check (richer output, same PID file). Pairs with
+# gate-background's .gate-background.pid + .gate-logs/. For a blocking wait
+# that exits 0 on finish, use `make gate-bg-wait`.
 gate-bg-check:
-	@if [ ! -f /tmp/gludd-gate-bg.pid ]; then \
-		echo "no /tmp/gludd-gate-bg.pid — gate-background not launched (or pid file removed)"; \
+	@if [ ! -f .gate-background.pid ]; then \
+		echo "no .gate-background.pid — gate-background not launched (or pid file removed)"; \
 		exit 1; \
 	fi
-	@PID=$$(cat /tmp/gludd-gate-bg.pid); \
+	@PID=$$(cat .gate-background.pid); \
 	if kill -0 $$PID 2>/dev/null; then \
 		echo "gate-background RUNNING (PID $$PID)"; STATE=running; \
 	else \
 		echo "gate-background FINISHED (PID $$PID not alive)"; STATE=finished; \
 	fi; \
-	echo "--- tail /tmp/gludd-gate-bg.log ---"; \
-	tail -40 /tmp/gludd-gate-bg.log 2>/dev/null || echo "(log empty or missing)"; \
+	LOG=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -n "$$LOG" ]; then \
+		echo "--- tail $$LOG ---"; \
+		tail -40 $$LOG 2>/dev/null || echo "(log empty or missing)"; \
+	else \
+		echo "(no .gate-logs/*.log found)"; \
+	fi; \
 	echo "--- .gate-status ---"; \
 	if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status yet)"; fi; \
 	[ "$$STATE" = running ] && exit 0 || exit 1
@@ -523,11 +626,11 @@ gate-bg-check:
 # no-unseen-events invariant in AGENTS.md). Intended use:
 #   make gate-background && make gate-bg-wait
 gate-bg-wait:
-	@if [ ! -f /tmp/gludd-gate-bg.pid ]; then \
-		echo "no /tmp/gludd-gate-bg.pid — gate-background not launched (or pid file removed)"; \
+	@if [ ! -f .gate-background.pid ]; then \
+		echo "no .gate-background.pid — gate-background not launched (or pid file removed)"; \
 		exit 1; \
 	fi
-	@PID=$$(cat /tmp/gludd-gate-bg.pid); \
+	@PID=$$(cat .gate-background.pid); \
 	echo "gate-bg-wait: waiting for gate PID $$PID (polling every 5s)"; \
 	i=0; \
 	while kill -0 $$PID 2>/dev/null; do \
@@ -536,8 +639,13 @@ gate-bg-wait:
 		sleep 5; \
 	done; \
 	echo "gate-bg-wait: PID $$PID no longer alive — gate finished"; \
-	echo "--- tail /tmp/gludd-gate-bg.log ---"; \
-	tail -40 /tmp/gludd-gate-bg.log 2>/dev/null || echo "(log empty or missing)"; \
+	LOG=$$(ls -t .gate-logs/gate-*.log 2>/dev/null | head -1); \
+	if [ -n "$$LOG" ]; then \
+		echo "--- tail $$LOG ---"; \
+		tail -40 $$LOG 2>/dev/null || echo "(log empty or missing)"; \
+	else \
+		echo "(no .gate-logs/*.log found)"; \
+	fi; \
 	echo "--- .gate-status ---"; \
 	if [ -f .gate-status ]; then cat .gate-status; else echo "(no .gate-status yet)"; fi; \
 	exit 0
@@ -707,6 +815,13 @@ healthcheck:
 
 ansible-syntax:
 	@for f in playbooks/*.yml playbooks/renderers/*.yml; do echo "Checking $$f..."; $(UV) run ansible-playbook --syntax-check "$$f" || exit 1; done
+
+# Debug target: run project_init.yml directly via ansible-playbook (bypass CoreRunner).
+debug-project-init:
+	@rm -rf /tmp/gludd-debug-pi; mkdir -p /tmp/gludd-debug-pi
+	@ANSIBLE_COLLECTIONS_PATH=$(CURDIR)/collections $(UV) run ansible-playbook $(CURDIR)/playbooks/project_init.yml -e collection_namespace=acme -e collection_name=project -e project_dir=/tmp/gludd-debug-pi -e force=false
+	@echo "=== SECOND RUN (should refuse) ==="
+	@ANSIBLE_COLLECTIONS_PATH=$(CURDIR)/collections $(UV) run ansible-playbook $(CURDIR)/playbooks/project_init.yml -e collection_namespace=acme -e collection_name=project -e project_dir=/tmp/gludd-debug-pi -e force=false || echo "exit=$$?"
 
 ansible-lint-playbooks:
 	@$(UV) run ansible-lint playbooks/roles || true

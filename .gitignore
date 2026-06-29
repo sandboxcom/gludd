@@ -17,6 +17,8 @@ build/
 *.egg-info/
 .gate-status
 .gate-failed
+.gate-background.pid
+.gate-logs/
 .test-summary
 .secrets.baseline
 

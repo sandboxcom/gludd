@@ -1285,6 +1285,41 @@ Subagents fail when they try to run long operations. To maximize success rate:
 3. Immediately dispatch 10 new subagents — one does `make ship-commit`, nine do work
 4. Repeat
 
+#### Background-gate workflow (canonical way to run a long gate)
+
+`make gate` is a ~40-minute operation that MUST NEVER run on the main thread
+(it blocks ALL subagent dispatch — see "Main-thread command restriction" above).
+The canonical replacement is the background-gate target family:
+
+- `make gate-background` — launches `make gate` via `nohup` in the background,
+  redirects output to `.gate-logs/gate-<timestamp>.log`, writes the PID to
+  `.gate-background.pid`, and returns in <1 second.
+- `make gate-status-check` — non-blocking probe: prints whether the background
+  gate is still running, the current phase (greps the log for
+  `=== GATE PHASE: <name> ===` markers), the terminal marker
+  (`=== GATE: PASSED ===` / `=== GATE: FAILED ===`), the last 20 log lines,
+  and `.gate-status`.
+- `make gate-tail` — live tail of the latest gate log (Ctrl-C to stop).
+- `make gate-logs` — lists every `.gate-logs/*.log` with mtime + PASS/FAIL/incomplete.
+- `make gate-kill` — SIGTERM then SIGKILL after 5s; removes `.gate-background.pid`.
+
+**Pattern:**
+1. Launch `make gate-background` (foreground is fine — it returns in <1s) or
+   dispatch it via a subagent.
+2. Continue other work in parallel (the pipeline stays primed at 10+ agents).
+3. Poll `make gate-status-check` from a subagent every ~60s.
+4. When the terminal marker appears, ingest the log + act on the result.
+
+**NEVER** `make gate` on the main thread. **NEVER** `make gate-background`
+on the main thread either if it would block — but `gate-background` returns in
+<1s, so it is allowed on the main thread.
+
+Enforced by: this section (proactive), `.opencode/plugin/enforce-make.ts`
+(the long-running-foreground deny message includes a `SUGGESTION` directive
+pointing to `make gate-background` + `make gate-status-check`), and
+`tests/unit/test_gate_background_targets.py` (target existence + phase markers
++ terminal markers + nohup + PID file).
+
 ### Steady-state dispatch (the 10-agent floor)
 
 The goal is a **continuous, pipelined** stream of subagent batches — not a sawtooth of "dispatch burst → drain to zero → repeat."

@@ -373,6 +373,10 @@ export default (async ({ }) => {
               "Allowed in foreground:",
               "  make lint, make typecheck, make test-count, make collect-check,",
               "  make test TESTFILE=<path>, make test NO_XDIST=1",
+              "",
+              "SUGGESTION: Run `make gate-background` instead, then `make gate-status-check`",
+              "to poll. Blocking the main thread on a 40-min gate is forbidden per",
+              "AGENTS.md (Main-thread command restriction / background-gate workflow).",
             ].join("\n"))
           }
         }
