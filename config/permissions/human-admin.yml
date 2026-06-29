@@ -5,7 +5,7 @@ parent_agent_id: null
 max_sts_ttl_seconds: 3600
 max_subagent_permissions: same_or_fewer
 capabilities:
-  - resource: file:
+  - resource: "file:"
     actions: ["read", "write"]
     constraints:
       path_prefix: "/"
