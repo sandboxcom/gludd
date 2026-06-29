@@ -2219,7 +2219,7 @@ requires-dist = [
     { name = "vllm", marker = "extra == 'local-inference'", specifier = ">=0.6.0" },
     { name = "watchdog", specifier = ">=6.0.0" },
 ]
-provides-extras = ["dev", "local-inference", "aws", "gcp", "azure", "observability"]
+provides-extras = ["dev", "local-inference", "aws", "gcp", "azure", "observability", "sandbox"]
 
 [package.metadata.requires-dev]
 dev = [

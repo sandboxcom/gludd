@@ -309,6 +309,7 @@ init: setup-dirs
 	@if [ ! -f pyproject.toml ]; then echo "ERROR: pyproject.toml missing"; exit 1; fi
 	@if command -v $(UV) >/dev/null 2>&1; then echo "Using uv..."; $(UV) sync; else echo "uv not found, using pip..."; $(PYTHON) -m venv .venv && . .venv/bin/activate && pip install -e ".[dev]"; fi
 	@$(MAKE) --no-print-directory install-hooks
+	@$(PYTHON) scripts/seed_openbao_backup_schedule.py || echo "seed_openbao_backup_schedule: skipped (non-fatal)"
 
 sync:
 	@$(UV) sync --locked
