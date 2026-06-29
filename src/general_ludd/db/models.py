@@ -852,3 +852,57 @@ class HumanTodoModel(Base):
         Index("ix_human_todos_status_category", "status", "category"),
         Index("ix_human_todos_status_priority", "status", "priority"),
     )
+
+
+def _gen_remediation_id() -> str:
+    return f"REM-{uuid4().hex[:12].upper()}"
+
+
+class RemediationActionModel(Base):
+    """Audit-trail row for every remediation action the dispatcher took.
+
+    One row per (blocked task, action kind). The dispatcher writes a row
+    whether the action succeeded, failed, or was a no-op so the operator
+    can query the full history via ``GET /admin/remediation/history`` and
+    the ``gludd remediation history`` CLI.
+
+    Additive table: participates in ``Base.metadata`` so ``create_all``
+    picks it up without a heavy migration, mirroring the
+    :class:`HumanTodoModel` and :class:`AgentMessageModel` precedent.
+    """
+
+    __tablename__ = "remediation_actions"
+
+    id: Mapped[str] = mapped_column(
+        String(32), primary_key=True, default=_gen_remediation_id
+    )
+    # The blocked task that triggered this action. Synthetic id
+    # (``HTODO:<id>``) when the finding came from a stale human-todo with
+    # no parent agent todo.
+    blocked_todo_id: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    project_id: Mapped[str | None] = mapped_column(
+        String(32),
+        ForeignKey("projects.project_id", ondelete="SET NULL"),
+        nullable=True,
+        index=True,
+    )
+    blocker_kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    action_kind: Mapped[str] = mapped_column(String(32), nullable=False, index=True)
+    # Short human-readable summary of what was done.
+    summary: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    # Free-form detail: the new todo id, the scheduled cron entry, the
+    # filed human-todo id, etc.
+    detail: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    # ``ok`` is False when the dispatcher tried and the action raised
+    # (logged for visibility, not retried inline). no_action rows are
+    # always ok=True with a reason.
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    reason: Mapped[str] = mapped_column(Text, nullable=False, default="")
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_remediation_actions_project_created", "project_id", "created_at"),
+        Index("ix_remediation_actions_blocked_kind", "blocked_todo_id", "action_kind"),
+    )

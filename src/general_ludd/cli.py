@@ -749,6 +749,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_human_todo_subparser(sub)
     human_todo_parser = sub.choices["human-todo"]
 
+    # `gludd remediation` — blocked-task detection + remediation.
+    from general_ludd.cli_remediation import add_remediation_subparser
+
+    add_remediation_subparser(sub)
+    remediation_parser = sub.choices["remediation"]
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -769,6 +775,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "connectors": connectors_parser,
         "perm": perm_parser,
         "human-todo": human_todo_parser,
+        "remediation": remediation_parser,
     }
 
     return parser, subcommand_map

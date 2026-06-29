@@ -24,6 +24,7 @@ from general_ludd.db.models import (
     PromptProfileModel,
     QueueModel,
     RelationType,
+    RemediationActionModel,
     RoleRunModel,
     SpendRecordModel,
     TaskReturnModel,
@@ -2112,5 +2113,80 @@ class HumanTodoRepository:
             .order_by(HumanTodoModel.created_at.desc())
             .limit(_DEFAULT_LIST_LIMIT)
         )
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+
+class RemediationActionRepository:
+    """Persistence for remediation audit-trail rows.
+
+    The dispatcher writes one row per action via :meth:`record`; operators
+    read the history via :meth:`list_for_project` / :meth:`list_since`.
+    Reads use the same session as the caller; writes ``flush`` so the row
+    is visible in the caller's transaction without committing.
+    """
+
+    def __init__(self, session: AsyncSession) -> None:
+        self._session = session
+
+    async def record(
+        self,
+        *,
+        blocked_todo_id: str,
+        action_kind: str,
+        blocker_kind: str,
+        summary: str = "",
+        detail: str = "{}",
+        project_id: str | None = None,
+        ok: bool = True,
+        reason: str = "",
+    ) -> RemediationActionModel:
+        row = RemediationActionModel(
+            blocked_todo_id=blocked_todo_id,
+            action_kind=action_kind,
+            blocker_kind=blocker_kind,
+            summary=summary,
+            detail=detail,
+            project_id=project_id,
+            ok=ok,
+            reason=reason,
+        )
+        self._session.add(row)
+        await self._session.flush()
+        return row
+
+    async def get(self, remediation_id: str) -> RemediationActionModel | None:
+        stmt = select(RemediationActionModel).where(
+            RemediationActionModel.id == remediation_id
+        )
+        result = await self._session.execute(stmt)
+        return result.scalar_one_or_none()
+
+    async def list_for_project(
+        self,
+        project_id: str | None = None,
+        limit: int = 100,
+        offset: int = 0,
+    ) -> list[RemediationActionModel]:
+        stmt = select(RemediationActionModel).order_by(
+            RemediationActionModel.created_at.desc()
+        )
+        if project_id is not None:
+            stmt = stmt.where(RemediationActionModel.project_id == project_id)
+        stmt = stmt.offset(max(0, offset)).limit(min(limit, _DEFAULT_LIST_LIMIT))
+        result = await self._session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def list_since(
+        self, since: datetime, project_id: str | None = None
+    ) -> list[RemediationActionModel]:
+        stmt = (
+            select(RemediationActionModel)
+            .where(RemediationActionModel.created_at >= since)
+            .order_by(RemediationActionModel.created_at.asc())
+            .limit(_DEFAULT_LIST_LIMIT)
+        )
+        if project_id is not None:
+            stmt = stmt.where(RemediationActionModel.project_id == project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())

@@ -422,25 +422,51 @@ occurrences), audit log (security decisions). Don't conflate them.
 Enforced by: this section (proactive), the `HumanTodo` model + daemon route,
 and `tests/unit/test_human_todo_*`.
 
-## CRITICAL: Remediation Keeps Projects Moving
+## CRITICAL: Don't Block Projects on Stalled Tasks
 
-**Blocked tasks do not get to wait forever.** The remediation system scans the todo + human-todo tables on a schedule and acts on stalled work so a project never silently stalls on a forgotten blocker.
+**The remediation system exists to keep projects moving.** Every blocked task
+older than its threshold triggers an action (`dispatch_agent` /
+`schedule_retry` / `file_human_todo`) so a project never silently stalls on
+a forgotten blocker. The system runs on an hourly schedule and is also
+invokable on demand.
 
-**Detection (read-only).** `BlockerDetector.scan()` returns a `BlockedTask` finding for every todo past its per-category threshold:
+**Detection (read-only).** `BlockerDetector.scan()` returns a `BlockedTask`
+finding for every todo past its per-category threshold:
 - `permission_escalation` blocks → `permission_escalation_block_hours` (default 4h).
 - `human_input` / generic blocks → `human_input_block_hours` (default 24h).
 - Chronically re-queued todos (`run_count > max_requeues_before_chronic`, default 3) → `resource_contention`.
 - Stale open human-todos past the threshold → `file_human_todo` (escalated reminder).
 
-Each finding carries a `suggested_remediation` (`schedule_retry`, `file_human_todo`, `dispatch_agent`, or `no_action`); the dispatcher may override based on operator policy.
+Each finding carries a `suggested_remediation` (`schedule_retry`,
+`file_human_todo`, `dispatch_agent`, or `no_action`); the dispatcher may
+override based on operator policy.
 
-**Chronic blockers.** `BlockerDetector.chronic_blockers()` groups recent `BLOCKED_ON_HUMAN` incidents by `(task_type, blocker_kind)` over a configurable lookback (default 7 days). Pairs crossing `min_chronic_incidents` (default 5) are surfaced as `ChronicBlocker` records — the recurring failure modes that need operator attention, not just a one-off.
+**Chronic blockers.** `BlockerDetector.chronic_blockers()` groups recent
+`BLOCKED_ON_HUMAN` incidents by `(task_type, blocker_kind)` over a
+configurable lookback (default 7 days). Pairs crossing
+`min_chronic_incidents` (default 5) are surfaced as `ChronicBlocker`
+records — the recurring failure modes that need operator attention, not
+just a one-off.
 
-**Operator surface.** Chronic blockers surface via `gludd remediation chronic-blockers`. Operators review weekly and tune the thresholds in `RemediationConfig` (via `config/remediation.yml` or env vars) when a category fires too often or too rarely.
+**Operator surface.** Chronic blockers surface via
+`gludd remediation chronic-blockers`. **Operators should review the
+chronic-blocker report weekly and address the systemic cause** (e.g. switch
+from static to OIDC credentials when `permission_escalation` recurs on the
+same task type; provision more capacity when `resource_contention` recurs).
+Tune the thresholds in `RemediationConfig` (via `config/remediation.yml` or
+env vars) when a category fires too often or too rarely.
 
-**Defaults are deliberately conservative** so a healthy project does nothing: 24h human-input threshold, 4h permission-escalation threshold, 3 re-queues before chronic, 5 incidents over 7 days. Tune up if blockers are surfaced too late; tune down if the system is noisy.
+**Defaults are deliberately conservative** so a healthy project does
+nothing: 24h human-input threshold, 4h permission-escalation threshold, 3
+re-queues before chronic, 5 incidents over 7 days, 4h retry delay. Tune up
+if blockers are surfaced too late; tune down if the system is noisy.
 
-Enforced by: this section (proactive), `src/general_ludd/remediation/blocker_detector.py`, and `tests/unit/test_remediation_*`.
+Enforced by: this section (proactive),
+`src/general_ludd/remediation/blocker_detector.py`,
+`src/general_ludd/remediation/dispatcher.py`,
+`src/general_ludd/remediation/reporter.py`, and
+`tests/unit/test_blocker_detector.py` + `tests/unit/test_remediation_dispatcher.py`
++ `tests/integration/test_remediation_scheduler.py`.
 
 ## CRITICAL: Project-Collection Precedence Contract
 

@@ -91,6 +91,7 @@ def load_startup_config(config_dir: str | None = None) -> dict[str, Any]:
         "model_profiles": [],
         "rules": [],
         "project_gludd_dir": find_project_gludd_dir(),
+        "remediation_config": None,
     }
 
     def _apply_project_overlay() -> None:
@@ -1961,6 +1962,7 @@ def create_daemon_app(
         projects,
         quantization,
         reload,
+        remediation,
         render,
         schedule,
         security,
@@ -2007,6 +2009,7 @@ def create_daemon_app(
     self_improve.register(app, daemon_state)
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
+    remediation.register(app, daemon_state)
     # Playbook web renderer (Phase 1): /api/renderers (PSK) + /render/<name> (public).
     # Registry discovery is best-effort — a missing playbooks/renderers/ dir must
     # not crash daemon startup (the router serves a 503 in that case).
