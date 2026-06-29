@@ -1,0 +1,30 @@
+---
+- name: Converge - scaffold project collection (force=false)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-role"
+  tasks:
+    - name: Invoke project_init (force=false; fresh scaffold)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.project_init
+      vars:
+        collection_namespace: acme
+        collection_name: project
+        force: false
+
+- name: Converge - re-run with force=true (overwrite path)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-role"
+  tasks:
+    - name: Invoke project_init (force=true; overwrite)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.project_init
+      vars:
+        collection_namespace: acme
+        collection_name: project
+        force: true

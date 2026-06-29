@@ -50,6 +50,24 @@ def _role_scenario(role: str) -> str:
     return f"role_{role}"
 
 
+# Scenarios that cover a role but use a non-conventional name.
+# project_init has TWO scenarios: project_init_role (scaffolding contract)
+# and project_init_override (project-tier precedence shadowing). Neither
+# matches the strict role_<name> convention, so they're mapped here.
+_ROLE_SCENARIO_ALIASES: dict[str, set[str]] = {
+    "project_init": {"project_init_role", "project_init_override"},
+    "openbao_break_glass_backup": {"openbao_break_glass_backup"},
+    "stream_input_key_both": {"stream_input_key_both"},
+}
+
+
+def _role_covered(role: str, scenarios: set[str]) -> bool:
+    """True if any covering scenario (conventional role_<name> OR an alias) exists."""
+    if _role_scenario(role) in scenarios:
+        return True
+    return bool(_ROLE_SCENARIO_ALIASES.get(role, set()) & scenarios)
+
+
 # --- The shrinking checklist -------------------------------------------------
 # Modules that DO NOT yet have a dedicated test_<module> molecule scenario.
 # Empty: every gludd_* module now has a dedicated test_gludd_* scenario,
@@ -70,12 +88,14 @@ def _role_scenario(role: str) -> str:
 # until a dedicated test_gludd_stream scenario lands. See Phase Stream in
 # TASKS.md.
 _NOT_YET_COVERED_MODULES: set[str] = {
+    "gludd_break_glass",
     "gludd_embed",
     "gludd_environment",
     "gludd_human_todo",
     "gludd_langchain_generate",
     "gludd_langgraph_decision",
     "gludd_proc_monitor",
+    "gludd_slurm_deploy",
     "gludd_stream",
 }
 # All other gludd_* modules now have molecule scenarios (W10 complete):
@@ -101,6 +121,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
 # roles/ dir during the single-home migration (2026-06-28). They do not hit
 # the daemon — scenarios are TODO but the roles are wired via FQCN.
 _NOT_YET_COVERED_ROLES: set[str] = {
+    "deploy_model_server_slurm",
     "gludd_update",
     "manage_processes",
     "observe_deploy_correlator",
@@ -109,6 +130,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "observe_latency_regression",
     "observe_saturation_capacity",
     "observe_security_signal",
+    "stream_input_key_before",
 }
 # All roles now have molecule scenarios (W10 role-coverage complete + W13 + W14 + W15):
 #   agent_task            -> role_agent_task            (8793, todo_get/worktree/agent/commit/todo_done)
@@ -211,7 +233,7 @@ class TestRoleCoverageChecklist:
     def test_inventory_partition_is_exact(self):
         roles = _role_names()
         scenarios = _scenario_names()
-        covered = {r for r in roles if _role_scenario(r) in scenarios}
+        covered = {r for r in roles if _role_covered(r, scenarios)}
         not_covered = roles - covered
 
         undeclared = not_covered - _NOT_YET_COVERED_ROLES
@@ -226,8 +248,53 @@ class TestRoleCoverageChecklist:
     def test_at_least_one_role_scenario_exists(self):
         roles = _role_names()
         scenarios = _scenario_names()
-        covered = {r for r in roles if _role_scenario(r) in scenarios}
+        covered = {r for r in roles if _role_covered(r, scenarios)}
         assert len(covered) >= 1, f"expected >= 1 role scenario, have {sorted(covered)}"
+
+
+_PROJECT_INIT_SCENARIOS: tuple[str, ...] = (
+    "project_init_role",
+    "project_init_override",
+)
+
+
+class TestProjectInitScenarios:
+    """The project_init role has two non-conventional scenarios: one for the
+    scaffolding contract, one for the project-tier override (precedence)."""
+
+    def test_project_init_scenarios_present(self):
+        scenarios = _scenario_names()
+        for name in _PROJECT_INIT_SCENARIOS:
+            assert name in scenarios, f"project_init scenario missing: {name}"
+            mol = SCENARIOS_DIR / name / "molecule.yml"
+            conv = SCENARIOS_DIR / name / "default" / "converge.yml"
+            ver = SCENARIOS_DIR / name / "default" / "verify.yml"
+            prep = SCENARIOS_DIR / name / "default" / "prepare.yml"
+            cleanup = SCENARIOS_DIR / name / "default" / "cleanup.yml"
+            assert mol.is_file(), f"{name}: molecule.yml missing"
+            assert conv.is_file(), f"{name}: default/converge.yml missing"
+            assert ver.is_file(), f"{name}: default/verify.yml missing"
+            assert prep.is_file(), f"{name}: default/prepare.yml missing"
+            assert cleanup.is_file(), f"{name}: default/cleanup.yml missing"
+
+    def test_project_init_scenarios_invoke_the_role(self):
+        for name in _PROJECT_INIT_SCENARIOS:
+            conv = SCENARIOS_DIR / name / "default" / "converge.yml"
+            text = conv.read_text()
+            assert "general_ludd.agent.project_init" in text, (
+                f"{name}: converge.yml must invoke general_ludd.agent.project_init"
+            )
+
+    def test_override_scenario_wires_precedence_env(self):
+        """project_init_override must set ANSIBLE_COLLECTIONS_PATH project-first."""
+        mol = SCENARIOS_DIR / "project_init_override" / "molecule.yml"
+        text = mol.read_text()
+        assert "ANSIBLE_COLLECTIONS_PATH" in text, (
+            "project_init_override molecule.yml must set ANSIBLE_COLLECTIONS_PATH"
+        )
+        assert "molecule_scenario_project_dir" in text or ".gludd/collections" in text, (
+            "project_init_override must put the project tier first in ANSIBLE_COLLECTIONS_PATH"
+        )
 
 
 # ---------------------------------------------------------------------------

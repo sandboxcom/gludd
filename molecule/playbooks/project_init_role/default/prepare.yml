@@ -1,0 +1,19 @@
+---
+- name: Prepare - create tmp project dir for project_init_role scenario
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-role"
+  tasks:
+    - name: Remove any prior tmp project dir
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Create fresh tmp project dir
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: "0755"

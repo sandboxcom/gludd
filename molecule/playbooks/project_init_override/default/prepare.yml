@@ -1,0 +1,56 @@
+---
+- name: Prepare - install custom override role into tmp project collection
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-override"
+    project_collection_root: "{{ project_dir }}/.gludd/collections/ansible_collections/general_ludd/agent"
+    override_role_tasks: "{{ project_collection_root }}/roles/project_init/tasks"
+  tasks:
+    - name: Remove any prior tmp project dir
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: absent
+      failed_when: false
+
+    - name: Create tmp project dir
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Create override role tasks dir
+      ansible.builtin.file:
+        path: "{{ override_role_tasks }}"
+        state: directory
+        mode: "0755"
+
+    - name: Write minimal galaxy.yml so ansible recognizes the project-tier collection
+      ansible.builtin.copy:
+        dest: "{{ project_collection_root }}/galaxy.yml"
+        mode: "0644"
+        content: |
+          ---
+          namespace: general_ludd
+          name: agent
+          version: 1.0.0
+          readme: README.md
+          authors: [project-override]
+          description: Project-tier override of general_ludd.agent
+          license: [MIT]
+          tags: []
+          dependencies: {}
+
+    - name: Install custom override tasks/main.yml (writes OVERRIDE_MARKER; does NOT write bundled scaffolding)
+      ansible.builtin.copy:
+        dest: "{{ override_role_tasks }}/main.yml"
+        mode: "0644"
+        content: |
+          ---
+          - name: Override marker — this is the PROJECT-TIER project_init, not bundled
+            ansible.builtin.copy:
+              dest: "{{ project_dir }}/OVERRIDE_MARKER"
+              mode: "0644"
+              content: "project-tier-override-ran\n"
+            when: project_dir is defined

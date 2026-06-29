@@ -1,0 +1,28 @@
+---
+driver:
+  name: default
+platforms: []
+provisioner:
+  name: ansible
+  env:
+    ANSIBLE_COLLECTIONS_PATH: "/tmp/gludd-project-init-override/.gludd/collections:${MOLECULE_PROJECT_DIRECTORY}/collections"
+  playbooks:
+    prepare: default/prepare.yml
+    converge: default/converge.yml
+    verify: default/verify.yml
+    cleanup: default/cleanup.yml
+verifier:
+  name: ansible
+scenario:
+  test_sequence:
+    - dependency
+    - cleanup
+    - destroy
+    - syntax
+    - create
+    - prepare
+    - converge
+    - side_effect
+    - verify
+    - cleanup
+    - destroy

@@ -1,0 +1,34 @@
+---
+- name: Verify - override won, bundled scaffolding absent
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-override"
+    coll_root: "{{ project_dir }}/.gludd/collections/ansible_collections/acme/project"
+  tasks:
+    - name: Assert OVERRIDE_MARKER exists (project-tier role ran)
+      ansible.builtin.stat:
+        path: "{{ project_dir }}/OVERRIDE_MARKER"
+      register: marker
+      failed_when: not marker.stat.exists
+
+    - name: Stat bundled scaffolding paths (must NOT exist)
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ coll_root }}/galaxy.yml"
+        - "{{ coll_root }}/README.md"
+        - "{{ coll_root }}/roles/.gitkeep"
+      register: bundled_stats
+
+    - name: Assert bundled scaffolding is absent (override replaced the role)
+      ansible.builtin.assert:
+        that: not item.stat.exists
+        fail_msg: "bundled scaffolding exists at {{ item.item }} — override did NOT win"
+        success_msg: "absent as expected: {{ item.item }}"
+      loop: "{{ bundled_stats.results }}"
+
+    - name: Success — override ran and bundled scaffolding absent
+      ansible.builtin.debug:
+        msg: "Override precedence proven: OVERRIDE_MARKER present, bundled galaxy.yml/README.md/.gitkeep absent"

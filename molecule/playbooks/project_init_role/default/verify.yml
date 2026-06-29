@@ -1,0 +1,55 @@
+---
+- name: Verify - assert scaffold tree and file contents
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-role"
+    coll_root: "{{ project_dir }}/.gludd/collections/ansible_collections/acme/project"
+  tasks:
+    - name: Stat full scaffold tree
+      ansible.builtin.stat:
+        path: "{{ item }}"
+      loop:
+        - "{{ coll_root }}/galaxy.yml"
+        - "{{ coll_root }}/roles/.gitkeep"
+        - "{{ coll_root }}/plugins/modules/.gitkeep"
+        - "{{ coll_root }}/plugins/module_utils/.gitkeep"
+        - "{{ coll_root }}/plugins/terraform/.gitkeep"
+        - "{{ coll_root }}/README.md"
+        - "{{ project_dir }}/.gludd/config.yml"
+      register: tree_stats
+
+    - name: Assert all scaffold paths exist
+      ansible.builtin.assert:
+        that: "{{ item.stat.exists }}"
+        fail_msg: "missing scaffold path: {{ item.item }}"
+        success_msg: "present: {{ item.item }}"
+      loop: "{{ tree_stats.results }}"
+
+    - name: Slurp galaxy.yml
+      ansible.builtin.slurp:
+        src: "{{ coll_root }}/galaxy.yml"
+      register: galaxy_raw
+
+    - name: Assert galaxy.yml content
+      ansible.builtin.assert:
+        that:
+          - "'namespace: acme' in (galaxy_raw.content | b64decode)"
+          - "'name: project' in (galaxy_raw.content | b64decode)"
+        fail_msg: "galaxy.yml content wrong: {{ galaxy_raw.content | b64decode }}"
+        success_msg: "galaxy.yml has namespace=acme name=project"
+
+    - name: Slurp config.yml
+      ansible.builtin.slurp:
+        src: "{{ project_dir }}/.gludd/config.yml"
+      register: config_raw
+
+    - name: Assert config.yml contains collection section with acme/project
+      ansible.builtin.assert:
+        that:
+          - "'collection:' in (config_raw.content | b64decode)"
+          - "'namespace: acme' in (config_raw.content | b64decode)"
+          - "'name: project' in (config_raw.content | b64decode)"
+        fail_msg: "config.yml content wrong: {{ config_raw.content | b64decode }}"
+        success_msg: "config.yml has collection section with acme/project"

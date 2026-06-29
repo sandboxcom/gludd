@@ -1,0 +1,15 @@
+---
+- name: Converge - invoke general_ludd.agent.project_init (project-tier override should win)
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-override"
+  tasks:
+    - name: Invoke project_init by FQCN (project-tier override resolves first)
+      ansible.builtin.include_role:
+        name: general_ludd.agent.project_init
+      vars:
+        collection_namespace: acme
+        collection_name: project
+        force: true

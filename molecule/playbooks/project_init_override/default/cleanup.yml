@@ -1,0 +1,13 @@
+---
+- name: Cleanup - remove tmp project dir
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    project_dir: "/tmp/gludd-project-init-override"
+  tasks:
+    - name: Remove tmp project dir
+      ansible.builtin.file:
+        path: "{{ project_dir }}"
+        state: absent
+      failed_when: false
