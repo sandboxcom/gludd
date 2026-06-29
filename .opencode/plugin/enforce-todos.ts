@@ -156,6 +156,188 @@ function responseLooksLikeSummary(text: string): boolean {
 // Returns true if TASKS.md appears in the staged diff. FAIL-OPEN -> false.
 // ============================================================================
 
+// ============================================================================
+// UNTRACKED-DELIVERABLE DETECTION (Gap 1, 2, 3)
+// The original guardrail checked ONLY todowrite state. The 2026-06-29 audit
+// proved that was insufficient: 14 subagent-produced files accumulated
+// untracked in the working tree without ever being committed, and the
+// guardrail never fired because none of them were tracked in todowrite. These
+// helpers close that hole by directly inspecting the working tree.
+// ============================================================================
+
+const DELIVERABLE_PATTERNS: readonly RegExp[] = [
+  /^tests\/.*\.py$/,
+  /^src\/.*\.(py|ts|tsx|js)$/,
+  /^docs\/design\/.*\.md$/,
+  /^collections\/.*\/modules\/.*\.py$/,
+  /^collections\/.*\/roles\/[^/]+\/main\.yml$/,
+  /^alembic\/versions\/.*\.py$/,
+  /^\.opencode\/plugin\/.*\.ts$/,
+  /^infra\/.*\.rego$/,
+  /^infra\/.*\.tf$/,
+  /^playbooks\/.*\.yml$/,
+  /^molecule\/.*\.yml$/,
+]
+
+const UNTRACKED_DELIVERABLE_THRESHOLD = 3
+
+interface GitStatus {
+  untrackedDeliverables: string[]
+  untrackedTests: string[]
+  trackedFiles: Set<string>
+}
+
+function probeWorkingTree(): GitStatus {
+  const empty: GitStatus = {
+    untrackedDeliverables: [],
+    untrackedTests: [],
+    trackedFiles: new Set(),
+  }
+  try {
+    const { execSync } = require("node:child_process")
+    const cwd = process.cwd()
+
+    let porcelain = ""
+    try {
+      porcelain = execSync("git status --porcelain", {
+        cwd,
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+    } catch {
+      return empty
+    }
+
+    const untrackedDeliverables: string[] = []
+    const untrackedTests: string[] = []
+    for (const line of porcelain.split(/\r?\n/)) {
+      if (!line.startsWith("??")) continue
+      const raw = line.slice(2).trim()
+      const p = raw.startsWith('"') && raw.endsWith('"')
+        ? raw.slice(1, -1)
+        : raw
+      if (DELIVERABLE_PATTERNS.some(re => re.test(p))) {
+        untrackedDeliverables.push(p)
+      }
+      if (/^tests\/unit\/test_.*\.py$/.test(p)) {
+        untrackedTests.push(p)
+      }
+    }
+
+    let tracked = ""
+    try {
+      tracked = execSync("git ls-files", {
+        cwd,
+        encoding: "utf8",
+        timeout: 3000,
+        stdio: ["pipe", "pipe", "pipe"],
+      })
+    } catch {
+      tracked = porcelain
+        .split(/\r?\n/)
+        .filter(l => l && !l.startsWith("??"))
+        .map(l => l.slice(3).trim().replace(/^"|"$/g, ""))
+        .join("\n")
+    }
+    const trackedFiles = new Set(
+      tracked.split(/\r?\n/).map(s => s.trim()).filter(Boolean),
+    )
+
+    return { untrackedDeliverables, untrackedTests, trackedFiles }
+  } catch {
+    return empty
+  }
+}
+
+function sourceCandidatesForTest(testPath: string): string[] {
+  const base = testPath.split("/").pop() ?? testPath
+  const m = base.match(/^test_(.+)\.py$/)
+  if (!m) return []
+  const stem = m[1]
+  return [`src/${stem}.py`, stem + ".py"]
+}
+
+function findOrphanedTests(status: GitStatus): string[] {
+  const orphans: string[] = []
+  for (const testPath of status.untrackedTests) {
+    const candidates = sourceCandidatesForTest(testPath)
+    const hasCommittedSource = candidates.some(c => {
+      if (status.trackedFiles.has(c)) return true
+      const stem = candidates[0]?.split("/").pop() ?? ""
+      if (!stem) return false
+      for (const tracked of status.trackedFiles) {
+        if (tracked.split("/").pop() === stem) return true
+      }
+      return false
+    })
+    if (hasCommittedSource) orphans.push(testPath)
+  }
+  return orphans
+}
+
+// ============================================================================
+// FREQUENCY CAP (Gap 4) — suppresses refiring within 30s per directive type.
+// ============================================================================
+
+const FREQ_CAP_PATH =
+  process.env.GLUDD_NOTHING_DROPPED_FREQ_FILE ||
+  "/tmp/gludd-nothing-dropped-last-fired.json"
+const FREQ_CAP_WINDOW_MS = 30_000
+
+type DirectiveType =
+  | "untracked-deliverables"
+  | "post-wave-sweep"
+  | "orphaned-test"
+
+function readFreqState(): Record<string, number> {
+  try {
+    if (!fs.existsSync(FREQ_CAP_PATH)) return {}
+    const raw = fs.readFileSync(FREQ_CAP_PATH, "utf8")
+    const parsed = JSON.parse(raw)
+    if (parsed && typeof parsed === "object" && !Array.isArray(parsed)) {
+      const out: Record<string, number> = {}
+      for (const [k, v] of Object.entries(parsed as Record<string, unknown>)) {
+        if (typeof v === "number") out[k] = v
+      }
+      return out
+    }
+    return {}
+  } catch {
+    return {}
+  }
+}
+
+function freqCapAllows(type: DirectiveType): boolean {
+  const state = readFreqState()
+  const last = state[type]
+  if (typeof last !== "number") return true
+  return Date.now() - last >= FREQ_CAP_WINDOW_MS
+}
+
+function recordFire(type: DirectiveType): void {
+  try {
+    const state = readFreqState()
+    state[type] = Date.now()
+    fs.writeFileSync(FREQ_CAP_PATH, JSON.stringify(state), "utf8")
+  } catch {
+    // best-effort
+  }
+}
+
+const DISPATCH_RESULT_MARKERS = [
+  "<task_result>",
+  "<task_id>",
+  "subagent result",
+  "wave",
+  "parallel task",
+]
+
+function responseMentionsDispatchResults(text: string): boolean {
+  const lower = text.toLowerCase()
+  return DISPATCH_RESULT_MARKERS.some(m => lower.includes(m))
+}
+
 function stagedChangesIncludeTasksMd(): boolean {
   try {
     const { execSync } = require("node:child_process")
@@ -185,28 +367,108 @@ export default (async () => {
     "experimental.chat.response.transform": async (_input: unknown, output: unknown) => {
       try {
         if (typeof output !== "string") return output
+
+        const directives: string[] = []
+
+        // --- Original todowrite-state check (preserved) -------------------
         const pending = readPendingTodos()
-        if (pending.length === 0) return output
-        if (!responseLooksLikeSummary(output)) return output
+        const isSummary = responseLooksLikeSummary(output)
+        if (pending.length > 0 && isSummary) {
+          directives.push([
+            "",
+            "",
+            "⛔ NOTHING-DROPPED GUARDRAIL: you have " + pending.length + " pending",
+            "todowrite items but this response is a text summary with no tool call.",
+            "Work is being dropped. RESUME WORK NOW — make a tool call that advances",
+            "the next pending item, OR explicitly mark items completed/cancelled in",
+            "todowrite with the reason.",
+            "",
+            "Pending items:",
+            ...pending.slice(0, 8).map((it, i) =>
+              "  " + (i + 1) + ". " + (it?.content ?? "(no content)") +
+              " [" + (it?.status ?? "?") + "]",
+            ),
+            pending.length > 8 ? "  ... (+" + (pending.length - 8) + " more)" : "",
+          ].join("\n"))
+        }
 
-        const directive = [
-          "",
-          "",
-          "⛔ NOTHING-DROPPED GUARDRAIL: you have " + pending.length + " pending",
-          "todowrite items but this response is a text summary with no tool call.",
-          "Work is being dropped. RESUME WORK NOW — make a tool call that advances",
-          "the next pending item, OR explicitly mark items completed/cancelled in",
-          "todowrite with the reason.",
-          "",
-          "Pending items:",
-          ...pending.slice(0, 8).map((it, i) =>
-            "  " + (i + 1) + ". " + (it?.content ?? "(no content)") +
-            " [" + (it?.status ?? "?") + "]",
-          ),
-          pending.length > 8 ? "  ... (+" + (pending.length - 8) + " more)" : "",
-        ].join("\n")
+        // --- Gap 1 + 2 + 3: working-tree deliverable detection ------------
+        // Run the working-tree probe REGARDLESS of todowrite state. Many
+        // subagent deliverables never enter todowrite; checking only the
+        // todo list missed them (the 2026-06-29 audit found 14 such files).
+        const status = probeWorkingTree()
 
-        return output + "\n" + directive
+        // Gap 1: untracked-deliverable accumulation. Fires when >=3 deliverable
+        // files accumulate alongside a summary-style response. The summary
+        // gate is required so we don't fire while the agent is mid-work.
+        if (
+          isSummary &&
+          status.untrackedDeliverables.length >= UNTRACKED_DELIVERABLE_THRESHOLD &&
+          freqCapAllows("untracked-deliverables")
+        ) {
+          recordFire("untracked-deliverables")
+          directives.push([
+            "",
+            "",
+            "⛔ UNTRACKED-DELIVERABLES GUARDRAIL: " + status.untrackedDeliverables.length,
+            "untracked deliverable files have accumulated (tests/, src/, docs/,",
+            "collections/, etc.). These were produced by subagents but never",
+            "committed. Recover them NOW — review `make git-status`, run `make",
+            "collect-check` on each, then commit. The pattern of 'produce ->",
+            "summarise -> drop' is the bug this guardrail exists to prevent.",
+            "",
+            "Untracked deliverables (first 8):",
+            ...status.untrackedDeliverables.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
+            status.untrackedDeliverables.length > 8
+              ? "  ... (+" + (status.untrackedDeliverables.length - 8) + " more)"
+              : "",
+          ].join("\n"))
+        }
+
+        // Gap 2: post-wave commit sweep. Fires when the response references
+        // dispatch results AND uncommitted deliverables exist, regardless of
+        // summary heuristic — this is the 'wave produced files -> agent read
+        // results -> about to summarise -> never commits' pattern.
+        if (
+          responseMentionsDispatchResults(output) &&
+          status.untrackedDeliverables.length > 0 &&
+          freqCapAllows("post-wave-sweep")
+        ) {
+          recordFire("post-wave-sweep")
+          directives.push([
+            "",
+            "",
+            "⛔ POST-WAVE COMMIT SWEEP: you dispatched parallel tasks and got",
+            "results. " + status.untrackedDeliverables.length + " deliverable file(s)",
+            "remain uncommitted. Before any other work, sweep the uncommitted",
+            "deliverables into atomic commits. Recovery is the deliverable now —",
+            "not new work.",
+            "",
+            "Uncommitted deliverables:",
+            ...status.untrackedDeliverables.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
+          ].join("\n"))
+        }
+
+        // Gap 3: orphaned-test detection. Fires whenever a test file is
+        // untracked while its corresponding source IS committed — regardless
+        // of summary heuristic, because this asymmetry is always a drop.
+        const orphans = findOrphanedTests(status)
+        if (orphans.length > 0 && freqCapAllows("orphaned-test")) {
+          recordFire("orphaned-test")
+          directives.push([
+            "",
+            "",
+            "⛔ ORPHANED-TEST GUARDRAIL: " + orphans.length + " test file(s) are",
+            "untracked while their corresponding source files are committed.",
+            "The tests were dropped. Commit them now.",
+            "",
+            "Orphaned tests:",
+            ...orphans.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
+          ].join("\n"))
+        }
+
+        if (directives.length === 0) return output
+        return output + "\n" + directives.join("\n")
       } catch {
         return output
       }

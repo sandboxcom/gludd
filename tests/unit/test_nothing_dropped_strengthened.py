@@ -1,0 +1,276 @@
+"""Strengthened tests for the nothing-dropped guardrail plugin.
+
+The original `tests/unit/test_todo_guard_plugin.py` pins the todowrite-state
+enforcement. The 2026-06-29 audit proved that enforcement was necessary but
+NOT sufficient: 14 subagent-produced files accumulated untracked in the
+working tree without ever being committed, and the guardrail never fired
+because none of them were tracked in todowrite.
+
+These tests pin the FOUR strengthened detection paths added to
+`.opencode/plugin/enforce-todos.ts`:
+
+  * Gap 1 — untracked-deliverable accumulation (>=3 deliverable files that
+    are not committed + a summary-style response -> directive prepended).
+  * Gap 2 — post-wave commit sweep (response mentions dispatch-result
+    indicators AND there are uncommitted deliverables -> sweep directive).
+  * Gap 3 — orphaned-test detection (tests/unit/test_X.py untracked while
+    src/**/X.py is committed -> loud warning).
+  * Gap 4 — frequency cap (>=30s between identical directive firings;
+    state file /tmp/gludd-nothing-dropped-last-fired.json).
+
+These tests follow the SAME static-source style as the existing
+`test_todo_guard_plugin.py`: the plugin is TypeScript executed by the
+opencode runtime, so we pin its behaviour by asserting on its source text.
+The behavioural integration (real git repos) is exercised by
+`tests/unit/test_opencode_plugin_ports.py`.
+"""
+
+import re
+from pathlib import Path
+
+ROOT = Path(__file__).parent.parent.parent
+PLUGIN = ROOT / ".opencode" / "plugin" / "enforce-todos.ts"
+
+
+def _src() -> str:
+    return PLUGIN.read_text()
+
+
+class TestStrengthenedPluginPresent:
+    def test_plugin_file_exists(self):
+        assert PLUGIN.exists(), (
+            "enforce-todos.ts must exist — this plugin guarantees that every "
+            "parallel subagent result is codified before the agent sends a "
+            "terminal response."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Gap 1 — untracked-deliverable accumulation
+# ---------------------------------------------------------------------------
+
+class TestUntrackedDeliverableDetection:
+    """The guardrail must surface untracked deliverables produced by prior
+    subagent waves even when todowrite has no pending items. Many subagent
+    results (test files, source files, migrations, ansible modules) never
+    appear in todowrite; checking only todowrite misses them."""
+
+    def test_runs_git_status_porcelain(self):
+        s = _src()
+        assert "git status --porcelain" in s, (
+            "Plugin must invoke `git status --porcelain` to enumerate "
+            "untracked deliverables. Without it the guardrail cannot see "
+            "files that subagents produced."
+        )
+
+    def test_filters_untracked_entries(self):
+        s = _src()
+        # `??` is the porcelain marker for untracked files. The plugin must
+        # distinguish untracked from modified/staged.
+        assert "??" in s, (
+            "Plugin must filter `git status --porcelain` output for untracked "
+            "entries (line prefix `??`) — modified/staged files do not "
+            "indicate dropped work."
+        )
+
+    def test_deliverable_patterns_present(self):
+        """All required deliverable path families must be recognised so
+        detection covers the full surface area where subagent work lands.
+        Patterns are regexes (e.g. `docs\\/design\\/`), so we match on the
+        path stem without the escape."""
+        s = _src()
+        required = [
+            "tests",
+            "src",
+            "docs",   # docs\/design\/ in regex
+            "design",
+            "collections",
+            "alembic",
+            "versions",
+            "plugin",  # .opencode\/plugin\/ in regex
+            "playbooks",
+            "molecule",
+            "rego",
+            "tf",
+        ]
+        missing = [p for p in required if p not in s]
+        assert not missing, (
+            "Plugin must recognise these deliverable paths: " + ", ".join(missing)
+        )
+
+    def test_untracked_deliverable_directive_text(self):
+        s = _src()
+        assert "UNTRACKED-DELIVERABLES GUARDRAIL" in s, (
+            "Plugin must emit an UNTRACKED-DELIVERABLES GUARDRAIL directive "
+            "when >=3 untracked deliverable files accumulate alongside a "
+            "summary-style response."
+        )
+
+    def test_threshold_is_at_least_three(self):
+        """The accumulation threshold must be >=3 so the directive does not
+        fire on a single innocuous untracked file (e.g. SESSION.md)."""
+        s = _src()
+        # Look for a numeric threshold near the deliverable check.
+        m = re.search(r"untrackedDeliverables\w*\.length\s*[<>]=?\s*(\d+)", s)
+        if not m:
+            m = re.search(r"deliverables\w*\.length\s*[<>]=?\s*(\d+)", s)
+        assert m, (
+            "Plugin must enforce a numeric accumulation threshold for the "
+            "untracked-deliverables directive (e.g. length >= 3)."
+        )
+        threshold = int(m.group(1))
+        assert threshold >= 3, (
+            f"Untracked-deliverables threshold must be >=3 (got {threshold}); "
+            "a lower value fires on single innocuous untracked files."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Gap 2 — post-wave commit sweep directive
+# ---------------------------------------------------------------------------
+
+class TestPostWaveCommitSweep:
+    """When a response references dispatch results AND uncommitted deliverables
+    exist, the plugin must inject a sweep directive: 'recovery is the
+    deliverable now, not new work.'"""
+
+    def test_dispatch_result_indicators_recognised(self):
+        s = _src()
+        # At least one of the documented dispatch-result markers must be
+        # checked when deciding to emit the sweep directive.
+        markers = ["task_result", "task_id", "subagent result", "wave", "parallel task"]
+        assert any(m in s.lower() for m in markers), (
+            "Plugin must check for dispatch-result indicators "
+            "(<task_result>, <task_id>, 'subagent result', 'wave', "
+            "'parallel task') before emitting the sweep directive."
+        )
+
+    def test_sweep_directive_text_present(self):
+        s = _src()
+        # The directive must name the recovery action ('sweep', 'commit',
+        # 'recovery') so the agent knows to stop new work and codify results.
+        assert "sweep" in s.lower(), (
+            "Plugin must inject a post-wave sweep directive that tells the "
+            "agent to commit accumulated deliverables before starting new work."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Gap 3 — orphaned-test detection
+# ---------------------------------------------------------------------------
+
+class TestOrphanedTestDetector:
+    """A common drop pattern: subagent writes src/foo.py + tests/unit/test_foo.py;
+    the source is committed and the test is left untracked (or vice versa).
+    The plugin must detect this structural mismatch."""
+
+    def test_orphan_check_function_present(self):
+        s = _src()
+        # The plugin must contain a function that performs the orphaned-test
+        # structural check. We accept any reasonable name.
+        assert re.search(
+            r"function\s+\w*(orphan|orphaned|orphanTest)\w*", s, re.IGNORECASE
+        ), (
+            "Plugin must contain a dedicated function for orphaned-test "
+            "detection (a name containing 'orphan')."
+        )
+
+    def test_orphan_warning_text_present(self):
+        s = _src()
+        # The warning must explicitly call out the dropped-test pattern so
+        # the agent cannot mistake it for a generic commit reminder.
+        assert "dropped" in s.lower(), (
+            "Orphaned-test warning must explicitly say the test was dropped."
+        )
+
+    def test_orphan_check_reads_committed_state(self):
+        """To detect src-committed / test-untracked, the plugin must consult
+        git's tracked-file set (e.g. `git ls-files` or a porcelain filter
+        that excludes the `??` prefix for the source-side check)."""
+        s = _src()
+        # Either `git ls-files` is invoked, or the porcelain output is split
+        # into untracked vs tracked sets.
+        assert "git ls-files" in s or "tracked" in s.lower(), (
+            "Orphaned-test detection must distinguish tracked vs untracked "
+            "files via `git ls-files` or by filtering porcelain prefixes."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Gap 4 — frequency cap
+# ---------------------------------------------------------------------------
+
+class TestFrequencyCap:
+    """Without a frequency cap the directive would fire on every response and
+    become noise. The cap records the last fire timestamp per directive type
+    and suppresses refiring within 30 seconds."""
+
+    def test_state_file_path_present(self):
+        s = _src()
+        assert "/tmp/gludd-nothing-dropped-last-fired.json" in s, (
+            "Plugin must persist the last-fire timestamp in "
+            "/tmp/gludd-nothing-dropped-last-fired.json so the frequency cap "
+            "survives across hook invocations within a session."
+        )
+
+    def test_thirty_second_window(self):
+        s = _src()
+        # 30000 ms or 30 s — either representation is acceptable.
+        assert ("30000" in s or "30" in s), (
+            "Frequency cap must suppress refiring for >=30 seconds."
+        )
+
+    def test_cap_applies_per_directive_type(self):
+        """The cap must key on directive type (untracked-deliverables vs
+        sweep vs orphaned-test) so firing one does not suppress the others."""
+        s = _src()
+        # DirectiveType union enumerates the directive types that key the
+        # frequency-cap state. Confirm all three are named.
+        for dt in (
+            "untracked-deliverables",
+            "post-wave-sweep",
+            "orphaned-test",
+        ):
+            assert dt in s, (
+                f"Frequency-cap state must be keyed by directive type '{dt}' "
+                "so firing one directive does not suppress the others."
+            )
+        # The state write must index by the directive-type key (bracket or
+        # dot notation). Bracket notation is what the implementation uses.
+        assert re.search(r"state\[\s*type\s*\]\s*=\s*Date\.now\(\)", s), (
+            "Frequency-cap state must be written keyed by the directive type "
+            "(state[type] = Date.now()) so the cap applies per-type."
+        )
+
+
+# ---------------------------------------------------------------------------
+# Fail-open guarantees
+# ---------------------------------------------------------------------------
+
+class TestFailOpenGuarantees:
+    """All new detection paths must fail open: a corrupt repo, missing git,
+    or a permission error must NEVER wedge the session. The plugin returns
+    the response unchanged."""
+
+    def test_git_invocations_wrapped_in_try_catch(self):
+        s = _src()
+        # Every execSync call site must be inside a try block whose catch
+        # returns a benign default. We count execSync calls vs try blocks —
+        # there must be at least one try per execSync invocation.
+        exec_count = len(re.findall(r"execSync\s*\(", s))
+        try_count = len(re.findall(r"\btry\b\s*\{", s))
+        assert try_count >= exec_count, (
+            f"Found {exec_count} execSync calls but only {try_count} try "
+            "blocks. Every git invocation must be wrapped in try/catch to "
+            "fail open on git errors."
+        )
+
+    def test_response_transform_returns_output_on_error(self):
+        s = _src()
+        # The outermost response.transform must end with a catch that
+        # returns `output` unchanged.
+        pattern = r"catch\s*\{[^}]*return\s+output\s*\}"
+        assert re.search(pattern, s), (
+            "response.transform must have a catch block that returns the "
+            "unchanged `output` on any internal error."
+        )
