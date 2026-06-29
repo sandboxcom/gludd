@@ -422,6 +422,26 @@ occurrences), audit log (security decisions). Don't conflate them.
 Enforced by: this section (proactive), the `HumanTodo` model + daemon route,
 and `tests/unit/test_human_todo_*`.
 
+## CRITICAL: Remediation Keeps Projects Moving
+
+**Blocked tasks do not get to wait forever.** The remediation system scans the todo + human-todo tables on a schedule and acts on stalled work so a project never silently stalls on a forgotten blocker.
+
+**Detection (read-only).** `BlockerDetector.scan()` returns a `BlockedTask` finding for every todo past its per-category threshold:
+- `permission_escalation` blocks → `permission_escalation_block_hours` (default 4h).
+- `human_input` / generic blocks → `human_input_block_hours` (default 24h).
+- Chronically re-queued todos (`run_count > max_requeues_before_chronic`, default 3) → `resource_contention`.
+- Stale open human-todos past the threshold → `file_human_todo` (escalated reminder).
+
+Each finding carries a `suggested_remediation` (`schedule_retry`, `file_human_todo`, `dispatch_agent`, or `no_action`); the dispatcher may override based on operator policy.
+
+**Chronic blockers.** `BlockerDetector.chronic_blockers()` groups recent `BLOCKED_ON_HUMAN` incidents by `(task_type, blocker_kind)` over a configurable lookback (default 7 days). Pairs crossing `min_chronic_incidents` (default 5) are surfaced as `ChronicBlocker` records — the recurring failure modes that need operator attention, not just a one-off.
+
+**Operator surface.** Chronic blockers surface via `gludd remediation chronic-blockers`. Operators review weekly and tune the thresholds in `RemediationConfig` (via `config/remediation.yml` or env vars) when a category fires too often or too rarely.
+
+**Defaults are deliberately conservative** so a healthy project does nothing: 24h human-input threshold, 4h permission-escalation threshold, 3 re-queues before chronic, 5 incidents over 7 days. Tune up if blockers are surfaced too late; tune down if the system is noisy.
+
+Enforced by: this section (proactive), `src/general_ludd/remediation/blocker_detector.py`, and `tests/unit/test_remediation_*`.
+
 ## CRITICAL: Project-Collection Precedence Contract
 
 Each project maintained by gludd has a `.gludd/collections/` directory for project-specific ansible roles/modules. Search order (highest precedence first):
@@ -1343,6 +1363,28 @@ A response with 1–4 task dispatches is a **policy violation** when ≥3 known 
 **Never**: make a single-task-dispatch message and wait for the result when ≥3 work items are known. Either fan out wider, or do non-blocking work inline while the wave runs.
 
 This rule exists because the agent repeatedly claimed "dispatching 10 parallel agents" but delivered 1-3 in sequence, serializing work that should have been concurrent. The floor plugin (enforce-floor.ts) blocks non-dispatch tool calls when live < 10 and GLUDD_FLOOR_ENFORCE=1; this prompt rule is the proactive layer that prevents the breach from happening in the first place.
+
+## CRITICAL: Long-Running Operations MUST Be Backgrounded
+
+**Any operation expected to take more than ~30 seconds MUST run in the background and be polled from a subagent — NEVER in the foreground on the main thread.** This is the same anti-pattern as stopping to ask permission: both burn the only non-delegatable resource (main-thread wall time) on something a subagent could own.
+
+**The pattern (mandatory):**
+1. Launch via `make <thing>-background` (canonical: `make gate-background`). For operations without a `-background` target, use `nohup make <thing> > .gate-logs/<thing>-<ts>.log 2>&1 &` so output is captured and observable.
+2. Continue other work — keep the subagent pool at the 10-agent floor.
+3. Poll status from a subagent every ~60s (`make gate-status-check` for the gate; `tail` the log for ad-hoc ops). NEVER poll from the main thread.
+4. When the terminal marker appears, ingest the result and act.
+
+**Plugin enforcement.** `.opencode/plugin/enforce-make.ts` (`tool.execute.before`) recognizes the foreground long-op anti-pattern: a `make gate` / `make test` / `make qa` / `make validate` / `make test-e2e` / `make ansible-syntax` invocation on the main thread is DENIED, and the deny message includes a `SUGGESTION` directive pointing at `make gate-background` + `make gate-status-check`. The block is structural, not advisory — do not attempt to bypass it by splitting the command or running a sibling target.
+
+**Progress markers (per the "No Unseen Events" rule).** While a background op runs, the orchestrator MUST emit observable progress:
+- The `-background` make targets stream phase markers (`=== GATE PHASE: <name> ===`) to their log file.
+- Polling subagents report phase + last-line-of-output on each tick, not just "still running."
+- On failure, the captured log is surfaced (see the gate `smoke` phase) — never swallowed.
+
+**Never:**
+- Run a multi-minute operation in the foreground "just this once." The plugin will deny it.
+- Launch a background op and go silent — emit a 1-line status between poll cycles.
+- Wire an auto-relaunching watcher for a long background op (see the ZOMBIE rule in "Agent At-Rest / Re-Dispatch Policy").
 
 ## Codify Improvements (Meta-Rule)
 
