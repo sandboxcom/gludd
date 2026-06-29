@@ -70,7 +70,6 @@ class TestFlow1Intersection:
         returns PermissionSpecParser.intersection(human_spec, agent_spec)."""
         from general_ludd.event_loop.loop import EventLoop
         from general_ludd.security.permissions import (
-            Capability,
             PermissionSpecParser,
             default_human_spec,
         )
@@ -240,7 +239,12 @@ class TestFlow2EscalationRequest:
                     Capability(
                         resource="secret:openbao",
                         actions=["read"],
-                        constraints={"openbao_paths": ["secret/data/gludd/*"]},
+                        constraints={
+                            "openbao_paths": [
+                                "secret/data/gludd/*",
+                                "secret/data/gludd/build/*",
+                            ]
+                        },
                     ),
                 ],
             )
@@ -275,7 +279,7 @@ class TestFlow2EscalationRequest:
         """When the request is OUTSIDE the human ∩ agent intersection, the
         escalation endpoint must file a HumanTodo(category=permission_escalation)
         so the human can see it in their queue."""
-        engine, factory, client, app = await _make_app(monkeypatch)
+        engine, _factory, client, app = await _make_app(monkeypatch)
         try:
             # Narrow the human+agent so the requested cap is OUTSIDE.
             from general_ludd.security.permissions import (
@@ -460,7 +464,7 @@ class TestFlow3HumanResolves:
             )
             assert resp.status_code == 200, resp.text
             # The escalation row MUST reflect the resolution.
-            resp2 = await client.get("/admin/perm/escalations")
+            resp2 = await client.get("/admin/perm/escalations", headers=AUTH)
             rows = resp2.json()["items"]
             matching = [r for r in rows if r["id"] == esc_id]
             assert matching, f"escalation {esc_id} not found"

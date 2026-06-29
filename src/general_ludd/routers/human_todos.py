@@ -285,6 +285,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
             }:
                 try:
                     import json as _json2
+
                     from general_ludd.routers.security import (
                         _sync_escalation_from_human_todo,
                     )

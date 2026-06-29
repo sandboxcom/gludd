@@ -5,6 +5,7 @@ PSK-gated centrally by the daemon's ``auth_and_stats_middleware`` (every
 """
 from __future__ import annotations
 
+import contextlib
 import json
 import logging
 from datetime import UTC, datetime
@@ -204,10 +205,8 @@ async def _sync_escalation_from_human_todo(
     esc_id: int | None = None
     for t in tags or []:
         if isinstance(t, str) and t.startswith("escalation:"):
-            try:
+            with contextlib.suppress(ValueError):
                 esc_id = int(t.split(":", 1)[1])
-            except ValueError:
-                pass
     if esc_id is None:
         return
     for esc in store:
