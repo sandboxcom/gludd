@@ -1,0 +1,58 @@
+---
+# stream_input_key_before — handles a single pre-key chunk emitted by
+# gludd_stream with dispatch_trigger.type=input_key, mode=before.
+#
+# Invoked once per key hit. The cloned role receives:
+#   stream_chunk            -> path to artifact_dir/chunk-<index>.bin
+#   stream_chunk_position   -> "before_key" (always, for mode=before)
+#   stream_chunk_index      -> 0-based dispatch counter
+#   stream_key_hit          -> the matched key (UTF-8 if decodable, else hex)
+#
+# The role records a per-dispatch manifest so verify plays (and downstream
+# consumers) can confirm what was received without re-reading the binary
+# chunk. REPORT-ONLY: never mutates the repo or the daemon.
+
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Slurp chunk payload (best-effort decode for manifest)
+  ansible.builtin.slurp:
+    src: "{{ stream_chunk | default(omit) }}"
+  register: _sikb_chunk_raw
+  when: stream_chunk is defined
+  failed_when: false
+
+- name: Decode chunk payload (UTF-8 best-effort)
+  ansible.builtin.set_fact:
+    _sikb_chunk_text: >-
+      {%- if _sikb_chunk_raw is defined and _sikb_chunk_raw.content is defined -%}
+        {{ (_sikb_chunk_raw.content | b64decode).decode('utf-8', errors='replace') }}
+      {%- else -%}
+        ""
+      {%- endif -%}
+
+- name: Write per-dispatch manifest
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'stream_input_key_before',
+        'stream_chunk': stream_chunk | default(''),
+        'stream_chunk_position': stream_chunk_position | default('before_key'),
+        'stream_chunk_index': stream_chunk_index | default(0) | int,
+        'stream_key_hit': stream_key_hit | default(''),
+        'chunk_bytes': _sikb_chunk_text | length,
+        'chunk_preview': _sikb_chunk_text[:200]
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/dispatch-{{ stream_chunk_index | default(0) | int }}-manifest.json"
+    mode: "0644"
+
+- name: Report dispatch handling
+  ansible.builtin.debug:
+    msg: >-
+      stream_input_key_before: index={{ stream_chunk_index | default(0) }}
+      position={{ stream_chunk_position | default('before_key') }}
+      key={{ stream_key_hit | default('') }}
+      bytes={{ _sikb_chunk_text | length }}

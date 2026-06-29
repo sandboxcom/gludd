@@ -1,0 +1,83 @@
+---
+# stream_input_key_both — handles chunks emitted by gludd_stream with
+# dispatch_trigger.type=input_key, mode=both.
+#
+# Each key hit produces TWO dispatches that share stream_chunk_index:
+#   - stream_chunk_position == "before_key"  (the lead-up to the key)
+#   - stream_chunk_position == "after_key"   (the continuation, flushed on
+#                                             the next key hit or max_bytes_after)
+# A trailing after_key chunk is emitted at EOF.
+#
+# The cloned role receives:
+#   stream_chunk            -> path to artifact_dir/chunk-<index>.bin
+#   stream_chunk_position   -> "before_key" | "after_key"
+#   stream_chunk_index      -> per-key-hit counter (shared by the pair)
+#   stream_key_hit          -> the matched key (UTF-8 if decodable, else hex)
+#
+# The role branches on stream_chunk_position and records a per-dispatch
+# manifest so verify plays (and downstream consumers) can confirm what was
+# received without re-reading the binary chunk. REPORT-ONLY.
+
+- name: Ensure artifact directory exists
+  ansible.builtin.file:
+    path: "{{ artifact_dir }}"
+    state: directory
+    mode: "0755"
+
+- name: Slurp chunk payload (best-effort decode for manifest)
+  ansible.builtin.slurp:
+    src: "{{ stream_chunk | default(omit) }}"
+  register: _sikb_chunk_raw
+  when: stream_chunk is defined
+  failed_when: false
+
+- name: Decode chunk payload (UTF-8 best-effort)
+  ansible.builtin.set_fact:
+    _sikb_chunk_text: >-
+      {%- if _sikb_chunk_raw is defined and _sikb_chunk_raw.content is defined -%}
+        {{ (_sikb_chunk_raw.content | b64decode).decode('utf-8', errors='replace') }}
+      {%- else -%}
+        ""
+      {%- endif -%}
+
+- name: Write per-dispatch manifest (before_key segment)
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'stream_input_key_both',
+        'segment': 'before_key',
+        'stream_chunk': stream_chunk | default(''),
+        'stream_chunk_position': stream_chunk_position | default('before_key'),
+        'stream_chunk_index': stream_chunk_index | default(0) | int,
+        'stream_key_hit': stream_key_hit | default(''),
+        'chunk_bytes': _sikb_chunk_text | length,
+        'chunk_preview': _sikb_chunk_text[:200]
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/dispatch-{{ stream_chunk_index | default(0) | int }}-before-manifest.json"
+    mode: "0644"
+  when: stream_chunk_position | default('before_key') == 'before_key'
+
+- name: Write per-dispatch manifest (after_key segment)
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'stream_input_key_both',
+        'segment': 'after_key',
+        'stream_chunk': stream_chunk | default(''),
+        'stream_chunk_position': stream_chunk_position | default('after_key'),
+        'stream_chunk_index': stream_chunk_index | default(0) | int,
+        'stream_key_hit': stream_key_hit | default(''),
+        'chunk_bytes': _sikb_chunk_text | length,
+        'chunk_preview': _sikb_chunk_text[:200]
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/dispatch-{{ stream_chunk_index | default(0) | int }}-after-manifest.json"
+    mode: "0644"
+  when: stream_chunk_position | default('after_key') == 'after_key'
+
+- name: Report dispatch handling
+  ansible.builtin.debug:
+    msg: >-
+      stream_input_key_both: index={{ stream_chunk_index | default(0) }}
+      position={{ stream_chunk_position | default('before_key') }}
+      key={{ stream_key_hit | default('') }}
+      bytes={{ _sikb_chunk_text | length }}

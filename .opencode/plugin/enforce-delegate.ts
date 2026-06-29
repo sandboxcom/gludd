@@ -37,7 +37,16 @@ const FORCE_DELEGATE_GRACE = parseInt(process.env.GLUDD_FORCE_DELEGATE_GRACE || 
 const FORCE_DELEGATE_MAXBLOCK = parseInt(process.env.GLUDD_FORCE_DELEGATE_MAXBLOCK || "4", 10)
 const FORCE_DELEGATE_STATE = process.env.GLUDD_FORCE_DELEGATE_STATE || "/tmp/gludd-force-delegate.json"
 
-const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak"
+// MAINTHREAD STREAK (2026-06-29 strengthening): consecutive main-thread mutating
+// tool calls with no intervening dispatch. After MAINTHREAD_THRESHOLD (default
+// 4) consecutive calls, the 5th is HARD-DENIED. Default ON; disable with
+// GLUDD_FORCE_DELEGATE=0 (same env var as the opt-in targeted force-delegate
+// gate, but inverted polarity: the streak blocker is default-on so inline
+// grinding is blocked even when the opt-in gate is off). State file is a
+// separate JSON file so the nothing-dropped plugin's frequency caps cannot
+// interfere.
+const MAINTHREAD_STREAK_ENABLED = process.env.GLUDD_FORCE_DELEGATE !== "0"
+const MAINTHREAD_STREAK_FILE = process.env.GLUDD_MAINTHREAD_STREAK_FILE || "/tmp/gludd-mainthread-streak.json"
 const MAINTHREAD_THRESHOLD = parseInt(process.env.GLUDD_MAINTHREAD_THRESHOLD || "4", 10)
 
 const DISK_DANGER_GB = parseFloat(process.env.GLUDD_DISK_DANGER_GB || "2.5")
@@ -421,6 +430,7 @@ function isDelegateTool(tool: string): boolean {
 
 function mainthreadBudgetBefore(tool: string): string | null {
   try {
+    if (!MAINTHREAD_STREAK_ENABLED) return null
     if (!isMainthreadTool(tool)) return null
     const streak = readStreak()
     if (streak < MAINTHREAD_THRESHOLD) return null
@@ -433,12 +443,13 @@ function mainthreadBudgetBefore(tool: string): string | null {
     writeStreak(rearm)
 
     return [
-      `MAIN-THREAD BUDGET: ${streak} main-thread tool calls in a row with no delegation,`,
-      `and only ${live} subagent(s) live (target ${TARGET}). THIS is the grind-inline`,
-      `pattern that drains multitasking. Hand the remaining chunk to a task/agent`,
-      `NOW instead of doing it inline — that resets this budget.`,
-      `(If subagent dispatch is blocked by a rate-limit/quota, this is expected;`,
-      `resume delegating once it clears.)`,
+      `MAIN-THREAD STREAK BLOCK: ${streak} consecutive main-thread mutating tool`,
+      `calls with no intervening dispatch, and only ${live} subagent(s) live`,
+      `(target ${TARGET}). THIS is the grind-inline pattern that drains`,
+      `multitasking. The 5th+ call is HARD-DENIED. Hand the remaining chunk to a`,
+      `task/agent NOW instead of doing it inline — a dispatch resets this streak.`,
+      `Set GLUDD_FORCE_DELEGATE=0 to disable. (If subagent dispatch is blocked by a`,
+      `rate-limit/quota, this is expected; resume delegating once it clears.)`,
     ].join(" ")
   } catch {
     return null

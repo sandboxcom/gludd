@@ -57,7 +57,10 @@ function isDispatchTool(tool: string): boolean {
 // Open-work probe: only block when the repo actually has pending work. Avoids
 // wedging a session where the floor is breached because the work is genuinely
 // done. Signals (any one triggers "open work"): ratchet.yml entries, the
-// multitasking backlog file present, or uncommitted git changes.
+// multitasking backlog file present, uncommitted git changes, OR a live
+// todowrite list with pending/in_progress items (state file mirror at
+// /tmp/gludd-todowrite-state.json written by enforce-todos.ts). The todowrite
+// check closes the hole where the agent has pending todos but a clean tree.
 // FAIL-OPEN: any error -> false (don't block on a probe bug).
 function openWorkExists(): boolean {
   try {
@@ -70,6 +73,19 @@ function openWorkExists(): boolean {
     }
     const backlog = path.join(process.cwd(), "scripts", "multitasking_backlog.json")
     if (fs.existsSync(backlog)) return true
+    // Todowrite state mirror — written by enforce-todos.ts whenever the agent
+    // carries pending/in_progress items. Best-effort: absent file => no signal.
+    const todoState = process.env.GLUDD_TODOWRITE_STATE || "/tmp/gludd-todowrite-state.json"
+    try {
+      if (fs.existsSync(todoState)) {
+        const todos = JSON.parse(fs.readFileSync(todoState, "utf8"))
+        if (Array.isArray(todos)) {
+          const hasPending = todos.some((t: any) =>
+            (t.status === "pending" || t.status === "in_progress"))
+          if (hasPending) return true
+        }
+      }
+    } catch { /* malformed mirror -> ignore */ }
     const { execSync } = require("node:child_process")
     const status = execSync("git status --porcelain", {
       cwd: process.cwd(),
@@ -129,13 +145,12 @@ export default (async ({ }) => {
         return {
           permissionDecision: "deny" as const,
           message: [
-            "⛔ TOOL DENIED — AGENT-FLOOR BREACH (default-enforced).",
-            `Only ~${active} agents are streaming; floor=${FLOOR}, target=${TARGET}.`,
-            "Open work is pending (ratchet/backlog/uncommitted changes). This non-dispatch",
-            `tool ('${tool}') is BLOCKED until the floor is refilled. DISPATCH ≥ ${need}`,
-            "more subagents via task/agent/workflow on DISJOINT work NOW — those dispatch",
-            "tools are explicitly ALLOWED (never blocked). After refilling toward target,",
-            "resume this step.",
+            `Live subagent count is ${active} (< floor ${FLOOR}). Dispatch a wave`,
+            `BEFORE continuing inline work. Set GLUDD_FLOOR_ENFORCE=0 to disable.`,
+            "",
+            `(Need ~${need} more dispatch(es) to reach target ${TARGET}. Dispatch tools`,
+            "task/agent/workflow are explicitly ALLOWED — never blocked. Open work is",
+            "pending: ratchet/backlog/todowrite/uncommitted. Refill the pool, then resume.)",
           ].join("\n"),
         }
       } catch {
