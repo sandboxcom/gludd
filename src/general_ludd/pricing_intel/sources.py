@@ -1370,7 +1370,7 @@ class GCPPricingSource:
         optional dep) is not installed; tests mock this method to avoid the
         network/dep.
         """
-        from google.cloud import billing  # type: ignore[import-not-found]
+        from google.cloud import billing
 
         return billing.CloudCatalogClient()
 

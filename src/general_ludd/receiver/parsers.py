@@ -418,7 +418,7 @@ def _otlp_load_protobuf(payload: bytes, signal: str) -> dict[str, Any] | None:
     ``ingest_formats``: if ``opentelemetry-proto`` is not installed, fail soft.
     """
     try:
-        from google.protobuf.json_format import MessageToDict  # type: ignore[import-untyped]
+        from google.protobuf.json_format import MessageToDict
 
         if signal == "logs":
             from opentelemetry.proto.collector.logs.v1.logs_service_pb2 import (  # type: ignore[import-not-found]
