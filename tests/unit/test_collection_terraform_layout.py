@@ -29,6 +29,20 @@ _PROJECT = Path(__file__).resolve().parent.parent.parent
 _TRUST_DATA = _PROJECT / "infra" / "terraform" / "policies" / "data.json"
 _CORE_POLICIES = _PROJECT / "infra" / "terraform" / "policies"
 _S3_FIXTURE = _PROJECT / "tests" / "fixtures" / "terraform" / "s3_public_read_fail" / "tfplan.json"
+_EXAMPLE_POLICY = (
+    _PROJECT
+    / "collections"
+    / "ansible_collections"
+    / "general_ludd"
+    / "agent"
+    / "plugins"
+    / "terraform"
+    / "policies"
+    / "example_tag_enforcement.rego"
+)
+_EXAMPLE_TAG_FIXTURE = (
+    _PROJECT / "tests" / "fixtures" / "terraform" / "example_tag_enforcement" / "tfplan.json"
+)
 
 _VALID_MAIN_TF = textwrap.dedent("""\
     terraform {
@@ -190,3 +204,57 @@ def test_import_issue_is_dataclass() -> None:
     issue = ImportIssue(severity="error", message="boom")
     assert issue.severity == "error"
     assert issue.message == "boom"
+
+
+def test_example_tag_enforcement_policy_uses_plan_json_shape() -> None:
+    """example_tag_enforcement.rego MUST use the terraform-plan JSON input path
+    (input.planned_values.root_module.resources[_]) — NOT input.resource[_].
+    Guards against the regression where the example diverged from core.rego's
+    shape and silently never matched anything."""
+    text = _EXAMPLE_POLICY.read_text(encoding="utf-8")
+    assert "input.resource[" not in text, (
+        "example_tag_enforcement.rego must not use the bogus `input.resource[_]` path; "
+        "it must use input.planned_values.root_module.resources[_] (and child_modules) "
+        "to match core.rego's shape."
+    )
+    assert "input.planned_values.root_module.resources[_]" in text, (
+        "example_tag_enforcement.rego must reference the canonical plan-JSON path."
+    )
+
+
+def test_example_tag_enforcement_policy_fires_on_missing_environment_tag() -> None:
+    """Runs the shipped example policy against the example_tag_enforcement fixture.
+
+    Skips cleanly when conftest/opa are absent. The fixture contains one bucket
+    WITH Environment (passes) and one WITHOUT (denied), so a correct policy
+    emits exactly one denial naming the missing tag.
+    """
+    if shutil.which("conftest") is None or shutil.which("opa") is None:
+        pytest.skip("conftest/opa not installed")
+    if not _EXAMPLE_TAG_FIXTURE.is_file():
+        pytest.skip("example_tag_enforcement fixture not yet created")
+
+    example_policy_dir = _EXAMPLE_POLICY.parent
+    proc = subprocess.run(
+        [
+            "conftest",
+            "test",
+            "-p",
+            str(example_policy_dir),
+            str(_EXAMPLE_TAG_FIXTURE),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert proc.returncode != 0, (
+        f"expected the example policy to deny the missing-Environment bucket; "
+        f"got exit 0.\nstdout:\n{proc.stdout}\nstderr:\n{proc.stderr}"
+    )
+    combined = proc.stdout + proc.stderr
+    assert "missing tags.Environment" in combined, (
+        f"expected 'missing tags.Environment' denial in:\n{combined}"
+    )
+    assert "aws_s3_bucket.with_env" not in combined, (
+        f"the compliant bucket should NOT be denied:\n{combined}"
+    )
