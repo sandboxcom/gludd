@@ -422,6 +422,26 @@ occurrences), audit log (security decisions). Don't conflate them.
 Enforced by: this section (proactive), the `HumanTodo` model + daemon route,
 and `tests/unit/test_human_todo_*`.
 
+## CRITICAL: Project-Collection Precedence Contract
+
+Each project maintained by gludd has a `.gludd/collections/` directory for project-specific ansible roles/modules. Search order (highest precedence first):
+
+1. **PROJECT** — `<project_root>/.gludd/collections/`
+2. **USER** — `${XDG_CONFIG_HOME:-~/.config}/gludd/collections/`
+3. **BUNDLED** — `<install_root>/collections/` (the `general_ludd.agent` canonical home)
+
+A role/module FQCN present in a higher tier SHADOWS the same FQCN in lower tiers. To override `general_ludd.agent.project_init` at the project level, place a custom role at `<project>/.gludd/collections/ansible_collections/general_ludd/agent/roles/project_init/` — the precedence system handles the shadowing automatically.
+
+**`gludd project init`** scaffolds the project collection via the `general_ludd.agent.project_init` role (NOT Python). Operators override that role to customize the scaffold (add pre-commit hooks, license headers, custom directory layout).
+
+**`gludd project paths`** prints the resolved precedence table for diagnostics.
+
+**Wiring**: at daemon startup and on project switch, `AnsibleRunnerAdapter` resolves the paths via `src/general_ludd/ansible/paths.py` and sets `ANSIBLE_COLLECTIONS_PATH` + `ANSIBLE_ROLES_PATH` accordingly. The bundled `ansible.cfg` is a fallback; the runtime env vars take precedence.
+
+Direct callability: roles in any tier are callable from any playbook via FQCN. No special registration — this is standard ansible.
+
+Enforced by: `src/general_ludd/ansible/paths.py`, `src/general_ludd/ansible/runner.py`, `daemon.py` lifespan wiring.
+
 ## Meta-Rule: Guardrail Policy
 
 When you introduce ANY new restriction or policy on agent behavior, you MUST
