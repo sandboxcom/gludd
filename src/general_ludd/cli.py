@@ -385,6 +385,10 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     proj_remove.add_argument("--daemon-url", default="http://localhost:8000")
     proj_remove.set_defaults(func=_cmd_project_remove)
 
+    from general_ludd.cli_project_init import add_project_init_subparser
+
+    add_project_init_subparser(proj_sub)
+
     mcp_parser = sub.add_parser("mcp", help="MCP server catalog commands")
     mcp_parser.set_defaults(func=None)
     mcp_sub = mcp_parser.add_subparsers(dest="mcp_command")

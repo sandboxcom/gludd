@@ -131,3 +131,76 @@ absent so CI without `terraform`/`opa` installed does not false-fail. Validation
   `tests/unit/test_opa_policies.py`
 - Example collection content:
   `collections/ansible_collections/general_ludd/agent/plugins/terraform/`
+
+## 6. Project-local collections
+
+A project may ship its own ansible-galaxy collection alongside the bundled
+`general_ludd.agent` collection. Project-local collections hold
+project-specific business logic — internal deploy patterns, team-private
+automation, project-specific terraform modules and OPA policies — and travel in
+the project repository rather than with gludd releases.
+
+### On-disk layout
+
+Project-specific content lives at:
+
+```
+<project_dir>/.gludd/collections/ansible_collections/<namespace>/<collection>/
+├── galaxy.yml                         # ansible-galaxy metadata
+├── roles/
+│   └── <role_name>/                   # project-specific roles
+├── plugins/
+│   ├── modules/                       # project-specific modules
+│   ├── module_utils/                  # shared module helpers
+│   └── terraform/                     # project terraform/OPA content (§1 layout)
+│       ├── modules/
+│       ├── stacks/
+│       ├── policies/
+│       └── providers.yaml
+└── ...
+```
+
+This mirrors the bundled collection layout (galaxy.yml, roles/,
+plugins/modules/, plugins/module_utils/, plugins/terraform/) but is scoped to a
+single project under `<project_dir>/.gludd/collections/`.
+
+### 3-tier precedence contract
+
+When gludd resolves an FQCN such as `acme.project.deploy_x`, it searches three
+roots in order — first match wins:
+
+| # | Root                                                | Precedence | Purpose                                                            |
+|---|-----------------------------------------------------|------------|--------------------------------------------------------------------|
+| 1 | `<project_dir>/.gludd/collections/ansible_collections/...` | Highest    | Project-specific business logic, team-private automation           |
+| 2 | `~/.local/share/gludd/collections/ansible_collections/...` | Middle     | Operator-personal overrides shared across projects                 |
+| 3 | `general_ludd.agent` (bundled with gludd)           | Lowest     | General-purpose, shareable roles/modules shipped with gludd        |
+
+First match wins; a role/module found in an earlier root shadows the same FQCN
+in a later root. This mirrors the Ansible `ANSIBLE_COLLECTIONS_PATH`
+multi-root resolution model.
+
+### Scaffolding via `gludd project init`
+
+```
+gludd project init --namespace <ns> [--collection <name>] [--force] [PROJECT_DIR]
+```
+
+- Creates the layout above under
+  `<project_dir>/.gludd/collections/ansible_collections/<ns>/<collection>/`.
+- Writes a `collection:` section into `<project_dir>/.gludd/config.yml` so the
+  daemon registers the project-local collection at startup.
+- `PROJECT_DIR` defaults to the current working directory.
+- `--collection` defaults to `project`.
+- `--force` overwrites an existing scaffold.
+
+### When to add a role here vs the bundled collection
+
+| Target                                       | Use for                                                                                        |
+|----------------------------------------------|------------------------------------------------------------------------------------------------|
+| Project-local (`acme.project.*`)             | Project-specific business logic, internal deploy patterns, team-private automation, project-specific terraform modules / OPA policies. Lives in the repo so it travels with the codebase. |
+| Bundled (`general_ludd.agent.*`)             | General-purpose SDLC automation (`write_tests`, `security_review`, `ci_pipeline_repair`, …). Shared across all projects and shipped with gludd releases.       |
+
+Rule of thumb: if the automation is project-specific or carries project
+secrets/context, it belongs in the project-local collection; if it is useful to
+every gludd project regardless of codebase, it belongs in the bundled
+collection.

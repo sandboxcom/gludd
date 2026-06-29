@@ -140,7 +140,6 @@ function readPendingTodos(): TodoItem[] {
 
 function responseLooksLikeSummary(text: string): boolean {
   const lower = text.toLowerCase()
-  if (/\bmake\s+\w/.test(lower)) return false
   if (/```(?:bash|sh|shell)\b/i.test(text)) return false
 
   const hasKeyword = SUMMARY_KEYWORDS.some(kw => lower.includes(kw))
@@ -179,7 +178,7 @@ const DELIVERABLE_PATTERNS: readonly RegExp[] = [
   /^molecule\/.*\.yml$/,
 ]
 
-const UNTRACKED_DELIVERABLE_THRESHOLD = 3
+const UNTRACKED_DELIVERABLE_THRESHOLD = 2
 
 interface GitStatus {
   untrackedDeliverables: string[]
@@ -325,6 +324,28 @@ function recordFire(type: DirectiveType): void {
   }
 }
 
+// Gap #4 fix: when the post-wave-sweep directive fires (REPLACE severity),
+// reset ALL other directive caps so the next response gets full scrutiny.
+// The 30s per-directive cap can otherwise mask a repeat breach immediately
+// following a replace-grade one.
+function resetOtherDirectiveCaps(firedType: DirectiveType): void {
+  try {
+    const state = readFreqState()
+    let mutated = false
+    for (const key of Object.keys(state)) {
+      if (key !== firedType) {
+        delete state[key]
+        mutated = true
+      }
+    }
+    if (mutated) {
+      fs.writeFileSync(FREQ_CAP_PATH, JSON.stringify(state), "utf8")
+    }
+  } catch {
+    // best-effort
+  }
+}
+
 const DISPATCH_RESULT_MARKERS = [
   "<task_result>",
   "<task_id>",
@@ -429,9 +450,49 @@ export default (async () => {
         // dispatch results AND uncommitted deliverables exist, regardless of
         // summary heuristic — this is the 'wave produced files -> agent read
         // results -> about to summarise -> never commits' pattern.
+        //
+        // REPLACE severity (2026-06-29 audit, Gap #2): when >=2 untracked
+        // deliverables accompany dispatch-result mentions, the dropping
+        // summary is REPLACED by the directive alone — APPEND let the user
+        // see the dropped summary as if it were the deliverable. With only
+        // 1 untracked deliverable we still APPEND (less severe, possibly
+        // innocuous).
+        const mentionsDispatch = responseMentionsDispatchResults(output)
+        const sweepUntracked = status.untrackedDeliverables
         if (
-          responseMentionsDispatchResults(output) &&
-          status.untrackedDeliverables.length > 0 &&
+          mentionsDispatch &&
+          sweepUntracked.length >= 2 &&
+          freqCapAllows("post-wave-sweep")
+        ) {
+          recordFire("post-wave-sweep")
+          resetOtherDirectiveCaps("post-wave-sweep")
+          return [
+            "⛔ NOTHING-DROPPED GUARDRAIL — POST-WAVE SWEEP REQUIRED",
+            "",
+            "Your response mentions parallel subagent results, but:",
+            "- " + sweepUntracked.length + " untracked deliverable file(s) have accumulated.",
+            "- The summary above is being REPLACED by this directive.",
+            "",
+            "The 'dispatch N agents → get N results → write summary' pattern is the bug.",
+            "The summary itself is NOT the deliverable.",
+            "",
+            "Recover NOW:",
+            "1. Run `make git-status` to see what's untracked.",
+            "2. Run `make collect-check` on each untracked deliverable to verify it's complete.",
+            "3. Commit each coherent group via `make commit-ci-gate MSG='...'`.",
+            "4. After all deliverables are committed, resume new work.",
+            "",
+            "Untracked deliverables (" + sweepUntracked.length + "):",
+            ...sweepUntracked.slice(0, 10).map((p, i) => "  " + (i + 1) + ". " + p),
+            sweepUntracked.length > 10
+              ? "  ... (+" + (sweepUntracked.length - 10) + " more)"
+              : "",
+          ].join("\n")
+        }
+
+        if (
+          mentionsDispatch &&
+          sweepUntracked.length === 1 &&
           freqCapAllows("post-wave-sweep")
         ) {
           recordFire("post-wave-sweep")
@@ -439,13 +500,11 @@ export default (async () => {
             "",
             "",
             "⛔ POST-WAVE COMMIT SWEEP: you dispatched parallel tasks and got",
-            "results. " + status.untrackedDeliverables.length + " deliverable file(s)",
-            "remain uncommitted. Before any other work, sweep the uncommitted",
-            "deliverables into atomic commits. Recovery is the deliverable now —",
-            "not new work.",
+            "results. 1 deliverable file remains uncommitted. Before any other",
+            "work, commit it. Recovery is the deliverable now — not new work.",
             "",
-            "Uncommitted deliverables:",
-            ...status.untrackedDeliverables.slice(0, 8).map((p, i) => "  " + (i + 1) + ". " + p),
+            "Uncommitted deliverable:",
+            "  1. " + sweepUntracked[0],
           ].join("\n"))
         }
 
