@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: observe_latency_regression
+  author: Agentic Harness Agent
+  description: >
+    Detect and RCA a latency regression.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

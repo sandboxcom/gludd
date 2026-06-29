@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: observe_security_signal
+  author: Agentic Harness Agent
+  description: >
+    Triage a security signal from observability feeds.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

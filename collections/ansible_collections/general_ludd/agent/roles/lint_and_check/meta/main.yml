@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: lint_and_check
+  author: Agentic Harness Agent
+  description: >
+    Run linters/checkers and write a status artifact.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

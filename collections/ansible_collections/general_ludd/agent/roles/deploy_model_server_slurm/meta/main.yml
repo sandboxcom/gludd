@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: deploy_model_server_slurm
+  author: Agentic Harness Agent
+  description: >
+    Deploy a model server onto a Slurm cluster.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

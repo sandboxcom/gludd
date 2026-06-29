@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: budget_guard
+  author: Agentic Harness Agent
+  description: >
+    Check remaining run budget; defer/abort when below threshold.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

@@ -1,0 +1,16 @@
+---
+galaxy_info:
+  role_name: feature_audit
+  author: Agentic Harness Agent
+  description: >
+    Audit a feature for completeness across CLI/daemon/TUI/interfaces.
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []
