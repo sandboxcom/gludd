@@ -30,6 +30,7 @@ class ComputeProvider(enum.StrEnum):
     DIGITAL_OCEAN = "digital_ocean"
     ORACLE = "oracle"
     VMWARE = "vmware"
+    KUBERNETES = "kubernetes"
     TOGETHER_AI = "together_ai"
     FIREWORKS_AI = "fireworks_ai"
     HUGGINGFACE = "huggingface"
@@ -76,6 +77,9 @@ class ComputeConfig(BaseModel):
     # endpoint. Interpolated into AWS/GCP/Azure ingress rules in terraform.py.
     allowed_cidr: str = "127.0.0.1/32"
     provider_auth_aliases: dict[str, str] | None = None
+    guided_decoding_backend: str = "outlines"
+    enable_structured_outputs: bool = True
+    grammar_file: str | None = None
 
     @field_validator("gpu_count")
     @classmethod
@@ -151,6 +155,31 @@ class ComputeConfig(BaseModel):
             raise ValueError(
                 f"Invalid characters in allowed_cidr {v!r}: only "
                 "[0-9a-fA-F.:,/] are allowed"
+            )
+        return v
+
+    @field_validator("guided_decoding_backend", mode="before")
+    @classmethod
+    def _validate_guided_backend(cls, v: object) -> str:
+        if not isinstance(v, str):
+            return "outlines"
+        v = v.strip()
+        allowed = {"outlines", "xgrammar", "lm-format-enforcer", ""}
+        if v not in allowed:
+            raise ValueError(
+                f"guided_decoding_backend must be one of {allowed!r}, got {v!r}"
+            )
+        return v
+
+    @field_validator("grammar_file")
+    @classmethod
+    def _validate_grammar_file(cls, v: str | None) -> str | None:
+        if v is None or v == "":
+            return None
+        v = v.strip()
+        if not re.match(r"^[A-Za-z0-9._/@:-]+$", v):
+            raise ValueError(
+                f"Invalid characters in grammar_file {v!r}"
             )
         return v
 

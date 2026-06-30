@@ -10,7 +10,7 @@
 locals {
   # Mirror of _engine_serve_cmd for InferenceEngine.LLAMACPP.
   # Note llama.cpp uses `-m` (not `--model`) for the model path.
-  serve_command = join(" ", [
+  serve_command = join(" ", compact([
     "docker", "run",
     "--gpus", "all",
     "-p", "8000:8000",
@@ -18,8 +18,10 @@ locals {
     "-m", var.model,
     "--host", "0.0.0.0",
     "--port", "8000",
+    var.grammar_file != "" ? "--grammar" : "",
+    var.grammar_file != "" ? var.grammar_file : "",
     var.extra_args,
-  ])
+  ]))
 
   user_data_template = <<-EOT
     #!/bin/bash
@@ -40,6 +42,7 @@ resource "terraform_data" "llamacpp_server_cloud_init" {
     model           = var.model
     gpus            = var.gpus
     extra_args      = var.extra_args
+    grammar_file    = var.grammar_file
     region          = var.region
     instance_type   = var.instance_type
     max_cost_usd    = var.max_cost_usd

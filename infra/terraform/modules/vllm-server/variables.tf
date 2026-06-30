@@ -48,3 +48,20 @@ variable "timeout_minutes" {
   type        = number
   default     = 60
 }
+
+variable "guided_decoding_backend" {
+  description = "Guided decoding backend for vLLM structured output generation. One of: outlines, xgrammar, lm-format-enforcer, or empty string to disable."
+  type        = string
+  default     = "outlines"
+
+  validation {
+    condition     = contains(["outlines", "xgrammar", "lm-format-enforcer", ""], var.guided_decoding_backend)
+    error_message = "guided_decoding_backend must be one of: outlines, xgrammar, lm-format-enforcer, or empty string."
+  }
+}
+
+variable "enable_structured_outputs" {
+  description = "Whether to enable server-side structured/guided decoding via --guided-decoding-backend."
+  type        = bool
+  default     = true
+}

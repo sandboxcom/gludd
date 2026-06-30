@@ -1,0 +1,101 @@
+# Reference Kubernetes manifest for a llama.cpp inference server deployment.
+# This is a standalone example; the authoritative source is the Terraform
+# module at infra/terraform/modules/kubernetes-deploy/.
+---
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: llamacpp-server-config
+  labels:
+    app.kubernetes.io/name: inference-server
+    app.kubernetes.io/engine: llamacpp
+    app.kubernetes.io/managed-by: terraform
+data:
+  engine: llamacpp
+  model_name: "/models/mistral-7b-instruct-v0.3.Q4_K_M.gguf"
+  serve_command: "llamacpp serve -m /models/mistral-7b-instruct-v0.3.Q4_K_M.gguf --host 0.0.0.0 --port 8080"
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: llamacpp-server
+  labels:
+    app.kubernetes.io/name: inference-server
+    app.kubernetes.io/engine: llamacpp
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: inference-server
+      app.kubernetes.io/engine: llamacpp
+  template:
+    metadata:
+      labels:
+        app.kubernetes.io/name: inference-server
+        app.kubernetes.io/engine: llamacpp
+    spec:
+      containers:
+        - name: llamacpp-server
+          image: ghcr.io/ggerganov/llama.cpp:server
+          args:
+            - "-m"
+            - "/models/mistral-7b-instruct-v0.3.Q4_K_M.gguf"
+            - "--host"
+            - "0.0.0.0"
+            - "--port"
+            - "8080"
+          ports:
+            - name: http
+              containerPort: 8080
+              protocol: TCP
+          resources:
+            requests:
+              cpu: "4"
+              memory: "8Gi"
+              nvidia.com/gpu: "1"
+            limits:
+              cpu: "8"
+              memory: "16Gi"
+              nvidia.com/gpu: "1"
+          volumeMounts:
+            - name: models
+              mountPath: /models
+              readOnly: true
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 60
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+      volumes:
+        - name: models
+          persistentVolumeClaim:
+            claimName: models-pvc
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: llamacpp-server
+  labels:
+    app.kubernetes.io/name: inference-server
+    app.kubernetes.io/engine: llamacpp
+spec:
+  type: ClusterIP
+  selector:
+    app.kubernetes.io/name: inference-server
+    app.kubernetes.io/engine: llamacpp
+  ports:
+    - name: http
+      port: 8080
+      targetPort: 8080
+      protocol: TCP

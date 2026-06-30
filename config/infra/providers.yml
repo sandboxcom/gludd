@@ -157,3 +157,11 @@ providers:
       a40: 0.80
       a100_40: 1.15
       a100_80: 1.60
+
+vllm_defaults:
+  guided_decoding_backend: outlines
+  enable_structured_outputs: true
+  available_backends:
+    - outlines
+    - xgrammar
+    - lm-format-enforcer

@@ -48,6 +48,10 @@ from general_ludd.infra.utilization import UtilizationTracker
 from general_ludd.logging.project_log import ProjectLogAdapter
 from general_ludd.mcp.loader import load_mcp_config
 from general_ludd.metrics.collector import MetricsCollector
+from general_ludd.models.deployment_health import (
+    DeploymentHealthChecker,
+    SelfHealingRouter,
+)
 from general_ludd.models.gateway import ModelGateway, ModelProfile
 from general_ludd.models.model_registry import ModelRegistry
 from general_ludd.models.timeout_detector import ModelHealthTracker
@@ -1037,6 +1041,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         health_tracker = app.state._health_tracker
 
         model_gateway = None
+        deployment_health_router = None
         if model_profiles:
             from general_ludd.models.provider_registry import ProviderRegistry
 
@@ -1061,6 +1066,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
                 budget_guard=budget_guard,
             )
             app.state._model_gateway = model_gateway
+
+            # Deployment health: track per-model-deployment failures and
+            # self-heal by routing away from unhealthy deployments.
+            deployment_health_checker = DeploymentHealthChecker()
+            deployment_health_router = SelfHealingRouter(
+                health_checker=deployment_health_checker,
+            )
+            # Feed each profile's fallback chain into the self-healing router
+            # so it knows the healthy alternatives when a deployment degrades.
+            for _p in model_gateway._profiles.values():
+                if _p.fallback_profiles:
+                    deployment_health_router.set_fallbacks(
+                        _p.model_profile_id,
+                        list(_p.fallback_profiles),
+                    )
+            app.state._deployment_health_router = deployment_health_router
+            app.state._model_gateway._deployment_health_checker = deployment_health_checker
+
             # Warn when a reasoning-model profile has a low max_output_tokens budget.
             _REASONING_MODEL_PREFIXES = ("glm-4.5", "glm-5")
             for _p in model_gateway._profiles.values():
@@ -1244,6 +1267,7 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
             # git-delivery path so concurrent todos cannot clobber the same file.
             file_claim_registry=getattr(app.state, "_file_claims", None),
             ansible_env_updater=getattr(app.state, "_ansible_env_updater", None),
+            deployment_health_router=deployment_health_router,
         )
         app.state.event_loop = event_loop
         app.state.event_loop._runner = runner
@@ -1696,6 +1720,7 @@ def create_daemon_app(
     app.state._model_registry = None
     app.state._skill_registry = None
     app.state._adaptive_router = None
+    app.state._deployment_health_router = None
     app.state._self_update_audit_sink = None
     app.state._startup_config = load_startup_config(config_dir)
     app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
@@ -1993,6 +2018,7 @@ def create_daemon_app(
         ansible,
         benchmark,
         compute,
+        deployments,
         embeddings,
         environment,
         facts,
@@ -2043,6 +2069,7 @@ def create_daemon_app(
     mcp.register(app, daemon_state)
     skills.register(app, daemon_state)
     compute.register(app, daemon_state)
+    deployments.register(app, daemon_state)
     processes.register(app, daemon_state)
     filestore.register(app, daemon_state)
     human_todos.register(app, daemon_state)

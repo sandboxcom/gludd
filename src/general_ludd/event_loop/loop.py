@@ -240,6 +240,7 @@ class EventLoop:
         ansible_env_updater: Any | None = None,
         model_perf_repo: Any | None = None,
         model_performance_interval: int = 10,
+        deployment_health_router: Any | None = None,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -337,6 +338,7 @@ class EventLoop:
         self._last_ansible_env_project_id: str | None = None
         self._model_perf_repo: Any = model_perf_repo
         self._model_performance_interval: int = model_performance_interval
+        self._deployment_health_router: Any = deployment_health_router
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -1619,6 +1621,24 @@ class EventLoop:
             if self._model_gateway is not None and is_generation_work_type(
                 _safe_str(todo, "work_type", "code") or "code"
             ):
+                # Deployment health check: before calling the model, verify
+                # the targeted deployment is healthy. If unhealthy, the
+                # self-healing router picks the first healthy fallback.
+                _deployment_id = resolved_model_profile or "default"
+                if self._deployment_health_router is not None:
+                    _routed = self._deployment_health_router.check_and_route(
+                        _deployment_id,
+                    )
+                    if _routed is not None and _routed != _deployment_id:
+                        resolved_model_profile = _routed
+                        _deployment_id = _routed
+                    elif _routed is None:
+                        logger.warning(
+                            "Deployment %s is unhealthy with no healthy fallback; "
+                            "proceeding with original profile",
+                            _deployment_id,
+                        )
+                _call_start = time.monotonic()
                 try:
                     model_response, model_tool_calls = await asyncio.to_thread(
                         invoke_model_for_generation,
@@ -1643,6 +1663,19 @@ class EventLoop:
                 model_response = None
                 model_tool_calls = None
             _model_call_duration = time.monotonic() - _model_call_start
+            # Record deployment health after each model call so the
+            # self-healing router learns which deployments are degraded.
+            if self._deployment_health_router is not None:
+                _health_id = resolved_model_profile or "default"
+                _health_checker = self._deployment_health_router.health_checker
+                if _model_call_success:
+                    _health_checker.record_success(_health_id)
+                elif _model_call_error:
+                    _health_checker.record_failure(
+                        _health_id,
+                        _model_call_error,
+                        kind="error",
+                    )
             # Record the model call in the performance repository.
             if self._model_perf_repo is not None:
                 _input_tokens = len(prompt_text or "") // 4

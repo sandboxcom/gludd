@@ -546,6 +546,15 @@ class ModelGateway:
                         f"{base_url!r} for profile '{profile_id}'"
                     )
                 init_kwargs["base_url"] = base_url
+        extra_body: dict[str, Any] = kwargs.pop("extra_body", {})
+        for key in ("guided_json", "guided_regex", "guided_choice",
+                      "guided_grammar", "guided_whitespace_pattern"):
+            val = kwargs.pop(key, None)
+            if val is not None:
+                extra_body[key] = val
+        if extra_body:
+            kwargs["extra_body"] = extra_body
+
         init_kwargs.update(kwargs)
 
         chat_model = provider_cls(**init_kwargs)

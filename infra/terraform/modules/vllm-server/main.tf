@@ -16,7 +16,7 @@ locals {
   # Mirror of _engine_serve_cmd for InferenceEngine.VLLM in terraform.py.
   # shlex-equivalent quoting is handled by the stack passing already-safe values
   # via tfvars (validated by ComputeConfig field validators before reaching HCL).
-  serve_command = join(" ", [
+  serve_command = join(" ", compact([
     "docker", "run",
     "--gpus", "all",
     "-p", "8000:8000",
@@ -24,8 +24,10 @@ locals {
     "--model", var.model,
     "--host", "0.0.0.0",
     "--port", "8000",
+    var.enable_structured_outputs && var.guided_decoding_backend != "" ? "--guided-decoding-backend" : "",
+    var.enable_structured_outputs && var.guided_decoding_backend != "" ? var.guided_decoding_backend : "",
     var.extra_args,
-  ])
+  ]))
 
   user_data = <<-EOT
     #!/bin/bash
@@ -46,15 +48,17 @@ locals {
 # no-provider resource (Terraform >= 1.4).
 resource "terraform_data" "vllm_server_cloud_init" {
   input = {
-    image           = var.image
-    model           = var.model
-    gpus            = var.gpus
-    extra_args      = var.extra_args
-    region          = var.region
-    instance_type   = var.instance_type
-    max_cost_usd    = var.max_cost_usd
-    timeout_minutes = var.timeout_minutes
-    serve_command   = local.serve_command
-    user_data       = local.user_data
+    image                     = var.image
+    model                     = var.model
+    gpus                      = var.gpus
+    extra_args                = var.extra_args
+    region                    = var.region
+    instance_type             = var.instance_type
+    max_cost_usd              = var.max_cost_usd
+    timeout_minutes           = var.timeout_minutes
+    guided_decoding_backend   = var.guided_decoding_backend
+    enable_structured_outputs = var.enable_structured_outputs
+    serve_command             = local.serve_command
+    user_data                 = local.user_data
   }
 }

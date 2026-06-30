@@ -4,6 +4,10 @@ from __future__ import annotations
 
 import shlex
 import textwrap
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from general_ludd.config.deployment_optimization import DeploymentOptimizationConfig
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, InferenceEngine
 from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
@@ -132,12 +136,14 @@ class TerraformGenerator:
     def __init__(
         self,
         state_backend_selector: StateBackendSelector | None = None,
+        deployment_optimization_config: DeploymentOptimizationConfig | None = None,
     ) -> None:
         # Optional state-backend selector (design doc §10 #2). When attached,
         # every generated main.tf is prepended with the appropriate
         # ``terraform { backend "..." {} }`` block. ``None`` preserves the
         # legacy local-state default (no backend block emitted).
         self._state_backend_selector = state_backend_selector
+        self._deployment_optimization_config = deployment_optimization_config
 
     def generate(self, config: ComputeConfig) -> str:
         body = self._generate_body(config)
@@ -177,7 +183,7 @@ class TerraformGenerator:
     # compatibility (Phase 4 removes them); the module-style ``_generate_vsphere``
     # path and any future module-style provider consume this method.
 
-    def build_tfvars(self, config: ComputeConfig) -> str:
+    def build_tfvars(self, config: ComputeConfig, hardware_preset: dict[str, object] | None = None) -> str:
         """Render a ``terraform.tfvars`` body for a ComputeConfig.
 
         All string values are passed through :func:`escape_tfvar_value` so the
@@ -199,6 +205,24 @@ class TerraformGenerator:
         ]
         if config.region is not None:
             lines.append(f"region         = {escape_tfvar_value(config.region)}")
+        if self._deployment_optimization_config is not None:
+            d = self._deployment_optimization_config
+            engine = config.engine.value
+            gpu = config.gpu_type.value
+            prefix = f"{engine}_"
+            raw_preset = d.get_preset(engine, gpu)
+            if hardware_preset is not None:
+                raw_preset.update(hardware_preset)
+            for key, value in raw_preset.items():
+                if key in ("vram_tier",):
+                    continue
+                tfvar_name = f"{prefix}{key}"
+                if isinstance(value, bool):
+                    lines.append(f"{tfvar_name} = {str(value).lower()}")
+                elif isinstance(value, str):
+                    lines.append(f"{tfvar_name} = {escape_tfvar_value(value)}")
+                else:
+                    lines.append(f"{tfvar_name} = {value}")
         return "\n".join(lines) + "\n"
 
     def _generate_aws(self, config: ComputeConfig) -> str:
@@ -285,6 +309,8 @@ class TerraformGenerator:
               extra_args      = var.extra_args
               max_cost_usd    = var.max_cost_usd
               timeout_minutes = var.timeout_minutes
+              guided_decoding_backend    = var.guided_decoding_backend
+              enable_structured_outputs  = var.enable_structured_outputs
             }}
 
             output "instance_id" {{
@@ -341,6 +367,8 @@ class TerraformGenerator:
               extra_args      = var.extra_args
               max_cost_usd    = var.max_cost_usd
               timeout_minutes = var.timeout_minutes
+              guided_decoding_backend    = var.guided_decoding_backend
+              enable_structured_outputs  = var.enable_structured_outputs
             }}
 
             output "instance_id" {{
@@ -398,6 +426,8 @@ class TerraformGenerator:
               extra_args      = var.extra_args
               max_cost_usd    = var.max_cost_usd
               timeout_minutes = var.timeout_minutes
+              guided_decoding_backend    = var.guided_decoding_backend
+              enable_structured_outputs  = var.enable_structured_outputs
             }}
 
             output "instance_id" {{
@@ -449,6 +479,8 @@ class TerraformGenerator:
               extra_args      = var.extra_args
               max_cost_usd    = var.max_cost_usd
               timeout_minutes = var.timeout_minutes
+              guided_decoding_backend    = var.guided_decoding_backend
+              enable_structured_outputs  = var.enable_structured_outputs
             }
 
             output "instance_id" {
@@ -495,6 +527,8 @@ class TerraformGenerator:
               extra_args      = var.extra_args
               max_cost_usd    = var.max_cost_usd
               timeout_minutes = var.timeout_minutes
+              guided_decoding_backend    = var.guided_decoding_backend
+              enable_structured_outputs  = var.enable_structured_outputs
             }
 
             output "instance_id" {
@@ -544,6 +578,8 @@ class TerraformGenerator:
               extra_args      = var.extra_args
               max_cost_usd    = var.max_cost_usd
               timeout_minutes = var.timeout_minutes
+              guided_decoding_backend    = var.guided_decoding_backend
+              enable_structured_outputs  = var.enable_structured_outputs
             }}
 
             output "instance_id" {{
@@ -628,6 +664,8 @@ class TerraformGenerator:
               container_image  = "{image}"
               max_cost_usd     = "{config.max_cost_usd}"
               timeout_minutes  = "{config.timeout_minutes}"
+              guided_decoding_backend    = "{config.guided_decoding_backend}"
+              enable_structured_outputs  = {str(config.enable_structured_outputs).lower()}
               user_data_script = <<-EOT
             {user_data}
               EOT

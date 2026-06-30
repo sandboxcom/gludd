@@ -48,3 +48,9 @@ variable "timeout_minutes" {
   type        = number
   default     = 60
 }
+
+variable "grammar_file" {
+  description = "Path to a GBNF grammar file for constrained generation. Passed to llama.cpp server as --grammar. Leave empty to disable."
+  type        = string
+  default     = ""
+}
