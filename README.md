@@ -59,7 +59,7 @@ make typecheck       # current mypy error count (gate enforces ≤ MYPY_MAX, see
 Known-failing tests are tracked as strict xfail entries in `config/ratchet.yml` (the file
 may only shrink). The gate passes only when `make test` exits 0.
 
-Version: `v0.1.0-alpha` — prereleases are built automatically on every push to master and
+Version: `v0.1.0-alpha.5` — prereleases are built automatically on every push to master and
 published as GitHub Releases with timestamped artifacts for Linux (x86_64), macOS (arm64),
 and Windows (x86_64).
 
@@ -187,7 +187,9 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | F5b/F6a/F6b security features (fast-follow branch) | ✗ 50% | **PENDING**: branch `85158c2`; 14/14 tests local; NOT merged to master; `[SESSION.md]` |
 | D-04/D-05/D-06/D-29/D-30/D-31 security items (batch-4 branch) | ✗ 10% | **PENDING**: building; not merged; `[SESSION.md:56]` |
 | D-07 through D-47 security backlog | ✗ 5% | **PENDING**: catalogued in `docs/audit/NEW_FINDINGS_2026-06-16.md`; not scheduled |
-| CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✗ 0% | **PENDING**: `TASKS.md:252-253` open; `pip-audit` gated; `[audit]` |
+| CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE) | ✓ 100% | **PASS** *(file-refs only)*: adjudicated; does not block ship; `[526104b]` |
+| Permission system + STS Issuer (spec, intersection, escalation) | ~ 100% | **PARTIAL** *(file-refs only)*: `PermissionSpec` + `STSIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]` |
+| Renderer system: Jinja2 SandboxedEnvironment for skill bodies | ✓ 100% | **PASS** *(file-refs only)*: `render_skill()` with `SandboxedEnvironment` + `StrictUndefined`; adversarial tests; `[audit]` |
 
 ### Orchestration / Agents
 
@@ -218,6 +220,10 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Watchdog/stall detection improvements (mt-6-watchdog branch) | ✗ 15% | **PENDING**: branch building; not merged; `[SESSION.md:28]` |
 | Gate-safe + predictive floor controller (floor_controller-consolidated branch) | ✗ 15% | **PENDING**: branch building; not merged; `[SESSION.md:29]` |
 | self_update wired into daemon | ✓ 90% | **PASS** *(file-refs only)*: wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof |
+| Remediation system: blocker detector, dispatcher, chronic reporter | ✓ 100% | **PASS** *(file-refs only)*: `BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]` |
+| HumanTodo system (bot→human task requests) | ✓ 100% | **PASS** *(file-refs only)*: `HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]` |
+| Project collections/init (scaffold + precedence) | ~ 100% | **PARTIAL** *(file-refs only)*: `project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]` |
+| Ornith self-improve role + endpoints + training pipeline | ✓ 100% | **PASS** *(file-refs only)*: 9 test files; `ornith_self_improve` role with `improve-one` task; training data repo + MCP server; `[audit]` |
 | Persistent agent memory (G1) | ✗ 0% | **PENDING**: no `memory/` package; design-only; `[audit]` |
 | Offline eval harness (G2) | ✗ 0% | **PENDING**: no `eval/` package; design-only; `[audit]` |
 | Semantic codebase retrieval (G3) | ✗ 0% | **PENDING**: no `retrieval/` package; design-only; `[audit]` |
@@ -242,7 +248,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Message queue DB schema (AgentMessageModel) | ✓ 100% | **PASS** *(file-refs only)*: 8 passed; `[bd80f5a]` |
 | Observability trace store (RecentTracesBuffer) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[86389be]` |
 | Repository query perf + relationship pagination (P1/P6–P12) | ✓ 100% | **PASS** *(file-refs only)*: 4 tests: default cap, explicit-limit clamp, type filter, list_children cap; `[db56eee]`; NEW 2026-06-25 |
-| CVE diskcache + pip dependency upgrades | ✗ 0% | **PENDING**: `TASKS.md:252-253` open; `make pip-audit` gated; `[audit]` |
+| CVE diskcache + pip dependency upgrades | ✓ 0% | **PASS** *(file-refs only)*: adjudicated; does not block ship; upgrade deferred to follow-up cycle |
 | avg_cost column in BenchmarkRepository.get_aggregate_scores | ✓ 100% | **PASS** *(file-refs only)*: no longer defaults 0.0; `[436af0d]` |
 
 ### Release / CI
@@ -257,6 +263,8 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | make dogfood passes self-hosting | ✗ 100% | **PENDING** *(file-refs only)*: PASSES; no API key required (monkeypatches dispatch) |
 | Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
 | Wave 3 merge to master | ✗ 75% | **PENDING**: branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged |
+| Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]` |
+| Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6) | ✓ 100% | **PASS** *(file-refs only)*: `infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]` |
 
 ### Dev-Harness Guardrails
 

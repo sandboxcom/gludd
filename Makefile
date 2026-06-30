@@ -637,3 +637,19 @@ sdd-harvest:
 
 sdd-quickfix:
 	@cat .devspark/defaults/commands/quickfix.md 2>/dev/null || echo "DevSpark not installed. Run: make setup-sdd"
+
+git-show-commit:
+	@test -n "$(SHA)" || (echo "Usage: make git-show-commit SHA=<sha>"; exit 1)
+	git show --stat $(SHA)
+
+git-log-branch:
+	@test -n "$(BRANCH)" || (echo "Usage: make git-log-branch BRANCH=<branch>"; exit 1)
+	git log --oneline $(BRANCH) -20
+
+ci-run-log:
+	@test -n "$(RUN)" || (echo "Usage: make ci-run-log RUN=<run_id>"; exit 1)
+	gh run view $(RUN) --repo sandboxcom/gludd
+
+ci-run-log-failed:
+	@test -n "$(RUN)" || (echo "Usage: make ci-run-log-failed RUN=<run_id>"; exit 1)
+	gh run view $(RUN) --repo sandboxcom/gludd --log-failed

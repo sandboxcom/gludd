@@ -249,8 +249,8 @@ the config source is deferred).
 
 `make pip-audit` reports two advisories; both adjudicated, neither blocks ship:
 
-- [ ] W5.3-CVE diskcache CVE-2025-69872 (tick finalized with commit hash in the follow-up docs commit)
-- [ ] W5.3-CVE pip PYSEC-2026-196 (tick finalized with commit hash in the follow-up docs commit)
+- [x] W5.3-CVE diskcache CVE-2025-69872 — adjudicated; does not block ship; `[526104b]`
+- [x] W5.3-CVE pip PYSEC-2026-196 — adjudicated; does not block ship; `[526104b]`
 
 ## Phase W7 — Ansible FACTS + MESSAGE-QUEUE backbone (2026-06-13)
 

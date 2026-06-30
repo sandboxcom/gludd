@@ -134,6 +134,14 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\*\*What'?s (?:left|next|remaining)\?\*\*/i,
   /\*\*What (?:did|was|have) (?:you|i|we)\b[^*]*\?\*\*/i,
   /\*\*How\b[^*]*\?\*\*/i,
+  // Item-count-as-completion (BUGS.md #2026-06-30): agent reports "16 items
+  // completed" with all checkboxes ticked and stops — an evidence ledger
+  // worn as a completion claim. See also the all-checked checkbox table
+  // detector in responseLooksTerminal.
+  /\b\d+\s+items?\s+(?:completed|done|ticked|checked)\b/i,
+  /\b\d+\s+tasks?\s+(?:completed|done|ticked|checked)\b/i,
+  /\ball\s+items?\s+(?:completed|done|ticked|checked)\b/i,
+  /\bevidence (?:ledger|table)\b/i,
 ]
 
 // ============================================================================
@@ -158,6 +166,16 @@ function responseLooksTerminal(text: string): boolean {
   // report wearing a different coat (BUGS.md #2026-06-28 incident).
   const qaHeaders = text.match(/^\*\*[^*]+\?\*\*$/gm)
   if (qaHeaders && qaHeaders.length >= 3) return true
+  // All-checked checkbox table (BUGS.md #2026-06-30): 3+ [x] rows and 0
+  // unchecked [ ] rows = a completion evidence ledger worn as a stop claim.
+  // This is the exact pattern the agent used: 16-row table of completed
+  // items with all checkboxes ticked, presented as a terminal summary.
+  const checkboxesChecked = (text.match(/- \[x\]/gi) || []).length
+  const checkboxesUnchecked = (text.match(/- \[ \]/gi) || []).length
+  if (checkboxesChecked >= 3 && checkboxesUnchecked === 0) return true
+  // Item-count completion claim (BUGS.md #2026-06-30): "\d+ items completed"
+  // or "\d+ items done" — counting completed items as a stop signal.
+  if (/\b\d+\s+items?\s+(?:completed|done|ticked|checked)\b/i.test(text)) return true
   return false
 }
 
@@ -179,10 +197,6 @@ function repoHasPendingWork(): boolean {
   try {
     const { execSync } = require("node:child_process")
     const cwd = process.cwd()
-    // (a) Unpushed commits on a tracked branch.
-    // `git log --oneline @{u}..HEAD` lists commits reachable from HEAD but
-    // not from the upstream. Empty output = nothing to push. A branch with
-    // no upstream configured exits non-zero (caught -> false).
     try {
       const unpushed = execSync("git log --oneline @{u}..HEAD", {
         cwd,
@@ -194,9 +208,6 @@ function repoHasPendingWork(): boolean {
     } catch {
       // no upstream / not a git repo / other — fall through to working-tree check
     }
-    // (b) Uncommitted changes in the working tree.
-    // `git status --porcelain` prints one line per modified/untracked file.
-    // Empty output = clean tree.
     try {
       const status = execSync("git status --porcelain", {
         cwd,
@@ -209,6 +220,21 @@ function repoHasPendingWork(): boolean {
       // not a git repo or git unavailable — fail open
     }
     return false
+  } catch {
+    return false
+  }
+}
+
+function tasksMdHasUnchecked(): boolean {
+  try {
+    const tasksPath = path.join(process.cwd(), "TASKS.md")
+    if (!fs.existsSync(tasksPath)) return false
+    const content = fs.readFileSync(tasksPath, "utf8")
+    // Unchecked markdown checkbox: `- [ ]` or `* [ ]` (the box is empty,
+    // i.e. NOT `- [x]` or `- [X]`). A single unchecked item means the
+    // project has known-unfinished work the agent acknowledged but did not
+    // complete.
+    return /-\s+\[\s*\]/.test(content) || /\*\s+\[\s*\][^xX]/i.test(content) || /\*\s+\[\s*\]/i.test(content)
   } catch {
     return false
   }
@@ -430,18 +456,23 @@ export default (async ({ }) => {
           const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
           ratchetEntries = ratchetContent.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
         }
-        const hasPendingWork = repoHasPendingWork() || ratchetEntries.length > 0
+        const hasPendingWork = repoHasPendingWork() || ratchetEntries.length > 0 || tasksMdHasUnchecked()
         if (hasPendingWork && responseLooksTerminal(output)) {
           return [
-            "⛔ STATE-BASED STOP BLOCKED: the repo has pending work",
-            `(ratchet: ${ratchetEntries.length} entries; git pending: ${repoHasPendingWork() ? "yes" : "no"})`,
+            "⛔ HARD STOP — STATE-BASED BLOCK: the repo has KNOWN-UNFINISHED WORK",
+            `(ratchet: ${ratchetEntries.length} entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"})`,
             "AND your response looks like a completion report (table, hash,",
-            "DONE/COMPLETE). This is the Whac-A-Mole fix: instead of matching",
-            "specific phrases, this check asks 'does the repo have pending work?'",
-            "AND 'does this response look like a finale?' If both are true, the",
-            "response is BLOCKED regardless of wording.",
+            "all-checked checkbox ledger, item-count claim, DONE/COMPLETE).",
             "",
-            "MAKE A TOOL CALL. Do NOT end your turn with a status report.",
+            "YOU ARE STOPPING PREMATURELY. BUGS.md has 20+ incidents of this exact",
+            "pattern — the agent sent a text-only completion summary while pending",
+            "work existed. This is the Whac-A-Mole structural fix: instead of",
+            "matching specific phrases, this check asks 'does the repo have pending",
+            "work?' AND 'does this response look like a finale?' Both are true.",
+            "",
+            "IMMEDIATELY DISPATCH A TOOL CALL. Do NOT send another summary. Do NOT",
+            "end your turn. Dispatch ≥5 subagents on the next pending work items",
+            "NOW. A text-only stop is this bug repeating — do not be the 21st incident.",
           ].join("\n")
         }
 
@@ -473,15 +504,15 @@ export default (async ({ }) => {
           )
           if (soundsLikeStop) {
             return [
-              "⛔ STOP BLOCKED (pending-work audit): the repo has pending work",
-              `(${ratchetEntries.length} ratchet entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}).`,
+              "⛔ HARD STOP — PENDING-WORK AUDIT: the repo has KNOWN-UNFINISHED",
+              `work (${ratchetEntries.length} ratchet entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"}).`,
               "Your response presents options / asks permission",
               "instead of DOING THE WORK. Per the Never-Block-on-Questions",
               "policy: pick the highest-probability-success option, state the",
               "assumption in one line, and EXECUTE. Do NOT present options and",
               "ask which one the user wants. That is the stop-and-ask bug.",
               "",
-              "DEFAULT TO ACTION NOW.",
+              "DISPATCH WORK NOW. Do not ask. Do not present. EXECUTE.",
             ].join("\n")
           }
         }

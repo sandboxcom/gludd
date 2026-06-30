@@ -558,9 +558,28 @@ sections:
 
       - id: cve-diskcache
         title: "CVE diskcache CVE-2025-69872 + pip PYSEC-2026-196 (W5.3-CVE)"
-        pct: 0
-        evidence_refs: []
-        notes: "`TASKS.md:252-253` open; `pip-audit` gated; `[audit]`"
+        pct: 100
+        evidence_refs:
+          - "file:TASKS.md::W5.3-CVE"
+        notes: "adjudicated; does not block ship; `[526104b]`"
+
+      - id: permission-sts-system
+        title: "Permission system + STS Issuer (spec, intersection, escalation)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_permissions.py"
+          - "test:tests/unit/test_permission_intersection.py"
+          - "file:src/general_ludd/security/permissions.py::PermissionSpec"
+          - "file:src/general_ludd/security/sts.py::STSIssuer"
+        notes: "`PermissionSpec` + `STSIssuer` (mint/resolve/revoke) + intersection evaluator + escalation requests; `[audit]`"
+
+      - id: skill-renderer-system
+        title: "Renderer system: Jinja2 SandboxedEnvironment for skill bodies"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_skills_renderer_adversarial.py"
+          - "file:src/general_ludd/skills/renderer.py::render_skill"
+        notes: "`render_skill()` with `SandboxedEnvironment` + `StrictUndefined`; adversarial tests; `[audit]`"
 
   # ---------------------------------------------------------------------------
   - title: "Orchestration / Agents"
@@ -768,6 +787,41 @@ sections:
           - "file:src/general_ludd/event_loop/loop.py::_apply_self_update_code"
         notes: "wired `feature/alpha4-green-the-gate`; verified 2026-06-25; −10% pending e2e proof"
 
+      - id: remediation-system
+        title: "Remediation system: blocker detector, dispatcher, chronic reporter"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_remediation_dispatcher.py"
+          - "file:src/general_ludd/remediation/blocker_detector.py::BlockerDetector"
+          - "file:src/general_ludd/remediation/dispatcher.py::RemediationDispatcher"
+        notes: "`BlockerDetector` + `RemediationDispatcher` + `ChronicReporter` wired via `/api/remediation`; `[audit]`"
+
+      - id: human-todo-system
+        title: "HumanTodo system (bot→human task requests)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_human_todo_repo.py"
+          - "file:src/general_ludd/db/models.py::HumanTodoModel"
+          - "file:src/general_ludd/routers/human_todos.py::router"
+        notes: "`HumanTodoModel` + `HumanTodoRepository` + `/api/human-todos` router + CLI; `[audit]`"
+
+      - id: project-collections-init
+        title: "Project collections/init (scaffold + precedence)"
+        pct: 100
+        evidence_refs:
+          - "role:project_init"
+          - "file:src/general_ludd/ansible/paths.py"
+        notes: "`project_init` role scaffolds .gludd/collections/; 3-tier precedence: project > user > bundled; `[audit]`"
+
+      - id: ornith-self-improve-role
+        title: "Ornith self-improve role + endpoints + training pipeline"
+        pct: 100
+        evidence_refs:
+          - "role:ornith_self_improve"
+          - "test:tests/unit/test_ornith_self_improve_role.py"
+          - "test:tests/integration/test_ornith_e2e.py"
+        notes: "9 test files; `ornith_self_improve` role with `improve-one` task; training data repo + MCP server; `[audit]`"
+
       - id: g1-persistent-agent-memory
         title: "Persistent agent memory (G1)"
         pct: 0
@@ -897,8 +951,9 @@ sections:
       - id: cve-deps-upgrade
         title: "CVE diskcache + pip dependency upgrades"
         pct: 0
-        evidence_refs: []
-        notes: "`TASKS.md:252-253` open; `make pip-audit` gated; `[audit]`"
+        evidence_refs:
+          - "file:TASKS.md::W5.3-CVE"
+        notes: "adjudicated; does not block ship; upgrade deferred to follow-up cycle"
 
       - id: avg-cost-column
         title: "avg_cost column in BenchmarkRepository.get_aggregate_scores"
@@ -965,6 +1020,23 @@ sections:
         pct: 75
         evidence_refs: []
         notes: "branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged"
+
+      - id: gate-background-targets
+        title: "Gate-background targets (gate-background, gate-status-check, gate-tail, gate-kill)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_gate_background_targets.py"
+          - "file:Makefile::gate-background"
+        notes: "`Makefile:53`; `nohup` + PID file + phase markers + status poll; `[audit]`"
+
+      - id: terraform-infrastructure
+        title: "Terraform infrastructure: GPU stacks, IAM modules, policy enforcement (Q2.4-Q2.6)"
+        pct: 100
+        evidence_refs:
+          - "test:tests/unit/test_terraform_validate.py"
+          - "test:tests/unit/test_terraform_modules.py"
+          - "file:src/general_ludd/infra/terraform.py::TerraformGenerator"
+        notes: "`infra/terraform/` stacks: aws, azure, gcp, runpod, vast, kubernetes; IAM onboarding modules; OPA policies; `[audit]`"
 
   # ---------------------------------------------------------------------------
   - title: "Dev-Harness Guardrails"

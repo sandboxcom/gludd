@@ -462,15 +462,85 @@ class TestEnforceStopResponseLooksTerminal:
         )
 
     def test_state_check_blocks_when_ratchet_has_entries(self):
-        """The STATE-BASED STOP BLOCKED message must be present and reference
+        """The HARD STOP — STATE-BASED BLOCK message must be present and reference
         the ratchet entry count."""
         src = ENFORCE_STOP.read_text()
-        assert "STATE-BASED STOP BLOCKED" in src, (
+        assert "HARD STOP — STATE-BASED BLOCK" in src, (
             "The state-based block response is missing its "
-            "'STATE-BASED STOP BLOCKED' header"
+            "'HARD STOP — STATE-BASED BLOCK' header"
         )
         assert "ratchetEntries.length" in src, (
             "The state-based block must report the ratchet entry count"
+        )
+
+    def test_detects_all_checked_checkbox_table(self):
+        """3+ checked checkboxes (- [x]) with zero unchecked (- [ ]) must be
+        flagged as terminal (BUGS.md #2026-06-30: 16-row evidence ledger)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract responseLooksTerminal body"
+        body = m.group(1)
+        assert re.search(r"checkboxesChecked", body), (
+            "responseLooksTerminal must count checked checkboxes (variable "
+            "checkboxesChecked)"
+        )
+        assert re.search(r"checkboxesUnchecked", body), (
+            "responseLooksTerminal must count unchecked checkboxes (variable "
+            "checkboxesUnchecked)"
+        )
+        assert re.search(r"checkboxesChecked\s*>=\s*3", body), (
+            "responseLooksTerminal must require checkboxesChecked >= 3"
+        )
+        assert re.search(r"checkboxesUnchecked\s*===\s*0", body), (
+            "responseLooksTerminal must require checkboxesUnchecked === 0 for "
+            "the all-checked signal"
+        )
+
+    def test_detects_item_count_completion_claim(self):
+        """A \"N items completed\" / \"N items done\" phrase must be flagged
+        as terminal (BUGS.md #2026-06-30 item-count-as-completion pattern)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract responseLooksTerminal body"
+        body = m.group(1)
+        assert re.search(r"\b\\d\+\\s\+items\?\\s\+\(\?:completed\|done", body), (
+            "responseLooksTerminal must detect '\\d+ items? (completed|done|ticked|checked)'"
+        )
+
+    def test_state_block_message_hard_stop_header(self):
+        """The state-based block response must use a 'HARD STOP — STATE-BASED BLOCK'
+        header (not just 'STATE-BASED STOP BLOCKED') for stronger enforcement."""
+        src = ENFORCE_STOP.read_text()
+        assert "HARD STOP" in src, (
+            "State-based block response must begin with 'HARD STOP' — advisory "
+            "wording was the structural gap in BUGS.md #2026-06-30"
+        )
+
+    def test_state_block_message_references_bugs_md_20_incidents(self):
+        """The state-based block message must reference the 20+ BUGS.md incidents
+        to make the agent aware of the historical pattern it is repeating."""
+        src = ENFORCE_STOP.read_text()
+        assert "BUGS.md" in src and "20+" in src, (
+            "State-based block message must reference 'BUGS.md has 20+ incidents' "
+            "so the agent knows this is a recurring failure, not a one-off"
+        )
+
+    def test_state_block_message_demands_subagent_dispatch(self):
+        """The block message must demand 'Dispatch ≥5 subagents' as the immediate
+        action, not just 'MAKE A TOOL CALL'."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(r"dispatch.*≥\s*5|dispatch.*\\u2265\s*5|≥\s*5\s+subagents", src, re.IGNORECASE) or \
+               "5 subagents" in src.lower(), (
+            "State-based block message must instruct 'Dispatch ≥5 subagents' "
+            "as the immediate corrective action"
+        )
+
+    def test_pending_work_audit_block_hard_stop_header(self):
+        """The pending-work audit block response must use a 'HARD STOP' header."""
+        src = ENFORCE_STOP.read_text()
+        assert "HARD STOP — PENDING-WORK AUDIT" in src, (
+            "Pending-work audit block response must begin with 'HARD STOP — "
+            "PENDING-WORK AUDIT' (not just 'STOP BLOCKED')"
         )
 
 
@@ -590,6 +660,106 @@ class TestEnforceStopRepoPendingWork:
         missing = [t for t in required_tokens if t not in body]
         assert not missing, (
             f"NO_WAIT_PATTERNS missing incident-class completion-recap patterns: {missing}"
+        )
+
+    def test_no_wait_patterns_include_item_count_completion(self):
+        """Item-count-as-completion patterns (BUGS.md #2026-06-30) must be present."""
+        body = TestEnforceStopNoWaitPatterns._extract_no_wait_patterns_body(self)
+        required = ["items?", "completed|done", "evidence", "ledger|table"]
+        missing = [s for s in required if s not in body]
+        assert not missing, (
+            f"NO_WAIT_PATTERNS missing item-count completion patterns: {missing}"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 3e. enforce-stop.ts — tasksMdHasUnchecked (2026-06-30 fix)
+# --------------------------------------------------------------------------- #
+# The ratchet-only proxy was broken: it tracked test failures but not
+# agent-acknowledged work in TASKS.md. An agent with all-green tests and a
+# clean git tree but unchecked TASKS.md rows could stop undetected. This
+# function reads TASKS.md for `- [ ]` / `* [ ]` rows and gates hasPendingWork
+# on them, closing the gap that caused the 2026-06-30 incident.
+class TestEnforceStopTasksMdUnchecked:
+    """tasksMdHasUnchecked must exist, be wired into hasPendingWork, and
+    detect unchecked markdown task boxes."""
+
+    def test_tasks_md_has_unchecked_function_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "function tasksMdHasUnchecked" in src, (
+            "tasksMdHasUnchecked function missing from enforce-stop.ts — the "
+            "2026-06-30 incident fix (TASKS.md unchecked work) is absent"
+        )
+
+    def test_tasks_md_has_unchecked_uses_exists_sync(self):
+        """Must guard the read with fs.existsSync (fail-open on absent file)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract tasksMdHasUnchecked body"
+        body = m.group(1)
+        assert "existsSync" in body, (
+            "tasksMdHasUnchecked must guard with fs.existsSync so absent "
+            "TASKS.md does not throw"
+        )
+
+    def test_tasks_md_has_unchecked_uses_default_path(self):
+        """Default path must be <cwd>/TASKS.md."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract tasksMdHasUnchecked body"
+        body = m.group(1)
+        assert "TASKS.md" in body, (
+            "tasksMdHasUnchecked must use TASKS.md as the default path"
+        )
+
+    def test_tasks_md_has_unchecked_detects_dash_checkbox(self):
+        """Must detect `- [ ]` dash-marked unchecked boxes."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract tasksMdHasUnchecked body"
+        body = m.group(1)
+        # The body contains regex literals like /-\s+\[\s*\]/ — verify the
+        # box-matching tokens appear. Use the same flexible assertion as
+        # enforce-floor's openWorkExists scan (substring triple: \[, \s, \]).
+        assert "\\[" in body and "\\s" in body and "\\]" in body, (
+            "tasksMdHasUnchecked must contain box-matching tokens for "
+            "unchecked markdown checkboxes ([ ])"
+        )
+
+    def test_tasks_md_has_unchecked_fails_open(self):
+        """Function must return false on any error (fail-open)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function tasksMdHasUnchecked\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract tasksMdHasUnchecked body"
+        body = m.group(1)
+        assert "catch" in body, (
+            "tasksMdHasUnchecked must wrap in try/catch and return false on "
+            "error (fail-open)"
+        )
+
+    def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
+        """hasPendingWork must OR tasksMdHasUnchecked() with the other checks."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"const\s+hasPendingWork\s*=\s*repoHasPendingWork\(\)\s*\|\|\s*ratchetEntries\.length\s*>\s*0\s*\|\|\s*tasksMdHasUnchecked\(\)",
+            src,
+        ), (
+            "hasPendingWork must be 'repoHasPendingWork() || ratchetEntries.length > 0 || "
+            "tasksMdHasUnchecked()' so unchecked TASKS.md rows are treated as pending work"
+        )
+
+    def test_state_block_shows_tasks_md_status(self):
+        """The state-based block response must report TASKS.md status."""
+        src = ENFORCE_STOP.read_text()
+        assert "TASKS.md unchecked" in src, (
+            "State-based block response must include 'TASKS.md unchecked: yes/no'"
+        )
+
+    def test_pending_work_audit_block_shows_tasks_md_status(self):
+        """The pending-work audit block response must also report TASKS.md status."""
+        src = ENFORCE_STOP.read_text()
+        assert "TASKS.md unchecked:" in src, (
+            "Pending-work audit block response must include 'TASKS.md unchecked:'"
         )
 
 
