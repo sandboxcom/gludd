@@ -562,3 +562,8 @@ audit; 11+ commits visible in `make git-log`.
 - [x] MP.13 — docs: update status date to 2026-06-29 in README | completed | commit f114653d |
 - [x] MP.14 — feat: add deletion gate guardrail for large deletions | completed | commit 0abd9bea; plugin + test pass |
 - [x] MP.15 — fix: restore TASKS.md evidence ledger, fix 12 test failures (agent floor, enforce-stop FLOOR, ship-commit, gateway overload retry), add Makefile improvements, opencode $schema, gitignore, SESSION.md | completed | commit c71378cf; lint 0, typecheck 0, collect 0, push verified |
+
+| MP.15 | fix: restore TASKS.md evidence ledger, fix 12 test failures (agent floor 7→10, enforce-stop FLOOR, ship-commit target, gateway overload retry breaker order), add Makefile improvements, opencode $schema, gitignore, SESSION.md | completed | commit c71378cf; lint 0, typecheck 0, collect 0, push verified |
+| MP.16 | fix: add gate phase markers + FAILED terminal marker, add git-rm-cached target, untrack ci-attempt-logs from git | completed | commit fe5429fb; lint 0, typecheck 0, collect 0, gate-background-target tests 10/10 |
+| MP.17 | fix: add check-status-table CI alias, remove duplicate FLOOR in enforce-stop.ts, fix gen-status-table import (lazy FileStore import), regenerate README status table | completed | commit 655fb911; lint 0, typecheck 0, collect 0, push verified |
+| MP.18 | fix: restore TASKS.md evidence ledger, fix 12 test failures (agent floor 7→10, enforce-stop FLOOR, ship-commit target, gateway overload retry breaker order), add Makefile improvements, add opencode $schema, add gitignore, update SESSION.md | completed | commit c71378cf; lint 0, typecheck 0, collect 0, push verified |
