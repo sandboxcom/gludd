@@ -1,0 +1,24 @@
+[submodule "external/llamacpp"]
+	path = external/llamacpp
+	url = https://github.com/ggerganov/llama.cpp.git
+	branch = master
+[submodule "external/openbao"]
+	path = external/openbao
+	url = https://github.com/openbao/openbao.git
+	branch = main
+[submodule "external/opentofu"]
+	path = external/opentofu
+	url = https://github.com/opentofu/opentofu.git
+	branch = main
+[submodule "external/osquery"]
+	path = external/osquery
+	url = https://github.com/osquery/osquery.git
+	branch = master
+[submodule "external/codebase-memory-mcp"]
+	path = external/codebase-memory-mcp
+	url = https://github.com/DeusData/codebase-memory-mcp.git
+	branch = main
+[submodule "external/skills"]
+	path = external/skills
+	url = https://github.com/mattpocock/skills.git
+	branch = main

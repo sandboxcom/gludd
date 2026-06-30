@@ -1,40 +1,3 @@
-# General Ludd Agent - Main Configuration
-# =========================================
-#
-# This is the primary configuration file. After installing, edit this file
-# to match your environment. The daemon loads it from:
-#   - /etc/general-ludd/general-ludd.yml  (systemd install)
-#   - ~/.config/general-ludd/user.yml     (user-level override)
-#
-# Pass --config-dir to the daemon to use a different config directory:
-#   gludd daemon --config-dir /path/to/config
-#
-# Environment variables in /etc/general-ludd/env take precedence over
-# values here. See docs/configuration.md for full reference.
-#
-# Additional config files live in the config/ directory alongside this file:
-#   config/model_profiles/*.yml    - Model provider profiles
-#   config/agents/default_agents.yml - Agent definitions
-#   config/binary_paths.yml        - External binary paths
-#   config/openbao/default.yml     - OpenBao secrets settings
-#   config/ansible/isolation.yml   - Process isolation settings
-#   config/mcp_servers/example.yml - MCP server connections
-#   config/tasks/example_tasks.yml - Reusable task templates
-#
-# ── Filestore ───────────────────────────────────────────────────────────────
-#
-# The filestore (~/.local/share/general-ludd/filestore/) stores artifacts,
-# binaries, and cached data. Files placed in ~/.config/gludd/fs/ overlay
-# the filestore — user configs, playbooks, and binaries here take priority.
-
-# ── Model Routing ───────────────────────────────────────────────────────────
-#
-# Controls which AI model is used for each task type.
-# Profile IDs must match a model_profile_id from config/model_profiles/*.yml
-#
-# When OPENROUTER_API_KEY is set, run "gludd models discover" to
-# auto-populate model profiles from OpenRouter's free model catalog.
-#
 model_routing:
   default_profile: zai_coder
   weak_model_profile: zai_coder
@@ -53,49 +16,18 @@ model_routing:
     gap_analysis: fast
     code_generation: coder
     planning: planner
-
-# ── Database ────────────────────────────────────────────────────────────────
-#
-# PostgreSQL connection. If not set, the daemon falls back to SQLite
-# (not recommended for production).
-#
-# Three ways to configure (in priority order):
-#   1. url:           Full connection string (takes precedence over all)
-#   2. DATABASE_URL:  Environment variable override
-#   3. host/port/name/user/password: Individual fields composed into a URL
-#
-# If none are set, falls back to SQLite at ~/.local/share/general-ludd/general-ludd.db
-#
 database:
-  # url: postgresql+psycopg://gludd:password@localhost:5432/gludd
   host: localhost
   port: 5432
   name: gludd
   user: gludd
-  # password: set-in-env-file
-
-# ── Agents ──────────────────────────────────────────────────────────────────
-#
-# Global agent behavior. Individual agent definitions are in
-# config/agents/default_agents.yml.
-#
 agents:
   default_agent: build
   max_concurrent: 4
-
-# ── Process Isolation ───────────────────────────────────────────────────────
-#
-# Run Ansible playbooks in isolated containers for safety.
-# Detailed settings in config/ansible/isolation.yml.
-#
 process_isolation:
   enabled: false
   container_runtime: podman
-
-# ── Budget ──────────────────────────────────────────────────────────────────
-#
-# Spending limits for AI model API calls.
-#
 budget:
   max_usd: 50
   warn_percent: 80
+deletion_gate_threshold: 15

@@ -134,6 +134,9 @@ class UserConfig(BaseSettings):
     ornith_model_sha: str = ""
     ornith_max_iterations: int = 10
     ornith_timeout_seconds: int = 300
+    # Deletion gate: threshold for lines removed before requiring DELETION_REASON env var.
+    # Set to 0 to disable the gate. Override via GLUDD_DELETION_GATE_THRESHOLD.
+    deletion_gate_threshold: int = 5
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:
