@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync
 
 # Regenerate the STATUS-TABLE in README.md from docs/features.yml
 gen-status-table:
@@ -7,6 +7,9 @@ gen-status-table:
 # Check if the STATUS-TABLE in README.md is current (CI gate)
 check-readme-status:
 	python3 scripts/check_readme_status_current.py
+
+# CI expects this target name (legacy alias)
+check-status-table: check-readme-status
 
 # Check README status with explicit tag
 check-readme-status-current:

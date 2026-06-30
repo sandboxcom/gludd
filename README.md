@@ -237,7 +237,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Feature / Task | Verified % | Evidence |
 |---|---|---|
 | Alembic 23 → 0 errors (W35) | ✓ 100% | **PASS** *(file-refs only)*: `make lint 0`; ruff clean; `[9d487ab]` |
-| mypy 18 → 0 errors (W5.4) | ✓ 100% | **PASS** *(file-refs only)*: `.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]` |
+| mypy 18 → 0 errors (W5.4) | ✗ 100% | **PENDING** *(file-refs only)*: `.gate-status typecheck PASS 0`; `MYPY_MAX=0`; `[526104b]` |
 | Alembic stamp_head + SQLite-only enforced | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[312e403]` |
 | Message queue DB schema (AgentMessageModel) | ✓ 100% | **PASS** *(file-refs only)*: 8 passed; `[bd80f5a]` |
 | Observability trace store (RecentTracesBuffer) | ✓ 100% | **PASS** *(file-refs only)*: 7 passed; `[86389be]` |
@@ -254,7 +254,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Molecule CI job | ✓ 75%(local) | **PASS** *(file-refs only)*: locally 49/49; CI-green unverified; `[audit]` |
 | dist packs LICENSE + SBOM + no build-machine paths | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[526104b]` |
 | Pre-commit hooks (detect-secrets, ruff, no-tracked-keys, etc.) | ✓ 100% | **PASS** *(file-refs only)*: `make install-hooks`; enforcing since `[7035e8c]` |
-| make dogfood passes self-hosting | ✓ 100% | **PASS** *(file-refs only)*: PASSES; no API key required (monkeypatches dispatch) |
+| make dogfood passes self-hosting | ✗ 100% | **PENDING** *(file-refs only)*: PASSES; no API key required (monkeypatches dispatch) |
 | Operator SSH key rotation + history scrub | ✗ 0% | **PENDING**: explicitly out-of-agent-scope; operator action required; `TASKS.md:W5.1` |
 | Wave 3 merge to master | ✗ 75% | **PENDING**: branch tip `6063e51`; gate was RUNNING per SESSION.md; not confirmed merged |
 
@@ -267,7 +267,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | State-based stop checks only — vocabulary list deleted (W1.3) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
 | status-snapshot writes SESSION.md in place + drift detector (W1.4) | ✗ 100% | **PENDING** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
 | audit-evidence wired into validate (W1.5) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
-| Makefile hygiene: stderr capture, MYPY_MAX var, gate coverage (W1.6) | ✓ 100% | **PASS** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
+| Makefile hygiene: stderr capture, MYPY_MAX var, gate coverage (W1.6) | ✗ 100% | **PENDING** *(file-refs only)*: `[audit W1.2-W1.7 DONE-VERIFIED]` |
 | preflight fails closed on unknown criteria (W1.7/H16) | ✓ 100% | **PASS** *(file-refs only)*: asserts FAIL on unknown criterion; `[audit W1.2-W1.7 DONE-VERIFIED]` |
 | Ratchet burn-down: 93 → 11 entries (W2 phases) | ~ 100% | **PARTIAL** *(file-refs only)*: `config/ratchet.yml` 11 entries; `[audit W2.x DONE-VERIFIED]` |
 | Anti-stop fuzz test (6/6 catching BUGS.md incidents) | ✓ 100% | **PASS** *(file-refs only)*: 6 passed; `[a1c1185]` |
@@ -276,7 +276,7 @@ Evidence key: `[commit]` = 7-char SHA in `TASKS.md`, `[test]` = named test file 
 | Watchdog FileWatcher in integrity scanner (W4.3) | ✓ 100% | **PASS** *(file-refs only)*: 2 passed + 3 xpassed; `[15db868]` |
 | deptry installed; langchain/langgraph deferred (W4.5) | ✗ 100% | **PENDING** *(file-refs only)*: `[15db868]` |
 | README claims measured / no hardcoded numbers (W5.5) | ✓ 100% | **PASS** *(file-refs only)*: 5 passed; `[526104b]` |
-| `make release-cut` target exists and runs (enforcement of this table) | ✓ 100% | **PASS** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
+| `make release-cut` target exists and runs (enforcement of this table) | ~ 100% | **PARTIAL** *(file-refs only)*: `Makefile:2488`; 4 steps: require-ci-green → check-readme-status → git-push → verify-artifact |
 
 ### Security Findings Backlog (NEW_FINDINGS_2026-06-16.md)
 

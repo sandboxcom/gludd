@@ -10,8 +10,6 @@ import xml.etree.ElementTree as ET
 from pathlib import Path
 from typing import Any
 
-from general_ludd.filestore.store import FileStore
-
 logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
@@ -143,6 +141,7 @@ def check_molecule_scenarios() -> dict[str, Any]:
 
 
 def check_filestore() -> dict[str, Any]:
+    from general_ludd.filestore.store import FileStore
     try:
         store = FileStore()
         return {"passed": True, "root_path": store.root_path, "exists": os.path.isdir(store.root_path)}
