@@ -490,9 +490,9 @@ Findings source: `docs/audit/QUEUE_LEASE_CLAIM_CONCURRENCY_AUDIT_2026-06-25.md` 
 
 Placeholder rows for in-flight work. Implementing subagents tick `[x]` when their gate goes green and paste evidence (test file + pass count + commit hash).
 
-- [ ] Q2.1 — Session-start orchestration contract: `.opencode/plugin/enforce-session-start.ts` PREPENDS `🚨 SESSION-START DIRECTIVE` as first system-prompt block; opt-in `tool.execute.before` hard gate via `GLUDD_SESSION_START_ENFORCE=1`; registered in `opencode.json` | evidence: pending gate
+- [x] Q2.1 — Session-start orchestration contract: `.opencode/plugin/enforce-session-start.ts` PREPENDS `🚨 SESSION-START DIRECTIVE` as first system-prompt block; opt-in `tool.execute.before` hard gate via `GLUDD_SESSION_START_ENFORCE=1`; registered in `opencode.json` | evidence: make test-specific TESTFILE=tests/unit/test_session_start_plugin.py 21 passed
 - [x] Q2.2 — opencode.json schema guard: `tests/unit/test_opencode_json_schema.py` allowlist of 35 schema-allowed top-level keys + regression marker for `env` breakage; PreToolUse guard in `enforce-make.ts` (lines 85-128 + 482-554) denies Write/Edit to `opencode.json` with unknown top-level keys; `TestOpencodeJsonSchemaGuardPlugin` (6 tests) in `test_guardrails.py` verifies the plugin guard | evidence: make test-specific TESTFILE=tests/unit/test_opencode_json_schema.py "4/4 pass"; TestOpencodeJsonSchemaGuardPlugin "6/6 pass"; make validate-opencode-config PASS
-- [ ] Q2.3 — Session-start plugin shape test: `tests/unit/test_session_start_plugin.py` pins directive-injection + opt-in hard-gate shape | evidence: pending gate
+- [x] Q2.3 — Session-start plugin shape test: `tests/unit/test_session_start_plugin.py` pins directive-injection + opt-in hard-gate shape | evidence: make test-specific TESTFILE=tests/unit/test_session_start_plugin.py 21 passed
 - [ ] Q2.4 — Terraform phase 0: bootstrap module structure | evidence: pending gate
 - [ ] Q2.5 — Terraform phase 1: base infrastructure provisioning | evidence: pending gate
 - [ ] Q2.6 — Terraform phase 2: application layer wiring | evidence: pending gate
@@ -537,3 +537,15 @@ audit; 11+ commits visible in `make git-log`.
 ## Phase Ornith — Training-data collector (2026-06-29)
 
 - [x] TR.1 — `TrainingDataCollector` class in `src/general_ludd/ornith/training_data.py` — captures (instruction, response, outcome) triples, batch operations, dedup, quality report, two export formats (fine-tuning JSONL + rollout log), wraps `OrnithTrainingRepo` | evidence: `make test-unit TESTFILE=tests/unit/test_ornith_training_data.py` → 22 passed in 6.98s; `make healthcheck` → OK
+
+## Phase MP — Model Performance + Recovery (2026-06-29)
+
+- [x] MP.1 — agent_liveness.py opencode probe fix: SQLite backend, caching, --debug | evidence: make test-specific TESTFILE=tests/unit/test_agent_liveness.py "41 passed" 34e9b86
+- [x] MP.2 — Pre-push hook fix: lint/typecheck/secret-scan errors resolved, push to sandboxcom/master succeeded | evidence: make git-push-sandboxcom "Everything up-to-date" 7b67f9c2
+- [x] MP.3 — Ornith MCP server + client adapter: 19 tests passing | evidence: committed in b317c42f / tests/unit/test_ornith_client_adapter.py 19 passed
+- [x] MP.4 — Ornith training data collector: 22 tests passing | evidence: tests/unit/test_ornith_training_data.py 22 passed
+- [x] MP.5 — Ornith self-improvement role: 84 files, 28 role tests, 8 module tests | evidence: make ansible-collection-test ornith 36 passed b317c42f
+- [x] MP.6 — Ornith CLI: 22 tests passing | evidence: tests/unit/test_ornith_cli.py 22 passed
+- [x] MP.7 — Q2.1 session-start plugin shape test: 21 tests | evidence: make test-specific TESTFILE=tests/unit/test_session_start_plugin.py 21 passed
+- [x] MP.8 — Q2.2 opencode.json schema guard strengthened: 6 plugin guard tests | evidence: tests/unit/test_guardrails.py::TestOpencodeJsonSchemaGuardPlugin 6 passed
+- [x] MP.9 — F1-F4 queue-lease evidence re-verified: all 7 tests pass | evidence: make test-specific TESTFILE='tests/security/test_eventloop_redteam.py::test_reclaim_skips_requeue_when_live_lease_exists_for_same_bucket' 1 passed
