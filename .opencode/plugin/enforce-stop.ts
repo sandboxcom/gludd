@@ -127,6 +127,13 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\bwhat i (?:did|changed|implemented|delivered)\b/i,
   /\b(?:here'?s|here is) what (?:i|we) (?:did|changed|shipped|delivered)\b/i,
   /\bi (?:made|landed|pushed|committed|shipped|applied)\s+(?:\d+|several|three|two|four)\b/i,
+  // Q&A-recap bolded question headers (BUGS.md #2026-06-28): a completion report
+  // wearing a different coat — bolded markdown headers phrased as questions.
+  /\*\*What changed\?\*\*/i,
+  /\*\*Why\?\*\*/i,
+  /\*\*What'?s (?:left|next|remaining)\?\*\*/i,
+  /\*\*What (?:did|was|have) (?:you|i|we)\b[^*]*\?\*\*/i,
+  /\*\*How\b[^*]*\?\*\*/i,
 ]
 
 // ============================================================================
@@ -146,6 +153,11 @@ function responseLooksTerminal(text: string): boolean {
   if (text.length > 200 && !/\?\s*$/.test(text)) return true
   // Commit hash pattern: 7-40 hex chars on a word boundary
   if (/\b[0-9a-f]{7,40}\b/.test(text)) return true
+  // Q&A recap headers: bolded question-style markdown headers (**What changed?**, **Why?**, etc.)
+  // A response structured as a Q&A recap with bolded question headers is a completion
+  // report wearing a different coat (BUGS.md #2026-06-28 incident).
+  const qaHeaders = text.match(/^\*\*[^*]+\?\*\*$/gm)
+  if (qaHeaders && qaHeaders.length >= 3) return true
   return false
 }
 

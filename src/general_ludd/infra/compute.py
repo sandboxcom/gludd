@@ -30,6 +30,10 @@ class ComputeProvider(enum.StrEnum):
     DIGITAL_OCEAN = "digital_ocean"
     ORACLE = "oracle"
     VMWARE = "vmware"
+    TOGETHER_AI = "together_ai"
+    FIREWORKS_AI = "fireworks_ai"
+    HUGGINGFACE = "huggingface"
+    REPLICATE = "replicate"
 
 
 class GPUType(enum.StrEnum):

@@ -108,3 +108,52 @@ providers:
     pricing:
       a10: 0.75
       a100_80: 25.00
+
+  - provider: together_ai
+    display_name: Together.ai
+    terraform_provider: none (API-only)
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: a100_40
+    max_gpu: h100
+    pricing:
+      a100_40: 1.50
+      a100_80: 1.90
+      h100: 2.50
+
+  - provider: fireworks_ai
+    display_name: Fireworks.ai
+    terraform_provider: none (API-only)
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: a100_40
+    max_gpu: h100
+    pricing:
+      a100_40: 1.50
+      a100_80: 1.90
+      h100: 2.50
+
+  - provider: huggingface
+    display_name: HuggingFace Inference Endpoints
+    terraform_provider: none (API-only)
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: t4
+    max_gpu: a100_80
+    pricing:
+      t4: 0.60
+      a10g: 1.30
+      a100_80: 4.00
+
+  - provider: replicate
+    display_name: Replicate
+    terraform_provider: none (API-only)
+    supports_spot: false
+    sub_hour_billing: true
+    min_gpu: t4
+    max_gpu: a100_80
+    pricing:
+      t4: 0.50
+      a40: 0.80
+      a100_40: 1.15
+      a100_80: 1.60

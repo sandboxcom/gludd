@@ -242,6 +242,9 @@ molecule-setup-openbao-break-glass:
 	mkdir -p /Users/shawnwilson/gludd/molecule/playbooks/openbao_break_glass_backup/molecule && ln -sf /Users/shawnwilson/gludd/molecule/playbooks/openbao_break_glass_backup/default /Users/shawnwilson/gludd/molecule/playbooks/openbao_break_glass_backup/molecule/default
 	ln -sf /Users/shawnwilson/gludd/molecule/playbooks/openbao_break_glass_backup /Users/shawnwilson/gludd/molecule/openbao_break_glass_backup
 
+git-tags:
+	git tag -l --sort=-creatordate
+
 git-remotes:
 	git remote -v
 

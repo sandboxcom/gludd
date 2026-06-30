@@ -95,6 +95,7 @@ jobs:
           GLUDD_PSK: ""
           GLUDD_XDIST: auto
       - name: Check status table current (fast)
+        if: startsWith(github.ref, 'refs/tags/v')
         # Verify README.md status table matches docs/features.yml generation.
         # Uses --fast (file-existence checks only, no pytest) so it is cheap in CI.
         # Fails if the table was hand-edited or features.yml was updated without

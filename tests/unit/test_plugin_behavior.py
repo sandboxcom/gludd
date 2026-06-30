@@ -194,9 +194,9 @@ class TestEnforceStopNoWaitPatterns:
         # Fallback: also count by the /i, delimiter pattern (multiple per line).
         if count < 20:
             count = len(re.findall(r"/i\b", body_no_comments))
-        assert count >= 20, (
-            f"NO_WAIT_PATTERNS has only {count} entries — expected >= 20 "
-            "(permission-seek + constraint-as-stopsign + status-report-as-handoff). "
+        assert count >= 25, (
+            f"NO_WAIT_PATTERNS has only {count} entries — expected >= 25 "
+            "(permission-seek + constraint-as-stopsign + status-report-as-handoff + Q&A-recap). "
             "The deferral vocabulary was truncated."
         )
 
@@ -428,6 +428,37 @@ class TestEnforceStopResponseLooksTerminal:
             "responseLooksTerminal(output) is not called inside "
             "experimental.chat.response.transform — the state-based guardrail "
             "is dead code"
+        )
+
+    def test_detects_qa_recap_bolded_headers(self):
+        """3+ bolded question headers (**...?**) must be flagged as terminal.
+
+        A Q&A-style recap with bolded question headers (e.g. **What changed?**,
+        **Why?**, **What's left?**) is a completion report wearing a different
+        coat — BUGS.md #2026-06-28 incident. The responseLooksTerminal function
+        must count lines matching ^**...?**$ and return true at >= 3.
+        """
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract responseLooksTerminal body"
+        body = m.group(1)
+        assert re.search(r"qaHeader", body), (
+            "responseLooksTerminal must define a qaHeaders variable to count "
+            "bolded question-style markdown headers"
+        )
+        assert re.search(r"length\s*>=\s*3", body), (
+            "responseLooksTerminal must check qaHeaders.length >= 3 to detect "
+            "a Q&A-recap-as-finale (3+ bolded question headers)"
+        )
+        # The regex pattern for bolded question headers must exist
+        assert (
+            re.search(r"\*\*\[\^\"\]\+\?", body)
+            or re.search(r"\\\*\\\*\[\^\\\*\]\+\\\?", body)
+            or re.search(r"\*\*\s*\^\\\*\*", body)
+            or re.search(r"\\*\\*", body)
+        ), (
+            "responseLooksTerminal must include a regex for bolded question "
+            "headers (**...?** pattern)"
         )
 
     def test_state_check_blocks_when_ratchet_has_entries(self):

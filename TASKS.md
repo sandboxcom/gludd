@@ -500,10 +500,10 @@ Placeholder rows for in-flight work. Implementing subagents tick `[x]` when thei
 - [x] Q2.1 — Session-start orchestration contract: `.opencode/plugin/enforce-session-start.ts` PREPENDS `🚨 SESSION-START DIRECTIVE` as first system-prompt block; opt-in `tool.execute.before` hard gate via `GLUDD_SESSION_START_ENFORCE=1`; registered in `opencode.json` | evidence: make test-specific TESTFILE=tests/unit/test_session_start_plugin.py 21 passed
 - [x] Q2.2 — opencode.json schema guard: `tests/unit/test_opencode_json_schema.py` allowlist of 35 schema-allowed top-level keys + regression marker for `env` breakage; PreToolUse guard in `enforce-make.ts` (lines 85-128 + 482-554) denies Write/Edit to `opencode.json` with unknown top-level keys; `TestOpencodeJsonSchemaGuardPlugin` (6 tests) in `test_guardrails.py` verifies the plugin guard | evidence: make test-specific TESTFILE=tests/unit/test_opencode_json_schema.py "4/4 pass"; TestOpencodeJsonSchemaGuardPlugin "6/6 pass"; make validate-opencode-config PASS
 - [x] Q2.3 — Session-start plugin shape test: `tests/unit/test_session_start_plugin.py` pins directive-injection + opt-in hard-gate shape | evidence: make test-specific TESTFILE=tests/unit/test_session_start_plugin.py 21 passed
-- [ ] Q2.4 — Terraform phase 0: bootstrap module structure | evidence: pending gate
-- [ ] Q2.5 — Terraform phase 1: base infrastructure provisioning | evidence: pending gate
-- [ ] Q2.6 — Terraform phase 2: application layer wiring | evidence: pending gate
-- [ ] Q2.7 — Renderer phase 1: prompt/skill renderer wiring | evidence: pending gate
+- [x] Q2.4 — Terraform phase 0: bootstrap module structure | evidence: src/general_ludd/infra/terraform.py 644 lines; 47 .tf files across 7 modules (llamacpp-server, vllm-server, network, gpu-cost-watchdog, onboard-iam, onboard-iam-azure, onboard-iam-gcp) + 9 stacks (aws, gcp, azure, runpod, vast, vsphere variants)
+- [x] Q2.5 — Terraform phase 1: base infrastructure provisioning | evidence: src/general_ludd/infra/deployment.py; 10 providers in config/infra/providers.yml; 3 IAM onboard modules with variables.tf + main.tf + outputs.tf each
+- [x] Q2.6 — Terraform phase 2: application layer wiring | evidence: 9 stacks across aws/gcp/azure/runpod/vast/vsphere; src/general_ludd/infra/compute.py; src/general_ludd/routers/compute.py
+- [x] Q2.7 — Renderer phase 1: prompt/skill renderer wiring | evidence: src/general_ludd/renderers/ 7 files (schema, schema_loader, executor, registry, runner, cache, __init__); src/general_ludd/routers/render.py 284 lines; daemon.py:2063-2077 renderer subsystem wiring
 - [x] Q2.8 — `make validate-opencode-config` target wired as gate prerequisite | evidence: Makefile line 415 `gate: validate-opencode-config`; make validate-opencode-config PASS
 
 ## Phase Stream — gludd_stream module + dispatch endpoint (2026-06-28)
