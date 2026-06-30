@@ -144,6 +144,7 @@ class DeploymentIncidentLog:
         audit_repo: Any | None = None,
         max_in_memory: int = 1000,
         project_id: str | None = None,
+        in_memory: bool = False,
     ) -> None:
         self._audit_repo = audit_repo
         self._max_in_memory = max_in_memory
@@ -260,6 +261,22 @@ class DeploymentHealthChecker:
     # -- health checks ------------------------------------------------------
 
     def is_healthy(self, deployment_id: str) -> bool:
+        with self._lock:
+            status = self._statuses.get(deployment_id)
+        if status is not None and not status.healthy:
+            if time.time() - status.last_check > self._recovery_interval:
+                with self._lock:
+                    status.healthy = True
+                    status.consecutive_failures = 0
+                    status.last_error = None
+                logger.info(
+                    "Deployment %s auto-recovered after %.0fs",
+                    deployment_id,
+                    self._recovery_interval,
+                )
+            else:
+                return False
+
         model_id = self._get_model_id(deployment_id)
         healthy = self._model_tracker.is_healthy(model_id)
         if healthy and self._max_avg_latency_s is not None:
@@ -398,24 +415,14 @@ class DeploymentHealthChecker:
 
     def get_status(self, deployment_id: str) -> DeploymentStatus:
         with self._lock:
-            model_id = self._deployment_to_model.get(
-                deployment_id, deployment_id
-            )
-            health = self._model_tracker.get_health(model_id)
-
             if deployment_id not in self._statuses:
                 self._statuses[deployment_id] = DeploymentStatus(
                     deployment_id=deployment_id
                 )
-            status = self._statuses[deployment_id]
-            status.healthy = health["healthy"]
-            status.consecutive_failures = health["consecutive_failures"]
-            return status
+            return self._statuses[deployment_id]
 
     def all_statuses(self) -> dict[str, DeploymentStatus]:
         with self._lock:
-            for did in list(self._statuses):
-                _ = self.get_status(did)
             return dict(self._statuses)
 
     def get_incidents(self, limit: int = 100) -> list[DeploymentHealthIncident]:
@@ -481,6 +488,7 @@ class SelfHealingRouter:
         self._health_checker = health_checker or DeploymentHealthChecker()
         self._failover_chain = failover_chain
         self._per_deployment_chains: dict[str, ModelFailoverChain] = {}
+        self._fallback_map: dict[str, list[str]] = {}
         self._deployment_health: dict[str, dict[str, Any]] = {}
         self._lock = threading.RLock()
 
@@ -489,6 +497,10 @@ class SelfHealingRouter:
     @property
     def health_checker(self) -> DeploymentHealthChecker:
         return self._health_checker
+
+    @property
+    def failover_chain(self) -> ModelFailoverChain | None:
+        return self._failover_chain
 
     @property
     def deployment_health(self) -> dict[str, dict[str, Any]]:
