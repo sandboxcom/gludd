@@ -209,7 +209,7 @@ verify-remote:
 
 ci-verdict:
 	@test -n "$(BRANCH)" || (echo "Usage: make ci-verdict BRANCH=<branch>"; exit 1)
-	@python3 scripts/require_ci_green.py "$(BRANCH)"
+	@python3 scripts/require_ci_green.py "$$(git rev-parse $(BRANCH))"
 
 # Check molecule config
 molecule-config-check:
@@ -422,7 +422,7 @@ feature-done:
 
 # Fast CI verdict check
 ci-verdict-fast:
-	@python3 scripts/require_ci_green.py "master" 2>/dev/null || echo "RED"
+	@python3 scripts/require_ci_green.py "$$(git rev-parse master)" 2>/dev/null || echo "RED"
 
 # Scan secrets fresh (no baseline)
 scan-secrets-fresh:
