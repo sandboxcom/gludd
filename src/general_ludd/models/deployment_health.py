@@ -528,6 +528,7 @@ class SelfHealingRouter:
             fallback_profiles=fallback_ids,
         )
         self.set_failover_chain(deployment_id, chain)
+        self._fallback_map[deployment_id] = list(fallback_ids)
 
     def _get_chain(self, deployment_id: str) -> ModelFailoverChain | None:
         with self._lock:
