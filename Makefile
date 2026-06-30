@@ -2292,6 +2292,18 @@ terraform-validate:
 	done; \
 	exit $$EXIT
 
+# Verbose variant: surfaces init+validate stderr/stdout for diagnosis.
+# Use when terraform-validate prints "VALIDATE FAIL" without a reason.
+terraform-validate-verbose:
+	@command -v terraform >/dev/null 2>&1 || { echo "terraform not installed"; exit 0; }
+	@for d in infra/terraform/modules/*/ infra/terraform/stacks/*/; do \
+		[ -d "$$d" ] || continue; \
+		[ -f "$$d/main.tf" ] || continue; \
+		echo "===== $$d ====="; \
+		( cd "$$d" && terraform init -backend=false -input=false ) || { echo "INIT FAIL: $$d"; continue; }; \
+		( cd "$$d" && terraform validate -no-color ) || true; \
+	done
+
 .PHONY: opa-install conftest-install opa-policy-check .terraform-plan-check
 
 # Install the Open Policy Agent binary to bin/opa. Idempotent: no-op if bin/opa
@@ -2387,6 +2399,47 @@ db-sample-part:
 
 db-tables:
 	@sqlite3 $(OPENCODE_DB) ".tables" 2>/dev/null
+
+# Read-only: full CREATE-schema + key stats for subagent-liveness analysis.
+db-schema-full:
+	@sqlite3 $(OPENCODE_DB) "SELECT sql FROM sqlite_master WHERE type='table' AND sql IS NOT NULL ORDER BY name;" 2>/dev/null
+	@echo "=== session: row count by directory (top 10) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT directory, COUNT(*) FROM session GROUP BY directory ORDER BY COUNT(*) DESC LIMIT 10;" 2>/dev/null
+	@echo "=== message: distinct json_extract(data,'$$.role') values ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT json_extract(data,'$$.role') AS role, COUNT(*) FROM message GROUP BY role;" 2>/dev/null
+	@echo "=== message: distinct json_extract(data,'$$.mode') values ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT json_extract(data,'$$.mode') AS mode, COUNT(*) FROM message GROUP BY mode;" 2>/dev/null
+	@echo "=== message: distinct json_extract(data,'$$.agent') values ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT json_extract(data,'$$.agent') AS agent, COUNT(*) FROM message GROUP BY agent ORDER BY COUNT(*) DESC LIMIT 20;" 2>/dev/null
+	@echo "=== message: count where parentID is non-null (subagent msgs) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM message WHERE json_extract(data,'$$.parentID') IS NOT NULL;" 2>/dev/null
+	@echo "=== session: time range ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT MIN(time_created), MAX(time_created), COUNT(*) FROM session;" 2>/dev/null
+	@echo "=== session: 5 most recent rows (id, directory, time_created, time_updated) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT id, directory, time_created, time_updated FROM session ORDER BY time_updated DESC LIMIT 5;" 2>/dev/null
+	@echo "=== session: full data JSON for most recent row ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT data FROM session ORDER BY time_updated DESC LIMIT 1;" 2>/dev/null
+	@echo "=== message: full data JSON for 3 most recent rows ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT substr(data,1,800) FROM message ORDER BY time_created DESC LIMIT 3;" 2>/dev/null
+	@echo "=== session_share schema sample (3 rows) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT substr(data,1,400) FROM session_share LIMIT 3;" 2>/dev/null
+	@echo "=== session_input schema sample (3 rows) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT substr(data,1,400) FROM session_input LIMIT 3;" 2>/dev/null
+
+# Read-only: subagent liveness analysis (parent_id IS NOT NULL = subagent session).
+db-subagent-analysis:
+	@echo "=== subagent vs top-level sessions (parent_id discriminator) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT (parent_id IS NOT NULL) AS is_subagent, COUNT(*) FROM session GROUP BY is_subagent;" 2>/dev/null
+	@echo "=== subagent sessions: 10 most recent (id, parent_id, time_updated, metadata) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT id, parent_id, time_updated, substr(metadata,1,200) FROM session WHERE parent_id IS NOT NULL ORDER BY time_updated DESC LIMIT 10;" 2>/dev/null
+	@echo "=== subagent sessions updated in last 5 min (live proxy) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM session WHERE parent_id IS NOT NULL AND time_updated > (strftime('%s','now')*1000 - 300000);" 2>/dev/null
+	@echo "=== subagent sessions updated in last 60s (live proxy) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT COUNT(*) FROM session WHERE parent_id IS NOT NULL AND time_updated > (strftime('%s','now')*1000 - 60000);" 2>/dev/null
+	@echo "=== sample subagent metadata (full JSON) ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT metadata FROM session WHERE parent_id IS NOT NULL AND metadata IS NOT NULL ORDER BY time_updated DESC LIMIT 3;" 2>/dev/null
+	@echo "=== distinct agent values among subagent sessions ==="
+	@sqlite3 $(OPENCODE_DB) "SELECT agent, COUNT(*) FROM session WHERE parent_id IS NOT NULL GROUP BY agent ORDER BY COUNT(*) DESC LIMIT 10;" 2>/dev/null
 
 # Diagnostic: dump the message.usage key universe + any rate-limit field in the
 # transcript, to decide whether the monitor can read a REAL rate-limit signal

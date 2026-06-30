@@ -16,6 +16,17 @@ logger = logging.getLogger(__name__)
 
 REPO_ROOT = Path(__file__).parent.parent.parent.parent
 
+# Path to the bundled ansible-galaxy collection's terraform plugins. The
+# importer is run on this tree during preflight so layout/provider/policy
+# regressions in the shipped collection surface before a release.
+_BUNDLED_COLLECTION = (
+    REPO_ROOT
+    / "collections"
+    / "ansible_collections"
+    / "general_ludd"
+    / "agent"
+)
+
 
 def check_coverage(threshold: float = 85.0, coverage_xml: Path | None = None) -> dict[str, Any]:
     coverage_xml = coverage_xml if coverage_xml is not None else REPO_ROOT / "coverage.xml"
@@ -223,6 +234,49 @@ def check_session_drift() -> dict[str, Any]:
     }
 
 
+def check_terraform_collection_import(strict: bool = False) -> dict[str, Any]:
+    """Run TerraformCollectionImporter against the bundled collection.
+
+    Reports every :class:`ImportIssue` as a preflight finding. By default the
+    check is advisory — issues surface to the operator but the gate does not
+    break (the importer's warnings are not release blockers). Pass
+    ``strict=True`` (the ``gludd preflight --strict-terraform-import`` flag)
+    to elevate any issue to a failure, useful for release readiness.
+    """
+    try:
+        from general_ludd.collections.importer import TerraformCollectionImporter
+    except ImportError as exc:
+        return {
+            "passed": not strict,
+            "issues": [],
+            "error": f"importer unavailable: {exc}",
+        }
+    if not _BUNDLED_COLLECTION.is_dir():
+        return {
+            "passed": not strict,
+            "issues": [],
+            "error": f"bundled collection not found at {_BUNDLED_COLLECTION}",
+        }
+    importer = TerraformCollectionImporter(_BUNDLED_COLLECTION)
+    issues = importer.import_collection()
+    findings = [
+        {"severity": i.severity, "message": i.message} for i in issues
+    ]
+    if strict:
+        blocking = [f for f in findings if f["severity"] in ("error", "warn")]
+        passed = len(blocking) == 0
+    else:
+        # Advisory: only hard importer errors fail the gate.
+        blocking = [f for f in findings if f["severity"] == "error"]
+        passed = len(blocking) == 0
+    return {
+        "passed": passed,
+        "issues": findings,
+        "issue_count": len(findings),
+        "strict": strict,
+    }
+
+
 def check_readme_no_hardcoded_metrics() -> dict[str, Any]:
     """W5.5: README must not hardcode test counts / mypy totals / coverage %.
 
@@ -262,7 +316,7 @@ def check_readme_no_hardcoded_metrics() -> dict[str, Any]:
     }
 
 
-def run_preflight() -> dict[str, Any]:
+def run_preflight(strict_terraform_import: bool = False) -> dict[str, Any]:
     checks: list[dict[str, Any]] = [
         {"name": "coverage_85pct", **check_coverage(threshold=85.0)},
         {"name": "lint_clean", **check_lint()},
@@ -276,6 +330,10 @@ def run_preflight() -> dict[str, Any]:
         {"name": "tasks_ticks_valid", **check_tasks_ticks()},
         {"name": "session_gate_drift", **check_session_drift()},
         {"name": "readme_no_hardcoded_metrics", **check_readme_no_hardcoded_metrics()},
+        {
+            "name": "terraform_collection_import_audit",
+            **check_terraform_collection_import(strict=strict_terraform_import),
+        },
     ]
     all_passed = all(c.get("passed", False) for c in checks)
     return {

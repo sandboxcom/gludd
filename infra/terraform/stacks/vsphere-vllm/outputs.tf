@@ -1,9 +1,9 @@
-output "instance_ip" {
-  description = "Primary IP of the vLLM inference VM."
-  value       = module.vllm_server.instance_ip
+output "instance_id" {
+  description = "Provider-assigned instance id of the deployed inference server."
+  value       = module.vllm_server.instance_id
 }
 
-output "endpoint_url" {
-  description = "OpenAI-compatible v1 endpoint."
-  value       = module.vllm_server.endpoint_url
+output "base_url" {
+  description = "OpenAI-compatible base URL of the inference server."
+  value       = module.vllm_server.base_url
 }

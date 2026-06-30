@@ -44,9 +44,9 @@ data "aws_caller_identity" "current" {}
 # it is statically auditable.
 
 resource "aws_iam_role" "compute_operator" {
-  name                = var.role_name
-  assume_role_policy  = file("${path.module}/assume-role-policy.json")
-  tags                = var.tags
+  name               = var.role_name
+  assume_role_policy = file("${path.module}/assume-role-policy.json")
+  tags               = var.tags
 }
 
 # ---------------------------------------------------------------------------
@@ -101,7 +101,7 @@ resource "aws_iam_instance_profile" "compute_operator" {
 
 locals {
   # Read the policy JSON and substitute the operator role ARN for the
-# PassRole resource scope. The placeholder is documented in policy.json.
+  # PassRole resource scope. The placeholder is documented in policy.json.
   policy_document = replace(
     file("${path.module}/policy.json"),
     "__OPERATOR_ROLE_ARN__",

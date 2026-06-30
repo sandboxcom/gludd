@@ -1,0 +1,96 @@
+---
+# ornith_self_improve — the bidirectional half of the symbiotic loop.
+#
+# Pulls rejected training pairs from the daemon, asks Ornith to improve the
+# worst-offending artifact, writes the patch to disk, opens a PR, and files
+# a human-todo so the proposal is reviewed before it lands. The PR is NOT
+# auto-merged — the human-todo is the gate.
+#
+# SAFE BY DEFAULT: gated behind ornith_enabled (default false).
+
+- name: Skip ornith_self_improve when Ornith is disabled
+  ansible.builtin.debug:
+    msg: "ornith_self_improve disabled (ornith_enabled is false) — skipping"
+  when: not (ornith_enabled | default(false) | bool)
+
+- name: Ornith_self_improve (enabled)
+  when: ornith_enabled | default(false) | bool
+  block:
+
+    - name: Create artifact directory
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: directory
+        mode: "0755"
+
+    - name: Pull rejected training pairs from the daemon
+      general_ludd.agent.gludd_ornith:
+        state: pairs
+        status: "{{ rejected_statuses }}"
+        limit: 50
+        lookback_days: "{{ lookback_days }}"
+        daemon_url: "{{ daemon_url }}"
+        psk: "{{ psk }}"
+      register: _osi_pairs_raw
+      no_log: "{{ psk | length > 0 }}"
+
+    - name: Extract the pairs list
+      ansible.builtin.set_fact:
+        _osi_pairs: "{{ _osi_pairs_raw.pairs | default([]) }}"
+
+    - name: Count rejections per target file
+      ansible.builtin.set_fact:
+        _osi_rejection_counts: >-
+          {%- set counts = {} -%}
+          {%- for p in _osi_pairs -%}
+            {%- for f in (p.target_files | default([])) -%}
+              {%- if f not in counts -%}
+                {%- set _ = counts.update({f: 0}) -%}
+              {%- endif -%}
+              {%- set _ = counts.update({f: counts[f] + 1}) -%}
+            {%- endfor -%}
+          {%- endfor -%}
+          {{ counts }}
+
+    - name: Build the candidate artifact list (explicit override or auto-pick)
+      ansible.builtin.set_fact:
+        _osi_candidates: >-
+          {%- if target_artifacts | length > 0 -%}
+            {{ target_artifacts }}
+          {%- else -%}
+            {%- set ranked = (_osi_rejection_counts
+                              | dict2items
+                              | sort(attribute='value', reverse=true)) -%}
+            {%- set eligible = ranked | rejectattr('value', 'lt', require_minimum_rejection_count) | list -%}
+            {%- set files = eligible | map(attribute='key') | list -%}
+            {{ files[:max_artifacts_per_run] }}
+          {%- endif -%}
+
+    - name: Write a skip artifact when no artifact meets the rejection threshold
+      ansible.builtin.copy:
+        content: >-
+          {{ {
+            'role': 'ornith_self_improve',
+            'status': 'skipped',
+            'reason': 'no artifact with >= ' ~ require_minimum_rejection_count
+                       ~ ' rejections in the last ' ~ lookback_days ~ ' days',
+            'rejection_counts': _osi_rejection_counts,
+            'pairs_inspected': _osi_pairs | length
+          } | to_nice_json }}
+        dest: "{{ artifact_dir }}/skip.json"
+        mode: "0644"
+      when: _osi_candidates | length == 0
+
+    - name: Report skip
+      ansible.builtin.debug:
+        msg: >-
+          ornith_self_improve: no artifact with >= {{ require_minimum_rejection_count }}
+          rejections in the last {{ lookback_days }} days — skipping
+      when: _osi_candidates | length == 0
+
+    - name: Improve each candidate artifact (one PR per artifact)
+      ansible.builtin.include_tasks: improve-one.yml
+      loop: "{{ _osi_candidates }}"
+      loop_control:
+        loop_var: _osi_artifact
+      when: _osi_candidates | length > 0

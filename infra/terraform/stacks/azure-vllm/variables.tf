@@ -44,3 +44,27 @@ variable "timeout_minutes" {
   type        = number
   default     = 60
 }
+
+variable "poll_interval_seconds" {
+  description = "Seconds between watchdog cost/TTL polls."
+  type        = number
+  default     = 60
+}
+
+variable "allowed_cidr" {
+  description = "CIDR permitted to reach the vLLM inference port (8000). Defaults to 0.0.0.0/0; narrow via tfvars for production."
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+variable "ssh_cidr" {
+  description = "CIDR permitted to reach port 22 (SSH). Should be the operator's egress CIDR."
+  type        = string
+  default     = "0.0.0.0/0"
+}
+
+variable "azure_resource_group" {
+  description = "Azure resource group name. Required for the network module's NSG + rules when provider == \"azure\"."
+  type        = string
+  default     = "vllm-rg"
+}

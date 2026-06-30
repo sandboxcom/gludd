@@ -6,6 +6,7 @@ import asyncio
 import contextlib
 import logging
 import os
+import sys
 import time
 from collections.abc import AsyncIterator, Callable
 from contextlib import asynccontextmanager
@@ -1458,6 +1459,24 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         logger.error("Daemon startup failed: %s", exc)
         app.state._degraded = str(exc)
 
+    # Phase 1 minimal hook: optionally launch the Ornith MCP server subprocess.
+    app.state._ornith_mcp_proc = None
+    _ornith_env_enabled = os.environ.get("ORNITH_ENABLED", "").lower() in {"1", "true", "yes"}
+    _ornith_cfg_enabled = bool(getattr(uc, "ornith_enabled", False)) if uc is not None else False
+    if _ornith_env_enabled or _ornith_cfg_enabled:
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                "general_ludd.ornith.mcp_server",
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+            )
+            app.state._ornith_mcp_proc = proc
+            logger.info("Ornith MCP server subprocess launched (pid=%s)", proc.pid)
+        except Exception as ornith_exc:
+            logger.warning("Failed to launch Ornith MCP subprocess: %s", ornith_exc)
+
     yield
 
     if getattr(app.state, "_degraded", None):
@@ -1491,6 +1510,16 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
     otel_bridge_ref = getattr(app.state, "_otel_bridge", None)
     if otel_bridge_ref is not None and hasattr(otel_bridge_ref, "shutdown"):
         otel_bridge_ref.shutdown()
+    _ornith_proc = getattr(app.state, "_ornith_mcp_proc", None)
+    if _ornith_proc is not None:
+        with contextlib.suppress(Exception):
+            _ornith_proc.terminate()
+            try:
+                await asyncio.wait_for(_ornith_proc.wait(), timeout=5.0)
+            except TimeoutError:
+                _ornith_proc.kill()
+                with contextlib.suppress(Exception):
+                    await _ornith_proc.wait()
 
 
 def _get_or_create_subsystems(app: FastAPI) -> dict[str, Any]:
@@ -1958,6 +1987,7 @@ def create_daemon_app(
         mcp,
         messages,
         models,
+        ornith,
         processes,
         projects,
         quantization,
@@ -2010,6 +2040,7 @@ def create_daemon_app(
     self_update.register(app, daemon_state)
     maintenance.register(app, daemon_state)
     remediation.register(app, daemon_state)
+    ornith.register(app, daemon_state)
     # Playbook web renderer (Phase 1): /api/renderers (PSK) + /render/<name> (public).
     # Registry discovery is best-effort — a missing playbooks/renderers/ dir must
     # not crash daemon startup (the router serves a 503 in that case).

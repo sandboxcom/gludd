@@ -1,0 +1,16 @@
+version: 1
+agent_type: agent-ornith
+parent_agent_id: null
+max_sts_ttl_seconds: 300
+max_subagent_permissions: same_or_fewer
+capabilities:
+  - resource: file:repo
+    actions: ["read", "write"]
+    constraints:
+      path_prefix: "/worktree/ornith/"
+  - resource: net:egress:llm_api
+    actions: ["connect"]
+    constraints:
+      allowed_hosts: ["localhost", "127.0.0.1"]
+      allowed_ports: [8000, 3000]
+denied: []

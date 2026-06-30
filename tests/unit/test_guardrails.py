@@ -135,6 +135,62 @@ class TestBashGuardrailPlugin:
         assert "startsWith" in content or "make" in content
 
 
+class TestOpencodeJsonSchemaGuardPlugin:
+    """The enforce-make.ts plugin has a PreToolUse guard that denies writes/edits
+    to opencode.json when the proposed content has unknown top-level keys.
+    This mirrors the Python test in test_opencode_json_schema.py.
+    The guard prevents a class of incident (2026-06-28) where an agent added
+    `"env": {...}` at the top level — opencode silently drops unknown keys
+    (additionalProperties: false), breaking every plugin that needed the value.
+    """
+
+    ALLOWED_KEYS_PYTHON = ROOT.parent / "tests" / "unit"
+    PLUGIN_CONTENT = PLUGIN_FILE.read_text()
+
+    def test_plugin_contains_schema_guard_block(self):
+        """The plugin must contain the BLOCKED message for unknown keys."""
+        assert "BLOCKED: opencode.json top-level key(s) not in opencode schema" in self.PLUGIN_CONTENT
+
+    def test_plugin_guard_applies_to_write_and_edit(self):
+        """Both write and edit tools must be within the guard's scope."""
+        assert "input.tool === \"write\"" in self.PLUGIN_CONTENT or "input.tool === 'write'" in self.PLUGIN_CONTENT
+        assert "input.tool === \"edit\"" in self.PLUGIN_CONTENT or "input.tool === 'edit'" in self.PLUGIN_CONTENT
+
+    def test_plugin_parses_json_to_validate_keys(self):
+        """The guard must parse JSON content, not just regex-check."""
+        assert "JSON.parse" in self.PLUGIN_CONTENT
+
+    def test_plugin_allowlist_matches_python_allowlist(self):
+        """The TypeScript ALLOWED_TOP_LEVEL_KEYS must match the Python test's set
+        exactly. If they diverge, one guard will miss a violation the other catches."""
+        from tests.unit.test_opencode_json_schema import ALLOWED_TOP_LEVEL_KEYS as py_keys
+
+        ts_content = self.PLUGIN_CONTENT
+        ts_start = ts_content.find("ALLOWED_TOP_LEVEL_KEYS:")
+        assert ts_start > 0, "Could not find ALLOWED_TOP_LEVEL_KEYS in plugin"
+        ts_block = ts_content[ts_start:]
+        ts_end = ts_block.find("]")
+        ts_block = ts_block[:ts_end]
+        ts_keys = set()
+        for m in __import__("re").finditer(r'"([^"]+)"', ts_block):
+            ts_keys.add(m.group(1))
+
+        # Remove $schema which is present in both sets
+        both = {"$schema"}
+        ts_only = ts_keys - py_keys - both
+        py_only = py_keys - ts_keys - both
+        assert not ts_only, f"TypeScript allowlist has keys not in Python: {sorted(ts_only)}"
+        assert not py_only, f"Python allowlist has keys not in TypeScript: {sorted(py_only)}"
+
+    def test_plugin_rejects_unknown_keys_in_write_content(self):
+        """Simulate the guard: a write with 'env' top-level key must be rejected."""
+        assert "unknown" in self.PLUGIN_CONTENT and "throw new Error" in self.PLUGIN_CONTENT
+
+    def test_plugin_references_opencode_schema_url(self):
+        """The error message must reference the published schema URL."""
+        assert "https://opencode.ai/config.json" in self.PLUGIN_CONTENT
+
+
 class TestBashGuardrailPrompting:
     def test_agents_md_exists(self):
         assert AGENTS_MD.exists(), "AGENTS.md must exist"

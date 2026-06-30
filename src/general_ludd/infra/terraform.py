@@ -6,6 +6,7 @@ import shlex
 import textwrap
 
 from general_ludd.infra.compute import ComputeConfig, ComputeProvider, InferenceEngine
+from general_ludd.infra.terraform_state import StateBackendSelector, render_backend_block
 
 # ---------------------------------------------------------------------------
 # Security note — HCL string interpolation
@@ -128,7 +129,24 @@ def _user_data_script(config: ComputeConfig) -> str:
 
 
 class TerraformGenerator:
+    def __init__(
+        self,
+        state_backend_selector: StateBackendSelector | None = None,
+    ) -> None:
+        # Optional state-backend selector (design doc §10 #2). When attached,
+        # every generated main.tf is prepended with the appropriate
+        # ``terraform { backend "..." {} }`` block. ``None`` preserves the
+        # legacy local-state default (no backend block emitted).
+        self._state_backend_selector = state_backend_selector
+
     def generate(self, config: ComputeConfig) -> str:
+        body = self._generate_body(config)
+        if self._state_backend_selector is None:
+            return body
+        backend_cfg = self._state_backend_selector.select(config)
+        return render_backend_block(backend_cfg) + "\n" + body
+
+    def _generate_body(self, config: ComputeConfig) -> str:
         if config.provider == ComputeProvider.AZURE and config.deploy_type == "containerapp":
             return self._generate_azure_containerapp(config)
         dispatch = {

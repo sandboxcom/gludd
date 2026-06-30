@@ -1,0 +1,43 @@
+---
+# ornith_self_improve defaults — SAFE BY DEFAULT.
+# The whole role is gated behind ornith_enabled; nothing runs unless an
+# operator opts in (config.ornith_enabled = true OR ornith_enabled var true).
+ornith_enabled: false
+
+daemon_url: "http://localhost:8000"
+psk: ""
+
+# Where to look for artifacts to improve. Empty = auto-pick from the
+# most-rejected pair's target_files.
+target_artifacts: []
+
+# Safety: one improvement per invocation.
+max_artifacts_per_run: 1
+
+# Only improve artifacts that have >= N rejections in the lookback window.
+require_minimum_rejection_count: 3
+lookback_days: 14
+
+# Pair statuses that count as "needs improvement".
+rejected_statuses: "rejected_by_gate,rejected_by_review,reverted"
+
+# Branch prefix for the PR the role opens.
+pr_branch_prefix: "ornith-self-improve"
+
+# Max iterations for the Ornith improvement rollout.
+max_iterations: 5
+
+# Model profile for the improvement call (empty = default routing).
+model_profile: ""
+
+# Repo to commit + open the PR against. Empty = dry-run (patch written, no PR).
+repo_path: ""
+
+# Artifact output dir (patch file + summary JSON land here).
+artifact_dir: "/tmp/gludd-ornith-self-improve"
+
+# The agent identifier recorded on the human-todo + audit rows.
+agent_id: "ornith_self_improve"
+
+# Parent agent todo id (links the filed human-todo back to the spawning todo).
+parent_agent_todo_id: ""

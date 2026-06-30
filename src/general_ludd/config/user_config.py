@@ -128,6 +128,12 @@ class UserConfig(BaseSettings):
     # default None → borrowing OFF, router unchanged. Set a block (or
     # GLUDD_RELATIONSHIP_ROUTING JSON) to enable + tune it.
     relationship_routing: RelationshipRoutingConfig | None = None
+    # Ornith (self-improving coding LLM) integration — Phase 1.
+    ornith_enabled: bool = False
+    ornith_binary_path: str = "ornith"
+    ornith_model_sha: str = ""
+    ornith_max_iterations: int = 10
+    ornith_timeout_seconds: int = 300
 
     @classmethod
     def from_yaml(cls, yaml_path: Path) -> UserConfig:

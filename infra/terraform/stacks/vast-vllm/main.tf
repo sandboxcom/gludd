@@ -1,16 +1,14 @@
 terraform {
-  required_providers {
-    vast-ai = {
-      source  = "vast-ai/vast-ai"
-      version = "~> 1.0"
-    }
-  }
+  required_version = ">= 1.4"
 }
 
-provider "vast-ai" {}
+# Vast.ai has no official Terraform provider in the registry. The stack composes
+# the provider-agnostic vllm-server module; Vast.ai instance lifecycle is driven
+# via the Vast.ai SDK at apply time outside Terraform. Add a provider block here
+# only if/when a community vast-ai provider is published.
 
 module "vllm_server" {
-  source = "../modules/vllm-server"
+  source = "../../modules/vllm-server"
 
   image           = var.image
   gpus            = var.gpus
@@ -20,14 +18,4 @@ module "vllm_server" {
   extra_args      = var.extra_args
   max_cost_usd    = var.max_cost_usd
   timeout_minutes = var.timeout_minutes
-}
-
-output "instance_id" {
-  description = "Provider-assigned instance id of the deployed inference server."
-  value       = module.vllm_server.instance_id
-}
-
-output "base_url" {
-  description = "OpenAI-compatible base URL of the inference server."
-  value       = module.vllm_server.base_url
 }

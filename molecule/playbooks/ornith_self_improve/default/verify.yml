@@ -1,0 +1,99 @@
+---
+- name: Verify - ornith_self_improve proposed a patch + filed a human-todo + opened a PR
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}.pid"
+    repo_path: "/tmp/gludd-ornith-repo-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8794', true) }}"
+    artifact_dir: "/tmp/gludd-ornith-self-improve-{{ mock_port }}"
+  tasks:
+    - name: Assert patch file exists
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/proposed-agent_orchestrate.yml.patch"
+      register: patch_file
+      failed_when: not patch_file.stat.exists
+
+    - name: Assert summary artifact exists
+      ansible.builtin.stat:
+        path: "{{ artifact_dir }}/proposed-agent_orchestrate.yml.json"
+      register: summary_file
+      failed_when: not summary_file.stat.exists
+
+    - name: Load summary artifact
+      ansible.builtin.slurp:
+        src: "{{ artifact_dir }}/proposed-agent_orchestrate.yml.json"
+      register: summary_raw
+
+    - name: Parse summary
+      ansible.builtin.set_fact:
+        summary: "{{ summary_raw.content | b64decode | from_json }}"
+
+    - name: Assert summary fields
+      ansible.builtin.assert:
+        that:
+          - summary.status == 'proposed'
+          - summary.artifact == 'playbooks/agent_orchestrate.yml'
+          - summary.failure_count >= 3
+          - summary.human_todo_id == 'HTODO-MOCK-0001'
+        fail_msg: "summary artifact wrong: {{ summary }}"
+        success_msg: "ornith_self_improve proposed improvement: {{ summary }}"
+
+    - name: Snapshot the request log (proves endpoint hits)
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests"
+        method: GET
+        status_code: 200
+      register: req_log
+
+    - name: Assert the ornith pairs endpoint was hit
+      ansible.builtin.assert:
+        that:
+          - >-
+            req_log.json.requests
+            | select('search', 'GET /admin/ornith/pairs')
+            | list
+            | length >= 1
+        fail_msg: "ornith pairs endpoint was not hit: {{ req_log.json.requests }}"
+        success_msg: "GET /admin/ornith/pairs was hit"
+
+    - name: Assert the human-todos endpoint was hit
+      ansible.builtin.assert:
+        that:
+          - >-
+            req_log.json.requests
+            | select('search', 'POST /api/human-todos')
+            | list
+            | length >= 1
+        fail_msg: "human-todos endpoint was not hit: {{ req_log.json.requests }}"
+        success_msg: "POST /api/human-todos was hit"
+
+    - name: Assert the models/call endpoint was hit (the Ornith improve call)
+      ansible.builtin.assert:
+        that:
+          - >-
+            req_log.json.requests
+            | select('search', 'POST /admin/models/call')
+            | list
+            | length >= 1
+        fail_msg: "models/call endpoint was not hit: {{ req_log.json.requests }}"
+        success_msg: "POST /admin/models/call was hit"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false
+
+    - name: Remove throwaway repo
+      ansible.builtin.file:
+        path: "{{ repo_path }}"
+        state: absent
+      failed_when: false
+
+    - name: Remove artifact dir
+      ansible.builtin.file:
+        path: "{{ artifact_dir }}"
+        state: absent
+      failed_when: false

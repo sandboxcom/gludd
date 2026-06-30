@@ -69,6 +69,7 @@ from __future__ import annotations
 import glob
 import json
 import os
+import sqlite3
 import sys
 import time
 
@@ -308,6 +309,186 @@ def live_count(
     return live, total, tasks
 
 
+# ============================================================================
+# HARNESS-AWARE BACKENDS (claude + opencode)
+# ============================================================================
+#
+# BUG THIS FIXES (2026-06-29): the original probe globbed ONLY Claude Code
+# transcript paths (~/.claude/projects/, /private/tmp/claude-<uid>/...). Under
+# opencode those paths do not exist, so the probe returned 0 unconditionally —
+# every floor/ceiling/delegate check was operating on permanently-zero data.
+# The whole multitasking enforcement layer was inert in opencode sessions.
+#
+# FIX: probe BOTH harnesses and report the max. opencode persists sessions in a
+# SQLite DB (~/.local/share/opencode/opencode.db) — there is no `status` column,
+# so "live" = subagent session (parent_id IS NOT NULL), not archived, not
+# compacting, and updated within the window. The DB is the ONLY signal under
+# opencode (no .jsonl transcripts exist for it).
+
+# Cache: the probe runs on every tool call (via the floor plugin). To stay
+# under the 500ms budget we cache the result for a few seconds so only one
+# actual probe runs per TTL window.
+CACHE_TTL_SEC = float(os.environ.get("GLUDD_LIVENESS_CACHE_TTL", "3"))
+CACHE_FILE = os.environ.get(
+    "GLUDD_LIVENESS_CACHE_FILE", "/tmp/gludd-live-count-cache.json"
+)
+
+
+def _opencode_db_path() -> str | None:
+    """Resolve the opencode SQLite DB path.
+
+    Order:
+      1. ``OPENCODE_DB_PATH`` env override.
+      2. ``~/.local/share/opencode/opencode.db`` (XDG default).
+
+    Returns the path string if it exists on disk, else ``None``.
+    """
+    override = os.environ.get("OPENCODE_DB_PATH")
+    if override:
+        return override if os.path.isfile(override) else None
+    default = os.path.expanduser("~/.local/share/opencode/opencode.db")
+    return default if os.path.isfile(default) else None
+
+
+def _count_claude_live(window: float = LIVENESS_WINDOW_SEC) -> int:
+    """Claude Code backend: count live subagent transcripts via the existing
+    filesystem probe. Returns just the live count (int)."""
+    live, _total, _tasks = live_count(window=window)
+    return live
+
+
+def _count_opencode_live(window: float = LIVENESS_WINDOW_SEC) -> int:
+    """opencode backend: count live subagent sessions in the SQLite DB.
+
+    A session row counts as a LIVE subagent iff:
+      - parent_id IS NOT NULL (it's a subagent, not a top-level orchestrator)
+      - time_archived IS NULL (not archived)
+      - time_compacting IS NULL (not in a compaction job)
+      - time_updated > now_ms - window_ms (recently active)
+
+    Fail-open: DB missing / schema unknown / any error → return 0.
+    """
+    db = _opencode_db_path()
+    if not db:
+        return 0
+    try:
+        con = sqlite3.connect("file:%s?mode=ro" % db, uri=True, timeout=2.0)
+    except sqlite3.Error:
+        return 0
+    try:
+        cur = con.execute("PRAGMA table_info(session)")
+        cols = {row[1] for row in cur.fetchall()}
+        required = {"parent_id", "time_updated", "time_archived", "time_compacting"}
+        if not required.issubset(cols):
+            # Unknown schema — cannot probe safely.
+            return 0
+        now_ms = int(time.time() * 1000)
+        cutoff = now_ms - int(window * 1000)
+        cur = con.execute(
+            """
+            SELECT COUNT(*) FROM session
+            WHERE parent_id IS NOT NULL
+              AND time_archived IS NULL
+              AND time_compacting IS NULL
+              AND time_updated > ?
+            """,
+            (cutoff,),
+        )
+        row = cur.fetchone()
+        return int(row[0]) if row else 0
+    except sqlite3.Error:
+        return 0
+    finally:
+        try:
+            con.close()
+        except Exception:
+            pass
+
+
+def _detect_harness() -> str:
+    """Detect which agent harness we are running under.
+
+    Returns one of:
+      - ``"claude"``   — CLAUDE_PROJECT_DIR set, or ~/.claude/projects/ exists.
+      - ``"opencode"`` — OPENCODE_SESSION_ID set, or ~/.local/share/opencode/ exists.
+      - ``"unknown"``  — neither signal present; caller should probe both.
+    """
+    if os.environ.get("CLAUDE_PROJECT_DIR"):
+        return "claude"
+    if os.environ.get("OPENCODE_SESSION_ID"):
+        return "opencode"
+    if os.path.isdir(os.path.expanduser("~/.claude/projects")):
+        return "claude"
+    if os.path.isdir(os.path.expanduser("~/.local/share/opencode")):
+        return "opencode"
+    return "unknown"
+
+
+def _read_cache() -> tuple[float, int] | None:
+    """Return (timestamp, count) from the cache file, or None if missing/stale/
+    unparseable. Caller decides freshness against CACHE_TTL_SEC."""
+    try:
+        with open(CACHE_FILE, "r") as fh:
+            data = json.load(fh)
+        ts = float(data["ts"])
+        count = int(data["count"])
+        return ts, count
+    except Exception:
+        return None
+
+
+def _write_cache(count: int) -> None:
+    try:
+        with open(CACHE_FILE, "w") as fh:
+            json.dump({"ts": time.time(), "count": int(count)}, fh)
+    except Exception:
+        pass
+
+
+def _count_live_total(
+    window: float = LIVENESS_WINDOW_SEC, use_cache: bool = True
+) -> int:
+    """Return ``max(claude_count, opencode_count)`` — the live-subagent count
+    that drives floor enforcement. Works in either harness.
+
+    When ``use_cache`` is True and the cache is fresh (within CACHE_TTL_SEC),
+    returns the cached count without probing. This keeps the per-tool-call cost
+    under the 500ms budget.
+    """
+    if use_cache and CACHE_TTL_SEC > 0:
+        cached = _read_cache()
+        if cached is not None and (time.time() - cached[0]) < CACHE_TTL_SEC:
+            return cached[1]
+
+    claude_n = _count_claude_live(window=window)
+    oc_n = _count_opencode_live(window=window)
+    total = max(claude_n, oc_n)
+    if use_cache:
+        _write_cache(total)
+    return total
+
+
+def _count_live_total_debug(
+    window: float = LIVENESS_WINDOW_SEC,
+) -> tuple[int, int, int, str, bool]:
+    """Same as _count_live_total but returns diagnostic detail for --debug.
+
+    Returns ``(total, claude_n, opencode_n, harness, cache_used)``.
+    """
+    harness = _detect_harness()
+    cache_used = False
+    if CACHE_TTL_SEC > 0:
+        cached = _read_cache()
+        if cached is not None and (time.time() - cached[0]) < CACHE_TTL_SEC:
+            cache_used = True
+            return cached[1], -1, -1, harness, cache_used
+    claude_n = _count_claude_live(window=window)
+    oc_n = _count_opencode_live(window=window)
+    total = max(claude_n, oc_n)
+    _write_cache(total)
+    return total, claude_n, oc_n, harness, cache_used
+
+
 def main(argv: list[str]) -> int:
     # TEST-ONLY seam: if FLOOR_LIVE_OVERRIDE is an all-digit string, skip the
     # filesystem probe entirely and print that integer directly. Makes callers
@@ -321,8 +502,16 @@ def main(argv: list[str]) -> int:
             print("[liveness] FLOOR_LIVE_OVERRIDE=%s (test seam active)" % override)
         return 0
 
+    debug = "--debug" in argv
+
     try:
-        live, total, tasks = live_count()
+        if debug:
+            live, claude_n, oc_n, harness, cached = _count_live_total_debug()
+        else:
+            live = _count_live_total()
+            claude_n = oc_n = None
+            harness = None
+            cached = None
     except Exception:
         # Fail safe: emit 0 so callers err toward dispatching, never wedge.
         if "--count" in argv:
@@ -333,11 +522,22 @@ def main(argv: list[str]) -> int:
 
     if "--count" in argv:
         print(live)
+    elif debug:
+        lines = [
+            "[liveness DEBUG]",
+            "  harness detected: %s" % harness,
+            "  claude backend live count:   %s" % claude_n,
+            "  opencode backend live count: %s" % oc_n,
+            "  cache used: %s" % cached,
+            "  reported (max): %d" % live,
+        ]
+        print("\n".join(lines))
     else:
+        tasks = _tasks_dir()
         print(
             "[liveness] live subagents (window=%.0fs + terminal-detection): "
-            "%d live  of %d total transcripts  (dir=%s)"
-            % (LIVENESS_WINDOW_SEC, live, total, tasks)
+            "%d live  (dir=%s)"
+            % (LIVENESS_WINDOW_SEC, live, tasks)
         )
     return 0
 

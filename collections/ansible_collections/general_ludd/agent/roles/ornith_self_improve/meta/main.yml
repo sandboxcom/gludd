@@ -1,0 +1,22 @@
+---
+galaxy_info:
+  role_name: ornith_self_improve
+  author: Agentic Harness Agent
+  description: >
+    The bidirectional half of the gludd × Ornith symbiotic loop. Pulls the
+    most-recently-rejected training pairs from the daemon (those that failed
+    the gate, were rejected by review, or were reverted), invokes Ornith via
+    gludd_ornith to produce an improvement patch, opens a GitHub PR via
+    gludd_git, and files a human-todo (category=decision) so a human reviews
+    the proposal. The PR is NEVER auto-merged — the human-todo is the gate.
+    SAFE BY DEFAULT — gated behind ornith_enabled (default false).
+  license: MIT
+  min_ansible_version: "2.14"
+  platforms:
+    - name: EL
+      versions: [all]
+    - name: Ubuntu
+      versions: [all]
+    - name: MacOSX
+      versions: [all]
+dependencies: []

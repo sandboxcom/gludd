@@ -11,8 +11,31 @@ provider "aws" {
   region = var.region
 }
 
+# Network: opens var.vllm_port from var.allowed_cidr + 22 from var.ssh_cidr.
+module "network" {
+  source = "../../modules/network"
+
+  cloud             = "aws"
+  vllm_port         = 8000
+  vllm_allowed_cidr = var.allowed_cidr
+  ssh_cidr          = var.ssh_cidr
+  name_prefix       = "aws-vllm"
+}
+
+# Self-terminating watchdog: enforces var.max_cost_usd + var.timeout_minutes
+# on the deployed VM via cloud-init + systemd.
+module "gpu_cost_watchdog" {
+  source = "../../modules/gpu-cost-watchdog"
+
+  max_cost_usd          = var.max_cost_usd
+  timeout_minutes       = var.timeout_minutes
+  poll_interval_seconds = var.poll_interval_seconds
+  region                = var.region
+  cloud                 = "aws"
+}
+
 module "vllm_server" {
-  source = "../modules/vllm-server"
+  source = "../../modules/vllm-server"
 
   image           = var.image
   gpus            = var.gpus
@@ -24,12 +47,12 @@ module "vllm_server" {
   timeout_minutes = var.timeout_minutes
 }
 
-output "instance_id" {
-  description = "Provider-assigned instance id of the deployed inference server."
-  value       = module.vllm_server.instance_id
+output "security_group_id" {
+  description = "Id of the AWS security group created by the network module."
+  value       = module.network.security_group_id
 }
 
-output "base_url" {
-  description = "OpenAI-compatible base URL of the inference server."
-  value       = module.vllm_server.base_url
+output "watchdog_user_data" {
+  description = "Cloud-init fragment from the gpu-cost-watchdog module. Compose with module.vllm_server.user_data via cloud-init multipart merge at apply time."
+  value       = module.gpu_cost_watchdog.user_data
 }

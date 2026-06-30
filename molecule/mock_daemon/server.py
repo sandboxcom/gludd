@@ -38,6 +38,8 @@ shape matches what each module parses:
   GET  /admin/processes               -> 200 {"processes":[...],"count":N}    (gludd_process list / gludd_proc_monitor)
   GET  /admin/processes/<pid>/stats   -> 200 psutil-shaped stats snapshot     (gludd_process status / gludd_proc_monitor)
   POST /admin/processes/<pid>/signal  -> 200 {"ok":true,"pid":..,"signal":..} (gludd_process signal)
+  GET  /admin/ornith/pairs            -> 200 {"pairs":[...],"count":N}        (gludd_ornith pairs — rejected training pairs)
+  POST /api/human-todos               -> 201 created human-todo               (gludd_human_todo present)
 
 Plus an in-memory request-log introspection seam (NOT a daemon endpoint — a
 test affordance) so verify plays can prove, per role-invocation, which
@@ -647,6 +649,92 @@ def _stream_dispatch_response(payload: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Ornith training-pair canned responses
+# ---------------------------------------------------------------------------
+# gludd_ornith state=pairs hits GET /admin/ornith/pairs?status=...&limit=N.
+# The mock returns 3 rejected pairs that all target the SAME artifact so the
+# ornith_self_improve role's rejection-count threshold (default 3) is met and
+# the artifact is selected for improvement.
+ORNITH_PAIRS_SNAPSHOT = [
+    {
+        "id": "ORN-MOCK-0001",
+        "invoked_at": "2026-06-20T04:00:00",
+        "task_description": "improve agent_orchestrate.yml",
+        "target_files": ["playbooks/agent_orchestrate.yml"],
+        "scaffold_kind": "playbook",
+        "scaffold_content": "---\n- name: old\n  hosts: localhost\n",
+        "scaffold_hash": "deadbeef",
+        "iterations_used": 3,
+        "tokens_consumed": 1500,
+        "model_sha": "mock-sha",
+        "outcome_status": "rejected_by_gate",
+        "outcome_details": {"gate_output": "ansible-syntax failed"},
+        "outcome_set_at": "2026-06-20T04:05:00",
+        "project_id": None,
+        "agent_id": "ornith_self_improve",
+    },
+    {
+        "id": "ORN-MOCK-0002",
+        "invoked_at": "2026-06-21T04:00:00",
+        "task_description": "improve agent_orchestrate.yml",
+        "target_files": ["playbooks/agent_orchestrate.yml"],
+        "scaffold_kind": "playbook",
+        "scaffold_content": "---\n- name: old\n  hosts: localhost\n",
+        "scaffold_hash": "deadbeef",
+        "iterations_used": 4,
+        "tokens_consumed": 1800,
+        "model_sha": "mock-sha",
+        "outcome_status": "rejected_by_review",
+        "outcome_details": {"reviewer": "human", "reason": "missing gludd_facts"},
+        "outcome_set_at": "2026-06-21T04:10:00",
+        "project_id": None,
+        "agent_id": "ornith_self_improve",
+    },
+    {
+        "id": "ORN-MOCK-0003",
+        "invoked_at": "2026-06-22T04:00:00",
+        "task_description": "improve agent_orchestrate.yml",
+        "target_files": ["playbooks/agent_orchestrate.yml"],
+        "scaffold_kind": "playbook",
+        "scaffold_content": "---\n- name: old\n  hosts: localhost\n",
+        "scaffold_hash": "deadbeef",
+        "iterations_used": 2,
+        "tokens_consumed": 1200,
+        "model_sha": "mock-sha",
+        "outcome_status": "reverted",
+        "outcome_details": {"revert_reason": "regression in test_x"},
+        "outcome_set_at": "2026-06-22T04:15:00",
+        "project_id": None,
+        "agent_id": "ornith_self_improve",
+    },
+]
+
+
+def _ornith_pairs_response(status_csv: str, limit: int) -> dict:
+    """Return Ornith training pairs filtered by the comma-separated statuses."""
+    statuses = {s.strip() for s in (status_csv or "").split(",") if s.strip()}
+    if not statuses:
+        return {"pairs": [], "count": 0}
+    filtered = [p for p in ORNITH_PAIRS_SNAPSHOT if p["outcome_status"] in statuses]
+    return {"pairs": filtered[:limit], "count": len(filtered)}
+
+
+def _human_todo_created(payload: dict) -> dict:
+    """Shape mirrors POST /api/human-todos response (HumanTodoModel dict)."""
+    return {
+        "id": "HTODO-MOCK-0001",
+        "parent_agent_todo_id": payload.get("parent_agent_todo_id"),
+        "agent_id": payload.get("agent_id", "ornith_self_improve"),
+        "title": payload.get("title", ""),
+        "body": payload.get("body", ""),
+        "category": payload.get("category", "decision"),
+        "priority": payload.get("priority", "medium"),
+        "status": "open",
+        "tags": payload.get("tags", []),
+    }
+
+
+# ---------------------------------------------------------------------------
 # Managed-process registry (gludd_process / gludd_proc_monitor)
 # ---------------------------------------------------------------------------
 # Shape mirrors the daemon's managed-process API: GET /admin/processes returns a
@@ -826,6 +914,11 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
                 self._send_json(403, {"detail": "missing X-Vault-Token"})
             else:
                 self._send_octet(200, OPENBAO_FAKE_SNAPSHOT)
+        elif path == "/admin/ornith/pairs":
+            qs = parse_qs(urlparse(self.path).query)
+            status_csv = (qs.get("status", [""]) or [""])[0]
+            limit = int((qs.get("limit", ["10"]) or ["10"])[0])
+            self._send_json(200, _ornith_pairs_response(status_csv, limit))
         else:
             self._send_json(404, {"detail": f"no mock route for GET {path}"})
 
@@ -862,6 +955,8 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
             self._send_json(200, _dispatch_response(payload))
         elif path == "/admin/stream/dispatch":
             self._send_json(200, _stream_dispatch_response(payload))
+        elif path == "/api/human-todos":
+            self._send_json(201, _human_todo_created(payload))
         elif path.startswith("/admin/processes/") and path.endswith("/signal"):
             pid = _pid_from_proc_path(path)
             if pid is None:

@@ -206,6 +206,133 @@ def test_import_issue_is_dataclass() -> None:
     assert issue.message == "boom"
 
 
+# ---------------------------------------------------------------------------
+# tfvars schema check
+# ---------------------------------------------------------------------------
+
+_VARIABLES_TF = textwrap.dedent("""\
+    variable "region" {
+      type = string
+    }
+
+    variable "instance_type" {
+      type = string
+    }
+""")
+
+_TFVARS_EXAMPLE_COMPLETE = textwrap.dedent("""\
+    region        = "us-east-1"
+    instance_type = "g4dn.xlarge"
+""")
+
+_TFVARS_EXAMPLE_MISSING = textwrap.dedent("""\
+    region = "us-east-1"
+""")
+
+
+def _build_stack_collection(
+    root: Path,
+    *,
+    variables_tf: str,
+    tfvars_example: str,
+) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    root.joinpath("galaxy.yml").write_text(
+        "namespace: acme\nname: obs\nversion: 1.0.0\n", encoding="utf-8"
+    )
+    stack = root / "plugins" / "terraform" / "stacks" / "aws-vllm"
+    stack.mkdir(parents=True)
+    stack.joinpath("variables.tf").write_text(variables_tf, encoding="utf-8")
+    stack.joinpath("terraform.tfvars.example").write_text(tfvars_example, encoding="utf-8")
+    return root
+
+
+def test_tfvars_schema_check_passes_when_every_variable_has_example(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(subprocess, "run", _ok_completed)
+    root = _build_stack_collection(
+        tmp_path / "acme-obs",
+        variables_tf=_VARIABLES_TF,
+        tfvars_example=_TFVARS_EXAMPLE_COMPLETE,
+    )
+    issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
+    schema_warnings = [i for i in issues if "no example value" in i.message]
+    assert schema_warnings == [], schema_warnings
+
+
+def test_tfvars_schema_check_warns_when_variable_missing_from_example(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(subprocess, "run", _ok_completed)
+    root = _build_stack_collection(
+        tmp_path / "acme-obs",
+        variables_tf=_VARIABLES_TF,
+        tfvars_example=_TFVARS_EXAMPLE_MISSING,
+    )
+    issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
+    warns = [i for i in issues if i.severity == "warn" and "instance_type" in i.message]
+    assert warns, f"expected warning for missing 'instance_type'; got {issues}"
+
+
+# ---------------------------------------------------------------------------
+# provider pin check
+# ---------------------------------------------------------------------------
+
+_PINNED_MAIN_TF = textwrap.dedent("""\
+    terraform {
+      required_providers {
+        aws = {
+          source  = "hashicorp/aws"
+          version = "~> 5.0"
+        }
+      }
+    }
+""")
+
+_FLOATING_MAIN_TF = textwrap.dedent("""\
+    terraform {
+      required_providers {
+        aws = {
+          source  = "hashicorp/aws"
+          version = ">= 5.0"
+        }
+      }
+    }
+""")
+
+
+def _build_module_collection(root: Path, *, main_tf: str) -> Path:
+    root.mkdir(parents=True, exist_ok=True)
+    root.joinpath("galaxy.yml").write_text(
+        "namespace: acme\nname: obs\nversion: 1.0.0\n", encoding="utf-8"
+    )
+    module = root / "plugins" / "terraform" / "modules" / "x"
+    module.mkdir(parents=True)
+    module.joinpath("main.tf").write_text(main_tf, encoding="utf-8")
+    return root
+
+
+def test_provider_pin_check_passes_on_pinned_version(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(subprocess, "run", _ok_completed)
+    root = _build_module_collection(tmp_path / "acme-obs", main_tf=_PINNED_MAIN_TF)
+    issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
+    pin_warnings = [i for i in issues if "floating version" in i.message]
+    assert pin_warnings == [], pin_warnings
+
+
+def test_provider_pin_check_warns_on_floating_ge_constraint(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    monkeypatch.setattr(subprocess, "run", _ok_completed)
+    root = _build_module_collection(tmp_path / "acme-obs", main_tf=_FLOATING_MAIN_TF)
+    issues = TerraformCollectionImporter(root, operator_trust_data_path=_TRUST_DATA).import_collection()
+    warns = [i for i in issues if i.severity == "warn" and "floating version" in i.message]
+    assert warns, f"expected floating-version warning; got {issues}"
+
+
 def test_example_tag_enforcement_policy_uses_plan_json_shape() -> None:
     """example_tag_enforcement.rego MUST use the terraform-plan JSON input path
     (input.planned_values.root_module.resources[_]) — NOT input.resource[_].

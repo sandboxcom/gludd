@@ -906,3 +906,51 @@ class RemediationActionModel(Base):
         Index("ix_remediation_actions_project_created", "project_id", "created_at"),
         Index("ix_remediation_actions_blocked_kind", "blocked_todo_id", "action_kind"),
     )
+
+
+def _gen_ornith_pair_id() -> str:
+    return f"ORN-{uuid4().hex}"
+
+
+class OrnithTrainingPairModel(Base):
+    """A ``(scaffold, outcome)`` pair captured from an Ornith invocation.
+
+    Feeds the offline RL trainer per the symbiotic design
+    (``docs/design/SYMBIOTIC_AGENT_INTEGRATION.md`` §5.7). The scaffold half
+    is recorded at ``solve()`` time; the outcome half is set later by the
+    :class:`~general_ludd.ornith.outcome_observer.OutcomeObserver` when the
+    gate / review / git-history decides what actually happened to the
+    scaffold Ornith produced.
+    """
+
+    __tablename__ = "ornith_training_pairs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=_gen_ornith_pair_id
+    )
+    invoked_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+    task_description: Mapped[str] = mapped_column(Text, nullable=False)
+    # JSON array of target file paths.
+    target_files: Mapped[str] = mapped_column(Text, nullable=False, default="[]")
+    scaffold_kind: Mapped[str] = mapped_column(String(32), nullable=False)
+    scaffold_content: Mapped[str] = mapped_column(Text, nullable=False)
+    scaffold_hash: Mapped[str] = mapped_column(String(64), nullable=False, index=True)
+    iterations_used: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    tokens_consumed: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    model_sha: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    outcome_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="pending", index=True
+    )
+    # JSON dict: gate output, review notes, reverted-because, etc.
+    outcome_details: Mapped[str] = mapped_column(Text, nullable=False, default="{}")
+    outcome_set_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    project_id: Mapped[str | None] = mapped_column(String(32), nullable=True, index=True)
+    agent_id: Mapped[str] = mapped_column(String(128), nullable=False)
+
+    __table_args__ = (
+        Index("ix_ornith_pairs_status_invoked", "outcome_status", "invoked_at"),
+    )

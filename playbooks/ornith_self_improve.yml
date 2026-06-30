@@ -1,0 +1,7 @@
+---
+- name: Ornith self-improvement pass
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  roles:
+    - role: general_ludd.agent.ornith_self_improve

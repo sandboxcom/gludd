@@ -503,6 +503,14 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     selftest_p.add_argument("--daemon-url", default="http://localhost:8000")
     selftest_p.set_defaults(func=_cmd_selftest)
 
+    preflight_p = sub.add_parser("preflight", help="Run the preflight quality gate")
+    preflight_p.add_argument(
+        "--strict-terraform-import",
+        action="store_true",
+        help="Elevate terraform-collection importer warnings to failures (release readiness)",
+    )
+    preflight_p.set_defaults(func=_cmd_preflight)
+
     tui_parser = sub.add_parser("tui", help="Launch the interactive TUI dashboard")
     tui_parser.add_argument("--daemon-url", default="http://localhost:8000")
     tui_parser.set_defaults(func=_cmd_tui)
@@ -755,6 +763,12 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     add_remediation_subparser(sub)
     remediation_parser = sub.choices["remediation"]
 
+    # `gludd ornith` — Ornith self-improving coding-agent integration.
+    from general_ludd.cli_ornith import add_ornith_subparser
+
+    add_ornith_subparser(sub)
+    ornith_parser = sub.choices["ornith"]
+
     subcommand_map = {
         "models": models_parser,
         "mcp": mcp_parser,
@@ -776,6 +790,7 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
         "perm": perm_parser,
         "human-todo": human_todo_parser,
         "remediation": remediation_parser,
+        "ornith": ornith_parser,
     }
 
     return parser, subcommand_map
@@ -1749,6 +1764,33 @@ def _cmd_selftest(args: argparse.Namespace) -> None:
         status = "PASS" if r.get("passed") else "FAIL"
         print(f"  [{status}] {r.get('scenario', 'unknown')}")
     if not data.get("success"):
+        sys.exit(1)
+
+
+def _cmd_preflight(args: argparse.Namespace) -> None:
+    """Run the preflight quality gate locally (no daemon required)."""
+    from general_ludd.quality.preflight import run_preflight
+
+    strict_tf = bool(getattr(args, "strict_terraform_import", False))
+    result = run_preflight(strict_terraform_import=strict_tf)
+    overall = result.get("overall", "FAIL")
+    print(f"Preflight: {overall}")
+    print(f"Passed:    {result.get('passed_count', 0)}/{result.get('total_count', 0)}")
+    for chk in result.get("checks", []):
+        name = chk.get("name", "?")
+        passed = chk.get("passed", False)
+        marker = "PASS" if passed else "FAIL"
+        line = f"  [{marker}] {name}"
+        if name == "terraform_collection_import_audit":
+            issues = chk.get("issues", []) or []
+            line += f"  ({len(issues)} importer issue(s))"
+            for issue in issues:
+                line += f"\n        {issue.get('severity', '?')}: {issue.get('message', '')}"
+        elif not passed and chk.get("violations"):
+            for v in chk["violations"][:3]:
+                line += f"\n        - {v}"
+        print(line)
+    if overall != "PASS":
         sys.exit(1)
 
 

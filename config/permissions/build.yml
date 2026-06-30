@@ -20,4 +20,9 @@ capabilities:
     actions: ["read", "write"]
     constraints:
       openbao_paths: ["secret/data/gludd/build/*"]
+  - resource: agent:ornith
+    actions: ["solve", "improve"]
+    constraints:
+      max_iterations: 50
+      max_tokens_per_call: 100000
 denied: []

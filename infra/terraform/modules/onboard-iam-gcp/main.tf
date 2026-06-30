@@ -59,6 +59,6 @@ resource "google_project_iam_member" "logging_log_writer" {
 resource "google_service_account_key" "gludd_operator_key" {
   count              = var.create_key ? 1 : 0
   service_account_id = google_service_account.gludd_operator.name
-  public_key_type    = "TYPE_X509_PEM"
+  public_key_type    = "TYPE_X509_PEM_FILE"
   private_key_type   = "TYPE_GOOGLE_CREDENTIALS_FILE"
 }

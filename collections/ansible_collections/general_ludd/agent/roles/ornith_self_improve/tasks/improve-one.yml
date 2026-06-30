@@ -1,0 +1,148 @@
+---
+# improve-one.yml — improve a single artifact, open a PR, file a human-todo.
+# Invoked once per candidate artifact (max_artifacts_per_run caps the loop).
+
+- name: Slurp the artifact's current content (best-effort — may not exist locally)
+  ansible.builtin.slurp:
+    src: "{{ _osi_artifact }}"
+  register: _osi_artifact_raw
+  failed_when: false
+
+- name: Build the failure-outcomes context for this artifact
+  ansible.builtin.set_fact:
+    _osi_failures: >-
+      {%- set out = [] -%}
+      {%- for p in _osi_pairs -%}
+        {%- if _osi_artifact in (p.target_files | default([])) -%}
+          {%- set _ = out.append({
+            'pair_id': p.id,
+            'outcome_status': p.outcome_status,
+            'invoked_at': p.invoked_at,
+            'details': p.outcome_details | default({})
+          }) -%}
+        {%- endif -%}
+      {%- endfor -%}
+      {{ out }}
+
+- name: Invoke Ornith to produce an improvement patch
+  general_ludd.agent.gludd_ornith:
+    state: improve
+    task_description: >-
+      Improve this artifact based on the failure outcomes attached.
+      Preserve the documented contract (public task names, module args,
+      return fields). Artifact: {{ _osi_artifact }}. Failures:
+      {{ _osi_failures | to_nice_json }}
+    target_files:
+      - "{{ _osi_artifact }}"
+    max_iterations: "{{ max_iterations }}"
+    model_profile: "{{ model_profile }}"
+    agent_id: "{{ agent_id }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _osi_rollout
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Derive the artifact basename for output paths
+  ansible.builtin.set_fact:
+    _osi_artifact_name: "{{ _osi_artifact | basename | regex_replace('[^A-Za-z0-9._-]', '_') }}"
+
+- name: Write the proposed improvement to disk
+  ansible.builtin.copy:
+    content: "{{ _osi_rollout.patch | default('') }}"
+    dest: "{{ artifact_dir }}/proposed-{{ _osi_artifact_name }}.patch"
+    mode: "0644"
+  register: _osi_patch_file
+
+- name: Create the PR branch + commit the patch (when repo_path is set)
+  when: repo_path | length > 0
+  block:
+
+    - name: Create PR branch
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: branch
+        branch: "{{ pr_branch_prefix }}/{{ _osi_artifact_name }}"
+      register: _osi_branch_result
+
+    - name: Apply the patch to the repo worktree
+      ansible.builtin.copy:
+        content: "{{ _osi_rollout.patch | default('') }}"
+        dest: "{{ repo_path }}/{{ _osi_artifact }}"
+        mode: "preserve"
+      when: not ansible_check_mode
+
+    - name: Commit the proposed improvement
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: commit
+        message: >-
+          ornith-self-improve: propose improvement to {{ _osi_artifact }}
+
+          Based on {{ _osi_failures | length }} rejection(s) in the last
+          {{ lookback_days }} days. Human review required before merge.
+
+          Citations:
+          {{ _osi_failures | map(attribute='pair_id') | join(', ') }}
+      register: _osi_commit_result
+
+    - name: Push the PR branch (opens PR via daemon sidecar)
+      general_ludd.agent.gludd_git:
+        path: "{{ repo_path }}"
+        op: push
+        branch: "{{ pr_branch_prefix }}/{{ _osi_artifact_name }}"
+      register: _osi_push_result
+
+    - name: Record the PR URL (best-effort from push result)
+      ansible.builtin.set_fact:
+        _osi_pr_url: "{{ (_osi_push_result.result | default({})).get('pr_url', '') }}"
+
+- name: Fallback PR URL when repo_path is empty (dry-run mode)
+  ansible.builtin.set_fact:
+    _osi_pr_url: "(dry-run: repo_path not set — patch written to {{ _osi_patch_file.dest }})"
+  when: not (repo_path | length > 0)
+
+- name: File a human-todo so a human reviews the proposal (the gate)
+  general_ludd.agent.gludd_human_todo:
+    state: present
+    category: decision
+    priority: high
+    title: "Review Ornith-proposed improvement to {{ _osi_artifact }}"
+    body: >-
+      Ornith proposed an improvement to `{{ _osi_artifact }}` based on
+      {{ _osi_failures | length }} rejection(s) in the last {{ lookback_days }} days.
+
+      PR: {{ _osi_pr_url }}
+
+      Proposed diff: {{ _osi_patch_file.dest }}
+
+      Failure citations:
+      {{ _osi_failures | to_nice_json }}
+    parent_agent_todo_id: "{{ parent_agent_todo_id }}"
+    agent_id: "{{ agent_id }}"
+    daemon_url: "{{ daemon_url }}"
+    psk: "{{ psk }}"
+  register: _osi_human_todo
+  no_log: "{{ psk | length > 0 }}"
+
+- name: Write the per-artifact summary artifact
+  ansible.builtin.copy:
+    content: >-
+      {{ {
+        'role': 'ornith_self_improve',
+        'status': 'proposed',
+        'artifact': _osi_artifact,
+        'patch_path': _osi_patch_file.dest,
+        'pr_url': _osi_pr_url,
+        'human_todo_id': _osi_human_todo.id | default(None),
+        'failure_count': _osi_failures | length,
+        'failure_citations': _osi_failures | map(attribute='pair_id') | list
+      } | to_nice_json }}
+    dest: "{{ artifact_dir }}/proposed-{{ _osi_artifact_name }}.json"
+    mode: "0644"
+
+- name: Report the proposal
+  ansible.builtin.debug:
+    msg: >-
+      ornith_self_improve: proposed improvement to {{ _osi_artifact }}
+      (failures={{ _osi_failures | length }} patch={{ _osi_patch_file.dest }}
+      pr={{ _osi_pr_url }} human_todo={{ _osi_human_todo.id | default('(none)') }})

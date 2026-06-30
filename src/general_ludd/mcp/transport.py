@@ -17,7 +17,7 @@ import json
 import os
 import re
 import shutil
-from typing import Any
+from typing import Any, cast
 
 from general_ludd.mcp.config import MCPServerConfig
 from general_ludd.mcp.registry import MCPTool
@@ -449,6 +449,16 @@ class MCPStdioClient:
                 )
             )
         return tools
+
+    async def list_resources(self) -> list[dict[str, Any]]:
+        result = await self._send_request("resources/list")
+        return cast("list[dict[str, Any]]", result.get("resources", []))
+
+    async def read_resource(self, uri: str) -> dict[str, Any]:
+        return await self._send_request(
+            "resources/read",
+            {"uri": uri},
+        )
 
     async def call_tool(
         self, tool_name: str, arguments: dict[str, Any]

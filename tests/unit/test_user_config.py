@@ -284,3 +284,23 @@ class TestBuildConfigLayer:
         )
         assert layer.resolve("budget") == {"max_usd": 100}
         assert layer.resolve("task_preferences") == {"budget": 50}
+
+
+class TestOrnithDefaults:
+    def test_ornith_disabled_by_default(self) -> None:
+        cfg = UserConfig()
+        assert cfg.ornith_enabled is False
+
+    def test_ornith_defaults(self) -> None:
+        cfg = UserConfig()
+        assert cfg.ornith_binary_path == "ornith"
+        assert cfg.ornith_model_sha == ""
+        assert cfg.ornith_max_iterations == 10
+        assert cfg.ornith_timeout_seconds == 300
+
+    def test_ornith_env_override(self, monkeypatch, tmp_path) -> None:
+        monkeypatch.setenv("GLUDD_ORNITH_ENABLED", "true")
+        monkeypatch.setenv("GLUDD_ORNITH_MAX_ITERATIONS", "42")
+        cfg = UserConfig()
+        assert cfg.ornith_enabled is True
+        assert cfg.ornith_max_iterations == 42

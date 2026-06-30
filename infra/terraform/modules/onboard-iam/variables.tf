@@ -23,8 +23,8 @@ variable "tags" {
   description = "Tags applied to the IAM role, policy, and instance profile."
   type        = map(string)
   default = {
-    ManagedBy   = "gludd"
-    Component   = "onboard-iam"
-    Purpose     = "least-privilege-compute-operator"
+    ManagedBy = "gludd"
+    Component = "onboard-iam"
+    Purpose   = "least-privilege-compute-operator"
   }
 }

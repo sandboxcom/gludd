@@ -261,10 +261,12 @@ EXPECTED_STACKS = {
     "vast-vllm", "vsphere-vllm",
 }
 
-# module source must point at ../modules/<engine>-server, where engine matches
-# the stack-name suffix (the last `-`-delimited token).
+# module source must point at (../|../../)modules/<engine>-server, where engine
+# matches the stack-name suffix (the last `-`-delimited token). Both relative
+# depths appear in-tree depending on whether the stack composes a sibling module
+# dir or reaches up two levels from stacks/<name>/ to modules/.
 _STACK_MODULE_SOURCE_RE = re.compile(
-    r'source\s*=\s*"\.\./modules/(vllm-server|llamacpp-server)"'
+    r'source\s*=\s*"(?:\.\./|\.\./\.\./)modules/(vllm-server|llamacpp-server)"'
 )
 # Stacks must be thin: no inline `resource "..."` blocks.
 _INLINE_RESOURCE_RE = re.compile(r'^\s*resource\s+"', re.MULTILINE)
@@ -443,3 +445,111 @@ def test_phase4_exit_no_inline_resource_in_generator():
         f"{TERRAFORM_PY}: Phase 4 exit criterion failed — found an inline "
         f'resource "..." block in the generator source'
     )
+
+
+# ---------------------------------------------------------------------------
+# Phase 1 real modules: gpu-cost-watchdog renders a self-termination cloud-init
+# and network exposes per-provider NSG/firewall primitives. Stacks compose both.
+# (TERRAFORM_INFRA_STRUCTURE.md §5.)
+# ---------------------------------------------------------------------------
+
+WATCHDOG_MAIN = MODULES_DIR / "gpu-cost-watchdog" / "main.tf"
+WATCHDOG_OUTPUTS = MODULES_DIR / "gpu-cost-watchdog" / "outputs.tf"
+NETWORK_MAIN = MODULES_DIR / "network" / "main.tf"
+NETWORK_OUTPUTS = MODULES_DIR / "network" / "outputs.tf"
+
+
+class TestGpuCostWatchdogModule:
+    def test_gpu_cost_watchdog_module_has_script_template(self):
+        """main.tf renders /usr/local/bin/gpu-cost-watchdog.sh via cloud-init."""
+        assert WATCHDOG_MAIN.is_file(), f"missing {WATCHDOG_MAIN}"
+        text = WATCHDOG_MAIN.read_text()
+        assert "/usr/local/bin/gpu-cost-watchdog.sh" in text, (
+            f"{WATCHDOG_MAIN}: expected /usr/local/bin/gpu-cost-watchdog.sh "
+            f"write_files entry not found"
+        )
+        # Cloud-init write_files wrapper is present.
+        assert "write_files" in text, (
+            f"{WATCHDOG_MAIN}: missing cloud-init write_files block"
+        )
+        # The self-termination call sites are present (at least AWS).
+        assert "terminate-instances" in text, (
+            f"{WATCHDOG_MAIN}: missing aws ec2 terminate-instances call"
+        )
+
+    def test_gpu_cost_watchdog_outputs_user_data_fragment(self):
+        """outputs.tf exposes a user_data output for stack composition."""
+        assert WATCHDOG_OUTPUTS.is_file(), f"missing {WATCHDOG_OUTPUTS}"
+        text = WATCHDOG_OUTPUTS.read_text()
+        assert re.search(r'output\s+"user_data"', text), (
+            f"{WATCHDOG_OUTPUTS}: missing `output user_data` (cloud-init fragment)"
+        )
+        assert re.search(r'output\s+"script_path"', text), (
+            f"{WATCHDOG_OUTPUTS}: missing `output script_path`"
+        )
+
+
+class TestNetworkModule:
+    def test_network_module_has_per_provider_switch(self):
+        """main.tf gates resources on var.cloud for each supported cloud."""
+        assert NETWORK_MAIN.is_file(), f"missing {NETWORK_MAIN}"
+        text = NETWORK_MAIN.read_text()
+        for cloud in ("aws", "gcp", "azure", "vsphere"):
+            pat = re.compile(rf'var\.cloud\s*==\s*"{cloud}"')
+            assert pat.search(text), (
+                f"{NETWORK_MAIN}: missing `var.cloud == \"{cloud}\"` "
+                f"per-provider switch branch"
+            )
+        # Concrete primitive for each real provider.
+        assert "aws_security_group" in text
+        assert "google_compute_firewall" in text
+        assert "azurerm_network_security_group" in text
+        # runpod/vast are documented as N/A.
+        assert "runpod" in text and "vast" in text
+
+    def test_network_module_outputs_security_group_id(self):
+        """outputs.tf exposes security_group_id + security_group_arn."""
+        assert NETWORK_OUTPUTS.is_file(), f"missing {NETWORK_OUTPUTS}"
+        text = NETWORK_OUTPUTS.read_text()
+        assert re.search(r'output\s+"security_group_id"', text), (
+            f"{NETWORK_OUTPUTS}: missing security_group_id output"
+        )
+        assert re.search(r'output\s+"security_group_arn"', text), (
+            f"{NETWORK_OUTPUTS}: missing security_group_arn output"
+        )
+
+
+class TestStackComposition:
+    """aws-vllm + gcp-vllm stacks compose network + gpu-cost-watchdog + vllm-server."""
+
+    @pytest.mark.parametrize(
+        "stack_name",
+        ["aws-vllm", "gcp-vllm"],
+    )
+    def test_stack_composes_network_and_watchdog(self, stack_name: str):
+        main_tf = STACKS_DIR / stack_name / "main.tf"
+        assert main_tf.is_file(), f"missing {main_tf}"
+        text = main_tf.read_text()
+
+        assert re.search(r'source\s*=\s*"(?:\.\./|\.\./\.\./)modules/network"', text), (
+            f"{main_tf}: stack does not compose the network module"
+        )
+        assert re.search(r'source\s*=\s*"(?:\.\./|\.\./\.\./)modules/gpu-cost-watchdog"', text), (
+            f"{main_tf}: stack does not compose the gpu-cost-watchdog module"
+        )
+        # Sanity: vllm-server is still composed.
+        assert re.search(r'source\s*=\s*"(?:\.\./|\.\./\.\./)modules/vllm-server"', text), (
+            f"{main_tf}: stack lost the vllm-server module reference"
+        )
+
+    def test_aws_stack_composes_network_and_watchdog(self):
+        main_tf = STACKS_DIR / "aws-vllm" / "main.tf"
+        text = main_tf.read_text()
+        assert re.search(r'modules/network"', text)
+        assert re.search(r'modules/gpu-cost-watchdog"', text)
+
+    def test_gcp_stack_composes_network_and_watchdog(self):
+        main_tf = STACKS_DIR / "gcp-vllm" / "main.tf"
+        text = main_tf.read_text()
+        assert re.search(r'modules/network"', text)
+        assert re.search(r'modules/gpu-cost-watchdog"', text)

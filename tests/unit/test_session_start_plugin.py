@@ -150,6 +150,90 @@ class TestSessionStartEnforcementGate:
         lower = src.lower()
         assert "task" in lower or "agent" in lower or "workflow" in lower
 
+    def test_state_file_path_default(self):
+        """The state file must default to /tmp/gludd-session-start.json."""
+        src = PLUGIN.read_text()
+        assert "/tmp/gludd-session-start.json" in src, (
+            "STATE_FILE must default to /tmp/gludd-session-start.json — the "
+            "per-session dispatch count state file is load-bearing for the "
+            "dispatch-count gate. The tool.execute.before hook tracks reads "
+            "and dispatches across turns via this file."
+        )
+        assert "GLUDD_SESSION_STATE" in src, (
+            "STATE_FILE must be overridable via GLUDD_SESSION_STATE env var "
+            "so tests can use a temp path."
+        )
+
+    def test_enforcement_default_is_blocking(self):
+        """ENFORCE must default to ON via `!== \"0\"` (not opt-in `=== \"1\"`).
+        The directive-only advisory mode is the exception, not the default.
+        """
+        src = PLUGIN.read_text()
+        assert '!== "0"' in src, (
+            "ENFORCE must use `process.env.GLUDD_SESSION_START_ENFORCE !== \"0\"` "
+            "polarity (default ON). Opt-in (`=== \"1\"`) defaults OFF and lets "
+            "the agent grind inline on session start."
+        )
+
+
+class TestSessionStartConstants:
+    """The config constants must be present and within expected bounds."""
+
+    def test_min_dispatches_constant_exists(self):
+        """MIN_DISPATCHES must be declared with env override and default >= 5."""
+        src = PLUGIN.read_text()
+        assert "MIN_DISPATCHES" in src, (
+            "MIN_DISPATCHES constant missing — the session-start dispatch "
+            "floor has no configurable minimum."
+        )
+        m = re.search(
+            r'GLUDD_SESSION_START_MIN_DISPATCHES\s*\|\|\s*["\'](\d+)["\']',
+            src,
+        )
+        assert m, "MIN_DISPATCHES default literal not found in env-var chain."
+        default = int(m.group(1))
+        assert default >= 5, (
+            f"MIN_DISPATCHES default is {default}, expected >= 5. The "
+            "session-start dispatch floor must be at least 5 parallel agents "
+            "(the message-shape wave minimum from AGENTS.md)."
+        )
+
+    def test_effective_min_bounded(self):
+        """EFFECTIVE_MIN must be >= 5 and <= 10, derived via Math.max/min."""
+        src = PLUGIN.read_text()
+        assert "EFFECTIVE_MIN" in src, "EFFECTIVE_MIN constant not found."
+        # The derivation: Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))
+        assert "Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))" in src, (
+            "EFFECTIVE_MIN must be 'Math.max(MIN_DISPATCHES, Math.min(FLOOR, 10))' "
+            "so the floor is bounded between MIN_DISPATCHES (>=5) and 10."
+        )
+
+    def test_fresh_secs_constant_exists(self):
+        """FRESH_SECS must be declared with env override and sane default."""
+        src = PLUGIN.read_text()
+        assert "FRESH_SECS" in src, "FRESH_SECS constant not found."
+        m = re.search(
+            r'GLUDD_SESSION_START_FRESH_SECS\s*\|\|\s*["\'](\d+)["\']',
+            src,
+        )
+        assert m, "FRESH_SECS default literal not found."
+        default = int(m.group(1))
+        assert default >= 60, (
+            f"FRESH_SECS default is {default}, expected >= 60 (at least "
+            "1 minute for a fresh-session gate window)."
+        )
+
+    def test_floor_env_var_override(self):
+        """FLOOR must reference CLAUDE_AGENT_FLOOR env var with '10' default."""
+        src = PLUGIN.read_text()
+        assert "CLAUDE_AGENT_FLOOR" in src, (
+            "FLOOR must read from CLAUDE_AGENT_FLOOR env var to stay "
+            "consistent with the sibling plugin (enforce-floor.ts)."
+        )
+        assert '"10"' in src or "'10'" in src, (
+            "FLOOR default must be '10' (the user directive from 2026-06-22)."
+        )
+
 
 class TestSessionStartPluginTemplate:
     """Plugin must follow the same structural template as the other plugins."""

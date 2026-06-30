@@ -17,3 +17,6 @@ denied:
     actions: ["read", "write"]
     constraints:
       openbao_paths: ["secret/data/gludd/*"]
+  - resource: agent:ornith
+    actions: ["solve", "improve"]
+    constraints: {}

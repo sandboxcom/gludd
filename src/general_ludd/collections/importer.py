@@ -26,6 +26,7 @@ import json
 import re
 import shutil
 import subprocess
+from collections.abc import Iterator
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Any
@@ -55,6 +56,8 @@ class TerraformCollectionImporter:
         issues.extend(self._validate_terraform_dirs())
         issues.extend(self._validate_rego_policies())
         issues.extend(self._check_provider_trust())
+        issues.extend(self._tfvars_schema_check())
+        issues.extend(self._provider_pin_check())
         return issues
 
     def _validate_terraform_dirs(self) -> list[ImportIssue]:
@@ -190,11 +193,179 @@ class TerraformCollectionImporter:
             relabel=str(policies_dir.relative_to(self.collection_path)),
         )
 
+    # ------------------------------------------------------------------
+    # tfvars schema + provider pinning checks
+    # ------------------------------------------------------------------
+
+    def _tfvars_schema_check(self) -> list[ImportIssue]:
+        """Warn when a stack's variables.tf declares vars missing from *.tfvars.example.
+
+        For every stack under ``plugins/terraform/stacks/<name>/`` that ships a
+        ``*.tfvars.example`` file, parse the declared ``variable "x" {}`` blocks
+        out of ``variables.tf`` and the assigned ``key = value`` lines out of
+        the example. Any declared variable with no example value is a warning.
+        """
+        issues: list[ImportIssue] = []
+        stacks_root = self.collection_path / "plugins" / "terraform" / "stacks"
+        for stack_dir in _iter_child_dirs(stacks_root):
+            example = _find_first(stack_dir.glob("*.tfvars.example"))
+            if example is None:
+                continue
+            variables_tf = stack_dir / "variables.tf"
+            if not variables_tf.is_file():
+                continue
+            declared = _parse_variable_names(variables_tf.read_text(encoding="utf-8"))
+            if not declared:
+                continue
+            examples = _parse_tfvars_keys(example.read_text(encoding="utf-8"))
+            rel = str(stack_dir.relative_to(self.collection_path))
+            for name in sorted(declared):
+                if name not in examples:
+                    issues.append(
+                        ImportIssue(
+                            severity="warn",
+                            message=(
+                                f"{rel}: variable {name!r} declared in variables.tf "
+                                f"has no example value in {example.name}"
+                            ),
+                        )
+                    )
+        return issues
+
+    def _provider_pin_check(self) -> list[ImportIssue]:
+        """Warn when a required_providers block uses a floating ``>=`` version.
+
+        Each ``required_providers`` block should pin its version (``~>`` or
+        ``=``). A floating ``>=`` constraint is permitted by Terraform but
+        invites unplanned provider upgrades that can silently change semantics.
+        """
+        issues: list[ImportIssue] = []
+        tf_root = self.collection_path / "plugins" / "terraform"
+        for tf_file in sorted(tf_root.rglob("*.tf")):
+            try:
+                text = tf_file.read_text(encoding="utf-8")
+            except OSError:
+                continue
+            for provider, version in _parse_required_providers(text).items():
+                if _is_floating_version(version):
+                    rel = str(tf_file.relative_to(self.collection_path))
+                    issues.append(
+                        ImportIssue(
+                            severity="warn",
+                            message=(
+                                f"{rel}: provider {provider!r} uses floating version "
+                                f"constraint {version!r}; pin with '~>' or '='"
+                            ),
+                        )
+                    )
+        return issues
+
 
 def _iter_child_dirs(parent: Path) -> list[Path]:
     if not parent.is_dir():
         return []
     return sorted(p for p in parent.iterdir() if p.is_dir())
+
+
+_VARIABLE_RE = re.compile(r'^\s*variable\s+"([^"]+)"\s*\{', re.MULTILINE)
+
+
+def _parse_variable_names(text: str) -> list[str]:
+    """Extract ``variable "x"`` names from a ``variables.tf`` body."""
+    return _VARIABLE_RE.findall(text)
+
+
+_TFVARS_KEY_RE = re.compile(r'^\s*([A-Za-z_][A-Za-z0-9_]*)\s*=')
+
+
+def _parse_tfvars_keys(text: str) -> set[str]:
+    """Extract top-level assignment keys (``foo = ...``) from a tfvars body.
+
+    Ignores blank lines, comments, and HCL block headers (``resource "..."``
+    etc.) — those are not tfvars assignments.
+    """
+    keys: set[str] = set()
+    for line in text.splitlines():
+        stripped = line.strip()
+        if not stripped or stripped.startswith("#") or stripped.startswith("//"):
+            continue
+        m = _TFVARS_KEY_RE.match(line)
+        if m:
+            keys.add(m.group(1))
+    return keys
+
+
+_VERSION_RE = re.compile(r'version\s*=\s*"(?P<v>[^"]+)"')
+_REQUIRED_PROVIDERS_HEADER_RE = re.compile(r'required_providers\s*\{')
+
+
+def _parse_required_providers(text: str) -> dict[str, str]:
+    """Parse every ``required_providers`` block into a {name: version} map.
+
+    Handles arbitrary nesting via a small depth-tracking scan: find each
+    ``required_providers {`` header, then walk forward counting ``{``/``}``
+    until the block closes, and within that span extract
+    ``<name> = { ... version = "..." ... }`` entries.
+    """
+    out: dict[str, str] = {}
+    for hdr in _REQUIRED_PROVIDERS_HEADER_RE.finditer(text):
+        start = hdr.end()
+        depth = 1
+        i = start
+        while i < len(text) and depth > 0:
+            ch = text[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            i += 1
+        block_body = text[start:i - 1]
+        # Each provider entry is ``name = { ... }``. Walk depth again per entry.
+        for name, entry in _iter_provider_entries(block_body):
+            m = _VERSION_RE.search(entry)
+            if m:
+                out[name] = m.group("v")
+    return out
+
+
+_PROVIDER_NAME_RE = re.compile(r'([A-Za-z0-9_-]+)\s*=\s*\{')
+
+
+def _iter_provider_entries(body: str) -> list[tuple[str, str]]:
+    """Yield ``(name, entry_body)`` pairs for ``name = { ... }`` blocks."""
+    entries: list[tuple[str, str]] = []
+    for m in _PROVIDER_NAME_RE.finditer(body):
+        name = m.group(1)
+        start = m.end()
+        depth = 1
+        i = start
+        while i < len(body) and depth > 0:
+            ch = body[i]
+            if ch == "{":
+                depth += 1
+            elif ch == "}":
+                depth -= 1
+            i += 1
+        entries.append((name, body[start:i - 1]))
+    return entries
+
+
+def _is_floating_version(version: str) -> bool:
+    """True when a version constraint is not pinned (``~>`` or ``=``).
+
+    A floating ``>=``/``>``/``<=``/``<`` constraint allows unplanned provider
+    upgrades and is flagged as a warning; ``~> 2.8`` and ``= 2.8.0`` are pins.
+    """
+    v = version.strip()
+    if v.startswith("~>") or v.startswith("="):
+        return False
+    return bool(v)
+
+
+def _find_first(iterator: Iterator[Path]) -> Path | None:
+    for p in iterator:
+        return p
+    return None
 
 
 def _provider_in_trust_list(provider: str, trust_list: list[str]) -> bool:
