@@ -1,0 +1,8 @@
+﻿2026-06-30T01:53:03.4223592Z ##[group]Run sed -i "s/__version__ = \".*\"/__version__ = \"0.1.0-alpha.202606300152\"/" src/general_ludd/__init__.py
+2026-06-30T01:53:03.4224633Z [36;1msed -i "s/__version__ = \".*\"/__version__ = \"0.1.0-alpha.202606300152\"/" src/general_ludd/__init__.py[0m
+2026-06-30T01:53:03.4225260Z [36;1msed -i "s/^version = \".*\"/version = \"0.1.0-alpha.202606300152\"/" pyproject.toml[0m
+2026-06-30T01:53:03.4424902Z shell: /usr/bin/bash -e {0}
+2026-06-30T01:53:03.4425197Z env:
+2026-06-30T01:53:03.4425483Z   UV_PYTHON_INSTALL_DIR: /home/runner/work/_temp/uv-python-dir
+2026-06-30T01:53:03.4425893Z   UV_CACHE_DIR: /home/runner/work/_temp/setup-uv-cache
+2026-06-30T01:53:03.4426194Z ##[endgroup]

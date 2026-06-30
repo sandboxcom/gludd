@@ -27,7 +27,11 @@ from general_ludd.config.project_dir import find_project_gludd_dir, merge_config
 from general_ludd.config.task_loader import discover_task_definitions
 from general_ludd.config.user_config import UserConfig
 from general_ludd.controllers.budget import RunBudgetGuard
-from general_ludd.db.repository import AuditEventRepository, BenchmarkRepository
+from general_ludd.db.repository import (
+    AuditEventRepository,
+    BenchmarkRepository,
+    ModelPerformanceRepository,
+)
 from general_ludd.db.session import (
     create_async_session_factory,
     ensure_tables,
@@ -1270,6 +1274,17 @@ async def _lifespan(app: FastAPI) -> AsyncIterator[None]:
         )
         event_loop._benchmark_recorder = benchmark_recorder
 
+        model_perf_repo = ModelPerformanceRepository(
+            session_factory=session_factory,
+        )
+        event_loop._model_perf_repo = model_perf_repo
+        app.state.model_perf_repo = model_perf_repo
+
+        from general_ludd.models.performance_router import ModelPerformanceRouter
+        app.state._model_performance_router = ModelPerformanceRouter(
+            perf_repo=model_perf_repo,  # type: ignore[arg-type]
+        )
+
         from general_ludd.worktree.core import WorktreeMonitor, WorktreeMonitorConfig
         config_dir = getattr(app.state, "_config_dir", None)
         wt_monitor = WorktreeMonitor(
@@ -1684,6 +1699,8 @@ def create_daemon_app(
     app.state._self_update_audit_sink = None
     app.state._startup_config = load_startup_config(config_dir)
     app.state._project_gludd_dir = app.state._startup_config.get("project_gludd_dir")
+    app.state._model_performance_router = None
+    app.state._performance_repo = None
     app.state._stats_start_time = time.monotonic()
     app.state._stats_requests = 0
     app.state._stats_responses = 0
@@ -1986,6 +2003,7 @@ def create_daemon_app(
         maintenance,
         mcp,
         messages,
+        model_performance,
         models,
         ornith,
         processes,
@@ -2019,6 +2037,7 @@ def create_daemon_app(
     embeddings.register(app, daemon_state)
     features.register(app, daemon_state)
     schedule.register(app, daemon_state)
+    model_performance.register(app, daemon_state)
     models.register(app, daemon_state)
     benchmark.register(app, daemon_state)
     mcp.register(app, daemon_state)

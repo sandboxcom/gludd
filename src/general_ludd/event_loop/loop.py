@@ -67,6 +67,7 @@ PHASE_ORDER = [
     "evaluate_rules",
     "dispatch_execute_jobs",
     "reconcile_completed_decisions",
+    "refresh_model_performance",
     "self_improve",
     "emit_tick_metrics",
 ]
@@ -237,6 +238,8 @@ class EventLoop:
         spend_limiter: Any | None = None,
         file_claim_registry: Any | None = None,
         ansible_env_updater: Any | None = None,
+        model_perf_repo: Any | None = None,
+        model_performance_interval: int = 10,
     ) -> None:
         self.worker_base_url = worker_base_url
         self.config = config or {}
@@ -332,6 +335,8 @@ class EventLoop:
         # .gludd/collections/ on the next run.
         self._ansible_env_updater = ansible_env_updater
         self._last_ansible_env_project_id: str | None = None
+        self._model_perf_repo: Any = model_perf_repo
+        self._model_performance_interval: int = model_performance_interval
 
     def _track_background_task(self, task: asyncio.Task[Any]) -> None:
         """Register a fire-and-forget task so its reference is held until done.
@@ -1608,22 +1613,73 @@ class EventLoop:
             # C1 (W3.x): invoke the model for a generation work type the SAME
             # way the worker HTTP path does, then feed the generated text into
             # the playbook vars so the runner path is not a no-op generator.
+            _model_call_start = time.monotonic()
+            _model_call_success = False
+            _model_call_error: str | None = None
             if self._model_gateway is not None and is_generation_work_type(
                 _safe_str(todo, "work_type", "code") or "code"
             ):
-                model_response, model_tool_calls = await asyncio.to_thread(
-                    invoke_model_for_generation,
-                    self._model_gateway,
-                    job_id=job_id,
-                    work_type=_safe_str(todo, "work_type", "code") or "code",
-                    model_profile=resolved_model_profile,
-                    prompt_text=prompt_text,
-                    skill_body=skill_body,
-                    budget_guard=self._budget_guard,
-                )
+                try:
+                    model_response, model_tool_calls = await asyncio.to_thread(
+                        invoke_model_for_generation,
+                        self._model_gateway,
+                        job_id=job_id,
+                        work_type=_safe_str(todo, "work_type", "code") or "code",
+                        model_profile=resolved_model_profile,
+                        prompt_text=prompt_text,
+                        skill_body=skill_body,
+                        budget_guard=self._budget_guard,
+                    )
+                    _model_call_success = model_response is not None
+                except Exception as _exc:
+                    model_response = None
+                    model_tool_calls = None
+                    _model_call_error = str(_exc)
+                    logger.warning(
+                        "Model call raised in EventLoop for job %s: %s",
+                        job_id, _exc,
+                    )
             else:
                 model_response = None
                 model_tool_calls = None
+            _model_call_duration = time.monotonic() - _model_call_start
+            # Record the model call in the performance repository.
+            if self._model_perf_repo is not None:
+                _input_tokens = len(prompt_text or "") // 4
+                _output_tokens = len(model_response or "") // 4
+                _profile_id = resolved_model_profile or "default"
+                _profile_obj: Any = None
+                if self._model_gateway is not None:
+                    _profile_obj = self._model_gateway.get_profile(_profile_id)
+                _cost_usd = 0.0
+                if _profile_obj is not None and hasattr(_profile_obj, "cost_per_input_token"):
+                    _cost_usd = (
+                        _input_tokens * _profile_obj.cost_per_input_token
+                        + _output_tokens * _profile_obj.cost_per_output_token
+                    )
+                _provider = getattr(_profile_obj, "provider", "") if _profile_obj else ""
+                _model_name = getattr(_profile_obj, "model_name", "") if _profile_obj else ""
+                try:
+                    await self._model_perf_repo.record_call(
+                        service=_provider or "unknown",
+                        model_name=_model_name or _profile_id,
+                        model_profile_id=_profile_id,
+                        task_type="generation",
+                        work_type=_safe_str(todo, "work_type", "code") or "code",
+                        success=_model_call_success,
+                        input_tokens=_input_tokens,
+                        output_tokens=_output_tokens,
+                        cost_usd=_cost_usd,
+                        duration_ms=_model_call_duration * 1000,
+                        todo_id=_safe_str(todo, "todo_id", ""),
+                        job_id=job_id,
+                        error_message=_model_call_error,
+                    )
+                except Exception as _rec_exc:
+                    logger.debug(
+                        "Model perf recording failed for %s: %s",
+                        job_id, _rec_exc,
+                    )
             if model_response is not None:
                 from general_ludd.dispatch.dynamic_dispatcher import (
                     structured_tool_calls_to_calls,
@@ -2623,6 +2679,50 @@ class EventLoop:
                     exc_info=True,
                 )
         return persisted
+
+    async def _phase_refresh_model_performance(self) -> None:
+        """Refresh aggregated model performance stats every N ticks.
+
+        Two responsibilities:
+        1. Call ``ModelPerformanceRepository.refresh_recent_stats()`` to
+           recompute rolling aggregates from the raw call log.
+        2. Log the current ``ModelRouter`` routing decisions so the
+           performance dashboard can correlate profile health with routing
+           choices.
+
+        Runs every ``model_performance_interval`` ticks (default 10).
+        Skipped when no repo is wired (None → harmless no-op).
+        """
+        interval = getattr(self, "_model_performance_interval", 10)
+        if interval <= 0 or self._total_ticks % interval != 0:
+            return
+        repo: Any = getattr(self, "_model_perf_repo", None)
+        if repo is None or self._session_factory is None:
+            return
+        try:
+            async with self._session_factory() as perf_session:
+                refreshed = await repo.refresh_recent_stats(session=perf_session)
+                await perf_session.commit()
+                logger.debug(
+                    "Model performance: refreshed %d profile(s)",
+                    refreshed,
+                )
+        except Exception as exc:
+            logger.warning(
+                "Model performance refresh failed: %s",
+                exc,
+                exc_info=True,
+            )
+        # Log current routing decisions.
+        router: Any = getattr(self, "_adaptive_router", None)
+        if router is not None and hasattr(router, "current_routing_decisions"):
+            try:
+                decisions = await router.current_routing_decisions()
+                self._tick_metrics["model_routing_decisions"] = len(decisions)
+            except Exception as exc:
+                logger.debug(
+                    "Model routing decision capture failed: %s", exc,
+                )
 
     async def _phase_emit_tick_metrics(self) -> None:
         logger.info("Tick metrics: %s", self._tick_metrics)

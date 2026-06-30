@@ -19,6 +19,8 @@ from general_ludd.db.models import (
     FeatureStatus,
     HumanTodoModel,
     LocationKind,
+    ModelCallLogModel,
+    ModelPerformanceModel,
     ProjectModel,
     ProjectRelationshipModel,
     PromptProfileModel,
@@ -2190,3 +2192,369 @@ class RemediationActionRepository:
             stmt = stmt.where(RemediationActionModel.project_id == project_id)
         result = await self._session.execute(stmt)
         return list(result.scalars().all())
+
+
+class ModelPerformanceRepository:
+    """Persistence for model call logs and aggregated performance stats.
+
+    Two-table design:
+
+    * ``model_call_logs`` — one row per model invocation, immutable.
+      Written by the worker HTTP path and the EventLoop in-process runner
+      path so every model call is centrally observable.
+    * ``model_performance`` — pre-aggregated per-profile stats, updated
+      periodically by ``refresh_recent_stats()`` for fast dashboard reads.
+
+    All write methods accept an optional ``session`` override so callers
+    that already hold an active session (e.g. the EventLoop tick) can share
+    it rather than opening a new one.
+    """
+
+    def __init__(
+        self,
+        session: AsyncSession | None = None,
+        session_factory: async_sessionmaker[AsyncSession] | None = None,
+    ) -> None:
+        self._session = session
+        self._session_factory = session_factory
+
+    # ── recording ───────────────────────────────────────────────────────
+
+    async def record_call(
+        self,
+        *,
+        service: str,
+        model_name: str,
+        model_profile_id: str,
+        task_type: str = "generation",
+        work_type: str | None = None,
+        success: bool = True,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: float = 0.0,
+        duration_ms: float = 0.0,
+        todo_id: str | None = None,
+        job_id: str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> ModelCallLogModel:
+        """Persist a single model call log entry.
+
+        When *session* is provided it is used directly; otherwise a new
+        session is opened from the factory (if available) or an error is
+        raised.  Returns the newly created :class:`ModelCallLogModel`.
+
+        This method does NOT update the aggregated ``model_performance``
+        table — call :meth:`refresh_recent_stats` to recompute aggregates
+        in batch.
+        """
+        eff_session = session or self._resolve_session()
+        row = ModelCallLogModel(
+            todo_id=todo_id,
+            job_id=job_id,
+            service=service,
+            model_name=model_name,
+            model_profile_id=model_profile_id,
+            task_type=task_type,
+            work_type=work_type,
+            success=success,
+            input_tokens=input_tokens,
+            output_tokens=output_tokens,
+            cost_usd=cost_usd,
+            duration_ms=duration_ms,
+            error_code=error_code,
+            error_message=error_message,
+        )
+        eff_session.add(row)
+        await eff_session.flush()
+        return row
+
+    def record_call_sync(
+        self,
+        *,
+        service: str,
+        model_name: str,
+        model_profile_id: str,
+        task_type: str = "generation",
+        work_type: str | None = None,
+        success: bool = True,
+        input_tokens: int = 0,
+        output_tokens: int = 0,
+        cost_usd: float = 0.0,
+        duration_ms: float = 0.0,
+        todo_id: str | None = None,
+        job_id: str | None = None,
+        error_code: str | None = None,
+        error_message: str | None = None,
+    ) -> None:
+        """Synchronous version of :meth:`record_call`.
+
+        Intended for use from ``asyncio.to_thread`` worker paths where an
+        async session is not available.  Opens and commits its own session
+        synchronously (blocking).  Fail-soft: any exception is logged and
+        swallowed so a broken repo never kills the model call.
+        """
+        try:
+            import asyncio as _asyncio
+
+            coro = self.record_call(
+                service=service,
+                model_name=model_name,
+                model_profile_id=model_profile_id,
+                task_type=task_type,
+                work_type=work_type,
+                success=success,
+                input_tokens=input_tokens,
+                output_tokens=output_tokens,
+                cost_usd=cost_usd,
+                duration_ms=duration_ms,
+                todo_id=todo_id,
+                job_id=job_id,
+                error_code=error_code,
+                error_message=error_message,
+                session=None,
+            )
+            _asyncio.run(coro)
+        except Exception as exc:
+            import logging as _logging
+
+            _logging.getLogger(__name__).warning(
+                "ModelPerformanceRepository.record_call_sync failed: %s",
+                exc,
+                exc_info=True,
+            )
+
+    # ── refresh (aggregated stats) ──────────────────────────────────────
+
+    async def refresh_recent_stats(
+        self,
+        session: AsyncSession | None = None,
+        window_hours: float = 24.0,
+    ) -> int:
+        """Recompute the ``model_performance`` table from recent call logs.
+
+        Queries all call log rows within the rolling *window_hours* window,
+        groups by ``model_profile_id``, and upserts each profile's aggregate
+        row in ``model_performance``.  Returns the number of profiles
+        refreshed.
+        """
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        from sqlalchemy import Integer as _Integer
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        cutoff = _dt.now(_UTC) - _td(hours=window_hours)
+
+        stmt = (
+            select(
+                ModelCallLogModel.model_profile_id,
+                _func.max(ModelCallLogModel.model_name).label("model_name"),
+                _func.max(ModelCallLogModel.service).label("service"),
+                _func.count().label("total_calls"),
+                _func.sum(
+                    _func.cast(ModelCallLogModel.success, _Integer)
+                ).label("successful_calls"),
+                (
+                    _func.count() - _func.sum(
+                        _func.cast(ModelCallLogModel.success, _Integer)
+                    )
+                ).label("failed_calls"),
+                _func.coalesce(
+                    _func.sum(ModelCallLogModel.input_tokens), 0
+                ).label("total_input_tokens"),
+                _func.coalesce(
+                    _func.sum(ModelCallLogModel.output_tokens), 0
+                ).label("total_output_tokens"),
+                _func.coalesce(
+                    _func.sum(ModelCallLogModel.cost_usd), 0.0
+                ).label("total_cost_usd"),
+                _func.avg(ModelCallLogModel.duration_ms).label("avg_duration_ms"),
+                _func.max(ModelCallLogModel.created_at).label("last_call_at"),
+                _func.min(ModelCallLogModel.created_at).label("first_call_at"),
+            )
+            .where(ModelCallLogModel.created_at >= cutoff)
+            .group_by(ModelCallLogModel.model_profile_id)
+        )
+        result = await eff_session.execute(stmt)
+        rows = result.all()
+
+        refreshed = 0
+        now = _dt.now(_UTC)
+        for row in rows:
+            profile_id = row.model_profile_id
+            existing = await eff_session.execute(
+                select(ModelPerformanceModel).where(
+                    ModelPerformanceModel.model_profile_id == profile_id
+                )
+            )
+            perf: ModelPerformanceModel | None = existing.scalar_one_or_none()
+            if perf is None:
+                perf = ModelPerformanceModel(
+                    model_profile_id=profile_id,
+                    model_name=str(row.model_name or ""),
+                    service=str(row.service or ""),
+                )
+                eff_session.add(perf)
+            perf.model_name = str(row.model_name or perf.model_name)
+            perf.service = str(row.service or perf.service)
+            perf.total_calls = int(row.total_calls or 0)
+            perf.successful_calls = int(row.successful_calls or 0)
+            perf.failed_calls = int(row.failed_calls or 0)
+            perf.total_input_tokens = int(row.total_input_tokens or 0)
+            perf.total_output_tokens = int(row.total_output_tokens or 0)
+            perf.total_cost_usd = float(row.total_cost_usd or 0.0)
+            perf.avg_duration_ms = (
+                float(row.avg_duration_ms) if row.avg_duration_ms is not None else 0.0
+            )
+            perf.last_call_at = row.last_call_at
+            perf.first_call_at = row.first_call_at
+            perf.updated_at = now
+            refreshed += 1
+
+        if refreshed:
+            await eff_session.flush()
+        return refreshed
+
+    # ── queries ─────────────────────────────────────────────────────────
+
+    async def get_stats_by_model(
+        self,
+        model_profile_id: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> list[ModelPerformanceModel]:
+        """Return aggregated performance rows, optionally filtered by profile.
+
+        When *model_profile_id* is None, returns stats for ALL profiles.
+        """
+        eff_session = session or self._resolve_session()
+        stmt = select(ModelPerformanceModel)
+        if model_profile_id is not None:
+            stmt = stmt.where(
+                ModelPerformanceModel.model_profile_id == model_profile_id
+            )
+        stmt = stmt.order_by(ModelPerformanceModel.total_cost_usd.desc())
+        result = await eff_session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_recent_calls(
+        self,
+        limit: int = 100,
+        model_profile_id: str | None = None,
+        session: AsyncSession | None = None,
+    ) -> list[ModelCallLogModel]:
+        """Return the most recent call log entries."""
+        eff_session = session or self._resolve_session()
+        stmt = (
+            select(ModelCallLogModel)
+            .order_by(ModelCallLogModel.created_at.desc())
+            .limit(min(limit, 1000))
+        )
+        if model_profile_id is not None:
+            stmt = stmt.where(
+                ModelCallLogModel.model_profile_id == model_profile_id
+            )
+        result = await eff_session.execute(stmt)
+        return list(result.scalars().all())
+
+    async def get_stats_by_service(
+        self,
+        session: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return aggregated performance grouped by service/provider."""
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        stmt = (
+            select(
+                ModelPerformanceModel.service,
+                _func.count().label("profile_count"),
+                _func.sum(ModelPerformanceModel.total_calls).label("total_calls"),
+                _func.sum(ModelPerformanceModel.successful_calls).label(
+                    "successful_calls"
+                ),
+                _func.sum(ModelPerformanceModel.total_cost_usd).label("total_cost"),
+            )
+            .group_by(ModelPerformanceModel.service)
+            .order_by(_func.sum(ModelPerformanceModel.total_cost_usd).desc())
+        )
+        result = await eff_session.execute(stmt)
+        return [
+            {
+                "service": r.service,
+                "profile_count": int(r.profile_count),
+                "total_calls": int(r.total_calls or 0),
+                "successful_calls": int(r.successful_calls or 0),
+                "total_cost_usd": float(r.total_cost or 0.0),
+            }
+            for r in result.all()
+        ]
+
+    async def get_daily_stats(
+        self,
+        days: int = 7,
+        session: AsyncSession | None = None,
+    ) -> list[dict[str, Any]]:
+        """Return daily call volume and cost aggregates."""
+        from datetime import UTC as _UTC
+        from datetime import datetime as _dt
+        from datetime import timedelta as _td
+
+        from sqlalchemy import Integer as _Integer
+        from sqlalchemy import func as _func
+
+        eff_session = session or self._resolve_session()
+        cutoff = _dt.now(_UTC) - _td(days=days)
+        stmt = (
+            select(
+                _func.date(ModelCallLogModel.created_at).label("day"),
+                _func.count().label("total_calls"),
+                _func.sum(
+                    _func.cast(ModelCallLogModel.success, _Integer)
+                ).label("successful_calls"),
+                _func.coalesce(
+                    _func.sum(ModelCallLogModel.input_tokens), 0
+                ).label("total_input_tokens"),
+                _func.coalesce(
+                    _func.sum(ModelCallLogModel.output_tokens), 0
+                ).label("total_output_tokens"),
+                _func.coalesce(
+                    _func.sum(ModelCallLogModel.cost_usd), 0.0
+                ).label("total_cost_usd"),
+            )
+            .where(ModelCallLogModel.created_at >= cutoff)
+            .group_by(_func.date(ModelCallLogModel.created_at))
+            .order_by(_func.date(ModelCallLogModel.created_at).desc())
+        )
+        result = await eff_session.execute(stmt)
+        return [
+            {
+                "date": str(r.day),
+                "total_calls": int(r.total_calls),
+                "successful_calls": int(r.successful_calls or 0),
+                "total_input_tokens": int(r.total_input_tokens or 0),
+                "total_output_tokens": int(r.total_output_tokens or 0),
+                "total_cost_usd": float(r.total_cost_usd or 0.0),
+            }
+            for r in result.all()
+        ]
+
+    # ── helpers ─────────────────────────────────────────────────────────
+
+    def _resolve_session(self) -> AsyncSession:
+        """Return a usable async session, raising when none is available."""
+        if self._session_factory is not None and self._session is None:
+            raise RuntimeError(
+                "ModelPerformanceRepository._resolve_session requires a "
+                "concrete AsyncSession. Use session_factory only for lazy "
+                "creation via an explicit session= override."
+            )
+        if self._session is None:
+            raise RuntimeError(
+                "ModelPerformanceRepository: no session configured and "
+                "no session= override provided."
+            )
+        return self._session

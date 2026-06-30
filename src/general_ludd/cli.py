@@ -20,6 +20,7 @@ from general_ludd.db.session import get_default_db_url, is_sqlite_url
 from general_ludd.filestore.bootstrap import BinaryBootstrapper
 from general_ludd.filestore.store import FileStore
 from general_ludd.integrity.scanner import FileIntegrityScanner
+from general_ludd.models.performance_router import DEFAULT_STRATEGIES
 from general_ludd.tui.config_editor import ConfigEditor
 from general_ludd.tui.runner import run_tui
 from general_ludd.tui.tables import _make_table
@@ -93,6 +94,20 @@ COMMANDS
         --provider NAME      Provider (default: openrouter)
         --daemon-url URL     Daemon URL
       discovered          List auto-discovered model profiles
+        --daemon-url URL     Daemon URL
+      performance         Show model performance data
+        --service S          Filter by service
+        --task-type T        Filter by task type
+        --daemon-url URL     Daemon URL
+      ranking             Show model rankings for a task type
+        --task-type T        Task type (required)
+        --strategy S         Ranking strategy (balanced|quality|cheapest|fastest)
+        --daemon-url URL     Daemon URL
+      router-status       Show current router configuration
+        --daemon-url URL     Daemon URL
+      router-set          Set routing strategy for a task type
+        --task-type T        Task type (required)
+        --strategy S         Routing strategy (balanced|quality|cheapest|fastest)
         --daemon-url URL     Daemon URL
 
     local-serve         Start a local inference server
@@ -336,6 +351,32 @@ def build_parser() -> tuple[argparse.ArgumentParser, dict[str, argparse.Argument
     models_remove.add_argument("model_id", help="Model ID to remove")
     models_remove.add_argument("--daemon-url", default="http://localhost:8000")
     models_remove.set_defaults(func=_cmd_models_remove)
+
+    models_perf = models_sub.add_parser("performance", help="Show model performance data")
+    models_perf.add_argument("--service", default=None, help="Filter by service")
+    models_perf.add_argument("--task-type", default=None, help="Filter by task type")
+    models_perf.add_argument("--daemon-url", default="http://localhost:8000")
+    models_perf.set_defaults(func=_cmd_model_performance)
+
+    models_ranking = models_sub.add_parser("ranking", help="Show model rankings for a task type")
+    models_ranking.add_argument("--task-type", required=True, help="Task type to rank")
+    models_ranking.add_argument("--strategy", default="balanced",
+                                choices=list(DEFAULT_STRATEGIES.keys()),
+                                help="Ranking strategy")
+    models_ranking.add_argument("--daemon-url", default="http://localhost:8000")
+    models_ranking.set_defaults(func=_cmd_model_ranking)
+
+    models_router_status = models_sub.add_parser("router-status", help="Show current router configuration")
+    models_router_status.add_argument("--daemon-url", default="http://localhost:8000")
+    models_router_status.set_defaults(func=_cmd_model_router_status)
+
+    models_router_set = models_sub.add_parser("router-set", help="Set routing strategy for a task type")
+    models_router_set.add_argument("--task-type", required=True, help="Task type")
+    models_router_set.add_argument("--strategy", required=True,
+                                   choices=list(DEFAULT_STRATEGIES.keys()),
+                                   help="Routing strategy")
+    models_router_set.add_argument("--daemon-url", default="http://localhost:8000")
+    models_router_set.set_defaults(func=_cmd_model_router_set)
 
     local_serve_parser = sub.add_parser("local-serve", help="Start a local inference server")
     local_serve_parser.add_argument("--engine", default="vllm", choices=["vllm", "llamacpp"])
@@ -1439,6 +1480,98 @@ def _cmd_models_add(args: argparse.Namespace) -> None:
 def _cmd_models_remove(args: argparse.Namespace) -> None:
     _http_call("DELETE", f"{args.daemon_url}/admin/models/{args.model_id}", timeout=10.0)
     print(f"Model removed: {args.model_id}")
+
+
+def _cmd_model_performance(args: argparse.Namespace) -> None:
+    """Show model performance data."""
+    params: dict[str, str] = {}
+    if args.service:
+        params["service"] = args.service
+    if args.task_type:
+        params["task_type"] = args.task_type
+    data = _http_call("GET", f"{args.daemon_url}/admin/models/performance", params=params, timeout=10.0)
+    if data is None:
+        return
+    rows = data.get("performance", [])
+    if not rows:
+        print("No performance data available.")
+        return
+    print(
+        f"{'service':<20} {'model':<25} {'task_type':<15} "
+        f"{'success':<8} {'latency':<10} {'cost':<12} {'calls':<8}"
+    )
+    print("-" * 100)
+    for r in rows:
+        svc = r.get("service", "")[:19]
+        mdl = r.get("model_name", "")[:24]
+        tt = r.get("task_type", "")[:14]
+        succ = f"{r.get('success_rate', 0):.2f}"
+        lat = f"{r.get('avg_latency_ms', 0):.0f}ms"
+        cost = f"${r.get('avg_cost_usd', 0):.6f}"
+        calls = str(r.get("sample_count", 0))
+        print(f"{svc:<20} {mdl:<25} {tt:<15} {succ:<8} {lat:<10} {cost:<12} {calls:<8}")
+
+
+def _cmd_model_ranking(args: argparse.Namespace) -> None:
+    """Show model rankings for a specific task type."""
+    params = {"task_type": args.task_type, "strategy": args.strategy}
+    data = _http_call("GET", f"{args.daemon_url}/admin/models/ranking", params=params, timeout=10.0)
+    if data is None:
+        return
+    ranking = data.get("ranking", [])
+    if not ranking:
+        print(f"No ranking data for task_type={args.task_type!r}.")
+        return
+    print(f"Task type: {data.get('task_type', '?')}  Strategy: {data.get('strategy', '?')}")
+    print(
+        f"{'rank':<5} {'service':<20} {'model':<25} "
+        f"{'score':<8} {'success':<8} {'latency':<10} {'cost':<12} {'calls':<8}"
+    )
+    print("-" * 100)
+    for i, r in enumerate(ranking, 1):
+        svc = r.get("service", "")[:19]
+        mdl = r.get("model_name", "")[:24]
+        score = f"{r.get('score', 0):.4f}"
+        succ = f"{r.get('success_rate', 0):.2f}"
+        lat = f"{r.get('avg_latency_ms', 0):.0f}ms"
+        cost = f"${r.get('avg_cost_usd', 0):.6f}"
+        calls = str(r.get("sample_count", 0))
+        print(f"{i:<5} {svc:<20} {mdl:<25} {score:<8} {succ:<8} {lat:<10} {cost:<12} {calls:<8}")
+
+
+def _cmd_model_router_status(args: argparse.Namespace) -> None:
+    """Show current router configuration and active model selections."""
+    data = _http_call("GET", f"{args.daemon_url}/admin/models/router/status", timeout=10.0)
+    if data is None:
+        return
+    if data.get("status") == "not_initialized":
+        print("Model performance router is not initialized.")
+        return
+    config = data.get("config", {})
+    strategies = config.get("strategies", {})
+    defaults = config.get("defaults", {})
+    print("Model Performance Router")
+    print(f"  Status: {data.get('status', '?')}")
+    if strategies:
+        print("  Per-task strategies:")
+        for tt, strat in sorted(strategies.items()):
+            print(f"    {tt:<20} {strat}")
+    else:
+        print("  Per-task strategies: (none set)")
+    print(f"  Min calls: {defaults.get('min_calls', '?')}")
+    print(f"  Default fallback: {defaults.get('default_fallback', '?')}")
+
+
+def _cmd_model_router_set(args: argparse.Namespace) -> None:
+    """Set routing strategy for a task type."""
+    data = _http_call(
+        "PUT", f"{args.daemon_url}/admin/models/router/config",
+        json={"task_type": args.task_type, "strategy": args.strategy},
+        timeout=10.0,
+    )
+    if data is None:
+        return
+    print(f"Strategy set: task_type={data.get('task_type', '?')} strategy={data.get('strategy', '?')}")
 
 
 def _cmd_local_serve(args: argparse.Namespace) -> None:

@@ -1,0 +1,32 @@
+﻿2026-06-30T01:52:59.1399050Z Current runner version: '2.335.1'
+2026-06-30T01:52:59.1439255Z ##[group]Runner Image Provisioner
+2026-06-30T01:52:59.1440963Z Hosted Compute Agent
+2026-06-30T01:52:59.1441929Z Version: 20260611.554
+2026-06-30T01:52:59.1442975Z Commit: 5e0782fdc9014723d3be820dd114dd31555c2bd1
+2026-06-30T01:52:59.1444263Z Build Date: 2026-06-11T21:40:46Z
+2026-06-30T01:52:59.1445341Z Worker ID: {c9b90f66-71bf-413e-af8b-3453ffaa2e9d}
+2026-06-30T01:52:59.1446542Z Azure Region: eastus
+2026-06-30T01:52:59.1447415Z ##[endgroup]
+2026-06-30T01:52:59.1450007Z ##[group]Operating System
+2026-06-30T01:52:59.1451067Z Ubuntu
+2026-06-30T01:52:59.1451837Z 24.04.4
+2026-06-30T01:52:59.1452639Z LTS
+2026-06-30T01:52:59.1453428Z ##[endgroup]
+2026-06-30T01:52:59.1454465Z ##[group]Runner Image
+2026-06-30T01:52:59.1455470Z Image: ubuntu-24.04
+2026-06-30T01:52:59.1456321Z Version: 20260622.220.1
+2026-06-30T01:52:59.1458152Z Included Software: https://github.com/actions/runner-images/blob/ubuntu24/20260622.220/images/ubuntu/Ubuntu2404-Readme.md
+2026-06-30T01:52:59.1461397Z Image Release: https://github.com/actions/runner-images/releases/tag/ubuntu24%2F20260622.220
+2026-06-30T01:52:59.1463047Z ##[endgroup]
+2026-06-30T01:52:59.1464864Z ##[group]GITHUB_TOKEN Permissions
+2026-06-30T01:52:59.1467934Z Contents: write
+2026-06-30T01:52:59.1469081Z Metadata: read
+2026-06-30T01:52:59.1470001Z Packages: write
+2026-06-30T01:52:59.1470995Z ##[endgroup]
+2026-06-30T01:52:59.1473942Z Secret source: Actions
+2026-06-30T01:52:59.1475180Z Prepare workflow directory
+2026-06-30T01:52:59.1940605Z Prepare all required actions
+2026-06-30T01:52:59.1995394Z Getting action download info
+2026-06-30T01:52:59.3494698Z Download action repository 'actions/checkout@93cb6efe18208431cddfb8368fd83d5badbf9bfd' (SHA:93cb6efe18208431cddfb8368fd83d5badbf9bfd)
+2026-06-30T01:52:59.4207706Z Download action repository 'astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39' (SHA:fac544c07dec837d0ccb6301d7b5580bf5edae39)
+2026-06-30T01:52:59.7041763Z Complete job name: gate (3.12)

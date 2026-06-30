@@ -1,6 +1,7 @@
 import type { Plugin } from "@opencode-ai/plugin"
 import * as fs from "node:fs"
 import * as path from "node:path"
+import { execSync } from "node:child_process"
 
 // Floor+ceiling enforcement guardrail (separate from enforce-make.ts so a bug
 // here can NEVER break the make-only enforcement). FAIL-OPEN: any error -> do
@@ -120,7 +121,6 @@ function openWorkExists(): boolean {
         if (openIncidents.length > 0) return true
       }
     } catch { /* unreadable BUGS.md -> ignore */ }
-    const { execSync } = require("node:child_process")
     const status = execSync("git status --porcelain", {
       cwd: process.cwd(),
       encoding: "utf8",
@@ -141,7 +141,6 @@ function openWorkExists(): boolean {
 // FAIL-OPEN: any error (probe missing, timeout, non-numeric) -> null (skip).
 function countActiveAgents(): number | null {
   try {
-    const { execSync } = require("node:child_process")
     const out = execSync(
       "python3 " + path.join(process.cwd(), "scripts", "agent_liveness.py") + " --count",
       {

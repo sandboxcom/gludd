@@ -1,0 +1,45 @@
+﻿2026-06-30T01:53:01.8019591Z ##[group]Run astral-sh/setup-uv@fac544c07dec837d0ccb6301d7b5580bf5edae39
+2026-06-30T01:53:01.8021144Z with:
+2026-06-30T01:53:01.8022029Z   activate-environment: false
+2026-06-30T01:53:01.8023084Z   no-project: false
+2026-06-30T01:53:01.8024138Z   working-directory: /home/runner/work/gludd/gludd
+2026-06-30T01:53:01.8034980Z   github-token: ***
+2026-06-30T01:53:01.8035958Z   enable-cache: auto
+2026-06-30T01:53:01.8038073Z   cache-dependency-glob: **/*requirements*.txt
+**/*requirements*.in
+**/*constraints*.txt
+**/*constraints*.in
+**/pyproject.toml
+**/uv.lock
+**/*.py.lock
+
+2026-06-30T01:53:01.8040642Z   restore-cache: true
+2026-06-30T01:53:01.8041592Z   save-cache: true
+2026-06-30T01:53:01.8042509Z   prune-cache: true
+2026-06-30T01:53:01.8043440Z   cache-python: false
+2026-06-30T01:53:01.8044694Z   ignore-nothing-to-cache: false
+2026-06-30T01:53:01.8045837Z   ignore-empty-workdir: false
+2026-06-30T01:53:01.8046954Z   download-from-astral-mirror: true
+2026-06-30T01:53:01.8048116Z   add-problem-matchers: true
+2026-06-30T01:53:01.8049219Z   quiet: false
+2026-06-30T01:53:01.8050137Z   resolution-strategy: highest
+2026-06-30T01:53:01.8051167Z ##[endgroup]
+2026-06-30T01:53:01.9789734Z Trying to find version for uv in: /home/runner/work/gludd/gludd/uv.toml
+2026-06-30T01:53:01.9792016Z Could not find file: /home/runner/work/gludd/gludd/uv.toml
+2026-06-30T01:53:01.9795053Z Trying to find version for uv in: /home/runner/work/gludd/gludd/pyproject.toml
+2026-06-30T01:53:01.9803543Z Could not determine uv version from uv.toml or pyproject.toml. Falling back to latest.
+2026-06-30T01:53:01.9807975Z Fetching manifest data from https://raw.githubusercontent.com/astral-sh/versions/main/v1/uv.ndjson ...
+2026-06-30T01:53:02.0512140Z Downloading uv from "https://releases.astral.sh/github/uv/releases/download/0.11.25/uv-x86_64-unknown-linux-gnu.tar.gz" ...
+2026-06-30T01:53:02.2318966Z [command]/usr/bin/tar xz --warning=no-unknown-keyword --overwrite -C /home/runner/work/_temp/2c560c57-8e17-4674-bc2a-308e8f2be20a -f /home/runner/work/_temp/268385a3-61e8-41b5-ac44-20cec18d6ddf
+2026-06-30T01:53:02.7323171Z Added /home/runner/.local/bin to the path
+2026-06-30T01:53:02.7327760Z Added /opt/hostedtoolcache/uv/0.11.25/x86_64 to the path
+2026-06-30T01:53:02.7329058Z Set UV_PYTHON_INSTALL_DIR to /home/runner/work/_temp/uv-python-dir
+2026-06-30T01:53:02.7330083Z Added /home/runner/work/_temp/uv-python-dir to the path
+2026-06-30T01:53:02.7357224Z Set UV_CACHE_DIR to /home/runner/work/_temp/setup-uv-cache
+2026-06-30T01:53:02.7358143Z Successfully installed uv version 0.11.25
+2026-06-30T01:53:02.8004988Z Searching files using cache dependency glob: /home/runner/work/gludd/gludd/**/*requirements*.txt,/home/runner/work/gludd/gludd/**/*requirements*.in,/home/runner/work/gludd/gludd/**/*constraints*.txt,/home/runner/work/gludd/gludd/**/*constraints*.in,/home/runner/work/gludd/gludd/**/pyproject.toml,/home/runner/work/gludd/gludd/**/uv.lock,/home/runner/work/gludd/gludd/**/*.py.lock
+2026-06-30T01:53:03.0872039Z /home/runner/work/gludd/gludd/pyproject.toml
+2026-06-30T01:53:03.2415438Z /home/runner/work/gludd/gludd/uv.lock
+2026-06-30T01:53:03.2455960Z Found 2 files to hash.
+2026-06-30T01:53:03.2527337Z Trying to restore cache from GitHub Actions cache with key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-3.12.3-pruned-704ebca171939035e42c5a25912a1d2468282738fdd47a3b8a328d1b0e79f982
+2026-06-30T01:53:03.2986580Z No GitHub Actions cache found for key: setup-uv-2-x86_64-unknown-linux-gnu-ubuntu-24.04-3.12.3-pruned-704ebca171939035e42c5a25912a1d2468282738fdd47a3b8a328d1b0e79f982

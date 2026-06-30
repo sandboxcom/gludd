@@ -5,7 +5,7 @@ from __future__ import annotations
 import os
 import tempfile
 from typing import Any
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 from httpx import ASGITransport, AsyncClient
@@ -251,3 +251,99 @@ class TestWorkerApp:
         worker = MagicMock()
         worker.pid = 12345
         mod.pre_exec(worker)
+
+
+class TestModelPerformanceRecording:
+    @pytest.mark.asyncio
+    @patch("general_ludd.worker.app._invoke_gateway_for_job")
+    async def test_records_successful_model_call(
+        self, mock_invoke: MagicMock, app: Any,
+    ) -> None:
+        mock_profile = MagicMock()
+        mock_profile.provider = "test"
+        mock_profile.model_name = "test-model"
+        mock_profile.cost_per_input_token = 0.0
+        mock_profile.cost_per_output_token = 0.0
+
+        mock_gateway = MagicMock()
+        mock_gateway.get_profile.return_value = mock_profile
+
+        app.state.gateway = mock_gateway
+        app.state.model_perf_repo = AsyncMock()
+
+        mock_invoke.return_value = ("response text", None)
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/jobs/execute", json={
+                "job_id": "JOB-PERF",
+                "todo_id": "TODO-PERF",
+                "playbook": "noop.yml",
+                "queue": "model",
+                "work_type": "code",
+                "model_profile": "test-model",
+                "prompt_text": "write a function",
+            })
+            assert resp.status_code == 200
+            app.state.model_perf_repo.record_call_sync.assert_called_once_with(
+                service="test",
+                model_name="test-model",
+                model_profile_id="test-model",
+                task_type="generation",
+                work_type="code",
+                success=True,
+                input_tokens=4,
+                output_tokens=3,
+                cost_usd=0.0,
+                duration_ms=pytest.approx(0, abs=100),
+                todo_id="TODO-PERF",
+                job_id="JOB-PERF",
+                error_message=None,
+            )
+
+    @pytest.mark.asyncio
+    @patch("general_ludd.worker.app._invoke_gateway_for_job")
+    async def test_records_failed_model_call(
+        self, mock_invoke: MagicMock, app: Any,
+    ) -> None:
+        mock_profile = MagicMock()
+        mock_profile.provider = "test"
+        mock_profile.model_name = "test-model"
+        mock_profile.cost_per_input_token = 0.0
+        mock_profile.cost_per_output_token = 0.0
+
+        mock_gateway = MagicMock()
+        mock_gateway.get_profile.return_value = mock_profile
+
+        app.state.gateway = mock_gateway
+        app.state.model_perf_repo = AsyncMock()
+
+        mock_invoke.side_effect = ValueError("API error")
+
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.post("/jobs/execute", json={
+                "job_id": "JOB-PERF-FAIL",
+                "todo_id": "TODO-PERF-FAIL",
+                "playbook": "noop.yml",
+                "queue": "model",
+                "work_type": "code",
+                "model_profile": "test-model",
+                "prompt_text": "write a function",
+            })
+            assert resp.status_code == 200
+            app.state.model_perf_repo.record_call_sync.assert_called_once()
+            _args, kwargs = app.state.model_perf_repo.record_call_sync.call_args
+            assert kwargs["success"] is False
+            assert kwargs["error_message"] == "API error"
+            assert kwargs["service"] == "test"
+            assert kwargs["model_name"] == "test-model"
+            assert kwargs["model_profile_id"] == "test-model"
+            assert kwargs["task_type"] == "generation"
+            assert kwargs["work_type"] == "code"
+            assert kwargs["input_tokens"] == 4
+            assert kwargs["output_tokens"] == 0
+            assert kwargs["cost_usd"] == 0.0
+            assert kwargs["duration_ms"] > 0
+            assert kwargs["todo_id"] == "TODO-PERF-FAIL"
+            assert kwargs["job_id"] == "JOB-PERF-FAIL"

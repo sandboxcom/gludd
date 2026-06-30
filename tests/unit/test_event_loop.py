@@ -1089,3 +1089,46 @@ class TestResolveRepoRoot:
         )
         result = loop._resolve_repo_root("proj-b")  # different project
         assert result == str(tmp_path / "cfg_root")
+
+
+class TestPhaseRefreshModelPerformance:
+    """Tests for ``_phase_refresh_model_performance``."""
+
+    @pytest.mark.asyncio
+    async def test_skips_when_no_repo(self):
+        loop, _ = _make_loop()
+        repo = getattr(loop, "_model_perf_repo", None)
+        assert repo is None
+        # Should not raise.
+        await loop._phase_refresh_model_performance()
+
+    @pytest.mark.asyncio
+    async def test_skips_on_wrong_tick(self):
+        loop, _ = _make_loop()
+        loop._model_perf_repo = AsyncMock()
+        loop._model_performance_interval = 5
+        loop._total_ticks = 2  # 2 % 5 != 0
+        await loop._phase_refresh_model_performance()
+        loop._model_perf_repo.refresh_recent_stats.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_refreshes_on_correct_tick(self):
+        loop, _mocks = _make_loop()
+        repo = AsyncMock()
+        repo.refresh_recent_stats.return_value = 3
+        loop._model_perf_repo = repo
+        loop._model_performance_interval = 5
+        loop._total_ticks = 10  # 10 % 5 == 0
+        await loop._phase_refresh_model_performance()
+        repo.refresh_recent_stats.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_handles_refresh_error_gracefully(self):
+        loop, _ = _make_loop()
+        repo = AsyncMock()
+        repo.refresh_recent_stats.side_effect = RuntimeError("db fail")
+        loop._model_perf_repo = repo
+        loop._model_performance_interval = 1
+        loop._total_ticks = 5
+        await loop._phase_refresh_model_performance()
+        repo.refresh_recent_stats.assert_awaited_once()

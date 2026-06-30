@@ -649,6 +649,94 @@ def _stream_dispatch_response(payload: dict) -> dict:
 
 
 # ---------------------------------------------------------------------------
+# Model performance tracking canned responses
+# ---------------------------------------------------------------------------
+# GET /admin/models/performance returns per-profile performance metrics across
+# all task types. GET /admin/models/ranking?task_type=X returns ranked profiles
+# for a given task type, filtered by the query parameter.
+MODEL_PERFORMANCE_SNAPSHOT = {
+    "profiles": [
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "default",
+            "task_type": "plan",
+            "success_rate": 0.85,
+            "avg_tokens": 450,
+            "avg_cost_usd": 0.0012,
+            "avg_latency_ms": 1200,
+            "sample_count": 20,
+            "last_evaluated": "2026-06-28T00:00:00Z",
+        },
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "default",
+            "task_type": "code",
+            "success_rate": 0.92,
+            "avg_tokens": 1200,
+            "avg_cost_usd": 0.0035,
+            "avg_latency_ms": 2800,
+            "sample_count": 50,
+            "last_evaluated": "2026-06-29T00:00:00Z",
+        },
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "review",
+            "task_type": "plan",
+            "success_rate": 0.78,
+            "avg_tokens": 300,
+            "avg_cost_usd": 0.0009,
+            "avg_latency_ms": 900,
+            "sample_count": 15,
+            "last_evaluated": "2026-06-27T00:00:00Z",
+        },
+    ],
+}
+
+
+def _ranking_response(task_type: str) -> dict:
+    """Return rankings filtered by task_type, sorted by composite_score descending."""
+    all_rankings = [
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "default",
+            "task_type": "plan",
+            "composite_score": 0.85,
+            "success_rate": 0.85,
+            "avg_cost_usd": 0.0012,
+            "avg_latency_ms": 1200,
+            "sample_count": 20,
+        },
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "review",
+            "task_type": "plan",
+            "composite_score": 0.78,
+            "success_rate": 0.78,
+            "avg_cost_usd": 0.0009,
+            "avg_latency_ms": 900,
+            "sample_count": 15,
+        },
+        {
+            "model_profile_id": "mock-profile",
+            "prompt_profile_id": "default",
+            "task_type": "code",
+            "composite_score": 0.92,
+            "success_rate": 0.92,
+            "avg_cost_usd": 0.0035,
+            "avg_latency_ms": 2800,
+            "sample_count": 50,
+        },
+    ]
+    q = (task_type or "").strip().lower()
+    if q:
+        filtered = [r for r in all_rankings if r["task_type"] == q]
+    else:
+        filtered = list(all_rankings)
+    filtered.sort(key=lambda r: r["composite_score"], reverse=True)
+    return {"rankings": filtered, "task_type": task_type}
+
+
+# ---------------------------------------------------------------------------
 # Ornith training-pair canned responses
 # ---------------------------------------------------------------------------
 # gludd_ornith state=pairs hits GET /admin/ornith/pairs?status=...&limit=N.
@@ -914,6 +1002,12 @@ class MockDaemonHandler(BaseHTTPRequestHandler):
                 self._send_json(403, {"detail": "missing X-Vault-Token"})
             else:
                 self._send_octet(200, OPENBAO_FAKE_SNAPSHOT)
+        elif path == "/admin/models/performance":
+            self._send_json(200, MODEL_PERFORMANCE_SNAPSHOT)
+        elif path == "/admin/models/ranking":
+            qs = parse_qs(urlparse(self.path).query)
+            task_type = (qs.get("task_type", [""]) or [""])[0]
+            self._send_json(200, _ranking_response(task_type))
         elif path == "/admin/ornith/pairs":
             qs = parse_qs(urlparse(self.path).query)
             status_csv = (qs.get("status", [""]) or [""])[0]

@@ -1,0 +1,50 @@
+---
+# Exercise /admin/models/performance and /admin/models/ranking against the mock daemon.
+- name: Converge - query model performance endpoints
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8867', true) }}"
+  tasks:
+    - name: Reset request log
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests/reset"
+        method: POST
+        status_code: 200
+
+    - name: Call GET /admin/models/performance
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/admin/models/performance"
+        method: GET
+        status_code: 200
+      register: perf_result
+
+    - name: Persist performance result for verify
+      ansible.builtin.copy:
+        content: "{{ perf_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-performance.json"
+        mode: "0644"
+      changed_when: false
+
+    - name: Call GET /admin/models/ranking?task_type=plan
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/admin/models/ranking?task_type=plan"
+        method: GET
+        status_code: 200
+      register: rank_result
+
+    - name: Persist ranking result for verify
+      ansible.builtin.copy:
+        content: "{{ rank_result | to_nice_json }}"
+        dest: "/tmp/gludd-mock-{{ mock_port }}-ranking.json"
+        mode: "0644"
+      changed_when: false
+
+    - name: Show performance result
+      ansible.builtin.debug:
+        var: perf_result
+
+    - name: Show ranking result
+      ansible.builtin.debug:
+        var: rank_result

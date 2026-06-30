@@ -908,6 +908,94 @@ class RemediationActionModel(Base):
     )
 
 
+def _gen_model_call_id() -> str:
+    return f"MC-{uuid4().hex[:12].upper()}"
+
+
+class ModelCallLogModel(Base):
+    """Immutable log of every model call made through the gateway.
+
+    Each row records one invocation: service, model name, token counts,
+    cost, duration, success/failure, and optional error details. Populated
+    by the worker HTTP path and the EventLoop in-process runner path so
+    that all model calls are centrally observable.
+    """
+
+    __tablename__ = "model_call_logs"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=_gen_model_call_id
+    )
+    todo_id: Mapped[str | None] = mapped_column(
+        String(64), nullable=True, index=True
+    )
+    job_id: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    # Provider name (e.g. ``"openai"``, ``"anthropic"``).
+    service: Mapped[str] = mapped_column(String(64), nullable=False)
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False)
+    model_profile_id: Mapped[str] = mapped_column(
+        String(64), nullable=False, index=True
+    )
+    task_type: Mapped[str] = mapped_column(String(32), nullable=False, default="generation")
+    work_type: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    success: Mapped[bool] = mapped_column(Boolean, nullable=False, default=True)
+    input_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    output_tokens: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    duration_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    error_code: Mapped[str | None] = mapped_column(String(32), nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, index=True
+    )
+
+    __table_args__ = (
+        Index("ix_model_call_logs_created", "created_at"),
+        Index("ix_model_call_logs_profile_created", "model_profile_id", "created_at"),
+    )
+
+
+class ModelPerformanceModel(Base):
+    """Pre-aggregated rolling performance stats per model profile.
+
+    Updated by ``ModelPerformanceRepository.refresh_recent_stats()``.  The
+    log table keeps raw per-call data; this table keeps the derived summary
+    so dashboards and the adaptive router can read performance without
+    scanning the entire log table.
+    """
+
+    __tablename__ = "model_performance"
+
+    id: Mapped[str] = mapped_column(
+        String(36), primary_key=True, default=_gen_model_call_id
+    )
+    model_profile_id: Mapped[str] = mapped_column(
+        String(64), unique=True, nullable=False, index=True
+    )
+    model_name: Mapped[str] = mapped_column(String(128), nullable=False, default="")
+    service: Mapped[str] = mapped_column(String(64), nullable=False, default="")
+    total_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    successful_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    failed_calls: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    total_input_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    total_output_tokens: Mapped[int] = mapped_column(
+        Integer, nullable=False, default=0
+    )
+    total_cost_usd: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    avg_duration_ms: Mapped[float] = mapped_column(Float, nullable=False, default=0.0)
+    last_call_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    first_call_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), nullable=False, default=_utcnow, onupdate=_utcnow
+    )
+
+
 def _gen_ornith_pair_id() -> str:
     return f"ORN-{uuid4().hex}"
 

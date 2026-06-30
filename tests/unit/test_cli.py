@@ -472,6 +472,50 @@ class TestHotLoading:
             main()
         assert exc_info.value.code == 0
 
+    def test_model_performance_command(self):
+        with patch("sys.argv", ["gludd", "models", "performance"]), patch(
+            "general_ludd.cli._cmd_model_performance"
+        ) as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.service is None
+            assert args.task_type is None
+
+    def test_model_performance_command_with_filters(self):
+        with patch("sys.argv", ["gludd", "models", "performance", "--service", "openai", "--task-type", "code"]), patch(
+            "general_ludd.cli._cmd_model_performance"
+        ) as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.service == "openai"
+            assert args.task_type == "code"
+
+    def test_model_ranking_command(self):
+        with patch("sys.argv", ["gludd", "models", "ranking", "--task-type", "code", "--strategy", "quality"]), patch(
+            "general_ludd.cli._cmd_model_ranking"
+        ) as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.task_type == "code"
+            assert args.strategy == "quality"
+
+    def test_model_router_status_command(self):
+        with patch("sys.argv", ["gludd", "models", "router-status"]), patch(
+            "general_ludd.cli._cmd_model_router_status"
+        ) as mock_cmd:
+            main()
+            mock_cmd.assert_called_once()
+
+    def test_model_router_set_command(self):
+        argv = ["gludd", "models", "router-set", "--task-type", "code", "--strategy", "cheapest"]
+        with patch("sys.argv", argv), patch(
+            "general_ludd.cli._cmd_model_router_set"
+        ) as mock_cmd:
+            main()
+            args = mock_cmd.call_args[0][0]
+            assert args.task_type == "code"
+            assert args.strategy == "cheapest"
+
     def test_mcp_no_subcommand_prints_help(self):
         with pytest.raises(SystemExit) as exc_info, patch.object(sys, "argv", ["gludd", "mcp"]):
             main()

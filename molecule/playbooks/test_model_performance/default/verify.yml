@@ -1,0 +1,73 @@
+---
+- name: Verify - model performance API responses
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    mock_port: "{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8867', true) }}"
+    pidfile: "/tmp/gludd-mock-{{ lookup('env', 'GLUDD_MOCK_PORT') | default('8867', true) }}.pid"
+  tasks:
+    - name: Load persisted performance result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-performance.json"
+      register: perf_raw
+
+    - name: Parse performance result
+      ansible.builtin.set_fact:
+        perf: "{{ perf_raw.content | b64decode | from_json }}"
+
+    - name: Assert performance returned profiles with expected fields
+      ansible.builtin.assert:
+        that:
+          - perf.json.profiles | length >= 1
+          - perf.json.profiles[0].model_profile_id is defined
+          - perf.json.profiles[0].task_type is defined
+          - perf.json.profiles[0].success_rate is defined
+          - perf.json.profiles[0].avg_tokens is defined
+          - perf.json.profiles[0].avg_cost_usd is defined
+          - perf.json.profiles[0].avg_latency_ms is defined
+          - perf.json.profiles[0].sample_count is defined
+          - perf.json.profiles[0].last_evaluated is defined
+        fail_msg: "Performance response missing expected fields: {{ perf }}"
+        success_msg: "Performance response has all expected fields"
+
+    - name: Load persisted ranking result
+      ansible.builtin.slurp:
+        src: "/tmp/gludd-mock-{{ mock_port }}-ranking.json"
+      register: rank_raw
+
+    - name: Parse ranking result
+      ansible.builtin.set_fact:
+        rank: "{{ rank_raw.content | b64decode | from_json }}"
+
+    - name: Assert ranking returned plan-type results sorted by score
+      ansible.builtin.assert:
+        that:
+          - rank.json.rankings | length >= 1
+          - rank.json.task_type == 'plan'
+          - rank.json.rankings[0].task_type == 'plan'
+          - rank.json.rankings[0].composite_score is defined
+          - rank.json.rankings[0].composite_score >= rank.json.rankings[-1].composite_score
+        fail_msg: "Ranking response unexpected: {{ rank }}"
+        success_msg: "Ranking returned plan results sorted by composite_score"
+
+    - name: Verify request log includes both endpoints
+      ansible.builtin.uri:
+        url: "http://127.0.0.1:{{ mock_port }}/__requests"
+        method: GET
+        status_code: 200
+      register: req_log
+
+    - name: Assert both endpoints were called
+      ansible.builtin.assert:
+        that:
+          - "'GET /admin/models/performance' in req_log.json.requests"
+          - "'GET /admin/models/ranking' in req_log.json.requests"
+        fail_msg: "Request log missing expected calls: {{ req_log.json.requests }}"
+        success_msg: "Both model performance endpoints were called"
+
+    - name: Stop mock daemon
+      ansible.builtin.shell:
+        cmd: "kill $(cat {{ pidfile }}) 2>/dev/null || true; rm -f {{ pidfile }}"
+      changed_when: false
+      failed_when: false

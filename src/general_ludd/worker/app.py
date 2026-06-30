@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import shutil
+import time
 from typing import Any
 
 from fastapi import FastAPI, HTTPException
@@ -280,9 +281,63 @@ def create_app(
         # feed its output into the playbook extravars and the job result.
         model_response: str | None = None
         model_tool_calls: list[dict[str, Any]] | None = None
+        _model_call_success: bool = False
+        _model_call_error: str | None = None
+        _model_call_duration_ms: float = 0.0
+        _model_call_start: float = time.monotonic()
         gw = application.state.gateway
         if gw is not None and is_generation_work_type(job.work_type):
-            model_response, model_tool_calls = _invoke_gateway_for_job(gw, job)
+            try:
+                model_response, model_tool_calls = _invoke_gateway_for_job(gw, job)
+                _model_call_success = model_response is not None
+            except Exception as _exc:
+                model_response = None
+                model_tool_calls = None
+                _model_call_error = str(_exc)
+                logger.warning(
+                    "Worker model call failed for job %s: %s",
+                    job.job_id, _exc,
+                )
+        _model_call_duration_ms = (time.monotonic() - _model_call_start) * 1000
+        # Record the model call in the performance repository if wired.
+        _model_perf_repo = getattr(application.state, "model_perf_repo", None)
+        if _model_perf_repo is not None and is_generation_work_type(job.work_type):
+            try:
+                _input_tokens = len(job.prompt_text or "") // 4
+                _output_tokens = len(model_response or "") // 4
+                _profile_id = job.model_profile or "default"
+                _gw = gw
+                _profile_obj: Any = None
+                if _gw is not None:
+                    _profile_obj = _gw.get_profile(_profile_id)
+                _cost_usd = 0.0
+                if _profile_obj is not None and hasattr(_profile_obj, "cost_per_input_token"):
+                    _cost_usd = (
+                        _input_tokens * _profile_obj.cost_per_input_token
+                        + _output_tokens * _profile_obj.cost_per_output_token
+                    )
+                _provider = getattr(_profile_obj, "provider", "") if _profile_obj else ""
+                _model_name = getattr(_profile_obj, "model_name", "") if _profile_obj else ""
+                _model_perf_repo.record_call_sync(
+                    service=_provider or "unknown",
+                    model_name=_model_name or _profile_id,
+                    model_profile_id=_profile_id,
+                    task_type="generation",
+                    work_type=job.work_type,
+                    success=_model_call_success,
+                    input_tokens=_input_tokens,
+                    output_tokens=_output_tokens,
+                    cost_usd=_cost_usd,
+                    duration_ms=_model_call_duration_ms,
+                    todo_id=job.todo_id,
+                    job_id=job.job_id,
+                    error_message=_model_call_error,
+                )
+            except Exception as _rec_exc:
+                logger.debug(
+                    "Worker model perf recording failed for %s: %s",
+                    job.job_id, _rec_exc,
+                )
 
         # Dispatch the model's STRUCTURED tool_calls. When a DynamicDispatcher is
         # wired (mirrors the daemon's EventLoop pattern), EXECUTE the calls via

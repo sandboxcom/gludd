@@ -5,12 +5,15 @@ platforms: []
 provisioner:
   name: ansible
   env:
-    ANSIBLE_COLLECTIONS_PATH: "${MOLECULE_PROJECT_DIRECTORY}/collections"
+    ANSIBLE_COLLECTIONS_PATH: "/Users/shawnwilson/gludd/collections"
     GLUDD_MOCK_PORT: "8794"
     # lookup('env', 'VAULT_TOKEN') in the role reads the controller's os.environ,
     # not the play's `environment:` directive — so the mock token must be present
     # in the provisioner env for the openbao_token_source=env path to resolve it.
     VAULT_TOKEN: "mock-token"
+  config_options:
+    defaults:
+      collections_path: "/Users/shawnwilson/gludd/collections:~/.ansible/collections:/usr/share/ansible/collections"
   playbooks:
     prepare: default/prepare.yml
     converge: default/converge.yml
