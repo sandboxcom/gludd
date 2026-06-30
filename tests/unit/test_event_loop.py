@@ -357,8 +357,8 @@ class TestEventLoop:
         assert "phases_completed" in result
         assert "tick_duration_ms" in result
         assert isinstance(result["tick_duration_ms"], float)
-        # 12 phases: the original 11 + run_scheduler (cron/one-shot promotion).
-        assert result["phases_completed"] == 12
+        # 13 phases: the original 11 + run_scheduler + _phase_publish_session_metrics.
+        assert result["phases_completed"] == 13
 
     @pytest.mark.asyncio
     async def test_run_forever_can_be_stopped(self):

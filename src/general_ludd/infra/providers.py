@@ -226,8 +226,9 @@ class ProviderRegistry:
         candidates: list[tuple[float, ProviderInfo]] = []
         gpu_key = gpu_type.value
         for info in self._providers.values():
-            if gpu_key in info.pricing:
-                candidates.append((info.pricing[gpu_key], info))
+            price = info.pricing.get(gpu_key)
+            if price and price > 0:
+                candidates.append((price, info))
         if not candidates:
             raise KeyError(f"No provider supports GPU type: {gpu_type}")
         candidates.sort(key=lambda x: x[0])
