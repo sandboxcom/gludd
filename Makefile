@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push dist test-integration test-live-zai
 
 # Regenerate the STATUS-TABLE in README.md from docs/features.yml
 gen-status-table:
@@ -338,6 +338,14 @@ test-unit:
 # Run e2e tests only
 test-e2e:
 	uv run python -m pytest tests/e2e/ -v
+
+# Integration tests (stub)
+test-integration:
+	@echo "test-integration: not yet implemented"
+
+# Live ZAI tests (stub)
+test-live-zai:
+	@echo "test-live-zai: not yet implemented"
 
 # Count test collection (no run)
 test-count:
