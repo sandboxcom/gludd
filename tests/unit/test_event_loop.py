@@ -1114,6 +1114,13 @@ class TestPhaseRefreshModelPerformance:
     @pytest.mark.asyncio
     async def test_refreshes_on_correct_tick(self):
         loop, _mocks = _make_loop()
+        session = _mocks["session"]
+        factory = MagicMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        factory.return_value = ctx
+        loop._session_factory = factory
         repo = AsyncMock()
         repo.refresh_recent_stats.return_value = 3
         loop._model_perf_repo = repo
@@ -1124,7 +1131,14 @@ class TestPhaseRefreshModelPerformance:
 
     @pytest.mark.asyncio
     async def test_handles_refresh_error_gracefully(self):
-        loop, _ = _make_loop()
+        loop, _mocks = _make_loop()
+        session = _mocks["session"]
+        factory = MagicMock()
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=session)
+        ctx.__aexit__ = AsyncMock(return_value=False)
+        factory.return_value = ctx
+        loop._session_factory = factory
         repo = AsyncMock()
         repo.refresh_recent_stats.side_effect = RuntimeError("db fail")
         loop._model_perf_repo = repo
