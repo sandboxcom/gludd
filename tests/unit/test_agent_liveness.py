@@ -119,19 +119,21 @@ def test_tail_boundary_excludes_just_past(tasks_dir: Path) -> None:
 
 def test_mixed_fleet_counts_only_live(tasks_dir: Path) -> None:
     import json
+    # live_f and stale_f: assistant-with-text is always terminal -> excluded by _is_terminal
     live_f = tasks_dir / "live.output"
     stale_f = tasks_dir / "stale.output"
     quiet_f = tasks_dir / "quiet.output"
     _write(live_f, json.dumps({"type": "assistant", "message": {"content": "working"}}))
-    _age_file(live_f, 10_000)   # outside window
+    _age_file(live_f, 10_000)
     _write(stale_f, json.dumps({"type": "assistant", "message": {"content": "done"}}))
-    _age_file(stale_f, 10_000)  # outside window
-    _write(quiet_f, json.dumps({"type": "assistant", "message": {"content": "recent"}}))
-    _age_file(quiet_f, 3.0)     # within 30s window
+    _age_file(stale_f, 10_000)
+    # quiet_f is non-terminal (tool_use) AND within the window -> counted live
+    _write(quiet_f, json.dumps({"type": "tool_use", "name": "Bash", "input": {"command": "test"}}))
+    _age_file(quiet_f, 3.0)
 
     live, total, _ = agent_liveness.live_count(window=30.0)
     assert total == 3
-    assert live == 1, "only the quiet-within-window file is live; stale ones are not"
+    assert live == 1, "only the quiet-within-window non-terminal file should be live"
 
 
 # --- 3. DETERMINISM — two consecutive calls return the same count -----------
@@ -350,9 +352,16 @@ def test_terminal_detection_subtype_result(tasks_dir: Path) -> None:
 
 
 def test_terminal_detection_unparseable_last_line_failopen(tasks_dir: Path) -> None:
-    """If last line is not valid JSON, terminal detection fails open (agent assumed running)."""
+    """If last line is not valid JSON, terminal detection fails open (agent assumed running).
+    First line must pass _is_agent_transcript; last line is binary garbage which
+    _is_terminal cannot parse -> fail-open non-terminal -> live."""
+    import json
     f = tasks_dir / "corrupt.output"
-    f.write_bytes(b"partial line or binary garbage\x00\xff\n")
+    f.write_bytes(
+        json.dumps({"type": "tool_use", "name": "Bash", "input": {"command": "work"}}).encode()
+        + b"\n"
+        + b"partial line or binary garbage\x00\xff\n"
+    )
     live, total, _ = agent_liveness.live_count(window=25.0)
     assert total == 1
     assert live == 1, "unparseable last line -> fail-open, count as live"
