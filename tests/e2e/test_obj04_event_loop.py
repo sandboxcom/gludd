@@ -15,10 +15,12 @@ class TestEventLoopE2E:
             "dispatch_return_review_jobs",
             "evaluate_pid_controllers",
             "refill_task_buckets",
+            "run_scheduler",
             "claim_runnable_todos",
             "evaluate_rules",
             "dispatch_execute_jobs",
             "reconcile_completed_decisions",
+            "refresh_model_performance",
             "self_improve",
             "emit_tick_metrics",
         ]

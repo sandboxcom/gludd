@@ -661,3 +661,12 @@ ci-run-log:
 ci-run-log-failed:
 	@test -n "$(RUN)" || (echo "Usage: make ci-run-log-failed RUN=<run_id>"; exit 1)
 	gh run view $(RUN) --repo sandboxcom/gludd --log-failed
+
+container-build:
+	@echo "container-build: not yet implemented"
+
+container-run:
+	@echo "container-run: not yet implemented"
+
+container-push:
+	@echo "container-push: not yet implemented"

@@ -847,7 +847,7 @@ class TestEphemeralGPUCompute:
         assert ComputeProvider.AZURE in provider_names
         assert ComputeProvider.RUNPOD in provider_names
         assert ComputeProvider.VAST_AI in provider_names
-        assert len(providers) == 10
+        assert len(providers) == 16
 
 
 class TestMCPToolsInEventLoop:
