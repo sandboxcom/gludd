@@ -29,6 +29,8 @@ import * as path from "node:path"
 // ============================================================================
 // CONFIG (mirrors the claude env var names so the same knobs work in opencode)
 // ============================================================================
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
+const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"  // DEFAULT: blocking (2026-06-22)
 
 // ============================================================================

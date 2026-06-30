@@ -852,14 +852,20 @@ class ModelGateway:
             """
             if not isinstance(exc, _retryable_exc_types):
                 return False
-            # Mid-loop circuit-open guard: if this failure tripped the breaker,
-            # stop retrying the primary so the fallback chain runs instead of
-            # stampeding a now-open circuit.
-            if tracker is not None and not tracker.is_healthy(profile_id, admit_probe=False):
-                return False
             kind = TimeoutClassifier.classify(exc)
             # Non-retryable kinds: immediate re-raise.
             if kind in _NON_RETRYABLE_KINDS:
+                return False
+            # Mid-loop circuit-open guard for transient kinds only: overload
+            # kinds (PROVIDER_ERROR, RATE_LIMITED) are expected to fail
+            # repeatedly while the provider recovers. The overload budget
+            # (10 retries) is the appropriate breaker — the per-model
+            # failure_threshold (3) tripping here would defeat it.
+            if (
+                kind not in _OVERLOAD_KINDS
+                and tracker is not None
+                and not tracker.is_healthy(profile_id, admit_probe=False)
+            ):
                 return False
             # Kind-aware hard cap: overload kinds use the dedicated overload
             # budget; transient kinds use the caller's max_retries.
