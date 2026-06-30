@@ -70,7 +70,8 @@ def _strip_var_refs(text: str) -> str:
     """Drop HCL attribute lines whose RHS is a ``var.<name>`` reference.
 
     A credential *literal* is a hardcoded string/secret embedded in the HCL
-    body (``password = "hunter2"``). A credential *reference* is an attribute
+    body (``password = "hunter2"``).  # pragma: allowlist secret
+    A credential *reference* is an attribute
     that pulls the value from a variable at apply time
     (``password = var.vsphere_password``) — that is the SAFE pattern, the
     whole point of the OpenBao/SecretsManager flow. The credential-scan
