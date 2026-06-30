@@ -84,7 +84,7 @@ def _collect_stats(pid: int) -> dict[str, Any]:
 
     io: dict[str, int] | None
     try:
-        ioc = proc.io_counters()  # type: ignore  # psutil Linux-only
+        ioc = proc.io_counters()  # type: ignore[attr-defined, unused-ignore]  # type: ignore[attr-defined]
         io = {
             "read_bytes": ioc.read_bytes,
             "write_bytes": ioc.write_bytes,

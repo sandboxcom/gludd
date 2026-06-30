@@ -33,7 +33,17 @@ smoke:
 	uv run python -c "import general_ludd; print('imports ok')"
 
 # Full gate: lint + typecheck + collect-check + test + smoke
-gate: lint typecheck collect-check test smoke
+gate:
+	@echo "=== GATE PHASE: lint ==="
+	@$(MAKE) lint || (echo "=== GATE: FAILED ===" && exit 1)
+	@echo "=== GATE PHASE: typecheck ==="
+	@$(MAKE) typecheck || (echo "=== GATE: FAILED ===" && exit 1)
+	@echo "=== GATE PHASE: collect ==="
+	@$(MAKE) collect-check || (echo "=== GATE: FAILED ===" && exit 1)
+	@echo "=== GATE PHASE: test ==="
+	@$(MAKE) test || (echo "=== GATE: FAILED ===" && exit 1)
+	@echo "=== GATE PHASE: smoke ==="
+	@$(MAKE) smoke || (echo "=== GATE: FAILED ===" && exit 1)
 	@echo "=== GATE: PASSED ==="
 
 # Background gate: launches gate via nohup, writes logs to .gate-logs/gate-<timestamp>.log
@@ -144,6 +154,9 @@ git-log:
 
 git-add:
 	git add $(FILES)
+
+git-rm-cached:
+	git rm --cached -r $(FILES)
 
 git-commit: _gate-fresh-check
 	git commit -m "$(MSG)"

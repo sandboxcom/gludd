@@ -561,4 +561,4 @@ audit; 11+ commits visible in `make git-log`.
 - [x] MP.12 — fix processes.py type:ignore unused in CI (mypy 2.1 Linux stubs include io_counters) | completed | commit 7ca4de1f; typecheck 0 errors |
 - [x] MP.13 — docs: update status date to 2026-06-29 in README | completed | commit f114653d |
 - [x] MP.14 — feat: add deletion gate guardrail for large deletions | completed | commit 0abd9bea; plugin + test pass |
-- [x] MP.15 — fix: restore TASKS.md evidence + Makefile/openconfig improvements | completed | commit 34ff3678; lint 0, typecheck 0, collect 0 |
+- [x] MP.15 — fix: restore TASKS.md evidence ledger, fix 12 test failures (agent floor, enforce-stop FLOOR, ship-commit, gateway overload retry), add Makefile improvements, opencode $schema, gitignore, SESSION.md | completed | commit c71378cf; lint 0, typecheck 0, collect 0, push verified |
