@@ -5,6 +5,9 @@ REF ?=
 TARGET ?= master
 MYPY_MAX := 0
 OPENCODE_DB ?= ~/.local/share/opencode/opencode.db
+SERVICE ?=
+TASK_TYPE ?=
+STRATEGY ?=
 
 PYTHON := python3
 UV := uv
@@ -109,10 +112,12 @@ HEAVY_SEM = $(PYTHON) scripts/heavy_sem.py $(HEAVY_MAX_PAR) gludd-heavy --
         test-worktree-disk-guard \
         git-cherry-pick-commit git-amend-msg \
         test-other-shard \
+        test-bg test-bg-status test-bg-list test-bg-kill test-bg-kill-all \
         alembic-check liveness-debug gate-lowmem-background pygrep \
         mcp-gen mcp-docs-check test-no-false-completion \
         gen-status-table gen-status-table-full check-status-table \
-        validate-opencode-config
+        validate-opencode-config \
+        model-performance model-ranking model-router-status model-router-set
 
 liveness-debug:
 	@$(UV) run python3 scripts/liveness_debug.py
@@ -272,6 +277,12 @@ help:
 	@echo "  clean                 Remove build artifacts"
 	@echo "  dist-clean            Remove distribution artifacts"
 	@echo "  gated-merge           flock-guarded multi-branch merge with manifest (BASE/BRANCHES/MERGE_STRATEGY/MANIFEST)"
+	@echo ""
+	@echo "  --- Model CLI ---"
+	@echo "  model-performance [SERVICE=...] [TASK_TYPE=...]  Show model performance data"
+	@echo "  model-ranking TASK_TYPE=... [STRATEGY=...]       Show model rankings for a task type"
+	@echo "  model-router-status                              Show current router configuration"
+	@echo "  model-router-set TASK_TYPE=... STRATEGY=...      Set routing strategy for a task type"
 
 skeleton:
 	@$(PYTHON) scripts/skeleton.py
@@ -346,6 +357,8 @@ venv-check:
 check-pytest:
 	@$(UV) run python -c "import pytest; print(f'pytest {pytest.__version__}')"
 
+
+
 lint:
 	@$(UV) run ruff check src tests
 
@@ -366,6 +379,34 @@ typecheck:
 # Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3) — see sem block above.
 test:
 	@$(HEAVY_SEM) $(UV) run python -m pytest tests/ --cov=general_ludd --cov-report=term-missing --cov-report=xml $(_XD) -v
+
+# ---------------------------------------------------------------------------
+# Background test runner — launch, poll, list, kill arbitrary test files
+# without blocking the foreground (parallel with gate-background pattern).
+# Logs -> .gate-logs/test-*.log, PID files -> .gate-logs/.test-*.pid.
+# ---------------------------------------------------------------------------
+test-bg:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-bg TESTFILE='tests/unit/test_foo.py'"; exit 1; fi
+	@bash scripts/run_test_background.sh "$(TESTFILE)"
+
+test-bg-status:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-bg-status TESTFILE='tests/unit/test_foo.py'"; exit 1; fi
+	@bash scripts/run_test_background.sh status "$(TESTFILE)"
+
+test-bg-list:
+	@bash scripts/run_test_background.sh list
+
+test-bg-kill:
+	@if [ -z "$(TESTFILE)" ]; then echo "Usage: make test-bg-kill TESTFILE='tests/unit/test_foo.py'"; exit 1; fi
+	@bash scripts/run_test_background.sh kill "$(TESTFILE)"
+
+test-bg-kill-all:
+	@for pid_file in .gate-logs/.test-*.pid; do \
+		[ -f "$$pid_file" ] || continue; \
+		tf=$$(basename "$$pid_file" | sed 's/^\.test-//; s/\.pid$$//'); \
+		echo "Killing $$tf..."; \
+		bash scripts/run_test_background.sh kill "$$tf"; \
+	done
 
 # Governed by $(HEAVY_SEM) (HEAVY_MAX_PAR, default 3).
 test-unit:
@@ -411,6 +452,34 @@ validate-opencode-config:
 	@$(UV) run python -m pytest tests/unit/test_opencode_json_schema.py -q --no-header || \
 		(echo "FAIL: opencode.json schema validation failed — see tests/unit/test_opencode_json_schema.py"; exit 1)
 	@echo "==> opencode.json schema OK"
+
+# ---------------------------------------------------------------------------
+# Model CLI convenience targets — thin wrappers over `gludd models` subcommands.
+# These call the daemon's REST API, so the daemon must be running.
+#   make model-performance [SERVICE=svc] [TASK_TYPE=tt]     -> shows performance data
+#   make model-ranking TASK_TYPE=tt [STRATEGY=s]             -> shows ranked models
+#   make model-router-status                                 -> shows router config
+#   make model-router-set TASK_TYPE=tt STRATEGY=s            -> sets routing strategy
+# ---------------------------------------------------------------------------
+model-performance:
+	@$(UV) run python -m general_ludd.cli models performance \
+		$(if $(SERVICE),--service $(SERVICE)) \
+		$(if $(TASK_TYPE),--task-type $(TASK_TYPE))
+
+model-ranking:
+	@if [ -z "$(TASK_TYPE)" ]; then echo "Usage: make model-ranking TASK_TYPE=<task-type> [STRATEGY=<strategy>]"; exit 1; fi
+	@$(UV) run python -m general_ludd.cli models ranking \
+		--task-type $(TASK_TYPE) \
+		$(if $(STRATEGY),--strategy $(STRATEGY))
+
+model-router-status:
+	@$(UV) run python -m general_ludd.cli models router-status
+
+model-router-set:
+	@if [ -z "$(TASK_TYPE)" ]; then echo "Usage: make model-router-set TASK_TYPE=<task-type> STRATEGY=<strategy>"; exit 1; fi
+	@if [ -z "$(STRATEGY)" ]; then echo "Usage: make model-router-set TASK_TYPE=<task-type> STRATEGY=<strategy>"; exit 1; fi
+	@$(UV) run python -m general_ludd.cli models router-set \
+		--task-type $(TASK_TYPE) --strategy $(STRATEGY)
 
 gate: validate-opencode-config
 	@rm -f .gate-failed
@@ -2387,6 +2456,10 @@ opa-policy-check:
 		echo "FAIL" >> .gate-status && touch .gate-failed && echo "[gate] opa-policy-check FAILED:" && cat /tmp/gludd-gate-opa.log; \
 	fi
 
+quick-imports:
+	@$(UV) run python -c "from general_ludd.models.performance_router import ModelPerformanceRouter, DEFAULT_STRATEGIES; r = ModelPerformanceRouter(); print('PerformanceRouter OK, strategies:', list(DEFAULT_STRATEGIES))"
+	@$(UV) run python -c "from general_ludd.routers.model_performance import register; print('model_performance router OK')"
+
 bootstrap: init lint test healthcheck
 	@echo "Bootstrap complete."
 
@@ -2534,6 +2607,17 @@ skill-install:
 bootstrap-skills:
 	@echo "Installing default mattpocock skills..."
 	@$(UV) run $(PYTHON) scripts/bootstrap_skills.py
+
+# Make new scripts executable (idempotent utility target). Run after creating
+# any new .sh file under scripts/. Agents cannot run `chmod` directly.
+chmod-background-script:
+	@chmod +x scripts/run_test_background.sh 2>/dev/null || true
+	@echo "chmod: scripts/run_test_background.sh executable"
+
+# Verify the background test runner module imports cleanly.
+check-background-runner:
+	@echo "Checking background_test_runner import..."
+	@$(UV) run python -c "from general_ludd.runner.background_test_runner import BackgroundTestRunner; print('BackgroundTestRunner OK')"
 
 analyze-jsonl:
 	@python3 /tmp/analyze_tools.py
