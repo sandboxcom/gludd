@@ -84,7 +84,7 @@ def _collect_stats(pid: int) -> dict[str, Any]:
 
     io: dict[str, int] | None
     try:
-        ioc = proc.io_counters()  # type: ignore[attr-defined]
+        ioc = proc.io_counters()  # type: ignore[attr-defined, unused-ignore]
         io = {
             "read_bytes": ioc.read_bytes,
             "write_bytes": ioc.write_bytes,
