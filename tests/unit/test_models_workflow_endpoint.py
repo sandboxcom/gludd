@@ -202,4 +202,4 @@ class TestWorkflowPassthrough:
             json={"messages": [{"role": "user", "content": "hi"}]},
         )
         assert resp.status_code == 500
-        assert "error" in resp.json()["detail"]
+        assert resp.json()["detail"] == "workflow execution failed"

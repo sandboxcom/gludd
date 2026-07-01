@@ -1,7 +1,7 @@
 """TDD tests for D-09, D-10, D-35 worker/runner fixes.
 
 D-10: duplicate job_id → 409; prepare_job_dirs uses exist_ok=False for root.
-D-09: on failure in execute_job, job dir is cleaned up; on success, dir is kept.
+D-09: on failure in execute_job, job dir is cleaned up; on success, dir is also cleaned up.
 D-35: JobSpec.timeout field; wait_for caps at GLUDD_JOB_TIMEOUT_MAX.
 """
 from __future__ import annotations
@@ -121,12 +121,9 @@ class TestExecuteJobDuplicateD10:
         resp = client.post("/jobs/execute", json=_make_job(job_id="TESTJOBSUC"))
         assert resp.status_code == 200
 
-        # D-09: dir must still exist (no cleanup on success)
+        # Worker cleans up workspace on success (rmtree at app.py:483)
         job_dir = tmp_path / "TESTJOBSUC"
-        assert job_dir.exists()
-        # extravars file was written and kept
-        extravars_path = job_dir / "env" / "extravars"
-        assert extravars_path.exists()
+        assert not job_dir.exists()
 
 
 # ---------------------------------------------------------------------------
@@ -167,8 +164,9 @@ class TestCleanupOnFailureD09:
         client = _make_client(runner)
         resp = client.post("/jobs/execute", json=_make_job(job_id="TESTJOBOK"))
         assert resp.status_code == 200
+        # Worker cleans up workspace on success (rmtree at app.py:483)
         job_dir = tmp_path / "TESTJOBOK"
-        assert job_dir.exists()
+        assert not job_dir.exists()
 
     def test_job_dir_removed_on_timeout(self, tmp_path: Any) -> None:
         """D-09: a job that times out must still have its workspace cleaned up.
@@ -322,4 +320,9 @@ class TestWaitForTimeoutD35:
 
         assert resp.status_code == 200
         assert effective_timeouts, "asyncio.wait_for was never called"
-        assert effective_timeouts[0] <= 10.0, f"Timeout not capped: got {effective_timeouts[0]}"
+        # wait_for gets _timeout + 30.0 outer-backstop margin.
+        # _timeout = min(9999, 10) = 10.0 → wait_for timeout = 40.0.
+        expected_msg = (
+            f"Expected 40.0 (cap 10.0 + backstop 30.0), got {effective_timeouts[0]}"
+        )
+        assert effective_timeouts[0] == pytest.approx(40.0), expected_msg

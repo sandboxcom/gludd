@@ -36,7 +36,7 @@ def _app_with_capture(monkeypatch: pytest.MonkeyPatch) -> tuple[FastAPI, dict[st
 
     captured: dict[str, Any] = {}
 
-    def _capture_call_model(profile_id: str, messages: Any) -> Any:
+    def _capture_call_model(profile_id: str, messages: Any, **kwargs: Any) -> Any:
         captured["profile_id"] = profile_id
         captured["messages"] = messages
         return MagicMock(content="ok", usage_metadata=None)

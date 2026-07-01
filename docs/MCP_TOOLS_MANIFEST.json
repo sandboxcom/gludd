@@ -123,6 +123,44 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_break_glass",
+    "description": "OpenBao raft snapshot and restore (break-glass backup) — Wraps the OpenBao HTTP API for the two break-glass endpoints C(/v1/sys/storage/raft/snapshot) (GET — snapshot) and C(/v1/sys/storage/raft/restore) (POST — restore). Mode C(snapshot) fetches the current raft snapshot bytes and writes them to C(output_path). Mode C(restore) POSTs the bytes from C(restore_source) back into a running OpenBao server. The C(token) argument is marked C(no_log=True); OpenBao tokens MUST NOT leak into Ansible task output. This module is safe to call from C(check_mode) for snapshot (it does nothing destructive); restore is refused in check_mode.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "openbao_addr": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string",
+          "x-no-log": true
+        },
+        "output_path": {
+          "type": "string",
+          "default": ""
+        },
+        "mode": {
+          "type": "string",
+          "enum": [
+            "snapshot",
+            "restore"
+          ],
+          "default": "snapshot"
+        },
+        "restore_source": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "openbao_addr",
+        "token"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_db",
     "description": "Todo/resource CRUD via daemon HTTP API (never raw SQLite) — Performs todo and resource operations against the daemon's REST API. {'Supported ops': 'C(todo_get), C(todo_create), C(todo_update_status), C(resource_preference).'} C(todo_create) issues POST /api/todos on the daemon (never raw SQLite). NEVER opens the SQLite file directly (single-writer rule). Check mode skips write operations.",
     "input_schema": {
@@ -421,7 +459,7 @@
   },
   {
     "name": "general_ludd.agent.gludd_git",
-    "description": "Git operations (commit/branch) via git_automation — Performs git commit or branch operations on a local repository. Wraps C(general_ludd.git_automation.repo.GitAutomation). Idempotent for C(branch) (no-op if branch already exists). C(commit) reports C(changed=true) when a commit is created; C(changed=false) if there is nothing to commit.",
+    "description": "Git control-plane ops (commit/branch/worktree/merge/push) via git_automation — Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation) control plane to roles/playbooks so an agent-authored job can perform git operations WITHOUT reimplementing the safety logic. This is a thin B(delegating wrapper) — it does not reimplement git. The Python core provides per-repo C(.git/index.lock) serialization (issue #63), a bounded subprocess timeout, a non-interactive git environment, leading-dash ref rejection, C(--) end-of-options separators, worktree-path traversal guards, and typed results the daemon also consumes synchronously. Keeping that core in Python (rather than a pure role) preserves those guarantees; this module simply makes the same operations available on the Ansible execution seam. Idempotent where git is: C(branch) is a no-op if the branch already exists; C(commit) reports C(changed=false) when there is nothing to commit. Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped in check mode and report the change they WOULD make.",
     "input_schema": {
       "type": "object",
       "properties": {
@@ -432,7 +470,12 @@
           "type": "string",
           "enum": [
             "commit",
-            "branch"
+            "branch",
+            "worktree_list",
+            "worktree_create",
+            "worktree_remove",
+            "merge",
+            "push"
           ]
         },
         "message": {
@@ -440,6 +483,28 @@
         },
         "branch": {
           "type": "string"
+        },
+        "worktree_path": {
+          "type": "string"
+        },
+        "source": {
+          "type": "string"
+        },
+        "target": {
+          "type": "string"
+        },
+        "strategy": {
+          "type": "string",
+          "enum": [
+            "ff",
+            "no-ff",
+            "squash"
+          ],
+          "default": "ff"
+        },
+        "remote": {
+          "type": "string",
+          "default": "origin"
         }
       },
       "additionalProperties": false,
@@ -447,6 +512,90 @@
         "path",
         "op"
       ]
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_human_todo",
+    "description": "File or resolve a bot→human request (HumanTodo) via the daemon — Agents use this module to ask a human for something they cannot get on their own — a permission escalation, an external action, a decision, missing input, or another blocker. It is the structured replacement for \"I gave up\" log lines and event errors. C(state=present) files a new human-todo via POST /api/human-todos. When C(parent_agent_todo_id) is set, the parent agent todo is moved to C(blocked_on_human) and will not be dispatched until the human resolves the request. C(state=done) marks an existing human-todo done (human provided what was asked). C(state=dismissed) records that the human declined, so the agent knows to try a different approach. Check mode skips write operations.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "present",
+            "done",
+            "dismissed"
+          ],
+          "default": "present"
+        },
+        "title": {
+          "type": "string"
+        },
+        "body": {
+          "type": "string"
+        },
+        "category": {
+          "type": "string",
+          "enum": [
+            "permission_escalation",
+            "external_action",
+            "decision",
+            "input_request",
+            "blocker"
+          ],
+          "default": "blocker"
+        },
+        "priority": {
+          "type": "string",
+          "enum": [
+            "low",
+            "medium",
+            "high",
+            "urgent"
+          ],
+          "default": "medium"
+        },
+        "parent_agent_todo_id": {
+          "type": "string"
+        },
+        "tags": {
+          "type": "array",
+          "default": []
+        },
+        "id": {
+          "type": "string"
+        },
+        "human_resolution": {
+          "type": "string"
+        },
+        "reason": {
+          "type": "string"
+        },
+        "human_resolver": {
+          "type": "string",
+          "default": "operator"
+        },
+        "agent_id": {
+          "type": "string",
+          "default": "agent"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 30
+        }
+      },
+      "additionalProperties": false
     },
     "server_id": "ansible"
   },
@@ -804,6 +953,74 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_ornith",
+    "description": "Pull rejected Ornith training pairs and invoke improvement rollouts — {'Bidirectional seam for the gludd × Ornith symbiotic loop. Two states': None} C(state=pairs) — fetch the most-recent training pairs whose outcome matches a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)). These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs) endpoint. C(state=improve) — invoke the daemon's model gateway (C(POST /admin/models/call)) with a structured \"improve this artifact\" prompt and return the proposed diff. The caller is responsible for writing the diff to disk, opening a PR, and filing a human-todo for review. The PR is NEVER auto-merged — the human-todo is the gate. Check mode skips both the network call and the model invocation.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "state": {
+          "type": "string",
+          "enum": [
+            "pairs",
+            "improve"
+          ],
+          "default": "improve"
+        },
+        "status": {
+          "type": "string",
+          "default": "rejected_by_gate,rejected_by_review,reverted"
+        },
+        "limit": {
+          "type": "integer",
+          "default": 10
+        },
+        "lookback_days": {
+          "type": "integer",
+          "default": 14
+        },
+        "project_id": {
+          "type": "string",
+          "default": ""
+        },
+        "task_description": {
+          "type": "string",
+          "default": ""
+        },
+        "target_files": {
+          "type": "array",
+          "default": []
+        },
+        "max_iterations": {
+          "type": "integer",
+          "default": 5
+        },
+        "model_profile": {
+          "type": "string",
+          "default": ""
+        },
+        "agent_id": {
+          "type": "string",
+          "default": "ornith_self_improve"
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 120
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_osquery",
     "description": "Query live system state via osquery and inject rows as ansible_facts — Runs a B(read-only) C(SELECT) query against C(osqueryi --json) and returns the result rows under C(ansible_facts.gludd_osquery) so a playbook (or the model running a job) can branch on real system state — processes, users, mounts, network interfaces, installed packages, system_info, etc. SECURITY — only C(SELECT) queries are permitted. The query is validated to start with C(SELECT) (after optional C(WITH ...) CTEs) and is rejected if it contains any mutating / side-effecting keyword (C(INSERT)/C(UPDATE)/C(DELETE)/C(DROP)/C(CREATE)/C(ALTER)/C(ATTACH)/ C(DETACH)/C(PRAGMA)/C(REPLACE)/C(VACUUM)). osquery's virtual tables are mostly read-only, but this module refuses to even hand a write-shaped query to the binary. The osquery binary is resolved from the daemon's filestore (C(binaries/osquery), downloaded on first use by the BinaryBootstrapper) when running in the same venv as the daemon; otherwise it falls back to an C(osqueryi) on the system C(PATH). Runs the binary via an explicit argument list (never C(shell=True)). Read-only and check-mode safe — it performs no writes. In check mode the query is validated and the binary located, but osquery is not executed.",
     "input_schema": {
@@ -858,6 +1075,81 @@
         }
       },
       "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_proc_monitor",
+    "description": "Report resource utilization, I/O and locks for gludd-managed processes — Queries the daemon's managed-process stats API and returns per-process resource utilization under C(ansible_facts.gludd_proc_monitor) so a playbook (or the model running a job) can branch on real process health — CPU, memory (RSS/VMS), I/O counters, open file descriptors, thread count, context switches, open files and held locks. When C(pid) is C(0) (the default) the module enumerates every gludd-managed process via C(GET /admin/processes) and then fetches stats for each B(alive) process. A process that exits mid-scan (its per-pid stats call returns C(404)) is skipped rather than failing the whole task. When C(pid) is greater than C(0) only that single process's stats are returned. B(Read-only) and B(check-mode safe) — it performs no writes. In check mode no daemon call is made and an empty fact set is returned (mirroring C(gludd_osquery)). Talks to the daemon over HTTP via the shared C(GluddClient) (stdlib C(urllib) only — no third-party deps in the managed-node venv).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "pid": {
+          "type": "integer",
+          "default": 0
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 10
+        }
+      },
+      "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_process",
+    "description": "List, signal, and inspect daemon-managed processes — Talks to the general_ludd daemon's managed-process API so a playbook (or the model running a job) can enumerate the processes the daemon launched, inspect a live process's resource usage, or deliver a signal to one — all without ever calling C(kill)/C(ps) directly on the managed node. C(action=list) calls C(GET /admin/processes) and returns the registry of managed processes under C(ansible_facts.gludd_process). C(action=status) calls C(GET /admin/processes/{pid}/stats) and returns a live psutil snapshot for one process under C(ansible_facts.gludd_process.stats). C(action=signal) calls C(POST /admin/processes/{pid}/signal) to deliver a signal (optionally to the whole process group). Signal delivery is a state change, so it reports C(changed=True) on success. SECURITY — for C(action=signal) the signal name is validated client-side against a small allow-list before any request is sent (defence in depth; the daemon enforces the same set server-side). Disallowed signal names are rejected without contacting the daemon. Read-only and check-mode safe for C(list)/C(status). In check mode a C(signal) request is B(not) sent — the module reports the change it would make (C(changed=True)) instead.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "action": {
+          "type": "string",
+          "enum": [
+            "list",
+            "signal",
+            "status"
+          ]
+        },
+        "pid": {
+          "type": "integer",
+          "default": 0
+        },
+        "signal": {
+          "type": "string",
+          "default": "SIGTERM"
+        },
+        "group": {
+          "type": "boolean",
+          "default": false
+        },
+        "daemon_url": {
+          "type": "string",
+          "default": "http://localhost:8000"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "timeout": {
+          "type": "integer",
+          "default": 10
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "action"
+      ]
     },
     "server_id": "ansible"
   },
@@ -952,6 +1244,79 @@
     "server_id": "ansible"
   },
   {
+    "name": "general_ludd.agent.gludd_slurm_deploy",
+    "description": "Deploy a vLLM or llama.cpp model server on a Slurm cluster — Submits a Slurm batch job that launches C(vllm serve) or C(llama_cpp.server) on an allocated GPU node and polls until the server is servable (writes a servable.json artifact with servable_url). Wraps C(general_ludd.infra.slurm_deployment.VllmSlurmDeployment) and C(LlamacppSlurmDeployment). Use this when the operator has a Slurm cluster and Slurm should arbitrate GPU access (fairshare + accounting). For cloud GPU, use Terraform; for local dev, use C(make local-model-vllm).",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "engine": {
+          "type": "string",
+          "enum": [
+            "vllm",
+            "llamacpp"
+          ]
+        },
+        "model_id": {
+          "type": "string"
+        },
+        "gpu_count": {
+          "type": "integer",
+          "default": 1
+        },
+        "gpu_type": {
+          "type": "string",
+          "default": "a100"
+        },
+        "port": {
+          "type": "integer",
+          "default": 8000
+        },
+        "max_hours": {
+          "type": "integer",
+          "default": 4
+        },
+        "mem_gb": {
+          "type": "integer",
+          "default": 32
+        },
+        "partition": {
+          "type": "string",
+          "default": "gpu"
+        },
+        "max_ctx": {
+          "type": "integer",
+          "default": 32768
+        },
+        "artifact_dir": {
+          "type": "string"
+        },
+        "poll_timeout": {
+          "type": "integer",
+          "default": 300
+        },
+        "poll_interval": {
+          "type": "number",
+          "default": 5.0
+        },
+        "module_loads": {
+          "type": "array",
+          "default": []
+        },
+        "extra_args": {
+          "type": "array",
+          "default": []
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "engine",
+        "model_id",
+        "artifact_dir"
+      ]
+    },
+    "server_id": "ansible"
+  },
+  {
     "name": "general_ludd.agent.gludd_spend",
     "description": "Fetch and configure the daemon spend-limiter — C(state=get) calls C(GET /api/spend) and returns the current spend snapshot as C(ansible_facts.gludd_spend). C(state=configure) calls C(POST /api/spend/configure) to update the spend-limiter settings (limit_usd and/or window_seconds). PSK-authed; check-mode safe on C(state=get). C(state=configure) skips the API call in check mode and returns an empty diff.",
     "input_schema": {
@@ -986,6 +1351,62 @@
         }
       },
       "additionalProperties": false
+    },
+    "server_id": "ansible"
+  },
+  {
+    "name": "general_ludd.agent.gludd_stream",
+    "description": "Stream input signals (video/audio/text/binary) and dispatch buffered chunks to a cloned role — Opens a device (e.g. C(/dev/video0), C(hw:0,0), C(pulse), C(rtsp://...), a file path) via the appropriate capture tool (ffmpeg / tail / cat) and streams bytes into a rolling in-memory buffer. When the configured C(dispatch_trigger) fires (size threshold, interval, silence detection, or external MQ message), the current buffer is written to C(artifact_dir/chunk-<n>.bin) and POSTed to the daemon's C(/admin/stream/dispatch) endpoint. The dispatch clones the *calling role* (the role invoking this module), injects the chunk as a named variable, and runs the clone on that chunk. An optional C(external_processor) (whisper.cpp / ffmpeg / agent) is invoked on the chunk before the cloned role's tasks run. The module stops when the C(stop_condition) fires (timeout, EOF, external MQ message, or max dispatches), drains the remaining buffer with a final dispatch, closes the device subprocess, and returns. Check mode skips device capture and HTTP dispatch; it returns a synthetic result describing the would-have-run pipeline.",
+    "input_schema": {
+      "type": "object",
+      "properties": {
+        "device": {
+          "type": "string"
+        },
+        "device_kind": {
+          "type": "string",
+          "enum": [
+            "video",
+            "audio",
+            "text",
+            "binary"
+          ]
+        },
+        "buffer_size": {
+          "type": "integer",
+          "default": 1048576
+        },
+        "dispatch_trigger": {
+          "type": "object"
+        },
+        "dispatch_role_clone": {
+          "type": "object"
+        },
+        "external_processor": {
+          "type": "object"
+        },
+        "stop_condition": {
+          "type": "object"
+        },
+        "daemon_url": {
+          "type": "string"
+        },
+        "psk": {
+          "type": "string",
+          "default": "",
+          "x-no-log": true
+        },
+        "artifact_dir": {
+          "type": "string",
+          "default": ""
+        }
+      },
+      "additionalProperties": false,
+      "required": [
+        "device",
+        "device_kind",
+        "daemon_url"
+      ]
     },
     "server_id": "ansible"
   },

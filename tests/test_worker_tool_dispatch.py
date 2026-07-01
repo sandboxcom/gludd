@@ -42,9 +42,24 @@ def _make_job(**kwargs: Any) -> dict[str, Any]:
     return base
 
 
-def _make_tool_response(calls: list[dict[str, Any]]) -> str:
-    """Encode a list of tool-call dicts as the JSON the model would emit."""
-    return json.dumps({"tool_calls": calls})
+def _make_tool_response(calls: list[dict[str, Any]]) -> tuple[str, list[dict[str, Any]]]:
+    """Build a (content, structured_tool_calls) tuple matching the real
+    ``invoke_model_for_generation`` return signature.
+
+    Converts the legacy ``{"kind","name","args"}`` call dicts into the
+    OpenAI-nested shape that ``structured_tool_calls_to_calls`` expects.
+    """
+    structured: list[dict[str, Any]] = []
+    for i, c in enumerate(calls):
+        structured.append({
+            "id": f"call_{i}",
+            "type": "function",
+            "function": {
+                "name": c["name"],
+                "arguments": json.dumps(c.get("args", {})),
+            },
+        })
+    return ("Generated plan text", structured)
 
 
 def _single_tool_call(name: str = "do_something", kind: str = "skill") -> dict[str, Any]:
@@ -113,7 +128,7 @@ class TestToolCallsDetected:
         detected = data.get("tool_calls_detected", [])
         assert len(detected) == 1, f"Expected 1 tool call detected, got: {detected}"
         assert detected[0]["name"] == "write_file"
-        assert detected[0]["kind"] == "skill"
+        assert detected[0]["kind"] == "mcp"
 
     def test_multiple_tool_calls_all_detected(self) -> None:
         """Multiple tool calls in one response all appear in tool_calls_detected."""
@@ -159,7 +174,7 @@ class TestPlainTextResponse:
             patch("general_ludd.worker.app.get_playbook_registry", return_value={"noop.yml"}),
             patch(
                 "general_ludd.worker.app._invoke_gateway_for_job",
-                return_value="Here is the generated plan: step 1, step 2.",
+                return_value=("Here is the generated plan: step 1, step 2.", None),
             ),
         ):
             app = create_app(gateway=gw)

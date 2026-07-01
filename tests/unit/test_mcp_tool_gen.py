@@ -77,14 +77,22 @@ def test_tool_def_for_gludd_ping():
 
 
 def test_tool_def_required_and_choices():
-    """gludd_git has a required 'op' with choices=[commit, branch]."""
+    """gludd_git has a required 'op' with choices covering all git ops."""
     tool_defs, _ = gen.generate()
     by_name = {t["name"]: t for t in tool_defs}
     td = by_name["general_ludd.agent.gludd_git"]
     schema = td["input_schema"]
     assert "path" in schema["required"]
     assert "op" in schema["required"]
-    assert schema["properties"]["op"]["enum"] == ["commit", "branch"]
+    assert schema["properties"]["op"]["enum"] == [
+        "commit",
+        "branch",
+        "worktree_list",
+        "worktree_create",
+        "worktree_remove",
+        "merge",
+        "push",
+    ]
 
 
 def test_argspec_to_json_schema_unit():

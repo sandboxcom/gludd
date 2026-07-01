@@ -153,6 +153,87 @@ general_ludd.agent.gludd_agent_run:
       returned: success
       type: dict
   module: gludd_agent_run
+general_ludd.agent.gludd_break_glass:
+  DOCUMENTATION:
+    description:
+    - Wraps the OpenBao HTTP API for the two break-glass endpoints C(/v1/sys/storage/raft/snapshot)
+      (GET — snapshot) and C(/v1/sys/storage/raft/restore) (POST — restore).
+    - Mode C(snapshot) fetches the current raft snapshot bytes and writes them to
+      C(output_path).
+    - Mode C(restore) POSTs the bytes from C(restore_source) back into a running OpenBao
+      server.
+    - The C(token) argument is marked C(no_log=True); OpenBao tokens MUST NOT leak
+      into Ansible task output.
+    - This module is safe to call from C(check_mode) for snapshot (it does nothing
+      destructive); restore is refused in check_mode.
+    module: gludd_break_glass
+    notes:
+    - Uses Python stdlib urllib only — no hvac dependency on the Ansible controller.
+    - Fails closed on any non-200 response from OpenBao.
+    options:
+      mode:
+        choices:
+        - snapshot
+        - restore
+        default: snapshot
+        description: Operation mode.
+        type: str
+      openbao_addr:
+        description: Base URL of the OpenBao server (e.g. https://127.0.0.1:8200).
+        required: true
+        type: str
+      output_path:
+        default: ''
+        description: Path where the snapshot bytes are written (mode=snapshot).
+        type: str
+      restore_source:
+        default: ''
+        description: Path to read bytes from for mode=restore (raw or GPG file). The
+          caller is responsible for GPG-decrypting prior to invocation; this module
+          reads bytes verbatim and POSTs them.
+        type: str
+      token:
+        description: OpenBao bearer token with snapshot/restore privileges.
+        no_log: true
+        required: true
+        type: str
+    short_description: OpenBao raft snapshot and restore (break-glass backup)
+  EXAMPLES:
+  - general_ludd.agent.gludd_break_glass:
+      mode: snapshot
+      openbao_addr: https://127.0.0.1:8200
+      output_path: /tmp/openbao-snapshot.bin
+      token: '{{ vault_token }}'
+    name: Snapshot OpenBao raft store to a temp file
+    register: snap
+  - general_ludd.agent.gludd_break_glass:
+      mode: restore
+      openbao_addr: https://127.0.0.1:8200
+      restore_source: /tmp/openbao-snapshot.bin
+      token: '{{ vault_token }}'
+    name: Restore OpenBao from a decrypted snapshot file
+  RETURN:
+    raft_applied:
+      description: True when OpenBao returned 200/204 from the restore endpoint.
+      returned: when mode=restore
+      type: bool
+    restored_at:
+      description: ISO-8601 UTC timestamp the restore POST completed.
+      returned: when mode=restore
+      type: str
+    saved_at:
+      description: ISO-8601 UTC timestamp the snapshot was written.
+      returned: when mode=snapshot
+      type: str
+    sha256:
+      description: SHA-256 hex digest of the snapshot bytes (mode=snapshot).
+      returned: when mode=snapshot
+      type: str
+    size_bytes:
+      description: Size of the snapshot written to output_path (mode=snapshot).
+      returned: when mode=snapshot
+      type: int
+  module: gludd_break_glass
 general_ludd.agent.gludd_db:
   DOCUMENTATION:
     description:
@@ -717,31 +798,34 @@ general_ludd.agent.gludd_features:
 general_ludd.agent.gludd_git:
   DOCUMENTATION:
     description:
-    - Performs git commit or branch operations on a local repository.
-    - Wraps C(general_ludd.git_automation.repo.GitAutomation).
-    - Idempotent for C(branch) (no-op if branch already exists).
-    - C(commit) reports C(changed=true) when a commit is created; C(changed=false)
-      if there is nothing to commit.
+    - Exposes gludd's hardened C(general_ludd.git_automation.GitAutomation)
+    - control plane to roles/playbooks so an agent-authored job can perform git
+    - operations WITHOUT reimplementing the safety logic.
+    - This is a thin B(delegating wrapper) — it does not reimplement git. The
+    - 'Python core provides per-repo C(.git/index.lock) serialization (issue #63),'
+    - a bounded subprocess timeout, a non-interactive git environment,
+    - leading-dash ref rejection, C(--) end-of-options separators, worktree-path
+    - traversal guards, and typed results the daemon also consumes synchronously.
+    - Keeping that core in Python (rather than a pure role) preserves those
+    - guarantees; this module simply makes the same operations available on the
+    - Ansible execution seam.
+    - 'Idempotent where git is: C(branch) is a no-op if the branch already exists;'
+    - C(commit) reports C(changed=false) when there is nothing to commit.
+    - Check-mode safe — read-only C(worktree_list) runs; mutating ops are skipped
+    - in check mode and report the change they WOULD make.
     module: gludd_git
     options:
-      branch:
-        description: Branch name (required when C(op=branch)).
-        type: str
-      message:
-        description: Commit message (required when C(op=commit)).
-        type: str
-      op:
-        choices:
-        - commit
-        - branch
-        description: Operation to perform.
-        required: true
-        type: str
-      path:
-        description: Path to the git repository or worktree.
-        required: true
-        type: str
-    short_description: Git operations (commit/branch) via git_automation
+      branch: {}
+      message: {}
+      op: {}
+      path: {}
+      remote: {}
+      source: {}
+      strategy: {}
+      target: {}
+      worktree_path: {}
+    short_description: Git control-plane ops (commit/branch/worktree/merge/push) via
+      git_automation
   EXAMPLES:
   - general_ludd.agent.gludd_git:
       message: 'auto: apply model-suggested fix'
@@ -754,16 +838,172 @@ general_ludd.agent.gludd_git:
       op: branch
       path: /workspace/myrepo
     name: Create branch
+  - general_ludd.agent.gludd_git:
+      op: worktree_list
+      path: /workspace/myrepo
+    name: List worktrees
+    register: wts
+  - general_ludd.agent.gludd_git:
+      branch: agent/TODO-1234/feature
+      op: worktree_create
+      path: /workspace/myrepo
+      worktree_path: /workspace/myrepo-wt-1234
+    name: Add an agent worktree on a new branch
+  - general_ludd.agent.gludd_git:
+      op: merge
+      path: /workspace/myrepo
+      source: agent/TODO-1234/feature
+      strategy: ff
+      target: main
+    name: Fast-forward merge a green branch
+  - general_ludd.agent.gludd_git:
+      branch: main
+      op: push
+      path: /workspace/myrepo
+    name: Push a branch to origin (bounded by the control-plane timeout)
   RETURN:
     branch:
       description: Branch name (op=branch).
       returned: when op=branch
       type: str
+    result:
+      description: Typed result dict for worktree/merge/push ops.
+      returned: when op in (worktree_list, worktree_create, worktree_remove, merge,
+        push)
+      type: dict
     sha:
       description: Commit SHA (op=commit only).
       returned: when op=commit and changed=true
       type: str
   module: gludd_git
+general_ludd.agent.gludd_human_todo:
+  DOCUMENTATION:
+    description:
+    - Agents use this module to ask a human for something they cannot get on their
+      own — a permission escalation, an external action, a decision, missing input,
+      or another blocker. It is the structured replacement for "I gave up" log lines
+      and event errors.
+    - C(state=present) files a new human-todo via POST /api/human-todos. When C(parent_agent_todo_id)
+      is set, the parent agent todo is moved to C(blocked_on_human) and will not be
+      dispatched until the human resolves the request.
+    - C(state=done) marks an existing human-todo done (human provided what was asked).
+      C(state=dismissed) records that the human declined, so the agent knows to try
+      a different approach.
+    - Check mode skips write operations.
+    module: gludd_human_todo
+    options:
+      agent_id:
+        default: agent
+        description: Filing agent's identifier (state=present).
+        type: str
+      body:
+        description: Full markdown context — what's needed, why, links (state=present).
+        type: str
+      category:
+        choices:
+        - permission_escalation
+        - external_action
+        - decision
+        - input_request
+        - blocker
+        default: blocker
+        description: Request category (state=present).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      human_resolution:
+        description: What the human did/said (required for state=done).
+        type: str
+      human_resolver:
+        default: operator
+        description: Identifier of the human acting (done/dismissed).
+        type: str
+      id:
+        description: Existing human-todo id (required for state=done/dismissed).
+        type: str
+      parent_agent_todo_id:
+        description: Agent todo id that's blocked on this request (optional).
+        type: str
+      priority:
+        choices:
+        - low
+        - medium
+        - high
+        - urgent
+        default: medium
+        description: Request priority (state=present).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      reason:
+        description: Why the request is dismissed (required for state=dismissed).
+        type: str
+      state:
+        choices:
+        - present
+        - done
+        - dismissed
+        default: present
+        description: Desired state.
+        type: str
+      tags:
+        default: []
+        description: Optional tags for the request (state=present).
+        elements: str
+        type: list
+      timeout:
+        default: 30
+        description: Request timeout in seconds.
+        type: int
+      title:
+        description: Short human-readable summary (state=present).
+        type: str
+    short_description: File or resolve a bot→human request (HumanTodo) via the daemon
+  EXAMPLES:
+  - general_ludd.agent.gludd_human_todo:
+      agent_id: implement_change_role
+      body: 'I need to update the prod config but the current capability policy
+
+        denies filesystem writes outside the workspace. Tried: gludd_db
+
+        resource_preference, env-var override. Both rejected.
+
+        '
+      category: permission_escalation
+      parent_agent_todo_id: TODO-abc123
+      priority: high
+      state: present
+      title: Need write access to /etc/gludd/prod.conf
+    name: Agent blocks on a permission escalation
+    register: human_req
+  - general_ludd.agent.gludd_human_todo:
+      body: Model gateway returns 401 on every call; key is not in OpenBao or env.
+      category: input_request
+      priority: urgent
+      state: present
+      title: OPENAI_API_KEY not set in environment
+    name: Agent asks for a missing API key
+  - general_ludd.agent.gludd_human_todo:
+      human_resolution: OPENAI_API_KEY rotated and loaded into OpenBao at secret/gludd/openai.
+      human_resolver: shawn
+      id: HTODO-...
+      state: done
+    name: Human marks the request done (the key is now set)
+  RETURN:
+    human_todo:
+      description: The created/updated human-todo record.
+      returned: always
+      type: dict
+    id:
+      description: The human-todo id.
+      returned: always
+      type: str
+  module: gludd_human_todo
 general_ludd.agent.gludd_introspect:
   DOCUMENTATION:
     description:
@@ -1359,6 +1599,119 @@ general_ludd.agent.gludd_model_call:
       returned: success
       type: dict
   module: gludd_model_call
+general_ludd.agent.gludd_ornith:
+  DOCUMENTATION:
+    description:
+    - Bidirectional seam for the gludd × Ornith symbiotic loop. Two states: null
+    - C(state=pairs) — fetch the most-recent training pairs whose outcome matches
+      a comma-separated status list (e.g. C(rejected_by_gate,rejected_by_review,reverted)).
+      These are the artifacts that NEED improvement. Hits the daemon's C(GET /admin/ornith/pairs)
+      endpoint.
+    - C(state=improve) — invoke the daemon's model gateway (C(POST /admin/models/call))
+      with a structured "improve this artifact" prompt and return the proposed diff.
+      The caller is responsible for writing the diff to disk, opening a PR, and filing
+      a human-todo for review. The PR is NEVER auto-merged — the human-todo is the
+      gate.
+    - Check mode skips both the network call and the model invocation.
+    module: gludd_ornith
+    options:
+      agent_id:
+        default: ornith_self_improve
+        description: Filing agent identifier (recorded in the daemon audit row).
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      limit:
+        default: 10
+        description: Maximum pairs to return (state=pairs).
+        type: int
+      lookback_days:
+        default: 14
+        description: Restrict to pairs invoked within the last N days (state=pairs).
+        type: int
+      max_iterations:
+        default: 5
+        description: Max tool-call iterations for the improvement rollout.
+        type: int
+      model_profile:
+        default: ''
+        description: Model profile to route the improvement call through.
+        type: str
+      project_id:
+        default: ''
+        description: Optional project filter (state=pairs).
+        type: str
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      state:
+        choices:
+        - pairs
+        - improve
+        default: improve
+        description: Desired state.
+        type: str
+      status:
+        default: rejected_by_gate,rejected_by_review,reverted
+        description: Comma-separated outcome statuses to filter on (state=pairs).
+        type: str
+      target_files:
+        default: []
+        description: List of artifact paths to improve (state=improve).
+        elements: str
+        type: list
+      task_description:
+        default: ''
+        description: 'The structured task prompt for the improvement rollout (state=improve).
+          The role passes a templated string that names the artifact and cites the
+          failure outcomes.
+
+          '
+        type: str
+      timeout:
+        default: 120
+        description: Request timeout in seconds.
+        type: int
+    short_description: Pull rejected Ornith training pairs and invoke improvement
+      rollouts
+  EXAMPLES:
+  - general_ludd.agent.gludd_ornith:
+      limit: 10
+      lookback_days: 14
+      state: pairs
+      status: rejected_by_gate,rejected_by_review,reverted
+    name: Pull the rejected training pairs
+    register: pairs
+  - general_ludd.agent.gludd_ornith:
+      max_iterations: 5
+      state: improve
+      target_files:
+      - playbooks/agent_orchestrate.yml
+      task_description: Improve this playbook based on the 3 gate failures attached.
+    name: Invoke Ornith to improve an artifact
+    register: rollout
+  RETURN:
+    count:
+      description: Number of pairs returned (state=pairs).
+      returned: when state=pairs
+      type: int
+    pairs:
+      description: List of matching training pairs (state=pairs).
+      returned: when state=pairs
+      type: list
+    patch:
+      description: The proposed improvement text (state=improve).
+      returned: when state=improve
+      type: str
+    usage:
+      description: Token usage from the model call (state=improve).
+      returned: when state=improve
+      type: dict
+  module: gludd_ornith
 general_ludd.agent.gludd_osquery:
   DOCUMENTATION:
     description:
@@ -1485,6 +1838,198 @@ general_ludd.agent.gludd_ping:
       returned: always
       type: bool
   module: gludd_ping
+general_ludd.agent.gludd_proc_monitor:
+  DOCUMENTATION:
+    description:
+    - Queries the daemon's managed-process stats API and returns per-process resource
+      utilization under C(ansible_facts.gludd_proc_monitor) so a playbook (or the
+      model running a job) can branch on real process health — CPU, memory (RSS/VMS),
+      I/O counters, open file descriptors, thread count, context switches, open files
+      and held locks.
+    - When C(pid) is C(0) (the default) the module enumerates every gludd-managed
+      process via C(GET /admin/processes) and then fetches stats for each B(alive)
+      process. A process that exits mid-scan (its per-pid stats call returns C(404))
+      is skipped rather than failing the whole task.
+    - When C(pid) is greater than C(0) only that single process's stats are returned.
+    - B(Read-only) and B(check-mode safe) — it performs no writes. In check mode no
+      daemon call is made and an empty fact set is returned (mirroring C(gludd_osquery)).
+    - Talks to the daemon over HTTP via the shared C(GluddClient) (stdlib C(urllib)
+      only — no third-party deps in the managed-node venv).
+    module: gludd_proc_monitor
+    options:
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the daemon.
+        type: str
+      pid:
+        default: 0
+        description:
+        - PID of a single gludd-managed process to monitor. When C(0) (the default)
+          B(all) managed processes are monitored.
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      timeout:
+        default: 10
+        description: Per-request timeout in seconds for daemon calls.
+        type: int
+    short_description: Report resource utilization, I/O and locks for gludd-managed
+      processes
+  EXAMPLES:
+  - general_ludd.agent.gludd_proc_monitor: null
+    name: Monitor all gludd-managed processes
+    register: procs
+  - ansible.builtin.debug:
+      msg: a managed process exceeds 1 GiB RSS
+    name: Branch on a process using too much memory
+    when: ansible_facts.gludd_proc_monitor.processes | selectattr('memory.rss', 'gt',
+      1073741824) | list | length > 0
+  - general_ludd.agent.gludd_proc_monitor:
+      pid: 4242
+    name: Monitor a single process by pid
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_proc_monitor:
+          contains:
+            count:
+              description: Number of process stats dicts returned.
+              type: int
+            processes:
+              description:
+              - List of per-process stats dicts. Each contains C(pid), C(cpu_percent),
+                C(memory) (C(rss)/C(vms)), C(io) (C(read_bytes)/C(write_bytes)/C(read_count)/C(write_count)
+                or C(null)), C(num_fds), C(num_threads), C(num_ctx_switches), C(status),
+                C(open_files) and C(locks).
+              type: list
+          description: The managed-process monitor result — C(processes) and C(count).
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_proc_monitor) result.
+      returned: always
+      type: dict
+  module: gludd_proc_monitor
+general_ludd.agent.gludd_process:
+  DOCUMENTATION:
+    description:
+    - Talks to the general_ludd daemon's managed-process API so a playbook (or the
+      model running a job) can enumerate the processes the daemon launched, inspect
+      a live process's resource usage, or deliver a signal to one — all without ever
+      calling C(kill)/C(ps) directly on the managed node.
+    - C(action=list) calls C(GET /admin/processes) and returns the registry of managed
+      processes under C(ansible_facts.gludd_process).
+    - C(action=status) calls C(GET /admin/processes/{pid}/stats) and returns a live
+      psutil snapshot for one process under C(ansible_facts.gludd_process.stats).
+    - C(action=signal) calls C(POST /admin/processes/{pid}/signal) to deliver a signal
+      (optionally to the whole process group). Signal delivery is a state change,
+      so it reports C(changed=True) on success.
+    - SECURITY — for C(action=signal) the signal name is validated client-side against
+      a small allow-list before any request is sent (defence in depth; the daemon
+      enforces the same set server-side). Disallowed signal names are rejected without
+      contacting the daemon.
+    - Read-only and check-mode safe for C(list)/C(status). In check mode a C(signal)
+      request is B(not) sent — the module reports the change it would make (C(changed=True))
+      instead.
+    module: gludd_process
+    options:
+      action:
+        choices:
+        - list
+        - signal
+        - status
+        description:
+        - The operation to perform. C(list) enumerates managed processes, C(status)
+          fetches a live stats snapshot for one C(pid), and C(signal) delivers a signal
+          to one C(pid).
+        required: true
+        type: str
+      daemon_url:
+        default: http://localhost:8000
+        description: Base URL of the general_ludd daemon.
+        type: str
+      group:
+        default: false
+        description:
+        - When C(true) and C(action=signal), deliver the signal to the target's whole
+          process group rather than the single process.
+        type: bool
+      pid:
+        default: 0
+        description:
+        - Target process id. Required (and must be C(> 0)) for C(action=signal) and
+          C(action=status). Ignored for C(action=list).
+        type: int
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth (Bearer / X-PSK).
+        no_log: true
+        type: str
+      signal:
+        default: SIGTERM
+        description:
+        - Signal name to deliver when C(action=signal). Must be one of the allow-listed
+          names (C(SIGTERM), C(SIGINT), C(SIGHUP), C(SIGQUIT), C(SIGUSR1), C(SIGUSR2),
+          C(SIGKILL), C(SIGSTOP), C(SIGCONT)).
+        type: str
+      timeout:
+        default: 10
+        description: Per-request HTTP timeout in seconds.
+        type: int
+    short_description: List, signal, and inspect daemon-managed processes
+  EXAMPLES:
+  - general_ludd.agent.gludd_process:
+      action: list
+    name: List all daemon-managed processes
+    register: managed
+  - ansible.builtin.debug:
+      msg: '{{ ansible_facts.gludd_process.count }} managed processes'
+    name: Show how many managed processes are alive
+  - general_ludd.agent.gludd_process:
+      action: status
+      pid: 4242
+    name: Inspect one managed process
+  - general_ludd.agent.gludd_process:
+      action: signal
+      group: true
+      pid: 4242
+      signal: SIGTERM
+    name: Gracefully terminate a managed process group
+  RETURN:
+    ansible_facts:
+      contains:
+        gludd_process:
+          contains:
+            count:
+              description: Number of managed processes (C(action=list)).
+              type: int
+            processes:
+              description: List of managed-process records (C(action=list)).
+              type: list
+            stats:
+              description: psutil snapshot for one process (C(action=status)).
+              type: dict
+          description: The process-API result for the requested action.
+          returned: always
+          type: dict
+      description: Facts dict containing the C(gludd_process) result.
+      returned: always
+      type: dict
+    note:
+      description: Human-readable note describing a check-mode no-op.
+      returned: when action is signal in check mode
+      type: str
+    pid:
+      description: The target pid for a C(signal)/C(status) action.
+      returned: when action is signal or status
+      type: int
+    signal:
+      description: The signal that was (or would be) delivered.
+      returned: when action is signal
+      type: str
+  module: gludd_process
 general_ludd.agent.gludd_reload:
   DOCUMENTATION:
     description:
@@ -1661,6 +2206,123 @@ general_ludd.agent.gludd_skill:
       returned: success
       type: str
   module: gludd_skill
+general_ludd.agent.gludd_slurm_deploy:
+  DOCUMENTATION:
+    description:
+    - Submits a Slurm batch job that launches C(vllm serve) or C(llama_cpp.server)
+      on an allocated GPU node and polls until the server is servable (writes a servable.json
+      artifact with servable_url).
+    - Wraps C(general_ludd.infra.slurm_deployment.VllmSlurmDeployment) and C(LlamacppSlurmDeployment).
+    - Use this when the operator has a Slurm cluster and Slurm should arbitrate GPU
+      access (fairshare + accounting). For cloud GPU, use Terraform; for local dev,
+      use C(make local-model-vllm).
+    module: gludd_slurm_deploy
+    notes:
+    - Returns C(changed=true) when a job was submitted, C(false) in check mode.
+    - C(servable_url) is empty until the artifact file appears with a non-null URL;
+      on failure, C(error) carries the diagnostics.
+    options:
+      artifact_dir:
+        description: 'Shared-filesystem directory the batch script writes servable.json
+          to. Must be readable from the controller host.
+
+          '
+        required: true
+        type: str
+      engine:
+        choices:
+        - vllm
+        - llamacpp
+        description: Which model server to deploy.
+        required: true
+        type: str
+      extra_args:
+        default: []
+        description: Extra argv tokens to pass to vllm serve / llama_cpp.server.
+        elements: str
+        type: list
+      gpu_count:
+        default: 1
+        description: Number of GPUs to request per node.
+        type: int
+      gpu_type:
+        default: a100
+        description: GPU type Slurm should allocate (e.g. a100, h100).
+        type: str
+      max_ctx:
+        default: 32768
+        description: Maximum model context length.
+        type: int
+      max_hours:
+        default: 4
+        description: Job walltime in hours.
+        type: int
+      mem_gb:
+        default: 32
+        description: Host memory to request (GB).
+        type: int
+      model_id:
+        description: Model id (HuggingFace id or path to .gguf for llamacpp).
+        required: true
+        type: str
+      module_loads:
+        default: []
+        description: List of environment modules to load on the compute node.
+        elements: str
+        type: list
+      partition:
+        default: gpu
+        description: Slurm partition to submit to.
+        type: str
+      poll_interval:
+        default: 5.0
+        description: Seconds between polls of the artifact file.
+        type: float
+      poll_timeout:
+        default: 300
+        description: Seconds to wait for the server to become servable.
+        type: int
+      port:
+        default: 8000
+        description: Port the model server binds on the compute node.
+        type: int
+    short_description: Deploy a vLLM or llama.cpp model server on a Slurm cluster
+  EXAMPLES:
+  - general_ludd.agent.gludd_slurm_deploy:
+      artifact_dir: /scratch/gludd/job-{{ job_id }}
+      engine: vllm
+      gpu_count: 2
+      gpu_type: a100
+      max_hours: 4
+      model_id: meta-llama/Llama-3.1-8B-Instruct
+      port: 8000
+    name: Deploy vLLM on Slurm
+    register: deploy
+  - ansible.builtin.assert:
+      that: deploy.servable_url | length > 0
+    name: Wait for servable
+  RETURN:
+    engine:
+      description: Engine that was deployed.
+      returned: always
+      type: str
+    error:
+      description: Diagnostics on failure (empty on success).
+      returned: always
+      type: str
+    job_id:
+      description: Submitted Slurm job id (empty in check mode).
+      returned: always
+      type: str
+    model_id:
+      description: Model id that was deployed.
+      returned: always
+      type: str
+    servable_url:
+      description: URL the model server is reachable at (empty on timeout/failure).
+      returned: always
+      type: str
+  module: gludd_slurm_deploy
 general_ludd.agent.gludd_spend:
   DOCUMENTATION:
     description:
@@ -1726,6 +2388,316 @@ general_ludd.agent.gludd_spend:
       returned: when state=get
       type: dict
   module: gludd_spend
+general_ludd.agent.gludd_stream:
+  DOCUMENTATION:
+    description:
+    - Opens a device (e.g. C(/dev/video0), C(hw:0,0), C(pulse), C(rtsp://...), a file
+      path) via the appropriate capture tool (ffmpeg / tail / cat) and streams bytes
+      into a rolling in-memory buffer.
+    - When the configured C(dispatch_trigger) fires (size threshold, interval, silence
+      detection, or external MQ message), the current buffer is written to C(artifact_dir/chunk-<n>.bin)
+      and POSTed to the daemon's C(/admin/stream/dispatch) endpoint.
+    - The dispatch clones the *calling role* (the role invoking this module), injects
+      the chunk as a named variable, and runs the clone on that chunk. An optional
+      C(external_processor) (whisper.cpp / ffmpeg / agent) is invoked on the chunk
+      before the cloned role's tasks run.
+    - The module stops when the C(stop_condition) fires (timeout, EOF, external MQ
+      message, or max dispatches), drains the remaining buffer with a final dispatch,
+      closes the device subprocess, and returns.
+    - Check mode skips device capture and HTTP dispatch; it returns a synthetic result
+      describing the would-have-run pipeline.
+    module: gludd_stream
+    options:
+      artifact_dir:
+        default: ''
+        description: Directory to write buffer chunks before dispatch. Defaults to
+          tempfile.gettempdir().
+        type: str
+      buffer_size:
+        default: 1048576
+        description: Maximum bytes/frames to retain in the rolling buffer before discarding
+          oldest.
+        type: int
+      daemon_url:
+        description: Base URL of the gludd daemon.
+        required: true
+        type: str
+      device:
+        description: Input device path or URL (e.g. C(/dev/video0), C(hw:0,0), C(rtsp://...)).
+        required: true
+        type: str
+      device_kind:
+        choices:
+        - video
+        - audio
+        - text
+        - binary
+        description: Hint for which capture tool / external processor to use.
+        required: true
+        type: str
+      dispatch_role_clone:
+        description: 'Dict controlling role cloning. When C(clone_current_role=true),
+          the daemon clones the calling role and injects the buffered chunk.
+
+          '
+        suboptions:
+          clone_current_role:
+            default: true
+            description: Whether to clone the current calling role.
+            type: bool
+          extra_vars:
+            default: {}
+            description: Additional vars passed to the cloned role.
+            type: dict
+          inject_as:
+            default: stream_chunk
+            description: Variable name the chunk path is injected as.
+            type: str
+        type: dict
+      dispatch_trigger:
+        description: 'Dict describing when to dispatch the current buffer. Exactly
+          one of C(size_threshold), C(interval), C(silence_detection), C(external),
+          C(input_key).
+
+          '
+        suboptions:
+          bytes:
+            description: Threshold in bytes (type=size_threshold).
+            type: int
+          include_key_in_after:
+            default: true
+            description: 'When true, the matched key bytes are prepended to the dispatched
+              after_key payload (type=input_key). The key is always consumed from
+              the working search buffer so repeated keys delimit successive chunks.
+
+              '
+            type: bool
+          key:
+            description: 'The input key to match in the byte stream (type=input_key).
+              Either a UTF-8 string (encoded to bytes for matching) or a list of byte
+              ints for binary streams.
+
+              '
+            type: raw
+          max_bytes_after:
+            default: 1048576
+            description: 'Cap on the post-key buffer; flushes the after-chunk when
+              reached (type=input_key, modes after/both).
+
+              '
+            type: int
+          max_bytes_before:
+            default: 1048576
+            description: Cap on the pre-key buffer (type=input_key).
+            type: int
+          min_silence_ms:
+            description: Minimum silence length in ms (type=silence_detection).
+            type: int
+          mode:
+            choices:
+            - before
+            - after
+            - both
+            default: before
+            description: 'How to dispatch around the key (type=input_key). C(before)
+              dispatches the buffer accumulated up to (excluding) the key. C(after)
+              dispatches the buffer accumulated past the key when the next key fires
+              or C(max_bytes_after) is reached. C(both) dispatches BOTH the pre-key
+              buffer and the post-key buffer as two separate dispatches sharing the
+              same C(stream_chunk_index).
+
+              '
+            type: str
+          seconds:
+            description: Interval or timeout in seconds (type=interval).
+            type: float
+          topic:
+            description: MQ topic whose first message triggers dispatch (type=external).
+            type: str
+          type:
+            choices:
+            - size_threshold
+            - interval
+            - silence_detection
+            - external
+            - input_key
+            description: Trigger kind.
+            type: str
+        type: dict
+      external_processor:
+        description: 'Optional tool the cloned role invokes on the chunk before its
+          own tasks.
+
+          '
+        suboptions:
+          args:
+            default: []
+            description: Extra args passed to the tool.
+            elements: str
+            type: list
+          timeout_seconds:
+            default: 60
+            description: Per-chunk processor timeout.
+            type: int
+          tool:
+            choices:
+            - whisper.cpp
+            - ffmpeg
+            - agent
+            description: Tool name.
+            type: str
+        type: dict
+      psk:
+        default: ''
+        description: Pre-shared key for daemon auth.
+        no_log: true
+        type: str
+      stop_condition:
+        description: Dict describing when to stop listening.
+        suboptions:
+          count:
+            description: Max dispatches before stopping (type=max_dispatches).
+            type: int
+          seconds:
+            description: Timeout in seconds (type=timeout).
+            type: float
+          topic:
+            description: MQ topic whose first message stops the stream (type=external).
+            type: str
+          type:
+            choices:
+            - timeout
+            - eof
+            - external
+            - max_dispatches
+            description: Stop kind.
+            type: str
+        type: dict
+    short_description: Stream input signals (video/audio/text/binary) and dispatch
+      buffered chunks to a cloned role
+  EXAMPLES:
+  - general_ludd.agent.gludd_stream:
+      buffer_size: 524288
+      daemon_url: http://localhost:8000
+      device: hw:0,0
+      device_kind: audio
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        min_silence_ms: 800
+        type: silence_detection
+      external_processor:
+        args:
+        - --language
+        - en
+        timeout_seconds: 60
+        tool: whisper.cpp
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        seconds: 300
+        type: timeout
+    name: Stream microphone and transcribe speech
+    register: stream_out
+  - ansible.builtin.debug:
+      msg: 'transcription task: {{ stream_out.last_task_id }}'
+    name: Use the last transcription task id
+  - general_ludd.agent.gludd_stream:
+      buffer_size: 2097152
+      daemon_url: http://localhost:8000
+      device: /dev/video0
+      device_kind: video
+      dispatch_role_clone:
+        clone_current_role: true
+        extra_vars:
+          detection_target: person
+        inject_as: stream_chunk
+      dispatch_trigger:
+        bytes: 2097152
+        type: size_threshold
+      external_processor:
+        timeout_seconds: 120
+        tool: agent
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        count: 5
+        type: max_dispatches
+    name: Stream webcam and detect features per chunk
+    register: stream_out
+  - general_ludd.agent.gludd_stream:
+      buffer_size: 1048576
+      daemon_url: http://localhost:8000
+      device: /var/log/app.log
+      device_kind: text
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        seconds: 10
+        type: interval
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        type: eof
+    name: Tail an app log and dispatch every 10s
+    register: stream_out
+  - general_ludd.agent.gludd_stream:
+      daemon_url: http://localhost:8000
+      device: /tmp/fixture.log
+      device_kind: binary
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        key: TRIGGER
+        mode: before
+        type: input_key
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        type: eof
+    name: Stream a log and dispatch the lead-up to each TRIGGER marker
+    register: stream_out
+  - general_ludd.agent.gludd_stream:
+      daemon_url: http://localhost:8000
+      device: hw:0,0
+      device_kind: audio
+      dispatch_role_clone:
+        clone_current_role: true
+        inject_as: stream_chunk
+      dispatch_trigger:
+        include_key_in_after: true
+        key: '{{ silence_marker_bytes }}'
+        max_bytes_after: 65536
+        mode: both
+        type: input_key
+      psk: '{{ gludd_psk }}'
+      stop_condition:
+        seconds: 600
+        type: timeout
+    name: Audio VAD — dispatch speech (before_key) + silence/continuation (after_key)
+    register: stream_out
+  RETURN:
+    bytes_processed:
+      description: Total bytes streamed through the buffer.
+      returned: success
+      type: int
+    chunks:
+      description: List of artifact chunk paths written to artifact_dir.
+      elements: str
+      returned: success
+      type: list
+    dispatches:
+      description: Number of dispatches performed.
+      returned: success
+      type: int
+    last_task_id:
+      description: task_id returned by the final dispatch.
+      returned: success
+      type: str
+    stopped_by:
+      description: Which stop_condition fired (timeout, eof, external, max_dispatches).
+      returned: success
+      type: str
+  module: gludd_stream
 general_ludd.agent.gludd_traces:
   DOCUMENTATION:
     description:

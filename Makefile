@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom release-cut release-recut release-create release-branch-new release-promote
 
 VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
 
@@ -471,6 +471,22 @@ dist-path-check:
 verify-release-artifact:
 	@test -n "$(TAG)" || (echo "Usage: make verify-release-artifact TAG=<tag>"; exit 1)
 	python3 scripts/verify_release_artifact.py "$(TAG)"
+
+# Release targets (stubs)
+release-cut:
+	@echo "release-cut: not yet implemented"
+
+release-recut:
+	@echo "release-recut: not yet implemented"
+
+release-create:
+	@echo "release-create: not yet implemented (needs build-executable, gh release, verify-release-artifact)"
+
+release-branch-new:
+	@echo "release-branch-new: not yet implemented"
+
+release-promote:
+	@echo "release-promote: not yet implemented"
 
 # Build pyinstaller executable
 build-executable:

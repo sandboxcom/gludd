@@ -6,6 +6,8 @@ from httpx import ASGITransport, AsyncClient
 
 
 def _make_app_with_todos(n: int):
+    import collections
+
     import general_ludd.daemon as dm
 
     app = dm.create_daemon_app(tick_interval=0.01)
@@ -23,17 +25,20 @@ def _make_app_with_todos(n: int):
         }
         for i in range(n)
     ]
-    # Mutate the CURRENT module attribute (create_daemon_app rebinds _daemon_state).
-    dm._daemon_state["todos"][:] = todos
+    # After register(), _daemon_state["todos"] is a bounded deque — not a list.
+    # Slice assignment ([:]) fails on deque. Replace it wholesale instead.
+    dm._daemon_state["todos"] = collections.deque(todos, maxlen=1000)
     return app, todos
 
 
 @pytest.fixture(autouse=True)
 def _clear_daemon_state():
+    import collections
+
     from general_ludd.daemon import _daemon_state
     original = list(_daemon_state["todos"])
     yield
-    _daemon_state["todos"][:] = original
+    _daemon_state["todos"] = collections.deque(original, maxlen=1000)
 
 
 @pytest.mark.asyncio
