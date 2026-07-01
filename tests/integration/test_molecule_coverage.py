@@ -94,6 +94,7 @@ _NOT_YET_COVERED_MODULES: set[str] = {
     "gludd_human_todo",
     "gludd_langchain_generate",
     "gludd_langgraph_decision",
+    "gludd_ornith",  # TODO: add molecule scenario
     "gludd_proc_monitor",
     "gludd_slurm_deploy",
     "gludd_stream",
@@ -128,6 +129,7 @@ _NOT_YET_COVERED_ROLES: set[str] = {
     "observe_error_spike_rca",
     "observe_incident_triage",
     "observe_latency_regression",
+    "ornith_self_improve",  # TODO: add molecule scenario
     "observe_saturation_capacity",
     "observe_security_signal",
     "stream_input_key_before",

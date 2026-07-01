@@ -491,19 +491,27 @@ sbom:
 	python3 -c "import json, datetime; d={'bomFormat':'CycloneDX','specVersion':'1.5','version':1,'metadata':{'timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),'component':{'name':'gludd','type':'application'}},'components':[]}; json.dump(d, open('dist/sbom.json','w'), indent=2)"
 
 # Build distribution tarball
+TARBALL_DIR := dist
+
 dist: bundle-binaries sbom
-	@mkdir -p dist
-	cp LICENSE dist/
-	cp THIRD_PARTY_LICENSES.md dist/
+	@mkdir -p $(TARBALL_DIR)
+	cp LICENSE $(TARBALL_DIR)/
+	cp THIRD_PARTY_LICENSES.md $(TARBALL_DIR)/
+	@echo "Scrubbing build paths from SBOM"
+	python3 -c "import json, os; sbom = json.load(open('dist/sbom.json')); raw = json.dumps(sbom, indent=2); raw = raw.replace(os.getcwd(), '\$${BUILD_ROOT}'); open('$(TARBALL_DIR)/sbom.json', 'w').write(raw)"
+	@if grep -rq '/Users/' $(TARBALL_DIR)/sbom.json; then \
+		echo "ERROR: leaked local paths in tarball SBOM"; \
+		exit 1; \
+	fi
 	@if [ "$(GLUDD_CI_DIST)" = "1" ]; then \
 		echo "CI mode: skipping pyinstaller build, creating stub binary"; \
-		echo '#!/bin/sh' > dist/gludd; \
-		echo 'echo "gludd CI stub"' >> dist/gludd; \
-		chmod +x dist/gludd; \
+		echo '#!/bin/sh' > $(TARBALL_DIR)/gludd; \
+		echo 'echo "gludd CI stub"' >> $(TARBALL_DIR)/gludd; \
+		chmod +x $(TARBALL_DIR)/gludd; \
 	else \
 		$(MAKE) build-executable; \
 	fi
-	tar -czf gludd-dist.tar.gz dist/
+	tar -czf gludd-dist.tar.gz $(TARBALL_DIR)/
 	@echo "dist: tarball created at gludd-dist.tar.gz"
 
 # Dependencies audit

@@ -52,14 +52,14 @@ def _get_session_factory(app: FastAPI) -> Any:
 
 
 def _validate_project_id(app: FastAPI, project_id: str | None) -> None:
-    """Reject unknown/missing project_id in multi-project mode (mirrors CREATE).
+    """Reject unknown project_id in multi-project mode (mirrors CREATE).
 
     TG-1: read/update endpoints previously returned 404 ("not found") or an empty
     result for an unknown project_id, while CREATE returns 422. This unifies the
-    contract: when a ProjectManager exists AND has >=1 active project, a null
-    project_id is 422 ("required") and an unknown id is 422 ("unknown"). When no
-    projects are active the field is unconstrained (single-project / no-PM
-    back-compat) and this is a no-op.
+    contract: when a ProjectManager exists AND has >=1 active project, a non-null
+    but unknown project_id is 422 ("unknown"). A null project_id is always allowed
+    (global/unscoped). When no projects are active the field is unconstrained
+    (single-project / no-PM back-compat) and this is a no-op.
     """
     pm = getattr(app.state, "_project_manager", None)
     if pm is None:
@@ -67,12 +67,7 @@ def _validate_project_id(app: FastAPI, project_id: str | None) -> None:
     active_ids = {p.project_id for p in pm.list_active()}
     if not active_ids:
         return
-    if project_id is None:
-        raise HTTPException(
-            status_code=422,
-            detail="project_id is required in multi-project mode",
-        )
-    if project_id not in active_ids:
+    if project_id is not None and project_id not in active_ids:
         raise HTTPException(
             status_code=422,
             detail=f"Unknown project_id: {project_id}",
@@ -146,24 +141,20 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         # Cross-project create guard: a caller could previously pass ANY
         # project_id (including one belonging to a different tenant). When a
         # ProjectManager exists AND has at least one active project, a non-null
-        # project_id MUST name one of them; an unknown id is rejected 422. When
-        # no projects are registered the field stays unconstrained (back-compat:
-        # single-project / no-project deployments and the many tests that create
-        # todos with arbitrary or null project_ids keep working).
+        # project_id MUST name one of them; an unknown id is rejected 422.
+        # A null/missing project_id is always allowed (global/unscoped todo).
+        # When no projects are registered the field stays unconstrained
+        # (back-compat: single-project / no-project deployments and the many
+        # tests that create todos with arbitrary or null project_ids keep
+        # working).
         pm = getattr(app.state, "_project_manager", None)
         if pm is not None:
             active_ids = {p.project_id for p in pm.list_active()}
-            if active_ids:
-                if req.project_id is None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="project_id is required in multi-project mode",
-                    )
-                if req.project_id not in active_ids:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Unknown project_id: {req.project_id}",
-                    )
+            if active_ids and req.project_id is not None and req.project_id not in active_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unknown project_id: {req.project_id}",
+                )
         factory = _get_session_factory(app)
         todo_id = f"TODO-{uuid.uuid4().hex[:8].upper()}"
         todo: dict[str, Any] = {
@@ -247,17 +238,11 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         pm = getattr(app.state, "_project_manager", None)
         if pm is not None:
             active_ids = {p.project_id for p in pm.list_active()}
-            if active_ids:
-                if req.project_id is None:
-                    raise HTTPException(
-                        status_code=422,
-                        detail="project_id is required in multi-project mode",
-                    )
-                if req.project_id not in active_ids:
-                    raise HTTPException(
-                        status_code=422,
-                        detail=f"Unknown project_id: {req.project_id}",
-                    )
+            if active_ids and req.project_id is not None and req.project_id not in active_ids:
+                raise HTTPException(
+                    status_code=422,
+                    detail=f"Unknown project_id: {req.project_id}",
+                )
         # Compute initial next_run_at from the cron expression.
         initial_next_run_at: datetime | None = None
         if req.cron is not None:
