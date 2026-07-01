@@ -51,6 +51,37 @@ const QUESTION_DENY_REASON = [
 ].join(" ")
 
 // ============================================================================
+// STOP-LIKE TOOL DENY (BUGS.md structural fix #2 — 2026-06-30)
+// When the agent tries to commit/push/release/merge ("I'm done") but
+// TASKS.md has unchecked items or config/ratchet.yml still has entries,
+// the tool call is denied. This catches premature completion attempts
+// that the response.transform path (text-analysis only) may miss.
+// ============================================================================
+const STOP_LIKE_TARGETS_RE = /^make\s+(git-commit|commit-no-verify|ship-commit|git-push-branch|git-push-branch-nv|git-push-sandboxcom|git-push-sandboxcom-main|git-push-master|git-tag-push|release-cut|release-promote|test-and-commit|repo-commit|feature-done|release-recut|release-branch-new|git-merge)(\s|$)/
+
+function stopLikeDenyMessage(taskMd: boolean, ratchetEntries: number): string {
+  return [
+    "⛔ STOP-LIKE TOOL BLOCKED — PENDING WORK EXISTS:",
+    `TASKS.md unchecked items: ${taskMd ? "yes" : "no"}`,
+    `config/ratchet.yml entries: ${ratchetEntries}`,
+    "",
+    "You are trying to commit/push/release while the project still has",
+    "known-unfinished work. This is the exact premature-stop pattern",
+    "that BUGS.md records 20+ times — the agent declares completion",
+    "while TASKS.md items remain unchecked or ratchet entries are active.",
+    "",
+    "Fix the pending work FIRST before committing/pushing:",
+    "  1. Complete all unchecked TASKS.md items (implement, test, verify)",
+    "  2. Burn all ratchet.yml entries (fix the test failures, re-run make gate)",
+    "  3. Re-run this tool call after the pending work is addressed.",
+    "",
+    "Do NOT bypass this. Do NOT use repo-commit or commit-no-verify to",
+    "dodge it — those are still stop-like. The work itself is the",
+    "deliverable; the commit is just the recording of completed work.",
+  ].join("\n")
+}
+
+// ============================================================================
 // NO-WAIT-STOP (port of no_wait_stop.sh)
 // Blocks turn-end when the final message DEFERS to the user (permission-seek,
 // hold, "want me to...", "your call", etc.) OR uses constraint-as-stopsign
@@ -142,6 +173,16 @@ const NO_WAIT_PATTERNS: RegExp[] = [
   /\b\d+\s+tasks?\s+(?:completed|done|ticked|checked)\b/i,
   /\ball\s+items?\s+(?:completed|done|ticked|checked)\b/i,
   /\bevidence (?:ledger|table)\b/i,
+  // CI-red-as-stop (BUGS.md structural fix #3): the agent mentions CI is red
+  // and then stops. "Done" while CI is red is never legitimate — it ignores
+  // the project's real validation state. These patterns catch the agent
+  // reporting CI red/failing and still presenting a completion.
+  /\bCI\s+is\s+red\b/i,
+  /\bCI\s+is\s+failing\b/i,
+  /\bCI\s+is\s+not green\b/i,
+  /\bCI\s+run\s+failed\b/i,
+  /\bthe\s+(?:CI|pipeline|gate)\s+is\s+(?:red|failing)\b/i,
+  /\b(?:CI|pipeline|gate)\s+(?:still|remains)\s+(?:red|failing)\b/i,
 ]
 
 // ============================================================================
@@ -238,6 +279,66 @@ function tasksMdHasUnchecked(): boolean {
   } catch {
     return false
   }
+}
+
+function ratchetHasEntries(): number {
+  try {
+    const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+    if (!fs.existsSync(ratchetPath)) return 0
+    const content = fs.readFileSync(ratchetPath, "utf8")
+    const entries = content.split("\n").filter(
+      l => l.trim() && !l.trim().startsWith("#") && l.includes(":")
+    )
+    return entries.length
+  } catch {
+    return 0
+  }
+}
+
+// ============================================================================
+// GATE-STATUS + CI-RED DETECTOR (BUGS.md structural fix #3)
+// "Make the gate-status / CI integration visible to the stop detector: if CI
+// is RED, a 'done' response should ALWAYS be blocked regardless of phrasing."
+//
+// Two signals: (a) the .gate-status file (written by `make gate`) has FAIL
+// lines — the project's own local gate knows it is not green; (b) the agent's
+// outgoing response text mentions CI being red/failing — the agent is aware
+// CI is broken and is trying to stop anyway. Either signal: the response must
+// NOT be treated as a legitimate completion.
+//
+// FAIL-OPEN on any error — a missing gate-status file is not a blocker.
+// ============================================================================
+function gateStatusIsRed(): boolean {
+  try {
+    const gatePath = path.join(process.cwd(), ".gate-status")
+    if (!fs.existsSync(gatePath)) return false
+    const content = fs.readFileSync(gatePath, "utf8")
+    const lines = content.split("\n")
+    for (const line of lines) {
+      // Skip the header line (starts with ===)
+      if (line.startsWith("===")) continue
+      if (/FAIL/.test(line)) return true
+    }
+    return false
+  } catch {
+    return false  // fail open
+  }
+}
+
+const CI_RED_PATTERNS: RegExp[] = [
+  /\bCI\s+is\s+(?:red|failing|broken|not green|down)\b/i,
+  /\bCI\s+(?:run|job|pipeline|workflow)\s+(?:failed|is red|is failing)\b/i,
+  /\bGitHub\s+Actions?\s+(?:is\s+)?(?:red|failing|failed)\b/i,
+  /\bbuild\s+(?:is\s+)?(?:red|failing|failed)\b.{0,30}?\b(?:CI|pipeline|actions?)\b/i,
+  /\b(?:gate|sandboxcom|Actions)\s+(?:is\s+)?(?:still\s+)?(?:red|failing|not green)\b/i,
+  /\bCI\s+(?:still|remains?)\s+(?:red|failing)\b/i,
+  /\b(?:release|build.and.release)\s+(?:job\s+)?(?:failed|is red)\b/i,
+  /\b(?:ci|pipeline)\s+is\s+not\s+(?:green|passing)\b/i,
+  /\b(?:ci|pipeline)\s+(?:never|hasn'?t)\s+(?:run|passed|gone)\s+green\b/i,
+]
+
+function responseMentionsCiRed(text: string): boolean {
+  return CI_RED_PATTERNS.some(p => p.test(text))
 }
 
 // ============================================================================
@@ -413,9 +514,27 @@ function buildOrchestrationContext(): string {
 export default (async ({ }) => {
   return {
     // --- Deny the question tool (no-blocking-questions) ----------------------
-    "tool.execute.before": async (input, _output) => {
+    "tool.execute.before": async (input, output) => {
       if (input.tool === "question") {
         throw new Error(QUESTION_DENY_REASON)
+      }
+
+      // --- STOP-LIKE TOOL BLOCK (BUGS.md structural fix #2 — 2026-06-30) --
+      // When the agent tries to commit/push/release ("I'm done") but
+      // TASKS.md still has unchecked items or config/ratchet.yml has
+      // entries, deny the tool call. This catches the premature-completion
+      // pattern that response.transform (text analysis) may miss.
+      if (input.tool === "bash") {
+        const cmd = (output as Record<string, unknown> | undefined)?.args
+        const args = cmd as { command?: string } | undefined
+        const command = typeof args?.command === "string" ? args.command.trim() : ""
+        if (command.startsWith("make ") && STOP_LIKE_TARGETS_RE.test(command)) {
+          const taskMd = tasksMdHasUnchecked()
+          const ratchetCount = ratchetHasEntries()
+          if (taskMd || ratchetCount > 0) {
+            throw new Error(stopLikeDenyMessage(taskMd, ratchetCount))
+          }
+        }
       }
     },
 
@@ -456,11 +575,13 @@ export default (async ({ }) => {
           const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
           ratchetEntries = ratchetContent.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
         }
-        const hasPendingWork = repoHasPendingWork() || ratchetEntries.length > 0 || tasksMdHasUnchecked()
+        const ciRed = gateStatusIsRed() || responseMentionsCiRed(output)
+        const hasPendingWork = repoHasPendingWork() || ratchetEntries.length > 0 || tasksMdHasUnchecked() || ciRed
         if (hasPendingWork && responseLooksTerminal(output)) {
+          const ciRedLine = ciRed ? `; gate-status red: ${gateStatusIsRed() ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(output) ? "yes" : "no"}` : ""
           return [
             "⛔ HARD STOP — STATE-BASED BLOCK: the repo has KNOWN-UNFINISHED WORK",
-            `(ratchet: ${ratchetEntries.length} entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"})`,
+            `(ratchet: ${ratchetEntries.length} entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"}${ciRedLine})`,
             "AND your response looks like a completion report (table, hash,",
             "all-checked checkbox ledger, item-count claim, DONE/COMPLETE).",
             "",
@@ -503,9 +624,10 @@ export default (async ({ }) => {
             (lower.includes("options") && lower.includes("?"))
           )
           if (soundsLikeStop) {
+            const ciRedLine = ciRed ? `; gate-status red: ${gateStatusIsRed() ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(output) ? "yes" : "no"}` : ""
             return [
               "⛔ HARD STOP — PENDING-WORK AUDIT: the repo has KNOWN-UNFINISHED",
-              `work (${ratchetEntries.length} ratchet entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"}).`,
+              `work (${ratchetEntries.length} ratchet entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"}${ciRedLine}).`,
               "Your response presents options / asks permission",
               "instead of DOING THE WORK. Per the Never-Block-on-Questions",
               "policy: pick the highest-probability-success option, state the",

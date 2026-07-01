@@ -764,6 +764,173 @@ class TestEnforceStopTasksMdUnchecked:
 
 
 # --------------------------------------------------------------------------- #
+# 3f. enforce-stop.ts — gateStatusIsRed + responseMentionsCiRed (BUGS.md #3)
+# --------------------------------------------------------------------------- #
+# BUGS.md structural fix #3: "Make the gate-status / CI integration visible to
+# the stop detector: if CI is RED, a 'done' response should ALWAYS be blocked
+# regardless of phrasing." Two signals: (a) .gate-status has FAIL lines, (b) the
+# response text mentions CI being red/failing. Both wire into hasPendingWork so
+# a red gate is treated as known-unfinished work and blocks any terminal-looking
+# response.
+class TestEnforceStopGateStatusCiRed:
+    """gateStatusIsRed and responseMentionsCiRed must exist and be wired in."""
+
+    def test_gate_status_is_red_function_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "function gateStatusIsRed" in src, (
+            "gateStatusIsRed function missing from enforce-stop.ts — "
+            "BUGS.md structural fix #3 (gate-status CI red detection) was removed"
+        )
+
+    def test_response_mentions_ci_red_function_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "function responseMentionsCiRed" in src, (
+            "responseMentionsCiRed function missing from enforce-stop.ts — "
+            "BUGS.md structural fix #3 (CI-red text detection) was removed"
+        )
+
+    def test_ci_red_patterns_array_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "CI_RED_PATTERNS" in src, (
+            "CI_RED_PATTERNS constant missing from enforce-stop.ts — "
+            "the CI-red text detection has no pattern list"
+        )
+
+    def _extract_ci_red_patterns_body(self) -> str:
+        src = ENFORCE_STOP.read_text()
+        m = re.search(
+            r"CI_RED_PATTERNS\s*:\s*RegExp\[\]\s*=\s*\[(.*?)\n\]",
+            src,
+            re.DOTALL,
+        )
+        assert m, (
+            "Could not extract CI_RED_PATTERNS array body — is the declaration "
+            "(CI_RED_PATTERNS: RegExp[] = [...]) intact?"
+        )
+        return m.group(1)
+
+    def test_ci_red_patterns_has_minimum_entries(self):
+        """CI_RED_PATTERNS must have >= 5 entries to cover common CI-red phrasings."""
+        body = self._extract_ci_red_patterns_body()
+        body_no_comments = "\n".join(
+            line for line in body.splitlines()
+            if not line.strip().startswith("//")
+        )
+        count = len(re.findall(r"/i\b", body_no_comments))
+        assert count >= 5, (
+            f"CI_RED_PATTERNS has only {count} entries — expected >= 5 "
+            "to cover common CI-red phrasings"
+        )
+
+    def test_ci_red_patterns_include_core_phrases(self):
+        """Must cover the canonical CI-red phrasings."""
+        body = self._extract_ci_red_patterns_body()
+        # The TS regex literals use \bCI\s+is\s+(?:red|failing|...) etc.
+        # Check for the core tokens that signal CI-red awareness.
+        required = ["CI", "red", "fail"]
+        missing = [s for s in required if s not in body]
+        assert not missing, (
+            f"CI_RED_PATTERNS missing core CI-red tokens: {missing}"
+        )
+
+    def test_response_mentions_ci_red_wired(self):
+        """responseMentionsCiRed must iterate CI_RED_PATTERNS via .some()."""
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"CI_RED_PATTERNS\.some\s*\(\s*p\s*=>\s*p\.test\s*\(\s*text\s*\)\s*\)",
+            src,
+        ), (
+            "responseMentionsCiRed must call CI_RED_PATTERNS.some(p => p.test(text))"
+        )
+
+    def test_gate_status_is_red_reads_gate_status_file(self):
+        """Must read .gate-status from <cwd>/.gate-status and check for FAIL lines."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function gateStatusIsRed\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract gateStatusIsRed body"
+        body = m.group(1)
+        assert ".gate-status" in body, (
+            "gateStatusIsRed must reference .gate-status file"
+        )
+        assert "existsSync" in body, (
+            "gateStatusIsRed must guard with fs.existsSync so absent .gate-status "
+            "does not throw"
+        )
+        assert "FAIL" in body, (
+            "gateStatusIsRed must check for FAIL lines in .gate-status content"
+        )
+        assert "readFileSync" in body, (
+            "gateStatusIsRed must use fs.readFileSync to read .gate-status"
+        )
+
+    def test_gate_status_is_red_fails_open(self):
+        """Must return false on any error (fail-open)."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function gateStatusIsRed\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract gateStatusIsRed body"
+        body = m.group(1)
+        assert "catch" in body, (
+            "gateStatusIsRed must wrap in try/catch and return false on error "
+            "(fail-open)"
+        )
+
+    def test_gate_status_is_red_skips_header_line(self):
+        """Must skip the header line (starts with ===) when scanning for FAIL."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function gateStatusIsRed\(.*?\{(.*?)^\}", src, re.DOTALL | re.MULTILINE)
+        assert m, "could not extract gateStatusIsRed body"
+        body = m.group(1)
+        assert "startsWith" in body, (
+            "gateStatusIsRed must use startsWith('===') to skip the header line "
+            "so a header containing 'FAIL' (e.g. in a timestamp) does not "
+            "trigger a false positive"
+        )
+
+    def test_ci_red_wired_into_has_pending_work(self):
+        """hasPendingWork must OR gateStatusIsRed() and responseMentionsCiRed(output)."""
+        src = ENFORCE_STOP.read_text()
+        # ciRed variable declaration must combine both signals
+        assert re.search(
+            r"ciRed\s*=\s*gateStatusIsRed\(\)\s*\|\|\s*responseMentionsCiRed\s*\(\s*output\s*\)",
+            src,
+        ), (
+            "ciRed must be declared as "
+            "'gateStatusIsRed() || responseMentionsCiRed(output)'"
+        )
+        # hasPendingWork must OR ciRed
+        assert re.search(
+            r"hasPendingWork\s*=\s*repoHasPendingWork\(\)\s*\|\|\s*ratchetEntries\.length\s*>\s*0\s*\|\|\s*tasksMdHasUnchecked\(\)\s*\|\|\s*ciRed",
+            src,
+        ), (
+            "hasPendingWork must be "
+            "'repoHasPendingWork() || ratchetEntries.length > 0 || "
+            "tasksMdHasUnchecked() || ciRed' so gate-status red triggers the block"
+        )
+
+    def test_state_block_shows_ci_red_line(self):
+        """The state-based block response must include CI-red status when CI is red."""
+        src = ENFORCE_STOP.read_text()
+        assert "gate-status red:" in src, (
+            "State-based block response must include 'gate-status red: yes/no' "
+            "when CI is red"
+        )
+        assert "CI mentioned in response:" in src, (
+            "State-based block response must include 'CI mentioned in response: yes/no' "
+            "when CI is red"
+        )
+
+    def test_pending_work_audit_block_shows_ci_red_line(self):
+        """The pending-work audit block response must also report CI-red status."""
+        src = ENFORCE_STOP.read_text()
+        # Count occurrences — must appear in both block responses
+        occurrences = src.count("gate-status red:")
+        assert occurrences >= 2, (
+            f"'gate-status red:' appears {occurrences} times — expected >= 2 "
+            "(once in state-based block, once in pending-work audit block)"
+        )
+
+
+# --------------------------------------------------------------------------- #
 # 4. enforce-floor.ts — floor/target/ceiling constants
 # --------------------------------------------------------------------------- #
 class TestEnforceFloorConstants:
