@@ -137,25 +137,50 @@ def _force_propagate_all_general_ludd_loggers() -> None:
     caplog tests failing only on gw0 in CI while passing in isolation).
 
     Running FUNCTION-scoped (previously session-scoped, which could not undo
-    pollution introduced mid-session) re-enables the whole ``general_ludd.*``
-    subtree, clears ``disabled``, and resets any global ``logging.disable()``
-    before every test — belt-and-suspenders with the per-test ``.propagate =
-    True`` lines already present in affected tests.
+    pollution introduced mid-session), it resets only the global disable and the
+    HIERARCHY-ANCESTOR loggers that gate whole subtrees.  It deliberately does
+    NOT rewrite leaf loggers' ``propagate``/``disabled``: forcing propagation on
+    a leaf a test intentionally silenced would MANUFACTURE records that test
+    asserts are absent.  Per CPython, ``callHandlers`` walks leaf -> ... -> root
+    and stops only on an ancestor's ``propagate=False`` (it never consults a
+    leaf's or ancestor's level, nor an ancestor's ``disabled``); global
+    suppression is ``logging.disable``.  So resetting the global disable + the
+    ancestor links is both necessary and sufficient to repair the empty-
+    ``caplog.records`` failures, without the leaf-blanket's regression surface.
     """
     import logging
 
-    # Undo any leftover global disable() from a prior test on this worker.
+    # 1. Undo any leftover global disable() from a prior test on this worker.
     logging.disable(logging.NOTSET)
-    for name in list(logging.root.manager.loggerDict.keys()):
-        if name == "general_ludd" or name.startswith("general_ludd."):
-            lg = logging.getLogger(name)
-            lg.propagate = True
-            lg.disabled = False
-    # The 'general_ludd' package ancestor gates propagation for the whole
-    # subtree; ensure it exists and propagates even if not yet in loggerDict.
-    pkg = logging.getLogger("general_ludd")
-    pkg.propagate = True
-    pkg.disabled = False
+    # 2. Re-open propagation on the hierarchy ANCESTORS only — the links whose
+    #    propagate=False poisons caplog for a whole subtree.  The emitting leaf
+    #    logger under test keeps its own (default) state.
+    for name in (
+        "general_ludd",
+        "general_ludd.events",
+        "general_ludd.connectors",
+        "general_ludd.daemon",
+    ):
+        lg = logging.getLogger(name)
+        lg.propagate = True
+        lg.disabled = False
+
+
+@pytest.fixture(autouse=True)
+def _reset_process_registry():
+    """Reset the process-wide ProcessRegistry singleton around each test.
+
+    general_ludd.process.registry._DEFAULT_REGISTRY is a lazily-created global
+    with no reset hook; PIDs registered by test_processes_router's managed_child
+    fixture or by ansible/core_runner leak into later tests on the same xdist
+    worker, making the suite order-dependent. Clearing the global forces a fresh
+    empty registry next call. Runs at setup/teardown only, so the singleton-
+    identity test is unaffected.
+    """
+    from general_ludd.process import registry as _proc_registry
+    _proc_registry._DEFAULT_REGISTRY = None
+    yield
+    _proc_registry._DEFAULT_REGISTRY = None
 
 
 @pytest.fixture(autouse=True)
