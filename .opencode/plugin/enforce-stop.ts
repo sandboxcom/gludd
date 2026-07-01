@@ -51,6 +51,15 @@ const turnState: { accumulatedText: string; blocked: boolean } = {
   blocked: false,
 }
 
+// CI verdict cache — TTL 60s (Deficiency A+B: shell out to make ci-verdict,
+// parse GREEN/RED/PENDING, cache to avoid excessive queries)
+interface CiVerdictCache {
+  ts: number
+  isPendingOrRed: boolean
+}
+
+let ciVerdictCache: CiVerdictCache | null = null
+
 // ============================================================================
 // NO-BLOCKING-QUESTIONS (port of no_blocking_questions_pretool.sh)
 // User directive (2026-06-18): "never interrupt work to ask; default to action."
@@ -236,6 +245,18 @@ function responseLooksTerminal(text: string): boolean {
   // Item-count completion claim (BUGS.md #2026-06-30): "\d+ items completed"
   // or "\d+ items done" — counting completed items as a stop signal.
   if (/\b\d+\s+items?\s+(?:completed|done|ticked|checked)\b/i.test(text)) return true
+  // "Session summary:" plain-text pattern (Deficiency C)
+  if (/\b[Ss]ession\s+summary:?\b/i.test(text)) return true
+  // Bold "**Session summary:**" markdown pattern (Deficiency C)
+  if (/\*\*[Ss]ession\s+[Ss]ummary:?\*\*/i.test(text)) return true
+  // Lines starting with "Session summary" followed by bullet points (Deficiency C)
+  if (/^[Ss]ession\s+[Ss]ummary/im.test(text.trim()) && /^[-*]\s/m.test(text)) return true
+  // Multi-line bold-header + bullet-point combo: >=3 bold headers AND >=3 bullet
+  // points in the same response = a summary report wearing markdown formatting
+  // (Deficiency C)
+  const boldHeaders = text.match(/^\*\*[^*]+\*\*$/gm)
+  const bulletPoints = text.match(/^\s*[-*]\s+/gm)
+  if (boldHeaders && boldHeaders.length >= 3 && bulletPoints && bulletPoints.length >= 3) return true
   return false
 }
 
@@ -282,6 +303,50 @@ function repoHasPendingWork(): boolean {
     return false
   } catch {
     return false
+  }
+}
+
+// ============================================================================
+// CI-VERDICT QUERY via make (Deficiency A+B)
+// Shells out to `make ci-verdict BRANCH=master`, parses the CI_RED_PATTERNS
+// output for GREEN/RED/PENDING, caches result for 60s. Treats anything other
+// than GREEN (failure, pending, in_progress, queued, cancelled) as pending work.
+// FAIL-OPEN on any error — a missing gh/network returns false (don't block).
+// ============================================================================
+function ciIsPendingOrRed(): boolean {
+  const now = Date.now()
+  if (ciVerdictCache && (now - ciVerdictCache.ts) < 60_000) {
+    return ciVerdictCache.isPendingOrRed
+  }
+  try {
+    const { execSync } = require("node:child_process")
+    const cwd = process.cwd()
+    try {
+      const output = execSync("make ci-verdict BRANCH=master", {
+        cwd,
+        encoding: "utf8",
+        timeout: 15000,
+        stdio: ["pipe", "pipe", "pipe"],
+      }).trim()
+      const isGreen = /^CI GREEN:/m.test(output) && !/STALE RUN WARNING/i.test(output)
+      ciVerdictCache = { ts: now, isPendingOrRed: !isGreen }
+      return !isGreen
+    } catch (e: any) {
+      // execSync throws on non-zero exit (RED exit 1, PENDING exit 2).
+      // The stdout is captured on the error object.
+      const output = (e?.stdout || e?.stderr || "").trim()
+      if (output) {
+        const isGreen = /^CI GREEN:/m.test(output) && !/STALE RUN WARNING/i.test(output)
+        ciVerdictCache = { ts: now, isPendingOrRed: !isGreen }
+        return !isGreen
+      }
+      // No output captured — treat as pending (fail-safe: assume non-green)
+      ciVerdictCache = { ts: now, isPendingOrRed: true }
+      return true
+    }
+  } catch {
+    ciVerdictCache = null
+    return false  // fail open
   }
 }
 
@@ -538,6 +603,9 @@ export default (async ({ }) => {
         turnState.accumulatedText = ""
         turnState.blocked = false
 
+        // Warm the CI verdict cache (Deficiency A+B)
+        ciIsPendingOrRed()
+
         const ratchetEntries = ratchetHasEntries()
         const tasksMdUnchecked = tasksMdHasUnchecked()
         const gateStatusRed = gateStatusIsRed()
@@ -647,7 +715,8 @@ export default (async ({ }) => {
         const backlogOpenItems = cache?.backlogItems ?? (multitaskingBacklogOpen()?.open ?? [])
 
         const ciRed = gateRed || responseMentionsCiRed(turnState.accumulatedText)
-        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed
+        const ciVerdictPendingOrRed = ciIsPendingOrRed()
+        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed
 
         // --- STATE-BASED CHECK: if the repo has pending work AND the response
         // looks terminal, block. This is the Whac-A-Mole fix: instead of matching
@@ -655,7 +724,7 @@ export default (async ({ }) => {
         // response look like a finale?' If both are true, the response is BLOCKED
         // regardless of wording. ---
         if (hasPendingWork && responseLooksTerminal(turnState.accumulatedText)) {
-          const ciRedLine = ciRed ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}` : ""
+          const ciRedLine = (ciRed || ciVerdictPendingOrRed) ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}; CI verdict: ${ciVerdictPendingOrRed ? "pending/red" : "green"}` : ""
           output.text = [
             "⛔ HARD STOP — STATE-BASED BLOCK: the repo has KNOWN-UNFINISHED WORK",
             `(ratchet: ${ratchetCount} entries; git pending: ${repoPending ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}${ciRedLine})`,
@@ -698,7 +767,7 @@ export default (async ({ }) => {
             (lower.includes("options") && lower.includes("?"))
           )
           if (soundsLikeStop) {
-            const ciRedLine = ciRed ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}` : ""
+            const ciRedLine = (ciRed || ciVerdictPendingOrRed) ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}; CI verdict: ${ciVerdictPendingOrRed ? "pending/red" : "green"}` : ""
             output.text = [
               "⛔ HARD STOP — PENDING-WORK AUDIT: the repo has KNOWN-UNFINISHED",
               `work (${ratchetCount} ratchet entries; git pending: ${repoPending ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}${ciRedLine}).`,

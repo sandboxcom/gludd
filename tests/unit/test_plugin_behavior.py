@@ -760,11 +760,11 @@ class TestEnforceStopTasksMdUnchecked:
         """hasPendingWork must OR tasksMdUnchecked (from cache) with the other checks."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed",
+            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed\s*\|\|\s*ciVerdictPendingOrRed",
             src,
         ), (
             "hasPendingWork must be "
-            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed' "
+            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed' "
             "so unchecked TASKS.md rows are treated as pending work"
         )
 
@@ -907,7 +907,7 @@ class TestEnforceStopGateStatusCiRed:
         )
 
     def test_ci_red_wired_into_has_pending_work(self):
-        """hasPendingWork must OR ciRed (gateRed || responseMentionsCiRed)."""
+        """hasPendingWork must OR ciRed (gateRed || responseMentionsCiRed) AND ciVerdictPendingOrRed."""
         src = ENFORCE_STOP.read_text()
         # ciRed variable declaration must combine both signals via cache
         assert re.search(
@@ -918,14 +918,22 @@ class TestEnforceStopGateStatusCiRed:
             "'gateRed || responseMentionsCiRed(turnState.accumulatedText)' "
             "where gateRed = cache?.gateStatusRed ?? gateStatusIsRed()"
         )
-        # hasPendingWork must OR ciRed
+        # ciVerdictPendingOrRed must call ciIsPendingOrRed()
         assert re.search(
-            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed",
+            r"ciVerdictPendingOrRed\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
+            src,
+        ), (
+            "ciVerdictPendingOrRed must be declared as ciIsPendingOrRed() — "
+            "the CI verdict query (Deficiency A+B)"
+        )
+        # hasPendingWork must OR both ciRed and ciVerdictPendingOrRed
+        assert re.search(
+            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed\s*\|\|\s*ciVerdictPendingOrRed",
             src,
         ), (
             "hasPendingWork must be "
-            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed' "
-            "so gate-status red triggers the block"
+            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed || ciVerdictPendingOrRed' "
+            "so CI verdict (pending/red) triggers the block"
         )
 
     def test_state_block_shows_ci_red_line(self):
@@ -939,6 +947,10 @@ class TestEnforceStopGateStatusCiRed:
             "State-based block response must include 'CI mentioned in response: yes/no' "
             "when CI is red"
         )
+        assert "CI verdict:" in src, (
+            "State-based block response must include 'CI verdict: pending/red|green' "
+            "to surface the ci-verdict query result (Deficiency A+B)"
+        )
 
     def test_pending_work_audit_block_shows_ci_red_line(self):
         """The pending-work audit block response must also report CI-red status."""
@@ -948,6 +960,136 @@ class TestEnforceStopGateStatusCiRed:
         assert occurrences >= 2, (
             f"'gate-status red:' appears {occurrences} times — expected >= 2 "
             "(once in state-based block, once in pending-work audit block)"
+        )
+
+
+# --------------------------------------------------------------------------- #
+# 3e. enforce-stop.ts — CI-is-pending-or-red (Deficiencies A+B+C+D)
+# --------------------------------------------------------------------------- #
+class TestEnforceStopCiPendingOrRed:
+    """CI verdict query and responseLooksTerminal coverage for Deficiencies A-D."""
+
+    def test_ci_is_pending_or_red_function_exists(self):
+        src = ENFORCE_STOP.read_text()
+        assert "function ciIsPendingOrRed" in src, (
+            "ciIsPendingOrRed function missing — CI verdict query (Deficiency A+B) "
+            "must exist in enforce-stop.ts"
+        )
+        assert re.search(
+            r"function\s+ciIsPendingOrRed\b",
+            src,
+        ), "ciIsPendingOrRed function must be declared in enforce-stop.ts"
+        assert re.search(r"execSync.*make\s+ci-verdict", src, re.DOTALL), (
+            "ciIsPendingOrRed must use execSync with 'make ci-verdict' "
+            "to query CI status"
+        )
+        assert "60_000" in src, (
+            "ciIsPendingOrRed must use 60_000 as the cache TTL (1 minute)"
+        )
+        assert re.search(r"CI\s+GREEN", src), (
+            "ciIsPendingOrRed must check for 'CI GREEN:' pattern in the output"
+        )
+
+    def test_ci_is_pending_or_red_has_cache(self):
+        src = ENFORCE_STOP.read_text()
+        assert "ciVerdictCache" in src, (
+            "ciVerdictCache variable missing — CI verdict must be cached "
+            "to avoid excessive shell-outs (Deficiency A+B)"
+        )
+        assert re.search(
+            r"ciVerdictCache\s*\&\&\s*\(now\s*-\s*ciVerdictCache\.ts\)\s*<\s*60_000",
+            src,
+        ), (
+            "ciVerdictCache must be checked with TTL: "
+            "'ciVerdictCache && (now - ciVerdictCache.ts) < 60_000'"
+        )
+
+    def test_response_looks_terminal_detects_session_summary(self):
+        """responseLooksTerminal must detect all 3 session-summary patterns."""
+        src = ENFORCE_STOP.read_text()
+        m = re.search(r"function responseLooksTerminal\(.*?\{(.*?)\n\}", src, re.DOTALL)
+        assert m, "could not extract responseLooksTerminal body"
+        body = m.group(1)
+        # Plain-text pattern: /\b[Ss]ession\s+summary:?\b/i
+        assert "[Ss]ession" in body, (
+            "responseLooksTerminal must detect '[Ss]ession summary' plain-text "
+            "pattern (Deficiency C)"
+        )
+        # Bold "**Session summary:**" pattern: /\*\*[Ss]ession\s+[Ss]ummary:?\*\*/i
+        assert "\\*\\*[Ss]ession" in body, (
+            "responseLooksTerminal must detect bold '**Session summary:**' "
+            "pattern with TS-escaped asterisks (Deficiency C)"
+        )
+        # Line-start session summary + bullet-point combo: uses .trim() and [-*]
+        assert "text.trim()" in body or ".trim()" in body, (
+            "responseLooksTerminal must use trim() for line-start session "
+            "summary check (Deficiency C)"
+        )
+        assert "[-*]" in body, (
+            "responseLooksTerminal must check for bullet points ([-*] "
+            "pattern) alongside session summary (Deficiency C)"
+        )
+
+    def test_response_looks_terminal_detects_bold_bullet_combo(self):
+        src = ENFORCE_STOP.read_text()
+        m = re.search(
+            r"function responseLooksTerminal\(.*?\{(.*?)^\}",
+            src,
+            re.DOTALL | re.MULTILINE,
+        )
+        assert m, "could not extract responseLooksTerminal body"
+        body = m.group(1)
+        assert "boldHeaders" in body, (
+            "responseLooksTerminal must have boldHeaders variable for "
+            "bold-header + bullet-point combo detection (Deficiency C)"
+        )
+        assert "bulletPoints" in body, (
+            "responseLooksTerminal must have bulletPoints variable for "
+            "bold-header + bullet-point combo detection (Deficiency C)"
+        )
+        # Both must use >= 3 threshold on their lengths
+        assert re.search(
+            r"boldHeaders\s*\&\&\s*boldHeaders\.length\s*>=\s*3",
+            body,
+        ), (
+            "responseLooksTerminal must check boldHeaders.length >= 3 "
+            "for bold-header / bullet-point combo (Deficiency C)"
+        )
+        assert re.search(
+            r"bulletPoints\s*\&\&\s*bulletPoints\.length\s*>=\s*3",
+            body,
+        ), (
+            "responseLooksTerminal must check bulletPoints.length >= 3 "
+            "for bold-header / bullet-point combo (Deficiency C)"
+        )
+
+    def test_ci_pending_wired_into_has_pending_work(self):
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r"ciVerdictPendingOrRed\s*=\s*ciIsPendingOrRed\s*\(\s*\)",
+            src,
+        ), (
+            "ciVerdictPendingOrRed must be declared as ciIsPendingOrRed() — "
+            "the CI verdict query must be wired into the stop detector "
+            "(Deficiency A+B)"
+        )
+        assert re.search(
+            r"hasPendingWork\s*=.*\|\|\s*ciVerdictPendingOrRed",
+            src,
+        ), (
+            "hasPendingWork must include ciVerdictPendingOrRed so CI pending/red "
+            "triggers the state-based block (Deficiency D)"
+        )
+
+    def test_session_idle_warms_ci_verdict_cache(self):
+        src = ENFORCE_STOP.read_text()
+        assert re.search(
+            r'"session\.idle".*?ciIsPendingOrRed\(\)',
+            src,
+            re.DOTALL,
+        ), (
+            "session.idle handler must call ciIsPendingOrRed() to warm the CI "
+            "verdict cache at session start (Deficiency A+B)"
         )
 
 
