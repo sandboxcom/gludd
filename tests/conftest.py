@@ -122,27 +122,40 @@ def _no_auth_opt_out(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("GLUDD_ALLOW_NO_AUTH", "1")
 
 
-@pytest.fixture(scope="session", autouse=True)
+@pytest.fixture(autouse=True)
 def _force_propagate_all_general_ludd_loggers() -> None:
-    """Ensure every general_ludd.* logger has propagate=True.
+    """Restore caplog capture for the general_ludd.* logger subtree per test.
 
-    caplog captures log records by installing a handler on the logger named in
-    ``caplog.at_level(logger=...)``.  If any ancestor or the logger itself has
-    ``propagate = False`` (e.g. because a previous test or a third-party library
-    reconfigured it), records never reach caplog's handler and ``caplog.records``
-    are empty even when the code under test emits at the right level.
+    caplog captures records by installing a handler that receives records
+    *propagated* up the logger hierarchy.  Capture silently breaks if any
+    ``general_ludd`` **ancestor** logger (not just the leaf named in
+    ``caplog.at_level(logger=...)``) has ``propagate = False`` or
+    ``disabled = True``, or if a global ``logging.disable()`` is in effect.
+    A prior test — or a src import side-effect — that leaves the log hierarchy
+    in that state poisons every later caplog test on the SAME xdist worker
+    (the exact failure mode behind the connectors / events-bus / daemon-auth
+    caplog tests failing only on gw0 in CI while passing in isolation).
 
-    This fixture runs once per test session and forces propagation on every
-    already-created ``general_ludd.*`` logger.  It is belt-and-suspenders with
-    the per-test ``.propagate = True`` lines already present in affected tests:
-    even a logger created late in the session (or a CI-specific Python 3.11/3.12
-    environment that reconfigures the log hierarchy) will propagate.
+    Running FUNCTION-scoped (previously session-scoped, which could not undo
+    pollution introduced mid-session) re-enables the whole ``general_ludd.*``
+    subtree, clears ``disabled``, and resets any global ``logging.disable()``
+    before every test — belt-and-suspenders with the per-test ``.propagate =
+    True`` lines already present in affected tests.
     """
     import logging
 
-    for name in sorted(logging.root.manager.loggerDict.keys()):
-        if name.startswith("general_ludd"):
-            logging.getLogger(name).propagate = True
+    # Undo any leftover global disable() from a prior test on this worker.
+    logging.disable(logging.NOTSET)
+    for name in list(logging.root.manager.loggerDict.keys()):
+        if name == "general_ludd" or name.startswith("general_ludd."):
+            lg = logging.getLogger(name)
+            lg.propagate = True
+            lg.disabled = False
+    # The 'general_ludd' package ancestor gates propagation for the whole
+    # subtree; ensure it exists and propagates even if not yet in loggerDict.
+    pkg = logging.getLogger("general_ludd")
+    pkg.propagate = True
+    pkg.disabled = False
 
 
 @pytest.fixture(autouse=True)
