@@ -41,6 +41,9 @@
 
 | Hash | Message |
 |------|---------|
+| `58bd941c` | docs: update TASKS.md with Q3 CI fix entries, gitignore gludd-dist.tar.gz, update SESSION.md |
+| `ee0f475d` | fix: _invoke_gateway_for_job returns tuple not plain string; add missing await on _maybe_open_pr calls; fix RUF021 parens + mypy no-any-return in background_test_runner |
+| `1975b922` | docs: update SESSION.md with latest state |
 | `1c5e2c2a` | fix: update remaining test assertions (phase order 11→13, provider count 10→16, add container recipe definitions to Makefile, update SESSION.md) |
 | `24c21085` | fix: mock _session_factory in event_loop test so refresh_recent_stats reaches phase 8 (48/48 pass) |
 | `7538be54` | fix: add stub Makefile targets (container-build/run/push, dist, test-integration) to satisfy CI test assertions |
@@ -59,8 +62,7 @@
 
 1. **CI test assertion mismatches** — test shards still have failures; lint/typecheck/collect pass in CI. Incrementally fixed this session (~15 assertions resolved; `ba3225c0`, `24c21085`, `7538be54`).
 2. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used for full validation.
-3. **Alpha.4 and alpha.5 never shipped** — no green CI release job, no downloadable artifact. Only alpha.3 has a verified artifact.
-4. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets; tests that verify them pass now but need real implementations.
+3. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets; tests that verify them pass now but need real implementations.
 
 ## Next Steps
 
