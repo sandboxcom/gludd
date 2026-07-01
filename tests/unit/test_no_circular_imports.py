@@ -81,10 +81,21 @@ def test_import_daemon_before_routers() -> None:
         assert general_ludd.daemon is not None
         assert general_ludd.routers is not None
     finally:
+        # Restore BOTH the sys.modules entry AND the package attribute. The
+        # re-import above rebinds `general_ludd.daemon` (the attribute on the
+        # package object) to a freshly-executed module; restoring only
+        # sys.modules leaves a split where later `monkeypatch.setattr(
+        # "general_ludd.daemon.<x>")` (which pytest resolves via
+        # getattr(general_ludd, "daemon")) patches the drifted module while
+        # handlers that do `from general_ludd.daemon import <x>` read the
+        # sys.modules original — silently defeating the patch (broke
+        # test_phase3_project_live_reload's config-reload tests).
         if saved_daemon is not None:
             sys.modules["general_ludd.daemon"] = saved_daemon
+            general_ludd.daemon = saved_daemon
         if saved_routers is not None:
             sys.modules["general_ludd.routers"] = saved_routers
+            general_ludd.routers = saved_routers
 
 
 def test_import_routers_before_daemon() -> None:
@@ -97,37 +108,57 @@ def test_import_routers_before_daemon() -> None:
         assert general_ludd.routers is not None
         assert general_ludd.daemon is not None
     finally:
+        # See test_import_daemon_before_routers: restore the package attribute
+        # too, not just sys.modules, to avoid the getattr/sys.modules split that
+        # defeats later monkeypatch.setattr on general_ludd.daemon.*.
         if saved_daemon is not None:
             sys.modules["general_ludd.daemon"] = saved_daemon
+            general_ludd.daemon = saved_daemon
         if saved_routers is not None:
             sys.modules["general_ludd.routers"] = saved_routers
+            general_ludd.routers = saved_routers
 
 
 def test_import_event_loop_and_models_gateway() -> None:
-    for key in ("general_ludd.event_loop.loop", "general_ludd.models.gateway"):
-        sys.modules.pop(key, None)
-    from general_ludd.event_loop import loop
-    from general_ludd.models import gateway
+    keys = ("general_ludd.event_loop.loop", "general_ludd.models.gateway")
+    saved = {k: sys.modules.pop(k, None) for k in keys}
+    try:
+        from general_ludd.event_loop import loop
+        from general_ludd.models import gateway
 
-    assert loop is not None
-    assert gateway is not None
+        assert loop is not None
+        assert gateway is not None
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                sys.modules[k] = v
 
 
 def test_import_db_session_and_models() -> None:
-    for key in ("general_ludd.db.session", "general_ludd.db.models"):
-        sys.modules.pop(key, None)
-    from general_ludd.db import models as db_models
-    from general_ludd.db import session
+    keys = ("general_ludd.db.session", "general_ludd.db.models")
+    saved = {k: sys.modules.pop(k, None) for k in keys}
+    try:
+        from general_ludd.db import models as db_models
+        from general_ludd.db import session
 
-    assert session is not None
-    assert db_models is not None
+        assert session is not None
+        assert db_models is not None
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                sys.modules[k] = v
 
 
 def test_import_secrets_manager_and_config() -> None:
-    for key in ("general_ludd.secrets.manager", "general_ludd.config.binary_paths"):
-        sys.modules.pop(key, None)
-    from general_ludd.config import binary_paths
-    from general_ludd.secrets import manager
+    keys = ("general_ludd.secrets.manager", "general_ludd.config.binary_paths")
+    saved = {k: sys.modules.pop(k, None) for k in keys}
+    try:
+        from general_ludd.config import binary_paths
+        from general_ludd.secrets import manager
 
-    assert manager is not None
-    assert binary_paths is not None
+        assert manager is not None
+        assert binary_paths is not None
+    finally:
+        for k, v in saved.items():
+            if v is not None:
+                sys.modules[k] = v

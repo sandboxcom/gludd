@@ -9,7 +9,7 @@ All DB I/O is replaced with mocks — no real SQLite is started. Tests verify:
   - POST .../schedule/pause?project_id=B  cross-tenant → 404
   - POST .../schedule/resume?project_id=B  cross-tenant → 404
   - POST .../schedule/pause (no project_id)  → 422 (missing required param)
-  - POST /api/todos  no project_id in multi-project → 422
+  - POST /api/todos  no project_id in multi-project → 201 (global/unscoped todo)
   - POST /api/todos  unknown project_id → 422
   - POST /api/todos  no PM / single-project: project_id=None allowed (back-compat)
   - TodoRepository.claim_runnable (INTERNAL) unaffected by router-layer scoping
@@ -194,16 +194,26 @@ class TestCreateScheduledTodoIsolation:
         assert r.status_code == 422
         assert "Unknown project_id" in r.json()["detail"]
 
-    async def test_no_project_id_in_multiproject_422(self) -> None:
-        """project_id=None (omitted) in multi-project mode → 422."""
-        app = _build_app(pm=_pm("proj-A"))
-        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
-            r = await c.post(
-                "/api/todos/scheduled",
-                json={"title": "test", "cron": "0 9 * * 1-5"},
-            )
-        assert r.status_code == 422
-        assert "project_id is required" in r.json()["detail"]
+    async def test_no_project_id_in_multiproject_allowed(self) -> None:
+        """project_id=None (omitted) in multi-project mode → ALLOWED (creates a
+        global/unscoped scheduled todo). A null project_id is NOT a cross-tenant
+        leak because unscoped LIST queries return [] in multi-project mode. This
+        matches the established contract in
+        tests/security/test_router_auth_redteam.py::
+        TestCrossProjectTodoCreate::test_null_project_id_always_allowed.
+        """
+        fake = _fake_todo("S-G1", None, status="scheduled")
+        repo = _repo_mock()
+        repo.create = AsyncMock(return_value=fake)
+        app = _build_app(pm=_pm("proj-A"), with_db=True)
+        with patch.object(todos_mod, "TodoRepository", return_value=repo):
+            async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
+                r = await c.post(
+                    "/api/todos/scheduled",
+                    json={"title": "test", "cron": "0 9 * * 1-5"},
+                )
+        assert r.status_code == 201, r.text
+        assert r.json()["project_id"] is None
 
 
 # ---------------------------------------------------------------------------
@@ -238,12 +248,15 @@ class TestGetTodoIsolation:
         assert body["todo_id"] == "T-A1"
         assert body["project_id"] == "proj-A"
 
-    async def test_get_todo_missing_project_id_422(self) -> None:
-        """project_id is a required query param; omitting it → 422."""
+    async def test_get_todo_missing_project_id_allowed_404_when_absent(self) -> None:
+        """GET /api/todos/{id} treats project_id as OPTIONAL (back-compat, matching
+        test_no_pm_no_project_id_allowed): an omitted project_id is not a validation
+        error. With no PM/DB and no such todo, the endpoint returns 404 (genuinely
+        absent) rather than 422."""
         app = _build_app()
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.get("/api/todos/T-A1")
-        assert r.status_code == 422
+        assert r.status_code == 404
 
 
 # ---------------------------------------------------------------------------
@@ -307,13 +320,20 @@ class TestCreateTodoIsolation:
         assert r.status_code == 422
         assert "Unknown project_id" in r.json()["detail"]
 
-    async def test_no_project_id_in_multiproject_422(self) -> None:
-        """project_id=None (omitted) in multi-project mode → 422."""
+    async def test_no_project_id_in_multiproject_allowed(self) -> None:
+        """project_id=None (omitted) in multi-project mode → ALLOWED (creates a
+        global/unscoped todo). A null project_id is NOT a cross-tenant leak
+        because unscoped LIST queries return [] in multi-project mode. This
+        matches the established contract in
+        tests/security/test_router_auth_redteam.py::
+        TestCrossProjectTodoCreate::test_null_project_id_always_allowed.
+        """
         app = _build_app(pm=_pm("proj-A"))
+        # No DB factory → in-memory path; 201 with the created global todo.
         async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as c:
             r = await c.post("/api/todos", json={"title": "test"})
-        assert r.status_code == 422
-        assert "project_id is required" in r.json()["detail"]
+        assert r.status_code == 201, r.text
+        assert r.json()["project_id"] is None
 
     async def test_no_pm_no_project_id_allowed(self) -> None:
         """Single-project / no-PM mode: project_id=None is fine (back-compat)."""
