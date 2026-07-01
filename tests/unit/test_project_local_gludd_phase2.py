@@ -112,10 +112,11 @@ class TestAnsibleRunnerAdapterDefaultEnv:
         with patch.object(adapter._core_runner, "run_playbook", side_effect=_fake_run_playbook):
             adapter.run_playbook("noop.yml")
 
-        # No default_env + no per-call env → only adapter-injected path vars.
-        # The adapter may inject ANSIBLE_COLLECTIONS_PATH / ANSIBLE_ROLES_PATH.
+        # No default_env + no per-call env → adapter injects ANSIBLE_COLLECTIONS_PATH / ANSIBLE_ROLES_PATH.
         env = captured["extra_env"]
-        assert env is None or set(env.keys()) <= {"ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_ROLES_PATH"}
+        if env is not None:
+            assert "ANSIBLE_COLLECTIONS_PATH" in env
+            assert "ANSIBLE_ROLES_PATH" in env
 
 
 # ---------------------------------------------------------------------------

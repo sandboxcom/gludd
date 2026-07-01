@@ -256,7 +256,7 @@ class TestWebmcpFactsFacets:
             # Get the actual /api/facts response to discover the real facet keys.
             facts_resp = await client.get("/api/facts", headers=AUTH)
             assert facts_resp.status_code == 200, facts_resp.text
-            actual_facets = set(facts_resp.json().keys()) - {"project_id"}
+            actual_facets = set(facts_resp.json().keys())
 
             webmcp_resp = await client.get("/api/webmcp")
             documented_facets = set(webmcp_resp.json()["facts_facets"])

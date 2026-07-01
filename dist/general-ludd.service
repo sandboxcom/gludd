@@ -1,0 +1,15 @@
+[Unit]
+Description=General Ludd Agent Daemon
+After=network.target
+
+[Service]
+User=general-ludd
+EnvironmentFile=/etc/general-ludd/config.env
+ExecStart=/usr/local/bin/gludd daemon --bind 127.0.0.1
+Restart=on-failure
+NoNewPrivileges=true
+ProtectSystem=strict
+PrivateTmp=true
+
+[Install]
+WantedBy=multi-user.target

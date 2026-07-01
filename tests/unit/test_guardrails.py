@@ -69,8 +69,12 @@ class TestMakefileTargets:
         assert "0.1.0" in result.stdout or "0.1.0-alpha" in result.stdout
 
     def test_make_ansible_syntax_passes(self):
-        if not shutil.which("ansible-playbook"):
+        collections_dir = ROOT / "collections"
+        venv_ansible = ROOT / ".venv" / "bin" / "ansible-playbook"
+        if not shutil.which("ansible-playbook") and not venv_ansible.exists():
             pytest.skip("ansible-playbook not installed")
+        if not collections_dir.exists():
+            pytest.skip(f"collections directory not found: {collections_dir}")
         # `make ansible-syntax` runs `ansible-playbook --syntax-check` across all
         # registered playbooks (~30), each paying ansible import overhead. Inside
         # the full gate this test runs concurrently with the rest of the suite

@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import asyncio
 import os
+import shutil
 import tempfile
 import threading
 from typing import Any
@@ -33,15 +34,20 @@ from general_ludd.worker.app import create_app
 
 def _make_adapter(tmp: str, job_id: str) -> MagicMock:
     adapter = MagicMock()
+    job_root = os.path.join(tmp, job_id)
+    os.makedirs(os.path.join(job_root, "env"), exist_ok=True)
+    os.makedirs(os.path.join(job_root, "project"), exist_ok=True)
+    os.makedirs(os.path.join(job_root, "inventory"), exist_ok=True)
+    os.makedirs(os.path.join(job_root, "artifacts"), exist_ok=True)
     adapter.list_playbooks.return_value = ["noop.yml", "return_review.yml"]
     adapter.prepare_job_dirs.return_value = {
-        "root": os.path.join(tmp, job_id),
-        "env": os.path.join(tmp, job_id, "env"),
-        "project": os.path.join(tmp, job_id, "project"),
-        "inventory": os.path.join(tmp, job_id, "inventory"),
-        "artifacts": os.path.join(tmp, job_id, "artifacts"),
+        "root": job_root,
+        "env": os.path.join(job_root, "env"),
+        "project": os.path.join(job_root, "project"),
+        "inventory": os.path.join(job_root, "inventory"),
+        "artifacts": os.path.join(job_root, "artifacts"),
     }
-    adapter.write_vars.return_value = os.path.join(tmp, job_id, "env", "extravars")
+    adapter.write_vars.return_value = os.path.join(job_root, "env", "extravars")
     adapter.run_playbook.return_value = {"rc": 0, "output": "", "events": []}
     return adapter
 
@@ -66,6 +72,8 @@ class TestWorkerExecuteToThreadOffload:
                 return adapter.write_vars.return_value
             if func is adapter.prepare_job_dirs:
                 return adapter.prepare_job_dirs.return_value
+            if func is shutil.rmtree:
+                shutil.rmtree(*args, **kwargs)
             return None
         mock_to_thread.side_effect = _to_thread_side_effect
 

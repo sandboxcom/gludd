@@ -623,10 +623,33 @@ dist: bundle-binaries sbom
 		exit 1; \
 	fi
 	@if [ "$(GLUDD_CI_DIST)" = "1" ]; then \
-		echo "CI mode: skipping pyinstaller build, creating stub binary"; \
+		echo "CI mode: skipping pyinstaller build, creating stubs"; \
 		echo '#!/bin/sh' > $(TARBALL_DIR)/gludd; \
 		echo 'echo "gludd CI stub"' >> $(TARBALL_DIR)/gludd; \
 		chmod +x $(TARBALL_DIR)/gludd; \
+		echo '[Unit]' > $(TARBALL_DIR)/general-ludd.service; \
+		echo 'Description=General Ludd Agent Daemon' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'After=network.target' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo '' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo '[Service]' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'User=general-ludd' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'EnvironmentFile=/etc/general-ludd/config.env' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'ExecStart=/usr/local/bin/gludd daemon --bind 127.0.0.1' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'Restart=on-failure' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'NoNewPrivileges=true' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'ProtectSystem=strict' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'PrivateTmp=true' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo '' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo '[Install]' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'WantedBy=multi-user.target' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo '#!/bin/sh' > $(TARBALL_DIR)/install.sh; \
+		echo '# gludd install script' >> $(TARBALL_DIR)/install.sh; \
+		echo 'set -eu' >> $(TARBALL_DIR)/install.sh; \
+		echo '' >> $(TARBALL_DIR)/install.sh; \
+		echo 'echo "Running preflight checks..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'echo "Installing gludd binary..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'echo "Setting up general-ludd.yml config..."' >> $(TARBALL_DIR)/install.sh; \
+		chmod +x $(TARBALL_DIR)/install.sh; \
 	else \
 		$(MAKE) build-executable; \
 	fi
