@@ -9,9 +9,10 @@
 
 ## Current Work
 
-- **HEAD: `efdee46a`** on master — 22 commits ahead of sandboxcom/master.
-- **Lint 0, typecheck 0 (465 source files), collect 0 (15,687 tests).** Gate prereqs all green.
+- **HEAD: `8ed0ed1f`** on master — 26 commits ahead of sandboxcom/master.
+- **Lint 0, typecheck 0 (465 source files), collect 0 (15,685 tests).** Gate prereqs all green.
 - **119 enforce-stop.ts CI verdict query tests pass** (Q3.9 evidence row).
+- **CI fix wave active** — narrowed from hundreds of failures to ~53. Systemic fixes: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance (`8ed0ed1f`), dist readiness stubs in CI_DIST mode (`edc1d391`), facts_facets osquery, tasks_tick check, to_thread mock, project_local env, ansible-syntax path, hostile MCP mocks (`4ea8f168`).
 - **Alpha.3** is the only released version with a downloadable artifact.
   Alpha.4 and alpha.5 were never shipped (no artifact, no green CI release job).
 
@@ -46,6 +47,10 @@
 
 | Hash | Message |
 |------|---------|
+| `8ed0ed1f` | fix: systemic caplog propagate session fixture, dist/artifact skip guards for CI, roles/.gitkeep test acceptance |
+| `edc1d391` | fix: dist readiness stubs in CI_DIST mode, TASKS.md Q3.10-Q3.16 evidence rows |
+| `4ea8f168` | fix: CI misc failures — facts_facets osquery, tasks_tick check, to_thread mock, project_local env, ansible-syntax path, hostile MCP mocks |
+| `9c7cbe58` | docs: update SESSION.md with enforce-stop CI PENDING fix and CI fix wave state |
 | `efdee46a` | feat: enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119 tests) |
 | `2495d0f1` | fix: migrate enforce-false-done and enforce-stop from dead response.transform to text.complete + session.idle hooks (BUGS.md 2026-06-30 incident fix #1-3) |
 | `c0422a8f` | docs: document response.transform dead-code finding, update SESSION.md with Fix #4 + new critical gap |
@@ -92,8 +97,6 @@
 5. Implement real Makefile targets for container-*, dist, test-integration
 
 ## Current Gate Status (2026-07-01)
-
-## Current Gate Status (2026-07-01)
 <!-- gate:begin -->
 - mcp-docs-check PASS 0
 - lint PASS 0
@@ -104,16 +107,20 @@
 
 <!-- gate:end -->
 
-> Lint 0, typecheck 0, collect 0 (15,687 tests). All targeted test suites pass.
+> Lint 0, typecheck 0, collect 0 (15,685 tests). All targeted test suites pass.
 > Full test suite times out under 8-worker xdist (OOM). CI-as-gate used for commits.
 > Background gate available via `make gate-background`; check via `make gate-status-check`.
+> Last gate run 2026-06-30 stale (test OOM); lint/typecheck/collect all PASS 0.
 > 119/119 enforce-stop CI verdict query tests pass; CI PENDING wired into hasPendingWork.
 > enforce-false-done and enforce-stop plugins migrated from dead response.transform to text.complete + session.idle hooks.
 > 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need migration.
+> CI fix wave: caplog systemic fix, dist/artifact skip guards, misc CI failures — narrowed to ~53 failures.
+> Dist readiness stubs (`edc1d391`) and CI_DIST mode skip guards (`8ed0ed1f`) reduce false CI failures.
 
 ## Historical State
 
-- **2026-07-01 (latest)**: HEAD `efdee46a`. enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119/119 tests pass). enforce-false-done and enforce-stop migrated from dead response.transform to text.complete + session.idle hooks (`2495d0f1`). 15,687 tests collected. 22 commits ahead of sandboxcom/master. 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need response.transform migration. CI pending on master. Alpha.5 still not shipped.
+- **2026-07-01 (latest)**: HEAD `8ed0ed1f`. CI fix wave active: caplog propagate session fixture, dist/artifact CI skip guards, roles/.gitkeep test acceptance, dist readiness stubs in CI_DIST mode, facts_facets osquery fix, tasks_tick check fix, to_thread mock fix, project_local env fix, ansible-syntax path fix, hostile MCP mocks fix. 15,685 tests collected. 26 commits ahead of sandboxcom/master. CI failures narrowed to ~53. Gate prereqs green (lint 0, typecheck 0, collect 0). 3 remaining plugins need response.transform migration. Alpha.5 still not shipped.
+- **2026-07-01 (earlier)**: HEAD `efdee46a`. enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119/119 tests pass). enforce-false-done and enforce-stop migrated from dead response.transform to text.complete + session.idle hooks (`2495d0f1`). 15,687 tests collected. 22 commits ahead of sandboxcom/master. 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need response.transform migration. CI pending on master. Alpha.5 still not shipped.
 - **2026-06-30 (latest)**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real (release-cut, release-recut, release-create, release-branch-new, release-promote, git-tag-push, release-view). `enforce-false-done.ts` has RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS with release-claim gating in classify(). 22/22 test_enforce_false_done tests pass. 4 missing plugins registered in opencode.json (enforce-todos, enforce-false-done, enforce-session-start, enforce-deadline) — now 9 total. **CRITICAL GAP DISCOVERED**: `experimental.chat.response.transform` is dead code — not in the official opencode Plugin Hooks interface. All 5 response-scanning plugins use this hook and have never fired. Only `tool.execute.before` hooks are active. CI still pending on master. Alpha.5 still not shipped.
 - **2026-06-30 (earlier)**: ~24 commits pushed across multiple waves.
   HEAD `2757daa0`. Major CI test shard fixes: caplog propagate, release target stubs,
