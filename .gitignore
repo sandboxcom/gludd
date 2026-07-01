@@ -23,6 +23,8 @@ ci-attempt-logs/
 .test-summary
 .secrets.baseline
 
+gludd-dist.tar.gz
+
 sandboxcom_github_rsa
 sandboxcom_github_rsa.pub
 
