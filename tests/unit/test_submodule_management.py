@@ -15,6 +15,8 @@ These tests prove the gap is closed by checking the Makefile structurally:
 import subprocess
 from pathlib import Path
 
+import pytest
+
 ROOT = Path(__file__).parent.parent.parent
 MAKEFILE = ROOT / "Makefile"
 GITMODULES = ROOT / ".gitmodules"
@@ -215,8 +217,10 @@ class TestSubmoduleIntegration:
         output = result.stdout
         # Each submodule line should show a tag name (not just a hash)
         # Format: <hash> <path> (<tag>)
-        for line in output.strip().split("\n"):
-            if line and not line.startswith("#"):
-                assert "(" in line and ")" in line, (
-                    f"Submodule should be at a tag: {line}"
-                )
+        status_lines = [ln for ln in output.strip().split("\n") if ln and not ln.startswith("#")]
+        if not status_lines or any(ln.lstrip().startswith("-") for ln in status_lines):
+            pytest.skip("submodules not initialized")
+        for line in status_lines:
+            assert "(" in line and ")" in line, (
+                f"Submodule should be at a tag: {line}"
+            )

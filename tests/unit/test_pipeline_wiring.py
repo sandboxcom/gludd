@@ -271,6 +271,7 @@ class TestMetricsCollectorWiring:
                 enabled=True,
                 cost_per_input_token=0.01,
                 cost_per_output_token=0.03,
+                run_budget_usd=1000.0,
             )],
             metrics_collector=collector,
             metrics_agent_id="agent-1",

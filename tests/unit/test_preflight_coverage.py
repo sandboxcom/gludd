@@ -209,7 +209,7 @@ class TestCheckMoleculeScenarios:
 
 
 class TestCheckFilestore:
-    @patch("general_ludd.quality.preflight.FileStore")
+    @patch("general_ludd.filestore.store.FileStore")
     def test_filestore_creation(self, MockFS):
         from general_ludd.quality.preflight import check_filestore
 
@@ -220,7 +220,7 @@ class TestCheckFilestore:
         assert result["passed"] is True
         assert result["root_path"] == "/fake/path"
 
-    @patch("general_ludd.quality.preflight.FileStore", side_effect=Exception("no fs"))
+    @patch("general_ludd.filestore.store.FileStore", side_effect=Exception("no fs"))
     def test_filestore_exception(self, MockFS):
         from general_ludd.quality.preflight import check_filestore
 
@@ -263,6 +263,10 @@ class TestCheckSprintBoxes:
 
 class TestRunPreflight:
     @patch(
+        "general_ludd.quality.preflight.check_terraform_collection_import",
+        return_value={"passed": True},
+    )
+    @patch(
         "general_ludd.quality.preflight.check_readme_no_hardcoded_metrics",
         return_value={"passed": True, "violations": []},
     )
@@ -298,7 +302,7 @@ class TestRunPreflight:
     def test_all_pass(
         self, mock_cov, mock_lint, mock_mypy, mock_tpl,
         mock_pb, mock_mol, mock_fs, mock_sprint, mock_audit,
-        mock_ticks, mock_drift, mock_readme,
+        mock_ticks, mock_drift, mock_readme, mock_tf,
     ):
         from general_ludd.quality.preflight import run_preflight
 
