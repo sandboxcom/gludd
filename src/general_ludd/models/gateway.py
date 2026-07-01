@@ -369,7 +369,10 @@ class ModelGateway:
             if messages is not None
             else None
         )
-        effective_cost = max(estimated_cost, server_cost) if server_cost is not None else estimated_cost
+        if server_cost is not None and isinstance(server_cost, (int, float)) and math.isfinite(server_cost):
+            effective_cost = max(estimated_cost, server_cost)
+        else:
+            effective_cost = estimated_cost
         if effective_cost > budget_remaining:
             return False
         return not (profile.api_metered and effective_cost > profile.run_budget_usd)

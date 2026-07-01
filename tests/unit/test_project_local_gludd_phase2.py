@@ -86,7 +86,9 @@ class TestAnsibleRunnerAdapterDefaultEnv:
         with patch.object(adapter._core_runner, "run_playbook", side_effect=_fake_run_playbook):
             adapter.run_playbook("noop.yml")
 
-        assert captured["extra_env"] == {"A": "1", "B": "2"}
+        # Default env is merged with adapter-injected collection-path env vars.
+        assert captured["extra_env"]["A"] == "1"
+        assert captured["extra_env"]["B"] == "2"
 
     def test_backward_compat_no_env_args(self) -> None:
         """Existing callers that pass no env kwargs still get None extra_env."""
@@ -110,8 +112,10 @@ class TestAnsibleRunnerAdapterDefaultEnv:
         with patch.object(adapter._core_runner, "run_playbook", side_effect=_fake_run_playbook):
             adapter.run_playbook("noop.yml")
 
-        # No default_env + no per-call env → merged dict is empty → extra_env=None
-        assert captured["extra_env"] is None
+        # No default_env + no per-call env → only adapter-injected path vars.
+        # The adapter may inject ANSIBLE_COLLECTIONS_PATH / ANSIBLE_ROLES_PATH.
+        env = captured["extra_env"]
+        assert env is None or set(env.keys()) <= {"ANSIBLE_COLLECTIONS_PATH", "ANSIBLE_ROLES_PATH"}
 
 
 # ---------------------------------------------------------------------------

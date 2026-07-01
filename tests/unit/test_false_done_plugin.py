@@ -118,8 +118,9 @@ class TestFailOpenAndAntiWedge:
         src = PLUGIN.read_text()
         # The block branch must `return blockDirective(...)` — NOT
         # `return output + directive` or similar append shapes.
-        assert "return blockDirective" in src or "return block" in src, (
-            "Block branch must return the directive (replacement), not "
+        assert ("return blockDirective" in src or "return block" in src
+                or "output.text = blockDirective" in src or "output.text = block" in src), (
+            "Block branch must return or assign the directive (replacement), not "
             "`output + directive` (append)."
         )
         assert "return output + " not in src.replace("return output + \"\\n\"", "X"), (

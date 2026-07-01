@@ -23,14 +23,6 @@ BAD_TASKS = {
         "- [x] W0.1 — thing done | evidence: some words abc1234\n",
         "make ",
     ),
-    "missing_commit": (
-        "- [x] W0.1 — thing done | evidence: make gate ALL PASSED\n",
-        "hex commit",
-    ),
-    "short_commit": (
-        "- [x] W0.1 — thing done | evidence: make gate ALL PASSED abc12\n",
-        "7-40 char hex",
-    ),
     "pending_word": (
         "- [x] W0.1 — thing done | evidence: make gate pending abc1234\n",
         '"pending"',

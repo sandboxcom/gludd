@@ -232,11 +232,15 @@ class TestMidLoopBreakerGuard:
     def test_breaker_trips_mid_retry_stops_further_attempts(self) -> None:
         """Mid-loop circuit-open guard halts retries as soon as the breaker trips.
 
-        With failure_threshold=2, two server-error responses trip the breaker.
-        Before the fix, ``_is_retryable`` returned True for the 3rd attempt and
-        kept hammering an already-open circuit. With the fix, after the 2nd failure
-        records the trip, ``_is_retryable`` calls ``tracker.is_healthy(admit_probe=False)``
-        and returns False immediately, so no 3rd invocation is made.
+        With failure_threshold=2, two transient connection errors trip the breaker.
+        Uses ``httpx.ConnectError`` (transient kind, CONNECTION_TIMEOUT) so the
+        mid-loop guard fires — overload kinds (503 PROVIDER_ERROR) intentionally
+        bypass it because they have their own dedicated overload retry budget
+        (default 10). Before the fix, ``_is_retryable`` returned True for the 3rd
+        attempt and kept hammering an already-open circuit. With the fix, after
+        the 2nd failure records the trip, ``_is_retryable`` calls
+        ``tracker.is_healthy(admit_probe=False)`` and returns False immediately,
+        so no 3rd invocation is made.
 
         The script contains exactly 2 errors; if a 3rd invocation fires,
         ``_FakeChatModel`` raises AssertionError (empty script guard).
@@ -244,8 +248,9 @@ class TestMidLoopBreakerGuard:
         tracker = ModelHealthTracker(failure_threshold=2, cooldown_seconds=60.0)
         gateway = _make_gateway(tracker)
 
-        _FakeChatModel.script = [_server_error(), _server_error()]
-        with pytest.raises(httpx.HTTPStatusError):
+        _conn_error = httpx.ConnectError("connection refused")
+        _FakeChatModel.script = [_conn_error, _conn_error]
+        with pytest.raises(httpx.ConnectError):
             gateway.call_model_with_retry(
                 "primary",
                 [{"role": "user", "content": "hi"}],

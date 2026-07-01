@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote install-hooks dist-clean run-watched git-tag-rm status-snapshot
 
 VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
 
@@ -7,6 +7,8 @@ version:
 	@echo $(VERSION)
 
 CONTAINER_RUNTIME := $(shell which podman 2>/dev/null || which docker 2>/dev/null || echo podman)
+
+VERIFY_POLLS ?= 30
 
 # Regenerate the STATUS-TABLE in README.md from docs/features.yml
 gen-status-table:
@@ -265,10 +267,15 @@ git-tags:
 	git tag -l --sort=-creatordate
 
 git-tag-push:
-	@test -n "$(TAG)" || (echo "Usage: make git-tag-push TAG=<tag> MSG='message'"; exit 1)
-	@test -n "$(MSG)" || (echo "Usage: make git-tag-push MSG='message'"; exit 1)
-	git tag -a "$(TAG)" -m "$(MSG)"
+	@test -n "$(TAG)" || (echo "Usage: make git-tag-push TAG=<tag> MSG='message' [COMMIT=<sha>]"; exit 1)
+	@test -n "$(MSG)" || (echo "Usage: make git-tag-push MSG='message' [COMMIT=<sha>]"; exit 1)
+	git tag -a "$(TAG)" -m "$(MSG)" $(if $(COMMIT),$(COMMIT),)
 	git push https://github.com/sandboxcom/gludd.git "$(TAG)"
+
+git-tag-rm:
+	@test -n "$(TAG)" || (echo "Usage: make git-tag-rm TAG=<tag>"; exit 1)
+	git tag -d "$(TAG)" 2>/dev/null || echo "Local tag $(TAG) not found"
+	GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o IdentitiesOnly=yes" git push https://github.com/sandboxcom/gludd.git --delete refs/tags/"$(TAG)"
 
 git-remotes:
 	git remote -v
@@ -336,6 +343,7 @@ test-iso:
 init:
 	uv sync
 	mkdir -p .gate-logs
+	$(MAKE) install-hooks
 
 # Sync uv dependencies
 sync:
@@ -345,6 +353,53 @@ sync:
 clean:
 	rm -rf .venv build dist *.egg-info .pytest_cache .mypy_cache .ruff_cache
 	rm -rf .gate-logs .gate-status .gate-background.pid
+
+dist-clean:
+	rm -rf dist gludd-dist.tar.gz
+
+run-watched:
+	@test -n "$(CMD)" || (echo "Usage: make run-watched CMD='<command>' [STALL_SECS=30] [MAX_SECS=300]"; exit 1)
+	@STALL_SECS=$${STALL_SECS:-30}; \
+	MAX_SECS=$${MAX_SECS:-300}; \
+	LAST_OUTPUT=$$(date +%s); \
+	START=$$(date +%s); \
+	eval "$$CMD" 2>&1 | while IFS= read -r line; do \
+		echo "$$line"; \
+		echo $$(date +%s) > /tmp/.gludd-run-watched-last-output; \
+	done & \
+	PID=$$!; \
+	while kill -0 $$PID 2>/dev/null; do \
+		sleep 1; \
+		NOW=$$(date +%s); \
+		ELAPSED=$$((NOW - START)); \
+		if [ -f /tmp/.gludd-run-watched-last-output ]; then \
+			LAST_OUTPUT=$$(cat /tmp/.gludd-run-watched-last-output); \
+		fi; \
+		STALL=$$((NOW - LAST_OUTPUT)); \
+		if [ $$STALL -gt $$STALL_SECS ]; then \
+			echo "RESULT=STALLED (no output for $$STALL_SECS sec)"; \
+			kill $$PID 2>/dev/null; \
+			rm -f /tmp/.gludd-run-watched-last-output; \
+			exit 1; \
+		fi; \
+		if [ $$ELAPSED -gt $$MAX_SECS ]; then \
+			echo "RESULT=STALLED (max $$MAX_SECS elapsed)"; \
+			kill $$PID 2>/dev/null; \
+			rm -f /tmp/.gludd-run-watched-last-output; \
+			exit 1; \
+		fi; \
+	done; \
+	rm -f /tmp/.gludd-run-watched-last-output; \
+	wait $$PID; \
+	echo "RESULT=OK"
+
+install-hooks:
+	@if command -v pre-commit >/dev/null 2>&1; then \
+		pre-commit install; \
+		echo "pre-commit hooks installed"; \
+	else \
+		echo "pre-commit not found; skipping hook installation"; \
+	fi
 
 # Bootstrap: init + lint + test + healthcheck
 bootstrap: init lint test healthcheck
@@ -436,7 +491,7 @@ validate-opencode-config:
 
 # Ansible syntax check
 ansible-syntax:
-	ANSIBLE_COLLECTIONS_PATH=/Users/shawnwilson/gludd/collections \
+	ANSIBLE_COLLECTIONS_PATH=$${PWD}/collections \
 	.venv/bin/ansible-playbook --syntax-check playbooks/*.yml
 
 # Ansible collection test suite
@@ -492,11 +547,19 @@ release-cut:
 	$(MAKE) git-tag-push TAG="$(TAG)" MSG="$(MSG)"
 	$(MAKE) release-view TAG="$(TAG)"
 
-# Re-trigger CI release job: delete + re-push tag
+# Re-trigger CI release job: verify local tag → delete remote → re-push → poll artifact
 release-recut:
 	@test -n "$(TAG)" || (echo "Usage: make release-recut TAG=<tag>"; exit 1)
-	git push https://github.com/sandboxcom/gludd.git --delete "$(TAG)"
-	git push https://github.com/sandboxcom/gludd.git "$(TAG)"
+	@git tag -l "$(TAG)" | grep -q "$(TAG)" || (echo "Local tag $(TAG) not found"; exit 1)
+	@GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o IdentitiesOnly=yes" git push https://github.com/sandboxcom/gludd.git --delete "$(TAG)"
+	@GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o IdentitiesOnly=yes" git push https://github.com/sandboxcom/gludd.git "$(TAG)"
+	@count=0; while [ $$count -lt $(VERIFY_POLLS) ]; do \
+		$(MAKE) verify-release-artifact TAG="$(TAG)" && break; \
+		sleep 10; count=$$((count + 1)); \
+	done; \
+	if [ $$count -ge $(VERIFY_POLLS) ]; then \
+		echo "ERROR: verify-release-artifact not passing after $(VERIFY_POLLS) polls"; exit 1; \
+	fi
 
 # Build executable + create GitHub Release + verify artifact
 release-create:
@@ -781,3 +844,6 @@ container-run:
 
 container-push:
 	$(CONTAINER_RUNTIME) push general-ludd-agent:$(VERSION) ghcr.io/sandboxcom/general-ludd-agent:$(VERSION)
+
+status-snapshot:
+	python3 scripts/status_snapshot.py

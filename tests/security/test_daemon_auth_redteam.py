@@ -149,6 +149,7 @@ class TestA3NoAuthDegraded:
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env.pop("GLUDD_ALLOW_NO_AUTH", None)
+        logging.getLogger("general_ludd.daemon").propagate = True
         with patch.dict(os.environ, env, clear=True), caplog.at_level(logging.WARNING):
             create_daemon_app(tick_interval=0.01)
         joined = " ".join(r.getMessage() for r in caplog.records).lower()
@@ -164,6 +165,7 @@ class TestA3NoAuthDegraded:
         env.pop("GLUDD_PSK", None)
         env.pop("GLUDD_REQUIRE_AUTH", None)
         env["GLUDD_ALLOW_NO_AUTH"] = "1"
+        logging.getLogger("general_ludd.daemon").propagate = True
         with patch.dict(os.environ, env, clear=True), caplog.at_level(logging.WARNING):
             create_daemon_app(tick_interval=0.01)
         joined = " ".join(r.getMessage() for r in caplog.records).lower()

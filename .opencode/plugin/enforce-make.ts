@@ -761,6 +761,12 @@ export default (async ({ }) => {
       }
     },
 
+    // --- Session idle — reset per-turn state ----------------------------------
+    "session.idle": async () => {
+      _pendingCommitReminder = false
+      _pendingPreflightGate = ""
+    },
+
     "experimental.chat.system.transform": async (_input, output) => {
       const mechanicalContract = [
         "⛔ MECHANICAL CONTRACT — VIOLATIONS ARE BLOCKED",
@@ -789,6 +795,86 @@ export default (async ({ }) => {
         output = mechanicalContract + "\n\n" + policyInjection + "\n\n" + output
       }
       return output // FORBIDDEN stop patterns enforced by this contract + response.transform hook
+    },
+
+    // --- Per-chunk state-based block (port of enforce-stop.ts text.complete) ---
+    "experimental.text.complete": async (_input, output) => {
+      if (typeof output?.text !== "string") return output
+
+      const text = output.text
+
+      const gateStatusPath = path.join(process.cwd(), ".gate-status")
+      if (fs.existsSync(gateStatusPath)) {
+        const gateContent = fs.readFileSync(gateStatusPath, "utf-8")
+        const hasGreen = (
+          gateContent.includes("lint PASS") &&
+          gateContent.includes("typecheck PASS") &&
+          gateContent.includes("collect PASS") &&
+          gateContent.includes("test PASS")
+        )
+        if (!hasGreen) {
+          output.text = [
+            "⛔ GATE IS RED — RESPONSE BLOCKED ⛔",
+            "",
+            ".gate-status is red or stale. Completion claims are BLOCKED.",
+            "Your message has been COMPLETELY REPLACED.",
+            "",
+            "Run `make gate`, fix all failures, then continue working.",
+            "Do NOT send another text message without tool calls.",
+          ].join("\n")
+          return output
+        }
+      }
+
+      if (detectStopPattern(text)) {
+        output.text = [
+          "⛔ STOP-PATTERN DETECTED — RESPONSE REPLACED ⛔",
+          "",
+          "Your previous message was a completion report. It has been",
+          "COMPLETELY REPLACED. You will NOT see your original text.",
+          "",
+          "You MUST immediately make a tool call to continue working.",
+          "Do NOT explain. Do NOT apologize. Call your tools NOW.",
+          "",
+          "Check todowrite — any pending or in_progress items?",
+          "→ Work on them NOW. Do NOT send another text message.",
+          "",
+          STOP_PATTERN_BLOCK,
+        ].join("\n")
+        return output
+      }
+
+      const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
+      if (fs.existsSync(ratchetPath)) {
+        const ratchetContent = fs.readFileSync(ratchetPath, "utf-8")
+        const ratchetLines = ratchetContent.split("\n").filter(
+          l => l.trim() && !l.trim().startsWith("#") && l.includes(": \"")
+        )
+        const hasPendingWork = ratchetLines.length > 0
+        const responseLower = text.toLowerCase()
+        const soundsComplete = (
+          responseLower.includes("all passed") ||
+          responseLower.includes("phase") && responseLower.includes("complete") ||
+          responseLower.includes("key accomplishments") ||
+          responseLower.includes("what was implemented") ||
+          responseLower.includes("task |") ||
+          responseLower.includes("| what was")
+        )
+        if (hasPendingWork && soundsComplete) {
+          output.text = [
+            "⛔ STOP-PATTERN DETECTED — INCOMPLETE WORK ⛔",
+            "",
+            `config/ratchet.yml has ${ratchetLines.length} known-failure entries.`,
+            "The project is NOT complete. Your completion claim is BLOCKED.",
+            "",
+            "You MUST continue working. Call your tools NOW.",
+            "",
+          ].join("\n")
+          return output
+        }
+      }
+
+      return output
     },
 
     "experimental.chat.response.transform": async (_input, output) => {

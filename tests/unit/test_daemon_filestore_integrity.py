@@ -167,7 +167,7 @@ class TestRealDaemonEndpoints:
         assert "changes" in data
         assert "log_entries" in data
 
-    @patch("general_ludd.integrity.scanner.sign_change_openbao")
+    @patch("general_ludd.routers.integrity.sign_change_openbao")
     def test_integrity_approve(self, mock_sign, client):
         mock_sign.return_value = {
             "path": "test.yaml",

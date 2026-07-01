@@ -56,9 +56,18 @@ class TestWorkerExecuteToThreadOffload:
         tmp = tempfile.mkdtemp()
         adapter = _make_adapter(tmp, "JOB-M9")
         mock_get_runner.return_value = adapter
-        # to_thread returns the runner result so execute_job can build its
-        # response from the offloaded call.
-        mock_to_thread.return_value = {"rc": 0, "output": "", "events": []}
+        # to_thread is called for prepare_job_dirs, write_vars, and run_playbook.
+        # Each returns a different shape — use side_effect so the correct value
+        # is returned per-call (dirs dict → str path → run result dict).
+        def _to_thread_side_effect(func, *args, **kwargs):
+            if func is adapter.run_playbook:
+                return {"rc": 0, "output": "", "events": []}
+            if func is adapter.write_vars:
+                return adapter.write_vars.return_value
+            if func is adapter.prepare_job_dirs:
+                return adapter.prepare_job_dirs.return_value
+            return None
+        mock_to_thread.side_effect = _to_thread_side_effect
 
         # No gateway: keep the test about the offload, not the model call.
         app = create_app(gateway=None)
@@ -77,8 +86,15 @@ class TestWorkerExecuteToThreadOffload:
 
         # run_playbook was NOT called inline; it was handed to asyncio.to_thread.
         adapter.run_playbook.assert_not_called()
-        mock_to_thread.assert_awaited_once()
-        assert mock_to_thread.await_args.args[0] is adapter.run_playbook
+        # to_thread is called 3 times (prepare_job_dirs, write_vars, run_playbook);
+        # the last call must be run_playbook.
+        assert mock_to_thread.await_count >= 3
+        # Verify at least one to_thread call was for run_playbook.
+        run_playbook_dispatched = any(
+            call_args.args[0] is adapter.run_playbook
+            for call_args in mock_to_thread.await_args_list
+        )
+        assert run_playbook_dispatched, "run_playbook was never dispatched via asyncio.to_thread"
 
     @pytest.mark.asyncio
     @patch("general_ludd.worker.app.get_runner")

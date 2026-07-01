@@ -393,7 +393,7 @@ def register(app: FastAPI, _daemon_state: dict[str, Any]) -> None:
         for todo in _daemon_state["todos"]:
             if (
                 str(todo.get("todo_id", "")) == todo_id
-                and todo.get("project_id") == project_id
+                and (project_id is None or todo.get("project_id") == project_id)
             ):
                 return dict(todo)
         raise HTTPException(status_code=404, detail="Todo not found")

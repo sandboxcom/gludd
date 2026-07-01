@@ -185,6 +185,10 @@ async def run_renderer(app: FastAPI, spec: RendererSpec) -> RendererResult:
     stub = getattr(app.state, "_renderer_runner", None)
     if stub is not None:
         stub_out = await stub.run(spec)
+        if isinstance(stub_out, RenderDocument):
+            raw = stub_out.model_dump()
+            start = time.monotonic()
+            return _validate_canonical(spec, raw, start)
         raw = _coerce_stub_output(stub_out, spec)
         start = time.monotonic()
     else:

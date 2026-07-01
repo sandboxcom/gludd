@@ -56,6 +56,7 @@ _FACTS_FACETS = [
     "accounting",
     "schedule",
     "coordination",
+    "osquery",
     "project_id",
 ]
 

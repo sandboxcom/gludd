@@ -196,7 +196,7 @@ class TestRegistryEntriesNeverLaunchable:
             ]
         }
         mock_urlopen.return_value = type("Resp", (), {
-            "read": lambda self: json.dumps(hostile).encode(),
+            "read": lambda self, n=None: json.dumps(hostile).encode(),
             "__enter__": lambda self: self,
             "__exit__": lambda self, *a: None,
         })()
@@ -218,7 +218,7 @@ class TestRegistryEntriesNeverLaunchable:
             ]
         }
         mock_urlopen.return_value = type("Resp", (), {
-            "read": lambda self: json.dumps(hostile).encode(),
+            "read": lambda self, n=None: json.dumps(hostile).encode(),
             "__enter__": lambda self: self,
             "__exit__": lambda self, *a: None,
         })()

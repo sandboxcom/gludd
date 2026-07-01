@@ -30,4 +30,3 @@ process_isolation:
 budget:
   max_usd: 50
   warn_percent: 80
-deletion_gate_threshold: 7

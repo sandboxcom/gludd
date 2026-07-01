@@ -93,14 +93,15 @@
 
 ## Current Gate Status (2026-07-01)
 
+## Current Gate Status (2026-07-01)
 <!-- gate:begin -->
-- lint: PASS 0
-- typecheck: PASS 0 (465 source files)
-- collect: PASS 0 (15,687 tests collected)
-- test: 119/119 enforce-stop CI verdict query tests pass
-- CI gate jobs: PASS (lint, typecheck, collect)
-- CI test shards: CI pending on master (`efdee46a`); assertion mismatches reduced
-- enforce-false-done + enforce-stop: migrated from dead response.transform to text.complete + session.idle
+- mcp-docs-check PASS 0
+- lint PASS 0
+- typecheck PASS 0
+- collect PASS 0
+- test FAIL non-zero-exit
+- FAIL non-zero-exit
+
 <!-- gate:end -->
 
 > Lint 0, typecheck 0, collect 0 (15,687 tests). All targeted test suites pass.

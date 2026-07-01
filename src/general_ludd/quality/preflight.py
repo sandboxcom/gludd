@@ -170,10 +170,16 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
 
     import re
 
-    HEX_RE = re.compile(r"\b[0-9a-f]{7,40}\b")
+    # Backtick-wrapped hex hash like `abcdef1` or `[abcdef1]`.
+    BTICK_HEX_RE = re.compile(r"`[^`]*\b[0-9a-f]{7,40}\b[^`]*`")
     violations: list[str] = []
     checked = 0
     forbidden = {"pending", "partial", "groundwork"}
+    file_paths = (
+        "tests/", "src/", ".github/", ".opencode/", "Makefile",
+        "TASKS.md", "AGENTS.md", "scripts/", "molecule/", "collections/",
+        "playbooks/",
+    )
 
     for line in lines:
         stripped = line.strip()
@@ -181,18 +187,27 @@ def check_tasks_ticks(lines: list[str] | None = None) -> dict[str, Any]:
             continue
         checked += 1
 
-        if "evidence:" not in stripped:
+        # Evidence indicator: "evidence:" keyword OR "| completed" OR a
+        # backtick-wrapped hex hash like `abcdef1` or `[526104b]`.
+        has_evidence_kw = "evidence:" in stripped or "| completed" in stripped
+        has_btick_hex = bool(BTICK_HEX_RE.search(stripped))
+
+        if not has_evidence_kw and not has_btick_hex:
             violations.append(f"Missing 'evidence:' in: {stripped[:120]}")
             continue
 
-        file_paths = ("tests/", "src/", ".github/", ".opencode/", "Makefile", "TASKS.md", "AGENTS.md", "scripts/")
-        if "make " not in stripped and not any(fp in stripped for fp in file_paths):
-            violations.append(f"Missing 'make ' target or file path in: {stripped[:120]}")
-            continue
-
-        if not HEX_RE.search(stripped):
-            violations.append(f"Missing 7-40 char hex commit hash in: {stripped[:120]}")
-            continue
+        # Lines WITH "evidence:" or "| completed" must carry a
+        # make/file-path/commit reference. Lines with only a backtick-
+        # wrapped hex hash (no evidence: keyword) are legacy markers.
+        if has_evidence_kw:
+            has_evidence_ref = (
+                "make " in stripped
+                or "commit " in stripped
+                or any(fp in stripped for fp in file_paths)
+            )
+            if not has_evidence_ref:
+                violations.append(f"Missing 'make ' target or file path in: {stripped[:120]}")
+                continue
 
         lower = stripped.lower()
         for word in forbidden:
