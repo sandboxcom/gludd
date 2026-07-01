@@ -1,4 +1,8 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push dist test-integration test-live-zai
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom
+
+VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
+
+CONTAINER_RUNTIME := $(shell which podman 2>/dev/null || which docker 2>/dev/null || echo podman)
 
 # Regenerate the STATUS-TABLE in README.md from docs/features.yml
 gen-status-table:
@@ -164,8 +168,16 @@ git-rm-cached:
 git-commit: _gate-fresh-check
 	git commit -m "$(MSG)"
 
+# CI-is-gate escape hatch: set GLUDD_CI_IS_GATE=1 to skip local .gate-status.
+# Use ONLY when local gate times out (>30 min) and CI validates the change.
 git-commit-no-verify: _gate-fresh-check
 	git commit --no-verify -m "$(MSG)"
+
+git-amend-msg: _gate-fresh-check
+	git commit --amend --no-verify -m "$(MSG)"
+
+commit-bootstrap: _gate-fresh-check
+	git commit -m "$(MSG)"
 
 # Non-code meta-commits (version bumps, docs) — documented escape hatch
 repo-commit:
@@ -339,9 +351,9 @@ test-unit:
 test-e2e:
 	uv run python -m pytest tests/e2e/ -v
 
-# Integration tests (stub)
+# Integration tests
 test-integration:
-	@echo "test-integration: not yet implemented"
+	uv run python -m pytest tests/integration/ -v
 
 # Live ZAI tests (stub)
 test-live-zai:
@@ -458,6 +470,36 @@ verify-release-artifact:
 # Build pyinstaller executable
 build-executable:
 	uv run pyinstaller --onefile --name gludd src/general_ludd/cli.py
+
+# Download bundled binaries (OpenBao, OpenTofu) into dist/binaries/
+bundle-binaries:
+	@if [ "$(GLUDD_CI_DIST)" = "1" ]; then \
+		echo "CI mode: skipping binary downloads"; \
+		mkdir -p dist/binaries; \
+	else \
+		uv run python scripts/download_bundled_binaries.py; \
+	fi
+
+# Generate CycloneDX SBOM stub
+sbom:
+	@mkdir -p dist
+	python3 -c "import json, datetime; d={'bomFormat':'CycloneDX','specVersion':'1.5','version':1,'metadata':{'timestamp':datetime.datetime.now(datetime.timezone.utc).isoformat(),'component':{'name':'gludd','type':'application'}},'components':[]}; json.dump(d, open('dist/sbom.json','w'), indent=2)"
+
+# Build distribution tarball
+dist: bundle-binaries sbom
+	@mkdir -p dist
+	cp LICENSE dist/
+	cp THIRD_PARTY_LICENSES.md dist/
+	@if [ "$(GLUDD_CI_DIST)" = "1" ]; then \
+		echo "CI mode: skipping pyinstaller build, creating stub binary"; \
+		echo '#!/bin/sh' > dist/gludd; \
+		echo 'echo "gludd CI stub"' >> dist/gludd; \
+		chmod +x dist/gludd; \
+	else \
+		$(MAKE) build-executable; \
+	fi
+	tar -czf gludd-dist.tar.gz dist/
+	@echo "dist: tarball created at gludd-dist.tar.gz"
 
 # Dependencies audit
 deps-audit:
@@ -663,10 +705,10 @@ ci-run-log-failed:
 	gh run view $(RUN) --repo sandboxcom/gludd --log-failed
 
 container-build:
-	@echo "container-build: not yet implemented"
+	$(CONTAINER_RUNTIME) build -t general-ludd-agent:$(VERSION) .
 
 container-run:
-	@echo "container-run: not yet implemented"
+	$(CONTAINER_RUNTIME) run --rm -p 8000:8000 -v gludd-data:/var/lib/general-ludd general-ludd-agent:$(VERSION)
 
 container-push:
-	@echo "container-push: not yet implemented"
+	$(CONTAINER_RUNTIME) push general-ludd-agent:$(VERSION) ghcr.io/sandboxcom/general-ludd-agent:$(VERSION)

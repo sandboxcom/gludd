@@ -45,11 +45,13 @@ class TestPublishFailureAccounting:
         # The good subscriber still ran (a failure must not block others).
         assert good_calls == [1]
         # The failure was logged at ERROR with the event type, not swallowed.
+        error_logs = [(r.levelno, r.getMessage()) for r in caplog.records]
         assert any(
             record.levelno == logging.ERROR and "failed" in record.getMessage()
             for record in caplog.records
-        )
-        assert any("model_added" in record.getMessage() for record in caplog.records)
+        ), f"No ERROR 'failed' log found. caplog records: {error_logs}"
+        assert any("model_added" in record.getMessage() for record in caplog.records), \
+            f"'model_added' not in any log message. Messages: {[r.getMessage() for r in caplog.records]}"
 
     def test_all_subscribers_succeed_returns_full_count(self):
         bus = EventBus()
@@ -92,11 +94,12 @@ class TestPublishFailureAccounting:
             # runs and emits the ERROR log before we assert.
             await asyncio.sleep(0)
 
+        error_logs = [(r.levelno, r.getMessage()) for r in caplog.records]
         assert any(
             record.levelno == logging.ERROR
             and "async event subscriber task failed" in record.getMessage().lower()
             for record in caplog.records
-        )
+        ), f"No async-task-failure ERROR log found. caplog records: {error_logs}"
 
     def test_async_subscriber_exception_logged_without_running_loop(self, caplog):
         # No running event loop -> _dispatch_coro drives a fresh, isolated loop
@@ -128,11 +131,12 @@ class TestPublishFailureAccounting:
             # publish() did not propagate the async failure as a delivery error;
             # the dispatch-loop error was already logged synchronously.
             assert delivered == 1
+            error_logs = [(r.levelno, r.getMessage()) for r in caplog.records]
             assert any(
                 record.levelno == logging.ERROR
                 and "dispatch loop" in record.getMessage().lower()
                 for record in caplog.records
-            )
+            ), f"No 'dispatch loop' ERROR log found. caplog records: {error_logs}"
         finally:
             # Restore whatever loop the worker had before so we never leave a
             # closed loop (or None) behind for the next test on this xdist worker.
@@ -152,10 +156,11 @@ class TestHookFireFailureSurfacing:
         # Only the successful hook counts; the other still ran.
         assert count == 1
         assert ok == [1]
+        error_logs = [(r.levelno, r.getMessage()) for r in caplog.records]
         assert any(
             record.levelno == logging.ERROR and "failed" in record.getMessage()
             for record in caplog.records
-        )
+        ), f"No ERROR 'failed' hook log found. caplog records: {error_logs}"
 
     def test_all_hooks_succeed_count_and_no_error(self, caplog):
         hooks = HookSystem()

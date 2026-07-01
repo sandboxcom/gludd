@@ -1,13 +1,13 @@
 """TDD tests for the commit-target gate-freshness guard.
 
-The bug: `make commit-no-verify` and `make commit-bootstrap` bypass the
+The bug: `make git-commit-no-verify` and `make commit-bootstrap` bypass the
 `.gate-status` freshness + green check that `make git-commit` enforces. An
 agent can commit when the gate is red by reaching for these bypass targets
 instead of fixing the actual failures. This test file proves the gap is closed:
 every commit-shaped target must enforce the same fresh+green `.gate-status`.
 
 Incident (BUGS.md 2026-06-22): agent committed a feature with red gate via
-`make commit-no-verify`, rationalizing "pre-existing failures + env issue".
+`make git-commit-no-verify`, rationalizing "pre-existing failures + env issue".
 The bypass target exists for pre-commit stash conflicts, NOT for skipping the
 gate. Gate integrity must hold across ALL commit targets.
 """
@@ -34,7 +34,7 @@ class TestCommitTargetsEnforceGate:
     """Every commit-shaped target must enforce the fresh+green gate check."""
 
     def test_commit_no_verify_recipe_exists(self):
-        assert _recipe("commit-no-verify"), "commit-no-verify target must exist"
+        assert _recipe("git-commit-no-verify"), "git-commit-no-verify target must exist"
 
     def test_commit_bootstrap_recipe_exists(self):
         assert _recipe("commit-bootstrap"), "commit-bootstrap target must exist"
@@ -43,7 +43,7 @@ class TestCommitTargetsEnforceGate:
         assert _recipe("git-commit"), "git-commit target must exist"
 
     def test_commit_no_verify_enforces_gate(self):
-        """The bug fix: commit-no-verify must check .gate-status freshness.
+        """git-commit-no-verify must check .gate-status freshness.
 
         Before: `git commit --no-verify` ran with no gate check — an agent
         could commit a red-gate change by reaching for this target.
@@ -56,40 +56,40 @@ class TestCommitTargetsEnforceGate:
         In that case the target must still reference GLUDD_CI_IS_GATE so the
         skip is explicit, not silent.
         """
-        recipe = _recipe("commit-no-verify")
-        # The check may be inline (`.gate-status` literal) OR delegated to the
-        # `_gate-fresh-check` target (which itself checks `.gate-status`) OR
-        # conditionally skipped via the `GLUDD_CI_IS_GATE=1` escape hatch, in
-        # which case the variable reference must appear in the recipe so the
-        # bypass is visible (never a silent skip).
+        recipe = _recipe("git-commit-no-verify")
         gate_enforced = (
             ".gate-status" in recipe or
             "_gate-fresh-check" in recipe or
             "GLUDD_CI_IS_GATE" in recipe
         )
         assert gate_enforced, (
-            "commit-no-verify must check .gate-status (or reference the "
+            "git-commit-no-verify must check .gate-status (or reference the "
             "GLUDD_CI_IS_GATE escape hatch) — it cannot silently bypass the gate"
         )
 
     def test_commit_no_verify_has_ci_is_gate_override(self):
-        """commit-no-verify must mention GLUDD_CI_IS_GATE in its recipe.
+        """git-commit-no-verify must reference GLUDD_CI_IS_GATE (directly or via _gate-fresh-check).
 
         The override exists for the specific case where the local gate takes
         longer than the bash tool timeout (>30 min) and CI shards validate the
-        change faster. The variable reference must appear in the recipe body so
-        the escape hatch is grep-discoverable and auditable.
+        change faster. The reference must be grep-discoverable and auditable:
+        either inline in the recipe or delegated to _gate-fresh-check (which is
+        the single gate-enforcement target containing the override).
         """
-        recipe = _recipe("commit-no-verify")
-        assert "GLUDD_CI_IS_GATE" in recipe, (
-            "commit-no-verify must reference GLUDD_CI_IS_GATE so the escape "
-            "hatch is explicit and auditable, not silent"
+        recipe = _recipe("git-commit-no-verify")
+        content = MAKEFILE.read_text()
+        has_override = "GLUDD_CI_IS_GATE" in recipe or (
+            "_gate-fresh-check" in recipe and "GLUDD_CI_IS_GATE" in content
+        )
+        assert has_override, (
+            "git-commit-no-verify must reference GLUDD_CI_IS_GATE (directly or "
+            "via _gate-fresh-check) so the escape hatch is explicit and auditable"
         )
 
     def test_commit_no_verify_override_is_escape_hatch_not_default(self):
         """The GLUDD_CI_IS_GATE override must be documented as an escape hatch.
 
-        The DEFAULT behaviour of commit-no-verify is to run the gate check.
+        The DEFAULT behaviour of git-commit-no-verify is to run the gate check.
         Skipping the gate is only acceptable as a documented escape hatch for
         the slow-local-gate / CI-is-gate case — never a silent or default off.
         This test verifies:
@@ -98,10 +98,8 @@ class TestCommitTargetsEnforceGate:
              so the override is opt-in rather than opt-out.
         """
         content = MAKEFILE.read_text()
-        marker = "\ncommit-no-verify:"
+        marker = "\ngit-commit-no-verify:"
         idx = content.index(marker)
-        # The comment block immediately precedes the target. Walk backward to
-        # capture the contiguous comment lines above the target header.
         header_start = idx
         comment_start = header_start
         while comment_start > 0:
@@ -113,18 +111,14 @@ class TestCommitTargetsEnforceGate:
             else:
                 break
         block = content[comment_start:idx + len(marker)]
-        # 1. The comment block must call out "escape hatch".
         assert "escape hatch" in block.lower(), (
-            "commit-no-verify comment must document GLUDD_CI_IS_GATE as an "
+            "git-commit-no-verify comment must document GLUDD_CI_IS_GATE as an "
             "escape hatch, not as a recommended default"
         )
-        # 2. The default branch (when GLUDD_CI_IS_GATE != 1) must still run
-        #    the gate check — i.e. the recipe must reference _gate-fresh-check
-        #    or .gate-status in addition to the override variable.
-        recipe = _recipe("commit-no-verify")
+        recipe = _recipe("git-commit-no-verify")
         assert ".gate-status" in recipe or "_gate-fresh-check" in recipe, (
-            "commit-no-verify default branch (no GLUDD_CI_IS_GATE) must still "
-            "run the gate check — the override may only SKIP, not REPLACE"
+            "git-commit-no-verify default branch (no GLUDD_CI_IS_GATE) must "
+            "still run the gate check — the override may only SKIP, not REPLACE"
         )
 
     def test_commit_bootstrap_enforces_gate(self):
@@ -213,6 +207,7 @@ class TestCommitTargetsEnforceGate:
                 "repo-commit",
                 "ship-commit",  # subagent-dispatch target; CI is the gate
                 "git-reset", "git-revert",
+                "submodule-pin",
             }
             if target_name in ALLOWLIST_NO_GATE:
                 continue

@@ -40,7 +40,7 @@ class BackgroundTestRunner:
 
     @staticmethod
     def _sanitize(testfile: str) -> str:
-        return re.sub(r"[^a-zA-Z0-9._-]", "_", testfile).replace(".", "_")
+        return re.sub(r"[^a-zA-Z0-9._-]+", "_", testfile).replace(".", "_")
 
     def _pid_path(self, testfile: str) -> Path:
         return self.status_dir / f".test-{self._sanitize(testfile)}.pid"
@@ -159,6 +159,13 @@ class BackgroundTestRunner:
         except OSError:
             return []
 
+    def tail_log(self, testfile: str, n: int = 20) -> str:
+        """Return last N lines of the most recent log file as a string."""
+        logs = self._log_paths(testfile)
+        if not logs:
+            return ""
+        return "\n".join(self._get_last_lines(logs[0], n))
+
     def poll_all(self) -> list[dict[str, Any]]:
         """Return status for every tracked background test."""
         results: list[dict[str, Any]] = []
@@ -231,6 +238,7 @@ class BackgroundTestRunner:
                     "phase": "completed",
                     "complete": True,
                     "log_tail": latest_log,
+                    "passed": st.get("terminal_marker") == "PASS",
                 }
             print(
                 f"[BackgroundTestRunner] waiting for {testfile} ... "
@@ -267,11 +275,14 @@ class BackgroundTestRunner:
         pid_path.unlink(missing_ok=True)
 
     @staticmethod
-    def _detect_terminal_marker(log_path: Path) -> str | None:
-        try:
-            text = log_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return None
+    def _detect_terminal_marker(log_path: str | Path) -> str | None:
+        if isinstance(log_path, Path):
+            try:
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+        else:
+            text = log_path
 
         # Check for pytest summary line
         if re.search(r"===\s*PASSED\s*===", text):
@@ -295,11 +306,14 @@ class BackgroundTestRunner:
         return None
 
     @staticmethod
-    def _parse_exit_code(log_path: Path) -> int | None:
-        try:
-            text = log_path.read_text(encoding="utf-8", errors="replace")
-        except OSError:
-            return None
+    def _parse_exit_code(log_path: str | Path) -> int | None:
+        if isinstance(log_path, Path):
+            try:
+                text = log_path.read_text(encoding="utf-8", errors="replace")
+            except OSError:
+                return None
+        else:
+            text = log_path
         m = re.search(r"exit code (\d+)", text, re.IGNORECASE)
         if m:
             return int(m.group(1))
@@ -310,6 +324,14 @@ class BackgroundTestRunner:
 
     @staticmethod
     def _resolve_testfile(pid_file: Path) -> str | None:
+        status_file = pid_file.parent / (pid_file.stem + ".status.json")
+        if status_file.exists():
+            try:
+                data = json.loads(status_file.read_text(encoding="utf-8"))
+                if "testfile" in data:
+                    return str(data["testfile"])
+            except (json.JSONDecodeError, OSError):
+                pass
         name = pid_file.name
         name = name.removeprefix(".test-").removesuffix(".pid")
         return name.replace("_", "/") if "_" in name else name

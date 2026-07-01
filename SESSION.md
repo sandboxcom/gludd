@@ -15,7 +15,6 @@
 - **CI gate jobs pass** (lint/typecheck/collect) but test shards still have assertion mismatches being fixed.
 - **Alpha.3** is the only released version with a downloadable artifact.
   Alpha.4 and alpha.5 were never shipped (no artifact, no green CI release job).
-- **Working tree: clean** — no uncommitted changes.
 
 ### Major features landed this session (2026-06-30)
 
@@ -60,9 +59,8 @@
 
 1. **CI test assertion mismatches** — test shards still have failures; lint/typecheck/collect pass in CI. Incrementally fixed this session (~15 assertions resolved; `ba3225c0`, `24c21085`, `7538be54`).
 2. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used for full validation.
-3. **Gate has collection ERRORs** — `make test-count` shows ERRORs; targeted suites pass but full gate is not green.
-4. **Alpha.4 and alpha.5 never shipped** — no green CI release job, no downloadable artifact. Only alpha.3 has a verified artifact.
-5. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets; tests that verify them pass now but need real implementations.
+3. **Alpha.4 and alpha.5 never shipped** — no green CI release job, no downloadable artifact. Only alpha.3 has a verified artifact.
+4. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets; tests that verify them pass now but need real implementations.
 
 ## Next Steps
 
@@ -75,8 +73,8 @@
 
 <!-- gate:begin -->
 - lint: PASS 0
-- typecheck: PASS 0 (462 source files)
-- collect: PASS 0 (15,546 tests collected)
+- typecheck: PASS 0 (465 source files)
+- collect: PASS 0 (15,646 tests collected)
 - test: all targeted suites green (214+ tests)
 - CI gate jobs: PASS (lint, typecheck, collect)
 - CI test shards: assertion mismatches (in progress, ~15 fixed this session)

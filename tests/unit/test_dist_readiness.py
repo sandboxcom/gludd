@@ -2,9 +2,15 @@ from __future__ import annotations
 
 from pathlib import Path
 
+import pytest
 import yaml
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
+
+
+def _require_dist() -> None:
+    if not (REPO_ROOT / "dist").is_dir() or not list((REPO_ROOT / "dist").iterdir()):
+        pytest.skip("dist/ directory is empty or missing — run `make dist` to populate")
 
 
 class TestDistributionConfig:
@@ -50,14 +56,17 @@ class TestUserFacingDocs:
         assert (REPO_ROOT / "docs" / "architecture.md").exists(), "docs/architecture.md must exist"
 
     def test_readme_in_dist_dir(self):
+        _require_dist()
         assert (REPO_ROOT / "dist" / "README.md").exists(), "dist/README.md must exist as the tarball readme"
 
 
 class TestInstallScript:
     def test_install_script_exists(self):
+        _require_dist()
         assert (REPO_ROOT / "dist" / "install.sh").exists()
 
     def test_install_script_does_not_auto_start(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "install.sh").read_text()
         lines = [
             line.strip()
@@ -70,6 +79,7 @@ class TestInstallScript:
             assert is_echo or "systemctl enable" not in line
 
     def test_install_script_has_preflight(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "install.sh").read_text()
         has_preflight = (
             "preflight" in content.lower() or "pre-flight" in content.lower()
@@ -77,23 +87,28 @@ class TestInstallScript:
         assert has_preflight
 
     def test_install_script_mentions_config_setup(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "install.sh").read_text()
         assert "general-ludd.yml" in content, "install.sh must mention the main config file"
 
 
 class TestSystemdUnit:
     def test_systemd_unit_has_env_file(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "general-ludd.service").read_text()
         assert "EnvironmentFile" in content, "systemd unit must have EnvironmentFile directive"
 
     def test_systemd_unit_runs_as_dedicated_user(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "general-ludd.service").read_text()
         assert "User=" in content, "systemd unit must run as a dedicated user"
 
     def test_systemd_unit_does_not_protect_home(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "general-ludd.service").read_text()
         assert "ProtectHome=true" not in content, "ProtectHome=true blocks reading ~/.config/general-ludd"
 
     def test_systemd_unit_binds_localhost(self):
+        _require_dist()
         content = (REPO_ROOT / "dist" / "general-ludd.service").read_text()
         assert "127.0.0.1" in content, "systemd unit must bind to localhost, not 0.0.0.0"

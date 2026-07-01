@@ -172,10 +172,10 @@ class TestBackgroundTestRunnerPollAll:
 
         # Create two test PID files
         for i, testfile in enumerate(["tests/unit/test_a.py", "tests/unit/test_b.py"]):
-            pid_path = tmp_path / f".test-tests_unit_test_{testfile[-5]}.py.pid"
-            pid_path.write_text(f"1234{i}")
-            status_path = tmp_path / f".test-tests_unit_test_{testfile[-5]}.py.status.json"
-            status_path.write_text(json.dumps({"pid": 12340 + i, "testfile": testfile, "phase": "running"}))
+            runner._pid_path(testfile).write_text(f"1234{i}")
+            runner._status_path(testfile).write_text(
+                json.dumps({"pid": 12340 + i, "testfile": testfile, "phase": "running"})
+            )
 
         with patch.object(runner, "_pid_alive", return_value=True):
             results = runner.poll_all()
@@ -395,8 +395,10 @@ class TestBackgroundTestRunnerIntegration:
         runner = BackgroundTestRunner(status_dir=gate_log_dir)
         testfile = "tests/unit/test_example.py"
 
-        pid_path = gate_log_dir / ".test-tests_unit_test_example_py.pid"
-        pid_path.write_text("12345")
+        runner._pid_path(testfile).write_text("12345")
+        runner._status_path(testfile).write_text(
+            json.dumps({"pid": 12345, "testfile": testfile, "phase": "running"})
+        )
 
         with patch.object(runner, "_pid_alive", return_value=True):
             results = runner.poll_all()

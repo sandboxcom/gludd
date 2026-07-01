@@ -166,8 +166,8 @@ class TestWorkerUsesCapabilities:
             work_type="code", prompt_text="do the thing",
             skill_body="be helpful",
         )
-        result = _invoke_gateway_for_job(gateway, job)
-        assert result == "OK"
+        content, _tool_calls = _invoke_gateway_for_job(gateway, job)
+        assert content == "OK"
         # The gateway was called with a messages list that went through the
         # capabilities path (system + user present).
         _, kwargs = gateway.call_model.call_args
@@ -347,7 +347,7 @@ class TestPRDeliveryWiring:
             "general_ludd.git_automation.pr_delivery.PRDelivery", _FakeDelivery
         )
         todo = SimpleNamespace(todo_id="T1", title="My change")
-        loop._maybe_open_pr(todo, "/tmp/wt", "gludd/T1")
+        await loop._maybe_open_pr(todo, "/tmp/wt", "gludd/T1")
         assert calls["pr"]["branch_name"] == "gludd/T1"
         assert calls["pr"]["todo_id"] == "T1"
 
@@ -371,7 +371,7 @@ class TestPRDeliveryWiring:
         monkeypatch.setattr(
             "general_ludd.git_automation.pr_delivery.PRDelivery", _FakeDelivery
         )
-        loop._maybe_open_pr(SimpleNamespace(todo_id="T1", title="x"), "/tmp/wt", "b")
+        await loop._maybe_open_pr(SimpleNamespace(todo_id="T1", title="x"), "/tmp/wt", "b")
         assert called["n"] == 0
 
 

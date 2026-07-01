@@ -33,6 +33,7 @@ _RESOURCE_CONSTRAINTS: dict[str, tuple[str, ...]] = {
     "secret:openbao": ("openbao_paths",),
     "file:": ("path_prefix",),
     "net:": ("allowed_hosts", "allowed_ports"),
+    "agent:": (),
 }
 
 

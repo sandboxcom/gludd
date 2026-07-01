@@ -148,7 +148,7 @@ class EventBus:
         exc = task.exception()
         if exc is not None:
             logger.error(
-                "Async event subscriber task failed: %s", exc, exc_info=exc
+                "Async event subscriber task failed: %s", exc, exc_info=True
             )
 
     def get_history(self) -> list[Event]:

@@ -137,8 +137,11 @@ class TestPublishCallbackException:
         # the count of successful deliveries, so the failing one is excluded.
         assert count == 0
         # The failure must still be surfaced at ERROR (new contract).
-        assert any(rec.levelno == logging.ERROR for rec in caplog.records)
-        assert any("boom" in rec.getMessage() for rec in caplog.records)
+        error_records = [(r.levelno, r.getMessage()) for r in caplog.records]
+        assert any(rec.levelno == logging.ERROR for rec in caplog.records), \
+            f"No ERROR records found. caplog records: {error_records}"
+        assert any("boom" in rec.getMessage() for rec in caplog.records), \
+            f"'boom' not in any log message. Messages: {[r.getMessage() for r in caplog.records]}"
 
     @pytest.mark.asyncio
     async def test_async_callback_exception_does_not_stop_others(self):
