@@ -124,6 +124,37 @@ const EVIDENCE_PATTERNS: RegExp[] = [
 ]
 
 // ============================================================================
+// (2b) RELEASE-EVIDENCE patterns — when a shipped/released/deployed claim is
+//     made, general evidence (commit SHA, gate pass, test count) is NOT
+//     sufficient.  The response MUST contain release-specific evidence:
+//     a VERIFIED line (from verify-remote), verify-release-artifact PASS,
+//     ARTIFACT CHECK: PASS, or gh release view output.
+//
+//     This is required by AGENTS.md "'Done' Claims Require Observable
+//     Verification Evidence" table row "Shipped / released", the
+//     BUGS.md 2026-06-30 Fix #4 requirement, and the principle that
+//     "A Release is an Artifact, Not a Tag."
+// ============================================================================
+
+const RELEASE_CLAIM_PATTERNS: RegExp[] = [
+  /\bshipped\b/i,
+  /\breleased\b/i,
+  /\bdeployed\b/i,
+]
+
+const RELEASE_EVIDENCE_PATTERNS: RegExp[] = [
+  // VERIFIED <branch>@<sha> — output of make verify-remote
+  /VERIFIED\s+\S+@[0-9a-f]{7,40}/i,
+  // verify-release-artifact TAG=... PASS — artifact verification succeeded
+  // [^\n] (not [^.\n]) because version tags contain dots (v0.1.0-alpha.5)
+  /verify-release-artifact[^\n]{0,80}PASS/i,
+  // ARTIFACT CHECK: PASS — inline output of verify_release_artifact.py
+  /ARTIFACT\s+CHECK:\s*PASS/i,
+  // gh release view — explicitly queried the release for assets
+  /gh release view/i,
+]
+
+// ============================================================================
 // (3) HEDGE patterns — honest hedge / negation / in-progress markers. The
 //     claim is qualified, not asserted. Presence anywhere means allow the
 //     response. Ported VERBATIM from no_false_completion_stop.sh
@@ -183,14 +214,30 @@ function classify(text: string): MatchResult {
   if (!hasClaim) {
     return { isFalseDone: false, matchedPhrase: null }
   }
-  const hasEvidence = EVIDENCE_PATTERNS.some(p => p.test(text))
-  if (hasEvidence) {
-    return { isFalseDone: false, matchedPhrase: null }
-  }
   const hasHedge = HEDGE_PATTERNS.some(p => p.test(text))
   if (hasHedge) {
     return { isFalseDone: false, matchedPhrase: null }
   }
+
+  // Release-claim pre-check: when a shipped/released/deployed claim is made,
+  // general evidence (commit SHA, gate pass, test count) is NOT sufficient.
+  // The response MUST contain release-specific evidence (VERIFIED line,
+  // verify-release-artifact PASS, or gh release view). A release claim
+  // without artifact evidence is blocked regardless of other evidence tokens.
+  const hasReleaseClaim = RELEASE_CLAIM_PATTERNS.some(p => p.test(text))
+  if (hasReleaseClaim) {
+    const hasReleaseEvidence = RELEASE_EVIDENCE_PATTERNS.some(p => p.test(text))
+    if (!hasReleaseEvidence) {
+      const m = text.match(/\b(?:shipped|released|deployed)\b/i)
+      return { isFalseDone: true, matchedPhrase: m ? m[0] : "shipped/released/deployed" }
+    }
+  }
+
+  const hasEvidence = EVIDENCE_PATTERNS.some(p => p.test(text))
+  if (hasEvidence) {
+    return { isFalseDone: false, matchedPhrase: null }
+  }
+
   // Find the specific claim phrase that fired (for the directive message).
   let matched: string | null = null
   for (const p of CLAIM_PATTERNS) {
@@ -238,9 +285,22 @@ function writeCount(n: number): void {
 
 function blockDirective(matchedPhrase: string | null, blockNum: number): string {
   const phrase = matchedPhrase ? `"${matchedPhrase}"` : "a done/shipped/landed claim"
+  const isReleasePhrase = matchedPhrase && /\b(?:shipped|released|deployed)\b/i.test(matchedPhrase)
+  const releaseNote = isReleasePhrase
+    ? [
+        "⛔ RELEASE CLAIM WITHOUT ARTIFACT EVIDENCE: a shipped/released/deployed",
+        "claim REQUIRES release-specific evidence — a general commit SHA or gate",
+        "pass is NOT sufficient. The response MUST include one of:",
+        "  • VERIFIED <branch>@<sha> (from make verify-remote)",
+        "  • verify-release-artifact TAG=<t> PASS",
+        "  • ARTIFACT CHECK: PASS",
+        "  • gh release view output showing assets",
+        "",
+      ].join("\n")
+    : ""
   return [
-    `⛔ FALSE-COMPLETION BLOCKED: your response contains ${phrase} but cites`,
-    "no evidence token (commit SHA, run URL, gate output, pass count, VERIFIED line).",
+    releaseNote || `⛔ FALSE-COMPLETION BLOCKED: your response contains ${phrase} but cites`,
+    releaseNote ? "" : "no evidence token (commit SHA, run URL, gate output, pass count, VERIFIED line).",
     "",
     'Per AGENTS.md "\'Done\' Claims Require Observable Verification Evidence":',
     "- Unit fix → named passing test + make-test pass count",
@@ -253,7 +313,7 @@ function blockDirective(matchedPhrase: string | null, blockNum: number): string 
     "Either PASTE the measurement or REPHRASE without the done-claim. " +
       `This is block ${blockNum} of ${MAX_CONSECUTIVE_BLOCKS}; after the cap ` +
       "you'll be allowed through (anti-wedge).",
-  ].join("\n")
+  ].filter(line => line !== "").join("\n")
 }
 
 // ============================================================================

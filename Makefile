@@ -1,4 +1,4 @@
-.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom release-cut release-recut release-create release-branch-new release-promote
+.PHONY: gen-status-table check-status-table check-readme-status check-readme-status-current git-status git-log git-add git-commit git-commit-no-verify help lint typecheck collect-check test test-iso smoke gate gate-background gate-status-check gate-tail gate-logs gate-kill qa healthcheck version molecule-config-check molecule-help molecule-test-help molecule-test-openbao-break-glass-backup molecule-test-facts molecule-test-root molecule-setup-openbao-break-glass molecule-test-help git-remotes git-push-sandboxcom-ssh check-mock-log test-ansible-collections deletion-gate-threshold submodule-init submodule-update submodule-status submodule-pin submodule-sync container-build container-run container-push build-executable bundle-binaries sbom dist test-integration test-live-zai bundle-binaries sbom git-tag-push release-view release-cut release-recut release-create release-branch-new release-promote
 
 VERSION := $(shell grep 'version = ' pyproject.toml | head -1 | cut -d'"' -f2)
 
@@ -264,6 +264,12 @@ molecule-setup-openbao-break-glass:
 git-tags:
 	git tag -l --sort=-creatordate
 
+git-tag-push:
+	@test -n "$(TAG)" || (echo "Usage: make git-tag-push TAG=<tag> MSG='message'"; exit 1)
+	@test -n "$(MSG)" || (echo "Usage: make git-tag-push MSG='message'"; exit 1)
+	git tag -a "$(TAG)" -m "$(MSG)"
+	git push https://github.com/sandboxcom/gludd.git "$(TAG)"
+
 git-remotes:
 	git remote -v
 
@@ -472,21 +478,55 @@ verify-release-artifact:
 	@test -n "$(TAG)" || (echo "Usage: make verify-release-artifact TAG=<tag>"; exit 1)
 	python3 scripts/verify_release_artifact.py "$(TAG)"
 
-# Release targets (stubs)
+# View a GitHub Release
+release-view:
+	@test -n "$(TAG)" || (echo "Usage: make release-view TAG=<tag>"; exit 1)
+	gh release view "$(TAG)" --repo sandboxcom/gludd
+
+# Single release command: check-readme-status → push master → tag+push → confirm release
 release-cut:
-	@echo "release-cut: not yet implemented"
+	@test -n "$(TAG)" || (echo "Usage: make release-cut TAG='<tag>' MSG='<message>'"; exit 1)
+	@test -n "$(MSG)" || (echo "Usage: make release-cut MSG='<message>'"; exit 1)
+	$(MAKE) check-readme-status
+	$(MAKE) git-push-sandboxcom
+	$(MAKE) git-tag-push TAG="$(TAG)" MSG="$(MSG)"
+	$(MAKE) release-view TAG="$(TAG)"
 
+# Re-trigger CI release job: delete + re-push tag
 release-recut:
-	@echo "release-recut: not yet implemented"
+	@test -n "$(TAG)" || (echo "Usage: make release-recut TAG=<tag>"; exit 1)
+	git push https://github.com/sandboxcom/gludd.git --delete "$(TAG)"
+	git push https://github.com/sandboxcom/gludd.git "$(TAG)"
 
+# Build executable + create GitHub Release + verify artifact
 release-create:
-	@echo "release-create: not yet implemented (needs build-executable, gh release, verify-release-artifact)"
+	@test -n "$(TAG)" || (echo "Usage: make release-create TAG=<tag> [NOTES='release notes']"; exit 1)
+	$(MAKE) build-executable
+	gh release create "$(TAG)" --repo sandboxcom/gludd --title "$(TAG)" --notes "$(or $(NOTES),Release $(TAG))" dist/gludd
+	$(MAKE) verify-release-artifact TAG="$(TAG)"
 
+# Create release branch from CI-green base (default: master)
 release-branch-new:
-	@echo "release-branch-new: not yet implemented"
+	@test -n "$(NAME)" || (echo "Usage: make release-branch-new NAME=release/<version> [BASE=master]"; exit 1)
+	@python3 scripts/require_ci_green.py "$$(git rev-parse $(or $(BASE),master))" || (echo "Base branch is not CI-GREEN — cannot start release branch from a red commit"; exit 1)
+	git checkout -b "$(NAME)" $(or $(BASE),master)
 
+# Promote a release branch to master: CI-green → tag → ff-merge → push → verify
 release-promote:
-	@echo "release-promote: not yet implemented"
+	@test -n "$(TAG)" || (echo "Usage: make release-promote TAG=<tag>"; exit 1)
+	@BRANCH=$$(git rev-parse --abbrev-ref HEAD); \
+	SHA=$$(git rev-parse HEAD); \
+	echo "=== Promoting $$BRANCH @ $$SHA as $(TAG) → master ==="; \
+	python3 scripts/require_ci_green.py "$$SHA" || (echo "CI not green for $$SHA on $$BRANCH — aborting promote"; exit 1); \
+	REMOTE_SHA=$$(GIT_SSH_COMMAND="ssh -i sandboxcom_github_rsa -o IdentitiesOnly=yes" git ls-remote https://github.com/sandboxcom/gludd.git refs/heads/$$BRANCH | awk '{print $$1}'); \
+	if [ "$$REMOTE_SHA" != "$$SHA" ]; then echo "REMOTE MISMATCH: remote=$$REMOTE_SHA local=$$SHA — push first then retry"; exit 1; fi; \
+	git tag -a "$(TAG)" -m "$(TAG)"; \
+	git push https://github.com/sandboxcom/gludd.git "$(TAG)"; \
+	git checkout master; \
+	git merge --ff-only "$$BRANCH"; \
+	git push https://github.com/sandboxcom/gludd.git master; \
+	NEW_SHA=$$(git rev-parse HEAD); \
+	$(MAKE) verify-remote BRANCH=master SHA=$$NEW_SHA
 
 # Build pyinstaller executable
 build-executable:
