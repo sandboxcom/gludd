@@ -346,16 +346,20 @@ class TestEnforceStopConstraintPatterns:
             "constraintBlockResponse must offer dispatching a research task"
         )
 
-    def test_constraint_detector_wired_into_response_transform(self):
-        """The response.transform hook must invoke detectConstraintAsStop."""
+    def test_constraint_detector_wired_into_text_complete(self):
+        """The experimental.text.complete hook must invoke detectConstraintAsStop."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"detectConstraintAsStop\s*\(\s*output\s*\)",
+            r"detectConstraintAsStop\s*\(\s*turnState\.accumulatedText\s*\)",
             src,
         ), (
-            "detectConstraintAsStop(output) is not called inside "
-            "experimental.chat.response.transform — the constraint guardrail "
+            "detectConstraintAsStop(turnState.accumulatedText) is not called "
+            "inside experimental.text.complete — the constraint guardrail "
             "is dead code"
+        )
+        assert re.search(r"session\.idle", src), (
+            "session.idle does not appear in enforce-stop.ts source — "
+            "the hook is not wired to the text.complete event"
         )
 
 
@@ -418,16 +422,20 @@ class TestEnforceStopResponseLooksTerminal:
             "question mark (the long-body signal only fires for non-questions)"
         )
 
-    def test_wired_into_response_transform(self):
-        """The response.transform hook must invoke responseLooksTerminal."""
+    def test_wired_into_text_complete(self):
+        """The experimental.text.complete hook must invoke responseLooksTerminal."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"responseLooksTerminal\s*\(\s*output\s*\)",
+            r"responseLooksTerminal\s*\(\s*turnState\.accumulatedText\s*\)",
             src,
         ), (
-            "responseLooksTerminal(output) is not called inside "
-            "experimental.chat.response.transform — the state-based guardrail "
+            "responseLooksTerminal(turnState.accumulatedText) is not called "
+            "inside experimental.text.complete — the state-based guardrail "
             "is dead code"
+        )
+        assert re.search(r"session\.idle", src), (
+            "session.idle does not appear in enforce-stop.ts source — "
+            "the hook is not wired to the text.complete event"
         )
 
     def test_detects_qa_recap_bolded_headers(self):
@@ -469,8 +477,9 @@ class TestEnforceStopResponseLooksTerminal:
             "The state-based block response is missing its "
             "'HARD STOP — STATE-BASED BLOCK' header"
         )
-        assert "ratchetEntries.length" in src, (
-            "The state-based block must report the ratchet entry count"
+        assert "ratchetCount" in src, (
+            "The state-based block must report the ratchet entry count via "
+            "the ratchetCount variable (cache-read pattern in text.complete)"
         )
 
     def test_detects_all_checked_checkbox_table(self):
@@ -607,14 +616,24 @@ class TestEnforceStopRepoPendingWork:
         )
 
     def test_repo_has_pending_work_wired_into_state_check(self):
-        """The state-based check must OR repoHasPendingWork() with ratchetEntries."""
+        """The state-based check must wire repoHasPendingWork into hasPendingWork
+        via the cache-read pattern (repoPending fallback)."""
         src = ENFORCE_STOP.read_text()
+        # repoHasPendingWork() is called as the ?? fallback on cache read
         assert re.search(
-            r"repoHasPendingWork\(\)\s*\|\|\s*ratchetEntries\.length",
+            r"repoPending\s*=\s*cache\?\.repoPending\s*\?\?\s*repoHasPendingWork\(\)",
             src,
         ), (
-            "State-based check must use 'repoHasPendingWork() || ratchetEntries.length' "
-            "so uncommitted/unpushed work is treated as pending regardless of ratchet"
+            "repoPending must be derived as 'cache?.repoPending ?? repoHasPendingWork()' "
+            "so the fallback-to-live-call pattern is intact"
+        )
+        # hasPendingWork must OR repoPending
+        assert re.search(
+            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount",
+            src,
+        ), (
+            "hasPendingWork must include 'repoPending' so uncommitted/unpushed "
+            "work is treated as pending regardless of ratchet"
         )
 
     def test_repo_has_pending_work_called_in_both_blocks(self):
@@ -738,14 +757,15 @@ class TestEnforceStopTasksMdUnchecked:
         )
 
     def test_tasks_md_has_unchecked_wired_into_has_pending_work(self):
-        """hasPendingWork must OR tasksMdHasUnchecked() with the other checks."""
+        """hasPendingWork must OR tasksMdUnchecked (from cache) with the other checks."""
         src = ENFORCE_STOP.read_text()
         assert re.search(
-            r"const\s+hasPendingWork\s*=\s*repoHasPendingWork\(\)\s*\|\|\s*ratchetEntries\.length\s*>\s*0\s*\|\|\s*tasksMdHasUnchecked\(\)",
+            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed",
             src,
         ), (
-            "hasPendingWork must be 'repoHasPendingWork() || ratchetEntries.length > 0 || "
-            "tasksMdHasUnchecked()' so unchecked TASKS.md rows are treated as pending work"
+            "hasPendingWork must be "
+            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed' "
+            "so unchecked TASKS.md rows are treated as pending work"
         )
 
     def test_state_block_shows_tasks_md_status(self):
@@ -887,24 +907,25 @@ class TestEnforceStopGateStatusCiRed:
         )
 
     def test_ci_red_wired_into_has_pending_work(self):
-        """hasPendingWork must OR gateStatusIsRed() and responseMentionsCiRed(output)."""
+        """hasPendingWork must OR ciRed (gateRed || responseMentionsCiRed)."""
         src = ENFORCE_STOP.read_text()
-        # ciRed variable declaration must combine both signals
+        # ciRed variable declaration must combine both signals via cache
         assert re.search(
-            r"ciRed\s*=\s*gateStatusIsRed\(\)\s*\|\|\s*responseMentionsCiRed\s*\(\s*output\s*\)",
+            r"ciRed\s*=\s*gateRed\s*\|\|\s*responseMentionsCiRed\s*\(\s*turnState\.accumulatedText\s*\)",
             src,
         ), (
             "ciRed must be declared as "
-            "'gateStatusIsRed() || responseMentionsCiRed(output)'"
+            "'gateRed || responseMentionsCiRed(turnState.accumulatedText)' "
+            "where gateRed = cache?.gateStatusRed ?? gateStatusIsRed()"
         )
         # hasPendingWork must OR ciRed
         assert re.search(
-            r"hasPendingWork\s*=\s*repoHasPendingWork\(\)\s*\|\|\s*ratchetEntries\.length\s*>\s*0\s*\|\|\s*tasksMdHasUnchecked\(\)\s*\|\|\s*ciRed",
+            r"hasPendingWork\s*=\s*repoPending\s*\|\|\s*ratchetCount\s*>\s*0\s*\|\|\s*tasksMdUnchecked\s*\|\|\s*ciRed",
             src,
         ), (
             "hasPendingWork must be "
-            "'repoHasPendingWork() || ratchetEntries.length > 0 || "
-            "tasksMdHasUnchecked() || ciRed' so gate-status red triggers the block"
+            "'repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed' "
+            "so gate-status red triggers the block"
         )
 
     def test_state_block_shows_ci_red_line(self):

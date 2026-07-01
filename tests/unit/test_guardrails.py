@@ -428,7 +428,7 @@ class TestGateStatusEnforcement:
 
     def test_plugin_response_transform_has_state_based_block(self):
         content = PLUGIN_FILE.read_text()
-        assert "chat.response.transform" in content
+        assert "experimental.text.complete" in content
         assert "readFileSync" in content or "gate-status" in content, (
             "completion claims must be verified against .gate-status, not just vocabulary"
         )
@@ -441,12 +441,18 @@ class TestGateStatusEnforcement:
             "response must be replaced when gate is red/stale/missing"
         )
 
+    def test_plugin_registers_session_idle_event(self):
+        content = PLUGIN_FILE.read_text()
+        assert '"session.idle"' in content, (
+            "session.idle event must be registered to reset turn state per turn"
+        )
+
 
 class TestSystemPromptDiet:
     def test_system_prompt_is_compact(self):
         content = PLUGIN_FILE.read_text()
         transform_start = content.index('"experimental.chat.system.transform"')
-        next_hook = content.index('"experimental.chat.response.transform"')
+        next_hook = content.index('"experimental.text.complete"')
         transform_block = content[transform_start:next_hook]
         lines = transform_block.split("\n")
         assert len(lines) < 120, (

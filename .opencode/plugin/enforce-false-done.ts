@@ -49,6 +49,11 @@ const STATE_FILE =
   process.env.GLUDD_FALSE_DONE_STATE_FILE ||
   "/tmp/gludd-false-done-blocks.json"
 
+const turnState: { accumulatedText: string; blocked: boolean } = {
+  accumulatedText: "",
+  blocked: false,
+}
+
 // ============================================================================
 // (1) CLAIM patterns — strong completion / success claim about shippable /
 //     outward work. Ported VERBATIM from no_false_completion_stop.sh
@@ -321,36 +326,46 @@ function blockDirective(matchedPhrase: string | null, blockNum: number): string 
 // ============================================================================
 export default (async () => {
   return {
-    "experimental.chat.response.transform": async (_input: unknown, output: unknown) => {
+    event: async ({ event }: { event: { type: string } }) => {
+      if (event.type === "session.idle") {
+        turnState.accumulatedText = ""
+        turnState.blocked = false
+      }
+    },
+    "experimental.text.complete": async (
+      input: { sessionID?: string; messageID: string; partID: string },
+      output: { text: string },
+    ) => {
       try {
-        if (!FALSE_DONE_ENFORCE) return output
-        if (typeof output !== "string") return output
+        if (!FALSE_DONE_ENFORCE) return
 
-        const result = classify(output)
+        turnState.accumulatedText += output.text
 
-        if (!result.isFalseDone) {
-          // Honest response (no claim, claim+evidence, or claim+hedge).
-          // Reset the consecutive-block counter.
-          if (readCount() !== 0) writeCount(0)
-          return output
+        if (turnState.blocked) {
+          output.text = ""
+          return
         }
 
-        // False-completion claim detected. Apply the bounded anti-wedge counter.
+        const result = classify(turnState.accumulatedText)
+
+        if (!result.isFalseDone) {
+          if (readCount() !== 0) writeCount(0)
+          return
+        }
+
         const current = readCount()
         if (current >= MAX_CONSECUTIVE_BLOCKS) {
-          // Anti-wedge: cap reached, allow this one through and reset.
           writeCount(0)
-          return output
+          return
         }
 
         const next = current + 1
         writeCount(next)
 
-        // REPLACE (not append) the response with the block directive so the
-        // unverified claim never reaches the user.
-        return blockDirective(result.matchedPhrase, next)
+        output.text = blockDirective(result.matchedPhrase, next)
+        turnState.blocked = true
       } catch {
-        return output // fail open
+        return // fail open
       }
     },
   }

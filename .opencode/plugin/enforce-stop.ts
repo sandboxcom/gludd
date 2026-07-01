@@ -32,6 +32,25 @@ import * as path from "node:path"
 const FLOOR = parseInt(process.env.CLAUDE_AGENT_FLOOR || "10", 10)
 const NO_WAIT_ENFORCE = process.env.GLUDD_NO_WAIT_ENFORCE !== "0"  // DEFAULT: blocking (2026-06-22)
 
+const STATE_FILE =
+  process.env.GLUDD_STOP_STATE_FILE ||
+  "/tmp/gludd-stop-state.json"
+
+interface StopStateCache {
+  ts: number
+  ratchetEntries: number
+  tasksMdUnchecked: boolean
+  gateStatusRed: boolean
+  repoPending: boolean
+  backlogOpen: number
+  backlogItems: string[]
+}
+
+const turnState: { accumulatedText: string; blocked: boolean } = {
+  accumulatedText: "",
+  blocked: false,
+}
+
 // ============================================================================
 // NO-BLOCKING-QUESTIONS (port of no_blocking_questions_pretool.sh)
 // User directive (2026-06-18): "never interrupt work to ask; default to action."
@@ -513,6 +532,34 @@ function buildOrchestrationContext(): string {
 // ============================================================================
 export default (async ({ }) => {
   return {
+    // --- Session idle — reset turn state and cache expensive checks ----------
+    "session.idle": async () => {
+      try {
+        turnState.accumulatedText = ""
+        turnState.blocked = false
+
+        const ratchetEntries = ratchetHasEntries()
+        const tasksMdUnchecked = tasksMdHasUnchecked()
+        const gateStatusRed = gateStatusIsRed()
+        const repoPending = repoHasPendingWork()
+        const backlog = multitaskingBacklogOpen()
+
+        const state: StopStateCache = {
+          ts: Date.now(),
+          ratchetEntries,
+          tasksMdUnchecked,
+          gateStatusRed,
+          repoPending,
+          backlogOpen: backlog ? backlog.open.length : 0,
+          backlogItems: backlog ? backlog.open : [],
+        }
+
+        fs.writeFileSync(STATE_FILE, JSON.stringify(state), "utf8")
+      } catch {
+        // fail open — skip cache write
+      }
+    },
+
     // --- Deny the question tool (no-blocking-questions) ----------------------
     "tool.execute.before": async (input, output) => {
       if (input.tool === "question") {
@@ -529,8 +576,22 @@ export default (async ({ }) => {
         const args = cmd as { command?: string } | undefined
         const command = typeof args?.command === "string" ? args.command.trim() : ""
         if (command.startsWith("make ") && STOP_LIKE_TARGETS_RE.test(command)) {
-          const taskMd = tasksMdHasUnchecked()
-          const ratchetCount = ratchetHasEntries()
+          let taskMd: boolean
+          let ratchetCount: number
+          try {
+            if (fs.existsSync(STATE_FILE)) {
+              const raw = fs.readFileSync(STATE_FILE, "utf8")
+              const cache = JSON.parse(raw)
+              taskMd = cache.tasksMdUnchecked ?? tasksMdHasUnchecked()
+              ratchetCount = cache.ratchetEntries ?? ratchetHasEntries()
+            } else {
+              taskMd = tasksMdHasUnchecked()
+              ratchetCount = ratchetHasEntries()
+            }
+          } catch {
+            taskMd = tasksMdHasUnchecked()
+            ratchetCount = ratchetHasEntries()
+          }
           if (taskMd || ratchetCount > 0) {
             throw new Error(stopLikeDenyMessage(taskMd, ratchetCount))
           }
@@ -552,36 +613,52 @@ export default (async ({ }) => {
     },
 
     // --- Stop-pattern enforcement (no-wait + backlog + ratchet + pending-todos) ---
-    // Runs in response.transform — examines the OUTGOING assistant message.
+    // Runs in experimental.text.complete — accumulates text across chunks and
+    // examines the GROWING assistant message. Reads pre-computed state from
+    // /tmp/gludd-stop-state.json (written by session.idle), falling back to
+    // live calls if cache is missing/stale.
     // The DEFAULT is ENFORCING (blocking) as of 2026-06-22. The advisory era
     // (2026-06-21) allowed the agent to stop and ask "which option do you want?"
     // — that was the bug. Set GLUDD_NO_WAIT_ENFORCE=0 to make it advisory again.
-    "experimental.chat.response.transform": async (_input, output) => {
+    "experimental.text.complete": async (_input, output) => {
       try {
-        if (typeof output !== "string") return output
+        turnState.accumulatedText += output.text || ""
 
-        // --- STATE-BASED CHECK (BUGS.md audit #1): if the repo has pending work
-        // (ratchet entries OR git pending state: unpushed commits / dirty tree)
-        // AND the response looks terminal, block. This is the Whac-A-Mole fix:
-        // instead of matching specific phrases, ask 'does the repo have pending
-        // work?' AND 'does this response look like a finale?' If both are true,
-        // the response is BLOCKED regardless of wording. The git-pending check
-        // (repoHasPendingWork) was added 2026-06-28 after the ratchet-only proxy
-        // missed an incident where work was done locally but not pushed/committed
-        // and the agent stopped with a "## Done — answer" finale. ---
-        const ratchetPath = path.join(process.cwd(), "config", "ratchet.yml")
-        let ratchetEntries: string[] = []
-        if (fs.existsSync(ratchetPath)) {
-          const ratchetContent = fs.readFileSync(ratchetPath, "utf8")
-          ratchetEntries = ratchetContent.split("\n").filter(l => l.trim() && !l.trim().startsWith("#") && l.includes(":"))
+        if (turnState.blocked) {
+          output.text = ""
+          return output
         }
-        const ciRed = gateStatusIsRed() || responseMentionsCiRed(output)
-        const hasPendingWork = repoHasPendingWork() || ratchetEntries.length > 0 || tasksMdHasUnchecked() || ciRed
-        if (hasPendingWork && responseLooksTerminal(output)) {
-          const ciRedLine = ciRed ? `; gate-status red: ${gateStatusIsRed() ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(output) ? "yes" : "no"}` : ""
-          return [
+
+        let cache: StopStateCache | null = null
+        try {
+          if (fs.existsSync(STATE_FILE)) {
+            const raw = fs.readFileSync(STATE_FILE, "utf8")
+            cache = JSON.parse(raw)
+          }
+        } catch {
+          cache = null
+        }
+
+        const ratchetCount = cache?.ratchetEntries ?? ratchetHasEntries()
+        const tasksMdUnchecked = cache?.tasksMdUnchecked ?? tasksMdHasUnchecked()
+        const gateRed = cache?.gateStatusRed ?? gateStatusIsRed()
+        const repoPending = cache?.repoPending ?? repoHasPendingWork()
+        const backlogOpenCount = cache?.backlogOpen ?? (multitaskingBacklogOpen()?.open?.length ?? 0)
+        const backlogOpenItems = cache?.backlogItems ?? (multitaskingBacklogOpen()?.open ?? [])
+
+        const ciRed = gateRed || responseMentionsCiRed(turnState.accumulatedText)
+        const hasPendingWork = repoPending || ratchetCount > 0 || tasksMdUnchecked || ciRed
+
+        // --- STATE-BASED CHECK: if the repo has pending work AND the response
+        // looks terminal, block. This is the Whac-A-Mole fix: instead of matching
+        // specific phrases, ask 'does the repo have pending work?' AND 'does this
+        // response look like a finale?' If both are true, the response is BLOCKED
+        // regardless of wording. ---
+        if (hasPendingWork && responseLooksTerminal(turnState.accumulatedText)) {
+          const ciRedLine = ciRed ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}` : ""
+          output.text = [
             "⛔ HARD STOP — STATE-BASED BLOCK: the repo has KNOWN-UNFINISHED WORK",
-            `(ratchet: ${ratchetEntries.length} entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"}${ciRedLine})`,
+            `(ratchet: ${ratchetCount} entries; git pending: ${repoPending ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}${ciRedLine})`,
             "AND your response looks like a completion report (table, hash,",
             "all-checked checkbox ledger, item-count claim, DONE/COMPLETE).",
             "",
@@ -595,17 +672,14 @@ export default (async ({ }) => {
             "end your turn. Dispatch ≥5 subagents on the next pending work items",
             "NOW. A text-only stop is this bug repeating — do not be the 21st incident.",
           ].join("\n")
+          turnState.blocked = true
+          return output
         }
 
-        // --- RATCHET CHECK (vocabulary-based): if the repo has pending work
-        // (ratchet entries OR git pending state), the project has known-unfixed
-        // work. Any response that sounds like a completion report or a
-        // stop-to-ask is BLOCKED. This is the state-based check that catches
-        // stop patterns vocabulary lists miss. Same hasPendingWork OR as the
-        // terminal check above so uncommitted/unpushed work is treated as
-        // pending regardless of ratchet contents. ---
+        // --- PENDING-WORK AUDIT: if the repo has pending work and the response
+        // sounds like a stop (deferral/options/permission-seek), block. ---
         if (hasPendingWork) {
-          const lower = output.toLowerCase()
+          const lower = turnState.accumulatedText.toLowerCase()
           const soundsLikeStop = (
             lower.includes("which do you want") ||
             lower.includes("which would you") ||
@@ -624,10 +698,10 @@ export default (async ({ }) => {
             (lower.includes("options") && lower.includes("?"))
           )
           if (soundsLikeStop) {
-            const ciRedLine = ciRed ? `; gate-status red: ${gateStatusIsRed() ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(output) ? "yes" : "no"}` : ""
-            return [
+            const ciRedLine = ciRed ? `; gate-status red: ${gateRed ? "yes" : "no"}; CI mentioned in response: ${responseMentionsCiRed(turnState.accumulatedText) ? "yes" : "no"}` : ""
+            output.text = [
               "⛔ HARD STOP — PENDING-WORK AUDIT: the repo has KNOWN-UNFINISHED",
-              `work (${ratchetEntries.length} ratchet entries; git pending: ${repoHasPendingWork() ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdHasUnchecked() ? "yes" : "no"}${ciRedLine}).`,
+              `work (${ratchetCount} ratchet entries; git pending: ${repoPending ? "yes" : "no"}; TASKS.md unchecked: ${tasksMdUnchecked ? "yes" : "no"}${ciRedLine}).`,
               "Your response presents options / asks permission",
               "instead of DOING THE WORK. Per the Never-Block-on-Questions",
               "policy: pick the highest-probability-success option, state the",
@@ -636,28 +710,33 @@ export default (async ({ }) => {
               "",
               "DISPATCH WORK NOW. Do not ask. Do not present. EXECUTE.",
             ].join("\n")
+            turnState.blocked = true
+            return output
           }
         }
 
         // Constraint-as-stop (self-heal — 2026-06-23): same enforcement gate as
         // no-wait. Runs BEFORE the no-wait check so the constraint-specific
-        // directive wins for overlapping phrases ("isn't possible", "no way to",
-        // "have to wait"). When detected, inject the workaround directive so the
-        // agent engineers a solution instead of parking it.
-        if (NO_WAIT_ENFORCE && detectConstraintAsStop(output)) {
-          return constraintBlockResponse()
+        // directive wins for overlapping phrases.
+        if (NO_WAIT_ENFORCE && detectConstraintAsStop(turnState.accumulatedText)) {
+          output.text = constraintBlockResponse()
+          turnState.blocked = true
+          return output
         }
 
         // No-wait stop pattern (now ENFORCING by default — 2026-06-22)
-        if (NO_WAIT_ENFORCE && detectNoWaitPattern(output)) {
-          return noWaitBlockResponse()
+        if (NO_WAIT_ENFORCE && detectNoWaitPattern(turnState.accumulatedText)) {
+          output.text = noWaitBlockResponse()
+          turnState.blocked = true
+          return output
         }
 
         // Multitasking backlog (always enforces — it's a standing user directive
         // that the backlog is worked until done-with-evidence).
-        const backlog = multitaskingBacklogOpen()
-        if (backlog && backlog.open.length > 0) {
-          return backlogBlockResponse(backlog.open)
+        if (backlogOpenCount > 0) {
+          output.text = backlogBlockResponse(backlogOpenItems)
+          turnState.blocked = true
+          return output
         }
 
         return output
