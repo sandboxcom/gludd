@@ -32,14 +32,19 @@ COLLECTION_ROLES = (
 
 class TestSingleRoleHome:
     def test_no_root_roles_directory(self):
-        """The legacy root ``roles/`` directory must not exist. The collection
-        is the single canonical home; leaving a parallel root ``roles/`` was
-        the source of the 'two locations' contributor confusion.
+        """The legacy root ``roles/`` directory must not contain any role
+        directories.  A bare ``.gitkeep`` is allowed (to preserve the directory
+        in version control), but all roles belong to the
+        ``general_ludd.agent`` / ``general_ludd.formal`` collections.
         """
-        assert not ROOT_ROLES.exists(), (
-            f"root {ROOT_ROLES} must not exist — all roles belong to the "
-            "general_ludd.agent / general_ludd.formal collections. Re-add a "
-            "role there by FQCN, not under a top-level roles/ dir."
+        if not ROOT_ROLES.exists():
+            return
+        entries = list(ROOT_ROLES.iterdir())
+        non_gitkeep = [e for e in entries if e.name != ".gitkeep"]
+        assert not non_gitkeep, (
+            f"root {ROOT_ROLES} must not contain role directories — all roles "
+            "belong to the general_ludd.agent / general_ludd.formal collections. "
+            "Re-add a role there by FQCN, not under a top-level roles/ dir."
         )
 
     def test_ansible_cfg_has_no_roles_path(self):

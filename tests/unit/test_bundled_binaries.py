@@ -45,10 +45,11 @@ class TestBundledBinaries:
             bundles = Path(tmp) / "bundled_binaries"
             bundles.mkdir()
             (bundles / "openbao").write_text("fake-binary")
+            (bundles / "opentofu").write_text("fake-binary")
             store = FileStore(root_path=tmp)
             boot = BinaryBootstrapper(store=store, bundled_binaries_dir=str(bundles))
             assert boot._has_bundled("openbao") is True
-            assert boot._has_bundled("opentofu") is True  # exists in dist/binaries/
+            assert boot._has_bundled("opentofu") is True
 
     def test_status_shows_bundled_binaries(self):
         from general_ludd.cli import _gather_offline_status

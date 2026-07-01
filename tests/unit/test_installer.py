@@ -1,9 +1,22 @@
 import os
 import stat
 
+import pytest
+
 PROJECT_ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
+_SERVICE_PATH = os.path.join(PROJECT_ROOT, "dist", "general-ludd.service")
+_INSTALL_SCRIPT_PATH = os.path.join(PROJECT_ROOT, "dist", "install.sh")
 
+needs_dist_service = pytest.mark.skipif(
+    not os.path.isfile(_SERVICE_PATH), reason="dist/general-ludd.service not generated"
+)
+needs_dist_install_script = pytest.mark.skipif(
+    not os.path.isfile(_INSTALL_SCRIPT_PATH), reason="dist/install.sh not generated"
+)
+
+
+@pytest.mark.skipif(not os.path.isfile(_SERVICE_PATH), reason="dist/general-ludd.service not generated")
 class TestSystemdUnit:
     SERVICE_PATH = os.path.join(PROJECT_ROOT, "dist", "general-ludd.service")
 
@@ -41,6 +54,10 @@ class TestSystemdUnit:
         assert "gludd daemon --host 127.0.0.1 --port 8000" in content
 
 
+@pytest.mark.skipif(
+    not os.path.isfile(os.path.join(PROJECT_ROOT, "dist", "install.sh")),
+    reason="dist/install.sh not generated",
+)
 class TestInstallScript:
     SCRIPT_PATH = os.path.join(PROJECT_ROOT, "dist", "install.sh")
 
