@@ -131,6 +131,7 @@ class TestPublishCallbackException:
             raise RuntimeError("boom")
 
         bus.subscribe("test.exc", bad_handler)
+        logging.getLogger("general_ludd.events.bus").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
             count = bus.publish(Event(type="test.exc"))
         # A throwing subscriber is NOT a successful delivery: publish() returns

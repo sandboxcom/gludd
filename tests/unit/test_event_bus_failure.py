@@ -37,6 +37,7 @@ class TestPublishFailureAccounting:
         bus.subscribe(EventType.MODEL_ADDED, bad)
         bus.subscribe(EventType.MODEL_ADDED, good)
 
+        logging.getLogger("general_ludd.events.bus").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
             delivered = bus.publish(Event(type=EventType.MODEL_ADDED, payload={}))
 
@@ -61,6 +62,7 @@ class TestPublishFailureAccounting:
 
     def test_no_subscribers_returns_zero_and_logs_nothing(self, caplog):
         bus = EventBus()
+        logging.getLogger("general_ludd.events.bus").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
             assert bus.publish(Event(type=EventType.CUSTOM, payload={})) == 0
         assert [r for r in caplog.records if r.levelno == logging.ERROR] == []
@@ -74,6 +76,7 @@ class TestPublishFailureAccounting:
 
         bus.subscribe("test.async_fail", bad)
 
+        logging.getLogger("general_ludd.events.bus").propagate = True
         with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
             # Counted as delivered at dispatch time (the coroutine was scheduled).
             delivered = bus.publish(Event(type="test.async_fail"))
@@ -125,6 +128,7 @@ class TestPublishFailureAccounting:
 
             bus.subscribe("test.async_fail_syncpath", bad)
 
+            logging.getLogger("general_ludd.events.bus").propagate = True
             with caplog.at_level(logging.ERROR, logger="general_ludd.events.bus"):
                 delivered = bus.publish(Event(type="test.async_fail_syncpath"))
 

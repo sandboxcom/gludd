@@ -13,6 +13,7 @@ layer (general_ludd.connectors.base) without depending on any concrete connector
 
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 import pytest
@@ -340,6 +341,7 @@ def test_normalized_record_coerces_nan_and_inf_ts_to_none() -> None:
 def test_normalized_record_logs_warning_on_non_finite(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    logging.getLogger("general_ludd.connectors.base").propagate = True
     # Coercion must never be silent (observability invariant).
     with caplog.at_level("WARNING", logger="general_ludd.connectors.base"):
         normalized_record(source="s", kind="metrics", value=float("nan"))
@@ -360,6 +362,7 @@ def test_finite_or_none_direct() -> None:
 def test_find_caps_unbounded_result_set_and_warns(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    logging.getLogger("general_ludd.connectors.base").propagate = True
     cap = Observability.MAX_FIND_RESULTS
     huge = [_rec(ts=float(i), source="flood", message=str(i)) for i in range(cap + 50)]
     reg = SourceRegistry()
@@ -376,6 +379,7 @@ def test_find_caps_unbounded_result_set_and_warns(
 
 
 def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> None:
+    logging.getLogger("general_ludd.connectors.base").propagate = True
     cap = Observability.MAX_FIND_RESULTS
     half = cap // 2 + 100  # each source overshoots half the cap
     reg = SourceRegistry()
@@ -393,6 +397,7 @@ def test_find_caps_across_multiple_sources(caplog: pytest.LogCaptureFixture) -> 
 def test_find_under_cap_returns_all_without_warning(
     caplog: pytest.LogCaptureFixture,
 ) -> None:
+    logging.getLogger("general_ludd.connectors.base").propagate = True
     reg = SourceRegistry()
     reg.register(_FakeSource("s", "logs", [_rec(ts=float(i), source="s") for i in range(5)]))
     obs = Observability(reg)
