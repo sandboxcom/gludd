@@ -634,7 +634,7 @@ dist: bundle-binaries sbom
 		echo '[Service]' >> $(TARBALL_DIR)/general-ludd.service; \
 		echo 'User=general-ludd' >> $(TARBALL_DIR)/general-ludd.service; \
 		echo 'EnvironmentFile=/etc/general-ludd/config.env' >> $(TARBALL_DIR)/general-ludd.service; \
-		echo 'ExecStart=/usr/local/bin/gludd daemon --bind 127.0.0.1' >> $(TARBALL_DIR)/general-ludd.service; \
+		echo 'ExecStart=/usr/local/bin/gludd daemon --host 127.0.0.1 --port 8000' >> $(TARBALL_DIR)/general-ludd.service; \
 		echo 'Restart=on-failure' >> $(TARBALL_DIR)/general-ludd.service; \
 		echo 'NoNewPrivileges=true' >> $(TARBALL_DIR)/general-ludd.service; \
 		echo 'ProtectSystem=strict' >> $(TARBALL_DIR)/general-ludd.service; \
@@ -646,9 +646,19 @@ dist: bundle-binaries sbom
 		echo '# gludd install script' >> $(TARBALL_DIR)/install.sh; \
 		echo 'set -eu' >> $(TARBALL_DIR)/install.sh; \
 		echo '' >> $(TARBALL_DIR)/install.sh; \
+		echo '' >> $(TARBALL_DIR)/install.sh; \
+		echo '# Check root' >> $(TARBALL_DIR)/install.sh; \
+		echo 'if [ "$$(id -u)" -ne 0 ]; then echo "Must run as root"; exit 1; fi' >> $(TARBALL_DIR)/install.sh; \
+		echo '' >> $(TARBALL_DIR)/install.sh; \
 		echo 'echo "Running preflight checks..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'echo "Creating directories..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'mkdir -p /var/log/general-ludd /var/lib/general-ludd /etc/general-ludd' >> $(TARBALL_DIR)/install.sh; \
 		echo 'echo "Installing gludd binary..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'cp gludd /usr/local/bin/gludd' >> $(TARBALL_DIR)/install.sh; \
 		echo 'echo "Setting up general-ludd.yml config..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'echo "Installing systemd unit..."' >> $(TARBALL_DIR)/install.sh; \
+		echo 'cp general-ludd.service /etc/systemd/system/general-ludd.service' >> $(TARBALL_DIR)/install.sh; \
+		echo 'systemctl daemon-reload' >> $(TARBALL_DIR)/install.sh; \
 		chmod +x $(TARBALL_DIR)/install.sh; \
 	else \
 		$(MAKE) build-executable; \
