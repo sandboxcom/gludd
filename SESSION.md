@@ -5,13 +5,13 @@
 > IF THIS DISAGREES WITH `make gate`, THE GATE IS CORRECT.
 
 ## Last Updated
-- 2026-06-30
+- 2026-07-01
 
 ## Current Work
 
-- **HEAD: `2ed2ea08`** on master — ~26 commits pushed across multiple waves.
-- **Lint 0, typecheck 0 (465 source files), collect 0 (15,658 tests).** Gate prereqs all green.
-- **All targeted suites pass** (214+ tests). CI test shard assertion mismatches heavily reduced this wave (5 commits: caplog propagate, release target stubs, dist target fixes, worker assertions, model gateway fixes).
+- **HEAD: `efdee46a`** on master — 22 commits ahead of sandboxcom/master.
+- **Lint 0, typecheck 0 (465 source files), collect 0 (15,687 tests).** Gate prereqs all green.
+- **119 enforce-stop.ts CI verdict query tests pass** (Q3.9 evidence row).
 - **Alpha.3** is the only released version with a downloadable artifact.
   Alpha.4 and alpha.5 were never shipped (no artifact, no green CI release job).
 
@@ -46,6 +46,9 @@
 
 | Hash | Message |
 |------|---------|
+| `efdee46a` | feat: enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119 tests) |
+| `2495d0f1` | fix: migrate enforce-false-done and enforce-stop from dead response.transform to text.complete + session.idle hooks (BUGS.md 2026-06-30 incident fix #1-3) |
+| `c0422a8f` | docs: document response.transform dead-code finding, update SESSION.md with Fix #4 + new critical gap |
 | `2ed2ea08` | feat: Fix #4 — wire verify-release-artifact into completion gate, real release targets, plugin registration (BUGS.md 2026-06-30 incident) |
 | `2f96c21b` | docs: add Q3.9 evidence row to TASKS.md |
 | `252c15dc` | docs: update SESSION.md with session end state - HEAD 2757daa0, 15658 tests, 24 commits, CI fix wave |
@@ -73,8 +76,8 @@
 
 ## Known Gaps
 
-1. **CRITICAL: `experimental.chat.response.transform` is dead code in all 5 response-scanning plugins** — This hook is not part of the official opencode Plugin Hooks interface. Plugins `enforce-stop.ts`, `enforce-make.ts`, `enforce-todos.ts`, `enforce-floor.ts`, and `enforce-false-done.ts` all register `experimental.chat.response.transform` but it has NEVER fired in any opencode session. **Only `tool.execute.before` hooks are active.** Proof: `/tmp/gludd-false-done-blocks.json` is missing, `/tmp/gludd-session-start.json` has 551 dispatches but no transform-triggered events. All 5 response-scanning plugins need to be ported to a mechanism that opencode actually supports (likely `chat.response.transform` or equivalent in the official API), or rewritten to use `tool.execute.before` pattern instead.
-2. **CI still pending on master** — CI run on latest push (`2ed2ea08`) not yet completed.
+1. **PARTIALLY FIXED: `experimental.chat.response.transform` dead code in response-scanning plugins** — `enforce-false-done.ts` and `enforce-stop.ts` migrated to `text.complete` + `session.idle` hooks (`2495d0f1`). Remaining plugins (`enforce-make.ts`, `enforce-todos.ts`, `enforce-floor.ts`) still use the dead `response.transform` hook and need migration.
+2. **CI still pending on master** — CI run on latest push (`efdee46a`) not yet completed. `enforce-stop.ts` now has CI PENDING detection wired into `hasPendingWork` (so it won't false-stop while CI is running).
 3. **CI test shard assertion mismatches** — reduced but may still have some failures; latest wave (`2757daa0`, `f62289bd`, `43b60450`) fixed caplog propagate, release target stubs, dist target scrubbing, worker assertions, model gateway errors.
 4. **Full local test suite** — OOM under 8-worker xdist; CI-as-gate used for full validation.
 5. **Pre-existing Makefile target tests** — `make container-build`, `make container-run`, `make container-push`, `make dist`, `make test-integration` are stub targets; tests that verify them pass now but need real implementations.
@@ -82,31 +85,34 @@
 
 ## Next Steps
 
-1. **PRIORITY: Fix response.transform dead-code gap** — port all 5 response-scanning plugins to a mechanism opencode actually supports, or rewrite them to use `tool.execute.before` pattern. This is the single biggest gap: the false-done guard, the stop guard, the todo guard, the floor guard, and the make-only enforcement are all dead in the response path.
-2. Verify CI status on latest push (`2ed2ea08`) — check if CI shards are now green
+1. **PRIORITY: Finish response.transform migration** — `enforce-false-done.ts` and `enforce-stop.ts` done (`2495d0f1`). Migrate remaining 3 plugins (`enforce-make.ts`, `enforce-todos.ts`, `enforce-floor.ts`) from dead `response.transform` to `text.complete` + `session.idle` or equivalent.
+2. Verify CI status on latest push (`efdee46a`) — check if CI shards are now green
 3. Achieve full green CI (all test shards passing)
 4. Cut and ship alpha.5 (requires green CI release job + verified artifact)
 5. Implement real Makefile targets for container-*, dist, test-integration
 
-## Current Gate Status (2026-06-30)
+## Current Gate Status (2026-07-01)
 
 <!-- gate:begin -->
 - lint: PASS 0
 - typecheck: PASS 0 (465 source files)
-- collect: PASS 0 (15,658 tests collected)
-- test: all targeted suites green (214+ tests); 22/22 enforce-false-done tests pass
+- collect: PASS 0 (15,687 tests collected)
+- test: 119/119 enforce-stop CI verdict query tests pass
 - CI gate jobs: PASS (lint, typecheck, collect)
-- CI test shards: assertion mismatches reduced; CI pending on master
+- CI test shards: CI pending on master (`efdee46a`); assertion mismatches reduced
+- enforce-false-done + enforce-stop: migrated from dead response.transform to text.complete + session.idle
 <!-- gate:end -->
 
-> Lint 0, typecheck 0, collect 0 (15,658 tests). All targeted test suites pass.
+> Lint 0, typecheck 0, collect 0 (15,687 tests). All targeted test suites pass.
 > Full test suite times out under 8-worker xdist (OOM). CI-as-gate used for commits.
 > Background gate available via `make gate-background`; check via `make gate-status-check`.
-> Targeted suites: unit tests (48/48 event loop), guardrails, plugin behavior, and CI infrastructure all pass.
-> 22/22 enforce-false-done tests pass; release targets real (release-cut, release-recut, release-create, release-branch-new, release-promote, git-tag-push, release-view).
+> 119/119 enforce-stop CI verdict query tests pass; CI PENDING wired into hasPendingWork.
+> enforce-false-done and enforce-stop plugins migrated from dead response.transform to text.complete + session.idle hooks.
+> 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need migration.
 
 ## Historical State
 
+- **2026-07-01 (latest)**: HEAD `efdee46a`. enforce-stop.ts CI verdict query (A-D), session summary detection, CI PENDING wired into hasPendingWork (119/119 tests pass). enforce-false-done and enforce-stop migrated from dead response.transform to text.complete + session.idle hooks (`2495d0f1`). 15,687 tests collected. 22 commits ahead of sandboxcom/master. 3 remaining plugins (enforce-make, enforce-todos, enforce-floor) still need response.transform migration. CI pending on master. Alpha.5 still not shipped.
 - **2026-06-30 (latest)**: HEAD `2ed2ea08`. Fix #4 completed: Makefile release targets real (release-cut, release-recut, release-create, release-branch-new, release-promote, git-tag-push, release-view). `enforce-false-done.ts` has RELEASE_CLAIM_PATTERNS + RELEASE_EVIDENCE_PATTERNS with release-claim gating in classify(). 22/22 test_enforce_false_done tests pass. 4 missing plugins registered in opencode.json (enforce-todos, enforce-false-done, enforce-session-start, enforce-deadline) — now 9 total. **CRITICAL GAP DISCOVERED**: `experimental.chat.response.transform` is dead code — not in the official opencode Plugin Hooks interface. All 5 response-scanning plugins use this hook and have never fired. Only `tool.execute.before` hooks are active. CI still pending on master. Alpha.5 still not shipped.
 - **2026-06-30 (earlier)**: ~24 commits pushed across multiple waves.
   HEAD `2757daa0`. Major CI test shard fixes: caplog propagate, release target stubs,
