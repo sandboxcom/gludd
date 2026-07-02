@@ -221,3 +221,30 @@ def test_output_capture_is_bounded_to_tail(tmp_path):
     # It kept the TAIL: the last line (100000) survives, early lines are dropped.
     assert "100000" in res.stdout_tail
     assert "\n1\n" not in res.stdout_tail
+
+
+# --- Memory cap + OOM detection ---------------------------------------------
+
+def test_check_result_oom_summary():
+    r = CheckResult(name="build", exit_code=-9, passed=False, duration_s=2.0, oom_killed=True)
+    assert "OOM-KILLED" in r.summary()
+    assert r.oom_killed is True
+
+
+def test_oom_killed_defaults_false():
+    r = CheckResult(name="t", exit_code=0, passed=True, duration_s=0.1)
+    assert r.oom_killed is False
+
+
+def test_runner_accepts_memory_limit_and_still_runs(tmp_path):
+    # A generous cap must not break a tiny normal command (plumbing check — the
+    # preexec RLIMIT_AS path is exercised on POSIX, a no-op on Windows).
+    prof = ProjectProfile(commands={"test": "true"}, allowed_exec=["true"])
+    res = ProjectCommandRunner(tmp_path, prof, memory_limit_mb=1024).run("test")
+    assert res.passed and not res.oom_killed
+
+
+def test_normal_failure_is_not_oom(tmp_path):
+    prof = ProjectProfile(commands={"test": "false"}, allowed_exec=["false"])
+    res = ProjectCommandRunner(tmp_path, prof).run("test")
+    assert not res.passed and not res.oom_killed  # exit 1, not a SIGKILL

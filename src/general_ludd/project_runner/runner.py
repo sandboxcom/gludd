@@ -28,12 +28,13 @@ import subprocess
 import threading
 import time
 from collections import deque
-from collections.abc import Sequence
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import IO
 
 from general_ludd.project_runner.profile import ProjectProfile, ProjectProfileError
+from general_ludd.system.rlimit import apply_limits
 
 # Keep only the last N chars of each stream so a huge build log can't exhaust
 # memory or flood the model context.
@@ -120,6 +121,7 @@ class CheckResult:
     stdout_tail: str = ""
     stderr_tail: str = ""
     timed_out: bool = False
+    oom_killed: bool = False
     error: str | None = None
     findings: list[str] = field(default_factory=list)
 
@@ -128,6 +130,8 @@ class CheckResult:
             return f"{self.name}: ERROR — {self.error}"
         if self.timed_out:
             return f"{self.name}: TIMED OUT after {self.duration_s:.0f}s"
+        if self.oom_killed:
+            return f"{self.name}: OOM-KILLED (exit {self.exit_code}, {self.duration_s:.1f}s)"
         state = "PASS" if self.passed else "FAIL"
         return f"{self.name}: {state} (exit {self.exit_code}, {self.duration_s:.1f}s)"
 
@@ -141,12 +145,17 @@ class ProjectCommandRunner:
         profile: ProjectProfile,
         *,
         default_timeout_s: int = _DEFAULT_TIMEOUT_S,
+        memory_limit_mb: int | None = None,
     ) -> None:
         self._workspace = Path(workspace).resolve()
         if not self._workspace.is_dir():
             raise ProjectProfileError(f"workspace {self._workspace} is not a directory")
         self._profile = profile
         self._default_timeout_s = default_timeout_s
+        # Optional RLIMIT_AS cap (MiB) applied in the child before exec so a
+        # heavy target test suite is bounded + OOM-killed inside its own process
+        # rather than taking down gludd's host. POSIX-only (no-op elsewhere).
+        self._memory_limit_mb = memory_limit_mb
         # Sanitized, minimal env — built once from the profile's allowlist so the
         # target's commands never inherit gludd's secrets (ZAI_API_KEY, tokens…).
         self._env = _build_env(profile.env_passthrough)
@@ -162,6 +171,18 @@ class ProjectCommandRunner:
         argv = self._profile.resolve_argv(check)  # ProjectProfileError on bad config
         timeout = timeout_s if timeout_s is not None else self._default_timeout_s
         start = time.monotonic()
+        # RLIMIT_AS cap applied in the child (post-fork, pre-exec) so a heavy
+        # target command is bounded inside its own address space rather than
+        # taking down gludd's host. POSIX-only (preexec_fn is unavailable on
+        # Windows); None ⇒ no cap.
+        preexec: Callable[[], None] | None = None
+        if self._memory_limit_mb is not None and os.name == "posix":
+            _mb = self._memory_limit_mb
+
+            def _apply_mem_limit() -> None:
+                apply_limits(_mb, 0)
+
+            preexec = _apply_mem_limit
         try:
             proc = subprocess.Popen(  # argv is validated + allow-listed, no shell
                 argv,
@@ -171,6 +192,7 @@ class ProjectCommandRunner:
                 stderr=subprocess.PIPE,
                 text=True,
                 start_new_session=True,  # own process group → killpg reaps children
+                preexec_fn=preexec,  # RLIMIT_AS cap before exec (None ⇒ no-op)
             )
         except FileNotFoundError:
             return CheckResult(
@@ -218,7 +240,11 @@ class ProjectCommandRunner:
 
         exit_code = proc.returncode
         duration = time.monotonic() - start
-        passed = (not timed_out) and exit_code == 0
+        # A memory-capped child that busts RLIMIT_AS (or the host OOM-killer) is
+        # SIGKILL'd → returncode -9 (Popen) or 137 (128+9). Surface it distinctly
+        # from a plain non-zero failure so callers can retry/degrade.
+        oom_killed = (not timed_out) and exit_code in (-9, 137)
+        passed = (not timed_out) and not oom_killed and exit_code == 0
         return CheckResult(
             name=check,
             exit_code=exit_code,
@@ -227,6 +253,7 @@ class ProjectCommandRunner:
             stdout_tail=out_reader.text,
             stderr_tail=err_reader.text,
             timed_out=timed_out,
+            oom_killed=oom_killed,
         )
 
 
