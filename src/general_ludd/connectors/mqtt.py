@@ -94,6 +94,10 @@ class MqttSource:
         self._lock = threading.Lock()
         self._client: Any = None
         self._started = False
+        # Guards lazy-connect so a failed first connect is not retried on every
+        # query (see query()). The ConnectorRegistry builds sources but never
+        # calls connect(), so query() starts the subscriber on first use.
+        self._connect_attempted = False
 
     # -- capacity ---------------------------------------------------------- #
     @property
@@ -134,13 +138,29 @@ class MqttSource:
             logger.warning("mqtt push failed for topic %s: %s", topic, exc)
 
     # -- read -------------------------------------------------------------- #
+    def _ensure_connected(self) -> None:
+        """Start the subscriber on first query (once). Best-effort — a missing
+        paho dep or unreachable broker leaves the buffer empty, not an error, so
+        the source degrades gracefully instead of failing the observe fan-out."""
+        if self._started or self._connect_attempted:
+            return
+        self._connect_attempted = True
+        try:
+            self.connect()
+        except Exception as exc:  # missing dep / unreachable broker → stay empty
+            logger.warning("mqtt lazy connect failed for %s: %s", self.name, exc)
+
     def query(self, spec: dict[str, Any]) -> list[dict[str, Any]]:
         """Return buffered records (deep-copied), filtered by ``spec``.
 
-        Supported filters: ``kind`` (equals), ``kinds`` (membership), ``topic``
-        (equals the record's ``labels.topic``), and ``since`` (numeric ``ts >=``;
-        records with no ts are excluded when ``since`` is set). Never raises.
+        On first call this lazily starts the background subscriber (the
+        ConnectorRegistry never calls connect()); a failed start is logged once
+        and the buffer is returned as-is. Supported filters: ``kind`` (equals),
+        ``kinds`` (membership), ``topic`` (equals the record's ``labels.topic``),
+        and ``since`` (numeric ``ts >=``; records with no ts are excluded when
+        ``since`` is set). Never raises.
         """
+        self._ensure_connected()
         spec = spec or {}
         with self._lock:
             snapshot = list(self._buffer)

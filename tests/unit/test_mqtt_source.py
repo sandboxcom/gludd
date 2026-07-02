@@ -216,3 +216,34 @@ def test_registration_via_from_config() -> None:
     assert src is not None
     assert type(src).__name__ == "MqttSource"
     assert src.name == "corp-mqtt"
+
+
+def test_query_lazy_connects_on_first_use(monkeypatch) -> None:
+    # The registry never calls connect(); the first query() must start the
+    # subscriber (once), so an operator only has to CONFIGURE the source.
+    holder: list = []
+    _install_fake_paho(monkeypatch, holder)
+    src = _src()
+    assert src._started is False
+    src.query({})
+    assert src._started is True
+    assert len(holder) == 1
+    src.query({})  # second query does not reconnect
+    assert len(holder) == 1
+
+
+def test_query_lazy_connect_failure_is_graceful(monkeypatch) -> None:
+    # A failed lazy connect (missing paho / unreachable broker) must not raise
+    # and must not be retried on every query — the buffer is returned as-is.
+    src = _src()
+
+    def _boom() -> None:
+        raise RuntimeError("no broker")
+
+    monkeypatch.setattr(src, "connect", _boom)
+    src.push_message("t", b"x")
+    assert [r["message"] for r in src.query({})] == ["x"]
+    assert src._started is False
+    assert src._connect_attempted is True
+    src.query({})  # does not re-attempt (flag guards it)
+    assert src._connect_attempted is True
