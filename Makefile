@@ -35,6 +35,11 @@ version:
 git-stash-pop:
 	git stash pop
 
+# Remove a single file (cleanup of a mistakenly-created file).
+rm-file:
+	@test -n "$(F)" || (echo "Usage: make rm-file F=<path>"; exit 1)
+	rm -f "$(F)" && echo "removed $(F)"
+
 # Merge a (worktree) branch into the current branch, no-ff, no editor.
 git-merge-branch:
 	@test -n "$(BRANCH)" || (echo "Usage: make git-merge-branch BRANCH=<branch>"; exit 1)
